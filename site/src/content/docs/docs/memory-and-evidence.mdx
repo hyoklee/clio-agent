@@ -4,8 +4,8 @@ description: Search earlier sessions, inspect what each run read, changed, and p
 ---
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
-import evidence from '../../../assets/captures/provenance-evidence.png';
-import gantt from '../../../assets/captures/agent-gantt.png';
+import evidence from '../../../assets/captures/current-data.png';
+import lineage from '../../../assets/captures/current-lineage.png';
 import { Image } from 'astro:assets';
 
 CLIO keeps a record of what happens in each run, so you can check an answer after the fact and build on earlier work. This page covers the record you see in the interface, and the memory the agent can search.
@@ -22,11 +22,15 @@ By default a search covers the current session. Searching across other sessions 
 
 A blueprint grants memory tools to the experts that need them. An expert that does not list them cannot search memory, and a blueprint cannot override the memory policy.
 
-## The observability panel
+## Data and Work
 
-Open the observability panel with the panel button at the top right of a session. It has four tabs.
+Use the **Evidence layout** button in the session toolbar to show the compact panels. **Data** contains context usage, sources and artifacts. **Work** contains tool calls and agent activity. You can move these panels to the top or bottom, show both, or hide them to give the transcript more room.
 
-<Image src={evidence} alt="The Evidence tab of the observability panel, listing files the agent read, a changed file, and generated artifacts beside the session" />
+Choose **Open full details** to inspect the record in the canvas. Its tabs are **Evidence**, **Timeline**, **Gantt** and **Context**.
+
+<Image src={evidence} alt="Current CLIO Evidence view listing the synthetic bike example's source table, derived table, findings report and dashboard" />
+
+*Current development UI, captured 10 October 2026. These files were authored through CLIO's production tools for a synthetic walkthrough; this is not a model run.*
 
 ### Evidence
 
@@ -36,15 +40,17 @@ Evidence lists what the run touched:
 - Changed files, each with a diff.
 - Artifacts the run created.
 
-### Timeline
+### Read a tool result
 
-The timeline lists every step in order: agent turns, tool calls with their arguments and outcomes, and the expert agents the main agent called on. Choose a step to jump to it in the transcript.
+Expand a tool row in the transcript or Work panel to read its result. Supported tools show a human-readable view, such as a command and its output, an artifact name and version, or an environment summary. Use the information button for recorded arguments and technical result details.
 
-### Gantt
+Failures retain their recorded error and exit status. A sandbox launch failure means the command could not start; it does not establish that the command itself ran and failed. Inspect the expanded result before deciding what to retry.
 
-The Gantt tab lays the same run out against time. It shows the main agent, its child agents, and individual tool calls, so you can see what ran in parallel and where the time went. Work that continues in the background appears under "Background work".
+### Timeline and Gantt
 
-<Image src={gantt} alt="A Gantt timeline showing the main agent, child agents, and individual tool calls over time" />
+**Timeline** lists recorded activity in order, with a named strand for each agent. Select an agent name to filter its activity. Select an event to open its transcript or artifact; child-agent rows open the child conversation.
+
+**Gantt** starts with an overview of agent durations, fitted to the recorded execution interval. Expand an agent to see its tool calls on separate rows. Select a row or bar to read its timing and outcome, then open the related conversation when available. **Fit** restores the execution overview after zooming.
 
 ### Context
 
@@ -56,9 +62,7 @@ When CLIO adds instructions or recovers earlier conversation context, a receipt 
 
 Recovery uses the complete saved context records when available, including recorded tool inputs, results and loaded instructions. If only a transcript is available, the receipt identifies that reconstruction and its missing continuation state. A normal restart with retained context does not need a recovery receipt.
 
-![The exact-details window shows the ordered context records restored after a controlled context-loss check](/media/source-context-recovery.png)
-
-The receipt distinguishes a restored context from a reconstructed transcript. [Enlarge screenshot](/media/source-context-recovery.png).
+The receipt distinguishes a restored context from a reconstructed transcript.
 
 ## Changed files and diffs
 
@@ -75,6 +79,20 @@ When a run produces a file you may want to keep, such as a report or a plot, it 
 - Lineage, which shows the inputs and earlier artifacts it was derived from.
 
 Open an artifact to see a preview and its **Versions** and **Lineage** tabs.
+
+### Follow artifact lineage
+
+Open **Lineage** on the findings report. In this synthetic example, `bike-stations.csv` supplies station snapshots to three independent checks: `station-balance.csv`, `availability-check.csv` and `capacity-check.csv`. Their declared input relationships join in `morning-findings.md`.
+
+<Image src={lineage} alt="Artifact lineage graph with bike-stations.csv, producing actions, station-balance.csv and morning-findings.md connected by Used and Generated edges" />
+
+Read the graph from the source toward the result:
+
+1. **Used** connects an input version to an action that declared it as an input.
+2. **Generated** connects that action to the file it produced.
+3. Select a related artifact to inspect its preview and recorded versions. Use **Fit view** to bring the whole graph into view.
+
+The graph records declared relationships and hashed versions. It does not prove that an interpretation is scientifically correct, and it does not invent missing inputs. An older artifact with no recorded input relationships may appear by itself. That gap remains visible.
 
 ## Charts, maps, and tables
 
