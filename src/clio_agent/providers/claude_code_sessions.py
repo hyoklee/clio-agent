@@ -67,7 +67,7 @@ import logging
 import queue
 import threading
 import time
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 
 from clio_agent.providers.claude_code_cancel import (
@@ -496,7 +496,7 @@ class _StreamClientEntry:
         cwd: str | None = None,
         thinking: dict[str, Any] | None = None,
         system_prompt: str | None = None,
-    ) -> AsyncIterator[Any]:
+    ) -> AsyncGenerator[Any, None]:
         """Yield SDK messages for one ``query`` on the pooled client (cross-loop)."""
         if self._dead:
             from clio_agent.providers.claude_code_lifecycle import (  # noqa: PLC0415
@@ -569,6 +569,10 @@ class _StreamClientEntry:
             # cancel `fut` outright (it could land inside a disconnect mid-flight).
             if kind is not _STREAM_END and kind != "exc" and not fut.done():
                 abandon.set()
+                # Close the admission race before asynchronous disconnect. The
+                # caller can request the next model iteration immediately.
+                self._dead = True
+                self.announce_dropped()
                 with contextlib.suppress(Exception):
                     asyncio.run_coroutine_threadsafe(self._mark_dead_and_reset(), self._loop)
             self._mark_idle()

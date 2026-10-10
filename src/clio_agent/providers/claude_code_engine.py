@@ -30,6 +30,7 @@ import os
 import threading
 import uuid
 from collections.abc import AsyncGenerator, Iterator
+from contextlib import aclosing
 from typing import Any
 
 from dspy.lm15 import (
@@ -55,7 +56,9 @@ from dspy.lm15 import TimeoutError as LMTimeoutError
 
 from clio_agent.lm.engines.conversations import ConversationRegistry, Send, conversation_key
 from clio_agent.lm.engines.text_tools import (
+    INVALID_TOOL_CALL,
     TURN_REMINDER,
+    ReplySplit,
     StreamSplitter,
     render_messages,
     render_system,
@@ -65,6 +68,7 @@ from clio_agent.providers import claude_code_bridge as _bridge
 from clio_agent.providers.claude_code_audit import emit_call_started, emit_call_usage
 from clio_agent.providers.claude_code_multimodal import native_blocks
 from clio_agent.providers.claude_code_options import require_claude_agent_sdk, thinking_key
+from clio_agent.providers.claude_code_output_progress import FormattingProgress
 from clio_agent.providers.claude_code_plan_limit import plan_limit_from_rate_limit_event
 from clio_agent.providers.claude_code_result_errors import (
     raise_classified_result_error,
@@ -187,19 +191,24 @@ class AsyncClaudeCodeEngine:
         )
         yield StreamStartEvent(model=request.model)
         try:
-            async for message in entry.stream(
-                payload=body,
-                native_blocks=blocks,
-                session_id=session_id,
-                idle_timeout=self.idle_timeout(),
-                on_construct=_STREAM_CLIENT_POOL.bump_construct,
-                model=self.model,
-                cwd=self.cwd,
-                thinking=self.thinking,
-                system_prompt=system,
-            ):
-                for out in turn.handle(message):
-                    yield out
+            async with aclosing(
+                entry.stream(
+                    payload=body,
+                    native_blocks=blocks,
+                    session_id=session_id,
+                    idle_timeout=self.idle_timeout(),
+                    on_construct=_STREAM_CLIENT_POOL.bump_construct,
+                    model=self.model,
+                    cwd=self.cwd,
+                    thinking=self.thinking,
+                    system_prompt=system,
+                )
+            ) as messages:
+                async for message in messages:
+                    for out in turn.handle(message):
+                        yield out
+                    if turn.protocol_error:
+                        break
         except TimeoutError as exc:  # typed by claude_code_expiry: connect vs stream idle
             _reset(send)
             raise LMTimeoutError(f"{exc} (model={self.model})") from exc
@@ -222,15 +231,17 @@ class AsyncClaudeCodeEngine:
                 usage=turn.usage,
                 output_chars=len(turn.reply),
             )
+        closing = turn.finish(send.call_id)  # records this call's cost share
         # Recorded after the query: connecting it may have dropped an older client.
         if send.key is not None:
-            if turn.provider_compacted:
+            if turn.protocol_error:
+                _reset(send)
+            elif turn.provider_compacted:
                 _CONVERSATIONS.reset(send.key, "provider_compacted")
             elif send.handle is None:
                 _CONVERSATIONS.opened(send.key, session_id, request, system)
             else:
                 _CONVERSATIONS.continued(send.key, request)
-        closing = turn.finish(send.call_id)  # records this call's cost share
         # A one-shot session (outside a loop) is never continued; released ones are gone.
         _forget_costs([session_id] if send.key is None else _CONVERSATIONS.take_released())
         for out in closing:
@@ -289,8 +300,12 @@ class _Turn:
         # matches clio-core's, so the conversation is reset after this call.
         self.provider_compacted = False
         self._splitter = StreamSplitter()
+        self.protocol_error: str | None = None
+        self._progress = FormattingProgress(enabled=bool(available_tools))
 
     def handle(self, message: Any) -> list[Any]:
+        if self.protocol_error:
+            return []
         kind = type(message).__name__
         self.events += 1
         if kind == "StreamEvent":
@@ -308,6 +323,11 @@ class _Turn:
                 )
             text = stream_event_text(message.event)
             if text:
+                cutoff = self._progress.cutoff(text)
+                if cutoff is not None:
+                    self.protocol_error = "formatting_only_repetition"
+                    self.reply = (self.reply + text[:cutoff])[:4096]
+                    return out
                 self.reply += text
                 shown = self._splitter.push(text)
                 if shown:
@@ -351,15 +371,38 @@ class _Turn:
 
     def finish(self, call_id: str) -> list[Any]:
         reply = self.reply or self.fallback
+        # Some SDK routes return only an assembled AssistantMessage/ResultMessage.
+        if not self.reply and self._progress.cutoff(reply) is not None:
+            self.protocol_error = "formatting_only_repetition"
+            reply = reply[:4096]
+            self.fallback = reply
         if not reply.strip():
             raise ServerError(f"claude agent sdk returned empty content (model={self.model})")
         out: list[Any] = []
-        if not self.reply:
+        if not self.reply and not self.protocol_error:
             shown = self._splitter.push(self.fallback)
             if shown:
                 out.append(StreamDeltaEvent(delta=TextDelta(text=shown, part_index=1)))
-        split = split_reply(
-            reply, call_prefix=f"call_{call_id[:8]}", available_tools=self.available_tools
+        split = (
+            ReplySplit(
+                text="",
+                calls=[
+                    ToolCallPart(
+                        id=f"call_{call_id[:8]}_0",
+                        name=INVALID_TOOL_CALL,
+                        input={
+                            "reason": self.protocol_error,
+                            "error": "The response repeated only HTML line breaks without an action. "
+                            "Continue with meaningful text or one complete tool_calls block. "
+                            "No operation was submitted by this response; accepted tasks still run.",
+                        },
+                    )
+                ],
+            )
+            if self.protocol_error
+            else split_reply(
+                reply, call_prefix=f"call_{call_id[:8]}", available_tools=self.available_tools
+            )
         )
         for index, call in enumerate(split.calls):
             out.append(

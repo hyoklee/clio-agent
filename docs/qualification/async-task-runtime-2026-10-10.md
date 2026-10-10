@@ -21,3 +21,17 @@ completion delivery and lifecycle races. Unit tests, an installed environment,
 and CI are supporting evidence; none replaces these live gates. Historical
 failures and unavailable or prohibited routes remain open until separately
 resolved.
+
+One retained Haiku mixed-task failure has a narrower diagnosis. Its short wait
+returned in 0.255 seconds and the canonical result reached the SDK. The following
+public response streamed 7,106 HTML line-break tags and no meaningful text. That
+output kept the inter-token silence watchdog alive; it does not show a blocked
+task wait. Other retained response stalls have different evidence and remain open.
+
+For tool-capable Claude calls, 256 consecutive HTML line-break tags with only
+whitespace now produce bounded protocol feedback through the existing malformed
+tool-call recovery path. The current provider stream closes; an interrupted
+client is retired before another iteration can reuse it. Ordinary text, tool
+argument bodies and short formatting retain their existing behavior. This adds no execution deadline and
+does not cancel accepted tasks. Tests of the bridge and its recovery loop are
+supporting evidence; final-source model acceptance remains a separate gate.
