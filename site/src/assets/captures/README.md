@@ -1,48 +1,35 @@
-# Product capture sources
+# Current product captures
 
-The OPAL figure and evidence captures are untouched 1440 × 1000 PNG screenshots from an isolated
-CLIO browser review on 2026-10-06, in light mode. They show the working UI at
-`gact-tui` commit `f9f2108942d7430877b0e1d7bf850f341e4e472f` with the directory
-browsing backend at `clio-agent` commit `a25d9703e1fcc3c988603af51d1b26e5d993d9c5`.
-They are development review captures, not evidence that a release was published.
+These light-mode browser captures show the development UI on 10 October 2026,
+at one device pixel per CSS pixel. They are original product screenshots,
+without painted controls, composited responses or private research data.
 
-`opal-report-review.png` is a newer untouched 1278 × 870 capture from the same
-isolated review, with `gact-tui` at
-`ce62046333fc4583f4c23c4a4a935ed4c4755cf7`. It shows the continuous, full-height
-preview and compact Open in toolbar beside the completed report-review answer.
-Its original, `opal-report-balanced-workspace-current-20261006-a.png`, is
-preserved in `2026-10-06-files-video-refresh`. This is navigation of previously
-corrected saved files, not fresh document generation or native Desktop acceptance.
+The fictional bike-station walkthrough is authored through the real
+`create_artifact`, transform-recording and dashboard-publication tools. It is
+not a model run. The source table branches into computed balance, availability
+and capacity tables, then joins in the findings report. Only declared
+relationships appear in Lineage.
 
-| Capture | What it demonstrates |
-| --- | --- |
-| `opal-figure-viewer.png` | The complete original six-panel plant-area figure in CLIO’s image viewer. Recorded category labels and IQR bands remain visible; this does not establish nickel doses or a treatment effect. |
-| `opal-report-review.png` | Review and publication of an existing three-page Word report, alongside an existing eleven-slide PowerPoint deck. This session did not author the initial documents. |
-| `opal-review-evidence.png` | The same review session’s recorded tool calls, sources and artifacts. |
+| File | Viewport | What to inspect |
+| --- | --- | --- |
+| `current-dashboard.png` | 1440 x 1280 | Complete charts, map, legends and five-station table. |
+| `current-data.png` | 1120 x 820 | All six registered files, including the source table. |
+| `current-lineage.png` | 1440 x 560 | All nine nodes and ten relationships, with no clipped branch. |
+| `current-report.png` | 1120 x 520 | The finding, its limits, and the three evidence tables. |
 
-`public/media/source-accounts.png` was captured from the same isolated CLIO. All
-accounts are signed out. It demonstrates global account settings, separate
-from workspace datasets, without exposing private credentials.
+`capture-manifest.json` records source revisions and SHA-256 checksums. The
+immutable originals and browser review screenshots are archived under
+`D:/Libraries/Videos/clio_recordings/2026-10-10-website-showcase/`. Astro creates
+responsive WebP derivatives; clicking a homepage image exposes its full-size
+version.
 
-The earlier untouched originals, website before/after captures and review notes are
-retained in the local dated `2026-10-06-site-ergonomics` capture archive with
-SHA-256 checksums. Astro generates responsive WebP derivatives at build time;
-the originals above remain the sources. Click a homepage capture to inspect its
-full-resolution derivative.
+Reproduce with `site/video/serve-website-showcase.py` in a new empty state
+directory, then `site/video/review-current-showcase.mjs`. Both refuse private
+session imports. The service bounds its private core to 64 MB and shuts it down
+through `POST /review/close`; remove disposable state after review.
 
-The other captures are earlier EarthScope and expert-agent examples, retained
-in the expandable workflow section. They are separate sessions from the OPAL
-review; their captions describe their own recorded behavior.
-
-## Dashboard development example
-
-`dashboard-overview.png` is an untouched, light-mode capture of a saved,
-agent-authored dashboard from the October 9 visual-feedback review. Its source is
-`D:/Libraries/Videos/clio_recordings/2026-10-09-widget-visual-feedback/saved-dashboard-overview.png`.
-The source and vendored PNG have SHA-256
-`d4a7449148461da966032eaf5bfafea451dd95d98823ae1771c70fb65823bc78`.
-
-The example explicitly labels the storm locations, correlation data, and mesh
-evidence synthetic. The capture shows the overview and three tabs; it does not
-establish scientific conclusions, complete cross-platform acceptance, or release
-availability. The dashboard guide keeps the development status beside it.
+The separate Gantt/Timeline acceptance images use an explicitly labelled
+fictional test fixture with four child agents and twelve tool calls. They test
+the production React components, including duration geometry, agent filters,
+keyboard activation and resize behavior. They are not website session captures
+or evidence of fresh inference. The fixture lives only under the UI test tree.

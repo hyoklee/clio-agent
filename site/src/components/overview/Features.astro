@@ -1,58 +1,36 @@
 ---
-/** Retain the five worked capability examples without five full-height blocks. */
-import { ArrowRight, ChevronDown, GitBranch, History, Search, ShieldCheck, Timer } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 import SectionHeading from './SectionHeading.astro';
 import Capture from './Capture';
-import { features } from '@/data/overview';
 import { captureImage } from '@/lib/captures';
-
-const icons = [Search, GitBranch, Timer, ShieldCheck, History];
-const rows = await Promise.all(features.map(async (f) => ({ ...f, capture: await captureImage(f.image) })));
+import lineage from '@/assets/captures/current-lineage.png';
+const image = await captureImage(lineage);
 ---
 
-<section class="features not-content" aria-labelledby="workflow">
-	<SectionHeading id="workflow" label="The workflow" title="From a question to" emphasis="an answer you can check." />
-	<div class="examples">
-		{rows.map((f, i) => {
-			const Icon = icons[i];
-			return <details name="clio-workflow" id={f.id} open={i === 0}>
-				<summary>
-					<Icon aria-hidden="true" size={20} />
-					<span class="label">{f.label}</span>
-					<span class="title">{f.title} {f.emphasis}</span>
-					<ChevronDown className="chevron" aria-hidden="true" size={16} />
-				</summary>
-				<div class="detail">
-					<div>
-						<p class="body">{f.body}</p>
-						{f.example && <p class="example">{f.example}</p>}
-						<a class="more" href={f.link.href}>{f.link.label} <ArrowRight aria-hidden="true" size={16} /></a>
-					</div>
-					<Capture client:visible image={f.capture} alt={f.alt} caption={f.caption} />
-				</div>
-			</details>;
-		})}
-	</div>
+<section class="provenance not-content" aria-labelledby="provenance">
+	<SectionHeading id="provenance" label="Follow the evidence" title="A result has" emphasis="a history." />
+	<p class="intro">Open an artifact’s <strong>Lineage</strong> tab to follow its recorded inputs, producing actions and outputs. The graph stays with the file, alongside its preview and version history.</p>
+	<Capture client:visible image={image}
+		alt="CLIO artifact provenance graph connecting bike-stations.csv through Used and Generated edges to station-balance.csv and morning-findings.md"
+		caption="Synthetic worked example: the source branches into balance, availability and capacity checks, then joins in the report. The tools recorded the declared input relationships and hashed file versions. Missing relationships are not inferred."
+		sizes="(min-width: 80rem) 76rem, 100vw" />
+	<ol class="reading-guide">
+		<li><strong>Start at the source.</strong><span>Find the input file and the version used for this result.</span></li>
+		<li><strong>Follow the action.</strong><span>Used leads into a recorded action; Generated leads to its output.</span></li>
+		<li><strong>Inspect the file.</strong><span>Open a related artifact, compare versions, or export its evidence.</span></li>
+	</ol>
+	<a class="more" href="/docs/memory-and-evidence/#follow-artifact-lineage">Read the lineage walkthrough <ArrowRight aria-hidden="true" size={16} /></a>
 </section>
 
 <style>
-	.features { padding-block: 3rem; border-top: 1px solid var(--line); }
-	.examples { margin-top: 1.75rem; }
-	details { border-top: 1px solid var(--line); scroll-margin-top: calc(var(--sl-nav-height) + 1rem); }
-	details:last-child { border-bottom: 1px solid var(--line); }
-	summary { display: flex; align-items: center; gap: 0.85rem; padding: 1.1rem 0; cursor: pointer; list-style: none; }
-	summary::-webkit-details-marker { display: none; }
-	summary :global(svg) { flex-shrink: 0; color: var(--accent); }
-	summary:hover .title { color: var(--accent); }
-	.label { width: 5.5rem; flex-shrink: 0; font-size: 0.9rem; font-weight: 600; color: var(--muted); }
-	.title { flex: 1; font-size: 1rem; font-weight: 500; color: var(--ink); }
-	summary :global(.chevron) { color: var(--muted); transition: transform var(--motion-fast); }
-	details[open] summary :global(.chevron) { transform: rotate(180deg); }
-	.detail { display: grid; gap: 1.5rem; padding-block: 0.25rem 1.75rem; }
-	.body { margin: 0; line-height: 1.6; color: var(--ink-soft); }
-	.example { margin: 1rem 0 0; padding-inline-start: 0.75rem; border-inline-start: 2px solid var(--copper); font-size: 0.95rem; line-height: 1.5; color: var(--ink); }
-	.more { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 1rem; font-size: 0.95rem; font-weight: 600; color: var(--accent); text-decoration: none; }
+	.provenance { padding-block: 3rem; border-top: 1px solid var(--line); }
+	.intro { max-width: 65ch; color: var(--ink-soft); line-height: 1.65; margin: 1rem 0 1.5rem; }
+	.reading-guide { display: grid; gap: 1.5rem; padding: 0; margin: 1.5rem 0; list-style: none; counter-reset: step; }
+	li { counter-increment: step; padding-top: 1rem; border-top: 1px solid var(--line); }
+	li::before { content: '0' counter(step); display: block; font-family: var(--font-mono); font-size: .8rem; color: var(--accent); margin-bottom: .5rem; }
+	strong { color: var(--ink); }
+	li span { display: block; color: var(--muted); margin-top: .35rem; font-size: .95rem; line-height: 1.5; }
+	.more { display: inline-flex; align-items: center; gap: .4rem; color: var(--accent); font-weight: 600; text-decoration: none; }
 	.more:hover { text-decoration: underline; }
-	@media (min-width: 64rem) { .detail { grid-template-columns: minmax(0, 4fr) minmax(0, 8fr); gap: 2rem; } }
-	@media (max-width: 39.99rem) { summary { flex-wrap: wrap; gap: 0.5rem 0.75rem; } .label { flex: 1; } .title { flex-basis: 100%; order: 4; padding-left: 2rem; } }
+	@media (min-width: 50rem) { .reading-guide { grid-template-columns: repeat(3,minmax(0,1fr)); } }
 </style>

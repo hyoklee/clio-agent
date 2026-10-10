@@ -13,18 +13,18 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 			await page.screenshot({ path: test.info().outputPath('home-390-dark.png'), animations: 'disabled' });
 		}
 		const showcase = page.getByRole('region', { name: 'Inside the CLIO workspace' });
-		const documents = showcase.getByRole('tab', { name: 'Documents', exact: true });
-		await expect(documents).toHaveAttribute('aria-selected', 'true');
-		await documents.focus();
+		const dashboards = showcase.getByRole('tab', { name: 'Dashboards', exact: true });
+		await expect(dashboards).toHaveAttribute('aria-selected', 'true');
+		await dashboards.focus();
 		await page.keyboard.press('ArrowRight');
 		await expect(showcase.getByRole('tab', { name: 'Evidence', exact: true })).toHaveAttribute('aria-selected', 'true');
-		await expect(showcase.getByRole('heading', { name: 'Follow the files and steps behind a result.' })).toBeVisible();
-		await showcase.getByRole('tab', { name: 'Figures', exact: true }).click();
+		await expect(showcase.getByRole('heading', { name: 'Find the files behind the result.' })).toBeVisible();
+		await showcase.getByRole('tab', { name: 'Files', exact: true }).click();
 		const enlarge = showcase.getByRole('button', { name: /^View larger:/ });
 		await enlarge.click();
 		const dialog = page.getByRole('dialog');
 		await expect(dialog).toBeVisible();
-		await expect(dialog).toContainText('not confirmed treatment doses');
+		await expect(dialog).toContainText('Synthetic worked example');
 		const bounds = await dialog.boundingBox();
 		const viewport = page.viewportSize()!;
 		expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -37,24 +37,31 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 		await expect(dialog).toBeHidden();
 		await expect(enlarge).toBeFocused();
 		expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-		await page.locator('#delegate summary').focus();
-		await page.keyboard.press('Enter');
-		await expect(page.locator('#delegate')).toHaveAttribute('open', '');
-		await expect(page.locator('#ask')).not.toHaveAttribute('open', '');
-		await expect(page.locator('#delegate').getByRole('img')).toBeVisible();
-		await documents.click();
+		const provenance = page.getByRole('region', {name:'A result has a history.'});
+		await expect(provenance.getByRole('img')).toBeVisible();
+		await expect(provenance).toContainText('Missing relationships are not inferred');
+		await provenance.scrollIntoViewIfNeeded();
+		await provenance.screenshot({path:test.info().outputPath(`provenance-${width}.png`)});
+		await provenance.getByRole('button', {name:/^View larger:/}).click();
+		await expect(dialog.getByRole('img')).toHaveAttribute('alt', /Used and Generated edges/);
+		await expect(dialog.getByRole('link', {name:'Open full-size image (new tab)'})).toBeVisible();
+		await page.screenshot({path:test.info().outputPath(`lineage-dialog-${width}.png`)});
+		await page.keyboard.press('Escape');
+		await dashboards.click();
 		const reportEnlarge = showcase.getByRole('button', { name: /^View larger:/ });
 		await reportEnlarge.click();
 		await expect(dialog).toBeVisible();
-		await expect(dialog.getByRole('img')).toHaveAttribute('alt', /rendered first page open beside the answer/);
+		await expect(dialog.getByRole('img')).toHaveAttribute('alt', /complete five-station table/);
+		await expect(dialog).toContainText('not a new model run');
 		await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
 		await page.screenshot({ path: test.info().outputPath(`report-dialog-${width}.png`) });
 		await page.keyboard.press('Escape');
 		await expect(reportEnlarge).toBeFocused();
-		await showcase.getByRole('link', { name: 'Open the worked example' }).click();
+		await showcase.getByRole('tab', { name:'Files',exact:true }).click();
+		await showcase.getByRole('link', { name: 'Explore file workflows' }).click();
 		await expect(page).toHaveURL(/\/docs\/examples\/reports-and-slides\/$/);
 		await expect(page.getByRole('heading', { name: 'Report and presentation example', exact: true })).toBeInViewport();
-		await expect(page.getByRole('main').locator('video')).toHaveCount(5);
+		await expect(page.getByRole('main').locator('video')).toHaveCount(4);
 		for (const name of ['files-sensor-word-generation', 'files-sensor-slide-generation']) {
 			await expect(page.locator(`video:has(source[src="/media/${name}.mp4"])`)).toBeVisible();
 			const response = await page.request.get(`/media/${name}.mp4`);
@@ -84,6 +91,18 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 	}
 });
 
+test('the evidence guide explains current controls and exposes artifact lineage', async ({ page }) => {
+	await page.goto('/docs/memory-and-evidence/');
+	await expect(page.getByRole('heading', {name:'Data and Work',exact:true})).toBeVisible();
+	await page.getByRole('heading', {name:'Follow artifact lineage',exact:true}).scrollIntoViewIfNeeded();
+	await expect(page.getByRole('img', {name:/^Artifact lineage graph with/})).toBeVisible();
+	await expect(page.getByRole('main')).toContainText('it does not invent missing inputs');
+	for (const image of await page.getByRole('main').getByRole('img').all()) {
+		expect((await page.request.get((await image.getAttribute('src'))!)).ok()).toBe(true);
+	}
+	await page.screenshot({path:test.info().outputPath('evidence-lineage-guide.png')});
+});
+
 test('docs reveal the current guide group and distinguish account sign-in from workspace datasets', async ({ page }) => {
 	await page.goto('/docs/');
 	const filesGroup = page.locator('#starlight__sidebar details').filter({ has: page.getByRole('link', { name: 'Connect sources', exact: true, includeHidden: true }) }).last();
@@ -94,7 +113,17 @@ test('docs reveal the current guide group and distinguish account sign-in from w
 	await filesGroup.getByRole('link', { name: 'Connect sources', exact: true }).click();
 	await expect(page.getByRole('main')).toContainText('Signing in does not attach a dataset');
 	await expect(page.getByRole('main')).toContainText('Files → Sources');
-	const image = page.getByRole('img', { name: /^Data sources settings lists/ });
-	await expect(image).toBeVisible();
-	expect((await page.request.get((await image.getAttribute('src'))!)).ok()).toBe(true);
+});
+
+test('private research recordings and downloadable documents are absent', async ({ page }) => {
+	for (const path of [
+		'/media/opal1-document-review/OPAL1_research_meeting_report.docx',
+		'/media/opal1-document-review/OPAL1_research_meeting_15min.pptx',
+		'/media/opal1-document-review/report-overview-1.png',
+		'/media/files-opal-report-review-current.mp4',
+		'/media/files-opal-report-review.mp4',
+		'/media/clio-session-export.mp4',
+		'/media/source-context-recovery.png',
+		'/media/source-accounts.png',
+	]) expect((await page.request.get(path)).status()).toBe(404);
 });

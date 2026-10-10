@@ -1,9 +1,6 @@
 ---
 import { widgetFor, widgetGroups, widgetUses, widgets } from '../data/widget-library.mjs';
 import reference from '../data/widget-reference.json';
-import terrainCapture from '../assets/captures/terrain-mesh.png';
-import mapCapture from '../assets/captures/earthscope-map.png';
-import chartCapture from '../assets/captures/earthscope-chart.png';
 import WidgetSectionTabs from './WidgetSectionTabs.astro';
 import WidgetLive from './WidgetLive.astro';
 import { readFileSync } from 'node:fs';
@@ -21,12 +18,6 @@ const fragment = fragments[name];
 if (!fragment) throw new Error(`Missing agent skill fragment: ${name}`);
 const linked = ['clio.chart.v1', 'clio.map.v1', 'clio.data-table.v1'].includes(name);
 const visualCapture = ['clio.raster-viewport.v1', 'clio.mesh-viewport.v1'].includes(name);
-const captures: Record<string, { src: string; alt: string }> = {
-  'clio.mesh-viewport.v1': { src: terrainCapture.src, alt: 'CLIO 3D terrain mesh with a selected peak' },
-  'clio.map.v1': { src: mapCapture.src, alt: 'CLIO map of scientific observation sites' },
-  'clio.chart.v1': { src: chartCapture.src, alt: 'CLIO chart of scientific observations' },
-};
-const capture = captures[name];
 ---
 
 <div class="widget-detail">
@@ -57,7 +48,6 @@ const capture = captures[name];
       <p>The agent chooses the content and binds it to the component. CLIO then renders the view and its available controls.</p>
       {linked && <p>When this view uses the same dataset as another view, selection travels with each row. A person can find the same observation across the views.</p>}
       {visualCapture && <p>The viewport can carry selected geometry or a labelled visual region into a follow-up, preserving the visual context of the question.</p>}
-      {capture && <figure class="widget-detail-visual"><img src={capture.src} alt={capture.alt} /><figcaption>Used in a CLIO answer</figcaption></figure>}
     </section>
     <section id="widget-detail-skill" role="tabpanel" class="widget-detail-panel" hidden>
       <h2>What the agent receives</h2>
