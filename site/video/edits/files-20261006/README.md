@@ -12,7 +12,6 @@ input and result review remain at normal speed.
 | `current-pdf.edit.json` | `files-sensor-pdf-read` | Open a two-page report PDF, resize Files, scroll and zoom. |
 | `current-word.edit.json` | `files-sensor-word-revision` | Reference and revise a structured Word report, then inspect the published two-page preview and Open in choices. |
 | `current-slides.edit.json` | `files-sensor-slide-revision` | Revise a six-slide briefing, correct formatting after visual review, bind its PDF and inspect the saved result. |
-| `current-opal.edit.json` | `files-opal-report-review-current` | Navigate the previously corrected three-page OPAL report and eleven-slide deck. This does not claim fresh generation. |
 
 The guide's sensor values are fictional. The reference builders, original
 editable files and corrected revisions are downloadable from the worked-example

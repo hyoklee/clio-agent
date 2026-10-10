@@ -6,7 +6,7 @@ description: Ask CLIO to author and revise a connected report in the side panel,
 import { Aside, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
-import dashboard from '../../../assets/captures/dashboard-overview.png';
+import dashboard from '../../../assets/captures/current-dashboard.png';
 
 A dashboard brings an analysis into one interactive report beside the
 conversation. Ask the agent to decide what belongs together: explain the main
@@ -16,11 +16,11 @@ data accessible. It can combine text, metrics, charts, maps, tables, images, and
 
 <Aside type="note" title="Development preview">
 Saved dashboard artifacts are implemented in a development build and are not
-included in beta 5.2. The capture below comes from a real agent review using
-explicitly synthetic data.
+included in beta 5.2. The capture below is a synthetic example authored through production tools;
+it is not a model run.
 </Aside>
 
-<Capture client:visible image={await captureImage(dashboard)} alt="Saved CLIO dashboard with Overview, Storm and correlation, and Linked mesh evidence tabs; the overview labels its data synthetic and shows storm locations on a map" caption="One saved dashboard with three tabs. This is an agent-authored synthetic example, not observed storm data or an engineering result." sizes="(min-width: 50rem) 46rem, 100vw" />
+<Capture client:visible image={await captureImage(dashboard)} alt="CLIO bike-station report with a wide annotated time chart, narrower station balance, linked map and comparison table" caption="Current development UI, captured 10 October 2026. A synthetic example authored through CLIO production tools, with the complete map, legends and five-station table visible. This is not a new model run." sizes="(min-width: 50rem) 46rem, 100vw" />
 
 ## Ask the agent to compose the report
 
