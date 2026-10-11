@@ -113,14 +113,25 @@ def transcript_records(row: Any) -> list[tuple[str, dict[str, Any]]]:
     metadata = field(row, "metadata") or {}
     telemetry = iter(metadata.get("tools_called") or [])
     open_calls: dict[str, str] = {}
+    current_thought: dict[str, Any] | None = None
     for part in field(row, "parts") or []:
         kind, text = field(part, "type"), field(part, "text")
-        if kind == "text" and text:
-            records.append(("user" if role == "user" else "thought", {"text": text}))
-        elif kind == "thinking" and text:
-            records.append(
-                ("thought", {"text": "", "thinking": [{"text": text, "continuation": []}]})
-            )
+        if kind == "text" and text and role == "user":
+            records.append(("user", {"text": text}))
+        elif kind in {"text", "thinking"} and text:
+            # Provider text can reach the transcript after a call starts, before
+            # its result. It still belongs to that assistant step: opening a new
+            # thought here would strand the recorded call during retained restart.
+            if not open_calls:
+                current_thought = {"text": ""}
+                records.append(("thought", current_thought))
+            assert current_thought is not None
+            if kind == "text":
+                current_thought["text"] += text
+            else:
+                current_thought.setdefault("thinking", []).append(
+                    {"text": text, "continuation": []}
+                )
         elif kind == "injection" and text:
             records.append(
                 ("user", {"text": text, "actor": "algorithm", "source": field(part, "source")})
@@ -144,6 +155,12 @@ def transcript_records(row: Any) -> list[tuple[str, dict[str, Any]]]:
                     )
                 )
                 continue
+            if not open_calls:
+                if records and records[-1][0] == "thought":
+                    current_thought = records[-1][1]
+                else:
+                    current_thought = {"text": ""}
+                    records.append(("thought", current_thought))
             records.append(("tool_call", {"id": call_id, "name": name, "args": dict(args)}))
             open_calls[call_id] = name
         elif kind == "tool_result":
