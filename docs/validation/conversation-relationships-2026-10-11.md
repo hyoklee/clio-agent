@@ -17,7 +17,7 @@ This does not change asynchronous task ownership, lifecycle controls, user-fork 
 ## Automated checks
 
 - Backend: **78 passed** across `test_conversation_origin.py`, `test_fork_and_search.py`, `test_session_fork_policy.py`, and `test_message_marks.py`.
-- Frontend: **81 passed** across 11 focused suites covering checkpoint placement, family selection and bounds, real turn projection, connector geometry, toggling, ownership labels, live-event query invalidation and workspace projections. The changed remount and workspace-data suites were rechecked after final integration.
+- Frontend: **82 passed** across 12 focused suites covering checkpoint placement, family selection and bounds, real turn projection, connector geometry, toggling, ownership labels, live-event query invalidation, workspace projections and shared provenance-provider selection. The final provider/workspace rerun passed **22 tests**.
 - Backend Ruff check/format passed. Mypy passed for the three changed production Python files (`--follow-imports=skip`).
 - Frontend TypeScript build and repository lint/ownership/component/file-size guards passed.
 
@@ -71,3 +71,9 @@ The branch/rewind guide includes the checkpoint, switch, ownership distinction, 
 The site build and browser guide checks validate image loading, enlarged image dialogs, keyboard dismissal/focus return, cross-guide navigation and 390/1440-pixel layout. Website publication still follows the normal `develop` to `main` release; this acceptance does not claim a public deployment or installed Desktop update.
 
 Site results: Astro check **0 errors / 0 warnings** (six existing hints), production build **80 pages** with valid internal links, and **2 browser tests passed**. The four enlarged screenshots were reviewed in the built guide on desktop and mobile. `CLIO_SITE_TEST_PORT=4393` kept this run separate from an existing preview on 4389.
+
+The website unit suite also passed **30 tests**. The family's provenance query follows the execution provider selected by the user; a dedicated hook integration test checks changing from native to Flowcept without silently retaining the old provider.
+
+## Resource closure
+
+The owned backend, private core, Vite server and temporary docs preview were stopped; their four ports no longer listen. No worktree was created. Removing the stopped service's disposable `home` and `private-core` directories (about **519 MB** on C:) was rejected by automatic approval review with only `blocked by policy`. They were retained rather than deleted through a different mechanism. Small acceptance records and reviewed captures remain available alongside them.
