@@ -363,9 +363,9 @@ def restore_pending_ask_user_questions(app: Any) -> int:
         record_user_question(app, question)
         arm_ask_user_deadline(app, question)
         restored += 1
-    for question in app.state.user_questions.values():
-        if question.status == "pending" and question.response_mode == "async":
-            arm_ask_user_deadline(app, question)
+    for live_question in app.state.user_questions.values():
+        if live_question.status == "pending" and live_question.response_mode == "async":
+            arm_ask_user_deadline(app, live_question)
     return restored
 
 
@@ -409,7 +409,39 @@ def arm_ask_user_deadline(app: Any, question: Any) -> None:
         # timer that has already fired (a harmless no-op) but the entry itself
         # must not outlive the question.
         cancel_ask_user_deadline(app, question.id)
-        updated = claim_question_transition(app, question.id, "expired")
+        next_status: str | None = None
+
+        def persist_release(updated: UserQuestion) -> None:
+            nonlocal next_status
+            session = app.state.sessions.get(updated.session_id)
+            from clio_agent.gact.user_question_resume import settled_question_metadata
+
+            metadata_patch = settled_question_metadata(app, updated.session_id, updated)
+            other_pending = any(
+                row.id != updated.id
+                and row.session_id == updated.session_id
+                and row.status == "pending"
+                and row.response_mode == "blocking"
+                for row in app.state.user_questions.values()
+            )
+            root_owned = updated.owner_session_id == updated.attended_session_id
+            next_status = (
+                "idle"
+                if root_owned
+                and not other_pending
+                and updated.response_mode == "blocking"
+                and getattr(session, "status", "") == "waiting_user"
+                else None
+            )
+            app.state.sessions.update(
+                updated.session_id,
+                status=next_status,
+                metadata_patch=metadata_patch,
+            )
+
+        updated = claim_question_transition(
+            app, question.id, "expired", before_publish=persist_release
+        )
         if updated is None:
             return
         from clio_agent.gact.agents.variant_close import close_for_question  # noqa: PLC0415
@@ -432,31 +464,6 @@ def arm_ask_user_deadline(app: Any, question: Any) -> None:
                         payload=expired_mirror.model_dump(exclude_none=True),
                     )
                 )
-        session = app.state.sessions.get(updated.session_id)
-        from clio_agent.gact.user_question_resume import settled_question_metadata
-
-        metadata_patch = settled_question_metadata(app, updated.session_id, updated)
-        other_pending = any(
-            row.id != updated.id
-            and row.session_id == updated.session_id
-            and row.status == "pending"
-            and row.response_mode == "blocking"
-            for row in app.state.user_questions.values()
-        )
-        root_owned = updated.owner_session_id == updated.attended_session_id
-        next_status = (
-            "idle"
-            if root_owned
-            and not other_pending
-            and updated.response_mode == "blocking"
-            and getattr(session, "status", "") == "waiting_user"
-            else None
-        )
-        app.state.sessions.update(
-            updated.session_id,
-            status=next_status,
-            metadata_patch=metadata_patch,
-        )
         app.state.bus.publish(
             Event(
                 type="user_question.expired",

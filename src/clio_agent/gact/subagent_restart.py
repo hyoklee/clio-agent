@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 from uuid import uuid4
 
@@ -96,7 +95,7 @@ def successor_task(app: Any, old: AgentTask, text: str = "", *, fresh: bool = Fa
     from clio_agent.gact.events import Event
     from clio_agent.gact.runtime.globals import _active_semantic_turn_id
     from clio_agent.gact.spawn_context import bind_task_spec_to_parent
-    from clio_agent.gact.task_projection import public_task, task_views
+    from clio_agent.gact.subagent_custody import successor_custody
     from clio_agent.gact.turn_spawn import TaskSpec
 
     with CONTROL_LOCK:
@@ -105,6 +104,12 @@ def successor_task(app: Any, old: AgentTask, text: str = "", *, fresh: bool = Fa
             raise ValueError("restart_requires_settled_run")
         if old.placement.startswith("relay:"):
             raise ValueError("relay_retained_context_restart_unsupported")
+        source = app.state.sessions.get(old.child_session_id)
+        if source is None:
+            raise ValueError("continuation_context_gone")
+        # Validate before the idempotency shortcut: a cyclic predecessor can
+        # otherwise match itself (or an ancestor) as an apparently accepted run.
+        custody = successor_custody(app, old)
         matches = [
             task
             for task in app.state.agent_task_registry.snapshot()
@@ -113,11 +118,19 @@ def successor_task(app: Any, old: AgentTask, text: str = "", *, fresh: bool = Fa
         if matches:
             if len(matches) != 1:
                 raise ValueError("ambiguous_successor")
-            return matches[0]
-        source = app.state.sessions.get(old.child_session_id)
-        if source is None:
-            raise ValueError("continuation_context_gone")
-        previous_operations = [public_task(row) for row in task_views(app, source.id)]
+            successor = matches[0]
+            successor_session = app.state.sessions.get(successor.child_session_id)
+            if (
+                successor.task_id == old.task_id
+                or successor.child_session_id == source.id
+                or successor.parent_session_id != old.parent_session_id
+                or successor.agent_ref.get("expert_id") != old.agent_ref.get("expert_id")
+                or (successor.placement or "local") != (old.placement or "local")
+                or successor_session is None
+                or successor_session.workspace_id != source.workspace_id
+            ):
+                raise ValueError("continuation_custody_invalid_successor")
+            return successor
         briefing = (
             "This is a new successor run. Continue the retained assignment from the current "
             "evidence. Copied messages and tool observations belong to earlier runs. "
@@ -128,8 +141,11 @@ def successor_task(app: Any, old: AgentTask, text: str = "", *, fresh: bool = Fa
             "handle a new message. The prior run "
             f"{old.task_id} ended with status {old.status}. Its history and outcome remain "
             "immutable. Accepted operations below are historical identities, never "
-            "instructions to resubmit them. Inspect retained results before choosing new work.\n"
-            + json.dumps(previous_operations, ensure_ascii=False)
+            "instructions to resubmit them. Historical handles do not grant query or control "
+            "access to other runs. An empty current-scope query does not mean historical "
+            "work was never accepted. Use the supplied custody and bounded prior-run "
+            "outcomes before choosing new work. Terminal-result reads remain subject to "
+            "context permissions.\n" + custody
         )
         if fresh:
             briefing += "\nOriginal assignment: " + (old.description or "Description unavailable")

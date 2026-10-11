@@ -41,6 +41,23 @@ exact-session messaging controls. Live acceptance remains a separate gate.
   supports their contract; existing owner-to-relay messaging is retained. Those
   routes remain unimplemented and unqualified, not silently simulated locally.
 
+## Restart custody across successor chains
+
+Every linked restart carries a bounded, validated briefing of accepted operation
+identities and prior-run outcomes from the existing registry/session lineage.
+This applies to retained and fresh context modes. The original assignment,
+operation handles, provider/backend-session identities and prior messages remain
+unchanged. Private workflow state and unbounded result content are excluded.
+Missing/cyclic/conflicting lineage, ambiguous handles or oversized custody reject
+the new launch rather than silently dropping accepted work. Validation precedes
+the idempotency shortcut; a returned successor must retain the same owner, agent,
+workspace and placement. Valid retries reuse the already accepted successor.
+
+An empty current-scope task query does not mean no earlier operation was accepted.
+The successor uses its explicit historical briefing to avoid replay. That
+briefing grants no historical query, control or live-result access; fresh-context
+result restrictions and existing retained terminal-result authorization remain.
+
 ## Human intervention and ownership
 
 Human control never silently changes an agent's owned work. Authorized human

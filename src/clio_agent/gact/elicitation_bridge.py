@@ -193,6 +193,7 @@ def claim_question_transition(
     answered_by: str = "",
     metadata_patch: Mapping[str, Any] | None = None,
     answer_already_delivered: bool = False,
+    before_publish: Callable[[UserQuestion], None] | None = None,
 ) -> UserQuestion | None:
     """Atomically transition a PENDING question to ``new_status`` (first-wins).
 
@@ -207,12 +208,13 @@ def claim_question_transition(
     ``answer_already_delivered`` is server-only: composer acceptance has already
     saved the answer's message or queue entry. Client metadata never bypasses delivery.
 
-    ``answered_by`` (#1309, C1-S7) is the agent-driven-elicitation attribution:
-    empty (the default) leaves :attr:`UserQuestion.answered_by` at its
-    byte-identical-with-today ``None`` wire absence; ``"agent"`` is stamped by
-    :mod:`clio_agent.gact.agent_elicitation` in the SAME atomic transition a
-    human answer would use, so the row is never observably "answered" before
-    its attribution is set.
+    ``before_publish`` is server-only owner persistence under the same arbitration
+    lock. It completes before the terminal row becomes observable; a failure
+    leaves the question pending. It must not recursively claim a question.
+
+    ``answered_by`` (#1309, C1-S7) defaults to the unchanged ``None`` wire absence.
+    Agent elicitation stamps ``"agent"`` in the same atomic transition, so the row
+    cannot appear answered before attribution is set.
     """
 
     with _QUESTIONS_LOCK:
@@ -249,6 +251,8 @@ def claim_question_transition(
                     "answer_metadata": {**updated.answer_metadata, "queued_message_id": queued_id}
                 }
             )
+        if before_publish is not None:
+            before_publish(updated)
         record_user_question(app, updated)
     # The ONE serialization point is also the one place the armed expiry timer is
     # released, so no settled question leaves a live timer behind (outside the lock).

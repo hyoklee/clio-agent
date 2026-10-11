@@ -7,6 +7,53 @@ run does not become a live pass for a later commit.
 
 ## Continued qualification on October 11
 
+### Restart custody and expiry publication correction
+
+On `b5efc8b8`, Claude's active/fresh family passed two complete cycles, then the
+third fresh successor replayed the original Shell operation. Its persisted
+briefing contained no accepted-operation identities because only the immediate
+predecessor's current task projection was read. The starts file records two
+launches. The model and backend evidence establish a real custody failure; the
+unchanged 150-second gate remains failed. Separately, all five complete lifecycle
+cycles passed on that earlier source. Neither result replaces the other.
+
+The correction validates and follows existing successor lineage, preserving
+accepted public handles and bounded prior outcomes in the explicit briefing.
+It preserves current task scopes and fresh/retained result-access boundaries.
+Invalid or oversized custody rejects admission before a successor is launched.
+No provider timeout, general repetition rule or command deduplication is added.
+
+Exact-head CI `38165995538` also found an expiry ordering race: a question could
+report `expired` before its root session left `waiting_user`. The existing
+first-wins transition now persists the owner's release before publishing expiry.
+A persistence gate reproduces the original race without changing its deadline
+or weakening the assertion. Losing claims and owner-persistence errors keep the
+original question intact.
+
+Three initial regressions failed with actual assertions before correction. Six
+additional cases reproduced an idempotency shortcut bypass for self/long cycles
+and conflicting successor identities. Validation now precedes that shortcut,
+while valid fresh/retained retries still reuse one accepted successor. All
+43 selected cases then passed individually and sequentially with one worker
+and zero skips. They cover custody chains, backend-session identity/handle
+collisions, invalid/oversized lineage, private-output bounds, existing result
+ACLs, first-wins question transitions and the original CI expiry case. Two
+pre-existing nullable-loop diagnostics were also reproduced on the unchanged
+previous source. A local-variable rename corrects them; concise attribution
+documentation keeps the transition module within the unchanged 800-line guard.
+Parsed execution is identical after those name/doc-only normalizations. Nine
+affected expiry, answer-race and recovery cases pass on the final file hashes,
+with zero skips. Original 43-case hashes remain retained separately. Scoped
+Ruff/format/Pyright and eight unchanged repository guards pass. Both focused
+owners and caches have completed recovery custody and retirement; the pytest
+runtime root is absent before the next admission.
+
+These are focused checks, not new live-model acceptance. The affected five-cycle
+model families, pending workload/UI routes and exact new-source CI must pass
+before qualification can advance. Protected native/transport/platform gates
+remain unverified and full qualification remains incomplete.
+
+
 ### Qualification resource custody
 
 Stopped qualification runtimes were allowed to accumulate. Owned cleanup retired
