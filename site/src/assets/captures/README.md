@@ -1,5 +1,17 @@
 # Current product captures
 
+## Task walkthrough controls
+
+The `docs-*` images accompany the task guides for comparison, refinement,
+dashboard exports, and session exports. They show real development controls and
+actual downloaded results using fictional bike counts. Comparison and refinement
+stills are decoded from genuine Codex/Luna recordings. The complete shoot,
+accepted and rejected takes, output files, captions, and review evidence are
+documented in `site/video/edits/docs-20261010/README.md` and archived under
+`D:/Libraries/Videos/clio_recordings/2026-10-10-docs-task-walkthroughs/`.
+
+## Report overview and lineage
+
 These light-mode browser captures show the development UI on 10 October 2026,
 at one device pixel per CSS pixel. They are original product screenshots,
 without painted controls, composited responses or private research data.

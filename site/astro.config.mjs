@@ -51,10 +51,10 @@ export default defineConfig({
 					label: 'Use CLIO',
 					items: [
 						{ label: 'Sessions and modes', slug: 'docs/sessions' },
-						{ label: 'Best of N and refinement', slug: 'docs/best-of-n' },
+						{ label: 'Working with files', slug: 'docs/working-with-files' },
 						{ label: 'Dashboards', slug: 'docs/dashboards' },
 						{ label: 'Exports and downloads', slug: 'docs/exports' },
-						{ label: 'Working with files', slug: 'docs/working-with-files' },
+						{ label: 'Memory and evidence', slug: 'docs/memory-and-evidence' },
 						{
 							label: 'Worked examples', collapsed: true,
 							items: [{ label: 'Report and presentation', slug: 'docs/examples/reports-and-slides' }],
@@ -70,6 +70,12 @@ export default defineConfig({
 								{ label: 'Manage sources', slug: 'docs/files/manage' },
 							],
 						},
+					],
+				},
+				{
+					label: 'Go further',
+					items: [
+						{ label: 'Compare and refine answers', slug: 'docs/best-of-n' },
 						{
 							label: 'Widget gallery',
 							collapsed: true,
@@ -91,7 +97,6 @@ export default defineConfig({
 						{ label: 'Tools and MCP servers', slug: 'docs/mcp-servers' },
 						{ label: 'Permissions and sandbox', slug: 'docs/permissions' },
 						{ label: 'Hooks', slug: 'docs/hooks' },
-						{ label: 'Memory and evidence', slug: 'docs/memory-and-evidence' },
 					],
 				},
 				{
