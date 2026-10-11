@@ -113,10 +113,35 @@ regression checks failed against the old source; the legacy question case alread
 passed. After correction, nine new checks and five existing contracts pass
 individually/sequentially through the real owned Core runtime, zero exclusions.
 Scoped Ruff/format/Pyright and all eight unchanged repository guards pass.
-Five fresh actual-service UI cycles with Assignment/Result wire, DOM and screenshot
-checks, plus affected model lifecycle and the remaining matrix, are prepared.
-They have not executed on this corrected source yet; older passes retain their
-original commit identities.
+Continuation 19 on `2932deb8` passed five complete Codex lifecycle cycles and
+five Claude busy/idle peer-message cycles. Those actual-model results retain that
+source identity. Its terminal-recipient harness rejected a new nested evidence
+destination before any model scenario; the unchanged helper's permitted direct
+root is prepared for the recheck. Five fresh actual-service UI Assignment/Result
+checks and the remaining mixed/recovery/storage/input matrix are still required.
+
+Claude's next lifecycle attempt completed pause/resume and retained restart, then
+failed cancellation setup in its first cycle. The explicit new assignment reached
+the model, which returned a 1,056-character bare JSON `spawn_agent_task` object
+with finish reason `stop`. No spawn invocation was observed. The text-tool parser
+treated this shape as a final answer. Why the model chose that format remains
+unestablished; this is not evidence of a time or repetition limit or lost queue
+delivery. Its exact public response and original failure are retained in
+`claude-bare-call19-diagnosis.json`; zero complete cycles are accepted for that gate.
+
+Three actual regression assertions reproduce the parser gap. The correction
+recognizes only a whole exact call object for a currently declared tool, returns
+the existing bounded protocol-error observation and asks the model to submit the
+complete fenced JSON list. It never executes malformed JSON. Ordinary JSON,
+unknown-tool data, examples, extra fields and malformed arguments remain answers.
+All 15 affected checks pass individually/sequentially on owned Core/Python 3.14,
+zero exclusions; this includes corrected-call execution exactly once and the
+legacy v3 expectation that failed three interpreter CI shards. Scoped
+Ruff/format/Pyright and all eight unchanged guards pass. No execution deadline,
+retry bound, task cancellation, owner or confinement change was introduced.
+Both providers' final-source lifecycle races, the real-service UI and the
+remaining matrix will run on the next frozen commit. Native checks alone do not
+establish that live acceptance.
 
 Exact-source CI on `e4b14af5` and `27e82e3b` passed all 19 jobs. The latter reports
 12,519 passed and 66 excluded tests per interpreter, plus 153 passed and one

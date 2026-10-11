@@ -234,6 +234,44 @@ def test_json_envelope_data_and_examples_remain_answers(raw: str, tools: set[str
     assert (split.text, split.calls) == (raw, [])
 
 
+@pytest.mark.parametrize("size", [20, 5000])
+def test_bare_declared_call_object_is_a_bounded_error_not_an_operation(size: int) -> None:
+    """The live Haiku cancellation spawn returned a call object without its fence/list."""
+    raw = json.dumps(
+        {"name": "spawn_agent_task", "arguments": {"agent": "worker", "task": "x" * size}}
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"spawn_agent_task"})
+    assert len(split.calls) == 1
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw[:4000]
+    assert "fenced" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        pytest.param('{"name":"search","arguments":{}}', set(), id="no-tools"),
+        pytest.param('{"name":"other","arguments":{}}', {"search"}, id="unknown-tool"),
+        pytest.param('{"name":"search","arguments":{},"result":"data"}', {"search"}, id="data"),
+        pytest.param('{"name":"search"}', {"search"}, id="missing-arguments"),
+        pytest.param('{"name":"search","arguments":[]}', {"search"}, id="non-object-arguments"),
+        pytest.param('Example: {"name":"search","arguments":{}}', {"search"}, id="example"),
+        pytest.param(
+            '```json\n{"name":"search","arguments":{}}\n```', {"search"}, id="fenced-example"
+        ),
+        pytest.param(
+            '{"name":"search","arguments":{}} trailing text', {"search"}, id="trailing-text"
+        ),
+    ],
+)
+def test_json_call_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only a whole exact call object for a declared tool requires protocol correction."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 @pytest.mark.parametrize("count", [1, 2])
 def test_xml_tool_calls_container_is_a_protocol_error_not_an_operation(count: int) -> None:
     """The actual Haiku parent used XML delimiters around an otherwise valid call list."""

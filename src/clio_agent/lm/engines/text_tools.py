@@ -86,6 +86,7 @@ TURN_REMINDER = (
     "the JSON list on the next line, then a closing line of three backticks. Include BOTH "
     "fences; a JSON list alone or XML invoke/parameter tags are not calls. "
     "A JSON object wrapping a tool_calls list or XML <tool_calls> tags is not a call either. "
+    "A single JSON call object also needs the complete fenced JSON list. "
     "Underscores are not tool-call fences. "
     "If no calls are needed, answer normally.)"
 )
@@ -206,11 +207,11 @@ def split_reply(
             return _invalid_reply(
                 "", reply.strip(), "missing opening ```tool_calls fence", call_prefix
             )
-        if _bare_call_envelope(reply, available_tools):
+        if _bare_call_json(reply, available_tools):
             return _invalid_reply(
                 "",
                 reply.strip(),
-                "tool_calls envelope requires a complete fenced ```tool_calls JSON list; "
+                "tool-call JSON requires a complete fenced ```tool_calls JSON list; "
                 "no operation was submitted",
                 call_prefix,
             )
@@ -275,17 +276,18 @@ def _orphaned_call_block(reply: str, available_tools: Collection[str]) -> bool:
     return _known_call_list(calls, available_tools)
 
 
-def _bare_call_envelope(reply: str, available_tools: Collection[str]) -> bool:
-    """Reject the whole reserved envelope; never execute JSON or reinterpret examples."""
+def _bare_call_json(reply: str, available_tools: Collection[str]) -> bool:
+    """Reject a whole declared call or reserved envelope; never reinterpret examples."""
     if not available_tools or not reply.lstrip().startswith("{"):
         return False
     try:
         envelope = json.loads(reply)
     except ValueError:
         return False
-    return (
-        isinstance(envelope, dict)
-        and set(envelope) == {"tool_calls"}
+    if not isinstance(envelope, dict):
+        return False
+    return _known_call_list([envelope], available_tools) or (
+        set(envelope) == {"tool_calls"}
         and _known_call_list(envelope["tool_calls"], available_tools)
     )
 
