@@ -62,7 +62,10 @@ class KnowledgeService:
             # Attachments are indexed by provider revision without reading their
             # bodies. Accept that exact manifest revision, then capture the bytes
             # with their SHA256 just as for notes.
-            manifest = self.storage.store.get("manifest", record.linked_manifest_id, Manifest)
+            manifest_id = record.linked_manifest_id
+            if not manifest_id:
+                raise ValueError("The knowledge source has no linked folder revision")
+            manifest = self.storage.store.get("manifest", manifest_id, Manifest)
             indexed = next((entry for entry in manifest.entries if entry.path == path), None)
             if path.lower().endswith(".md") or indexed is None or revision != indexed.revision:
                 raise ValueError("The note changed since this view; refresh it before opening")
