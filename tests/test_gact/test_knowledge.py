@@ -97,7 +97,9 @@ def test_subfolder_source_confines_index_reader_links_and_edits(
     assert {note.path for note in snapshot.notes} == {"Plan.md", "Methods.md"}
     assert knowledge.index.snapshot(record, query="Unique text").total == 0
     assert next(link for link in snapshot.links if link.target == "Methods.md").status == "resolved"
-    assert all(link.status == "unresolved" for link in snapshot.links if link.target != "Methods.md")
+    assert all(
+        link.status == "unresolved" for link in snapshot.links if link.target != "Methods.md"
+    )
     opened = knowledge.open("w", record.source.id, "Plan.md")
     assert opened["text"].startswith("# Plan")
     with pytest.raises(KeyError, match="a.md"):
