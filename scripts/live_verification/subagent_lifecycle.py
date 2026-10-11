@@ -328,6 +328,17 @@ def main() -> int:
         "Never delegate peer discovery or messaging; use your own native memory and message tools.\n",
         encoding="utf8",
     )
+    if args.human_controls:
+        with main_expert.open("a", encoding="utf8") as prompt:
+            prompt.write(
+                "\nHuman-intervention receipt qualification: every final answer must first "
+                "include a JSON receipt array for every newly injected human_intervention. "
+                "Copy intervention_id, action, handle, phase, outcome and text exactly from "
+                "those notices. The intervention_id is mandatory even when a simultaneous "
+                "task completion summarizes the same operation. Report receipts before any "
+                "completion summary; never replace the receipt array with a prose summary. "
+                "This reporting requirement applies after every automatic wake too.\n"
+            )
     if args.provider == "claude_code":
         # These missions exercise lifecycle behavior through the text-tool bridge.
         # Explicitly request its real call syntax; never reinterpret bare JSON as work.
