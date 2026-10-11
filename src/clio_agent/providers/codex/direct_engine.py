@@ -79,6 +79,7 @@ from clio_agent.providers.codex.audit import (
     emit_raw_event,
 )
 from clio_agent.providers.codex.errors import CodexPlanLimitError, is_usage_limit_text
+from clio_agent.providers.codex.shutdown import close_kept_sockets
 from clio_agent.providers.codex.stream_errors import (
     CallOutcome,
     CodexStreamDroppedError,
@@ -463,14 +464,12 @@ def default_wire() -> Any:
 
 
 def close_all() -> int:
-    """Close every kept socket (server shutdown); returns how many were open."""
+    """Close kept sockets concurrently under one shutdown bound; return their count."""
     with _CONVERSATIONS_LOCK:
         conversations = list(_CONVERSATIONS.values())
         _CONVERSATIONS.clear()
     if conversations:
-        loop = _OWNER.loop()
-        for conversation in conversations:
-            asyncio.run_coroutine_threadsafe(conversation.socket.close(), loop).result(timeout=5)
+        close_kept_sockets([conversation.socket for conversation in conversations], _OWNER.loop())
     return len(conversations)
 
 
