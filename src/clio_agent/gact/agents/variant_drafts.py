@@ -605,8 +605,7 @@ def build_draft_alternatives_tool() -> Any:
         not the whole set requested by the user. Do not create a second picker.
         Write ``rubric`` as criteria for ONE candidate. Put the number of independent
         attempts only in ``n``; never ask each candidate to produce the whole set.
-        ``strategy``: ``best_of_n``
-        drafts ``n`` alternatives at once; ``refine`` drafts one and improves it with
+        ``best_of_n`` drafts ``n`` alternatives at once; ``refine`` improves one with
         feedback, up to ``n`` drafts. ``judge``: ``user`` shows the drafts to the user,
         who picks one (and may comment to refine it); ``lm`` scores them against
         ``rubric``. The selected draft is your answer and the turn ends. If the user
