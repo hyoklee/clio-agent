@@ -85,6 +85,7 @@ TURN_REMINDER = (
     "complete fenced block: an opening line of three backticks followed by tool_calls, "
     "the JSON list on the next line, then a closing line of three backticks. Include BOTH "
     "fences; a JSON list alone or XML invoke/parameter tags are not calls. "
+    "A JSON object wrapping a tool_calls list is not a call either. "
     "If no calls are needed, answer normally.)"
 )
 
@@ -194,6 +195,14 @@ def split_reply(
             return _invalid_reply(
                 "", reply.strip(), "missing opening ```tool_calls fence", call_prefix
             )
+        if _bare_call_envelope(reply, available_tools):
+            return _invalid_reply(
+                "",
+                reply.strip(),
+                "tool_calls envelope requires a complete fenced ```tool_calls JSON list; "
+                "no operation was submitted",
+                call_prefix,
+            )
         return ReplySplit(text=reply.strip())
     body = reply[start + len(FENCE) :]
     end = body.find("```")
@@ -242,6 +251,26 @@ def _orphaned_call_block(reply: str, available_tools: Collection[str]) -> bool:
         calls = json.loads(raw[:-3])
     except ValueError:
         return False
+    return _known_call_list(calls, available_tools)
+
+
+def _bare_call_envelope(reply: str, available_tools: Collection[str]) -> bool:
+    """Reject the whole reserved envelope; never execute JSON or reinterpret examples."""
+    if not available_tools or not reply.lstrip().startswith("{"):
+        return False
+    try:
+        envelope = json.loads(reply)
+    except ValueError:
+        return False
+    return (
+        isinstance(envelope, dict)
+        and set(envelope) == {"tool_calls"}
+        and _known_call_list(envelope["tool_calls"], available_tools)
+    )
+
+
+def _known_call_list(calls: Any, available_tools: Collection[str]) -> bool:
+    """Recognize only exact call objects for declared tools, without resolving arguments."""
     return (
         isinstance(calls, list)
         and bool(calls)

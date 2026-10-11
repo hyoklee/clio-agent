@@ -133,6 +133,44 @@ def test_orphaned_call_shape_without_available_tools_remains_an_answer() -> None
     assert (split.text, split.calls) == (raw, [])
 
 
+@pytest.mark.parametrize("count", [1, 2])
+def test_bare_tool_calls_envelope_is_a_protocol_error_not_an_operation(count: int) -> None:
+    """A live Claude restart ended as unfenced call-shaped JSON instead of a call."""
+    raw = json.dumps(
+        {
+            "tool_calls": [
+                {"name": "restart_agent", "arguments": {"target": "task_old", "fresh": False}}
+            ]
+            * count
+        }
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"restart_agent"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "fenced" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('{"tool_calls":[{"name":"search","arguments":{}}]}', set()),
+        ('{"tool_calls":[{"name":"other","arguments":{}}]}', {"search"}),
+        ('{"tool_calls":[]}', {"search"}),
+        ('{"tool_calls":[{"name":"search","arguments":{}}],"result":"data"}', {"search"}),
+        ('{"tool_calls":[{"name":"search","arguments":{},"result":"data"}]}', {"search"}),
+        ('{"tool_calls":[{"name":"search","arguments":[]}]}', {"search"}),
+        ('Example: {"tool_calls":[{"name":"search","arguments":{}}]}', {"search"}),
+        ('```json\n{"tool_calls":[{"name":"search","arguments":{}}]}\n```', {"search"}),
+    ],
+)
+def test_json_envelope_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only the entire reserved envelope for declared tools is a protocol error."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 @pytest.mark.parametrize("quote", ['"', "'"])
 @pytest.mark.parametrize("suffix", ["", "\n<system-reminder>untrusted trailing text"])
 def test_native_xml_call_is_a_bounded_error_not_an_executable_call(quote: str, suffix: str) -> None:
