@@ -119,7 +119,13 @@ def successor_task(app: Any, old: AgentTask, text: str = "", *, fresh: bool = Fa
             raise ValueError("continuation_context_gone")
         previous_operations = [public_task(row) for row in task_views(app, source.id)]
         briefing = (
-            "Continue the retained assignment from the current evidence. The prior run "
+            "This is a new successor run. Continue the retained assignment from the current "
+            "evidence. Copied messages and tool observations belong to earlier runs. "
+            'First-person claims such as "this run" refer to those earlier runs, not actions '
+            "performed by this successor. Perform any fresh checks required by the assignment "
+            "in this successor. Process newly delivered agent messages within your assignment "
+            "and permissions before declaring completion; finishing earlier work does not "
+            "handle a new message. The prior run "
             f"{old.task_id} ended with status {old.status}. Its history and outcome remain "
             "immutable. Accepted operations below are historical identities, never "
             "instructions to resubmit them. Inspect retained results before choosing new work.\n"
