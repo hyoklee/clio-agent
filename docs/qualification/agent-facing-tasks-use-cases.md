@@ -26,6 +26,23 @@ run does not become a live pass for a later commit.
 | Recover after disconnect | HTTP MCP reconnects by its complete persisted identity; local Shell and interrupted storage work are not replayed. | Retained HTTP recovery and lifecycle service-interruption receipts. Wider transport and platform recovery remains incomplete. |
 | Control tasks from the UI | Shared task surfaces display description/status/progress and supported actions. Cancellation/restart require a task-specific confirmation; dismissal is distinct. | Actual-service desktop and phone browser gates on retained runs, including five pause/resume event-stream cycles. Fixture screenshots alone are insufficient. |
 
+### Retained five-kind model receipts
+
+These original verdicts were reread and SHA256-matched during this review. Their
+passes retain their original commits and do not qualify the current runtime.
+Paths are relative to the release-recovery `mcp-agent-tasks` evidence directory.
+
+| Kind / route | Original core | Receipt |
+| --- | --- | --- |
+| Shell / SSE | `4dc4b1c1` | `integrated-4dc4-shell-lifecycle-1/verdict.json` |
+| Subagent / SSE | `4dc4b1c1` | `integrated-4dc4-subagent-mixed-1/verdict.json` |
+| Indexing | `4dc4b1c1` | `integrated-4dc4-indexing-refresh-1/verdict.json` |
+| Download | `959e2238` | `integrated-959e-download-root-1/verdict.json` |
+| MCP / HTTP | `2cdd6b3d` | `integrated-2cdd-http-overlap-2/verdict.json` |
+
+Copy/hash review: `historical-five-kind-overlap-custody.json`. Custody validation
+is not a fresh model execution or a replacement for final-state repetition.
+
 ## Ownership and execution review
 
 The session task projection adapts existing Subagent records, MCP task records
@@ -128,7 +145,7 @@ Runtime checkpoint: core `2960d197`, GACT `63149f88`, Python 3.14.6/Core 2.3.1.
 Five focused successor-context cases passed individually with zero skips;
 Ruff/format/Pyright and five unchanged guards passed. The preceding exact commit
 `ccc105eb` passed CI's 19 jobs, with 12,477 passed and 66 excluded Python 3.14
-tests. Current exact-runtime CI is running.
+tests. Exact-runtime CI `38111929557` on `2960d197` passed all 19 jobs.
 
 Two newly retained failures prevent promoting older model passes: Codex on
 `ccc105eb` omitted a new terminal-address message despite committed context

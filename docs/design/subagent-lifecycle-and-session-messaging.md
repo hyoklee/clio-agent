@@ -62,7 +62,7 @@ messaging. Recovery setup then failed: the parent model called an unbounded
 150-second operator gate expired before service interruption, so current-runtime
 recovery, UI and additional terminal/active/fresh gates were not executed. This
 does not demonstrate a broken wait. All 12 recorded Shell owners and its private
-Core owner are absent. Exact-runtime CI `38111929557` is in progress.
+Core owner are absent. Exact-runtime CI `38111929557` passed all 19 jobs.
 CI `38110734518` on `ccc105eb` passed all 19 jobs; its executed
 test skips remain exclusions. Current machine-readable status is retained in
 `mcp-agent-tasks/lifecycle-qualification-current.json`.
