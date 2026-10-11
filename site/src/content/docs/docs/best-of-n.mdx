@@ -1,99 +1,157 @@
 ---
-title: Best of N and refinement
-description: Compare independent drafts generated in parallel, inspect their evaluation criteria, and choose an answer or refine one sequentially.
+title: Compare and refine answers
+description: Compare independent drafts with Best of N, check the criteria, and choose one to continue or improve with feedback.
 ---
 
-import { Aside, CardGrid, LinkCard, Steps, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
+import Capture from "../../../components/overview/Capture";
+import WidgetRecording from "../../../components/WidgetRecording.astro";
+import { captureImage } from "../../../lib/captures";
+import candidates from "../../../assets/captures/docs-best-of-n.png";
+import refinement from "../../../assets/captures/docs-refinement.png";
+import revised from "../../../assets/captures/docs-refinement-revised.png";
 
-Ask CLIO for several alternatives when a task benefits from different approaches:
-a summary, a report introduction, an explanation, or a plan. **Best of N** makes
-independent attempts at the same task. Each candidate has its own tab, so you can
-compare complete answers without mixing their text together.
+Most questions need one answer. Ask for alternatives when the **approach or
+wording is a choice**: a report introduction, an explanation for a different
+audience, or competing analysis plans. **Best of N** runs independent attempts
+at the same task, then lets you or the model choose one.
+
+You can return to this workflow after [your first analysis](/tutorials/guides/first-analysis/).
+It is an optional way to improve a result, not a step required to use CLIO.
 
 <Aside type="note" title="Development preview">
-This guide describes the reviewed development build. Its corrections for five
-individual candidates, separate reasoning, and evaluation criteria are not
-included in beta 5.2.
+  The individual candidate tabs, separate reasoning, and evaluation controls
+  shown here are not included in beta 5.2. This guide uses the development build.
+  The demonstration uses fictional station counts, rather than private research.
 </Aside>
 
-## Ask for alternatives
+## Compare three introductions
+
+The finding is already known: the station snapshots total 54 bikes, Hill loses
+37 while Downtown gains 37 between 6 and 9 am, and Fernhill is first recorded
+empty at 8:15. Now choose a clear way to introduce that finding.
+
+```text
+Use Best of N: 3 candidates, one 2-sentence introduction each.
+Facts: fictional bike counts total 54; Hill -37, Downtown +37, 6–9 am;
+Fernhill empty at 8:15. No trip inference. Let me choose.
+```
 
 <Steps>
 
-1. State the task, the number of drafts, and what makes a good answer.
+1. Send the request. Look for **Alternative drafts**, rather than a numbered
+   list in an ordinary answer. Each **Draft** tab is one independent attempt.
 
-   ```text
-   Use Best of N to write five different introductions to this report.
-   Each should be one paragraph for a general scientific audience.
-   Compare clarity, fidelity to the supplied results, and concision.
-   Let me choose the one to continue with.
-   ```
+2. Read the candidates. Open **Evaluation criteria** to check what they were
+   asked to preserve. Reasoning and tool activity can be expanded separately.
 
-2. Open the **Alternative drafts** block. Select each **Try** tab to read its
-   candidate. Reasoning and tool activity can be expanded separately.
-
-3. Open **Evaluation criteria** to check the instructions used for the comparison.
-   When you are choosing, select **Pick Try** on the candidate you want.
+3. Select **Pick Draft** on the candidate you want. CLIO continues the conversation
+   from that candidate; the other attempts remain in the recorded run.
 
 </Steps>
 
-The agent decides when to use the draft tool; asking for numbered alternatives
-in ordinary prose does not by itself establish a Best of N run. Check for the
-draft block and its individual tries. The default maximum is eight attempts;
-an operator can configure a lower limit.
+<Capture client:visible image={await captureImage(candidates)}
+  alt="Alternative drafts with three candidate tabs, evaluation criteria, and the Pick Draft control"
+  caption="The actual candidate comparison from a Codex/Luna run using fictional counts. Switch tabs to compare the complete drafts; Pick Draft chooses the currently displayed candidate."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+<WidgetRecording name="docs-best-of-n"
+  title="Compare the drafts. Check the criteria. Pick one."
+  caption="A real Codex/Luna run. The request, independent candidates, evaluation criteria, and the selection are recorded through the product controls."
+  timingNote="Generation is accelerated where labelled; comparison and selection play at normal speed."
+  pointerGuide />
+
+The prompt can request the workflow, but the agent chooses whether to call the
+draft tool. The presence of the draft block establishes that separate attempts
+were run. The default maximum is eight; your deployment can set a lower limit.
 
 ## Choose who judges
 
 <Tabs>
 <TabItem label="You choose">
 
-Include “let me choose” in the request. The run waits for your selection, and the
-conversation continues from the selected candidate. Other candidates remain
-available in the recorded run.
-
-For example, five user-judged attempts in a real Codex/Luna check each produced
-one short poem. The five tabs represented five separate candidates, rather than
-five sets of poems.
+Say **“let me choose.”** CLIO waits for your selection. Compare the drafts against
+the source, not just against each other. In this example, an introduction should
+retain the interval and counts without claiming that individual journeys were
+observed.
 
 </TabItem>
 <TabItem label="The model chooses">
 
-Ask CLIO to select against specific criteria, such as “accurate to the source,
-plain language, under 150 words.” Each evaluated candidate receives a score
-from 0 to 1. **Selected** identifies the chosen candidate.
+Say **“choose the clearest introduction that preserves these facts.”** Give
+specific criteria, such as plain language, accurate units, and a word limit.
+Evaluated candidates receive a score from 0 to 1; **Selected** identifies the
+chosen draft.
 
-In a separate real Codex/Luna check, three short poems received scores of 0.85,
-0.95, and 0.92 against the same criteria. The second candidate was selected.
-These are one model's judgments for that example, not measured correctness or
-a promise that the selected answer is better for every reader.
+A score is the model's judgment against the criteria. It does not establish
+factual correctness or replace checking the original data.
 
 </TabItem>
 </Tabs>
 
-## Parallel drafts or sequential refinement?
+## Improve one draft with feedback
 
-| Approach | How attempts relate | When to use it |
-|---|---|---|
-| Best of N | Independent candidates run in parallel, then a person or model selects. | Explore different approaches to one task. |
-| Refine | Each attempt uses feedback from the previous one and runs sequentially. | Improve a candidate against a concrete criticism. |
+Use **refinement** when you already know what needs to change. Each new attempt
+uses feedback from the preceding one, instead of starting independently.
 
-In a user-judged refinement run, add an optional comment to the candidate.
-**Refine Try** requests another attempt using that feedback; picking without a
-comment accepts the candidate. For example: “Keep the opening, remove the
-repetition, and define the acronym.”
+```text
+Use user-judged refinement, up to 3 drafts, one at a time. Write one
+2-sentence report introduction. Facts: fictional station snapshots total
+54 bikes; Hill -37, Downtown +37 from 6–9 am; Fernhill first empty at 8:15.
+Start with concise technical wording. Let me comment before accepting.
+```
 
-Several attempts use more model work than one answer. Check their activity and
-the session's usage when deciding how many to request. For factual work, verify
-the evidence behind the selected answer as well as its wording.
+<Steps>
 
-## Keep the result useful
+1. Read **Draft 1**. Unlike Best of N, refinement starts with one candidate.
 
-Tell CLIO what to do with the chosen result: revise a document, develop the
-selected plan, or use the selected explanation in a dashboard. Selection chooses
-an answer; it does not independently approve a protected file change or publish
-a result outside the workspace.
+2. Enter feedback in **Comment for Draft 1**. The button changes from
+   **Pick Draft 1** to **Refine Draft 1** when you add a comment.
 
-<CardGrid>
-	<LinkCard title="Dashboards" description="Develop the chosen analysis into a connected interactive report." href="/docs/dashboards/" />
-	<LinkCard title="Memory and evidence" description="Inspect the recorded work and sources behind an answer." href="/docs/memory-and-evidence/" />
-</CardGrid>
+   ```text
+   For a nontechnical colleague: use plain language, keep all figures,
+   and say these snapshots do not prove individual bike journeys.
+   ```
+
+3. Click **Refine Draft 1**. Read **Draft 2**, marked **Refined from Draft 1**,
+   and check whether it followed the feedback. Earlier drafts remain in their tabs.
+
+4. To accept the revision, leave its comment field empty and click **Pick Draft 2**.
+   To revise again within the run's limit, enter another comment first.
+
+</Steps>
+
+<Capture client:visible image={await captureImage(refinement)}
+  alt="User-judged refinement with feedback entered and the Refine Draft 1 button ready"
+  caption="Feedback changes the action from accepting the draft to refining it. The next candidate is based on this draft and comment, rather than an independent alternative."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+<WidgetRecording name="docs-refinement"
+  title="Comment on a draft. Inspect the revision. Accept it."
+  caption="A separate real Codex/Luna refinement run. Watch the feedback change the action to Refine Draft, then inspect the revised candidate and accept it without another comment."
+  timingNote="Typing and generation are accelerated where labelled; feedback, review, and acceptance remain visible."
+  pointerGuide />
+
+<Capture client:visible image={await captureImage(revised)}
+  alt="Draft 2 marked Refined from Draft 1, with revised plain-language wording and the Pick Draft 2 control"
+  caption="The actual revision retains the counts and adds that the snapshots do not prove individual journeys. The empty comment field makes Pick Draft 2 accept it."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+| Use | When it helps |
+| --- | --- |
+| **Best of N** | You want to compare distinct approaches to the same task. |
+| **Refine** | You want to correct or improve one approach with specific feedback. |
+| An ordinary follow-up | You only need a small change and do not need a formal comparison. |
+
+Several attempts use more model work than one answer. Start with a small number,
+and inspect their activity and session usage before requesting more.
+
+## Continue with the chosen result
+
+Tell CLIO where the selected introduction belongs: revise a document, use it in a
+[dashboard](/docs/dashboards/), or develop the chosen plan. Selection does not
+independently approve a protected change or publish work outside the workspace.
+
+[Exports and downloads](/docs/exports/) explains how to share the recorded
+conversation. [Memory and evidence](/docs/memory-and-evidence/) shows where to
+inspect its inputs, artifacts, and history.
