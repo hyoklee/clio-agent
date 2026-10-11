@@ -44,6 +44,12 @@ def main() -> None:
     diagnostic_signal = getattr(signal, "SIGUSR1", None)
     if diagnostic_signal is not None:
         signal.signal(diagnostic_signal, dump_owner_stacks)
+    # The Python handler above cannot run while a native call owns the GIL.
+    # Keep a separate native handler so failed graceful shutdowns still leave
+    # thread positions rather than losing the cause when the owner is reaped.
+    native_diagnostic_signal = getattr(signal, "SIGUSR2", None)
+    if native_diagnostic_signal is not None:
+        faulthandler.register(native_diagnostic_signal, file=sys.stderr, all_threads=True)
     uvicorn.run(build_app(), host="127.0.0.1", port=int(sys.argv[1]))
 
 

@@ -408,6 +408,10 @@ def main() -> int:
                     try:
                         process.wait(timeout=30)
                     except subprocess.TimeoutExpired:
+                        native_diagnostic_signal = getattr(signal, "SIGUSR2", None)
+                        if native_diagnostic_signal is not None:
+                            process.send_signal(native_diagnostic_signal)
+                            time.sleep(0.2)
                         diagnostic_signal = getattr(signal, "SIGUSR1", None)
                         if diagnostic_signal is not None:
                             process.send_signal(diagnostic_signal)
