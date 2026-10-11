@@ -24,6 +24,19 @@ def vault_path(path: str, excluded: list[str]) -> None:
         raise PermissionError("This path is outside the approved vault contents")
 
 
+def vault_root(root: Path) -> Path:
+    """Locate the enclosing vault without widening the selected content scope."""
+    for candidate in (root, *root.parents):
+        marker = candidate / ".obsidian"
+        if marker.is_dir() and not is_link(marker):
+            relative = root.relative_to(candidate).as_posix()
+            if relative != ".":
+                vault_path(relative, [])
+                safe_child(candidate, relative)
+            return candidate
+    raise ValueError("Select an Obsidian vault or a folder inside one (.obsidian required)")
+
+
 class ObsidianSource(LocalSource):
     """A local vault with safe note and attachment access, including reviewed writes."""
 
@@ -31,8 +44,7 @@ class ObsidianSource(LocalSource):
         self, root: str, *, writable: bool = False, excluded: list[str] | None = None
     ) -> None:
         super().__init__(root, writable=writable)
-        if not (self.root / ".obsidian").is_dir():
-            raise ValueError("Select an Obsidian vault containing a .obsidian directory")
+        self.vault_root = vault_root(self.root)
         self.excluded = excluded or []
         for path in self.excluded:
             FileEntry(path=path, kind="directory")

@@ -2,7 +2,11 @@
 
 In a workspace, use **Add context → Attach → Obsidian vault**. Choose a vault
 folder on the connected CLIO host and keep **Read only** selected to browse and
-analyze without changing the vault. A vault must contain `.obsidian`.
+analyze without changing the vault. Select the whole vault or a folder inside it;
+the enclosing vault must contain `.obsidian`. The selected folder is the content
+boundary for the index, graph, reader, captures, and edits. Paths are relative to
+that folder. Links to notes outside the selection remain unresolved, and do not
+grant access to sibling or parent folders. Connect another source to use them.
 
 Connecting opens a source-specific **Knowledge** workbench tab. Switch between
 **Graph** and **Files**, search note text or metadata, select a note to read it,
@@ -41,9 +45,13 @@ identify malformed or oversized notes rather than silently inventing content.
 Install the official [`obsidian-headless`](https://help.obsidian.md/sync/headless)
 client on the CLIO host. Privately run `ob login` and
 `ob sync-setup --vault <vault-name> --path <dedicated-copy>`, and complete an initial
-sync so the local copy is a valid vault. Connect that copy using the **Headless
-Sync copy** mechanism. CLIO does not collect account passwords or encryption keys.
+sync so the local copy is a valid vault. Connect that copy or a folder inside it
+using the **Headless Sync copy** mechanism. The official client synchronizes the
+enclosing vault copy; the selected source folder limits knowledge access, not the
+client's synchronization scope. CLIO does not collect account passwords or encryption keys.
 The client requires an Obsidian Sync subscription and Node.js 22 or later.
+Follow Obsidian's guidance to use one sync method per device; the official
+Headless client is currently in open beta.
 
 The Knowledge tab shows sync state separately from index state. **Start sync**
 supervises the installed official client; **Stop sync**, disconnect, remove, and

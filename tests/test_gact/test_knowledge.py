@@ -75,6 +75,52 @@ def test_incremental_index_and_exclusions(tmp_path: Path, vault: Path) -> None:
         adapter.apply("a.md", None, None)
 
 
+def test_subfolder_source_confines_index_reader_links_and_edits(
+    tmp_path: Path, vault: Path
+) -> None:
+    """Selecting a project folder grants no access to sibling notes or private settings."""
+    project = vault / "Research"
+    project.mkdir()
+    (project / "Plan.md").write_text("# Plan\n[[Methods]] [[a]] [[../b]]", encoding="utf-8")
+    (project / "Methods.md").write_text("# Methods\nCalibration", encoding="utf-8")
+    (project / ".private").mkdir()
+    (project / ".private" / "secret.md").write_text("secret")
+    storage = StorageService(tmp_path / "private", tmp_path / "auth" / "credentials.json")
+    record = storage.create(
+        "w",
+        CreateSource(provider="obsidian", root=str(project), label="Research", mode="working_copy"),
+    )
+    knowledge = KnowledgeService(
+        storage, ResourceStore(root=tmp_path / "resources", max_resource_bytes=4096)
+    )
+    snapshot = knowledge.index.snapshot(record)
+    assert {note.path for note in snapshot.notes} == {"Plan.md", "Methods.md"}
+    assert knowledge.index.snapshot(record, query="Unique text").total == 0
+    assert next(link for link in snapshot.links if link.target == "Methods.md").status == "resolved"
+    assert all(link.status == "unresolved" for link in snapshot.links if link.target != "Methods.md")
+    opened = knowledge.open("w", record.source.id, "Plan.md")
+    assert opened["text"].startswith("# Plan")
+    with pytest.raises(KeyError, match="a.md"):
+        knowledge.open("w", record.source.id, "a.md")
+    for path in ("../a.md", ".private/secret.md", "../.obsidian/private.json"):
+        with pytest.raises((PermissionError, ValueError)):
+            knowledge.open("w", record.source.id, path)
+    with pytest.raises((PermissionError, ValueError)):
+        knowledge.edit("w", record.source.id, "../a.md", "bad", opened["note"]["revision"])
+    knowledge.edit("w", record.source.id, "Plan.md", "# Revised", opened["note"]["revision"])
+    assert knowledge.open("w", record.source.id, "Plan.md")["text"] == "# Revised"
+    assert (project / "Plan.md").read_text(encoding="utf-8").startswith("# Plan")
+    assert (vault / "a.md").read_text(encoding="utf-8").startswith("---")
+
+
+def test_subfolder_rejects_private_scope_and_nonvault_folder(tmp_path: Path, vault: Path) -> None:
+    """A selected source cannot expose Obsidian private state as its content root."""
+    with pytest.raises(PermissionError, match="approved vault"):
+        ObsidianSource(str(vault / ".obsidian"))
+    with pytest.raises(ValueError, match="folder inside"):
+        ObsidianSource(str(tmp_path))
+
+
 def test_live_http_read_only_custody_gating_and_revocation(
     tmp_path: Path, vault: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
