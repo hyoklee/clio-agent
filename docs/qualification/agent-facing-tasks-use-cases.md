@@ -19,12 +19,13 @@ run does not become a live pass for a later commit.
 | Cancel any task | `cancel_tasks` routes to the actual owner. Cancellation-request state stays distinct from terminal state. | Retained physical Shell/subtree and storage cleanup receipts. A transport refusal is an error, not successful cancellation. |
 | Pause a Subagent | Persist an execution hold, stop its model, retain context and handle. Accepted background work continues and results/mail accumulate. | Actual-model lifecycle runs plus actual-service UI event-stream checks. Relay pause is explicitly unsupported. |
 | Resume a Subagent | Release the hold and resume the same handle/context; deliver retained mail and results. | Actual-model same-handle lifecycle cycles and held-mail assertions. |
-| Restart a Subagent | Settle an active run and its descendant owners, then create one linked successor. Retained context preserves provenance; fresh context omits copied history. Accepted operations are never replayed. | Retained full lifecycle runs and physical owner receipts. Latest Claude runs exposed a fresh-result-read omission after copied first-person history; those failures remain failures. |
+| Restart a Subagent | Settle an active run and its descendant owners, then create one linked successor. Retained context preserves provenance; fresh context omits copied history. Accepted operations are never replayed. | Retained full lifecycle runs and physical owner receipts. Earlier Claude runs exposed a fresh-result-read omission after copied first-person history; those failures remain failures. |
 | Message a busy/idle agent | Persist attributed mail, inject at the next iteration if busy, or wake if idle. A hold retains mail. | Actual-model busy/idle peer cases and focused durable mailbox/commit cases. Sender messages are not human authority. |
 | Address a finished agent | Address its exact session/handle; use its valid successor chain or create a linked successor, preserving the original parent. | Retained model completed addressing and cancelled/failed addressing through existing successor chains. The latter does not establish first-message continuation from every terminal state. |
 | Discover another session | Memory search/summary/context reads return permitted context and an exact message target. Read permission does not grant lifecycle control. Peer messages require scoped intent. | Actual-model scoped peer discovery/messaging and focused denial/identity checks. Relay peer addressing is explicitly unsupported. |
 | Recover after disconnect | HTTP MCP reconnects by its complete persisted identity; local Shell and interrupted storage work are not replayed. | Retained HTTP recovery and lifecycle service-interruption receipts. Wider transport and platform recovery remains incomplete. |
 | Control tasks from the UI | Shared task surfaces display description/status/progress and supported actions. Cancellation/restart require a task-specific confirmation; dismissal is distinct. | Actual-service desktop and phone browser gates on retained runs, including five pause/resume event-stream cycles. Fixture screenshots alone are insufficient. |
+| Learn about human intervention | Human steering, Stop, pause/resume, cancellation and restart queue an attributed notice to the actual task owner. Busy owners receive it before their next model call; idle owners wake and held owners retain it. | The human-control relay checkpoint below separates focused contracts, model receipt, owner settlement and remaining route gaps. Agent-origin controls do not impersonate human actions. |
 
 ### Retained five-kind model receipts
 
@@ -139,7 +140,48 @@ explicitly instructed the model how to continue after protocol feedback. They
 demonstrate cooperative recovery plumbing, not spontaneous recovery from the
 original failure, general provider acceptance or a root-cause diagnosis.
 
-## Current completion gate
+## Human-control relay checkpoint
+
+Core `c4ee4299` adds notices through the existing durable mailbox. The live
+controller in `1cc00989` checks intervention IDs supplied only to the parent model,
+busy iteration delivery, idle wakes isolated from task completion, Stop/pause
+independence, physical Shell and Subagent cancellation, linked restart without
+replay, and a later turn
+without duplicate collection. Core `4ade8463` changes only an existing watcher
+test; production and live-controller trees are identical to `1cc00989`.
+
+Eighteen new intervention cases, twelve affected existing cases and three
+transcript golden cases pass individually/sequentially with zero skips. Scoped
+Ruff/format/Pyright (zero errors/warnings) and five unchanged guards pass. The
+watcher test previously assumed direct child discussion generated only one
+model call. Its corrected contract requires the child discussion, the parent's
+notice turn and one normal standing-watcher check, with exact session identities
+and a delivered human notice. The original failure was reproduced and retained.
+
+Five actual Codex/Luna cycles on `1cc00989` and five Claude/Haiku SDK cycles on
+`4ade8463` pass on isolated Python 3.14.6/Core 2.3.1. Every cycle requires the
+parent to report random intervention IDs supplied only through its mailbox,
+while accepted work is still running. Physical worker identities and all twenty
+durable Shell supervisors are absent after the runs, as are both private Core
+owners. Source fingerprints remain unchanged throughout each run. The initial
+`c4ee4299` attempt remains failed: its restart reply acknowledged the human
+action and new handle but omitted the ID required by the receipt check. Only
+qualification reporting instructions changed for the subsequent five-cycle run;
+no assertion or runtime budget was relaxed.
+
+Exact-source CI `38115363030` on `4ade8463` passes all 19 jobs. Python 3.14
+reports 12,495 passed and 66 skipped; the skips remain exclusions. Later
+documentation commits leave the production and live-controller trees unchanged.
+
+Current source, model receipts and CI are recorded in
+`mcp-agent-tasks/human-intervention-status-current.json`. The live human-control
+cycles exercise real Shell and Subagent owners; MCP, Download and Indexing
+cancellation relay use the shared controls covered by focused cases. No fresh
+actual-model acceptance for those three cancellation routes is claimed here.
+This relay checkpoint does not qualify every workload, platform or transport in
+the wider Tasks matrix.
+
+## Earlier complete-lifecycle checkpoint
 
 Runtime checkpoint: core `2960d197`, GACT `63149f88`, Python 3.14.6/Core 2.3.1.
 Five focused successor-context cases passed individually with zero skips;

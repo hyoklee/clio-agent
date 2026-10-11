@@ -71,7 +71,14 @@ to automatically undo a human control or replay accepted work.
 
 The consolidated implementation and use-case review is
 [Agent-facing Tasks: use cases and acceptance](../qualification/agent-facing-tasks-use-cases.md).
-Full qualification remains incomplete. Core `2960d197` clarifies successor
+The human-control relay checkpoint in that review records the new owner notices,
+focused cases and five actual Codex/Luna plus five Claude/Haiku cycles. Busy
+iteration delivery, idle wakes, cancellation settlement and linked restart are
+checked against real Shell/Subagent owners. Human intervention qualification is
+tracked separately from the wider lifecycle/workload matrix and its remaining
+platform/transport gates.
+
+Full qualification remains incomplete. The earlier core `2960d197` clarifies successor
 briefing: copied first-person history describes earlier runs, fresh checks must
 be performed in the successor, and newly delivered mail must be processed within
 the recipient's permissions. Five focused cases and scoped checks passed.
