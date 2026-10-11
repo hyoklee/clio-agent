@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from clio_agent.gact.storage.models import SourceRecord
+from clio_agent.gact.storage.obsidian import ObsidianSource
 
 
 def client_command() -> list[str]:
@@ -65,13 +66,16 @@ class ObsidianSync:
         if not record.connected or record.source.connection != "headless_sync":
             raise ValueError("Select a connected Headless Sync vault")
         command = client_command()
+        # The official client syncs the enclosing copy. Knowledge reads and edits
+        # stay confined to source.root, which can be a selected vault subfolder.
+        sync_root = str(ObsidianSource(record.source.root).vault_root)
         with self._lock:
             if self.status(record)["state"] == "running":
                 return self.status(record)
             # Setup/login happen interactively in the official client. No account,
             # encryption password or authentication output enters CLIO tool results.
             checked = subprocess.run(
-                [*command, "sync-status", "--path", record.source.root],
+                [*command, "sync-status", "--path", sync_root],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
@@ -85,7 +89,7 @@ class ObsidianSync:
                     *command,
                     "sync-config",
                     "--path",
-                    record.source.root,
+                    sync_root,
                     "--mode",
                     record.configuration.obsidian_sync_mode,
                 ],
@@ -101,7 +105,7 @@ class ObsidianSync:
             if sys.platform == "win32":
                 creationflags = subprocess.CREATE_NO_WINDOW
             self._processes[record.source.id] = subprocess.Popen(
-                [*command, "sync", "--path", record.source.root, "--continuous"],
+                [*command, "sync", "--path", sync_root, "--continuous"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

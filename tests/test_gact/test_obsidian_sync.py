@@ -75,6 +75,30 @@ def test_sync_setup_failure_does_not_start_client(
         obsidian_sync.ObsidianSync().start(record)
 
 
+def test_sync_subfolder_uses_enclosing_vault_without_changing_source_scope(
+    record: SourceRecord, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Official sync targets the configured copy while the knowledge source keeps its folder."""
+    root = Path(record.source.root)
+    project = root / "Research"
+    project.mkdir()
+    record.source = record.source.model_copy(update={"root": str(project)})
+    monkeypatch.setattr(obsidian_sync, "client_command", lambda: ["ob"])
+    runner = Mock(return_value=Mock(returncode=0))
+    process = Mock()
+    process.poll.return_value = None
+    launcher = Mock(return_value=process)
+    monkeypatch.setattr(obsidian_sync.subprocess, "run", runner)
+    monkeypatch.setattr(obsidian_sync.subprocess, "Popen", launcher)
+    sync = obsidian_sync.ObsidianSync()
+    assert sync.start(record)["state"] == "running"
+    for call in [*runner.call_args_list, launcher.call_args]:
+        args = call.args[0]
+        assert args[args.index("--path") + 1] == str(root)
+    assert record.source.root == str(project)
+    sync.shutdown()
+
+
 def test_windows_npm_wrapper_resolves_official_javascript(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

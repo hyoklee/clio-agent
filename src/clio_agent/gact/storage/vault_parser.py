@@ -94,7 +94,9 @@ def parse_note(
     )
 
 
-def resolve_links(notes: list[KnowledgeNote], authored: list[KnowledgeLink]) -> list[KnowledgeLink]:
+def resolve_links(
+    notes: list[KnowledgeNote], authored: list[KnowledgeLink], *, vault_prefix: str = ""
+) -> list[KnowledgeLink]:
     """Resolve exact paths first, then unique names; never guess ambiguous targets."""
     by_path = {note.path: note for note in notes}
     names: dict[str, set[str]] = {}
@@ -113,7 +115,15 @@ def resolve_links(notes: list[KnowledgeNote], authored: list[KnowledgeLink]) -> 
         if not target:
             candidates = [link.source]
         else:
-            for candidate in [relative, relative + ".md", target, target + ".md"]:
+            variants = [relative, relative + ".md", target, target + ".md"]
+            prefix = vault_prefix.rstrip("/") + "/" if vault_prefix else ""
+            if prefix and target.lstrip("/").startswith(prefix):
+                # Explicit vault-root paths must not fall back to a same-named
+                # local note when normalization escapes the selected folder.
+                rooted = posixpath.normpath(target.lstrip("/"))
+                scoped = rooted[len(prefix) :] if rooted.startswith(prefix) else ""
+                variants = [scoped, scoped + ".md"] if scoped else []
+            for candidate in variants:
                 if candidate in by_path:
                     candidates = [candidate]
                     break
