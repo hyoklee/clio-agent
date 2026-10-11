@@ -9,7 +9,7 @@ for (const width of [390, 1440]) {
     const captures = [
       'Copied offset calculation',
       'Relationships view with Calibration baseline',
-      'Conversation family Gantt with four named conversations',
+      'Conversation family Gantt with five named conversations',
       "The offset branch's artifact Lineage tab",
     ];
     for (const [index, title] of captures.entries()) {

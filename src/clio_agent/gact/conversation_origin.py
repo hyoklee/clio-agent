@@ -1,4 +1,4 @@
-"""Durable user-fork checkpoints, independent of mutable parent transcripts."""
+"""Bounded public conversation origins, independent of mutable parent transcripts."""
 
 from __future__ import annotations
 
@@ -6,6 +6,30 @@ from collections.abc import Mapping
 from typing import Any
 
 FORK_ORIGIN_KEY = "fork_origin"
+
+
+def saved_delegation_origin(
+    metadata: Mapping[str, Any], *, session_id: str, parent_session_id: str
+) -> dict[str, str] | None:
+    """Expose only the recorded owner turn and launch time, never the task briefing."""
+    task = metadata.get("agent_task")
+    if not isinstance(task, Mapping):
+        return None
+    if (
+        not parent_session_id
+        or task.get("parent_session_id") != parent_session_id
+        or task.get("child_session_id") != session_id
+        or not isinstance(task.get("parent_turn_id"), str)
+        or not task["parent_turn_id"]
+        or not isinstance(task.get("created_at"), str)
+        or not task["created_at"]
+    ):
+        return None
+    return {
+        "session_id": parent_session_id,
+        "turn_id": task["parent_turn_id"],
+        "created_at": task["created_at"],
+    }
 
 
 def saved_fork_origin(metadata: Mapping[str, Any]) -> dict[str, Any] | None:

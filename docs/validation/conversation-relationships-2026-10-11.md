@@ -16,8 +16,8 @@ This does not change asynchronous task ownership, lifecycle controls, user-fork 
 
 ## Automated checks
 
-- Backend: **78 passed** across `test_conversation_origin.py`, `test_fork_and_search.py`, `test_session_fork_policy.py`, and `test_message_marks.py`.
-- Frontend: **82 passed** across 12 focused suites covering checkpoint placement, family selection and bounds, real turn projection, connector geometry, toggling, ownership labels, live-event query invalidation, workspace projections and shared provenance-provider selection. The final provider/workspace rerun passed **22 tests**.
+- Backend: **84 passed** across `test_conversation_origin.py`, `test_fork_and_search.py`, `test_session_fork_policy.py`, and `test_message_marks.py`, including bounded delegation-origin projection and malformed/mismatched-owner rejection.
+- Frontend: **90 passed** across 14 focused suites covering checkpoint placement, family selection and bounds, real turn projection, connector geometry, toggling, ownership labels, live-event query invalidation, workspace projections, shared provenance-provider selection, selected-session preview reads, artifact ownership and copied-history boundaries. The final shared-inspector rerun passed four tests; the output-ownership hook suite passed three.
 - Backend Ruff check/format passed. Mypy passed for the three changed production Python files (`--follow-imports=skip`).
 - Frontend TypeScript build and repository lint/ownership/component/file-size guards passed.
 
@@ -48,9 +48,9 @@ The native execution provider returned a complete, untruncated family snapshot w
 
 `external/gact-tui/web/tests/deployment/live/conversation-relationships.spec.ts` ran against that real service and the production React UI, without route interception, injected transcripts or substituted model replies.
 
-The final Chromium run passed checkpoint persistence, six recorded turn bars, three attached fork connectors, all activity rows inside the chart, four ReactFlow nodes and three real edges, source/target graph port alignment, selection retention across view swaps and responsive remounts, actual output lineage, nested-conversation navigation, and reload. No page errors were recorded.
+The revised Chromium run passed checkpoint persistence, eight recorded turn bars, three solid fork connectors and one dashed delegation connector, all activity rows inside the chart, five ReactFlow nodes and four real edges, source/target graph port alignment, shared inspector alignment, selection retention across swaps and responsive remounts, actual output lineage, direct Gantt title navigation, nested-conversation navigation, and reload. No page errors were recorded. The inspector uses actual messages around the saved copied-history boundary and the latest continuation, with a link to the complete history. It fetches only the selected session and labels parent-owned subagents explicitly.
 
-- Gantt arrowhead gaps: at most **1 pixel horizontally**, **0 vertically**.
+- Gantt arrowhead gaps: less than **2 pixels horizontally**, **0 vertically**.
 - Relationships source/target port gaps: **0 pixels**.
 - Widths: **1440, 1024, 736 and 390 pixels**; no page overflow, all graph nodes fit after resizing.
 - Visual review rejected intermediate captures with overlapping milestone labels, clipped stacked rows, stale graph fit and a narrow output pane. The delivered captures show all named rows, connected arrows, a fitted family graph and a maximized lineage pane.
@@ -58,11 +58,21 @@ The final Chromium run passed checkpoint persistence, six recorded turn bars, th
 | Public capture | Framing |
 | --- | --- |
 | `docs-fork-checkpoint.png` | Child header, copied offset answer, checkpoint, new request and actual nested answer; unrelated sidebar omitted |
-| `docs-conversation-family-gantt.png` | Observability tabs, switch, four complete rows and legend; empty lower canvas cropped |
-| `docs-conversation-relationships.png` | Same Observability frame, full family and selected conversation's outputs |
+| `docs-conversation-family-gantt.png` | Observability tabs, stable Relationships swap, five role-labelled linked rows, solid/dashed relationships and aligned real-history inspector |
+| `docs-conversation-relationships.png` | Same frame, top-down family, same selection and inspector; unused connection handles hidden |
 | `docs-conversation-output-lineage.png` | Maximized artifact pane with Preview/Versions/Lineage, real baseline-to-offset chain and fit controls |
 
-Original full frames, exact API requests/responses, provenance JSON, browser verdict, source identities and isolated service state are retained in `C:/clio-relationships-20261011`. Only the four reviewed PNGs are copied into `site/src/assets/captures/` (under 400 KB combined). No OPAL data was used.
+Original full frames, exact API requests/responses, provenance JSON, browser verdict, source identities and isolated service state are retained in `C:/clio-relationships-20261011`. Only the four reviewed PNGs are copied into `site/src/assets/captures/` (under 400 KB combined). No OPAL data was used. The family views use the additional recorded five-session run; checkpoint and lineage retain the earlier successful artifact run. These are separate real takes, not a continuous recorded interaction.
+
+### Additional live limitations retained after the visual review
+
+The first additional commission was refused because `base-agent`'s root expert is `base`, not `main`. Correcting that invocation produced a real child response with mean 12, collected by the parent. The separate five-session family contains a completed child that asked for measurement values rather than calculating them; its use here verifies real ownership and navigation, not scientific answer quality. That run also reported an offset-file collision in the shared test workspace. Its transcript was retained; the successful earlier artifact run supplies the lineage capture. The driver now supports unique artifact suffixes.
+
+All eight recorded response intervals in the five-session run have actual ends. Native provenance nevertheless returns `complete=false`, `truncated=false`, with remaining commission/delegation spans marked running; the UI truthfully displays the partial-history notice. It does not manufacture completed provenance.
+
+Fresh model runs in `acceptance-v3`, `acceptance-v4` and `acceptance-v5` timed out on a session read after starting their first turn. A controlled restart restored read access, and the revised browser acceptance passed against retained real sessions. The fresh-turn stall remains unresolved and is not claimed as fixed by this UI change. Requests, service logs and failed verdicts remain in the evidence directory. The browser proof uses production APIs and the real renderer, without intercepted routes or injected messages.
+
+The Gantt's delegation connector required a bounded public `delegation_origin` projection: owner session, recorded parent turn and creation time only. Validation rejects mismatched owners/children; task briefings and results remain outside that projection. Older records without a usable origin do not get guessed connections.
 
 ## Website documentation
 

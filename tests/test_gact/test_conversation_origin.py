@@ -5,10 +5,49 @@ from typing import Any
 
 import pytest
 
-from clio_agent.gact.conversation_origin import saved_fork_origin
+from clio_agent.gact.conversation_origin import saved_delegation_origin, saved_fork_origin
 from clio_agent.gact.protocol.v3.session import session_to_v3
 
 from .test_fork_and_search import _client, _turn
+
+
+@pytest.mark.parametrize("task", [None, [], {}, {"parent_turn_id": 1}, {"created_at": []}])
+def test_malformed_delegation_is_not_projected(task: Any) -> None:
+    assert (
+        saved_delegation_origin(
+            {"agent_task": task}, session_id="child", parent_session_id="parent"
+        )
+        is None
+    )
+
+
+def test_delegation_projection_limits_public_fields_and_checks_owner(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        record = client.app.state.sessions.create(
+            workspace_id="ws_default",
+            parent_session_id="parent",
+            metadata={"session_type": "agent_task"},
+        )
+        record.metadata["agent_task"] = {
+            "parent_session_id": "parent",
+            "child_session_id": record.id,
+            "parent_turn_id": "parent-request",
+            "created_at": "2026-10-11T12:00:00Z",
+            "description": "Private briefing",
+            "result": {"answer_excerpt": "Private result"},
+        }
+        assert session_to_v3(record)["metadata"] == {
+            "delegation_origin": {
+                "session_id": "parent",
+                "turn_id": "parent-request",
+                "created_at": "2026-10-11T12:00:00Z",
+            }
+        }
+        record.metadata["agent_task"]["child_session_id"] = "other"
+        assert "metadata" not in session_to_v3(record)
+        record.metadata["agent_task"]["child_session_id"] = record.id
+        record.parent_session_id = "foreign"
+        assert "metadata" not in session_to_v3(record)
 
 
 @pytest.mark.parametrize(

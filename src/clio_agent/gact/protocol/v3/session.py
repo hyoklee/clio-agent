@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
-from clio_agent.gact.conversation_origin import FORK_ORIGIN_KEY, saved_fork_origin
+from clio_agent.gact.conversation_origin import (
+    FORK_ORIGIN_KEY,
+    saved_delegation_origin,
+    saved_fork_origin,
+)
 from clio_agent.gact.message_marks import MARKS_KEY, saved_message_marks
 from clio_agent.gact.protocol.v3 import utcnow_iso
 from clio_agent.gact.session_defaults import session_effort
@@ -98,6 +102,12 @@ def session_to_v3(session: Any) -> dict[str, Any]:
     origin = saved_fork_origin(metadata)
     if origin and origin["session_id"] == getattr(session, "parent_session_id", ""):
         public_metadata[FORK_ORIGIN_KEY] = origin
+    if row["session_kind"] == "agent":
+        delegation = saved_delegation_origin(
+            metadata, session_id=row["id"], parent_session_id=str(optional["parent_session_id"])
+        )
+        if delegation:
+            public_metadata["delegation_origin"] = delegation
     if public_metadata:
         row["metadata"] = public_metadata
     return row

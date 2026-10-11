@@ -14,8 +14,11 @@ def main() -> int:
     parser.add_argument("--endpoint", default="http://127.0.0.1:17963")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--workspace", type=Path, required=True)
+    parser.add_argument("--artifact-suffix", default="")
     args = parser.parse_args()
     runner = Acceptance(args.endpoint, args.out)
+    baseline_name = f"calibration-baseline{args.artifact_suffix}.md"
+    offset_name = f"calibration-offset{args.artifact_suffix}.md"
     runner.call(
         "PUT", "/v1/providers/lm", {"provider": "codex", "model": "gpt-6-luna", "api_base": ""}
     )
@@ -40,7 +43,7 @@ def main() -> int:
     runner.sessions["baseline"] = root
     baseline = runner.turn(
         root,
-        "This is fictional calibration data for a public CLIO walkthrough: readings 10, 12 and 14. Calculate their mean. Use create_artifact to author calibration-baseline.md, a short Markdown record of the readings and calculation. Use content, kind='other', and pdf_preview=false. Do not use shell or environment tools. End the visible answer with Mean: 12.",
+        f"This is fictional calibration data for a public CLIO walkthrough: readings 10, 12 and 14. Calculate their mean. Use create_artifact to author {baseline_name}, a short Markdown record of the readings and calculation. Use content, kind='other', and pdf_preview=false. Do not use shell or environment tools. End the visible answer with Mean: 12.",
         "baseline and real artifact",
         12,
     )
@@ -48,7 +51,7 @@ def main() -> int:
     branch_before = runner.messages(branch)
     runner.turn(
         branch,
-        "For this independent branch keep all original readings, add an offset of +2 to each, and remember that method. Use create_artifact to author calibration-offset.md from calibration-baseline.md, declaring used=['calibration-baseline.md'], kind='other', pdf_preview=false. Keep the visible answer to two sentences; do not use shell tools.",
+        f"For this independent branch keep all original readings, add an offset of +2 to each, and remember that method. Use create_artifact to author {offset_name} from {baseline_name}, declaring used=['{baseline_name}'], kind='other', pdf_preview=false. Keep the visible answer to two sentences; do not use shell tools.",
         "offset alternative",
         14,
     )
@@ -93,12 +96,48 @@ def main() -> int:
         "branch retains independent context",
         14,
     )
+    runner.call(
+        "POST",
+        f"/v1/sessions/{root}/messages",
+        {
+            "text": 'Delegate one fictional calibration check using spawn_agent_task(blueprint_id="base-agent", agent="base", task="The three measured numerical values are 10, 12 and 14 (these are values, not reading IDs). Calculate their mean and whether any value differs from it by more than 2. Two sentences only, no tools or files."). Spawn exactly one child, collect it with wait_tasks, then summarize its result in one short sentence. No shell tools.'
+        },
+    )
+    runner.wait(root)
+    tasks = runner.call("GET", f"/v1/sessions/{root}/agent-tasks")["tasks"]
+    runner.check(
+        "real delegated check completes",
+        len(tasks) == 1 and tasks[0]["status"] == "completed",
+        tasks,
+    )
+    child = tasks[0]["child_session_id"]
+    runner.call("PATCH", f"/v1/sessions/{child}", {"title": "Calibration check"})
+    runner.sessions["Calibration check"] = child
+    runner.save("delegated-transcript", runner.messages(child))
+    provenance = runner.call(
+        "GET",
+        f"/v1/sessions/{root}/provenance/execution?provider=native&include_children=true&limit=10000",
+    )
+    runner.save("family-provenance", provenance)
+    turns = [span for span in provenance["spans"] if span["event_type"] == "turn.started"]
+    runner.check(
+        "all eight recorded response intervals",
+        len(turns) == 8
+        and all(span["end_time"] is not None for span in turns)
+        and not provenance["truncated"],
+        {
+            "turns": len(turns),
+            "complete": provenance["complete"],
+            "truncated": provenance["truncated"],
+        },
+    )
     runner.save(
         "acceptance-state",
         {
             "workspace": runner.workspace,
             "baseline_message": baseline["id"],
             "sessions": runner.sessions,
+            "artifacts": {"baseline": baseline_name, "offset": offset_name},
             "origin": origin,
         },
     )
