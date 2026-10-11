@@ -50,6 +50,27 @@ test('dashboard example opens at full size and draft examples separate judge mod
 	await expect(page.getByRole('tabpanel')).toContainText('let me choose');
 });
 
+test('capture waits for its handlers before accepting the first click', async ({ page }) => {
+	let releaseScripts!: () => void;
+	const scriptsReady = new Promise<void>((resolve) => { releaseScripts = resolve; });
+	await page.route('**/_astro/*.js', async (route) => {
+		await scriptsReady;
+		await route.continue();
+	});
+	try {
+		await page.goto('/docs/dashboards/', { waitUntil: 'commit' });
+		const capture = page.getByRole('button', { name: /^View larger:/ }).first();
+		await capture.scrollIntoViewIfNeeded();
+		await expect(capture).toBeDisabled();
+		releaseScripts();
+		await expect(capture).toBeEnabled();
+		await capture.click();
+		await expect(page.getByRole('dialog')).toContainText('complete report overview');
+	} finally {
+		releaseScripts();
+	}
+});
+
 test('the beginner path puts files before dashboards and alternatives under Go further', async ({ page }) => {
 	await page.goto('/docs/dashboards/');
 	const sidebar = page.locator('#starlight__sidebar');
