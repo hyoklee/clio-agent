@@ -37,6 +37,13 @@ The permanent user guide is [Branch and rewind](../../site/src/content/docs/docs
    out of the branch even though the service's ledger contained them. Copies now
    belong to the destination session, with historical message/turn IDs preserved.
 
+Full CI additionally caught a compatibility regression in standalone context
+reconstruction without a turn ID: the current user question was included twice.
+That path now excludes only its latest question, retaining any earlier unanswered
+question. The existing context-projection test and both turn-ID/no-turn-ID cases
+pass together. Real-service acceptance always used a turn ID; its path is unchanged
+by this compatibility correction.
+
 The rewind confirmation also explicitly states that the selected message remains
 and existing files and artifacts are kept. The previously requested managed-session
 fork prohibition is enforced in the service and both UI entry points; its policy
@@ -78,6 +85,10 @@ the two changed suites passed all 18 current tests. The final malformed-target
 test also passed. There were no skipped tests. clio-core emitted native binding
 shutdown leak diagnostics despite successful pytest exits; this acceptance does
 not claim that those binding lifetime diagnostics are resolved.
+
+After the full-CI compatibility finding, `test_context_projection.py` and
+`test_context_recovery.py` passed all 21 tests on Python 3.14.6. The retained log is
+`context-compatibility-tests.log` in the evidence directory.
 
 UI: 30 focused Vitest tests passed; the updated confirmation's three tests passed
 again. TypeScript build, scoped Oxlint, frontend size guard, Ruff, Pyright, and the

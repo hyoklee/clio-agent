@@ -195,13 +195,15 @@ def test_unanswered_transcript_call_never_seeds_partial_context() -> None:
         )
 
 
+@pytest.mark.parametrize("turn_id", ["current", ""])
 def test_carry_over_keeps_user_boundary_and_excludes_only_current_request(
     monkeypatch: pytest.MonkeyPatch,
+    turn_id: str,
 ) -> None:
     monkeypatch.setattr(context, "active_app", lambda: None)
     plane = HistoryPlane()
     recorder = StepRecorder(plane, "branch", "main", expert_id="main")
-    recorder.turn_id = "current"
+    recorder.turn_id = turn_id
     recorder.carry_over(
         [
             {
