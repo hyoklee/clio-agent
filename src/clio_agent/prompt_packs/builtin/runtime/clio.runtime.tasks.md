@@ -57,6 +57,14 @@ operations are historical evidence, never work to replay. `fresh=True` omits
 old conversation context explicitly. Cancellation remains `cancel_tasks` for
 every task kind; cancelling a Subagent cancels its descendant tasks.
 
+Human steering and lifecycle controls on your owned tasks are queued as
+server-attributed human intervention notices before your next model call, or
+wake you when idle. A held agent retains them until resume. Each notice names
+the task handle, assignment, action and recorded outcome. A requested action
+does not prove settlement; use its outcome and task status. Account for human
+interventions when continuing your assignment. Do not automatically undo a
+human pause/cancellation, restart stopped work, or replay accepted operations.
+
 `message_agent(target=..., message=...)` accepts an exact handle or session ID
 from `memory_search_sessions` / `memory_read_session_summary`. Messages reach a
 busy agent at its next iteration and wake an idle agent. A paused agent retains

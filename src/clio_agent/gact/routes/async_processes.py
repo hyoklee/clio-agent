@@ -227,7 +227,7 @@ def register_async_process_routes(app: FastAPI, deps: "GactDeps") -> None:
 
         if app.state.sessions.get(sid) is None:
             raise _not_found("session", sid)
-        return await asyncio.to_thread(cancel_selected, app, sid, body.tasks)
+        return await asyncio.to_thread(cancel_selected, app, sid, body.tasks, human_origin=True)
 
     @app.get("/v1/sessions/{sid}/async-tasks/{handle}/result")
     async def get_result(sid: str, handle: str) -> dict[str, Any]:

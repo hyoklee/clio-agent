@@ -41,6 +41,32 @@ exact-session messaging controls. Live acceptance remains a separate gate.
   supports their contract; existing owner-to-relay messaging is retained. Those
   routes remain unimplemented and unqualified, not silently simulated locally.
 
+## Human intervention and ownership
+
+Human control never silently changes an agent's owned work. Authorized human
+steering, pause, resume, cancellation, restart and child-session Stop are relayed
+to the **actual immediate owner**, independently of which ancestor's UI issued
+the command. A nested Shell or Download notifies its owning child; controlling
+that child notifies its parent. Subagent cancellation/restart notices explicitly
+identify the descendant cascade. Dismissal remains a display operation.
+
+Notices use the existing durable agent mailbox and its regular next-model-call
+boundary, idle wake, hold, batching and commit-to-run rules. They carry human
+attribution, action, original handle, kind, assignment, target session, status
+before the action and recorded outcome. A restart outcome includes the new handle
+and predecessor link. A human request is saved before control execution; an
+uncollected request is updated with its acknowledgement/error. If the model has
+already received a long-running request, its outcome is queued as a linked
+follow-up. Requested cancellation is never presented as physical settlement.
+
+Both current and compatibility HTTP controls are covered, along with accepted
+user feedback sent directly to a child, queued-message promotion and human Stop
+from HTTP/A2UI. Replayed accepted messages retain one notification identity.
+Agent-initiated controls continue to return their ordinary tool observations;
+they do not impersonate a human intervention. Target authorization remains ahead
+of relay, and a notice neither transfers permissions nor instructs the parent
+to automatically undo a human control or replay accepted work.
+
 ## Current checkpoint
 
 The consolidated implementation and use-case review is

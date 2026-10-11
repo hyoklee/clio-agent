@@ -6,6 +6,7 @@ from typing import Any
 
 from clio_agent.gact.agent_mailbox import accept_agent_mail, validate_agent_message
 from clio_agent.gact.agent_targets import resolve_agent_target
+from clio_agent.gact.human_task_intervention import human_task_intervention
 from clio_agent.gact.subagent_lifecycle import execution_held, on_app_loop, resume_subagent
 
 
@@ -21,6 +22,7 @@ def message_agent_address(
     wake: bool = False,
     reply_to: str = "",
     correlation_id: str = "",
+    human_origin: bool = False,
 ) -> dict[str, Any]:
     """Authorize the exact recipient, persist sender identity, then queue or wake once."""
 
@@ -30,6 +32,15 @@ def message_agent_address(
         )
         original_sid = session.id
         validate_agent_message(app, text, caller_sid, original_sid, reply_to, correlation_id)
+        with human_task_intervention(
+            app, task if human_origin else None, "steer", actor_sid=caller_sid, text=text
+        ) as outcome:
+            result = deliver(session, task)
+            outcome.update(result)
+            return result
+
+    def deliver(session: Any, task: Any) -> dict[str, Any]:
+        original_sid = session.id
         if task is not None and task.placement.startswith("relay:"):
             # Preserve the established owner-to-relay transport. Peer addressing
             # needs a remote sender/permission contract and is refused explicitly.

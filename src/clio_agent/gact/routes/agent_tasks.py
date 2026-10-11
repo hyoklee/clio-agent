@@ -35,6 +35,7 @@ from clio_agent.gact.a2ui_capabilities import (
     apply_client_metadata_guards,
 )
 from clio_agent.gact.agent_messaging import MessageAgentError, message_agent_task
+from clio_agent.gact.human_task_intervention import human_task_intervention
 from clio_agent.gact.live_handle import project_live_handle
 from clio_agent.gact.messaging import raise_on_reserved_metadata
 from clio_agent.gact.run_registry import detach_run, dismiss_run, project_runs
@@ -173,9 +174,14 @@ def register_agent_task_routes(app: FastAPI, deps: "GactDeps") -> None:
         from clio_agent.gact.agents.invoker import TaskHandle  # noqa: PLC0415
         from clio_agent.gact.agents.spawn_placement import invoker_for_task  # noqa: PLC0415
 
-        invoker_for_task(app, task).invoker.cancel(TaskHandle.from_task(task))
-        updated = registry.get(task_id)
-        return asdict(updated if updated is not None else task)
+        with human_task_intervention(app, task, "cancel") as outcome:
+            invoker_for_task(app, task).invoker.cancel(TaskHandle.from_task(task))
+            updated = registry.get(task_id) or task
+            outcome.update(
+                cancellation_requested=updated.cancel_requested,
+                status=updated.live_state or updated.status,
+            )
+            return asdict(updated)
 
     @app.get("/v1/agent-tasks/{task_id}/live")
     async def get_agent_task_live(task_id: str, request: Request) -> Any:
@@ -222,7 +228,11 @@ def register_agent_task_routes(app: FastAPI, deps: "GactDeps") -> None:
             raise _a2ui_error(exc) from exc
         steer_metadata = _normalized_a2ui_steer_metadata(body.metadata)
         try:
-            result = message_agent_task(app, task_id, body.text, steer_metadata)
+            with human_task_intervention(app, task, "steer", text=body.text) as outcome:
+                result = message_agent_task(
+                    app, task_id, body.text, steer_metadata, parent_agent_id="human"
+                )
+                outcome.update(result.to_wire())
         except MessageAgentError as exc:
             raise HTTPException(
                 status_code=exc.status_code,

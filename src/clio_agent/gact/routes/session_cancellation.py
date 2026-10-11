@@ -8,9 +8,11 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
 
+from clio_agent.gact.agent_tasks import AgentTask
 from clio_agent.gact.autonomous_loop import stop_session_loop
 from clio_agent.gact.events import Event
 from clio_agent.gact.goal import stop_session_goal
+from clio_agent.gact.human_task_intervention import human_task_intervention
 from clio_agent.gact.runtime.globals import _new_cancellation_attempt_id
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
 
@@ -40,6 +42,15 @@ def cancellation_grace_s() -> float:
 
 
 def cancel_session_state(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, Any]:
+    """Apply human Stop from HTTP or A2UI and inform the child's owner."""
+    task = AgentTask.from_session(app.state.sessions.get(sid))
+    with human_task_intervention(app, task, "stop", actor_sid=sid) as outcome:
+        payload = _cancel_session_state(app, deps, sid)
+        outcome.update(turn_stop_requested=True, accepted_tasks_continue=True, **payload)
+        return payload
+
+
+def _cancel_session_state(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, Any]:
     """Apply the canonical best-effort cancellation transition for a session."""
 
     sess = app.state.sessions.get(sid)

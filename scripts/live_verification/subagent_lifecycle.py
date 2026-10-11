@@ -301,6 +301,7 @@ def main() -> int:
     parser.add_argument("--proof", type=Path, required=True)
     parser.add_argument("--port", type=int, default=18846)
     parser.add_argument("--repeats", type=int, default=1)
+    parser.add_argument("--human-controls", action="store_true")
     parser.add_argument("--peer", action="store_true")
     parser.add_argument("--recovery", action="store_true")
     parser.add_argument("--ui", action="store_true")
@@ -409,9 +410,12 @@ def main() -> int:
                 f"actual {args.provider}/{model} ready",
             )
             for number in range(1, args.repeats + 1):
-                verdict["cycles"].append(
-                    lifecycle_cycle(call, proof, wid, blueprint, number, process.pid)
-                )
+                cycle = lifecycle_cycle
+                if args.human_controls:
+                    from _lifecycle_human_controls import human_control_cycle
+
+                    cycle = human_control_cycle
+                verdict["cycles"].append(cycle(call, proof, wid, blueprint, number, process.pid))
                 common.dump_json(proof / "verdict.json", verdict)
             if args.peer:
                 verdict["peer"] = peer_cycle(call, proof, wid, blueprint)
@@ -478,6 +482,8 @@ def main() -> int:
             )
         if process is not None:
             common.terminate_server(process)
+        verdict["source_unchanged_during_run"] = source_identity(CORE) == verdict["source"]
+        verdict["pass"] = verdict["pass"] and verdict["source_unchanged_during_run"]
         verdict["finished_at"] = time.time()
         common.dump_json(proof / "verdict.json", verdict)
     return 0 if verdict["pass"] else 1

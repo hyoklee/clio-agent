@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from clio_agent.gact.agent_session_messaging import message_agent_address
 from clio_agent.gact.agent_targets import resolve_agent_target
+from clio_agent.gact.human_task_intervention import human_task_intervention
 from clio_agent.gact.subagent_lifecycle import on_app_loop, pause_subagent, resume_subagent
 from clio_agent.gact.subagent_restart import restart_subagent
 
@@ -46,10 +47,14 @@ def register_agent_lifecycle_routes(app: FastAPI) -> None:
             _session, task = resolve_agent_target(app, sid, target, control=True)
             if task is None:
                 raise ValueError("recipient_not_subagent")
-            if action == "restart":
-                return await asyncio.to_thread(restart_subagent, app, task, fresh=body.fresh)
-            operation = pause_subagent if action == "pause" else resume_subagent
-            return on_app_loop(app, lambda: operation(app, task))
+            with human_task_intervention(app, task, action, actor_sid=sid) as outcome:
+                if action == "restart":
+                    result = await asyncio.to_thread(restart_subagent, app, task, fresh=body.fresh)
+                else:
+                    operation = pause_subagent if action == "pause" else resume_subagent
+                    result = on_app_loop(app, lambda: operation(app, task))
+                outcome.update(result)
+                return result
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(
                 status_code=409, detail={"error": {"error": str(exc), "message": str(exc)}}
@@ -70,6 +75,7 @@ def register_agent_lifecycle_routes(app: FastAPI) -> None:
                 wake=body.wake,
                 reply_to=body.reply_to,
                 correlation_id=body.correlation_id,
+                human_origin=True,
             )
         except (RuntimeError, ValueError) as exc:
             raise HTTPException(

@@ -401,22 +401,28 @@ def _observation(event: Any) -> dict[str, Any]:
     return {"id": event.id, "type": event.type, "payload": bounded}
 
 
-def cancel_selected(app: Any, sid: str, tasks: str | list[str]) -> dict[str, Any]:
+def cancel_selected(
+    app: Any, sid: str, tasks: str | list[str], *, human_origin: bool = False
+) -> dict[str, Any]:
     """Request cancellation through each task's owner, never infer settlement from an ACK."""
+    from clio_agent.gact.human_task_intervention import human_task_intervention
     from clio_agent.gact.task_supervisor import task_supervisor
 
     rows, errors = _selected(app, sid, tasks)
     results = []
     for row in rows:
         try:
-            requested = task_supervisor(app).request_cancel(row)
-            results.append(
-                {
+            with human_task_intervention(
+                app, row if human_origin else None, "cancel", actor_sid=sid
+            ) as outcome:
+                requested = task_supervisor(app).request_cancel(row)
+                result = {
                     "handle": row["handle"],
                     "cancellation_requested": requested,
                     "status": row["effective_status"],
                 }
-            )
+                outcome.update(result)
+                results.append(result)
         except (ValueError, RuntimeError) as exc:
             errors.append({"handle": row["handle"], "error": str(exc)})
     return {"results": results, "errors": errors}

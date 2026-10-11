@@ -25,6 +25,7 @@ from clio_agent.gact.context_reference_delivery import (
 )
 from clio_agent.gact.context_references import authorize_context_reference_parts_sync
 from clio_agent.gact.events import Event
+from clio_agent.gact.human_task_intervention import relay_human_session_message
 from clio_agent.gact.loop_inbox import enqueue_user_steer
 from clio_agent.gact.message_intents import DuplicateIntentError, PendingSteer
 from clio_agent.gact.message_submission_errors import (
@@ -712,6 +713,7 @@ def accept_message(
                 [row for row in app.state.messages.get(sid, []) if row.id != message_id],
             )
             raise
+        relay_human_session_message(app, sid, ack.message_id, user_text)
         return ack, 202
 
     # Cancellation belongs to the turn that was active when /cancel was requested.
@@ -761,6 +763,7 @@ def accept_message(
             },
         )
     )
+    relay_human_session_message(app, sid, ack.message_id, user_text)
     return ack, 200
 
 

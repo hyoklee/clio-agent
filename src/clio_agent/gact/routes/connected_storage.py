@@ -717,7 +717,11 @@ def register_connected_storage_routes(app: FastAPI) -> None:
             from clio_agent.gact.task_controls import cancel_selected
 
             outcome = await asyncio.to_thread(
-                cancel_selected, app, operation.owner_session_id, operation.task_handle
+                cancel_selected,
+                app,
+                operation.owner_session_id,
+                operation.task_handle,
+                human_origin=True,
             )
             if outcome["errors"]:
                 raise HTTPException(409, outcome["errors"])
