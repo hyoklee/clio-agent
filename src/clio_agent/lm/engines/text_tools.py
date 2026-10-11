@@ -260,7 +260,7 @@ def _orphaned_call_block(reply: str, available_tools: Collection[str]) -> bool:
     """Recognize observed broken openers without guessing executable calls.
 
     Ordinary JSON answers and fenced examples stay answers. Only a whole call list
-    for this request's tools followed by an unmatched closing fence is rejected,
+    or single call object for this request's tools followed by an unmatched closing fence is rejected,
     including the live reply whose opening fence became ``_tool_calls``.
     """
     raw = reply.strip()
@@ -273,7 +273,7 @@ def _orphaned_call_block(reply: str, available_tools: Collection[str]) -> bool:
         calls = json.loads(body)
     except ValueError:
         return False
-    return _known_call_list(calls, available_tools)
+    return _known_call_list(calls, available_tools) or _known_call_list([calls], available_tools)
 
 
 def _bare_call_json(reply: str, available_tools: Collection[str]) -> bool:

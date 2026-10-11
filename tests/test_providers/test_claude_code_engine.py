@@ -306,6 +306,11 @@ def test_xml_parameter_fragment_is_a_protocol_error_not_a_completed_answer(pool:
             id="bare-call-object",
         ),
         pytest.param(
+            '{"name":"search","arguments":{"q":"actual data"}}\n```',
+            "missing opening",
+            id="orphaned-call-object",
+        ),
+        pytest.param(
             '<tool_calls>[{"name":"search","arguments":{"q":"actual data"}}]</tool_calls>',
             "XML",
             id="xml-container",

@@ -7,6 +7,26 @@ run does not become a live pass for a later commit.
 
 ## Continued qualification on October 11
 
+### Qualification resource custody
+
+Stopped qualification runtimes were allowed to accumulate. Owned cleanup retired
+136 old Core allocation files, accounting for 55,984,308,224 allocated bytes by
+file metadata, and 48 stopped sandbox caches containing 7,628,639,115 logical
+bytes. Recovery archives were verified locally by CRC and every member's SHA256;
+original PID/birth absence and source hashes were checked before retirement.
+Transcripts, configuration, captures and failed verdicts remain retained. These
+totals are not a measured change in volume free space.
+
+Subsequent qualification admission requires the preceding gate's actual owner
+settlement, Core recovery custody and cache recovery/retirement acknowledgement,
+including after a failed gate. A live negative check refused premature admission
+and created no new runtime. The first cache audit after the resumed browser check
+also correctly refused while a proof-scoped process still existed. No next gate
+was admitted; a later read-only audit found the process absent. Incomplete owner
+records and earlier prohibited roots remain excluded rather than guessed at.
+Receipts are retained under `mcp-agent-tasks/cleanup-completed21.json` and
+`live-cache-custody21/` in the release-recovery directory.
+
 ### Current continuation: confined MCP transport directory
 
 The `41ebfe5c` continuation passed five Codex human-control cycles, five

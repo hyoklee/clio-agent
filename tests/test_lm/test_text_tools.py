@@ -111,6 +111,47 @@ def test_orphaned_call_list_is_rejected_without_executing_it() -> None:
     assert not split.text
 
 
+@pytest.mark.parametrize("size", [20, 5000])
+def test_orphaned_single_call_is_a_bounded_error_not_an_operation(size: int) -> None:
+    """A live fresh-restart reply had a closing fence but no opening fence or list."""
+    raw = (
+        json.dumps({"name": "restart_agent", "arguments": {"target": "x" * size, "fresh": True}})
+        + "\n```"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"restart_agent"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw[:4000]
+    assert "opening" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        pytest.param('{"name":"search","arguments":{}}\n```', set(), id="no-tools"),
+        pytest.param('{"name":"other","arguments":{}}\n```', {"search"}, id="unknown"),
+        pytest.param(
+            '{"name":"search","arguments":{},"result":"data"}\n```',
+            {"search"},
+            id="data",
+        ),
+        pytest.param('{"name":"search","arguments":[]}\n```', {"search"}, id="arguments"),
+        pytest.param('Example: {"name":"search","arguments":{}}\n```', {"search"}, id="example"),
+        pytest.param(
+            '```json\n{"name":"search","arguments":{}}\n```', {"search"}, id="fenced-example"
+        ),
+        pytest.param(
+            '{"name":"search","arguments":{}}\n```\nMore text.', {"search"}, id="trailing-text"
+        ),
+    ],
+)
+def test_orphaned_single_call_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Reject only the complete declared call shape, never data or examples."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 def test_corrupted_tool_fence_is_a_protocol_error_without_submitting_work() -> None:
     """The live Haiku reply replaced its opening fence with an underscore."""
     raw = '_tool_calls\n[{"name":"spawn_agent_task","arguments":{"agent":"worker"}}]\n```'
