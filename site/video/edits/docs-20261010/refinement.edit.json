@@ -1,0 +1,10 @@
+{
+  "source": "D:/Libraries/Videos/clio_recordings/2026-10-10-docs-task-walkthroughs/raw/refinement-2.mp4",
+  "width": 1280,
+  "height": 960,
+  "shots": [
+    { "from": 0, "to": 12.1, "speed": 2, "caption": "Typing - 2x speed" },
+    { "from": 12.1, "to": 17.057, "speed": 2, "caption": "Actual draft generation - 2x speed" },
+    { "from": 17.057, "to": 43.89 }
+  ]
+}

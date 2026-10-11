@@ -1,4 +1,5 @@
 import { Maximize2 } from 'lucide-react';
+import { useSyncExternalStore } from 'react';
 import { Frame, FramePanel } from '@/components/reui/frame';
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
@@ -21,19 +22,25 @@ interface Props {
 	priority?: boolean;
 }
 
+const subscribe = () => () => {};
+const ready = () => true;
+const serverReady = () => false;
+
 /**
  * A real product capture in a reui Frame. Clicking it opens the full-size
  * image in a dialog, with the caption as the dialog's description.
  */
 export default function Capture({ image, alt, caption, sizes = '(min-width: 64rem) 44rem, 100vw', priority }: Props) {
+	const interactive = useSyncExternalStore(subscribe, ready, serverReady);
 	return (
 		<Dialog>
 			<figure className="m-0 min-w-0">
 				<Frame spacing="xs" className="[--frame-radius:var(--radius-xl)]">
 					<FramePanel className="overflow-hidden p-0">
 						<DialogTrigger
-							className="group relative block w-full cursor-zoom-in border-0 bg-transparent p-0"
+							className="group relative block w-full cursor-zoom-in border-0 bg-transparent p-0 disabled:cursor-wait"
 							aria-label={`View larger: ${alt}`}
+							disabled={!interactive}
 						>
 							<img
 								src={image.src}
