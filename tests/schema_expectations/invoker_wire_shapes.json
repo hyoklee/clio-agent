@@ -140,7 +140,9 @@
         "start_turn",
         "tool_allowlist",
         "agent_elicitation_depth",
-        "target_blueprint_id"
+        "target_blueprint_id",
+        "continuation_task_id",
+        "fresh_context"
       ],
       "required_fields": [
         "child_expert_id",
@@ -172,7 +174,9 @@
         "start_turn",
         "tool_allowlist",
         "agent_elicitation_depth",
-        "target_blueprint_id"
+        "target_blueprint_id",
+        "continuation_task_id",
+        "fresh_context"
       ]
     }
   },
