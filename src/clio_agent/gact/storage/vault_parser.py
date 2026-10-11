@@ -115,21 +115,18 @@ def resolve_links(
         if not target:
             candidates = [link.source]
         else:
-            for candidate in [relative, relative + ".md", target, target + ".md"]:
+            variants = [relative, relative + ".md", target, target + ".md"]
+            prefix = vault_prefix.rstrip("/") + "/" if vault_prefix else ""
+            if prefix and target.lstrip("/").startswith(prefix):
+                # Explicit vault-root paths must not fall back to a same-named
+                # local note when normalization escapes the selected folder.
+                rooted = posixpath.normpath(target.lstrip("/"))
+                scoped = rooted[len(prefix) :] if rooted.startswith(prefix) else ""
+                variants = [scoped, scoped + ".md"] if scoped else []
+            for candidate in variants:
                 if candidate in by_path:
                     candidates = [candidate]
                     break
-            # Obsidian can store a target relative to the enclosing vault even
-            # when this connection selects only a subfolder. Translate that
-            # prefix, but resolve against indexed in-scope notes only.
-            prefix = vault_prefix.rstrip("/") + "/" if vault_prefix else ""
-            rooted = posixpath.normpath(target.lstrip("/"))
-            if not candidates and prefix and rooted.startswith(prefix):
-                scoped = rooted[len(prefix) :]
-                for candidate in [scoped, scoped + ".md"]:
-                    if candidate in by_path:
-                        candidates = [candidate]
-                        break
             if not candidates and "/" not in target:
                 candidates = sorted(names.get(target.casefold(), set()))
         result.append(

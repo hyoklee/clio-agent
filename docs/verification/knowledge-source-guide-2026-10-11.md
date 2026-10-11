@@ -33,7 +33,7 @@ so node labels remain readable beside the reader.
 
 ## Validation
 
-- Backend: 40 connected-storage, linked-storage, knowledge, and sync tests passed.
+- Backend: 41 connected-storage, linked-storage, knowledge, and sync tests passed.
   Coverage includes folder-scoped indexing, unresolved outside links, capture and
   edit confinement, private-root rejection, the enclosing-vault sync path, and
   vault-root link resolution within the selected folder.

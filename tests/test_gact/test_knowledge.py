@@ -75,6 +75,17 @@ def test_incremental_index_and_exclusions(tmp_path: Path, vault: Path) -> None:
         adapter.apply("a.md", None, None)
 
 
+def test_vault_root_links_do_not_fall_back_to_an_unrelated_in_scope_note() -> None:
+    """An escaping vault-root path stays unresolved even if its basename exists locally."""
+    plan, authored, _ = parse_note("Plan.md", "[[Research/Methods#Section]] [[Research/../a]]", "1")
+    method, _, _ = parse_note("Methods.md", "# Section", "2")
+    local, _, _ = parse_note("a.md", "# Local note, different from the enclosing vault's a.md", "3")
+    links = resolve_links([plan, method, local], authored, vault_prefix="Research")
+    assert links[0].target == "Methods.md" and links[0].selector == "Section"
+    assert links[0].status == "resolved"
+    assert links[1].target == "Research/../a" and links[1].status == "unresolved"
+
+
 def test_subfolder_source_confines_index_reader_links_and_edits(
     tmp_path: Path, vault: Path
 ) -> None:
