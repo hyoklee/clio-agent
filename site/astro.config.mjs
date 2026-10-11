@@ -67,6 +67,7 @@ export default defineConfig({
 								{ label: 'Attach files and folders', slug: 'docs/files/attach' },
 								{ label: '@ references', slug: 'docs/files/references' },
 								{ label: 'Connect sources', slug: 'docs/files/connect' },
+								{ label: 'Knowledge source', slug: 'docs/files/knowledge' },
 								{ label: 'Download or link', slug: 'docs/files/download-or-link' },
 								{ label: 'Manage sources', slug: 'docs/files/manage' },
 							],
