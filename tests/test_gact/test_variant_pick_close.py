@@ -29,14 +29,17 @@ SABOTAGE (each run manually, each went RED, then was restored):
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import dspy
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.gact import ask_user_tool
 from clio_agent.gact import context as ctx
 from clio_agent.gact.agents.clio_react import ClioReAct
 from clio_agent.gact.agents.variant_drafts import build_draft_alternatives_tool
@@ -356,12 +359,23 @@ def test_a_dismissed_pick_closes_the_run_cancelled_and_the_conversation_goes_on(
 def test_an_expired_pick_closes_the_run_expired(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    timers: list[threading.Timer] = []
+
+    def retain_real_timer(delay: float, callback: Callable[[], None]) -> threading.Timer:
+        """Retain the actual timer before its callback can retire the registry entry."""
+        timer = threading.Timer(delay, callback)
+        timers.append(timer)
+        return timer
+
+    monkeypatch.setattr(ask_user_tool, "threading", SimpleNamespace(Timer=retain_real_timer))
     lm, engine, question = _paused(world, monkeypatch, expires=1)
     assert question.expires_at  # the window the agent asked for
-    timer = world.app.state.ask_user_deadlines[question.id]
+    [timer] = timers
 
     timer.join()  # the real deadline timer fires and runs to its end
 
+    assert not timer.is_alive()
+    assert question.id not in world.app.state.ask_user_deadlines
     assert world.app.state.user_questions[question.id].status == "expired"
     run = load_run(world.app, world.sid, question.metadata["variants_id"])
     assert (run.status, run.closed_reason) == ("expired", "variant_pick_expired")

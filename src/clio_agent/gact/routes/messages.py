@@ -30,7 +30,7 @@ unsupported-override error, and the agent-not-available error) travel on
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, Mapping, cast
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
@@ -371,9 +371,9 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         if sess.message_count == 0 and not has_persisted_ledger:
             get_if_resident = getattr(messages, "get_if_resident", None)
             if callable(get_if_resident):
-                chronological_rows = list(get_if_resident(sid) or [])
+                chronological_rows = list(cast(list[Message], get_if_resident(sid) or []))
             elif isinstance(messages, dict):
-                chronological_rows = list(messages.get(sid, []))
+                chronological_rows = list(cast(list[Message], messages.get(sid, [])))
             else:
                 chronological_rows = []
         else:
@@ -382,7 +382,9 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             # event-loop thread: it stalls progressive hydration and is rejected
             # by the ARC loop guard. Copy the materialized ledger in the worker so
             # response projection cannot race a concurrent in-place append.
-            chronological_rows = await run_off_loop(lambda: list(messages.get(sid, [])))
+            chronological_rows = await run_off_loop(
+                lambda: list(cast(list[Message], messages.get(sid, [])))
+            )
 
         # (1) Resolve ``before`` against the chronological list. The cursor names
         # a real stored message; return only rows strictly older than it. The
@@ -457,6 +459,7 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
                         "created_at": str(task.created_at or ""),
                         "summary": str(task.error_reason or answer_excerpt),
                         "result": answer_excerpt,
+                        "task": task.description,
                     }
             # ``rows`` is newest-first for the 0.2 page; the v3 projection is
             # ledger-ordered and preserves what it is given, so hand it the

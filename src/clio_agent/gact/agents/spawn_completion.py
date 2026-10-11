@@ -13,7 +13,7 @@ from clio_agent.gact.turn_spawn_result import message_text
 from clio_agent.gact.types import Part
 
 if TYPE_CHECKING:
-    from clio_agent.gact.agents.types import AgentDef
+    from clio_agent.gact.types import AgentDef
 
 
 def resolve_verbatim_output(app: Any, task: Any) -> tuple[str, dict[str, str]]:
@@ -82,6 +82,7 @@ def return_handoff_part(agent_def: "AgentDef", task: Any, payload: dict[str, Any
         "error": task.error_reason or "",
         "run_index": task.run_index,
         "artifact_ref": task.artifact_ref,
+        "description": str(getattr(task, "description", "") or ""),
     }
     return_row.update(spawn_group_fields(task))
     for marker in ("output_source", "output_fallback_reason"):

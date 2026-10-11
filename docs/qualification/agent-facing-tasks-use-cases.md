@@ -7,6 +7,150 @@ run does not become a live pass for a later commit.
 
 ## Continued qualification on October 11
 
+### Current continuation: confined MCP transport directory
+
+The `41ebfe5c` continuation passed five Codex human-control cycles, five
+active/fresh restart cycles, five busy/idle peer-message cycles, five MCP HTTP
+reconnect cycles, five human Indexing cancellations and five graceful Indexing
+interruption/recovery cycles. The actual-service UI controls also passed. These
+receipts remain tied to that source. Its stdio case failed before acceptance:
+the real model reported that `web_fetch` was absent from its tool catalog.
+
+Inspection found the active Codex fence selecting an absent first state grant
+as `-C`, although the explicitly supplied workspace existed. The regression
+reproduced that directory mismatch using the production transport and fence
+composer. Commit `e4b14af5` passes the intended directory through both stdio
+construction paths without adding or reordering permission grants. Three new
+regressions and twelve existing transport contracts pass individually and
+sequentially, with zero skips. An existing Windows simulation needed its actual
+FastMCP import before changing `sys.platform`; its type assertion is stronger.
+Scoped Ruff/format/Pyright and all eight unchanged repository guards pass.
+
+All five actual Codex stdio interruption cycles passed on `e4b14af5` after the
+fixture placed its state inside the existing workspace grant. Each requires
+an immediate handle, independent model work, actual backend process settlement,
+preserved task identity after service interruption, an honest interrupted result
+and one automatic wake without resubmission. The original outside-workspace
+fixture denial remains a setup failure; confinement grants were not broadened.
+
+A further regression reproduced double resolution of a relative workspace:
+the launcher changed directory, then its confinement command interpreted that
+relative path again. Commit `27e82e3b` normalizes the declared directory before
+validation, artifact-root construction and confinement. All four directory cases
+pass individually/sequentially with zero exclusions; scoped Ruff/format/Pyright
+and all eight unchanged guards pass. Continuation 17 passed five stdio
+interruption cycles, five Claude busy/idle peer cycles and five Codex
+terminal-recipient successor cycles on this commit. Claude lifecycle passed
+three complete cycles, then failed cycle four: the exact restart instruction
+reached the actual SDK request, but the model ended with 58 characters of
+`reasoning_effort` markup and no restart invocation. The request did not contain
+that tag. Its cause remains unestablished; cycle five was not executed.
+The original failed cycle, public reply and private SDK record are retained.
+
+Code inspection then found that normalizing `cwd=""` accidentally accepted a
+previously invalid explicit directory. An actual assertion failure reproduced
+the regression; `9f8ae56f` preserves empty-directory rejection while retaining
+valid relative-directory normalization. Six focused cases pass individually and
+sequentially with zero exclusions; scoped Ruff/format/Pyright and eight unchanged
+guards pass. Continuation 18 freezes this commit and runs the remaining matrix,
+continuing independent families after a failure. Earlier passes remain tied to
+their original commits.
+
+New isolated Core/test runtimes and generated source inputs use the existing
+user-owned `/data` volume. The original 512 MiB runtime capacity, reserve guards,
+workload counts, bytes, deadlines and behavioral assertions remain unchanged.
+The first empty-directory attempt failed capacity admission and is not counted
+as the regression reproduction; the second was admitted and failed its expected
+exception assertion. All three stopped focused Core archives have local
+CRC/member/hash verification.
+
+On `9f8ae56f`, five complete Claude lifecycle cycles and five cycles each of
+Claude/Codex human controls, active/fresh restart, Codex lifecycle and Codex
+busy/idle peer messaging pass. Five stdio interruption cycles also pass. The
+real-service desktop/phone UI gate passes five pause/resume cycles, cancellation
+and restart confirmation/dismissal, descendant settlement, linked restart and
+viewport checks. All seven captured UI views were visually inspected. A later
+review found a real defect in the settled restart view: the task registry retains
+the original assignment, but the transcript omits its task field and displays
+returned text under Assignment. The original functional result and visual review
+are preserved; assignment-display acceptance is failed. Public network fields
+and the actual captured pixels are retained in
+`remaining18-ui-assignment-defect.json`. A production projection correction and
+affected live requalification remain required.
+
+Five long Shell success, five long Shell failure and five long Subagent
+completion cycles pass on `9f8ae56f`. Accepted work continues after the model
+ends, the actual result automatically wakes it, and a later turn receives no
+duplicate result. All five success/failure Shell replies report the stored exit
+status (0/7 respectively) and the exact random output nonce. Public model text
+and backend receipts are retained separately from private SDK context.
+
+The current Codex mixed-task attempt failed before its waits: the child accepted
+its first Shell operation, then ended saying it would continue in a subsequent
+turn. It did not submit the second requested operation. Its recorded model
+requests contain the shared finish-independent-actions guidance and task controls.
+A mission clarification explicitly distinguishes same-turn model iterations from
+subsequent conversation turns. It preserves all 58 assertions, workloads,
+deadlines and repetitions, and is prepared but unexecuted. This failure is
+retained; it does not demonstrate a lost accepted operation. Independent Shell,
+Subagent gates continued on the frozen source. The following recovery setup
+was interrupted by an actual host `ENOSPC` write failure before it could produce
+an acceptance verdict. It is resource-interrupted and unverified, rather than a
+demonstrated model wait or recovery failure. Its exact API/Core owners are settled.
+Eight stopped, owned prior Core stores were archived with CRC/all-member SHA
+proof before their exact allocations were retired. Logs/configurations and
+incomplete zero-byte metadata remain preserved; the latter's allocation was not
+retired without its original owner receipt. No volume free-byte claim is made.
+Continuation 18 has 514 locally verified public ZIP members/513 exported files
+and 13 locally verified stopped-Core recovery archives. Two zero-byte checkpoint
+files remain privately retained and are explicitly listed as incomplete exports.
+
+The assignment projection correction carries the registry's original assignment
+through live task events, started/terminal handoffs and snapshot links. Workflow
+and tool spawns share that projection; legacy missing descriptions are explicit.
+It does not replay work or change execution ownership. Seven of eight original
+regression checks failed against the old source; the legacy question case already
+passed. After correction, nine new checks and five existing contracts pass
+individually/sequentially through the real owned Core runtime, zero exclusions.
+Scoped Ruff/format/Pyright and all eight unchanged repository guards pass.
+Five fresh actual-service UI cycles with Assignment/Result wire, DOM and screenshot
+checks, plus affected model lifecycle and the remaining matrix, are prepared.
+They have not executed on this corrected source yet; older passes retain their
+original commit identities.
+
+Exact-source CI on `e4b14af5` and `27e82e3b` passed all 19 jobs. The latter reports
+12,519 passed and 66 excluded tests per interpreter, plus 153 passed and one
+excluded flake case. CI on `9f8ae56f` finished with 18 successful jobs and one
+failed Python 3.14 shard (`38139241350`). Its expiry test looked up a real timer
+after that timer could already remove its registry entry. A test-only correction
+retains the actual timer at construction, preserves the one-second deadline and
+every terminal assertion, and adds timer/registry settlement assertions. Scoped
+checks pass. The unchanged real callback deterministically reproduces the
+original `KeyError`; the corrected case passes with both forced late lookup and
+normal expiry. The no-deadline and dismissed-pick contracts also pass, all four
+individually/sequentially on real Core with zero exclusions. None of these test
+results replaces the live matrix.
+
+In the preceding continuation, the
+Codex recovery setup failed because the parent waited before interruption, and
+the idle Indexing setup failed because the model omitted its required independent
+checklist action. Neither attempt demonstrates recovery or idle delivery.
+The next setup explicitly separates the parent coordinator from the child's
+assignment, and uses the existing second-message mode to request independent
+work while the accepted storage task remains running. Original failures and
+unchanged acceptance assertions are retained.
+
+Public evidence for continuation 13 has 274 verified ZIP members and 273
+manifest-matched exported files; its 19 stopped private Core allocations have
+verified recovery archives. Private originals remain on the isolated host.
+Continuation 16 has 32 locally verified ZIP members and one verified stopped
+Core archive. Continuation 17 has 177 locally verified public ZIP members and
+four verified stopped Core archives. Further results are recorded in
+`mcp-agent-tasks/remaining-continue22-18` and `qualification-ledger-current.md`.
+Full qualification remains incomplete.
+
+### Earlier source and transfer qualification
+
 The `4ade8463` runtime has five additional complete Codex lifecycle cycles,
 busy/idle peer messaging, active/fresh restart checks and a separate real service
 interruption/recovery pass. Actual-service desktop and phone UI checks passed,

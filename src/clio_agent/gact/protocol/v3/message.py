@@ -238,7 +238,7 @@ def part_to_v3_block(part: Mapping[str, Any]) -> dict[str, Any]:
     if part_type == "expert_handoff":
         metadata = _mapping(part.get("metadata"))
         stage = str(part.get("stage") or metadata.get("stage") or "")
-        task = str(metadata.get("question") or "")
+        task = str(metadata.get("description") or metadata.get("question") or "")
         return {
             "id": part_id,
             "type": "subagent",
@@ -562,8 +562,14 @@ def _project_subagent(
         or part.get("text")
         or ""
     )
-    task = str(metadata.get("question") or link.get("task") or "")
     previous = context.subagents.get(subagent_id, {})
+    task = str(
+        link.get("task")
+        or metadata.get("description")
+        or previous.get("task")
+        or metadata.get("question")
+        or ("Description unavailable for this older task" if link else "")
+    )
     context.subagents[subagent_id] = {
         **previous,
         "id": subagent_id,
@@ -708,7 +714,7 @@ def transcript_entities(
         child_session_id = str(link.get("child_session_id") or "")
         agent_id = str(link.get("agent_id") or "")
         summary = str(link.get("summary") or link.get("result") or "")
-        task = str(link.get("task") or "")
+        task = str(link.get("task") or "Description unavailable for this older task")
         result = str(link.get("result") or "")
         created_at = str(link.get("created_at") or utcnow_iso())
         subagents[subagent_id] = {

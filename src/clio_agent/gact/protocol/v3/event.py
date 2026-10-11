@@ -365,6 +365,7 @@ def _subagent_upsert(event: Event, payload: dict[str, Any], session: Any) -> _Pr
         ),
         "title": title,
         "state": _LIVE_WORK_STATE.get(raw_state, "interrupted"),
+        "task": str(payload.get("description") or "Description unavailable for this older task"),
         "agent_id": expert_id,
         "task_path": _task_path(payload),
         **(

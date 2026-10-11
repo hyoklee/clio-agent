@@ -246,7 +246,7 @@ def _emit_delegation_terminal(app: Any, session_id: str, agent_def: "AgentDef", 
         blueprint=_blueprint_block(agent_def, child_id),
         payload=dict(payload),
     )
-    _append_live_assistant_part(app, session_id, _return_handoff_part(agent_def, task, payload))
+    _append_live_assistant_part(app, session_id, _return_handoff_part(agent_def, reported, payload))
     emit_commission_artifact_returned(
         app,
         session_id,
@@ -291,23 +291,17 @@ def emit_workflow_step_start(
     path emits — otherwise the step's child would render nothing in the parent
     transcript."""
 
-    _emit_semantic_event(
+    _emit_spawn_started(
         app,
         session_id,
-        "blueprint.delegation.started",
-        turn_id=_active_semantic_turn_id(),
-        trace_id=_active_semantic_trace_id(),
-        status="running",
-        summary=f"{agent_def.id} spawned {child_id} (workflow)",
-        actor={"agent_id": agent_def.id, "role": "parent_expert"},
-        subject={"agent_id": child_id, "role": "child_expert"},
-        blueprint=_blueprint_block(agent_def, child_id),
-        payload={"run_index": spawned.run_index, "workflow_step": True},
-    )
-    _append_live_assistant_part(
-        app,
-        session_id,
-        _started_handoff_part(agent_def, child_id, task_text, spawned.depth, spawned),
+        agent_def,
+        child_id,
+        task_text,
+        spawned.depth,
+        spawned,
+        emit_semantic_event=_emit_semantic_event,
+        append_live_part=_append_live_assistant_part,
+        workflow_step=True,
     )
 
 

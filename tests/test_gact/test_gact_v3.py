@@ -669,6 +669,7 @@ def test_v3_projects_authoritative_child_relation_without_handoff_part(tmp_path:
             "agent_id": "geospatial",
             "title": "Resolve Seattle",
             "state": "completed",
+            "task": "Description unavailable for this older task",
             "summary": "Seattle resolved to an authoritative region.",
             "result": "Seattle resolved to an authoritative region.",
         }

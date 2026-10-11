@@ -17,7 +17,7 @@ from clio_agent.gact.tool_observer import _append_live_assistant_part, _handoff_
 from clio_agent.gact.types import Part
 
 if TYPE_CHECKING:
-    from clio_agent.gact.agents.types import AgentDef
+    from clio_agent.gact.types import AgentDef
 
 
 def _started_handoff_part(
@@ -28,6 +28,7 @@ def _started_handoff_part(
     spawned: Any,
     *,
     input_task_ids: list[str] | None = None,
+    description: str = "",
 ) -> Part:
     """Build the running child handoff appended at its causal launch position.
 
@@ -48,6 +49,8 @@ def _started_handoff_part(
         "depth": depth,
         "run_index": spawned.run_index,
     }
+    if description:
+        started_row["description"] = description
     if input_task_ids:
         started_row["input_task_ids"] = list(input_task_ids)
     started_row.update(spawn_group_fields(spawned))
@@ -82,6 +85,7 @@ def emit_spawn_started(
     emit_semantic_event: Callable[..., Any] = _emit_semantic_event,
     append_live_part: Callable[..., Any] = _append_live_assistant_part,
     input_task_ids: list[str] | None = None,
+    workflow_step: bool = False,
 ) -> None:
     """Publish one canonical started handoff for any real child-task spawn."""
     emit_semantic_event(
@@ -91,7 +95,7 @@ def emit_spawn_started(
         turn_id=_active_semantic_turn_id(),
         trace_id=_active_semantic_trace_id(),
         status="running",
-        summary=f"{agent_def.id} spawned {child_id}",
+        summary=f"{agent_def.id} spawned {child_id}" + (" (workflow)" if workflow_step else ""),
         actor={"agent_id": agent_def.id, "role": "parent_expert"},
         subject={"agent_id": child_id, "role": "child_expert"},
         blueprint={
@@ -99,12 +103,23 @@ def emit_spawn_started(
             "parent_expert": agent_def.id,
             "child_expert": child_id,
         },
-        payload={"run_index": spawned.run_index},
+        payload={
+            "run_index": spawned.run_index,
+            **({"workflow_step": True} if workflow_step else {}),
+        },
     )
+    registry = getattr(app.state, "agent_task_registry", None)
+    record = registry.get(spawned.task_id) if registry is not None else None
     append_live_part(
         app,
         session_id,
         _started_handoff_part(
-            agent_def, child_id, task_text, depth, spawned, input_task_ids=input_task_ids
+            agent_def,
+            child_id,
+            task_text,
+            depth,
+            spawned,
+            input_task_ids=input_task_ids,
+            description=record.description if record is not None else "",
         ),
     )
