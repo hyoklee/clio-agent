@@ -327,6 +327,18 @@ def main() -> int:
         "Never delegate peer discovery or messaging; use your own native memory and message tools.\n",
         encoding="utf8",
     )
+    if args.provider == "claude_code":
+        # These missions exercise lifecycle behavior through the text-tool bridge.
+        # Explicitly request its real call syntax; never reinterpret bare JSON as work.
+        for expert in (main_expert, pack / "experts/worker.md"):
+            with expert.open("a", encoding="utf8") as prompt:
+                prompt.write(
+                    "\nThis Claude SDK route invokes CLIO tools only through the complete "
+                    "fenced tool_calls protocol in the system instructions. For every requested "
+                    "action, output an opening ```tool_calls fence, the JSON call list, and "
+                    "the closing ``` fence. A bare JSON list, XML tags or formatting alone "
+                    "submits no operation. Verify both fences before ending an action response.\n"
+                )
     model = args.model or ("gpt-6-luna" if args.provider == "codex" else "haiku")
     if args.provider == "codex":
         auth = frozen_codex_auth(proof / "private-codex")
