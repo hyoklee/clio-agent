@@ -75,6 +75,20 @@ def test_incremental_index_and_exclusions(tmp_path: Path, vault: Path) -> None:
         adapter.apply("a.md", None, None)
 
 
+def test_extensionless_note_links_do_not_conflict_with_attachment_stems() -> None:
+    """An extensionless wikilink names Markdown; attachments need their extension."""
+    source, links, _ = parse_note("Index.md", "[[Recipe]] [[Recipe.png]] [[Only image]]", "1")
+    recipe, _, _ = parse_note("Notes/Recipe.md", "# Recipe", "2")
+    image = recipe.model_copy(update={"path": "Photos/Recipe.png", "kind": "attachment"})
+    orphan = image.model_copy(update={"path": "Photos/Only image.png"})
+    resolved = resolve_links([source, recipe, image, orphan], links)
+    assert [(link.target, link.status) for link in resolved] == [
+        ("Notes/Recipe.md", "resolved"),
+        ("Photos/Recipe.png", "resolved"),
+        ("Only image", "unresolved"),
+    ]
+
+
 def test_vault_root_links_do_not_fall_back_to_an_unrelated_in_scope_note() -> None:
     """An escaping vault-root path stays unresolved even if its basename exists locally."""
     plan, authored, _ = parse_note("Plan.md", "[[Research/Methods#Section]] [[Research/../a]]", "1")
@@ -84,6 +98,46 @@ def test_vault_root_links_do_not_fall_back_to_an_unrelated_in_scope_note() -> No
     assert links[0].target == "Methods.md" and links[0].selector == "Section"
     assert links[0].status == "resolved"
     assert links[1].target == "Research/../a" and links[1].status == "unresolved"
+
+
+def test_graph_keeps_cross_page_links_without_sending_note_contents(
+    tmp_path: Path, vault: Path
+) -> None:
+    """Global topology includes every note beyond the ordinary 200-item page."""
+    for index in range(601):
+        (vault / f"z{index:04d}.md").write_text(
+            f"# Entry {index}\nPrivate note text\n", encoding="utf-8"
+        )
+    (vault / "a.md").write_text(
+        "---\naliases: [Alpha]\n---\n# A\n[[z0600]] [[z0600#Entry]] [[b]]", encoding="utf-8"
+    )
+    storage = StorageService(tmp_path / "private", tmp_path / "auth" / "credentials.json")
+    record = storage.create(
+        "w", CreateSource(provider="obsidian", root=str(vault), label="Research")
+    )
+    index = KnowledgeIndex(storage.store.root)
+    page = index.snapshot(record)
+    assert len(page.notes) == 200 and page.truncated
+    assert not any(link.target == "z0600.md" for link in page.links)
+    graph = index.graph(record)
+    assert graph.total == 603 and len(graph.notes) == 603 and not graph.truncated
+    assert {(link.source, link.target) for link in graph.links} >= {
+        ("a.md", "z0600.md"),
+        ("b.md", "a.md"),
+    }
+    assert sum(link.target == "z0600.md" for link in graph.links) == 1
+    assert all(not note.excerpt and not note.headings and not note.blocks for note in graph.notes)
+    assert not any(note.path == "figure.png" for note in graph.notes)
+    assert any(note.path == "figure.png" for note in index.graph(record, attachments=True).notes)
+    assert {note.path for note in index.graph(record, focus="a.md").notes} == {
+        "a.md",
+        "b.md",
+        "z0600.md",
+    }
+    assert index.graph(record, query="Private note text").total == 601
+    record.connected = False
+    with pytest.raises(PermissionError):
+        index.graph(record)
 
 
 def test_subfolder_source_confines_index_reader_links_and_edits(
@@ -173,6 +227,12 @@ def test_live_http_read_only_custody_gating_and_revocation(
             "knowledge_related",
         }
         graph = client.get(prefix + "/knowledge")
+        overview = client.get(prefix + "/knowledge/graph")
+        assert overview.status_code == 200
+        assert {note["path"] for note in overview.json()["notes"]} == {"a.md", "b.md"}
+        assert (
+            client.get(prefix.replace("/w/", "/elsewhere/") + "/knowledge/graph").status_code == 404
+        )
         assert graph.status_code == 200, graph.text
         note = next(row for row in graph.json()["notes"] if row["path"] == "a.md")
         opened = client.post(

@@ -9,7 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from clio_schemas.knowledge import KnowledgeLink, KnowledgeNote, KnowledgeSnapshot
+from clio_schemas.knowledge import (
+    KnowledgeGraphSnapshot,
+    KnowledgeLink,
+    KnowledgeNote,
+    KnowledgeSnapshot,
+)
 
 from clio_agent.gact.storage.models import FileEntry, LinkedEdits, SourceRecord
 from clio_agent.gact.storage.obsidian import ObsidianSource, vault_path
@@ -39,6 +44,69 @@ class KnowledgeIndex:
         """Refresh changed notes and return a bounded query or link neighborhood."""
         if offset < 0 or not 1 <= limit <= 500:
             raise ValueError("Knowledge pages require offset >= 0 and limit 1..500")
+        selected, links, warnings, revision = self._selection(record, query=query, focus=focus)
+        page = selected[offset : offset + limit]
+        paths = {row.path for row in page}
+        page_links = [
+            link
+            for link in links
+            if link.source in paths
+            and (link.status != "resolved" or link.target in paths)
+            and (
+                (link.source == focus or link.target == focus)
+                if focus
+                else link.status != "external"
+            )
+        ]
+        return KnowledgeSnapshot(
+            source_id=record.source.id,
+            revision=revision,
+            notes=page,
+            links=page_links[:2000],
+            total=len(selected),
+            offset=offset,
+            next_offset=offset + limit if offset + limit < len(selected) else None,
+            truncated=len(page) < len(selected),
+            relationships_truncated=len(page_links) > 2000,
+            warnings=warnings,
+        )
+
+    def graph(
+        self, record: SourceRecord, *, query: str = "", focus: str = "", attachments: bool = False
+    ) -> KnowledgeGraphSnapshot:
+        """Return bounded source topology including connections across file pages."""
+        selected, links, warnings, revision = self._selection(record, query=query, focus=focus)
+        selected = [note for note in selected if attachments or note.kind == "note"]
+        notes = [
+            note.model_copy(update={"excerpt": "", "headings": [], "blocks": [], "aliases": []})
+            for note in selected[:5000]
+        ]
+        paths = {note.path for note in notes}
+        unique: dict[tuple[str, str], KnowledgeLink] = {}
+        for link in links:
+            if (
+                link.status == "resolved"
+                and link.source in paths
+                and link.target in paths
+                and link.source != link.target
+                and (not focus or focus in (link.source, link.target))
+            ):
+                unique.setdefault((link.source, link.target), link)
+        return KnowledgeGraphSnapshot(
+            source_id=record.source.id,
+            revision=revision,
+            notes=notes,
+            links=list(unique.values())[:20000],
+            total=len(selected),
+            truncated=len(notes) < len(selected),
+            relationships_truncated=len(unique) > 20000,
+            warnings=warnings,
+        )
+
+    def _selection(
+        self, record: SourceRecord, *, query: str, focus: str
+    ) -> tuple[list[KnowledgeNote], list[KnowledgeLink], list[str], str]:
+        """Use the same policy, index and search semantics for pages and topology."""
         if record.source.source_kind != "knowledge" or not record.connected:
             raise PermissionError("Connect a knowledge source before using knowledge operations")
         with self._lock:
@@ -67,31 +135,7 @@ class KnowledgeIndex:
                     for term in terms
                 )
             ]
-        page = selected[offset : offset + limit]
-        paths = {row.path for row in page}
-        page_links = [
-            link
-            for link in links
-            if link.source in paths
-            and (link.status != "resolved" or link.target in paths)
-            and (
-                (link.source == focus or link.target == focus)
-                if focus
-                else link.status != "external"
-            )
-        ]
-        return KnowledgeSnapshot(
-            source_id=record.source.id,
-            revision=revision,
-            notes=page,
-            links=page_links[:2000],
-            total=len(selected),
-            offset=offset,
-            next_offset=offset + limit if offset + limit < len(selected) else None,
-            truncated=len(page) < len(selected),
-            relationships_truncated=len(page_links) > 2000,
-            warnings=warnings,
-        )
+        return selected, links, warnings, revision
 
     def note(self, record: SourceRecord, path: str) -> tuple[KnowledgeNote, str, dict[str, Any]]:
         """Read a current note under the same vault boundary and content limit."""

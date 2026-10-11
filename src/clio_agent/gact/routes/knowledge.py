@@ -60,6 +60,17 @@ def register_knowledge_routes(app: FastAPI) -> None:
         """Read selected note content with a revision-bound workspace resource."""
         return await run(lambda: service.open(wid, source_id, body.path, body.revision))
 
+    @app.get("/v1/workspaces/{wid}/sources/{source_id}/knowledge/graph")
+    async def graph(
+        wid: str, source_id: str, query: str = "", focus: str = "", attachments: bool = False
+    ) -> dict[str, Any]:
+        """Return whole-source note topology independently of file pagination."""
+        return await run(
+            lambda: service.index.graph(
+                service.record(wid, source_id), query=query, focus=focus, attachments=attachments
+            ).model_dump(mode="json")
+        )
+
     @app.get("/v1/workspaces/{wid}/sources/{source_id}/knowledge/sync")
     async def sync_status(wid: str, source_id: str) -> dict[str, Any]:
         """Report sync separately from indexing and note access."""

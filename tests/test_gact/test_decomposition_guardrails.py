@@ -191,7 +191,7 @@ from clio_agent.gact.app import build_app
 # 369 -> 372: response feedback GET, PUT and DELETE for an assistant message.
 # 372 -> 376: source-scoped knowledge snapshot/open and Sync status/action routes,
 # owned by routes/knowledge.py and registered from routes/connected_storage.py.
-EXPECTED_ROUTE_METHOD_PAIRS = 376
+EXPECTED_ROUTE_METHOD_PAIRS = 377  # Source-wide knowledge graph overview GET.
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
