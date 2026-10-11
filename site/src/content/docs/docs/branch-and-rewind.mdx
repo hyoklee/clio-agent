@@ -11,6 +11,10 @@ import branchControl from "../../../assets/captures/docs-conversation-branch-con
 import branchResult from "../../../assets/captures/docs-conversation-branch-result.png";
 import rewindConfirm from "../../../assets/captures/docs-conversation-rewind-confirm.png";
 import rewindResult from "../../../assets/captures/docs-conversation-rewind-result.png";
+import forkCheckpoint from "../../../assets/captures/docs-fork-checkpoint.png";
+import familyGantt from "../../../assets/captures/docs-conversation-family-gantt.png";
+import relationships from "../../../assets/captures/docs-conversation-relationships.png";
+import outputLineage from "../../../assets/captures/docs-conversation-output-lineage.png";
 
 **Branch** when you want to compare approaches and keep both conversations.
 **Rewind** when you want to remove later messages from the current conversation
@@ -70,6 +74,76 @@ session title and choose **Branch into a new session**.
   alt="Session header menu with Branch into a new session"
   caption="The header action copies the entire current conversation; the action beneath a message copies only through that point."
   sizes="(min-width: 50rem) 46rem, 100vw" />
+
+## See where the branch begins
+
+**The old conversation stays visible in the child.** A **Branched here** marker
+appears after the last copied message. Above it is the copied history; below it
+is this branch's independent continuation. Select the source title on the marker
+to return to the parent conversation at that message.
+
+<Capture client:visible image={await captureImage(forkCheckpoint)}
+  alt="Copied offset calculation followed by a Branched here marker linked to Offset comparison, then Offset sensitivity's independent request and mean of 17"
+  caption="The branch checkpoint separates copied history from new work. It survives reload and a later rewind of the parent."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+The marker records the source at the time of branching. If the parent later
+rewinds past that message, the child keeps its copied history and marker; the
+source link still opens the parent, whose transcript may no longer contain that
+message. Older branches without a saved checkpoint do not get a guessed marker.
+
+## Find and compare related conversations
+
+Open **Evidence layout → Open full details → Gantt**. The **Relationships ⇄**
+button swaps between recorded timing and the conversation graph. It stays in
+the chart header, beside the selected conversation's inspector. Your selection
+stays with you when you switch views or resize the window.
+
+<Capture client:visible image={await captureImage(relationships)}
+  alt="Relationships view with Calibration baseline branching into Offset comparison and Flagged reading comparison, and Offset comparison branching again into Offset sensitivity"
+  caption="Select a node to preview its actual history and continuation. Solid links identify user forks; dashed links identify parent-owned subagents."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+**A user branch is another conversation you control.** A delegated agent is
+work owned by its parent agent. Its distinct label and dashed relationship show
+that ownership; displaying it here does not allow users to branch that agent.
+The inspector shows a short extract from the actual transcript: copied history,
+the saved fork point, and the latest continuation. **Full conversation history**
+or **Open conversation** takes you to the complete conversation and its composer.
+**Open subagent** opens the parent-owned work with its existing controls.
+
+<Capture client:visible image={await captureImage(familyGantt)}
+  alt="Conversation family Gantt with five named conversations and subagents, role-labelled links, recorded response bars, and an aligned transcript inspector"
+  caption="Linked titles distinguish conversations, user forks and subagents. Solid fork links and dashed delegation links attach to recorded activity; short bars keep their full timing in the tooltip."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+Select a Gantt **title** to open that conversation directly. Select a **bar** to
+inspect its conversation without leaving the chart. Use **Fit** after zooming.
+**Execution details** shows the current conversation's latest execution and
+individual tools; **Family** returns to this comparison.
+Conversation lifetime is not drawn as continuous work. Missing or partial timing
+records are labelled, and an older branch without a saved origin has no invented
+creation diamond. An empty new branch has a start milestone until it records a
+response.
+
+### Follow a branch's output into artifact lineage
+
+In either family view, select a conversation, then choose a file under **Outputs**.
+Open its **Lineage** tab to see recorded inputs and producing actions. The inspector
+loads only the selected conversation's outputs; copied input files are not listed
+as newly produced outputs.
+
+<Capture client:visible image={await captureImage(outputLineage)}
+  alt="The offset branch's artifact Lineage tab connects calibration-baseline.md through its producing action to calibration-offset.md"
+  caption="Conversation relationships explain which discussion explored an alternative. Artifact lineage explains the declared inputs and versions behind its output."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+These four captures were taken on **11 October 2026** from a running development
+service with real Codex/Luna responses and fictional calibration data. The family
+views include an additional real delegated check from a separate validation run;
+the checkpoint and output-lineage captures retain the earlier calculation run. The nested
+branch changes the offset to +5 (mean **17**); the sibling excludes the flagged
+reading (mean **11**). No private research sessions were used.
 
 ## Rewind and continue from an earlier point
 

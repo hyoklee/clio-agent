@@ -40,13 +40,30 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=17961)
     parser.add_argument("--ui-port", type=int, default=5187)
     parser.add_argument("--hold-seconds", type=int, default=3600)
+    parser.add_argument(
+        "--resume", action="store_true", help="Reuse a stopped run's state and storage"
+    )
     args = parser.parse_args()
     out = args.out.resolve()
     out.mkdir(parents=True, exist_ok=True)
-    if (out / "server.json").exists():
+    if (out / "server.json").exists() and not args.resume:
         raise RuntimeError("Use a new evidence directory; an existing run must not be overwritten")
+    if args.resume:
+        import socket
+
+        stopped = out / "service-stopped.json"
+        if not stopped.exists() or not json.loads(stopped.read_text())["stopped"]:
+            raise RuntimeError("Only a stopped acceptance run can be resumed")
+        with socket.socket() as probe:
+            if probe.connect_ex(("127.0.0.1", args.port)) == 0:
+                raise RuntimeError("The requested service port is already in use")
+        stamp = time.time_ns()
+        for name in ("server.json", "service-stopped.json", "stop.request"):
+            previous = out / name
+            if previous.exists():
+                previous.rename(out / f"{name}.before-resume-{stamp}")
     workspace = out / "workspace"
-    workspace.mkdir()
+    workspace.mkdir(exist_ok=args.resume)
     env = dict(os.environ)
     for key in tuple(env):
         if key == "CLIO_AGENT_HOME" or key.startswith("CLIO_AGENT_") and key.endswith("_DIR"):
@@ -64,7 +81,9 @@ def main() -> int:
     )
     isolation = isolate_cte_env(out / "private-core", env)
     identity = source_identity(ROOT)
-    write_json(out / "source.json", identity)
+    write_json(
+        out / (f"source-resume-{time.time_ns()}.json" if args.resume else "source.json"), identity
+    )
     process: subprocess.Popen[bytes] | None = None
     restart_count = 0
     deadline = time.monotonic() + args.hold_seconds
