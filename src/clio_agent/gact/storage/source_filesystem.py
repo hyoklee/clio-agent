@@ -175,6 +175,12 @@ class SourceFileSystem(AbstractFileSystem):
         lock_root.mkdir(exist_ok=True)
         with FileLock(lock_root / (self.source_id + ".lock"), timeout=30):
             record = self._record(write=True)
+            if record.source.provider == "obsidian":
+                from clio_agent.gact.storage.obsidian import vault_path
+
+                vault_path(path, record.configuration.obsidian_excluded_folders)
+                if not path.lower().endswith(".md"):
+                    raise PermissionError("Knowledge edits support Markdown notes only")
             self.service.require_idle(record)
             manifest = store.get("manifest", self.revision, Manifest)
             previous = next((row for row in manifest.entries if row.path == path), None)
