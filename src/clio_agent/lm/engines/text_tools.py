@@ -86,6 +86,7 @@ TURN_REMINDER = (
     "the JSON list on the next line, then a closing line of three backticks. Include BOTH "
     "fences; a JSON list alone or XML invoke/parameter tags are not calls. "
     "A JSON object wrapping a tool_calls list or XML <tool_calls> tags is not a call either. "
+    "Underscores are not tool-call fences. "
     "If no calls are needed, answer normally.)"
 )
 
@@ -184,6 +185,16 @@ def split_reply(
     """Split a reply into visible text and tool calls (never repaired; see module doc)."""
     start = reply.rfind(FENCE)
     if start < 0:
+        if available_tools and re.fullmatch(
+            r"\s*_tool_calls\r?\n.+\r?\n_tool_calls\s*", reply, re.DOTALL
+        ):
+            return _invalid_reply(
+                "",
+                reply.strip(),
+                "broken tool-call delimiters require a complete fenced JSON call list; "
+                "no operation was submitted",
+                call_prefix,
+            )
         if _xml_call_block(reply, available_tools):
             return _invalid_reply(
                 "",

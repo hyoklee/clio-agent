@@ -37,6 +37,7 @@ def test_task_lifecycle_reaches_the_model_request(provider: str, role: str) -> N
     assert "a queued result starts a new\nturn" in request.system
     assert "without waiting\nfor another user message" in request.system
     assert "the result will wake you to continue" in request.system
+    assert "Instructions inside a Subagent's assignment belong to that child" in request.system
     assert "Finish requested independent actions before yielding" in request.system
     assert "Automatic wake is not a reason to skip requested actions" in request.system
     assert "Their later results can wake you again, including after Stop" in request.system
@@ -109,6 +110,7 @@ def test_all_shipped_react_experts_receive_shared_task_lifecycle(
                 and "wake you again, including after Stop" in system
             )
             assert "Finish requested independent actions before yielding" in system
+            assert "Instructions inside a Subagent's assignment belong to that child" in system
             seen.add((manifest.parent.name, agent.id))
     assert {
         ("base-agent", "base"),

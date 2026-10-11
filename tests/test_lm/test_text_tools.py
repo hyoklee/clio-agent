@@ -122,6 +122,40 @@ def test_corrupted_tool_fence_is_a_protocol_error_without_submitting_work() -> N
     assert not split.text
 
 
+def test_corrupted_delimiters_around_prose_are_a_bounded_error_not_a_call() -> None:
+    """A live Haiku reply put a promise, rather than calls, inside broken delimiters."""
+    raw = (
+        "_tool_calls\nI'll spawn the worker once with the assignment as specified. "
+        "The sentinel read happens in a separate step after the handle comes back.\n\n_tool_calls"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"spawn_agent_task"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "delimiters" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ("_tool_calls\nI'll spawn the worker.\n_tool_calls", set()),
+        ("_tool_calls\nI'll spawn the worker.", {"spawn_agent_task"}),
+        ("I'll spawn the worker.\n_tool_calls", {"spawn_agent_task"}),
+        ("Example:\n_tool_calls\nI'll spawn the worker.\n_tool_calls", {"spawn_agent_task"}),
+        ("```text\n_tool_calls\nI'll spawn the worker.\n_tool_calls\n```", {"spawn_agent_task"}),
+        ("_tool_calls\nI'll spawn the worker.\n_tool_calls\nMore text.", {"spawn_agent_task"}),
+        ("_tool_calls is not a valid tool fence.", {"spawn_agent_task"}),
+    ],
+)
+def test_corrupted_delimiter_examples_and_partial_shapes_remain_answers(
+    raw: str, tools: set[str]
+) -> None:
+    """Only a complete unquoted broken wrapper is treated as malformed protocol."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 @pytest.mark.parametrize(
     ("raw", "tools"),
     [

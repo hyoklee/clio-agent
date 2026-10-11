@@ -71,6 +71,37 @@ refresh-disabled snapshot, with original host credential bytes unchanged.
 Neither focused parser checks nor the earlier four cycles establish five-cycle
 live recovery on the corrected source.
 
+### Role boundaries and the next observed malformed reply
+
+On `51202204`, actual Claude HTTP reconnect passed. One complete terminal-message
+cycle and the completed-recipient portion of the second passed, but the second
+parent then took its child's instruction to wait as its own instruction. Its
+public response and actual unbounded `wait_tasks` invocation confirm that
+behavior; the unchanged parent-settlement gate failed. Shared task guidance now
+explicitly distinguishes the parent's instructions from the child's assignment.
+The old compiled prompt failed the new regression. Ten actual request-building
+contracts then passed individually, covering root/child providers, editable
+overrides and every shipped ReAct agent pack.
+
+Two complete mixed-task cycles passed on the same source. In the third, the
+actual Haiku SDK response contained a promise to spawn between two `_tool_calls`
+markers, with no executable call. No operation was accepted and the unchanged
+worker-start gate failed. The model's reason for generating that text is unknown.
+The parser correction treats only that entire unquoted broken wrapper as a
+protocol error, using the existing bounded correction path. It neither invents
+arguments nor executes prose. Quoted examples, partial markers and ordinary
+answers remain answers. This is format validation, with no elapsed-time or
+general repetition threshold. The precise reproduction failed on the old parser.
+Twenty-five affected parser contracts then passed individually and sequentially,
+with zero skips. Scoped Ruff/format/Pyright and all eight existing guards passed;
+all tested source bytes match. A new frozen live matrix is being prepared. The
+earlier failed model attempts remain failures.
+
+The `51202204` CI run completed all 19 jobs successfully, with 12,507 passed and
+66 excluded tests per interpreter. Its 153-pass/one-exclusion flake check is also
+retained. Exclusions remain exclusions. Those results do not qualify the later
+role-guidance and parser changes or replace the failed model gates.
+
 ## Behavior under review
 
 | Use case | Implemented behavior | Acceptance evidence and limits |
