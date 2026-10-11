@@ -7,6 +7,28 @@ run does not become a live pass for a later commit.
 
 ## Continued qualification on October 11
 
+### Fresh-context replay found by actual Codex execution
+
+On frozen `abe59c8ea2c73861e7c7eb236591202aa29eee22`, five Codex human-control
+cycles passed. Its next active/fresh gate passed the active restart, including
+physical cancellation settlement and retained successor completion, then failed
+the first fresh-context cycle. The fresh successor received the full predecessor
+custody and cancelled Shell outcome but submitted the original command again and
+waited on the new handle. The unchanged 150-second settlement check failed.
+This failure is retained in `codex-fresh38-public-diagnosis.json` and the ended
+public snapshot `remaining-continue22-24-final25-public.zip` (276 members, CRC and
+all 275 exported-file hashes verified). Owners and Core/cache custody settled.
+
+The candidate briefing now quotes/labels the original assignment as historical
+and reiterates afterward that fresh resets copied transcript only. Newly
+delivered messages remain separate. Custody, recipient permissions, immutable
+outcomes and admission controls are unchanged. The trace establishes the replay,
+not its internal cause; the original imperative assignment's framing was a
+plausible ambiguity. No global command-deduplication or timeout heuristic was
+added. Focused prompt/custody contracts support this change; actual-model replay,
+lifecycle and peer-message gates must be repeated on the corrected source.
+Earlier-source model passes and CI are not promoted to the correction.
+
 ### Restart custody and expiry publication correction
 
 On `b5efc8b8`, Claude's active/fresh family passed two complete cycles, then the

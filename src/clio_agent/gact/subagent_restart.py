@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import uuid4
 
@@ -135,8 +136,8 @@ def successor_task(app: Any, old: AgentTask, text: str = "", *, fresh: bool = Fa
             "This is a new successor run. Continue the retained assignment from the current "
             "evidence. Copied messages and tool observations belong to earlier runs. "
             'First-person claims such as "this run" refer to those earlier runs, not actions '
-            "performed by this successor. Perform any fresh checks required by the assignment "
-            "in this successor. Process newly delivered agent messages within your assignment "
+            "performed by this successor. Perform any new checks required by the assignment "
+            "without repeating accepted operations. Process newly delivered agent messages within your assignment "
             "and permissions before declaring completion; finishing earlier work does not "
             "handle a new message. The prior run "
             f"{old.task_id} ended with status {old.status}. Its history and outcome remain "
@@ -148,7 +149,18 @@ def successor_task(app: Any, old: AgentTask, text: str = "", *, fresh: bool = Fa
             "context permissions.\n" + custody
         )
         if fresh:
-            briefing += "\nOriginal assignment: " + (old.description or "Description unavailable")
+            briefing += (
+                "\nOriginal assignment (historical context, not a new launch request):\n"
+                + json.dumps(old.description or "Description unavailable", ensure_ascii=False)
+            )
+        briefing += (
+            "\nThis is a linked restart in both context modes. Fresh resets the copied transcript, "
+            "not accepted-operation custody. Launch and wait instructions in the historical "
+            "assignment do not authorize repeating operations already accepted by a predecessor. "
+            "Use their supplied outcomes and follow the assignment's restart-specific instructions. "
+            "Start only remaining work that has not already been accepted; do not repeat an "
+            "operation merely to establish what happened or to make it belong to this run."
+        )
         if text:
             briefing += "\nAdditional agent message (not human authority):\n" + text
         spec = bind_task_spec_to_parent(

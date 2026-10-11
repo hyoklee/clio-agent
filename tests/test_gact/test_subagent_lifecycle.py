@@ -471,7 +471,8 @@ def test_terminal_restart_is_linked_idempotent_and_keeps_original_parent(
     assert "This is a new successor run" in briefing
     assert "Copied messages and tool observations belong to earlier runs" in briefing
     assert 'First-person claims such as "this run" refer to those earlier runs' in briefing
-    assert "Perform any fresh checks required by the assignment in this successor" in briefing
+    assert "Perform any new checks required by the assignment" in briefing
+    assert "without repeating accepted operations" in briefing
     assert (
         "Process newly delivered agent messages within your assignment and permissions" in briefing
     )
@@ -683,13 +684,16 @@ def test_retained_successor_reads_terminal_result_without_claiming_old_mail(
             new = replace(new, status="completed", live_state="completed")
             persist_agent_task(app, new)
         previous = new
-    monkeypatch.setattr("clio_agent.gact.task_controls._scope", lambda: (app, new.child_session_id))
+    successor = previous
+    monkeypatch.setattr(
+        "clio_agent.gact.task_controls._scope", lambda: (app, successor.child_session_id)
+    )
     result = get_task_result(operation.handle)
     assert result["result"] == operation.result and result["status"] == status
     stored = app.state.mcp_task_store.get(operation.key)
     assert stored.notify_pending and not stored.consumed_at
-    assert query_snapshot(app, new.child_session_id)["tasks"] == []
-    rejected = cancel_selected(app, new.child_session_id, operation.handle)
+    assert query_snapshot(app, successor.child_session_id)["tasks"] == []
+    rejected = cancel_selected(app, successor.child_session_id, operation.handle)
     assert (
         not rejected["results"] and rejected["errors"][0]["error"] == "unknown_or_unauthorized_task"
     )

@@ -58,6 +58,14 @@ The successor uses its explicit historical briefing to avoid replay. That
 briefing grants no historical query, control or live-result access; fresh-context
 result restrictions and existing retained terminal-result authorization remain.
 
+The fresh-context briefing quotes the original assignment as historical data and
+places the current restart instructions afterward. Fresh resets the copied
+transcript, not accepted-operation custody. Historical launch instructions do
+not request another execution of already accepted work. Explicit new messages
+remain separate and retain their sender authority. This guidance addresses an
+actual Codex replay on `abe59c8e`; wording alone is not a deterministic execution
+deduplication mechanism. The affected model lifecycle gates require rechecking.
+
 ## Human intervention and ownership
 
 Human control never silently changes an agent's owned work. Authorized human
