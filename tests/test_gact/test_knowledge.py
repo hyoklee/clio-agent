@@ -217,3 +217,9 @@ def test_generic_writes_cannot_bypass_vault_exclusions(tmp_path: Path, vault: Pa
             with fs.open(path, "wb") as writer:
                 writer.write(b"denied")
     assert (vault / ".obsidian" / "private.json").read_text() == "secret"
+    with fs.open("new.md", "wb") as writer:
+        writer.write(b"# Staged creation\n[[a]]")
+    assert not (vault / "new.md").exists()
+    record = storage.get("w", record.source.id)
+    assert knowledge.index.snapshot(record, query="Staged creation").total == 1
+    assert knowledge.open("w", record.source.id, "new.md")["text"].startswith("# Staged creation")

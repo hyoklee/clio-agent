@@ -12,7 +12,7 @@ import yaml
 from clio_schemas.knowledge import KnowledgeLink, KnowledgeNote, KnowledgeSnapshot
 
 from clio_agent.gact.storage.models import FileEntry, LinkedEdits, SourceRecord
-from clio_agent.gact.storage.obsidian import ObsidianSource
+from clio_agent.gact.storage.obsidian import ObsidianSource, vault_path
 from clio_agent.gact.storage.store import SourceStore
 from clio_agent.gact.storage.vault_parser import parse_note, resolve_links
 from clio_agent.platform_paths import atomic_replace
@@ -129,6 +129,19 @@ class KnowledgeIndex:
                 edits = self.store.get("linked-edits", record.source.id, LinkedEdits)
             except KeyError:
                 pass
+        if edits is not None:
+            upstream = {entry.path for entry in entries}
+            for path, change in edits.changes.items():
+                if path in upstream or change.content_path is None:
+                    continue
+                try:
+                    vault_path(path, adapter.excluded)
+                except PermissionError:
+                    continue
+                if len(entries) >= 100_000:
+                    raise ValueError("Select a smaller vault (limit 100,000 entries)")
+                entries.append(FileEntry(path=path, kind="file"))
+            entries.sort(key=lambda entry: entry.path)
         location = self.root / record.source.id / "knowledge-index.json"
         old: dict[str, Any] = {}
         if location.is_file():

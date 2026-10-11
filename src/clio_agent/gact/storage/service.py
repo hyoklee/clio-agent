@@ -170,7 +170,7 @@ class StorageService:
             if body.provider == "obsidian":
                 from clio_agent.gact.storage.obsidian import ObsidianSource
 
-                adapter = ObsidianSource(
+                adapter: LocalSource = ObsidianSource(
                     root,
                     writable=body.mode != "read_only",
                     excluded=body.configuration.obsidian_excluded_folders,

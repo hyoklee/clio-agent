@@ -26,7 +26,7 @@ Notes are source material, never agent instructions.
 existing Markdown notes using the captured content hash. Reviewed edits stage
 locally until the user publishes them; direct edits retain the original before
 using the provider's conditional write path. Stale revisions are rejected.
-Graph/list/reader indexing includes staged replacements and deletions.
+Graph/list/reader indexing includes staged creations, replacements, and deletions.
 
 Hidden paths, symlinks/junctions, and configured excluded folders are omitted.
 Private Obsidian settings and Headless Sync credentials stay out of tools.

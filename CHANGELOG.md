@@ -16,6 +16,8 @@ TUI/HTTP surface aren't tracked here.
 
 ### Fixed
 
+- Resource derivative storage uses Windows extended paths throughout, so captured
+  resources remain readable under deep workspace and custody paths.
 - Windows protected execution prefers verified native MXC with bundled Codex
   0.162.1, avoiding sandbox account creation, elevation and runtime ACL scans on
   compatible devices. Filesystem exclusions and direct external-network denial

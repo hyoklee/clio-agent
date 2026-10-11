@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import threading
 from pathlib import Path
 from typing import Any
@@ -96,12 +97,15 @@ class ObsidianSync:
             )
             if configured.returncode:
                 raise ValueError("The official client could not configure this vault's sync mode")
+            creationflags = 0
+            if sys.platform == "win32":
+                creationflags = subprocess.CREATE_NO_WINDOW
             self._processes[record.source.id] = subprocess.Popen(
                 [*command, "sync", "--path", record.source.root, "--continuous"],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0,
+                creationflags=creationflags,
             )
             return self.status(record)
 
