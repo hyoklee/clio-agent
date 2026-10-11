@@ -6,13 +6,24 @@ import asyncio
 import faulthandler
 import signal
 import sys
+import threading
+import traceback
 from types import FrameType
 from typing import Any
 
 
 def dump_owner_stacks(signum: int, frame: FrameType | None) -> None:
     """Record thread and coroutine positions without exposing frame-local values."""
-    faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+    frames = sys._current_frames()
+    listeners = 0
+    for owner in threading.enumerate():
+        if owner.name.startswith("clio-net-chokepoint"):
+            listeners += 1
+            continue
+        if owner.ident is not None and (position := frames.get(owner.ident)) is not None:
+            print(f"THREAD OWNER {owner.name}", file=sys.stderr)
+            traceback.print_stack(position, file=sys.stderr)
+    print(f"NETWORK LISTENER THREADS {listeners}", file=sys.stderr)
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -48,8 +59,9 @@ def main() -> None:
     # Keep a separate native handler so failed graceful shutdowns still leave
     # thread positions rather than losing the cause when the owner is reaped.
     native_diagnostic_signal = getattr(signal, "SIGUSR2", None)
-    if native_diagnostic_signal is not None:
-        faulthandler.register(native_diagnostic_signal, file=sys.stderr, all_threads=True)
+    register_native = getattr(faulthandler, "register", None)
+    if native_diagnostic_signal is not None and callable(register_native):
+        register_native(native_diagnostic_signal, file=sys.stderr, all_threads=False)
     uvicorn.run(build_app(), host="127.0.0.1", port=int(sys.argv[1]))
 
 

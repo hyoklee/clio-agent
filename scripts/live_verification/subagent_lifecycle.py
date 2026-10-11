@@ -415,7 +415,7 @@ def main() -> int:
                         diagnostic_signal = getattr(signal, "SIGUSR1", None)
                         if diagnostic_signal is not None:
                             process.send_signal(diagnostic_signal)
-                            time.sleep(0.2)
+                            time.sleep(1.0)
                         common.terminate_server(process)
                         raise AssertionError(
                             "Owned API did not settle graceful interruption"
