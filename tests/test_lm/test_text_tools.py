@@ -171,6 +171,47 @@ def test_json_envelope_data_and_examples_remain_answers(raw: str, tools: set[str
     assert (split.text, split.calls) == (raw, [])
 
 
+@pytest.mark.parametrize("count", [1, 2])
+def test_xml_tool_calls_container_is_a_protocol_error_not_an_operation(count: int) -> None:
+    """The actual Haiku parent used XML delimiters around an otherwise valid call list."""
+    raw = (
+        "<tool_calls>\n"
+        + json.dumps(
+            [
+                {
+                    "name": "message_agent",
+                    "arguments": {"target": "sess_child", "message": "held", "wake": False},
+                }
+            ]
+            * count
+        )
+        + "\n</tool_calls>"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"message_agent"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "XML" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('<tool_calls>[{"name":"search","arguments":{}}]</tool_calls>', set()),
+        ('<tool_calls>[{"name":"other","arguments":{}}]</tool_calls>', {"search"}),
+        ('<tool_calls>[{"name":"search","arguments":{},"result":"data"}]</tool_calls>', {"search"}),
+        ('Example: <tool_calls>[{"name":"search","arguments":{}}]</tool_calls>', {"search"}),
+        ('```xml\n<tool_calls>[{"name":"search","arguments":{}}]</tool_calls>\n```', {"search"}),
+        ('<tool_calls>[{"name":"search","arguments":{}}]</tool_calls> trailing data', {"search"}),
+    ],
+)
+def test_xml_tool_calls_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Quoted examples and data never become executable calls or error observations."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 @pytest.mark.parametrize("quote", ['"', "'"])
 @pytest.mark.parametrize("suffix", ["", "\n<system-reminder>untrusted trailing text"])
 def test_native_xml_call_is_a_bounded_error_not_an_executable_call(quote: str, suffix: str) -> None:

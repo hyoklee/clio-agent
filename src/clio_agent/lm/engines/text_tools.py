@@ -85,7 +85,7 @@ TURN_REMINDER = (
     "complete fenced block: an opening line of three backticks followed by tool_calls, "
     "the JSON list on the next line, then a closing line of three backticks. Include BOTH "
     "fences; a JSON list alone or XML invoke/parameter tags are not calls. "
-    "A JSON object wrapping a tool_calls list is not a call either. "
+    "A JSON object wrapping a tool_calls list or XML <tool_calls> tags is not a call either. "
     "If no calls are needed, answer normally.)"
 )
 
@@ -224,6 +224,12 @@ def _xml_call_block(reply: str, available_tools: Collection[str]) -> bool:
     """Reject observed native call shapes without inferring or executing their arguments."""
     if not available_tools:
         return False
+    container = re.fullmatch(r"\s*<tool_calls>\s*(.*?)\s*</tool_calls>\s*", reply, re.DOTALL)
+    if container:
+        try:
+            return _known_call_list(json.loads(container[1]), available_tools)
+        except ValueError:
+            return False
     match = re.match(r"""\s*<invoke\s+name=(["'])([^"']+)\1\s*>""", reply)
     if match:
         return match[2] in available_tools and "</invoke>" in reply[match.end() :]

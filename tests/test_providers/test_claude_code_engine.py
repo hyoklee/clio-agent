@@ -300,6 +300,11 @@ def test_xml_parameter_fragment_is_a_protocol_error_not_a_completed_answer(pool:
             "fenced",
             id="bare-envelope",
         ),
+        pytest.param(
+            '<tool_calls>[{"name":"search","arguments":{"q":"actual data"}}]</tool_calls>',
+            "XML",
+            id="xml-container",
+        ),
     ],
 )
 def test_loop_recovers_malformed_call_before_running_the_corrected_call(
