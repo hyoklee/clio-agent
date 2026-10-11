@@ -51,6 +51,7 @@ export default defineConfig({
 					label: 'Use CLIO',
 					items: [
 						{ label: 'Sessions and modes', slug: 'docs/sessions' },
+						{ label: 'Branch and rewind', slug: 'docs/branch-and-rewind' },
 						{ label: 'Working with files', slug: 'docs/working-with-files' },
 						{ label: 'Dashboards', slug: 'docs/dashboards' },
 						{ label: 'Exports and downloads', slug: 'docs/exports' },
