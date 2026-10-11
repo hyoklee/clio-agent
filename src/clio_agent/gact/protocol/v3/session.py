@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from clio_agent.gact.conversation_origin import FORK_ORIGIN_KEY, saved_fork_origin
 from clio_agent.gact.message_marks import MARKS_KEY, saved_message_marks
 from clio_agent.gact.protocol.v3 import utcnow_iso
 from clio_agent.gact.session_defaults import session_effort
@@ -94,6 +95,9 @@ def session_to_v3(session: Any) -> dict[str, Any]:
         public_metadata["composer_queue_paused"] = bool(metadata.get("composer_queue_paused", True))
     if MARKS_KEY in metadata:
         public_metadata[MARKS_KEY] = saved_message_marks(metadata)
+    origin = saved_fork_origin(metadata)
+    if origin and origin["session_id"] == getattr(session, "parent_session_id", ""):
+        public_metadata[FORK_ORIGIN_KEY] = origin
     if public_metadata:
         row["metadata"] = public_metadata
     return row

@@ -7,6 +7,7 @@ from collections.abc import Awaitable, Callable
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
+from clio_agent.gact.conversation_origin import FORK_ORIGIN_KEY
 from clio_agent.gact.message_marks import saved_message_marks
 from clio_agent.gact.protocol_v3 import project_for_request, session_to_v3
 from clio_agent.gact.routes._body import json_body
@@ -106,14 +107,22 @@ def register_session_fork_route(
         )
         inherit_child_session_policies(app, sid, new_sess.id)
         copied = await copy_context(sid, new_sess.id, target)
+        copied_messages = app.state.messages.get(new_sess.id, [])
         app.state.sessions.update(
             new_sess.id,
             message_count=copied,
             metadata_patch={
+                FORK_ORIGIN_KEY: {
+                    "session_id": sid,
+                    "message_id": copied_messages[-1].id if copied_messages else "",
+                    "message_count": copied,
+                    "title": sess.title,
+                    "created_at": new_sess.created_at,
+                },
                 "message_marks": saved_message_marks(
                     sess.metadata,
                     {message.id for message in app.state.messages.get(new_sess.id, [])},
-                )
+                ),
             },
         )
         return project_for_request(

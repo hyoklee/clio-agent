@@ -45,6 +45,14 @@ Failures retain their recorded error and exit status. A sandbox launch failure m
 
 **Gantt** starts with an overview of agent durations, fitted to the recorded execution interval. Expand an agent to see its tool calls on separate rows. Select a row or bar to read its timing and outcome, then open the related conversation when available. **Fit** restores the execution overview after zooming.
 
+When a conversation has user branches, **Gantt** starts with the conversation
+family: named rows, recorded response durations and saved branch creation
+diamonds. **Execution details** opens the latest execution's tools. The
+**Relationships** button swaps to a navigable ancestry graph, with solid user
+branch arrows and dashed delegated-agent arrows. Select a node to open its
+conversation or fork source. Open an output and choose **Lineage** to trace its
+inputs. See the [branching walkthrough and screenshots](/docs/branch-and-rewind/#find-and-compare-related-conversations).
+
 ### Context
 
 The Context tab shows the context the agent is working with, for the agent you select.
