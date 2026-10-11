@@ -72,6 +72,7 @@ def main() -> int:
         try:
             while not (out / "stop.request").exists() and time.monotonic() < deadline:
                 if process is None:
+                    write_json(out / f"source-restart-{restart_count}.json", source_identity(ROOT))
                     process = subprocess.Popen(
                         [
                             sys.executable,

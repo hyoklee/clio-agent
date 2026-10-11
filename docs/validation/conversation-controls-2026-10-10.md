@@ -119,3 +119,11 @@ supports `stop.request`, and has a one-hour default maximum lifetime. At complet
 stop the two owned UI/docs development servers, reap the private core, preserve
 compact transcripts/captures/traces, and remove private runtime state and the small
 temporary pytest dependency cache. Do not remove another task's state or processes.
+
+Completion record: all four owned listeners (API, UI, docs, private core) were
+closed and the two temporary browser helpers were removed. All 34 private test
+sessions were exported before shutdown. Recursive removal was rejected twice by
+automatic approval review with `blocked by policy`, including a retry naming
+only the private core directory. The private home/core and pytest cache remain
+on C: (876,575,460 bytes total); this is recorded in `cleanup.json`. No unrelated
+worktrees, sessions or files were removed. Cleanup is not reported as complete.
