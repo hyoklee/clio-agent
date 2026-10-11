@@ -571,6 +571,7 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
     For http servers the ``cwd`` is irrelevant and ignored.
     """
     if spec.transport == "stdio":
+        cwd = os.path.abspath(cwd) if cwd is not None else None
         from fastmcp.client.transports import StdioTransport  # noqa: PLC0415
 
         # Fail-loud preflight (iowarp/clio-agent MCP spawn diagnosability): catch the
@@ -639,9 +640,8 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
             final_command, final_args = diet_command, diet_args
         else:
             final_command, final_args = resolved, resolved_args
-        # Route post-spawn-diet argv through the shared confinement owner (#975).
-        # Preserve the transport directory independently of writable-root ordering;
-        # this declaration path retains its existing pdeathsig=False lifetime.
+        # Route post-spawn-diet argv through the shared confinement owner (#975),
+        # preserving cwd independently of grants and the existing pdeathsig=False lifetime.
         from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
         confined = sandbox.wrap_confined(

@@ -59,16 +59,24 @@ def assert_preserved_directory_and_grants(
     }
 
 
-@pytest.mark.parametrize("explicit", [True, False], ids=["explicit", "inherited"])
+@pytest.mark.parametrize("mode", ["explicit", "inherited", "relative"])
 def test_declared_stdio_preserves_directory_through_active_fence(
-    confined_workspace: tuple[Path, tuple[Path, ...]], explicit: bool
+    confined_workspace: tuple[Path, tuple[Path, ...]],
+    mode: str,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The fence directory must agree with explicit cwd or the inherited process directory."""
+    """The fence, launcher and artifacts root must agree on the actual directory."""
     workspace, roots = confined_workspace
+    cwd = str(workspace) if mode == "explicit" else None
+    if mode == "relative":
+        monkeypatch.chdir(workspace.parent)
+        cwd = workspace.name
     spec = spec_from_declaration("owned", {"command": sys.executable, "args": ["-c", "pass"]})
-    transport = transport_for(spec, cwd=str(workspace) if explicit else None)
+    transport = transport_for(spec, cwd=cwd)
     assert_preserved_directory_and_grants(transport, workspace, roots)
-    assert transport.cwd == (str(workspace) if explicit else None)
+    assert transport.cwd == (str(workspace) if cwd is not None else None)
+    if cwd is not None:
+        assert transport.env["CLIO_KIT_ARTIFACTS"] == str(workspace)
 
 
 def test_configured_stdio_preserves_inherited_directory_through_active_fence(
