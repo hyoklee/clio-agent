@@ -292,6 +292,16 @@ def linked_adapter(
     elif provider == "google_drive":
         with drive_folder(service, record) as adapter:
             yield adapter
+    elif provider == "obsidian":
+        from clio_agent.gact.storage.obsidian import ObsidianFolder, ObsidianSource
+
+        yield ObsidianFolder(
+            ObsidianSource(
+                record.source.root,
+                writable=record.linked_access != "read_only",
+                excluded=record.configuration.obsidian_excluded_folders,
+            )
+        )
     elif provider == "local":
         yield FsspecFolder(
             LocalFileSystem(auto_mkdir=False),
@@ -405,6 +415,12 @@ def _linked_file(service: StorageService, record: SourceRecord, relative: str) -
                 )
                 else None
             )
+        elif record.source.provider == "obsidian":
+            from clio_agent.gact.storage.obsidian import ObsidianFolder
+
+            if not isinstance(adapter, ObsidianFolder):
+                raise ValueError("Knowledge source adapter changed")
+            current = adapter.metadata(relative)
         else:
             current = next((row for row in adapter.entries() if row.path == relative), None)
         if current is None or (current.revision, current.size) != (

@@ -160,8 +160,10 @@ def source_resource(
         "sha256": expected,
         "mode": source.mode,
     }
+    if source.source_kind == "knowledge":
+        origin.update({"kind": "note", "source_kind": "knowledge", "connection": source.connection})
     identity = hashlib.sha256(
-        f"{source.id}\0{source.revision}\0{relative}\0{expected}".encode()
+        f"{source.id}\0{record.linked_manifest_id if linked_path else source.revision}\0{relative}\0{expected}".encode()
     ).hexdigest()
     resource, _ = resources.create_or_resume(
         workspace_id=source.workspace_id or "",

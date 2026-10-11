@@ -31,7 +31,7 @@ def mapping_options(service: StorageService, record: SourceRecord) -> dict[str, 
             "reason": "This connection supports downloaded copies.",
             "write_permission": False,
         }
-    if provider == "local":
+    if provider in {"local", "obsidian"}:
         allowed = os.access(record.source.root, os.W_OK)
     elif provider in {"github", "google_drive"} and not service.auth.connected(record):
         allowed = False
