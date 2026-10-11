@@ -195,7 +195,22 @@ class _Def:
 # --------------------------------------------------------------------------- #
 
 
-def test_completed_async_child_sets_notify_pending(tmp_path: Path, monkeypatch) -> None:
+def test_completed_async_child_sets_notify_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from clio_agent.gact.task_completion_wake import request_completion_wake
+
+    requested = threading.Event()
+    consumed = threading.Event()
+    wake_requests: list[tuple[Any, str, str]] = []
+
+    def hold_wake(owner: Any, sid: str, handle: str = "") -> None:
+        wake_requests.append((owner, sid, handle))
+        requested.set()
+
+    # Inspect the durable producer before releasing its real idle consumer.
+    # Otherwise a fast completion wake can correctly consume before the assertion.
+    monkeypatch.setattr("clio_agent.gact.task_completion_wake.request_completion_wake", hold_wake)
     _declare(monkeypatch, "main")
     app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent())
     with TestClient(app) as client:
@@ -213,6 +228,24 @@ def test_completed_async_child_sets_notify_pending(tmp_path: Path, monkeypatch) 
         settled = _wait_terminal(app, task.task_id)
         assert settled.status == STATUS_COMPLETED
         assert settled.notify_pending is True, "completed async child must be observe-later pending"
+        assert requested.wait(TURN_SIGNAL_BACKSTOP_S)
+        assert (app, parent, task.task_id) in wake_requests
+        durable = AgentTask.from_session(app.state.sessions.get(task.child_session_id))
+        assert durable is not None and durable.notify_pending and not durable.consumed_at
+        publish = app.state.bus.publish
+
+        def record_delivery(event: Any) -> None:
+            publish(event)
+            if event.type == "agent.task.consumed" and event.payload.get("task_id") == task.task_id:
+                consumed.set()
+
+        monkeypatch.setattr(app.state.bus, "publish", record_delivery)
+        request_completion_wake(app, parent, task.task_id)
+        assert consumed.wait(TURN_SIGNAL_BACKSTOP_S), "real idle wake must collect the result"
+        delivered = app.state.agent_task_registry.get(task.task_id)
+        assert not delivered.notify_pending and delivered.consumed_at
+        assert consume_notification(app, task.task_id) is None
+        assert app.state.agent_task_registry.get(task.task_id).consumed_at == delivered.consumed_at
 
 
 def test_child_task_follows_immediate_continuation_before_completion(
