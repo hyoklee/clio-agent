@@ -210,11 +210,18 @@ class AgentTask:
     delegation_reported: bool = False
     description: str = ""
     cancel_requested: bool = False
+    supersedes_task_id: str = ""
 
     def __post_init__(self) -> None:
         """Keep lifecycle-backed live state canonical at record construction."""
 
-        if self.status != STATUS_RUNNING or not self.live_state or self.live_state in STATUSES:
+        held = self.status in {STATUS_RUNNING, STATUS_QUEUED} and self.live_state in {
+            "paused",
+            "pause_requested",
+        }
+        if not held and (
+            self.status != STATUS_RUNNING or not self.live_state or self.live_state in STATUSES
+        ):
             object.__setattr__(self, "live_state", self.status)
 
     def to_metadata(self) -> dict[str, Any]:
@@ -535,60 +542,10 @@ def install_agent_task_registry(app: "FastAPI") -> AgentTaskRegistry:
 
 
 def settle_interrupted_agent_tasks(app: "FastAPI") -> int:
-    """Fail every boot-folded task left in a NON-TERMINAL status (#948 S6 [10]).
+    """Restore durable holds and settle interrupted nonrecoverable local model owners."""
+    from clio_agent.gact.agent_task_recovery import settle_interrupted_agent_tasks as restore
 
-    A ``queued``/``running`` task in the rebuilt registry was interrupted by an
-    unclean stop (crash / power loss / SIGKILL): its in-flight turn does not exist
-    on this fresh process and cannot be resumed, so leaving it non-terminal makes it
-    a permanent zombie — ``wait_agent_tasks`` blocks on a never-set Event,
-    ``observe_agent_tasks`` reports it ``running`` forever, and it permanently
-    counts against the per-depth concurrency cap (progressive slot starvation across
-    restarts). Each such task is transitioned to ``failed`` with the typed reason
-    ``server_restart_interrupted`` and ``notify_pending=True``, so the parent's next
-    turn LEARNS its spawned task was interrupted (observe-later) and the model
-    decides how to proceed. Failing them (terminal) also frees their per-depth slots
-    — the running-task cap accounting counts only ``STATUS_RUNNING``. Returns the
-    number settled. Idempotent: a second boot finds nothing non-terminal to settle.
-    """
-
-    reg = app.state.agent_task_registry
-    now = datetime.now(timezone.utc).isoformat()
-    settled = 0
-    for task in reg.snapshot():
-        # Remote owners survive this process; recovery resumes retained identity.
-        if task.is_terminal or task.placement.startswith("relay:"):
-            continue
-        try:
-            updated = reg.transition(
-                task.task_id,
-                STATUS_FAILED,
-                error_reason="server_restart_interrupted",
-                notify_pending=True,
-                updated_at=now,
-            )
-        except AgentTaskError as exc:
-            # A concurrent boot path already settled it, or an illegal-transition
-            # edge — never brick boot; surface the typed reason.
-            logger.warning(
-                "agent_task boot settle skipped reason=%s task=%s",
-                getattr(exc, "reason", "unknown"),
-                task.task_id,
-            )
-            continue
-        try:
-            persist_agent_task(app, updated)
-        except (AgentTaskError, OSError) as exc:
-            logger.warning(
-                "agent_task boot settle not persisted reason=%s task=%s err=%r",
-                getattr(exc, "reason", type(exc).__name__),
-                task.task_id,
-                exc,
-            )
-        publish_agent_task_event(app, updated, AGENT_TASK_EVENTS[STATUS_FAILED])
-        settled += 1
-    if settled:
-        logger.warning("agent_task boot settle failed %d interrupted task(s)", settled)
-    return settled
+    return restore(app)
 
 
 def seed_agent_task(

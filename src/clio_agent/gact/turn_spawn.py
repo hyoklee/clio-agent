@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
+from clio_agent.gact.agent_task_admission import _batch_key, _queued_admissible, _running_in_batch
 from clio_agent.gact.agent_task_artifacts import returned_artifact_ref
 from clio_agent.gact.agent_task_wake import build_child_done_callback, resume_on_continuation_turn
 from clio_agent.gact.agent_tasks import (
@@ -159,6 +160,8 @@ class TaskSpec:
     agent_elicitation_depth: Optional[int] = None
     # Kept last for positional compatibility; selects an installed blueprint root.
     target_blueprint_id: str = ""
+    continuation_task_id: str = ""
+    fresh_context: bool = False
 
 
 class SpawnError(Exception):
@@ -167,51 +170,6 @@ class SpawnError(Exception):
     def __init__(self, message: str, *, reason: str) -> None:
         super().__init__(message)
         self.reason = reason
-
-
-def _batch_key(
-    parent_session_id: str, requesting_expert_id: str, depth: int
-) -> tuple[str, str, int]:
-    """The fan-out batch identity: the same parent expert's children at one depth.
-
-    The ``fanout.max_workers`` bound (#948 S5) caps how many tasks sharing this key
-    may RUN concurrently — a per-parent-expert concurrency limit distinct from the
-    global per-depth cap."""
-
-    return (parent_session_id, requesting_expert_id, depth)
-
-
-def _queued_admissible(
-    task: "AgentTask",
-    running_by_depth: dict[int, int],
-    running_by_batch: dict[tuple[str, str, int], int],
-    cap: int,
-) -> bool:
-    """Whether a queued task may be admitted: the global per-depth cap AND (when the
-    task declares a ``fanout_bound``) the fan-out batch bound must both have room —
-    else admitting it would exceed the parent's declared max_workers (#948 S5)."""
-
-    if running_by_depth.get(task.depth, 0) >= cap:
-        return False
-    if task.fanout_bound > 0:
-        key = _batch_key(
-            task.parent_session_id, task.agent_ref.get("requesting_expert_id", ""), task.depth
-        )
-        if running_by_batch.get(key, 0) >= task.fanout_bound:
-            return False
-    return True
-
-
-def _running_in_batch(snapshot: Any, batch_key: tuple[str, str, int]) -> int:
-    """Count RUNNING tasks in ``batch_key``'s fan-out batch (over a registry snapshot)."""
-
-    return sum(
-        1
-        for t in snapshot
-        if t.status == STATUS_RUNNING
-        and _batch_key(t.parent_session_id, t.agent_ref.get("requesting_expert_id", ""), t.depth)
-        == batch_key
-    )
 
 
 def _now() -> str:
@@ -261,6 +219,10 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
             "Task subtree cancellation has closed child admission", reason="cancelled_by_parent"
         )
     workspace_id, parent_mode, session_scope_metadata = validate_task_spec(app, spec)
+    if spec.continuation_task_id:
+        from clio_agent.gact.subagent_restart import validate_successor_source
+
+        validate_successor_source(app, spec)
     parent = app.state.sessions.get(spec.parent_session_id)
     if (
         spec.start_turn
@@ -353,6 +315,7 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
         child_session_id=child.id,
         parent_turn_id=spec.parent_turn_id,
         description=spec.description or spec.task_text,
+        supersedes_task_id=spec.continuation_task_id,
         agent_ref={
             "expert_id": spec.child_expert_id,
             "requesting_expert_id": spec.requesting_expert_id,
@@ -424,10 +387,16 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
                 "session_mode": parent_mode,
                 "session_scope_metadata": session_scope_metadata,
                 "session_approval_profile": spec.session_approval_profile,
+                "continuation_task_id": spec.continuation_task_id,
             },
         },
     )
     publish_agent_task_event(app, task, AGENT_TASK_EVENTS[STATUS_QUEUED])
+    if spec.continuation_task_id:
+        from clio_agent.gact.subagent_continuation import schedule_successor_context
+
+        schedule_successor_context(app, task, spec)
+        return reg.get(task.task_id) or task
     if not spec.start_turn:
         # Standing task: never queued-at-cap, never _launch()ed -- transitions
         # straight to its RUNNING/"waiting" standing state. A later, independent
@@ -540,12 +509,22 @@ def _launch(app: "FastAPI", task: AgentTask, spec: TaskSpec) -> AgentTask:
 
         text = f"{text}\n\n[workflow_state]\n{json.dumps(spec.workflow_state, sort_keys=True, default=str)}"
 
+    from clio_agent.gact.subagent_lifecycle import retained_model_metadata
+
     _start_background_user_turn(
         app,
         task.child_session_id,
         child,
         text,
-        metadata={"agent_task_id": task.task_id, "spawned_by": spec.requesting_expert_id},
+        metadata={
+            **(
+                retained_model_metadata(app, task.child_session_id)
+                if spec.continuation_task_id
+                else {}
+            ),
+            "agent_task_id": task.task_id,
+            "spawned_by": spec.requesting_expert_id,
+        },
         prev_status="idle",
         turn_agent_id=spec.child_expert_id,
     )
@@ -642,6 +621,10 @@ def _on_child_done(
     reg = app.state.agent_task_registry
     task = reg.get(task_id)
     if task is None or task.is_terminal:
+        return
+    from clio_agent.gact.subagent_lifecycle import defer_paused_settlement
+
+    if defer_paused_settlement(app, task, mode):
         return
     from clio_agent.gact.task_subagent_owner import defer_subagent_settlement
 
@@ -750,8 +733,18 @@ def _admit_next_queued(app: "FastAPI") -> None:
                     t.parent_session_id, t.agent_ref.get("requesting_expert_id", ""), t.depth
                 )
                 running_by_batch[key] = running_by_batch.get(key, 0) + 1
+        from clio_agent.gact.subagent_continuation import context_preparing
+        from clio_agent.gact.subagent_lifecycle import execution_held
+
         queued = sorted(
-            (t for t in snap if t.status == STATUS_QUEUED and not t.cancel_requested),
+            (
+                t
+                for t in snap
+                if t.status == STATUS_QUEUED
+                and not t.cancel_requested
+                and not execution_held(app, t.child_session_id)
+                and not context_preparing(app, t.child_session_id)
+            ),
             key=lambda t: t.created_at,
         )
         task = next(
@@ -781,6 +774,7 @@ def _admit_next_queued(app: "FastAPI") -> None:
             session_mode=pending.get("session_mode"),
             session_scope_metadata=pending.get("session_scope_metadata"),
             session_approval_profile=pending.get("session_approval_profile"),
+            continuation_task_id=pending.get("continuation_task_id", task.supersedes_task_id),
         )
         reg.register(replace(task, queued_reason=""))  # clear queued_reason as it launches
         _launch(app, reg.get(task.task_id), spec)

@@ -207,6 +207,9 @@ def _prepare_turn_off_loop_steps(
         task_results, state.pending_notification_task_ids = pending_task_notifications(
             state.app, state.sid
         )
+        from clio_agent.gact.agent_mailbox import stage_agent_mail
+
+        stage_agent_mail(state)
         # P1.2 #1064: surface plan mode to the model each turn (survives compaction; no-op otherwise).
         reminder = plan_mode_reminder(state.app, state.sid, state.sess)
         todos = todo_recitation(state.app, state.sid, state.sess)

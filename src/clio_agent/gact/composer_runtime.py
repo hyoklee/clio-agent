@@ -169,6 +169,9 @@ def _install_composer_idle_hook(app: Any, deps: Any) -> None:
         from clio_agent.gact.task_completion_wake import request_completion_wake
 
         request_completion_wake(app, session_id)
+        from clio_agent.gact.agent_mailbox import wake_mail_recipient
+
+        wake_mail_recipient(app, session_id)
 
     app.state.turn_runner.set_idle_hook(on_session_idle)
 
@@ -184,9 +187,10 @@ def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
     from clio_agent.gact.events import Event  # noqa: PLC0415
     from clio_agent.gact.message_intents import RevisionConflictError  # noqa: PLC0415
     from clio_agent.gact.message_submission import accept_message  # noqa: PLC0415
+    from clio_agent.gact.subagent_lifecycle import execution_held
     from clio_agent.gact.types import PostMessageRequest  # noqa: PLC0415
 
-    if app.state.turn_runner.busy(session_id):
+    if execution_held(app, session_id) or app.state.turn_runner.busy(session_id):
         return
     if any(
         row.session_id == session_id and row.status == "pending" and row.response_mode == "blocking"

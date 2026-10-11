@@ -168,7 +168,18 @@ def test_message_agent_tool_has_no_transport_argument() -> None:
 
     tool = build_message_agent_tool(SimpleNamespace(id="main"))
     assert tool.name == "message_agent"
-    assert set(tool.args) == {"task_id", "message"}
+    assert set(tool.args) == {
+        "task_id",
+        "message",
+        "target",
+        "scope",
+        "user_intent",
+        "wake",
+        "reply_to",
+        "correlation_id",
+    }
+    assert "transport" not in tool.args
+    assert tool.args["target"]["type"] == "string" and tool.args["wake"]["type"] == "boolean"
 
 
 def test_local_and_relay_running_messages_have_shape_identical_parts(

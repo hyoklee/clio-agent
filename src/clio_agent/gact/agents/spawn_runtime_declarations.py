@@ -84,6 +84,7 @@ def assemble_spawn_runtime_tools(
     / workflow-gated filtering.
     """
 
+    from clio_agent.gact.agent_lifecycle_tools import build_agent_lifecycle_tools
     from clio_agent.gact.agent_messaging import build_message_agent_tool  # noqa: PLC0415
     from clio_agent.gact.agents.agent_task_output_digest import (  # noqa: PLC0415
         build_agent_task_output_tool,
@@ -137,6 +138,7 @@ def assemble_spawn_runtime_tools(
         ),
         build_wait_tool(wait_agent_tasks),
         build_message_agent_tool(agent_def),
+        *build_agent_lifecycle_tools(),
         # OBSERVE posture (#1000): the read-only child-progress surface, built in
         # its owner module (observe_runtime) so this file stays under the size ratchet.
         build_observe_tool(),
@@ -172,6 +174,9 @@ def assemble_spawn_runtime_tools(
         collection_names = {
             "wait_agent_tasks",
             "message_agent",
+            "pause_agent",
+            "resume_agent",
+            "restart_agent",
             "observe_agent_tasks",
             "get_agent_task_output",
             *(

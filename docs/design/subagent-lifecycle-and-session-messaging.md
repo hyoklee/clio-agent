@@ -1,11 +1,59 @@
 # Subagent lifecycle and session messaging
 
-Status: source audit and proposed extension, 2026-10-10. The audited core is
+Status: candidate implementation and qualification in progress, 2026-10-10.
+The original source audit used core
 `8feb486cb84a3c4587d9c424b69861e93925933b` on
-`codex/agent-facing-async-tasks`. This document does not claim implementation or
-live acceptance of the additional controls below.
+`codex/agent-facing-async-tasks`. The branch now includes local lifecycle and
+exact-session messaging controls. Live acceptance remains a separate gate.
 
-## Existing behavior
+## Candidate implementation
+
+- `pause_agent(target)`, `resume_agent(target)` and `restart_agent(target, fresh=False)`
+  use the existing Subagent registry and original placement owner. Pause persists
+  an execution hold before stopping its model; resume keeps the handle. Running
+  held runs reserve their admission slot; held queued runs cannot be admitted.
+- `cancel_tasks` remains generic across all task kinds. A Subagent cancellation
+  closes admission and settles its descendant owners before publishing completion.
+- `message_agent(target=..., message=..., scope=..., user_intent=..., wake=False,
+  reply_to=..., correlation_id=...)` accepts exact session IDs or task handles.
+  The old `task_id` argument remains an alias. Sender-attributed mail is durable
+  before acknowledgement and is collected at model iteration boundaries or an
+  automatic idle wake. A hold prevents both paths from consuming pending results.
+- A terminal recipient creates a linked successor without reparenting. Full
+  retained messages have new IDs and references to their original message IDs;
+  fresh mode omits history. Current parent restrictions compose with retained
+  recipient policy. Restart retries against one old handle reuse its successor.
+- Memory search and summary results include exact message targets after read-scope
+  checks. Peer messaging additionally requires scoped intent; discovery does not
+  grant pause, resume, restart or cancellation authority.
+- The HTTP doors are `POST /v1/sessions/{sid}/agent-controls/{target}/{action}`
+  and `POST /v1/sessions/{sid}/agent-messages`. UI and native tools call the same
+  lifecycle and messaging owners. Task surfaces expose pause requested, paused,
+  resume and confirmed restart separately from cancellation.
+- Local holds cannot pause a remote model. Relay pause/retained-context restart
+  and peer relay addressing are explicitly refused until the remote protocol
+  supports their contract; existing owner-to-relay messaging is retained. Those
+  routes remain unimplemented and unqualified, not silently simulated locally.
+
+## Original audit before implementation
+
+The candidate has 33 focused lifecycle parameter cases, six existing messaging
+compatibility cases and three unchanged transcript golden cases qualified
+sequentially with one worker. UI controls have three focused component and two
+transport cases, scoped checks and both production builds. These are engineering
+checks, not substitutes for the model acceptance below.
+
+Actual Codex/Luna runs have demonstrated held background Shell completion,
+same-handle resume, linked completed/cancelled restart without replay, generic
+subtree cancellation and process settlement. Separate real-model peer discovery,
+busy/idle messaging and service-interruption recovery also passed. Final
+five-cycle qualification and a clean actual-service browser gate are pending.
+The first browser run exercised every lifecycle action but failed its unchanged
+no-error gate because the isolated runtime omitted its own executable directory
+from PATH; the environment correction does not change production assertions.
+No full cross-provider/platform qualification or relay lifecycle acceptance is
+claimed. Retain detailed verdicts, source identities and failed attempts under
+the release recovery `mcp-agent-tasks` evidence directory.
 
 | Operation | Current implementation |
 | --- | --- |
@@ -25,9 +73,8 @@ Sources: `gact/agent_messaging.py`, `gact/agent_message_transport.py`,
 
 ## Pause, Stop, cancel and restart
 
-These meanings are distinct. The proposed default for Pause is a durable hold
-until explicit resume or an explicitly waking message. This choice was asked
-of the user and remains a proposed default until confirmed.
+These meanings are distinct. The agreed default for Pause is a durable hold
+until explicit resume or an explicitly waking owner message.
 
 | Action | Agent execution | Accepted descendant tasks | Identity and notifications |
 | --- | --- | --- | --- |

@@ -360,10 +360,12 @@ def _declare_message_agent_structured_content(
                 f"(supersedes {wire.get('supersedes_task_id', '')})"
             )
         else:
-            message = (
-                f"queued message to task {wire.get('task_id', '')} "
-                f"(transport={wire.get('transport', '')})"
+            recipient = (
+                f"task {wire['task_id']}"
+                if wire.get("task_id")
+                else f"session {wire.get('target_session_id', '')}"
             )
+            message = f"queued message to {recipient} (transport={wire.get('transport', '')})"
         fields = dict(wire)
     declare_structured_content({"message": message, **fields})
 
@@ -373,12 +375,24 @@ def build_message_agent_tool(agent_def: Any) -> Any:
 
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
-    def message_agent(task_id: str, message: str) -> str:
-        """Send a message to a spawned child by task id.
+    def message_agent(
+        task_id: str = "",
+        message: str = "",
+        target: str = "",
+        scope: str = "session",
+        user_intent: str = "",
+        wake: bool = False,
+        reply_to: str = "",
+        correlation_id: str = "",
+    ) -> str:
+        """Message an exact Subagent handle or session ID from memory discovery.
 
-        Transport is selected from the task's retained placement. A running child
-        receives the message at its next safe boundary; a completed child starts a
-        placement-matched successor run and supersedes its earlier return.
+        target is the preferred address; task_id remains a compatibility alias.
+        Busy recipients receive mail next iteration; idle recipients wake. Paused
+        recipients retain mail unless their owner sets wake=True. Terminal local
+        recipients receive a linked successor. Peer messages require user_intent
+        and permitted workspace scope; they convey no human authority. Replies
+        address source_session_id and reply_to=message_id. Do not create reply loops.
         """
 
         app = _ctx.active_app()
@@ -386,20 +400,32 @@ def build_message_agent_tool(agent_def: Any) -> Any:
         if app is None or not session_id:
             raise RuntimeError("message_agent requires an active CLIO app/session context")
         try:
-            result = message_agent_task(
+            from clio_agent.gact.agent_session_messaging import message_agent_address
+
+            if target and task_id and target != task_id:
+                raise ValueError("conflicting_agent_targets")
+            wire = message_agent_address(
                 app,
-                task_id,
+                target or task_id,
                 message,
-                parent_agent_id=str(getattr(agent_def, "id", "") or "main"),
+                caller_sid=session_id,
+                sender_agent=str(getattr(agent_def, "id", "") or "main"),
+                scope=scope,
+                user_intent=user_intent,
+                wake=wake,
+                reply_to=reply_to,
+                correlation_id=correlation_id,
             )
-            wire = result.to_wire()
             _declare_message_agent_structured_content(wire)
             return json.dumps(wire, sort_keys=True)
-        except MessageAgentError as exc:
+        except (MessageAgentError, ValueError) as exc:
+            reason = getattr(exc, "reason", str(exc))
+            if task_id and not target and reason == "unknown_or_ambiguous_agent_target":
+                reason = "unknown_task"  # one-cycle task_id compatibility wire
             error_wire = {
-                "error": exc.reason,
+                "error": reason,
                 "message": str(exc),
-                "details": exc.details,
+                "details": getattr(exc, "details", {}),
             }
             _declare_message_agent_structured_content(error_wire, is_error=True)
             return json.dumps(error_wire, sort_keys=True)
@@ -412,7 +438,32 @@ def build_message_agent_tool(agent_def: Any) -> Any:
         desc=message_agent.__doc__,
         title="Message Agent",
         args={
-            "task_id": {"type": "string", "description": "Task id returned by spawn."},
-            "message": {"type": "string", "description": "Message for the child agent."},
+            "task_id": {
+                "type": "string",
+                "default": "",
+                "description": "Compatibility alias for target.",
+            },
+            "target": {
+                "type": "string",
+                "default": "",
+                "description": "Exact task handle or session ID from memory search.",
+            },
+            "message": {
+                "type": "string",
+                "description": "Agent message; not new human instructions.",
+            },
+            "scope": {"type": "string", "default": "session"},
+            "user_intent": {
+                "type": "string",
+                "default": "",
+                "description": "User-authorized purpose required for peer session messaging.",
+            },
+            "wake": {
+                "type": "boolean",
+                "default": False,
+                "description": "Owner-only explicit resume of a paused recipient.",
+            },
+            "reply_to": {"type": "string", "default": ""},
+            "correlation_id": {"type": "string", "default": ""},
         },
     )

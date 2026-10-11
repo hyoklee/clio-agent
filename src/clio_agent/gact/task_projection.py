@@ -129,6 +129,17 @@ def task_views(app: Any, sid: str, *, include_children: bool = True) -> list[dic
             connection_freshness=row.get("connection_freshness", "unknown"),
             progress=row.get("backend", {}).get("progress", {}),
         )
+        if subagent and not placement.startswith("relay:"):
+            task = app.state.agent_task_registry.get(row["id"])
+            if task is not None:
+                row["supported_actions"].append("message")
+                if task.is_terminal:
+                    row["supported_actions"].append("restart")
+                elif not task.cancel_requested:
+                    from clio_agent.gact.subagent_lifecycle import execution_held
+
+                    held = execution_held(app, task.child_session_id)
+                    row["supported_actions"].append("resume" if held else "pause")
     return rows
 
 

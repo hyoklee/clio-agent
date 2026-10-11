@@ -673,8 +673,16 @@ def _start_background_user_turn(
     promote an ALREADY persisted pending steer: acceptance wrote that identity
     durably, so staging replaces that row in place, its accepted stamp kept.
     """
+    from clio_agent.gact.subagent_lifecycle import (
+        require_execution_allowed,
+        retained_model_metadata,
+    )
+
+    require_execution_allowed(app, sid)
     now = time.time()
     user_metadata = dict(metadata or {})
+    if message_role == "system":
+        user_metadata = {**retained_model_metadata(app, sid), **user_metadata}
     user_parts = _user_message_parts(
         request_parts=list(request_parts or []),
         user_text=user_text,

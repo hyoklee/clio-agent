@@ -20,12 +20,16 @@ def commit_task_context_frame(state: Any) -> None:
         removed_tokens = sum(
             item.get("tokens_estimated", 0)
             for item in previous
-            if item.get("kind") == "injection" and item.get("source_id") == "task_results"
+            if item.get("kind") == "injection"
+            and item.get("source_id") in {"task_results", "agent_messages"}
         )
         retained = [
             item
             for item in previous
-            if not (item.get("kind") == "injection" and item.get("source_id") == "task_results")
+            if not (
+                item.get("kind") == "injection"
+                and item.get("source_id") in {"task_results", "agent_messages"}
+            )
         ]
         committed = [
             {
@@ -37,7 +41,7 @@ def commit_task_context_frame(state: Any) -> None:
                 "metadata": {"actor": "algorithm", "text": text},
             }
             for source, text in state.injections
-            if source == "task_results"
+            if source in {"task_results", "agent_messages"}
         ]
         frame["items"] = [*retained, *committed]
         frame["tokens_estimated"] = max(

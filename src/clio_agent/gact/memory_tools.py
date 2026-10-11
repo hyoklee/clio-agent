@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from clio_agent.gact.agent_targets import session_address as _session_address
 from clio_agent.gact.runtime.memory_search import _memory_search_response
 from clio_agent.gact.workspace_scope import GLOBAL_WORKSPACE_ID
 
@@ -135,7 +136,10 @@ def _search_result(
         "tool": "memory_search_sessions",
         "query": response.query,
         "searched_sessions": response.searched_sessions,
-        "hits": [hit.model_dump() for hit in response.hits],
+        "hits": [
+            {**hit.model_dump(), "agent_target": _session_address(app, hit.session_id)}
+            for hit in response.hits
+        ],
         "metadata": response.metadata
         | {
             "policy_decision": policy_decision,
@@ -197,6 +201,7 @@ def _summary_result(
     return {
         "tool": "memory_read_session_summary",
         "summary": summary,
+        "agent_target": _session_address(app, target_id),
         "metadata": {
             "policy_decision": policy.get("decision", ""),
             "policy_scope": policy.get("scope", ""),

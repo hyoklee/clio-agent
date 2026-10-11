@@ -107,6 +107,9 @@ def register_agent_task_routes(app: FastAPI, deps: "GactDeps") -> None:
     """Register the agent-task read + cancel routes on ``app``."""
 
     del deps  # symmetry with the other register_*_routes; state is on app.state
+    from clio_agent.gact.routes.agent_lifecycle import register_agent_lifecycle_routes
+
+    register_agent_lifecycle_routes(app)
 
     @app.get("/v1/runs")
     async def list_runs() -> dict[str, Any]:

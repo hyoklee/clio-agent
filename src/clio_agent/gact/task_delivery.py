@@ -69,11 +69,15 @@ def pending_completions(app: Any, sid: str, *, limit: int = 8) -> tuple[str, lis
 
 def commit_staged_completions(state: Any) -> None:
     """Claim and recompose staged results so an intervening collection cannot duplicate delivery."""
+    from clio_agent.gact.agent_mailbox import commit_agent_mail
     from clio_agent.gact.enrichment import consume_pending_agent_task_notifications
+    from clio_agent.gact.subagent_lifecycle import CONTROL_LOCK, require_execution_allowed
     from clio_agent.gact.task_context_frame import commit_task_context_frame
     from clio_agent.gact.task_supervisor import task_supervisor
 
-    with task_supervisor(state.app).delivery_lock:
+    with CONTROL_LOCK, task_supervisor(state.app).delivery_lock:
+        require_execution_allowed(state.app, state.sid)
+        commit_agent_mail(state)
         blocks = consume_pending_agent_task_notifications(
             state.app, state.sid, state.pending_notification_task_ids
         )

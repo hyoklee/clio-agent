@@ -66,6 +66,10 @@ def _wake_idle_session(app: Any, sid: str) -> None:
     session = app.state.sessions.get(sid)
     if session is None:
         return
+    from clio_agent.gact.subagent_lifecycle import execution_held
+
+    if execution_held(app, sid):
+        return
     from clio_agent.tools.task_call_context import require_admission
 
     try:
@@ -144,8 +148,12 @@ def _wake_idle_session(app: Any, sid: str) -> None:
 
 def redrive_pending_completion_wakes(app: Any) -> None:
     """Recover retained mailboxes when an executable agent becomes ready again."""
+    from clio_agent.gact.agent_mailbox import pending_mail, request_mail_wake
     from clio_agent.gact.mcp_task_store import app_task_store
 
+    for session in app.state.sessions.list():
+        if pending_mail(app, session.id):
+            request_mail_wake(app, session.id)
     owners = {
         record.session_id
         for record in app_task_store(app).list()

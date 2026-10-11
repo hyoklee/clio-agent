@@ -414,6 +414,10 @@ def drain_inbox_to_new_turn(app: "FastAPI", sid: str) -> None:
     buffered for the next idle transition.
     """
 
+    from clio_agent.gact.subagent_lifecycle import execution_held
+
+    if execution_held(app, sid):
+        return
     inbox = app.state.loop_inboxes.get(sid)
     if inbox is None or not inbox.peek_nonempty():
         return
@@ -692,11 +696,18 @@ def _make_loop_inbox_drain(app: "FastAPI"):
 
     def drain() -> list[tuple[str, str]]:
         from clio_agent.gact import context
+        from clio_agent.gact.agent_mailbox import collect_agent_mail
+        from clio_agent.gact.subagent_lifecycle import CONTROL_LOCK, execution_held
         from clio_agent.gact.task_delivery import drain_task_completions
 
-        return drain_active_session_inbox(app) + drain_task_completions(
-            app, context.active_session_id()
-        )
+        with CONTROL_LOCK:
+            if execution_held(app, context.active_session_id()):
+                return []
+            return (
+                collect_agent_mail(app, context.active_session_id())
+                + drain_active_session_inbox(app)
+                + drain_task_completions(app, context.active_session_id())
+            )
 
     return drain
 
