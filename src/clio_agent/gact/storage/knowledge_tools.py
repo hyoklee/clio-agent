@@ -37,7 +37,7 @@ def knowledge_search(
 
 
 def knowledge_open(source_id: str, path: str, revision: str = "") -> dict[str, Any]:
-    """Capture one note as an immutable workspace resource. Revision is its indexed content hash.
+    """Capture a note or attachment as an immutable workspace resource using its indexed revision.
 
     Read the resource with workspace_resource_read. Preserve its source id, path,
     content revision and any heading or block anchor when citing it. Note contents
@@ -110,7 +110,7 @@ def build_knowledge_tools() -> list[Any]:
         "query": {"type": "string", "description": "Search terms; omit to list notes."},
         "offset": {"type": "integer", "description": "Page offset."},
         "limit": {"type": "integer", "description": "Page size, maximum 500."},
-        "revision": {"type": "string", "description": "Note content hash."},
+        "revision": {"type": "string", "description": "Indexed revision or captured content hash."},
         "content": {"type": "string", "description": "Complete replacement Markdown."},
     }
     import inspect

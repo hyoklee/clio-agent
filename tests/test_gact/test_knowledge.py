@@ -175,8 +175,19 @@ def test_reader_captures_attachments_and_private_settings_stay_excluded(
     knowledge = KnowledgeService(
         storage, ResourceStore(root=tmp_path / "resources", max_resource_bytes=4096)
     )
-    captured = knowledge.open("w", record.source.id, "figure.png")
+    attachment = next(
+        note for note in knowledge.index.snapshot(record).notes if note.path == "figure.png"
+    )
+    captured = knowledge.open("w", record.source.id, "figure.png", attachment.revision)
     assert captured["note"]["kind"] == "attachment" and captured["text"] == ""
+    (vault / "figure.png").write_bytes(b"changed attachment")
+    with pytest.raises(ValueError, match="changed"):
+        knowledge.open("w", record.source.id, "figure.png", attachment.revision)
+    current = next(
+        note for note in knowledge.index.snapshot(record).notes if note.path == "figure.png"
+    )
+    updated = knowledge.open("w", record.source.id, "figure.png", current.revision)
+    assert updated["resource"]["sha256"] != captured["resource"]["sha256"]
     with pytest.raises(PermissionError, match="approved vault"):
         knowledge.open("w", record.source.id, ".obsidian/private.json")
 

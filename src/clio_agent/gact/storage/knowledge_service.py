@@ -59,7 +59,13 @@ class KnowledgeService:
         selected = linked_file(self.storage, record, path)
         digest = file_hash(selected)
         if revision and revision != digest:
-            raise ValueError("The note changed since this view; refresh it before opening")
+            # Attachments are indexed by provider revision without reading their
+            # bodies. Accept that exact manifest revision, then capture the bytes
+            # with their SHA256 just as for notes.
+            manifest = self.storage.store.get("manifest", record.linked_manifest_id, Manifest)
+            indexed = next((entry for entry in manifest.entries if entry.path == path), None)
+            if path.lower().endswith(".md") or indexed is None or revision != indexed.revision:
+                raise ValueError("The note changed since this view; refresh it before opening")
         if selected.stat().st_size > 2 * 1024 * 1024 and path.lower().endswith(".md"):
             raise ValueError("Note exceeds the 2 MiB reader limit")
         resource = source_resource(
