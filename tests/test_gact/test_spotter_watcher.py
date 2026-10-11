@@ -325,9 +325,11 @@ class _CapturingAgent:
 
     def __init__(self, *, block_until: "threading.Event | None" = None) -> None:
         self.calls: list[str] = []
+        self.session_calls: list[tuple[str, str]] = []
         self._block_until = block_until
 
     def forward(self, question: str, session_id: str, **_kw: Any) -> Any:
+        self.session_calls.append((session_id, question))
         self.calls.append(question)
         if self._block_until is not None:
             self._block_until.wait(timeout=10.0)
@@ -651,11 +653,23 @@ def test_user_message_to_waiting_watcher_works_and_returns_to_waiting(tmp_path: 
         resp = client.post(f"/v1/sessions/{child_sid}/messages", json={"text": "what's up?"})
         assert resp.status_code == 200
 
-        assert _wait_for(lambda: len(agent.calls) == 1)
-        assert agent.calls[0] == "what's up?"
+        # Human discussion now also wakes the owner with an intervention notice.
+        # Its finalized turn causes one ordinary standing-watcher check.
         assert _wait_for(
-            lambda: app.state.agent_task_registry.get(task.task_id).live_state == "waiting"
+            lambda: len(agent.session_calls) == 3
+            and not app.state.turn_runner.busy(sid)
+            and not app.state.turn_runner.busy(child_sid)
+            and app.state.agent_task_registry.get(task.task_id).live_state == "waiting"
         )
+        child_questions = [text for target, text in agent.session_calls if target == child_sid]
+        parent_questions = [text for target, text in agent.session_calls if target == sid]
+        assert child_questions == ["what's up?", _WAKE_TURN_FINAL_TEXT]
+        assert len(parent_questions) == 1 and "Messages are queued" in parent_questions[0]
+        notice = app.state.sessions.get(sid).metadata["agent_mailbox"]
+        assert len(notice) == 1 and notice[0]["delivered_at"]
+        assert notice[0]["human_intervention"]["action"] == "steer"
+        assert notice[0]["human_intervention"]["target_session_id"] == child_sid
+        assert notice[0]["human_intervention"]["text"] == "what's up?"
         assert not app.state.agent_task_registry.get(task.task_id).is_terminal
 
 
