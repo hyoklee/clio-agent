@@ -1,0 +1,31 @@
+{
+  "source": "D:/Libraries/Videos/clio_recordings/2026-10-10-docs-task-walkthroughs/raw/best-of-n-4.mp4",
+  "width": 1280,
+  "height": 960,
+  "shots": [
+    {
+      "from": 0,
+      "to": 9.2,
+      "speed": 2,
+      "caption": "Typing - 2x speed"
+    },
+    {
+      "from": 9.2,
+      "to": 17.2,
+      "speed": 4,
+      "caption": "Actual draft generation - 4x speed"
+    },
+    {
+      "from": 17.2,
+      "to": 18.4
+    },
+    {
+      "from": 18.73,
+      "to": 29.65
+    },
+    {
+      "from": 30.0,
+      "to": 36.09
+    }
+  ]
+}

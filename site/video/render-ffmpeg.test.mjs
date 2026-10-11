@@ -53,3 +53,24 @@ test('editing preserves black levels for full and limited range recordings', asy
       `${range} source black became ${[...decoded.stdout]}`);
   }
 });
+
+test('a taller recording keeps its bottom controls in the export', async () => {
+  const directory = await mkdtemp(resolve(tmpdir(), 'clio-video-framing-'));
+  await mkdir(resolve(directory, 'public'));
+  const source = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-f', 'lavfi',
+    '-i', 'color=c=white:size=1280x960:rate=30:duration=0.3', '-vf',
+    'drawbox=x=0:y=900:w=1280:h=60:color=black:t=fill', '-c:v', 'libx264', '-threads', '1',
+    resolve(directory, 'public/source.mp4')], { encoding: 'utf8' });
+  assert.equal(source.status, 0, source.stderr);
+  await writeFile(resolve(directory, 'edit.json'), JSON.stringify({ source: 'source.mp4',
+    width: 1280, height: 960, shots: [{ from: 0, to: 0.3 }] }));
+  const edited = spawnSync(process.execPath, [resolve('render-ffmpeg.mjs'), 'edit.json', 'edited.mp4'],
+    { cwd: directory, encoding: 'utf8' });
+  assert.equal(edited.status, 0, edited.stderr);
+  const pixels = spawnSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-threads', '1',
+    '-i', resolve(directory, 'edited.mp4'), '-frames:v', '1', '-vf', 'crop=2:2:600:930',
+    '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1']);
+  assert.equal(pixels.status, 0, pixels.stderr.toString());
+  assert.equal(pixels.stdout.length, 12);
+  assert.ok([...pixels.stdout].every((channel) => channel <= 2));
+});

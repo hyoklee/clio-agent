@@ -6,6 +6,11 @@ import {spawnSync} from 'node:child_process';
 const [manifest, destination] = process.argv.slice(2);
 if (!manifest || !destination) throw new Error('Usage: node render-ffmpeg.mjs edit.json out/video.mp4');
 const edit = JSON.parse(await readFile(manifest, 'utf8'));
+const width = edit.width ?? 1280;
+const height = edit.height ?? 870;
+if (![width, height].every((value) => Number.isInteger(value) && value >= 480 && value % 2 === 0)) {
+  throw new Error('Output dimensions must be even integers of at least 480 pixels');
+}
 const directory = resolve('out', manifest.replace(/\.json$/, '') + '-segments');
 await mkdir(directory, {recursive:true});
 const segments = [];
@@ -18,9 +23,9 @@ for (const [index, shot] of edit.shots.entries()) {
   if (!(shot.to > shot.from)) throw new Error(`Invalid interval in shot ${index}`);
   const speed = shot.speed ?? 1;
   if (!Number.isFinite(speed) || speed <= 0) throw new Error(`Invalid speed in shot ${index}`);
-  const crop = shot.crop ?? {x:0,y:0,width:1280,height:870};
-  const filters = [`setpts=(PTS-STARTPTS)/${speed}`, `fps=30`, `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`, 'scale=1280:870:force_original_aspect_ratio=decrease:in_range=auto:out_range=tv', 'pad=1280:870:(ow-iw)/2:(oh-ih)/2:color=0xf4f9f9', 'setsar=1'];
-  if (shot.zoom) filters.push(`zoompan=z='1+${shot.zoom-1}*min(on/30,1)':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=1280x870:fps=30`);
+  const crop = shot.crop ?? {x:0,y:0,width,height};
+  const filters = [`setpts=(PTS-STARTPTS)/${speed}`, `fps=30`, `crop=${crop.width}:${crop.height}:${crop.x}:${crop.y}`, `scale=${width}:${height}:force_original_aspect_ratio=decrease:in_range=auto:out_range=tv`, `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=0xf4f9f9`, 'setsar=1'];
+  if (shot.zoom) filters.push(`zoompan=z='1+${shot.zoom-1}*min(on/30,1)':x='iw/2-iw/zoom/2':y='ih/2-ih/zoom/2':d=1:s=${width}x${height}:fps=30`);
   if (shot.caption) {
     const captionPath = resolve(directory, `${index}.txt`);
     await writeFile(captionPath, shot.caption, 'utf8');
