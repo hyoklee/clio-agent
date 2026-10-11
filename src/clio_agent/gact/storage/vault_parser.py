@@ -94,7 +94,9 @@ def parse_note(
     )
 
 
-def resolve_links(notes: list[KnowledgeNote], authored: list[KnowledgeLink]) -> list[KnowledgeLink]:
+def resolve_links(
+    notes: list[KnowledgeNote], authored: list[KnowledgeLink], *, vault_prefix: str = ""
+) -> list[KnowledgeLink]:
     """Resolve exact paths first, then unique names; never guess ambiguous targets."""
     by_path = {note.path: note for note in notes}
     names: dict[str, set[str]] = {}
@@ -117,6 +119,17 @@ def resolve_links(notes: list[KnowledgeNote], authored: list[KnowledgeLink]) -> 
                 if candidate in by_path:
                     candidates = [candidate]
                     break
+            # Obsidian can store a target relative to the enclosing vault even
+            # when this connection selects only a subfolder. Translate that
+            # prefix, but resolve against indexed in-scope notes only.
+            prefix = vault_prefix.rstrip("/") + "/" if vault_prefix else ""
+            rooted = posixpath.normpath(target.lstrip("/"))
+            if not candidates and prefix and rooted.startswith(prefix):
+                scoped = rooted[len(prefix) :]
+                for candidate in [scoped, scoped + ".md"]:
+                    if candidate in by_path:
+                        candidates = [candidate]
+                        break
             if not candidates and "/" not in target:
                 candidates = sorted(names.get(target.casefold(), set()))
         result.append(

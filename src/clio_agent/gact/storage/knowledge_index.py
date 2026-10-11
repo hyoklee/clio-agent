@@ -214,4 +214,10 @@ class KnowledgeIndex:
             "\n".join(f"{note.path}\0{note.revision}" for note in notes).encode()
         ).hexdigest()
         self._texts = {path: row["text"] for path, row in cache.items()}
-        return notes, resolve_links(notes, authored), warnings, revision
+        prefix = adapter.root.relative_to(adapter.vault_root).as_posix()
+        return (
+            notes,
+            resolve_links(notes, authored, vault_prefix=prefix if prefix != "." else ""),
+            warnings,
+            revision,
+        )

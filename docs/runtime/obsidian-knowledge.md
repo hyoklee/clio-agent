@@ -7,6 +7,8 @@ the enclosing vault must contain `.obsidian`. The selected folder is the content
 boundary for the index, graph, reader, captures, and edits. Paths are relative to
 that folder. Links to notes outside the selection remain unresolved, and do not
 grant access to sibling or parent folders. Connect another source to use them.
+Vault-root link paths into the selected folder are translated to source-relative
+paths, while heading anchors are retained.
 
 Connecting opens a source-specific **Knowledge** workbench tab. Switch between
 **Graph** and **Files**, search note text or metadata, select a note to read it,

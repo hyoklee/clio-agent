@@ -81,7 +81,11 @@ def test_subfolder_source_confines_index_reader_links_and_edits(
     """Selecting a project folder grants no access to sibling notes or private settings."""
     project = vault / "Research"
     project.mkdir()
-    (project / "Plan.md").write_text("# Plan\n[[Methods]] [[a]] [[../b]]", encoding="utf-8")
+    (project / "Plan.md").write_text(
+        "# Plan\n[[Methods]] [[Research/Methods#Section]] [Methods](/Research/Methods.md) "
+        "[[a]] [[../b]] [[Research/../a]]",
+        encoding="utf-8",
+    )
     (project / "Methods.md").write_text("# Methods\nCalibration", encoding="utf-8")
     (project / ".private").mkdir()
     (project / ".private" / "secret.md").write_text("secret")
@@ -96,7 +100,10 @@ def test_subfolder_source_confines_index_reader_links_and_edits(
     snapshot = knowledge.index.snapshot(record)
     assert {note.path for note in snapshot.notes} == {"Plan.md", "Methods.md"}
     assert knowledge.index.snapshot(record, query="Unique text").total == 0
-    assert next(link for link in snapshot.links if link.target == "Methods.md").status == "resolved"
+    resolved = [link for link in snapshot.links if link.status == "resolved"]
+    assert len(resolved) == 3
+    assert all(link.target == "Methods.md" for link in resolved)
+    assert any(link.selector == "Section" for link in resolved)
     assert all(
         link.status == "unresolved" for link in snapshot.links if link.target != "Methods.md"
     )
