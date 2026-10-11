@@ -10,6 +10,7 @@ import argparse
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
 import time
@@ -365,12 +366,13 @@ def main() -> int:
     process = None
     try:
         with (proof / "server.log").open("w", encoding="utf8") as log:
-            code = (
-                "from clio_agent.gact.app import build_app; import uvicorn; "
-                f"a=build_app(); uvicorn.run(a,host='127.0.0.1',port={args.port})"
-            )
+            server_argv = [
+                sys.executable,
+                str(Path(__file__).with_name("_lifecycle_server.py")),
+                str(args.port),
+            ]
             process = subprocess.Popen(
-                [sys.executable, "-c", code],
+                server_argv,
                 cwd=workspace,
                 env=env,
                 stdout=log,
@@ -406,12 +408,16 @@ def main() -> int:
                     try:
                         process.wait(timeout=30)
                     except subprocess.TimeoutExpired:
+                        diagnostic_signal = getattr(signal, "SIGUSR1", None)
+                        if diagnostic_signal is not None:
+                            process.send_signal(diagnostic_signal)
+                            time.sleep(0.2)
                         common.terminate_server(process)
                         raise AssertionError(
                             "Owned API did not settle graceful interruption"
                         ) from None
                     process = subprocess.Popen(
-                        [sys.executable, "-c", code],
+                        server_argv,
                         cwd=workspace,
                         env=env,
                         stdout=log,
