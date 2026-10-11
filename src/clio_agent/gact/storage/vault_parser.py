@@ -101,7 +101,13 @@ def resolve_links(
     by_path = {note.path: note for note in notes}
     names: dict[str, set[str]] = {}
     for note in notes:
-        for name in [PurePosixPath(note.path).name, PurePosixPath(note.path).stem, *note.aliases]:
+        path = PurePosixPath(note.path)
+        # Obsidian permits omitted extensions for Markdown notes only. An image
+        # with the same stem must not make [[Recipe]] ambiguous with Recipe.md.
+        note_names = [path.name]
+        if note.kind == "note":
+            note_names.extend([path.stem, *note.aliases])
+        for name in note_names:
             names.setdefault(name.casefold(), set()).add(note.path)
     result = []
     for link in authored:

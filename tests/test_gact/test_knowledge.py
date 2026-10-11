@@ -75,6 +75,20 @@ def test_incremental_index_and_exclusions(tmp_path: Path, vault: Path) -> None:
         adapter.apply("a.md", None, None)
 
 
+def test_extensionless_note_links_do_not_conflict_with_attachment_stems() -> None:
+    """An extensionless wikilink names Markdown; attachments need their extension."""
+    source, links, _ = parse_note("Index.md", "[[Recipe]] [[Recipe.png]] [[Only image]]", "1")
+    recipe, _, _ = parse_note("Notes/Recipe.md", "# Recipe", "2")
+    image = recipe.model_copy(update={"path": "Photos/Recipe.png", "kind": "attachment"})
+    orphan = image.model_copy(update={"path": "Photos/Only image.png"})
+    resolved = resolve_links([source, recipe, image, orphan], links)
+    assert [(link.target, link.status) for link in resolved] == [
+        ("Notes/Recipe.md", "resolved"),
+        ("Photos/Recipe.png", "resolved"),
+        ("Only image", "unresolved"),
+    ]
+
+
 def test_vault_root_links_do_not_fall_back_to_an_unrelated_in_scope_note() -> None:
     """An escaping vault-root path stays unresolved even if its basename exists locally."""
     plan, authored, _ = parse_note("Plan.md", "[[Research/Methods#Section]] [[Research/../a]]", "1")
