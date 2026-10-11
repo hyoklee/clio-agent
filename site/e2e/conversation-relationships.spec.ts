@@ -22,8 +22,9 @@ for (const width of [390, 1440]) {
       await button.click();
       const dialog = page.getByRole('dialog');
       await expect(dialog.getByRole('img')).toBeVisible();
+      await expect.poll(() => dialog.getByRole('img').evaluate((element) => (element as HTMLImageElement).complete && (element as HTMLImageElement).naturalWidth > 0)).toBe(true);
       await expect(dialog.getByRole('link', { name: 'Open full-size image (new tab)' })).toHaveAttribute('href', /\.webp$/);
-      if (width === 1440 || index === 1) await page.screenshot({ path: test.info().outputPath(`capture-${index}-${width}.png`) });
+      if (width === 1440 || index === 1) await page.screenshot({ path: test.info().outputPath(`capture-${index}-${width}.png`), animations: 'disabled' });
       await page.keyboard.press('Escape');
       await expect(dialog).toBeHidden();
       await expect(button).toBeFocused();
