@@ -6,8 +6,18 @@ TUI/HTTP surface aren't tracked here.
 
 ## Unreleased
 
+### Added
+
+- Connect Obsidian vaults as knowledge sources, with a graph/files workbench,
+  note reader, immutable chat attachments, and capability-gated knowledge tools.
+  Local vaults default to read only; reviewed edits reuse the connected-source
+  write pipeline. Optional official Headless Sync runs separately from indexing
+  and note permissions, with private client setup on the CLIO host.
+
 ### Fixed
 
+- Resource derivative storage uses Windows extended paths throughout, so captured
+  resources remain readable under deep workspace and custody paths.
 - Windows protected execution prefers verified native MXC with bundled Codex
   0.162.1, avoiding sandbox account creation, elevation and runtime ACL scans on
   compatible devices. Filesystem exclusions and direct external-network denial

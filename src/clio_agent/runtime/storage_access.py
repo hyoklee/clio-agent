@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
+import sys
 from pathlib import Path, PurePath, PureWindowsPath
 from urllib.parse import quote
 
@@ -77,19 +79,41 @@ def storage_access_roots() -> tuple[tuple[Path, ...], tuple[Path, ...]]:
         data = paths.user_data_dir() / "connected-sources"
     except paths.HomeDirectoryUnavailable:
         return (), ()
-    denied = (private.resolve(),) if private.exists() else ()
+    denied = [private.resolve()] if private.exists() else []
+    headless = (
+        Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config") / "obsidian-headless"
+        if sys.platform == "linux"
+        else Path.home() / ".obsidian-headless"
+    )
+    if headless.exists():
+        denied.append(headless.resolve())
     database = data / "sources.sqlite3"
     if not database.exists():
-        return (), denied
+        return (), tuple(denied)
     read_only = [data.resolve()]
     try:
         for record in _source_records():
             source = record["source"]
-            if record["connected"] and source["provider"] == "local":
+            if record["connected"] and source["provider"] in {"local", "obsidian"}:
                 read_only.append(Path(source["root"]).resolve())
+                if source["provider"] == "obsidian":
+                    vault = Path(source["root"])
+                    denied.append((vault / ".obsidian").resolve())
+                    denied.extend(
+                        (vault / folder).resolve()
+                        for folder in record.get("configuration", {}).get(
+                            "obsidian_excluded_folders", []
+                        )
+                    )
+                    if vault.is_dir():
+                        denied.extend(
+                            child.resolve()
+                            for child in vault.iterdir()
+                            if child.name.startswith(".")
+                        )
     except (sqlite3.Error, ValueError, KeyError, TypeError) as exc:
         raise PermissionError("Connected-source access decisions could not be read") from exc
-    return tuple(read_only), denied
+    return tuple(read_only), tuple(denied)
 
 
 def check_storage_access(path: Path, *, write: bool = False) -> None:
@@ -118,7 +142,9 @@ def require_storage_fence(mechanism: str, active: bool, write_roots: tuple[Path,
     if active and mechanism == "codex":
         return
     read_only, denied = storage_access_roots()
-    has_credentials = any((root / "credentials.json").exists() for root in denied)
+    has_credentials = any(
+        (root / "credentials.json").exists() or (root / "auth_token").exists() for root in denied
+    )
     protected = bool(_source_records()) and (
         not active
         or any(

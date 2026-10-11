@@ -185,4 +185,7 @@ def build_auto_react_tools(
         )
 
         tools.append(build_draft_alternatives_tool())
+    from clio_agent.gact.storage.knowledge_tools import build_knowledge_tools
+
+    tools.extend(build_knowledge_tools())
     return tools

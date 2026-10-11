@@ -32,6 +32,9 @@ class SourceConfiguration(StorageModel):
     destination_collection_root: str = ""
     destination_local_root: str = ""
     github_ref: str = ""
+    obsidian_connection: Literal["local_vault", "headless_sync"] = "local_vault"
+    obsidian_excluded_folders: list[str] = Field(default_factory=list)
+    obsidian_sync_mode: Literal["pull-only", "bidirectional"] = "pull-only"
 
 
 class SftpCredentials(StorageModel):
@@ -45,7 +48,7 @@ class SftpCredentials(StorageModel):
 class CreateSource(StorageModel):
     """Approve one source on the connected CLIO for one workspace."""
 
-    provider: Literal["local", "sftp", "google_drive", "globus", "github"]
+    provider: Literal["local", "sftp", "google_drive", "globus", "github", "obsidian"]
     root: str = Field(min_length=1, max_length=4096)
     label: str = Field(min_length=1, max_length=120)
     mode: AccessMode = "read_only"

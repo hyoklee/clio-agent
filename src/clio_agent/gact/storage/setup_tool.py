@@ -63,6 +63,15 @@ def connected_data_status() -> dict[str, Any]:
             {
                 "id": source.id,
                 "provider": source.provider,
+                "source_kind": source.source_kind,
+                "connection": source.connection,
+                "knowledge_capabilities": {
+                    "note_read": source.capabilities.note_read,
+                    "note_search": source.capabilities.note_search,
+                    "note_relations": source.capabilities.note_relations,
+                    "note_write": record.linked_access != "read_only"
+                    and source.source_kind == "knowledge",
+                },
                 "label": source.label,
                 "mode": source.mode,
                 "link_access": record.linked_access,
