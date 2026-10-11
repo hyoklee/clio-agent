@@ -42,6 +42,35 @@ Representative Download acceptance uses 6,000 selected small files plus a
 failure remains separate and is not relabeled as a pass. Remaining model gates
 continue on a newly frozen source; full qualification remains incomplete.
 
+### Continued Claude protocol qualification
+
+The next frozen `22d704e1` run passed four complete actual Claude mixed-task
+cycles. Its fifth parent reply began `_tool_calls`, contained the requested
+`spawn_agent_task` JSON and ended with a closing fence. The actual SDK record
+confirms the malformed opener; the bridge treated it as a final answer, so no
+child operation was accepted. The unchanged 180-second worker-start gate failed.
+That attempt remains failed. A root cause for the model's spelling is not
+established.
+
+The text-tool parser now routes that exact whole-block shape through its existing
+bounded protocol-error observation. It requires a call list for declared tools
+and an unmatched closing fence. It executes no malformed call and introduces no
+elapsed-time or general repetition rule. JSON data, unknown tool names, quoted
+examples and blocks without the observed closing fence remain ordinary answers.
+The reproduction failed before correction; eighteen focused cases then passed
+individually and sequentially with zero skips. Scoped Ruff/format/Pyright and
+eight existing guards passed. Formatting preserved the tested syntax trees.
+
+Five Codex terminal-messaging cycles also passed on `22d704e1`, independently
+creating successors for completed and cancelled recipients with immutable old
+outcomes and no replay. Fresh Claude runs are being prepared on the parser
+correction. The previous isolated credential snapshot fell below the unchanged
+30-minute admission precondition; those later Claude cases executed no model
+gate. A newer existing homelab credential has been copied into a new isolated,
+refresh-disabled snapshot, with original host credential bytes unchanged.
+Neither focused parser checks nor the earlier four cycles establish five-cycle
+live recovery on the corrected source.
+
 ## Behavior under review
 
 | Use case | Implemented behavior | Acceptance evidence and limits |

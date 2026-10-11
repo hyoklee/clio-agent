@@ -111,6 +111,35 @@ def test_orphaned_call_list_is_rejected_without_executing_it() -> None:
     assert not split.text
 
 
+def test_corrupted_tool_fence_is_a_protocol_error_without_submitting_work() -> None:
+    """The live Haiku reply replaced its opening fence with an underscore."""
+    raw = '_tool_calls\n[{"name":"spawn_agent_task","arguments":{"agent":"worker"}}]\n```'
+    split = split_reply(raw, call_prefix="t", available_tools={"spawn_agent_task"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "opening" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('_tool_calls\n[{"name":"search","arguments":{}}]\n```', set()),
+        ('_tool_calls\n[{"name":"other","arguments":{}}]\n```', {"search"}),
+        ('_tool_calls\n[{"name":"search","arguments":{},"result":"data"}]\n```', {"search"}),
+        ('_tool_calls\n[{"name":"search","arguments":{}}]', {"search"}),
+        ('Example:\n_tool_calls\n[{"name":"search","arguments":{}}]\n```', {"search"}),
+        ('```text\n_tool_calls\n[{"name":"search","arguments":{}}]\n```', {"search"}),
+        ('_tool_calls\n[{"name":"search","arguments":{}}]\n```\nMore text.', {"search"}),
+    ],
+)
+def test_corrupted_fence_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only the whole observed shape for available tools can produce protocol feedback."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 @pytest.mark.parametrize(
     "reply",
     [
