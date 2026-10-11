@@ -10,7 +10,9 @@ for (const width of [390, 1440]) {
     await expect(page.locator('.sl-markdown-content')).toContainText('fictional');
     expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
     const captures = page.locator('.guide-screenshot');
-    await expect(captures).toHaveCount(4);
+    await expect(captures).toHaveCount(5);
+    await expect(page.locator('.sl-markdown-content')).toContainText('All notes');
+    await expect(page.locator('.sl-markdown-content')).toContainText('Isolated notes');
     for (const capture of await captures.all()) {
       await capture.scrollIntoViewIfNeeded();
       const image = capture.getByRole('img');
