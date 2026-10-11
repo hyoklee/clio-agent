@@ -1,5 +1,9 @@
 # Integrated asynchronous task runtime qualification
 
+The consolidated current review is [Agent-facing Tasks: use cases and
+acceptance](agent-facing-tasks-use-cases.md). The integration and runtime
+preflight below are historical snapshots, not final-source acceptance.
+
 The task implementation is integrated in core develop `4314bbb0`, with GACT
 `e7d7de52` and marketplace `db6d6b7`. This does not establish full live acceptance.
 Earlier model receipts retain their original source and runtime identities.

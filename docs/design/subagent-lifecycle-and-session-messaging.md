@@ -1,6 +1,6 @@
 # Subagent lifecycle and session messaging
 
-Status: candidate implementation and qualification in progress, 2026-10-10.
+Status: candidate implementation and qualification in progress, 2026-10-11.
 The original source audit used core
 `8feb486cb84a3c4587d9c424b69861e93925933b` on
 `codex/agent-facing-async-tasks`. The branch now includes local lifecycle and
@@ -41,36 +41,137 @@ exact-session messaging controls. Live acceptance remains a separate gate.
   supports their contract; existing owner-to-relay messaging is retained. Those
   routes remain unimplemented and unqualified, not silently simulated locally.
 
-## Original audit before implementation
+## Current checkpoint
 
-The candidate has 47 focused lifecycle parameter cases, six existing messaging
+The consolidated implementation and use-case review is
+[Agent-facing Tasks: use cases and acceptance](../qualification/agent-facing-tasks-use-cases.md).
+Full qualification remains incomplete. Core `2960d197` clarifies successor
+briefing: copied first-person history describes earlier runs, fresh checks must
+be performed in the successor, and newly delivered mail must be processed within
+the recipient's permissions. Five focused cases and scoped checks passed.
+
+The prior `ccc105eb` Codex run passed five lifecycle cycles, peer/recovery/UI and
+active/fresh restart, but failed new terminal-mail handling through a successor
+chain. Its committed context included the mail; that proves staging, not a
+successful model response. The Claude run on `2960d197` reached a fresh successor
+result read, then failed a later spawn request during its first cycle. Zero
+complete cycles are claimed for that attempt. Both failures remain recorded.
+Codex on `2960d197` passed five complete lifecycle cycles and busy/idle peer
+messaging. Recovery setup then failed: the parent model called an unbounded
+`wait_tasks` on its accepted child instead of ending after spawning. The unchanged
+150-second operator gate expired before service interruption, so current-runtime
+recovery, UI and additional terminal/active/fresh gates were not executed. This
+does not demonstrate a broken wait. All 12 recorded Shell owners and its private
+Core owner are absent. Exact-runtime CI `38111929557` is in progress.
+CI `38110734518` on `ccc105eb` passed all 19 jobs; its executed
+test skips remain exclusions. Current machine-readable status is retained in
+`mcp-agent-tasks/lifecycle-qualification-current.json`.
+
+## Retained verification history
+
+The candidate has 55 focused lifecycle parameter cases, six existing messaging
 compatibility cases and three unchanged transcript golden cases qualified
-sequentially with one worker. UI controls have three focused component and two
-transport cases, scoped checks and both production builds. These are engineering
-checks, not substitutes for the model acceptance below.
+individually and sequentially with one worker. Nine catalog/route/commit
+contracts and the metadata-race/hook-defer checks also pass. Claude protocol
+checks add 16 JSON-envelope and 14 XML/legacy-format executions, including the
+production provider bridge and agent loop. Focused cases have zero skips.
+Scoped Ruff/format, changed-runtime Pyright (zero errors/warnings) and unchanged
+guards pass. UI controls have three focused component and two transport cases,
+scoped checks and both production builds. These checks do not replace models.
 
-Actual Codex/Luna runs have demonstrated held background Shell completion,
-same-handle resume, linked completed/cancelled restart without replay, generic
-subtree cancellation and process settlement. Separate real-model peer discovery,
-busy/idle messaging and service-interruption recovery also passed. Final
-five-cycle qualification and a clean actual-service browser gate are pending.
-The first five-cycle control run completed all five cycles, but its trace audit
-found unauthorized historical-result reads in successors; that is a failed
-acceptance condition and is being corrected with fourteen additional scoped
-authorization cases. Its peer-discovery leg failed when the coordinator delegated
-instead of calling its memory/message tools. The revised peer gate uses autonomous
-roots with their production tools, keeping that failed attempt intact.
-The fourteen retained-result authorization cases now pass, as do nine exact
-catalog/route/commit fixture contracts. CI additionally exposed a session-metadata
-serialization race. A gated concurrent writer reproduced it before the fix;
-copy-on-write metadata patches now pass that regression and the actual hook-defer
-case. No timeout, worker, assertion or guard budget was weakened.
-The first browser run exercised every lifecycle action but failed its unchanged
-no-error gate because the isolated runtime omitted its own executable directory
-from PATH; the environment correction does not change production assertions.
-No full cross-provider/platform qualification or relay lifecycle acceptance is
-claimed. Retain detailed verdicts, source identities and failed attempts under
-the release recovery `mcp-agent-tasks` evidence directory.
+The complete actual Claude/Haiku run on core `e7e67bb4` and GACT `63149f88`
+passed five lifecycle cycles: immediate handles and independent parent work,
+accepted Shell completion while the child is held, retained mail, same-handle
+resume, completed/cancelled retained-context restart without replay, and generic
+subtree cancellation after physical process settlement. Peer discovery and
+busy/idle messaging, service interruption/recovery, and real-service browser
+controls at 1280px and 390px also passed. The UI ran five additional pause/resume
+cycles on the actual event stream, with honest pause states, confirmation and
+dismissal behavior, no page/HTTP errors and no viewport overflow. Additional
+model checks passed terminal completed addressing, cancelled/failed addresses
+through existing successor chains, active restart after physical subtree
+settlement and fresh-context restart without replay. All 14 Shell owners and its
+private Core owner are absent. This remains evidence for `e7e67bb4`, rather than
+acceptance of later runtime changes. The earlier complete Codex `ca7506fa` run
+also retains its original identity. The full Codex/Luna run at `a8a5c9fc`
+subsequently passed the same five lifecycle cycles, peer messaging, recovery,
+actual-service desktop/phone controls and additional terminal/active/fresh
+checks. Its 14 Shell owners and private Core owner are absent. Recovery required
+an explicit second message asking the child to wait on its already accepted
+Shell handle; the operation was not replayed and no deadline changed. This is
+recorded as a second wait mission, not first-assignment adherence.
+
+Source CI on `a8a5c9fc` failed one Python 3.13 shard: Stop arriving during durable
+MCP acceptance was retained, then ignored by the app-less transparent-wait path.
+A gated regression reproduced that race. `ad51cd45` finishes accepted custody
+and propagates Stop before starting another foreground wait. Four focused
+regressions pass, including actual backend cancellation/reconnect and responsive
+waits, without changing five-second bounds or cancelling backend work. Scoped
+checks and five guards pass. The Claude `ad51cd45` attempt completed three full
+cycles, then failed the fourth successor's required new `get_task_result` call:
+the model reused its copied historical result and made no new tool call. No
+authorization error or replay was observed. Its seven Shell owners and private
+Core owner are absent, and the failed verdict is retained. `18fdc127` clarifies
+the live mission's new-run result read and in-flight recovery wait. Its non-text
+execution/oracle AST and production runtime tree are unchanged. The subsequent
+Haiku attempt ended with formatting rather than the requested message call;
+the Sonnet diagnostic returned unfenced JSON without submitting a tool call.
+Both failed verdicts are retained. `ccc105eb` clarifies Claude's text-tool framing
+only in the qualification agents; runtime and lifecycle oracles are unchanged.
+Its Haiku attempt passed two full cycles, then failed the third successor's
+required fresh result-read gate. Five Shell owners and its private Core are
+absent. No final-head lifecycle pass is claimed. Runtime CI `38109538473` on
+`ad51cd45` and `ccc105eb` passed all 19 jobs. These CI receipts do not establish
+complete live qualification.
+
+The runtime is an isolated Python 3.14.6/Core 2.3.1 candidate. This does not
+qualify the installed runtime or the protected Windows native/confinement gates.
+Final source CI is recorded independently; the existing 66 skipped tests per
+interpreter remain exclusions, not acceptance passes. Relay pause, retained
+restart and peer addressing remain explicitly unsupported; wider provider,
+platform and earlier transport gates are not claimed complete.
+
+Failed attempts retain their original outcomes. Codex `110d9425`, `e7e67bb4`,
+`4017a0b7` and `b554879c` passed five controls and peer messaging but exceeded
+the unchanged 30-second shutdown deadline; their UI gates were not executed.
+Two real-socket regressions reproduced listener threads remaining blocked after
+close. Five focused cases pass after shutdown-before-close, but the complete
+`b554879c` workload still failed application shutdown, so that listener bug is
+not claimed as the complete cause. A serving-lifespan diagnostic then captured
+the shutdown owner waiting in sequential Codex conversation-socket closes.
+Two deterministic owner-loop regressions reproduce this serialization and a
+close failure skipping other owners. Both pass after concurrent close under
+one existing five-second socket bound. Scoped checks and unchanged guards pass;
+the complete `a8a5c9fc` run above includes actual-model service recovery on that fix.
+The short `2d3ca338` diagnostic completed one cycle, then failed because the
+successor reported retained data without the required `get_task_result` call.
+The strict assertion remains unchanged. A zero-control-cycle `a54b0e63`
+diagnostic passed peer messaging and isolated recovery; it is not a full matrix.
+
+The first Claude run on `7ca356e3` exposed
+retained-context reconstruction stranding a cancellation result after streamed
+text. Four regressions reproduced before correction; six checks now pass,
+including the exact failed transcript's original call/result identities and
+strict rejection of missing results. Claude `65361111` passed three cycles
+before bare JSON call metadata was misclassified as a final answer. Claude
+`20830ab9` passed two before an XML call container caused the same silent ending.
+Neither malformed response submitted an operation. Both formats now receive
+bounded protocol-error feedback and require a subsequent correctly fenced model
+call; JSON/XML examples and ordinary data are never executed. Each failure has
+preserved transcripts, source identity and absent-owner evidence.
+
+Other retained corrections include authorization of known historical results,
+ambiguous lineage aliases, missing pause-state wire projections and concurrent
+session-metadata serialization. The completion-notify regression checks durable
+intent before releasing the real consumer, then actual collection and duplicate
+suppression; no production delivery change was made for that test. The first
+browser attempt's missing private executable PATH and earlier coordinator
+delegation were qualification failures, not claimed acceptance. No timeout,
+worker, assertion or guard budget was weakened. Detailed source identities,
+verdicts, public custody hashes and failed attempts remain under the release
+recovery `mcp-agent-tasks` evidence directory.
+
+## Original audit before implementation
 
 | Operation | Current implementation |
 | --- | --- |
