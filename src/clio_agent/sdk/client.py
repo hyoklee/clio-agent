@@ -340,7 +340,8 @@ class SessionsAPI:
     ) -> Session:
         """POST /v1/sessions/{id}/fork — ``at_message_id`` truncation
         is inclusive. The independent branch preserves the parent's model,
-        behavior settings and narrowing permission policies."""
+        behavior settings and narrowing permission policies. Only user conversations
+        and user branches can be forked; managed subagent/lookup sessions are rejected."""
 
         body = _drop_missing({"at_message_id": at_message_id, "title": title})
         response = self._client._request("POST", f"/v1/sessions/{session_id}/fork", json=body)

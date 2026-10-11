@@ -448,8 +448,9 @@ class StepRecorder:
         )
 
         rows = list(model_context_messages(list(ledger)))
-        while rows and _field(rows[-1], "role") == "user":
-            rows.pop()  # this turn's own message is recorded by the loop itself
+        # The loop records this forward's question itself. Earlier unanswered
+        # questions (e.g. a branch/rewind at a user message) remain model context.
+        rows = [row for row in rows if not self.turn_id or _field(row, "id") != self.turn_id]
         from clio_agent.gact.agents.context_recovery import (
             context_identity,
             recorded_context,

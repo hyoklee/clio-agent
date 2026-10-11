@@ -57,6 +57,7 @@ def test_fork_copies_messages_and_sets_parent(tmp_path: Path) -> None:
 
         rows = client.get(f"/v1/sessions/{new['id']}/messages").json()["messages"]
     assert len(rows) == 4  # 2 turns × (user + assistant)
+    assert all(row["session_id"] == new["id"] for row in rows)
 
 
 def test_fork_copies_context_files(tmp_path: Path) -> None:
@@ -126,6 +127,27 @@ def test_fork_unknown_session_404s(tmp_path: Path) -> None:
     assert resp.json()["error"]["error"] == "not_found"
 
 
+def test_fork_rejects_unknown_or_foreign_message_without_creating_branch(tmp_path: Path) -> None:
+    with _client(tmp_path) as client:
+        source = client.post("/v1/sessions", json={"title": "source"}).json()["id"]
+        other = client.post("/v1/sessions", json={"title": "other"}).json()["id"]
+        _turn(client, source, "Original baseline")
+        foreign = _turn(client, other, "Other conversation")
+        before = client.get("/v1/sessions").json()
+        history = client.get(f"/v1/sessions/{source}/messages").json()
+        for target in ("msg_missing", foreign["id"]):
+            response = client.post(f"/v1/sessions/{source}/fork", json={"at_message_id": target})
+            assert response.status_code == 404
+            assert response.json()["error"]["details"]["message_id"] == target
+            assert client.get("/v1/sessions").json() == before
+            assert client.get(f"/v1/sessions/{source}/messages").json() == history
+        for malformed in (0, False, [], {}):
+            response = client.post(f"/v1/sessions/{source}/fork", json={"at_message_id": malformed})
+            assert response.status_code == 422
+            assert response.json()["error"]["details"]["field"] == "at_message_id"
+            assert client.get("/v1/sessions").json() == before
+
+
 def test_v3_fork_is_writable_and_leaves_original_unchanged(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         original = client.post("/v1/sessions", json={"title": "Original"}).json()["id"]
@@ -156,13 +178,12 @@ def test_fork_preserves_configuration_and_narrowing_policies(tmp_path: Path) -> 
             edit_mode="patch",
             routing_mode="reasoning_only",
             approval_mode="bypass",
-            agent={"id": "expert", "mode": "subagent"},
+            agent={"id": "expert"},
             metadata={
                 "effort": "high",
                 "effort_source": "user",
                 "active_agent_blueprint_id": "blueprint",
-                "session_type": "agent_task",
-                "agent_task": {"pending": True},
+                "mcp_tasks": [{"task_id": "pending"}],
                 "pinned": True,
             },
         )
@@ -189,7 +210,7 @@ def test_fork_preserves_configuration_and_narrowing_policies(tmp_path: Path) -> 
         assert branch["effort"] == "high"
         assert branch["active_blueprint_id"] == "blueprint"
         assert not branch["pinned"]
-        assert "agent_task" not in record.metadata
+        assert "mcp_tasks" not in record.metadata
         assert any(
             row["scope_id"] == record.id and row["action"] == "deny"
             for row in client.app.state.permission_policies

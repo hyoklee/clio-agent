@@ -41,6 +41,7 @@ from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui, spli
 from clio_agent.gact.routes.session_cancellation import cancel_session_state
 from clio_agent.gact.routes.session_creation import register_session_creation_route
 from clio_agent.gact.routes.session_export import register_session_export_routes
+from clio_agent.gact.routes.session_fork import register_session_fork_route
 from clio_agent.gact.routes.session_question_helpers import (
     normalize_question_options,
     pending_user_questions,
@@ -50,7 +51,6 @@ from clio_agent.gact.routes.session_question_helpers import (
 from clio_agent.gact.routes.session_rows import filter_session_rows, rows_to_wire
 from clio_agent.gact.routes.side_sessions import register_side_session_routes
 from clio_agent.gact.runtime.globals import _new_attempt_id, _new_question_id
-from clio_agent.gact.runtime.permission_policies import inherit_child_session_policies
 from clio_agent.gact.runtime.retention import enforce_dict_bound
 from clio_agent.gact.session_descendants import purge_session_tasks
 from clio_agent.gact.session_tool_output import delete_session_tool_output
@@ -270,7 +270,10 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             src_msgs = src_msgs[: next(i for i, m in enumerate(src_msgs) if m.id == at) + 1]
         # Deep-copy parts so the copy's log doesn't alias the source's (model_copy snapshot).
         await run_off_loop(
-            deps.replace_session_messages, app, dst, [m.model_copy(deep=True) for m in src_msgs]
+            deps.replace_session_messages,
+            app,
+            dst,
+            [m.model_copy(deep=True, update={"session_id": dst}) for m in src_msgs],
         )
         if source_context_files := app.state.context_files.get(src, {}):
             app.state.context_files[dst] = {k: dict(row) for k, row in source_context_files.items()}
@@ -279,6 +282,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
     register_side_session_routes(
         app, copy_context=copy_session_context, delete_session=delete_session
     )
+    register_session_fork_route(app, copy_context=copy_session_context)
 
     # ---- Rollback (undo / rewind) -----------------------------------
 
@@ -535,73 +539,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             deleted_messages=deleted,
             target_message_id=target_message_id,
             include_target=include_target,
-        )
-
-    # ---- POST /v1/sessions/{sid}/fork (BBB26) -------------------------
-
-    @app.post("/v1/sessions/{sid}/fork")
-    async def fork_session(sid: str, request: Request) -> Response:
-        """Copy a session + its messages into a fresh session.
-
-        Body (optional): ``{"at_message_id": "<id>", "title": "..."}``
-        ``at_message_id`` truncates the copy at + including that
-        message (so "branch from this point"). Absent → copy every
-        stored message.
-
-        The new session's ``parent_session_id`` points at the source
-        so the TUI's sidebar can render the fork hierarchy (the v0.1
-        Session already carries that field).
-        """
-
-        sess = app.state.sessions.get(sid)
-        if sess is None:
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="not_found",
-                        message=f"session not found: {sid}",
-                        details={"session_id": sid},
-                        recoverable=False,
-                    )
-                ).model_dump(exclude_none=True),
-            )
-
-        body = await json_body(request, route="POST /v1/sessions/{sid}/fork")
-        title = body.get("title") or f"{sess.title} (fork)"
-        # Preserve conversation configuration, without copying task ownership,
-        # pending work, pinning, or ephemeral lookup state into a user branch.
-        metadata = {
-            key: value
-            for key, value in sess.metadata.items()
-            if key.startswith("active_agent_blueprint_")
-            or key in {"effort", "effort_source", "thinking_level", "branch", "git_branch"}
-        }
-        metadata["session_kind"] = "branch"
-        agent = {key: value for key, value in sess.agent.items() if key != "mode"}
-        new_sess = app.state.sessions.create(
-            workspace_id=sess.workspace_id,
-            title=title,
-            parent_session_id=sid,
-            model=dict(sess.model),
-            agent=agent,
-            metadata=metadata,
-            mode=sess.mode,
-            edit_mode=sess.edit_mode,
-            routing_mode=sess.routing_mode,
-            approval_mode=sess.approval_mode,
-            approval_profile=sess.approval_profile,
-        )
-        inherit_child_session_policies(app, sid, new_sess.id)
-        copied = await copy_session_context(sid, new_sess.id, body.get("at_message_id") or "")
-        app.state.sessions.update(new_sess.id, message_count=copied)
-        return project_for_request(
-            request,
-            v2=lambda: JSONResponse(
-                status_code=201,
-                content=Session(**new_sess.to_wire()).model_dump(exclude_none=True),
-            ),
-            v3=lambda: JSONResponse(status_code=201, content=session_to_v3(new_sess)),
         )
 
     # ---- /v1/sessions/{sid}/compact ----------------------------------

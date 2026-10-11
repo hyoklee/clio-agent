@@ -11,7 +11,7 @@ import pytest
 from clio_agent.arc.history_plane import HistoryPlane
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import context
-from clio_agent.gact.agents.clio_react_record import fold_steps
+from clio_agent.gact.agents.clio_react_record import StepRecorder, fold_steps
 from clio_agent.gact.agents.context_recovery import (
     recorded_context,
     recovery_details,
@@ -193,3 +193,31 @@ def test_unanswered_transcript_call_never_seeds_partial_context() -> None:
                 }
             ],
         )
+
+
+def test_carry_over_keeps_user_boundary_and_excludes_only_current_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(context, "active_app", lambda: None)
+    plane = HistoryPlane()
+    recorder = StepRecorder(plane, "branch", "main", expert_id="main")
+    recorder.turn_id = "current"
+    recorder.carry_over(
+        [
+            {
+                "id": "selected",
+                "role": "user",
+                "parts": [{"type": "text", "text": "Readings 10, 12, 14"}],
+            },
+            {
+                "id": "current",
+                "role": "user",
+                "parts": [{"type": "text", "text": "Recall the readings"}],
+            },
+        ]
+    )
+    recovered = plane.render_working_set("branch", "main")
+    user_text = [s.content.get("text") for s in recovered if s.content.get("actor") != "algorithm"]
+    assert user_text == ["Readings 10, 12, 14"]
+    recorder.carry_over([])
+    assert plane.render_working_set("branch", "main") == recovered
