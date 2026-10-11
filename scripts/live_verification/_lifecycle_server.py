@@ -7,6 +7,7 @@ import faulthandler
 import signal
 import sys
 import threading
+import time
 import traceback
 from types import FrameType
 from typing import Any
@@ -45,6 +46,22 @@ def dump_owner_stacks(signum: int, frame: FrameType | None) -> None:
     sys.stderr.flush()
 
 
+def watch_shutdown(app: Any, stopped: threading.Event) -> None:
+    """Request loop-owner diagnostics during teardown even if a library owns SIGUSR1."""
+    noticed_at: float | None = None
+    while not stopped.wait(0.25):
+        supervisor = getattr(app.state, "task_supervisor", None)
+        if supervisor is None or not supervisor.closing:
+            continue
+        if noticed_at is None:
+            noticed_at = time.monotonic()
+        elif time.monotonic() - noticed_at >= 10:
+            loop = getattr(app.state, "mcp_app_loop", None)
+            if loop is not None and loop.is_running():
+                loop.call_soon_threadsafe(dump_owner_stacks, 0, None)
+            noticed_at = time.monotonic()
+
+
 def main() -> None:
     """Run unchanged production startup/shutdown; signal diagnostics stay private."""
     import uvicorn
@@ -62,7 +79,17 @@ def main() -> None:
     register_native = getattr(faulthandler, "register", None)
     if native_diagnostic_signal is not None and callable(register_native):
         register_native(native_diagnostic_signal, file=sys.stderr, all_threads=False)
-    uvicorn.run(build_app(), host="127.0.0.1", port=int(sys.argv[1]))
+    app = build_app()
+    stopped = threading.Event()
+    watcher = threading.Thread(
+        target=watch_shutdown, args=(app, stopped), name="live-shutdown-diagnostics", daemon=True
+    )
+    watcher.start()
+    try:
+        uvicorn.run(app, host="127.0.0.1", port=int(sys.argv[1]))
+    finally:
+        stopped.set()
+        watcher.join(timeout=1)
 
 
 if __name__ == "__main__":
