@@ -195,11 +195,31 @@ class _Def:
 # --------------------------------------------------------------------------- #
 
 
-def test_completed_async_child_sets_notify_pending(tmp_path: Path, monkeypatch) -> None:
+def test_completed_async_child_sets_notify_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Inspect the durable notification at handoff, before automatic delivery consumes it."""
+    from clio_agent.gact.task_completion_wake import request_completion_wake
+
     _declare(monkeypatch, "main")
     app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent())
     with TestClient(app) as client:
         parent = client.post("/v1/sessions", json={"title": "p"}).json()["id"]
+        wake_requested = threading.Event()
+        wakes: list[tuple[str, str]] = []
+
+        def record_wake(_app: Any, sid: str, handle: str = "") -> None:
+            if sid != parent:
+                request_completion_wake(_app, sid, handle)
+                return
+            wakes.append((sid, handle))
+            wake_requested.set()
+
+        # Idle-parent delivery is covered below by the complete wake/consume test.
+        # Hold that consumer at its dispatch seam so this assertion cannot race it.
+        monkeypatch.setattr(
+            "clio_agent.gact.task_completion_wake.request_completion_wake", record_wake
+        )
         task = spawn_child_turn_threadsafe(
             app,
             TaskSpec(
@@ -210,9 +230,12 @@ def test_completed_async_child_sets_notify_pending(tmp_path: Path, monkeypatch) 
                 mode="async",
             ),
         )
+        assert wake_requested.wait(TURN_SIGNAL_BACKSTOP_S), "completion did not request delivery"
         settled = _wait_terminal(app, task.task_id)
         assert settled.status == STATUS_COMPLETED
         assert settled.notify_pending is True, "completed async child must be observe-later pending"
+        assert settled.consumed_at == ""
+        assert wakes == [(parent, task.task_id)]
 
 
 def test_child_task_follows_immediate_continuation_before_completion(
