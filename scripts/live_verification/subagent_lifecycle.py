@@ -50,9 +50,11 @@ def lifecycle_cycle(
         "exactly once. Then wait_tasks on the accepted Shell handle with no timeout. "
         "If your model execution is paused, do not replay the Shell call on resume. "
         "Once the result arrives, report its exact RESULT_NONCE and any received HELD_MESSAGE. "
-        "Do not read the script or other files. On retained-context restart, report the already "
-        "observed nonce after reading the existing Shell handle with get_task_result, "
-        "without starting another operation. Do not reply to any agent message."
+        "Do not read the script or other files. On retained-context restart, make a NEW "
+        "get_task_result call in the NEW run on the existing Shell handle before reporting "
+        "the already observed nonce. Reading a copied earlier result does not exercise the "
+        "new run's result access, which this assignment must verify. Do not start another "
+        "operation or reply to any agent message."
     )
     submission = common.post_message(
         call,
@@ -178,7 +180,9 @@ def lifecycle_cycle(
         "exactly once, then wait_tasks on its accepted handle without a timeout. "
         "Do not read other files or submit additional work. If this run is cancelled or "
         "interrupted and then restarted with retained context, report that prior outcome "
-        "after reading its existing Shell handle with get_task_result and finish. "
+        "after making a NEW get_task_result call in the NEW run on its existing Shell "
+        "handle and finish. Reading a copied earlier result does not exercise the new "
+        "run's result access, which this assignment must verify. "
         "Never replay the already accepted Shell operation."
     )
     evidence.model_turn(

@@ -28,7 +28,10 @@ def recovery_cycle(
     command = common.quoted_command(sys.executable, str(paths["script"]))
     assignment = (
         f"Call shell_bash(command={command!r},background=true,timeout_s=0,cwd={str(workspace)!r}) "
-        "exactly once and then wait_tasks without a timeout. Do not read files or start other work. "
+        "exactly once and immediately call wait_tasks on the returned handle without a timeout. "
+        "Do not end your model turn before making that wait call: this mission verifies "
+        "an actual in-flight waiter during service interruption. Do not read files or "
+        "start other work. "
         "If service interruption ends this run and a retained-context successor is started, "
         "report the previous failed/interrupted outcome and finish. Never replay the operation."
     )
