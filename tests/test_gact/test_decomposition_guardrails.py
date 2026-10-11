@@ -189,7 +189,8 @@ from clio_agent.gact.app import build_app
 # and service context-sizing POST (routes/infrastructure.py); provider working-context
 # GET/PUT (routes/working_context.py).
 # 369 -> 372: response feedback GET, PUT and DELETE for an assistant message.
-EXPECTED_ROUTE_METHOD_PAIRS = 372
+# Lifecycle controls and exact session messages add two intentional POST routes.
+EXPECTED_ROUTE_METHOD_PAIRS = 374
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
@@ -229,6 +230,10 @@ def test_build_app_registers_expected_route_count() -> None:
         for method in route.methods or ()
     ]
     assert len(set(route_pairs)) == len(route_pairs), "duplicate (route, method) registrations"
+    assert {
+        ("/v1/sessions/{sid}/agent-controls/{target}/{action}", "POST"),
+        ("/v1/sessions/{sid}/agent-messages", "POST"),
+    } <= set(route_pairs)
     pairs = len(route_pairs)
 
     assert pairs == EXPECTED_ROUTE_METHOD_PAIRS, (

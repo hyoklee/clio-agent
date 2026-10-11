@@ -633,3 +633,109 @@ async def test_successor_copy_stays_off_loop_and_holds_admission_until_settled(
         assert not launches
         settled = app.state.agent_task_registry.get(new.task_id)
         assert settled.status == ("cancelled" if finish_mode == "cancel" else "failed")
+
+
+@pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
+@pytest.mark.parametrize("depth", [1, 2])
+def test_retained_successor_reads_terminal_result_without_claiming_old_mail(
+    lifecycle: Any, monkeypatch: pytest.MonkeyPatch, status: str, depth: int
+) -> None:
+    from clio_agent.gact.task_controls import cancel_selected, get_task_result, query_snapshot
+
+    app, parent, old, _calls = lifecycle
+    old = replace(old, status="completed", live_state="completed")
+    persist_agent_task(app, old)
+    operation = TaskRecord(
+        key=TaskKey("shell", old.child_session_id, "history"),
+        handle="historical_shell",
+        kind="Shell",
+        status=status,
+        result={"exit_code": 7, "output": "retained evidence"},
+        notify_pending=True,
+    )
+    app.state.mcp_task_store.put(operation)
+    previous = old
+    for index in range(depth):
+        new = seed_agent_task(
+            app, parent_session_id=parent, status="running", agent_ref=old.agent_ref
+        )
+        new = replace(new, supersedes_task_id=previous.task_id)
+        persist_agent_task(app, new)
+        app.state.sessions.update(
+            new.child_session_id,
+            metadata_patch={
+                "continuation": {"source_task_id": previous.task_id, "context_mode": "retained"}
+            },
+        )
+        if index < depth - 1:
+            new = replace(new, status="completed", live_state="completed")
+            persist_agent_task(app, new)
+        previous = new
+    monkeypatch.setattr("clio_agent.gact.task_controls._scope", lambda: (app, new.child_session_id))
+    result = get_task_result(operation.handle)
+    assert result["result"] == operation.result and result["status"] == status
+    stored = app.state.mcp_task_store.get(operation.key)
+    assert stored.notify_pending and not stored.consumed_at
+    assert query_snapshot(app, new.child_session_id)["tasks"] == []
+    rejected = cancel_selected(app, new.child_session_id, operation.handle)
+    assert (
+        not rejected["results"] and rejected["errors"][0]["error"] == "unknown_or_unauthorized_task"
+    )
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        "fresh",
+        "wrong_parent",
+        "wrong_agent",
+        "wrong_workspace",
+        "deleted_source",
+        "live_source",
+        "live_operation",
+        "cycle",
+    ],
+)
+def test_retained_result_rejects_unrelated_live_fresh_or_missing_context(
+    lifecycle: Any, boundary: str
+) -> None:
+    from clio_agent.gact.subagent_history import retained_result_row
+
+    app, parent, old, _calls = lifecycle
+    old = replace(old, status="completed", live_state="completed")
+    persist_agent_task(app, old)
+    operation = TaskRecord(
+        key=TaskKey("shell", old.child_session_id, "history"),
+        handle="historical_shell",
+        kind="Shell",
+        status="running" if boundary == "live_operation" else "completed",
+        result={"private": "predecessor only"},
+    )
+    app.state.mcp_task_store.put(operation)
+    new = seed_agent_task(
+        app,
+        parent_session_id=parent,
+        status="running",
+        agent_ref=old.agent_ref,
+        workspace_id="private" if boundary == "wrong_workspace" else None,
+    )
+    new = replace(new, supersedes_task_id=new.task_id if boundary == "cycle" else old.task_id)
+    persist_agent_task(app, new)
+    app.state.sessions.update(
+        new.child_session_id,
+        metadata_patch={
+            "continuation": {
+                "source_task_id": new.supersedes_task_id,
+                "context_mode": "fresh" if boundary == "fresh" else "retained",
+            }
+        },
+    )
+    if boundary == "wrong_parent":
+        persist_agent_task(app, replace(old, parent_session_id="unrelated"))
+    elif boundary == "wrong_agent":
+        persist_agent_task(app, replace(old, agent_ref={"expert_id": "other"}))
+    elif boundary == "deleted_source":
+        app.state.sessions.delete(old.child_session_id)
+    elif boundary == "live_source":
+        persist_agent_task(app, replace(old, status="running", live_state="running"))
+    assert retained_result_row(app, new.child_session_id, operation.handle) is None

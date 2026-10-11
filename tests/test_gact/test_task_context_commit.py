@@ -71,6 +71,7 @@ def test_context_frame_matches_completion_commit(
         app=app,
         sid=sid,
         pending_notification_task_ids=handles,
+        pending_agent_mail_ids=[],
         injections=[("todos", "keep"), ("task_results", block)],
         context_frame=frame,
     )

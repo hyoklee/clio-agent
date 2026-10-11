@@ -23,6 +23,12 @@ exact-session messaging controls. Live acceptance remains a separate gate.
   retained messages have new IDs and references to their original message IDs;
   fresh mode omits history. Current parent restrictions compose with retained
   recipient policy. Restart retries against one old handle reuse its successor.
+- A retained successor may read a known terminal task result from its own prior
+  run lineage with `get_task_result`. Registry links, recipient identity and
+  workspace must agree. This does not enumerate historical tasks, grant task
+  control, expose live work or consume the predecessor's completion mailbox.
+  Fresh-context runs, deleted sources and unrelated peer sessions retain their
+  ordinary result scope.
 - Memory search and summary results include exact message targets after read-scope
   checks. Peer messaging additionally requires scoped intent; discovery does not
   grant pause, resume, restart or cancellation authority.
@@ -37,7 +43,7 @@ exact-session messaging controls. Live acceptance remains a separate gate.
 
 ## Original audit before implementation
 
-The candidate has 33 focused lifecycle parameter cases, six existing messaging
+The candidate has 47 focused lifecycle parameter cases, six existing messaging
 compatibility cases and three unchanged transcript golden cases qualified
 sequentially with one worker. UI controls have three focused component and two
 transport cases, scoped checks and both production builds. These are engineering
@@ -48,6 +54,17 @@ same-handle resume, linked completed/cancelled restart without replay, generic
 subtree cancellation and process settlement. Separate real-model peer discovery,
 busy/idle messaging and service-interruption recovery also passed. Final
 five-cycle qualification and a clean actual-service browser gate are pending.
+The first five-cycle control run completed all five cycles, but its trace audit
+found unauthorized historical-result reads in successors; that is a failed
+acceptance condition and is being corrected with fourteen additional scoped
+authorization cases. Its peer-discovery leg failed when the coordinator delegated
+instead of calling its memory/message tools. The revised peer gate uses autonomous
+roots with their production tools, keeping that failed attempt intact.
+The fourteen retained-result authorization cases now pass, as do nine exact
+catalog/route/commit fixture contracts. CI additionally exposed a session-metadata
+serialization race. A gated concurrent writer reproduced it before the fix;
+copy-on-write metadata patches now pass that regression and the actual hook-defer
+case. No timeout, worker, assertion or guard budget was weakened.
 The first browser run exercised every lifecycle action but failed its unchanged
 no-error gate because the isolated runtime omitted its own executable directory
 from PATH; the environment correction does not change production assertions.

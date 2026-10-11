@@ -50,7 +50,8 @@ def lifecycle_cycle(
         "If your model execution is paused, do not replay the Shell call on resume. "
         "Once the result arrives, report its exact RESULT_NONCE and any received HELD_MESSAGE. "
         "Do not read the script or other files. On retained-context restart, report the already "
-        "observed nonce without starting another operation. Do not reply to any agent message."
+        "observed nonce after reading the existing Shell handle with get_task_result, "
+        "without starting another operation. Do not reply to any agent message."
     )
     submission = common.post_message(
         call,
@@ -165,6 +166,8 @@ def lifecycle_cycle(
     successor_messages = common.session_messages(call, successor["child_session_id"])
     assert nonce in json.dumps(successor_messages, ensure_ascii=False)
     assert not evidence.tool_events(proof, successor["child_session_id"], "shell_bash")
+    historical = evidence.tool_events(proof, successor["child_session_id"], "get_task_result")
+    assert historical and all(row["payload"].get("ok") for row in historical)
     evidence.assert_no_replay(paths["starts"])
     assert evidence.task(call, sid, handle)["raw_status"] == "completed"
     cancel_paths = evidence.worker_files(workspace, f"cancel-{number}", "must-not-complete")
@@ -174,7 +177,8 @@ def lifecycle_cycle(
         "exactly once, then wait_tasks on its accepted handle without a timeout. "
         "Do not read other files or submit additional work. If this run is cancelled or "
         "interrupted and then restarted with retained context, report that prior outcome "
-        "from the retained evidence and finish. Never replay the already accepted Shell operation."
+        "after reading its existing Shell handle with get_task_result and finish. "
+        "Never replay the already accepted Shell operation."
     )
     evidence.model_turn(
         call,
@@ -244,6 +248,10 @@ def lifecycle_cycle(
     )
     assert evidence.task(call, sid, cancel_child["handle"])["effective_status"] == "cancelled"
     assert not evidence.tool_events(proof, cancelled_successor["child_session_id"], "shell_bash")
+    historical = evidence.tool_events(
+        proof, cancelled_successor["child_session_id"], "get_task_result"
+    )
+    assert historical and all(row["payload"].get("ok") for row in historical)
     evidence.assert_no_replay(cancel_paths["starts"])
     for recipient in (
         sid,

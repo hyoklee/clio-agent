@@ -137,13 +137,16 @@ def _selected(
     return rows, errors
 
 
-def collect_result(app: Any, sid: str, row: dict[str, Any]) -> dict[str, Any]:
+def collect_result(
+    app: Any, sid: str, row: dict[str, Any], *, consume_delivery: bool = True
+) -> dict[str, Any]:
     """Read a stored result and atomically share the notification delivery guard."""
     from clio_agent.gact.task_delivery import consume_task
 
     if row["effective_status"] not in TERMINAL:
         return {"handle": row["handle"], "status": row["effective_status"], "pending": True}
-    consume_task(app, sid, row["handle"])
+    if consume_delivery:
+        consume_task(app, sid, row["handle"])
     result = row.get("result")
     if row["task_kind"] == "Subagent":
         from clio_agent.gact.agents.spawn_completion import completion_payload
@@ -174,9 +177,24 @@ def collect_result(app: Any, sid: str, row: dict[str, Any]) -> dict[str, Any]:
 
 
 def get_task_result(handle: str) -> dict[str, Any]:
-    """Read a terminal result again; explicit reads remain possible after delivery."""
+    """Read a terminal result again, including a retained predecessor's known handle.
+
+    Historical access is read-only and does not consume the prior run's mailbox.
+    Query, wait, observe and cancel retain their ordinary conversation scope.
+    """
     app, sid = _scope()
-    return collect_result(app, sid, resolve_task(app, sid, handle))
+    try:
+        row = resolve_task(app, sid, handle)
+    except ValueError as exc:
+        if str(exc) != "unknown_or_unauthorized_task":
+            raise
+        from clio_agent.gact.subagent_history import retained_result_row
+
+        historical = retained_result_row(app, sid, handle)
+        if historical is None:
+            raise
+        return collect_result(app, sid, historical, consume_delivery=False)
+    return collect_result(app, sid, row)
 
 
 def _deadline(timeout_s: float | None) -> float | None:

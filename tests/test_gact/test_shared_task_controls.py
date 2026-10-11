@@ -140,6 +140,7 @@ def test_collection_between_staging_and_commit_cannot_duplicate_injection(
         app=app,
         sid=sid,
         pending_notification_task_ids=handles,
+        pending_agent_mail_ids=[],
         injections=[("todos", "keep"), ("task_results", block)],
     )
     assert wait_tasks("staged", timeout_s=0)["results"]

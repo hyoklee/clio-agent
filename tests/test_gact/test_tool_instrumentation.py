@@ -975,6 +975,9 @@ def test_spawn_runtime_tools_declare_handoff_for_spawn_and_row_for_collectors(
         "observe_agent_tasks": ("row", "Observe"),
         "get_agent_task_output": ("row", "Collect"),
         "message_agent": ("row", "Message Agent"),
+        "pause_agent": ("row", "Pause Agent"),
+        "resume_agent": ("row", "Resume Agent"),
+        "restart_agent": ("row", "Restart Agent"),
     }
     assert {t.name for t in tools} == set(expected)
     for name, (representation, title) in expected.items():

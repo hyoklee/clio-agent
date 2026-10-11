@@ -550,7 +550,10 @@ class SessionStore:
             if agent is not None:
                 sess.agent = dict(agent)
             if metadata_patch is not None:
-                sess.metadata.update(metadata_patch)
+                # Readers retain Session rows after get() releases the store lock.
+                # Publish a new mapping so an in-flight wire projection can finish
+                # iterating its old metadata while task/mail writers patch the row.
+                sess.metadata = {**sess.metadata, **metadata_patch}
             if archived is not None:
                 sess.archived = bool(archived)
             now = _utcnow_iso()

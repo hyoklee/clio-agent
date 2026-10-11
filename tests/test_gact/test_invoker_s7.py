@@ -1214,15 +1214,16 @@ def test_run_index_and_notify_parity(tmp_path: Path, monkeypatch) -> None:
 
 def test_taskresult_drops_internal_bookkeeping(tmp_path: Path, monkeypatch) -> None:
     """The boundary :class:`TaskResult` omits EVERY :class:`AgentTask` field that is not
-    part of the executor boundary — all eleven: parent-side observe-later /
+    part of the executor boundary: parent-side observe-later /
     wire-dedup bookkeeping (``notify_pending`` / ``consumed_at`` / ``delegation_reported``)
     and spawn-request / topology fields the parent already holds on its ``TaskSpec``
     (``parent_turn_id`` / ``child_turn_id`` / ``fanout_bound``), plus parent-side run-list
     display state (``detached`` / ``dismissed``), and local parent-projection policy
-    (``project_to_parent``), plus local cancellation intent and assignment description.
+    (``project_to_parent``), plus local cancellation intent, assignment description
+    and retained-run predecessor identity (``supersedes_task_id``).
 
     Adversarial-review finding [5]: the drop-list must be EXHAUSTIVE against the code —
-    ``AgentTask`` minus ``TaskResult`` is exactly these eleven, no more, no less."""
+    ``AgentTask`` minus ``TaskResult`` is exactly the named fields, no more, no less."""
 
     task_fields = set(AgentTask.__dataclass_fields__)
     result_fields = set(TaskResult.__dataclass_fields__)
@@ -1238,9 +1239,10 @@ def test_taskresult_drops_internal_bookkeeping(tmp_path: Path, monkeypatch) -> N
         "project_to_parent",
         "cancel_requested",
         "description",
+        "supersedes_task_id",
     }
-    assert dropped.isdisjoint(result_fields)  # none of the eleven survive the projection
-    # EXHAUSTIVE: the eleven named above are exactly the fields AgentTask has and
+    assert dropped.isdisjoint(result_fields)  # internal fields never survive the projection
+    # EXHAUSTIVE: the fields named above are exactly the fields AgentTask has and
     # TaskResult drops — a newly-added dropped/carried field must update this + the docs.
     assert task_fields - result_fields == dropped
     # But it DOES carry the durable, relay-compatible record vocabulary.

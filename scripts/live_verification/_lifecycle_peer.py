@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import secrets
+import shutil
 import sys
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,35 @@ def peer_cycle(call: Any, proof: Path, wid: str, blueprint: str) -> dict[str, An
     output = proof / "peer-messaging"
     output.mkdir()
     workspace = proof / "workspace"
+    # Test exact peer routing with autonomous roots. Coordinator delegation is a
+    # separate behavior; it must not substitute a child lacking memory tools.
+    peer_pack = workspace / "peer-testing-pack"
+    shutil.copytree(workspace / "testing-packs/task-subagent-testing", peer_pack)
+    manifest = peer_pack / "AGENT.md"
+    manifest.write_text(
+        manifest.read_text(encoding="utf8").replace(
+            "id: task-subagent-testing", "id: lifecycle-peer-testing"
+        ),
+        encoding="utf8",
+    )
+    expert = peer_pack / "experts/main.md"
+    expert.write_text(
+        expert.read_text(encoding="utf8")
+        .replace("children:\n  - worker\n", "")
+        .replace("Task Qualification Coordinator", "Peer Messaging Qualification Agent")
+        .replace(
+            "The exact qualification mission to coordinate.", "The exact peer messaging mission."
+        )
+        .replace(
+            "Spawn only the explicitly requested worker assignment. Use shared task controls\n"
+            "yourself for status and waits; do not delegate those observations to the worker.",
+            "Execute the peer discovery, messaging and task-control mission yourself.\n"
+            "Do not spawn or delegate any of those actions.",
+        )
+        + "\nPerform this peer messaging mission directly with your own declared tools.\n",
+        encoding="utf8",
+    )
+    blueprint = common.install_blueprint(call, peer_pack, wid)["id"]
     marker = "PEER_DISCOVERY_" + secrets.token_hex(8)
     busy_message = "BUSY_PEER_MESSAGE_" + secrets.token_hex(8)
     idle_message = "IDLE_PEER_MESSAGE_" + secrets.token_hex(8)
@@ -129,6 +159,9 @@ def peer_cycle(call: Any, proof: Path, wid: str, blueprint: str) -> dict[str, An
         lambda: evidence.settled_turn(call, sender), "sender second reply wake settled"
     )
     assert len(evidence.mail(call, peer)) == 2 and len(evidence.mail(call, sender)) == 2
+    for sid in (peer, sender):
+        assert not evidence.tool_events(proof, sid, "spawn_agent_task", complete=False)
+        assert not evidence.tool_events(proof, sid, "spawn_agents_parallel", complete=False)
     assert len(evidence.tool_events(proof, peer, "shell_bash")) == 1
     assert not call("GET", f"/v1/sessions/{peer}").get("parent_session_id")
     for sid in (sender, peer):
