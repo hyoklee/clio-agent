@@ -19,6 +19,7 @@ def retained_result_row(app: Any, sid: str, handle: str) -> dict[str, Any] | Non
     session = app.state.sessions.get(sid)
     current = AgentTask.from_session(session) if session is not None else None
     visited: set[str] = set()
+    rows: list[dict[str, Any]] = []
     while current is not None and current.supersedes_task_id:
         context = session.metadata.get("continuation", {})
         if (
@@ -40,12 +41,14 @@ def retained_result_row(app: Any, sid: str, handle: str) -> dict[str, Any] | Non
             or source.workspace_id != session.workspace_id
         ):
             return None
-        rows = task_views(app, source.id)
-        exact = [row for row in rows if row["handle"] == handle]
-        matches = exact or [row for row in rows if handle in (row["id"], row.get("legacy_task_id"))]
-        if len(matches) > 1:
-            raise ValueError("ambiguous_task")
-        if matches:
-            return matches[0] if matches[0]["effective_status"] in TERMINAL else None
+        rows.extend(task_views(app, source.id))
         current, session = previous, source
+    # Resolve against the complete authorized lineage. Backend aliases can be
+    # reused across sessions; a nearer record must not silently hide another one.
+    exact = [row for row in rows if row["handle"] == handle]
+    matches = exact or [row for row in rows if handle in (row["id"], row.get("legacy_task_id"))]
+    if len(matches) > 1:
+        raise ValueError("ambiguous_task")
+    if matches and matches[0]["effective_status"] in TERMINAL:
+        return matches[0]
     return None
