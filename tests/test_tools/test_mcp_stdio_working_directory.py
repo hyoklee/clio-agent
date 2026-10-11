@@ -11,10 +11,18 @@ import pytest
 
 from clio_agent.runtime import sandbox, sandbox_net
 from clio_agent.tools.mcp_config import (
+    MCPSpawnError,
     spec_from_declaration,
     transport_for,
     transport_from_spec,
 )
+
+
+def test_declared_stdio_rejects_empty_directory_before_transport_creation() -> None:
+    """An explicit empty directory remains an invalid submission rather than ambient cwd."""
+    spec = spec_from_declaration("owned", {"command": sys.executable, "args": ["-c", "pass"]})
+    with pytest.raises(MCPSpawnError, match="working directory '' does not exist"):
+        transport_for(spec, cwd="")
 
 
 @pytest.fixture

@@ -571,7 +571,7 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
     For http servers the ``cwd`` is irrelevant and ignored.
     """
     if spec.transport == "stdio":
-        cwd = os.path.abspath(cwd) if cwd is not None else None
+        cwd = os.path.abspath(cwd) if cwd else cwd
         from fastmcp.client.transports import StdioTransport  # noqa: PLC0415
 
         # Fail-loud preflight (iowarp/clio-agent MCP spawn diagnosability): catch the
