@@ -30,6 +30,7 @@ from clio_agent.gact.context_rollback import follow_rollback
 from clio_agent.gact.events import Event
 from clio_agent.gact.goal import stop_session_goal
 from clio_agent.gact.mcp_apps import cleanup_session_mcp_apps
+from clio_agent.gact.message_marks import validated_session_metadata
 from clio_agent.gact.message_submission import _apply_a2ui_client_metadata_guards
 from clio_agent.gact.messaging import raise_on_reserved_metadata
 from clio_agent.gact.off_loop import run_off_loop
@@ -112,12 +113,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
     async def patch_session(
         sid: str, req: UpdateSessionRequest, request: Request
     ) -> Session | JSONResponse:
-        """Update mutable session fields (title + mode + edit_mode).
-
-        Lets the TUI flip plan ↔ edit ↔ architect mid-session
-        without recreating, and rename via the existing rename
-        modal (``chat`` mode was deleted in P1.1 #1063).
-        """
+        """Update session settings and durable user navigation metadata."""
 
         prior_approval_mode = str(getattr(app.state.sessions.get(sid), "approval_mode", "") or "")
         sess = app.state.sessions.update(
@@ -130,7 +126,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             model=req.model.model_dump(exclude_none=True) if req.model else None,
             agent=req.agent.model_dump(exclude_none=True) if req.agent else None,
             # iowarp/gact-tui §audit/E-14: persist pin + archive state.
-            metadata_patch=req.metadata,
+            metadata_patch=validated_session_metadata(app, sid, req.metadata),
             archived=req.archived,
         )
         if sess is None:
@@ -360,6 +356,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             message_count=len(replacement_messages),
             status="idle",
             metadata_patch={
+                "message_marks": dict.fromkeys(deleted_ids, False),
                 "last_rollback": {
                     "operation": operation,
                     "deleted_message_ids": deleted_ids,
@@ -367,7 +364,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     "include_target": include_target,
                     "memory_scope": "gact_visible_transcript_only",
                     "occurred_at": datetime.now(timezone.utc).isoformat(),
-                }
+                },
             },
         )
         if updated is None:

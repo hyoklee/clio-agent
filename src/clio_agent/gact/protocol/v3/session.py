@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping
 
+from clio_agent.gact.message_marks import MARKS_KEY, saved_message_marks
 from clio_agent.gact.protocol.v3 import utcnow_iso
 from clio_agent.gact.session_defaults import session_effort
 from clio_agent.gact.session_kind import session_kind
@@ -87,10 +88,12 @@ def session_to_v3(session: Any) -> dict[str, Any]:
             "approval_mode": str(getattr(session, "approval_mode", "ask") or "ask"),
         }
     )
-    # Expose only the composer's public pause state, not unrelated private
-    # session metadata. A legacy cancelled row also represents a paused queue.
+    # Explicitly project public navigation state; keep unrelated metadata private.
+    public_metadata: dict[str, Any] = {}
     if "composer_queue_paused" in metadata or status == "cancelled":
-        row["metadata"] = {
-            "composer_queue_paused": bool(metadata.get("composer_queue_paused", True))
-        }
+        public_metadata["composer_queue_paused"] = bool(metadata.get("composer_queue_paused", True))
+    if MARKS_KEY in metadata:
+        public_metadata[MARKS_KEY] = saved_message_marks(metadata)
+    if public_metadata:
+        row["metadata"] = public_metadata
     return row
