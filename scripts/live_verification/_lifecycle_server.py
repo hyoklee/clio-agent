@@ -7,8 +7,9 @@ import faulthandler
 import signal
 import sys
 import threading
-import time
 import traceback
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from types import FrameType
 from typing import Any
 
@@ -46,20 +47,31 @@ def dump_owner_stacks(signum: int, frame: FrameType | None) -> None:
     sys.stderr.flush()
 
 
-def watch_shutdown(app: Any, stopped: threading.Event) -> None:
-    """Request loop-owner diagnostics during teardown even if a library owns SIGUSR1."""
-    noticed_at: float | None = None
-    while not stopped.wait(0.25):
-        supervisor = getattr(app.state, "task_supervisor", None)
-        if supervisor is None or not supervisor.closing:
-            continue
-        if noticed_at is None:
-            noticed_at = time.monotonic()
-        elif time.monotonic() - noticed_at >= 10:
-            loop = getattr(app.state, "mcp_app_loop", None)
-            if loop is not None and loop.is_running():
-                loop.call_soon_threadsafe(dump_owner_stacks, 0, None)
-            noticed_at = time.monotonic()
+async def watch_shutdown() -> None:
+    """Record pending owners on the serving loop while production teardown runs."""
+    while True:
+        await asyncio.sleep(10)
+        dump_owner_stacks(0, None)
+
+
+def add_shutdown_diagnostics(app: Any) -> None:
+    """Wrap the unchanged production lifespan with a private diagnostic observer."""
+    original = app.router.lifespan_context
+
+    @asynccontextmanager
+    async def observed_lifespan(application: Any) -> AsyncIterator[Any]:
+        observer: asyncio.Task[None] | None = None
+        try:
+            async with original(application) as state:
+                yield state
+                print("PRODUCTION SHUTDOWN DIAGNOSTICS ARMED", file=sys.stderr, flush=True)
+                observer = asyncio.create_task(watch_shutdown(), name="live-shutdown-diagnostics")
+        finally:
+            if observer is not None:
+                observer.cancel()
+                await asyncio.gather(observer, return_exceptions=True)
+
+    app.router.lifespan_context = observed_lifespan
 
 
 def main() -> None:
@@ -80,16 +92,8 @@ def main() -> None:
     if native_diagnostic_signal is not None and callable(register_native):
         register_native(native_diagnostic_signal, file=sys.stderr, all_threads=False)
     app = build_app()
-    stopped = threading.Event()
-    watcher = threading.Thread(
-        target=watch_shutdown, args=(app, stopped), name="live-shutdown-diagnostics", daemon=True
-    )
-    watcher.start()
-    try:
-        uvicorn.run(app, host="127.0.0.1", port=int(sys.argv[1]))
-    finally:
-        stopped.set()
-        watcher.join(timeout=1)
+    add_shutdown_diagnostics(app)
+    uvicorn.run(app, host="127.0.0.1", port=int(sys.argv[1]))
 
 
 if __name__ == "__main__":
