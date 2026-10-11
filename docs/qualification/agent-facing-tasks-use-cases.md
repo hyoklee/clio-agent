@@ -5,6 +5,43 @@ Subagent lifecycle extension. Implementation, focused checks, source CI and
 actual-model acceptance are separate columns of evidence. An older successful
 run does not become a live pass for a later commit.
 
+## Continued qualification on October 11
+
+The `4ade8463` runtime has five additional complete Codex lifecycle cycles,
+busy/idle peer messaging, active/fresh restart checks and a separate real service
+interruption/recovery pass. Actual-service desktop and phone UI checks passed,
+including five pause/resume cycles, cancellation confirmation and dismissal.
+All 14 recorded Shell owners and both private Core owners are absent. Public
+custody archives and browser receipts are retained under
+`remaining-codex-lifecycle-4ade-1` and `remaining-codex-recovery-4ade-1` in the
+release-recovery evidence directory.
+
+Five actual-model Indexing runs passed with exact 48,098-entry manifests. A
+48,000-small-file Download stress run returned its handle, performed independent
+model work and remained responsive, but did not settle within the unchanged
+600-second qualification deadline. Its subsequent diagnostic exception does not
+replace that failure. Shutdown recorded interruption only after cleanup; no
+manifest or staging tree remained and its owned API/Core processes are absent.
+The failed run is retained as `remaining-storage-4ade-series-1/download-1`.
+
+Profiling a real 301-file transfer attributed 9.8 of 16.9 seconds to SQLite
+commits and 3.5 seconds to file syncing. Progress persistence now publishes first
+bytes immediately, then at the task observer's 0.2-second cadence, and flushes
+exact bytes before cleanup. Cancellation still checks every chunk/file; hashes,
+file syncing and cleanup-before-terminal publication are preserved. Four new
+regressions cover success, cancellation, hash failure and an unavailable final
+progress ledger. Existing API progress/cleanup, custody, conflict and selected
+download checks also pass individually, without skipped cases. Scoped
+Ruff/format/Pyright and the five existing guards pass.
+The same 301 selected files and payload now finish in 7.4 seconds, with 0.97
+seconds in SQLite commits and all 301 file-sync operations retained. This is
+an owned production transfer profile, not an additional model acceptance pass.
+
+Representative Download acceptance uses 6,000 selected small files plus a
+64 MiB payload, checking every selected path and hash. The 48,000-file stress
+failure remains separate and is not relabeled as a pass. Remaining model gates
+continue on a newly frozen source; full qualification remains incomplete.
+
 ## Behavior under review
 
 | Use case | Implemented behavior | Acceptance evidence and limits |

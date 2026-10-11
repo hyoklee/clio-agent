@@ -8,6 +8,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
+from time import monotonic
 from typing import Literal
 
 from clio_agent.gact.storage.adapters import SourceAdapter, file_hash, safe_child
@@ -94,6 +95,8 @@ def materialize(
     settled_state: Literal["completed", "cancelled", "failed"] | None = None
     settled_error: str | None = None
     done = 0
+    published_bytes = 0
+    progress_published_at: float | None = None
     store.update_operation(operation.id, state="running")
     try:
         entries = adapter.entries()
@@ -138,7 +141,14 @@ def materialize(
                     writer.write(chunk)
                     digest.update(chunk)
                     done += len(chunk)
-                    store.update_operation(operation.id, bytes_done=done)
+                    current_time = monotonic()
+                    # First bytes are visible immediately. Subsequent progress
+                    # matches the task observer's 5 Hz cadence instead of doing
+                    # a synchronous SQLite commit for every small source file.
+                    if progress_published_at is None or current_time - progress_published_at >= 0.2:
+                        store.update_operation(operation.id, bytes_done=done)
+                        published_bytes = done
+                        progress_published_at = current_time
                 writer.flush()
                 os.fsync(writer.fileno())
             if source.provider == "globus" and file_bytes != entry.size:
@@ -212,15 +222,23 @@ def materialize(
         store.put("source", source.id, record)
         raise
     finally:
-        remove_owned_tree(stage, owner_root)
-        if workspace_stage is not None:
-            remove_owned_tree(workspace_stage, workspace_root / "connected-data")
+        # Preserve exact byte accounting even if the required cleanup fails.
+        # This is progress only; terminal publication still follows cleanup.
+        try:
+            if done != published_bytes:
+                store.update_operation(operation.id, bytes_done=done)
+        finally:
+            remove_owned_tree(stage, owner_root)
+            if workspace_stage is not None:
+                remove_owned_tree(workspace_stage, workspace_root / "connected-data")
         # Terminal state acknowledges settled ownership, including staging cleanup.
         # If cleanup raises, leave the operation live for the service's error owner.
         if settled_state == "completed":
             store.update_operation(operation.id, state=settled_state, bytes_done=done)
         elif settled_state is not None:
-            store.update_operation(operation.id, state=settled_state, error=settled_error)
+            store.update_operation(
+                operation.id, state=settled_state, error=settled_error, bytes_done=done
+            )
 
 
 def local_hashes(root: Path) -> dict[str, str]:
