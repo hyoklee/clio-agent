@@ -52,5 +52,7 @@ the assertion now compares the actual map contents.
   screenshots, persistence semantics and the recorded-example qualification.
 
 Runtime services are explicitly stopped after acceptance. Compact transcripts,
-verdicts and capture originals are retained; disposable runtime and type-check
-caches are removed separately after verifying their resolved evidence-root paths.
+verdicts and capture originals are retained. Automatic approval review rejected
+deleting the disposable runtime and type-check caches after resolved-path and
+service-stop checks; 831 MiB remain on C: (see `cleanup.json`). No worktrees
+were created for this change.
