@@ -218,6 +218,7 @@ def test_lm_judged_drafts_run_at_once_and_bestofn_keeps_the_highest_reward(world
     for scope in (RUN0, RUN1, RUN2):
         seen = _texts(engine.by_scope[scope][0])
         assert ASK in seen
+        assert "Produce only ONE candidate here." in engine.by_scope[scope][0].system
         assert not any(d in t for t in seen for d in ("Draft A", "Draft B", "Draft C"))
     # selection by reward: the judge scored every try (no threshold reached), 0.9 won
     assert len(engine.by_scope[""]) == 3

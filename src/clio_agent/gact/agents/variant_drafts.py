@@ -147,7 +147,10 @@ def _candidate_instruction(rubric: str) -> str:
         "The harness produces the other candidates and presents the picker. Put only the "
         "candidate's content in your final answer. Keep planning, commentary and evaluation "
         "in reasoning; do not create a widget or another selection interface. "
-        f"Quality criteria for this candidate: {rubric}"
+        f"Quality criteria for this candidate: {rubric}\n\n"
+        "Candidate boundary: the harness has already allocated the other attempts. "
+        "Any requested number of drafts, versions or alternatives in the task or criteria "
+        "describes the whole run, not your output. Produce only ONE candidate here."
     )
 
 
@@ -600,6 +603,8 @@ def build_draft_alternatives_tool() -> Any:
         the user asks for alternatives. Each draft is you doing the same task, apart,
         from the conversation as it was before this turn, producing ONE candidate,
         not the whole set requested by the user. Do not create a second picker.
+        Write ``rubric`` as criteria for ONE candidate. Put the number of independent
+        attempts only in ``n``; never ask each candidate to produce the whole set.
         ``strategy``: ``best_of_n``
         drafts ``n`` alternatives at once; ``refine`` drafts one and improves it with
         feedback, up to ``n`` drafts. ``judge``: ``user`` shows the drafts to the user,
@@ -624,7 +629,13 @@ def build_draft_alternatives_tool() -> Any:
         title="Draft alternatives",
         args={
             "n": {"type": "integer", "description": "How many drafts (capped by config)."},
-            "rubric": {"type": "string", "description": "What makes a draft good."},
+            "rubric": {
+                "type": "string",
+                "description": (
+                    "Quality criteria for ONE candidate. Do not request multiple drafts here; "
+                    "n controls how many independent candidates the harness produces."
+                ),
+            },
             "strategy": {
                 "type": "string",
                 "description": "best_of_n (parallel drafts) or refine (improve one draft).",
