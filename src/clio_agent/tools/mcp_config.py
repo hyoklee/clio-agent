@@ -639,10 +639,9 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
             final_command, final_args = diet_command, diet_args
         else:
             final_command, final_args = resolved, resolved_args
-        # #975: route the FINAL argv (post spawn-diet) through the single confinement
-        # composer. Floor-first — the `fleet` profile resolves to passthrough this slice,
-        # so command/args/env are byte-identical; only the recorded confinement intent
-        # is added. transport_for carries no pdeathsig today, so pdeathsig stays off here.
+        # Route post-spawn-diet argv through the shared confinement owner (#975).
+        # Preserve the transport directory independently of writable-root ordering;
+        # this declaration path retains its existing pdeathsig=False lifetime.
         from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
         confined = sandbox.wrap_confined(
@@ -652,6 +651,7 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
             net_policy=sandbox.NET_ALLOW_RECORD,
             profile=sandbox.PROFILE_FLEET,
             pdeathsig=False,
+            cwd=cwd if cwd is not None else os.getcwd(),
         )
         # B5 #979.7 (the deferred B4 WRITER): this fleet proxy is ONE persistent confined child
         # per (workspace, namespace). Register its ``net_child_id`` (empty on the floor → no-op)
@@ -774,10 +774,9 @@ def transport_from_spec(spec: Mapping[str, Any]) -> Any:
         raw_args = spec.get("args") or []
         raw_env = spec.get("env") or None
         command, raw_args, base_env = dmr.prepare_desktop_stdio(command, raw_args, raw_env)
-        # #975: the pdeathsig argv-prefix folds INTO the single confinement composer
-        # (owner decision #974.5 — one prefix owner, no second site). pdeathsig=True
-        # preserves the exact Linux setpriv behavior this dict-spec path had before; the
-        # `fleet` backend is passthrough this slice, so the composed argv is identical.
+        # The shared confinement owner also composes parent-death cleanup (#975).
+        # Preserve inherited cwd independently of grants, retaining this dict-spec
+        # path's Linux setpriv behavior through pdeathsig=True.
         from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
         confined = sandbox.wrap_confined(
@@ -787,6 +786,7 @@ def transport_from_spec(spec: Mapping[str, Any]) -> Any:
             net_policy=sandbox.NET_ALLOW_RECORD,
             profile=sandbox.PROFILE_FLEET,
             pdeathsig=True,
+            cwd=os.getcwd(),
         )
         if confined.env_overlay:
             base_env.update(confined.env_overlay)

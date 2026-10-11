@@ -658,11 +658,14 @@ def test_transport_from_spec_stdio_no_pdeathsig_off_linux(
 ) -> None:
     """Cross-platform guard: on Windows/macOS the stdio spawn is an unwrapped
     passthrough (setpriv is Linux-only), mirroring pdeathsig_wrapped_command."""
+    from fastmcp.client.transports import StdioTransport
+
     from clio_agent import paths
 
     host_platform = paths._platform()
     monkeypatch.setattr(paths, "_platform", lambda: host_platform)
     monkeypatch.setattr(sys, "platform", platform)
     transport = transport_from_spec({"transport": "stdio", "command": "uvx", "args": ["geo-mcp"]})
+    assert isinstance(transport, StdioTransport)
     assert transport.command == "uvx"
     assert list(transport.args) == ["geo-mcp"]
