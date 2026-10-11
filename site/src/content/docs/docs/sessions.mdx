@@ -4,6 +4,9 @@ description: Start sessions in a workspace, pick an agent blueprint, set how muc
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
+import { Image } from 'astro:assets';
+import messagePreview from '../../../assets/captures/docs-message-preview.png';
+import markedMessages from '../../../assets/captures/docs-marked-messages.png';
 
 A workspace is a folder on your computer that CLIO treats as one body of work. A session is one conversation with an agent inside a workspace. Files the agent reads and creates, and the evidence recorded for them, stay attached to the session that produced them.
 
@@ -89,6 +92,39 @@ The status bar at the bottom of the window shows whether anything is running. Se
 Expert agents run as child sessions. Open one to see its own transcript, and use the back arrow in its header, labeled "Return to parent conversation", to return.
 
 Use **+ → Attach** to [add files, folders, or connected data](/docs/files/attach/). Use **+ → Reference**, or type **@**, to [point to existing files and evidence](/docs/files/references/). Inspect the selected items before sending; [downloads and links](/docs/files/download-or-link/) have different rules for edits.
+
+## Find and mark messages
+
+The slim rail on the left of the conversation helps you find an earlier message.
+Point to a line to see a **short bold title** and a few lines of context; select
+the line to jump there. A question's preview includes the following answer when
+one is available. These are excerpts of the recorded conversation, not new
+AI-generated summaries.
+
+<figure>
+  <Image src={messagePreview} alt="Message rail preview with a bold title, two lines of answer context, and a filled bookmark button" />
+  <figcaption>A filled bookmark means this message is saved in your marked list.</figcaption>
+</figure>
+
+Choose the bookmark in a preview, or **Mark message** beside a message's other
+actions. The bookmark above the rail opens **Marked messages**; select an entry
+to return to it. On a narrow window, open **Transcript outline** and choose
+**Marked**. Choose **Unmark message** to remove a mark.
+
+<figure>
+  <Image src={markedMessages} alt="Marked messages list opened from the bookmark above the conversation rail" />
+  <figcaption>Each entry keeps its title and a short excerpt, so you can choose where to return.</figcaption>
+</figure>
+
+Marks are saved **with the conversation** and appear in other CLIO clients and
+session exports. An exported HTML review shows the bookmark beside marked
+messages; importing the transcript preserves them. Branching copies marks on
+the copied messages, and each branch can change its marks independently.
+Rewind and undo remove marks for messages they discard. Marking a message
+does not add it to the model's context or change its content.
+
+These screenshots show the development build, using recorded Codex/Luna
+responses about fictional calibration readings.
 
 ## Steer or stop a run
 
