@@ -214,6 +214,12 @@ def cycle(call: Any, root: Path, wid: str, pack: str, number: int) -> dict[str, 
         if mode == "answer":
             assert row["answer_nonce"] in json.dumps(raw["result"])
             assert len(raw["input_answers"]) == 1
+            assert any(
+                row["answer_nonce"] in part.get("text", "")
+                for message in common.session_messages(call, sid)
+                if message.get("role") == "assistant"
+                for part in message.get("parts", [])
+            ), "The actual model must report the nonce supplied only through human input"
         elif mode == "cancel":
             assert raw["cancel_requested"] and raw["cancel_acknowledged"]
             questions = call("GET", f"/v1/sessions/{sid}/questions")["questions"]
