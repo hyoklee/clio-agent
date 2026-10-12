@@ -38,7 +38,7 @@ def commit_task_context_frame(state: Any) -> None:
                 "included": True,
                 "reason": "clio_addition",
                 "tokens_estimated": _estimate_context_tokens(text),
-                "metadata": {"actor": "algorithm", "text": text},
+                "metadata": {"actor": "algorithm", "text": str(text)},
             }
             for source, text in state.injections
             if source in {"task_results", "agent_messages"}

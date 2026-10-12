@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -15,11 +14,8 @@ from clio_agent.gact.events import EventBus
 from clio_agent.gact.mcp_task_store import SessionMetadataTaskStore
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_projection import resolve_task, task_views
-from clio_agent.gact.task_shell_owner import spawn_owned_shell
 from clio_agent.gact.task_subagent_owner import close_subtree_admission
 from clio_agent.gact.task_supervisor import task_supervisor
-from clio_agent.runtime.task_process_tree import task_spawn_options
-from clio_agent.tools.servers.shell_output import StreamCapture
 from clio_agent.tools.task_call_context import require_admission
 
 
@@ -36,70 +32,6 @@ def application(tmp_path: Path) -> tuple[Any, str]:
             cancel_flags=set(),
         )
     ), sid
-
-
-def test_stop_during_actual_shell_spawn_finishes_durable_acceptance(tmp_path: Path) -> None:
-    app, sid = application(tmp_path)
-
-    async def exercise() -> None:
-        app.state.mcp_app_loop = asyncio.get_running_loop()
-        spawned, release = asyncio.Event(), asyncio.Event()
-        supervisor = task_supervisor(app)
-
-        async def spawn() -> asyncio.subprocess.Process:
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-c",
-                "import time; print('accepted once',flush=True); time.sleep(120)",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                **task_spawn_options({}),
-            )
-            spawned.set()
-            await release.wait()
-            return process
-
-        captures = [
-            StreamCapture(name, inline_limit=4096, spill_path=tmp_path / f"{name}.log")
-            for name in ("stdout", "stderr")
-        ]
-        waiter = asyncio.create_task(
-            spawn_owned_shell(
-                app,
-                sid,
-                spawn(),
-                captures,
-                command="owned acceptance race",
-                cwd=tmp_path,
-                spill_root=tmp_path,
-                timeout=0,
-                invocation_id="race-call",
-            )
-        )
-        try:
-            await asyncio.wait_for(spawned.wait(), 5)
-            waiter.cancel()
-            await asyncio.sleep(0)
-            assert not waiter.done()
-            release.set()
-            with pytest.raises(asyncio.CancelledError):
-                await asyncio.wait_for(waiter, 5)
-            rows = task_views(app, sid)
-            assert len(rows) == 1
-            handle = rows[0]["handle"]
-            assert handle.startswith("task_")
-            assert rows[0]["invocation_id"] == "race-call"
-            assert rows[0]["effective_status"] == "running"
-            assert await asyncio.to_thread(supervisor.request_cancel, rows[0])
-            driver = supervisor.drivers.get(handle)
-            if driver is not None:
-                await asyncio.wait_for(asyncio.shield(driver), 5)
-            assert resolve_task(app, sid, handle)["effective_status"] == "cancelled"
-        finally:
-            release.set()
-            await supervisor.shutdown()
-
-    asyncio.run(exercise())
 
 
 @pytest.mark.parametrize("kind", ["MCP", "Shell"])
@@ -156,20 +88,6 @@ def test_subtree_cancel_joins_late_actual_acceptance(
             await release.wait()
             await original(extension, *args, **kwargs)
 
-        async def spawn() -> asyncio.subprocess.Process:
-            calls.append("Shell")
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-c",
-                "import time; print('once',flush=True); time.sleep(120)",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                **task_spawn_options({}),
-            )
-            reached.set()
-            await release.wait()
-            return process
-
         try:
             if kind == "MCP":
                 monkeypatch.setattr(ClioTasksClientExtension, "_make_durable", gated)
@@ -177,25 +95,43 @@ def test_subtree_cancel_joins_late_actual_acceptance(
                 await executor.start()
                 waiter = asyncio.create_task(executor.call_tool_result("actual_work", {}))
             else:
-                captures = [
-                    StreamCapture(name, inline_limit=4096, spill_path=tmp_path / f"{name}.log")
-                    for name in ("stdout", "stderr")
-                ]
-                waiter = asyncio.create_task(
-                    spawn_owned_shell(
-                        app,
-                        child_sid,
-                        spawn(),
-                        captures,
-                        command="late acceptance",
-                        cwd=tmp_path,
-                        spill_root=tmp_path,
-                        timeout=0,
-                        invocation_id="acceptance-race",
+                from clio_agent.tools import native_task_host
+                from clio_agent.tools.execution import tool_workspace_context
+                from tests.test_tools.test_native_task_host import _shell_process_command
+
+                native_host = app.state.native_task_hosts["shell"]
+                real_workload = native_host.tools["bash"]._workload
+
+                async def actual_shell(arguments: dict[str, Any], ctx: Any) -> dict[str, Any]:
+                    calls.append("Shell")
+                    return await real_workload(arguments, ctx)
+
+                native_host.tools["bash"].bind(native_host, actual_shell)
+                real_submit = native_task_host.call_tool_task
+
+                async def held_reply(*args: Any, **kwargs: Any) -> Any:
+                    native = await real_submit(*args, **kwargs)
+                    async with asyncio.timeout(8):
+                        while calls != ["Shell"]:
+                            await asyncio.sleep(0.02)
+                    reached.set()
+                    await release.wait()
+                    return native
+
+                monkeypatch.setattr(native_task_host, "call_tool_task", held_reply)
+                monkeypatch.setenv("CLIO_ALLOWED_ROOTS", str(tmp_path))
+                command, _ = _shell_process_command(tmp_path)
+                with tool_workspace_context(tmp_path):
+                    waiter = asyncio.create_task(
+                        native_host.submit("bash", {"command": command, "background": True})
                     )
-                )
             await asyncio.wait_for(reached.wait(), 5)
-            assert pending_submissions(app, child_sid)
+            if kind == "MCP":
+                assert pending_submissions(app, child_sid)
+            else:
+                owned = task_views(app, child_sid)
+                assert len(owned) == 1 and owned[0]["acceptance"] == "accepted"
+                assert native_host.submissions
             supervisor = task_supervisor(app)
             assert await asyncio.to_thread(
                 supervisor.request_cancel, resolve_task(app, sid, child.handle_id)

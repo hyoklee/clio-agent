@@ -434,6 +434,7 @@ class _Loop:
             tools=self.tools,
             config=self.config,
         )
+        self.recorder.commit_input(self.step)
         try:
             response = _call_lm(self.lm, request)
         except (ContextWindowExceededError, ContextLengthError):

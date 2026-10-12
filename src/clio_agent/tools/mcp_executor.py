@@ -7,7 +7,6 @@ import base64
 import hashlib
 import json
 import logging
-import math
 import threading
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from contextlib import suppress
@@ -181,38 +180,12 @@ def _tool_annotations(tool: Any) -> Mapping[str, Any]:
 
 
 def _explicit_tool_timeout_seconds(tool: Any, args: Mapping[str, Any]) -> float | None:
-    """Read standard, explicitly supplied timeout arguments declared by the tool schema.
+    """Compatibility entry point for the shared schema-derived budget calculation."""
+    from clio_agent.tools.mcp_timeout_budget import explicit_tool_timeout_seconds
 
-    Only arguments present in both the MCP input schema and this invocation count.
-    Schema defaults are deliberately ignored, preserving the executor's existing
-    default for callers that did not explicitly request a longer operation. An
-    active ``wait_timeout_seconds`` participates only when ``wait_for_terminal`` is
-    true; otherwise it does not describe this call's wall-clock lifetime.
-
-    Explicit budgets are additive rather than alternatives. A tool may spend one
-    budget executing remote work and another waiting or collecting its result;
-    summing them is the only generic derivation that cannot undercut a valid
-    sequential implementation. The executor's base timeout is added separately as
-    transport/protocol overhead around those declared phases.
-    """
-
-    properties = _mapping_value(_tool_input_schema(tool).get("properties")) or {}
-    candidates: list[float] = []
-    for field in ("timeout_seconds", "wait_timeout_seconds"):
-        if field not in properties or field not in args:
-            continue
-        if field == "wait_timeout_seconds" and args.get("wait_for_terminal") is not True:
-            continue
-        raw = args[field]
-        if isinstance(raw, bool):
-            continue
-        try:
-            seconds = float(raw)
-        except (TypeError, ValueError):
-            continue
-        if math.isfinite(seconds) and seconds > 0:
-            candidates.append(seconds)
-    return sum(candidates) if candidates else None
+    return explicit_tool_timeout_seconds(
+        _mapping_value(_tool_input_schema(tool).get("properties")) or {}, args
+    )
 
 
 def _is_wait_for_terminal_commitment(tool: Any, args: Mapping[str, Any]) -> bool:
@@ -417,6 +390,31 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
             raise UncertainMutatingToolOutcomeError(name, prior_uncertain, retry_blocked=True)
         budget = self._timeout_budget_for_call(name, args)
         timeout = budget.seconds
+        # Built-in native roots are retained by GACT, never by this resident
+        # executor's loop or idle reaper. Provider bridges share this boundary.
+        from clio_agent.gact.context import active_app
+        from clio_agent.tools.native_task_host import native_route
+
+        app = active_app()
+        route = native_route(app, name)
+        if route is not None:
+            host, tool = route
+            backend_args, token = task_calls.begin_backend_call(self, name, dict(args))
+            try:
+                from clio_agent.gact.loop_handoff import await_on_loop
+
+                result = await await_on_loop(
+                    app.state.mcp_app_loop,
+                    host.submit(tool, backend_args),
+                    op=f"submit native {host.identity} task",
+                )
+                return _MCPCallOutcome(
+                    model_text=_result_to_text(result),
+                    raw_result=result,
+                    source_namespace="shell",
+                )
+            finally:
+                task_calls.TASK_CALL.reset(token)
         client, on_server_name, namespace = await self._route(name)
         # #934: the namespace backend SPAWNS on its first forwarded call
         # (proxy ctx-enter spawns nothing), so first-call success/failure

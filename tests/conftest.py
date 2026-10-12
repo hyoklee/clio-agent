@@ -352,7 +352,13 @@ def _clio_private_cte_daemon():
         # start (not mid-suite under load) and hold a client so it stays up all
         # session. A daemon that does not come up FAILS the run with its own reason:
         # the cte legs must never quietly run on local files.
-        if not eagerly_attach_private_daemon():
+        try:
+            attached = eagerly_attach_private_daemon()
+        except Exception as exc:
+            pytest.fail(
+                f"{private_daemon_failure_report(isolation)}\nattach error: {exc}", pytrace=False
+            )
+        if not attached:
             pytest.fail(private_daemon_failure_report(isolation), pytrace=False)
         yield isolation
     finally:

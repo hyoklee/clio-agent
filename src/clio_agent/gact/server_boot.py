@@ -73,6 +73,16 @@ async def shutdown_tasks(app: FastAPI) -> None:
     from clio_agent.gact.task_supervisor import task_supervisor
 
     await task_supervisor(app).shutdown()
+    for host in getattr(app.state, "native_task_hosts", {}).values():
+        await host.close()
+
+
+async def start_task_hosts(app: FastAPI) -> None:
+    """Recover existing work and enter independent application-owned native roots."""
+    from clio_agent.tools.native_task_host import start_native_hosts
+
+    reconcile_connected_storage(app)
+    await start_native_hosts(app)
 
 
 def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:

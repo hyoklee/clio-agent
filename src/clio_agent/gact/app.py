@@ -805,7 +805,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     provider_catalog_task = server_boot.start_provider_catalog(app)
 
-    server_boot.reconcile_connected_storage(app)
+    await server_boot.start_task_hosts(app)
 
     yield
 

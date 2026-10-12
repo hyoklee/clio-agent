@@ -752,13 +752,11 @@ class SyncMCPToolExecutor(SyncNamespacePreparationMixin):
             tool_observer, name, effective_args, observer_handle
         )
 
-        budget = self._async_executor._timeout_budget_for_call(name, effective_args)
-        timeout = budget.seconds  # None == unbounded wait_for_terminal commitment, #1225
+        timeout, native_call = foreground_cancel.call_limits(
+            self._async_executor, name, effective_args
+        )
         task_call_token = task_calls.begin_invocation()
         try:
-            # #1230: an unbounded commitment wait must not count against the
-            # turn's no-progress ceiling — commitment_activity is the signal
-            # gact/turn_watchdog.py reads; a no-op unless timeout is None.
             with commitment_activity.track(timeout is None):
                 outcome = foreground_cancel._run_foreground_coroutine(
                     self._loop,
@@ -770,6 +768,7 @@ class SyncMCPToolExecutor(SyncNamespacePreparationMixin):
                     timeout=(None if timeout is None else timeout + SYNC_TOOL_RESULT_GRACE_SECONDS),
                     action=f"MCP tool {name!r}",
                     cancellation_checker=cancellation_checker,
+                    wait_for_settlement=native_call,
                     cancellation_error=lambda wire_settled: (
                         foreground_cancel._tool_cancellation_error(
                             name,

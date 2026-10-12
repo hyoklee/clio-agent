@@ -31,6 +31,10 @@ def consume_task(app: Any, sid: str, handle: str) -> bool:
         # can collect its mailbox. Otherwise a parent read strands a yielding child.
         if row["owner"]["session_id"] != sid:
             return False
+        if row.get("native"):
+            # Native completion is acknowledged by the confirmed input record,
+            # after its observation/content is stored, never during staging.
+            return False
         if row["task_kind"] == "Subagent":
             from clio_agent.gact.enrichment import consume_pending_agent_task_notifications
 
@@ -88,6 +92,27 @@ def commit_staged_completions(state: Any) -> None:
             state.injections.append(
                 ("task_results", "## Background task results\n\n" + "\n\n".join(blocks))
             )
+        native = [
+            row
+            for row in task_views(state.app, state.sid)
+            if row.get("native")
+            and row.get("notify_pending")
+            and row["effective_status"] in TERMINAL
+            and row["owner"]["session_id"] == state.sid
+        ][:8]
+        if native:
+            from clio_agent.gact.core_task_journal import NotificationText
+
+            state.injections.append(
+                (
+                    "task_results",
+                    NotificationText(
+                        "## Background task results\n\n"
+                        + "\n\n".join(completion_block(row) for row in native),
+                        [row["notification_id"] for row in native],
+                    ),
+                )
+            )
         commit_task_context_frame(state)
 
 
@@ -107,10 +132,27 @@ def drain_task_completions(app: Any, sid: str) -> list[tuple[str, str]]:
     delivered = []
     for handle in selected:
         row = resolve_task(app, sid, handle)
+        if row.get("native"):
+            from clio_agent.gact.core_task_journal import NotificationText
+
+            delivered.append(NotificationText(completion_block(row), [row["notification_id"]]))
+            continue
         if consume_task(app, sid, handle):
             delivered.append(completion_block(row))
-    return (
-        [("task_results", "## Background task results\n\n" + "\n\n".join(delivered))]
-        if delivered
-        else []
-    )
+    if not delivered:
+        return []
+    from clio_agent.gact.core_task_journal import NotificationText
+
+    return [
+        (
+            "task_results",
+            NotificationText(
+                "## Background task results\n\n" + "\n\n".join(delivered),
+                [
+                    identity
+                    for text in delivered
+                    for identity in getattr(text, "notification_ids", ())
+                ],
+            ),
+        )
+    ]

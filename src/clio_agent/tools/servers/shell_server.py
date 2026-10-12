@@ -475,22 +475,10 @@ async def bash(
             "command must be a non-empty string.",
             details={"field": "command"},
         )
-    background_app, background_sid = None, ""
     if background:
-        from clio_agent.gact import context as task_context
-
-        background_app, background_sid = task_context.active_app(), task_context.active_session_id()
-        if background_app is None or not background_sid:
-            return _error(
-                "background_unavailable",
-                "Background shell requires an application-owned conversation",
-            )
-        from clio_agent.tools.task_call_context import require_admission
-
-        try:
-            require_admission(background_app, background_sid)
-        except RuntimeError as exc:
-            return _error("task_admission_closed", str(exc))
+        return _error(
+            "native_submission_required", "Background shell must use the native MCP task client."
+        )
     command = command.strip()
     max_chars = _SHELL_LIMITS.max_command_chars
     if len(command) > max_chars:
@@ -583,67 +571,130 @@ async def bash(
     try:
         from clio_agent.runtime.task_process_tree import task_spawn_options
 
-        process_options = (
-            task_spawn_options(confined.popen_kwargs) if background else confined.popen_kwargs
-        )
-        spawn = asyncio.create_subprocess_exec(
-            *run_argv,
-            cwd=str(safe_cwd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=run_env,
-            **process_options,
-            # Give the child an immediately-EOF stdin. Without this the spawned
-            # shell inherits clio-agent's own stdin (a pipe the parent holds open
-            # and never closes), and PowerShell/cmd block at startup waiting on
-            # that stream — every command then hits the timeout with empty output.
-            stdin=subprocess.DEVNULL,
-        )
-        if background:
-            from clio_agent.gact.task_shell_owner import spawn_owned_shell
-            from clio_agent.tools.task_call_context import TASK_CALL
-
-            return await spawn_owned_shell(
-                background_app,
-                background_sid,
-                spawn,
-                captures,
-                command=command,
-                cwd=safe_cwd,
-                spill_root=spill_root,
-                timeout=timeout,
-                invocation_id=TASK_CALL.get().invocation_id,
+        process_options = task_spawn_options(confined.popen_kwargs)
+        spawn = asyncio.create_task(
+            asyncio.create_subprocess_exec(
+                *run_argv,
+                cwd=str(safe_cwd),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=run_env,
+                **process_options,
+                # Give the child an immediately-EOF stdin. Without this the spawned
+                # shell inherits clio-agent's own stdin (a pipe the parent holds open
+                # and never closes), and PowerShell/cmd block at startup waiting on
+                # that stream — every command then hits the timeout with empty output.
+                stdin=subprocess.DEVNULL,
             )
-        process = await spawn
+        )
+        try:
+            process = await asyncio.shield(spawn)
+        except asyncio.CancelledError:
+            # A cancelled submission waiter cannot abandon a newly created
+            # suspended process. Resolve this exact spawn before stopping it.
+            await _cancel_pending_spawn(spawn)
+            raise
     except Exception as exc:  # noqa: BLE001
         return _error("execution_failed", str(exc), details={"command": command})
 
     assert process.stdout is not None
     assert process.stderr is not None
+    from clio_agent.runtime.task_process_tree import TaskProcessTree
+
+    try:
+        tree = TaskProcessTree(process.pid)
+    except Exception:
+        # Windows ownership failure kills the still-suspended process; wait
+        # for its actual exit before allowing the worker to leave.
+        if process.returncode is None:
+            process.kill()
+        await process.wait()
+        from clio_agent.tools.native_task_tool import confirm_workload_cleanup
+
+        confirm_workload_cleanup()
+        raise
     readers = [
         asyncio.create_task(read_process_stream(pipe, capture=capture, ctx=ctx))
         for pipe, capture in zip((process.stdout, process.stderr), captures, strict=True)
     ]
     timed_out = False
+    physical_settlement = False
+    result: dict[str, Any] | None = None
+
+    async def settle() -> None:
+        await process.wait()
+        while await asyncio.to_thread(tree.active):
+            await asyncio.sleep(0.05)
+
     try:
-        await asyncio.wait_for(process.wait(), timeout=timeout or None)
+        await asyncio.wait_for(settle(), timeout=timeout or None)
+        physical_settlement = True
     except TimeoutError:
         timed_out = True
-        await asyncio.to_thread(_kill_process_tree, process.pid)
-        await process.wait()
-    except asyncio.CancelledError:
-        # The turn was cancelled (the human stopped it): never orphan the command.
-        _kill_process_tree(process.pid)
+        await asyncio.to_thread(tree.terminate)
+        await settle()
+        physical_settlement = True
+    except BaseException:
+        # The registered worker's cleanup receipt is valid only after the
+        # process tree and output readers have actually settled.
+        await asyncio.to_thread(tree.terminate)
+        await settle()
+        physical_settlement = True
         raise
-    await asyncio.gather(*readers)
-    base = {
-        "command": command,
-        "cwd": str(safe_cwd),
-        "exit_code": None if timed_out else process.returncode,
-        "timed_out": timed_out,
-        "timeout_s": timeout,
-    }
-    return compose_output_fields(base, captures, root=spill_root, budget=shell_result_char_budget())
+    finally:
+        try:
+            await asyncio.gather(*readers)
+        finally:
+            tree.close()
+            if physical_settlement:
+                from clio_agent.tools.native_task_tool import confirm_workload_cleanup
+
+                base = {
+                    "command": command,
+                    "cwd": str(safe_cwd),
+                    "exit_code": None if timed_out else process.returncode,
+                    "timed_out": timed_out,
+                    "timeout_s": timeout,
+                }
+                result = compose_output_fields(
+                    base, captures, root=spill_root, budget=shell_result_char_budget()
+                )
+                confirm_workload_cleanup(result)
+    if result is None:
+        raise RuntimeError("Shell exited without confirmed process-tree settlement")
+    return result
+
+
+async def _cancel_pending_spawn(spawn: asyncio.Task[asyncio.subprocess.Process]) -> None:
+    """Resolve an exact spawn race and physically settle it without replaying the command."""
+    from clio_agent.runtime.task_process_tree import TaskProcessTree
+    from clio_agent.tools.native_task_tool import confirm_workload_cleanup
+
+    async def cleanup() -> None:
+        process = await spawn
+        tree = None
+        try:
+            tree = TaskProcessTree(process.pid)
+            await asyncio.to_thread(tree.terminate)
+            await process.wait()
+            while await asyncio.to_thread(tree.active):
+                await asyncio.sleep(0.05)
+        finally:
+            if tree is not None:
+                tree.close()
+            elif process.returncode is None:
+                process.kill()
+                await process.wait()
+        confirm_workload_cleanup()
+
+    pending = asyncio.create_task(cleanup())
+    while True:
+        try:
+            await asyncio.shield(pending)
+            return
+        except asyncio.CancelledError:
+            if pending.cancelled():
+                raise
 
 
 def _spill_root(safe_cwd: Path) -> Path:

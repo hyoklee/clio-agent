@@ -42,6 +42,7 @@ class ContextReader:
         self._generation: int | None = None
         self._closed_upto = 0  # segments [0, n) are folded into ``_closed``
         self._closed: list[Message] = []
+        self.snapshot: Any = None
 
     def read(self) -> list[Message]:
         """The scope's context now, as typed messages.
@@ -60,6 +61,7 @@ class ContextReader:
         except Exception as exc:  # noqa: BLE001 - re-raised typed, never swallowed
             raise ContextReadError(self.scope, exc) from exc
         segments = snapshot.segments
+        self.snapshot = snapshot
         if snapshot.generation != self._generation or len(segments) < self._closed_upto:
             self._generation = snapshot.generation
             self._closed_upto = 0

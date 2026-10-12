@@ -15,6 +15,15 @@ _CANCELLATION_POLL_SECONDS = 0.05
 _MCP_WIRE_CANCELLATION_SETTLE_SECONDS = 1.0
 
 
+def call_limits(executor: Any, name: str, arguments: Any) -> tuple[float | None, bool]:
+    """Keep native execution limits with its owner and retain other MCP RPC budgets."""
+    from clio_agent.gact.context import active_app
+    from clio_agent.tools.native_task_host import native_route
+
+    native = native_route(active_app(), name) is not None
+    return (None if native else executor._timeout_budget_for_call(name, arguments).seconds), native
+
+
 def _tool_cancellation_error(
     tool: str,
     stage: str,
@@ -47,6 +56,7 @@ def _run_foreground_coroutine(
     action: str,
     cancellation_checker: Callable[[], bool] | None = None,
     cancellation_error: Callable[[bool], CancellationError] | None = None,
+    wait_for_settlement: bool = False,
 ) -> Any:
     """Run ``coro`` on ``loop`` from this (foreground) thread, cooperatively
     cancellable while it runs.
@@ -60,14 +70,29 @@ def _run_foreground_coroutine(
     abandoned on its own.
     """
     settled = threading.Event()
+    gate = threading.Lock()
+    started = False
 
     async def tracked() -> Any:
+        nonlocal started
+        with gate:
+            if settled.is_set():
+                raise asyncio.CancelledError
+            started = True
         try:
             return await coro
         finally:
             settled.set()
 
     future = asyncio.run_coroutine_threadsafe(tracked(), loop)
+
+    def cancel() -> bool:
+        with gate:
+            if not started:
+                coro.close()
+                settled.set()
+            return future.cancel()
+
     deadline = None if timeout is None else time.monotonic() + timeout
     while True:
         remaining = None if deadline is None else max(0.0, deadline - time.monotonic())
@@ -89,13 +114,17 @@ def _run_foreground_coroutine(
                 try:
                     cancel_requested = cancellation_checker()
                 except Exception:
-                    future.cancel()
-                    settled.wait(_MCP_WIRE_CANCELLATION_SETTLE_SECONDS)
+                    cancel()
+                    settled.wait(
+                        None if wait_for_settlement else _MCP_WIRE_CANCELLATION_SETTLE_SECONDS
+                    )
                     raise
-                if cancel_requested and future.cancel():
+                if cancel_requested and cancel():
                     # Do not synthesize a request id here. Cancelling this exact call
                     # task makes MCP's dispatcher use the id in its pending table.
-                    wire_settled = settled.wait(_MCP_WIRE_CANCELLATION_SETTLE_SECONDS)
+                    wire_settled = settled.wait(
+                        None if wait_for_settlement else _MCP_WIRE_CANCELLATION_SETTLE_SECONDS
+                    )
                     if cancellation_error is not None:
                         raise cancellation_error(wire_settled) from None
                     raise CancellationError(
@@ -104,5 +133,5 @@ def _run_foreground_coroutine(
                     ) from None
             if deadline is None or time.monotonic() < deadline:
                 continue
-            future.cancel()
+            cancel()
             raise TimeoutError(f"{action} timed out after {timeout:g}s") from exc

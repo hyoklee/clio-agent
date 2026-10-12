@@ -60,7 +60,15 @@ TURN_YIELD_METADATA: dict[str, str] = {
 _FOLDED_KINDS = frozenset({"user", "thought", "tool_call", "observation", "summary"})
 # clio-core record kinds that are never the agent's context (skipped by declaration).
 _NON_CONTEXT_KINDS = frozenset(
-    {"answer", "semantic_event", "ws_op", "step_open", "message_part", "state_merge"}
+    {
+        "answer",
+        "semantic_event",
+        "ws_op",
+        "step_open",
+        "message_part",
+        "state_merge",
+        "recipient_input",
+    }
 )
 
 
@@ -524,9 +532,12 @@ class StepRecorder:
                 latest[str(content.get("source"))] = str(content.get("text"))
         for source, text in injections:
             if text and latest.get(source) != text:
-                record = {"text": text, "source": source, "actor": "algorithm"}
+                record: dict[str, Any] = {"text": str(text), "source": source, "actor": "algorithm"}
+                identities = getattr(text, "notification_ids", ())
+                if identities:
+                    record["notification_ids"] = list(identities)
                 self._write("user", record, 0, "")
-                emit_injection(source, text, agent_id=self.expert_id)
+                emit_injection(source, str(text), agent_id=self.expert_id)
                 latest[source] = text
 
     def arrivals(self, arrivals: Sequence[tuple[str, str]], step: int) -> None:
@@ -537,10 +548,33 @@ class StepRecorder:
         """
         for source, text in arrivals:
             actor = "user" if source == "steer" else "algorithm"
-            record = {"text": text, "source": source, "actor": actor}
+            record: dict[str, Any] = {"text": str(text), "source": source, "actor": actor}
+            identities = getattr(text, "notification_ids", ())
+            if identities:
+                existing = {
+                    identity
+                    for segment in self.arc.render_working_set(self.session, self.scope)
+                    for identity in segment.content.get("notification_ids", [])
+                }
+                if all(identity in existing for identity in identities):
+                    continue
+                record["notification_ids"] = list(identities)
             self._write("user", record, step, "")
             if actor == "algorithm":
-                emit_injection(source, text, agent_id=self.expert_id)
+                emit_injection(source, str(text), agent_id=self.expert_id)
+
+    def commit_input(self, step: int) -> None:
+        """Confirm this iteration's fixed context before model execution."""
+        import asyncio
+
+        from clio_agent.gact.context import active_app
+
+        app = active_app()
+        journal = getattr(getattr(app, "state", None), "core_task_journal", None)
+        if app is not None and journal is not None:
+            asyncio.run_coroutine_threadsafe(
+                journal.commit_input(self, step), app.state.mcp_app_loop
+            ).result()
 
     def step_open(self, step: int, span: str, text: str, calls: Sequence[ToolCallPart]) -> None:
         """The pre-execution breadcrumb: a crash mid-step still leaves the step's opening."""
@@ -588,6 +622,17 @@ class StepRecorder:
         rows: list[dict[str, Any]] = []
         for call in calls:
             value, is_error = results.get(call.id, ("", False))
+            notification_ids: list[str] = []
+            from clio_agent.gact.context import active_app
+            from clio_agent.tools.native_task_host import native_route
+
+            app = active_app()
+            journal = getattr(getattr(app, "state", None), "core_task_journal", None)
+            if journal is not None and (
+                call.name in {"get_task_result", "wait_tasks"}
+                or native_route(app, call.name) is not None
+            ):
+                notification_ids = journal.collected_ids(self.session, value)
             self._write(
                 "tool_call",
                 {"id": call.id, "name": call.name, "args": dict(call.input)},
@@ -596,7 +641,12 @@ class StepRecorder:
             )
             self._write(
                 "observation",
-                {"call_id": call.id, "text": _arc_obs_value(value), "is_error": is_error},
+                {
+                    "call_id": call.id,
+                    "text": _arc_obs_value(value),
+                    "is_error": is_error,
+                    **({"notification_ids": notification_ids} if notification_ids else {}),
+                },
                 step,
                 span,
             )

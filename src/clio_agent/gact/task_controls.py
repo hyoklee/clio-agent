@@ -187,6 +187,7 @@ def collect_result(
         "status": row["effective_status"],
         "result": result,
         "result_reference": row["result_reference"],
+        **({"notification_id": row["notification_id"]} if row.get("native") else {}),
     }
 
 

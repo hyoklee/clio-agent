@@ -48,6 +48,9 @@ def public_task(row: dict[str, Any]) -> dict[str, Any]:
         "depth",
         "run_index",
         "access",
+        "activity",
+        "recording",
+        "acceptance",
     }
     return {name: value for name, value in row.items() if name in fields}
 
@@ -186,7 +189,7 @@ def task_views(
     # Workspace reads can encounter the same owner through multiple authorized
     # paths. Deduplicate that full identity, never the public handle: a handle
     # collision must remain visible so resolution/custody reject ambiguity.
-    return list(
+    projected = list(
         {
             ("Subagent", row["id"])
             if row["task_kind"] == "Subagent"
@@ -194,6 +197,57 @@ def task_views(
             for row in rows
         }.values()
     )
+    journal = getattr(app.state, "core_task_journal", None)
+    if journal is not None:
+        # Delegation confers tree access; a model-supplied scope or intent
+        # cannot confer rights over a native peer execution.
+        owners = {sid}
+        registry = getattr(app.state, "agent_task_registry", None)
+        frontier = [sid] if include_children and registry is not None else []
+        while frontier:
+            assert registry is not None
+            parent = frontier.pop()
+            for task in registry.for_parent(parent):
+                if task.child_session_id and task.child_session_id not in owners:
+                    owners.add(task.child_session_id)
+                    frontier.append(task.child_session_id)
+        for native in [*journal.rows.values(), *journal.unconfirmed.values()]:
+            if native["session_id"] not in owners:
+                continue
+            handle = native["handle"]
+            if any(row["handle"] == handle and row.get("native") for row in projected):
+                continue
+            native = journal.get(handle)
+            root = native["native_root"]
+            host = getattr(app.state, "native_task_hosts", {}).get(root[0])
+            controllable = host is not None and host.instance == root[1]
+            notification_id = native.get("notification_id", "")
+            projected.append(
+                {
+                    **native,
+                    "native": True,
+                    "id": handle,
+                    "kind": "mcp",
+                    "task_kind": native["kind"],
+                    "label": native["description"],
+                    "title": native["description"],
+                    "description_missing": not bool(native["description"]),
+                    "owner": {"session_id": native["session_id"], "agent": native["owner_agent"]},
+                    "owner_session_id": native["session_id"],
+                    "root_session_id": sid,
+                    "supported_actions": ["observe", "wait", "result"]
+                    + (
+                        ["cancel"]
+                        if controllable and native["effective_status"] not in TERMINAL
+                        else []
+                    ),
+                    "result_reference": {"handle": handle, "tool": "get_task_result"},
+                    "access": "owner" if native["session_id"] == sid else "descendant",
+                    "notify_pending": bool(notification_id)
+                    and journal.pending(native["session_id"], notification_id),
+                }
+            )
+    return projected
 
 
 def resolve_task(
