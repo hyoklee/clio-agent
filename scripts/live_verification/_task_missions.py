@@ -25,7 +25,7 @@ def shell_input(workspace: Path) -> str:
     return "& " + command if os.name == "nt" else command
 
 
-def folder_input(proof: Path, kind: str) -> dict[str, Any]:
+def folder_input(proof: Path, kind: str, *, file_count: int | None = None) -> dict[str, Any]:
     """Create real owned files, below the production enumeration limit, without a fake adapter."""
     root = proof / "upstream"
     root.mkdir()
@@ -34,7 +34,9 @@ def folder_input(proof: Path, kind: str) -> dict[str, Any]:
     selected.write_bytes(payload)
     seed = root / "seed.txt"
     seed.write_bytes(b"owned indexing entry\n" * 32)
-    count = 48_000 if kind == "Indexing" else 24_000
+    count = file_count if file_count is not None else (48_000 if kind == "Indexing" else 24_000)
+    if not 0 < count <= 99_000:
+        raise ValueError("Owned storage workload must stay below the actual provider entry limit")
     for index in range(count):
         directory = root / f"group-{index // 500:03}"
         directory.mkdir(exist_ok=True)

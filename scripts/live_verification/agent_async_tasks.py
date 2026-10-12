@@ -65,6 +65,7 @@ def main() -> int:
         "--kind", choices=["MCP", "Shell", "Subagent", "Download", "Indexing"], default="MCP"
     )
     parser.add_argument("--max-elapsed", type=float, default=600)
+    parser.add_argument("--storage-files", type=int)
     parser.add_argument("--web-dir", type=Path)
     parser.add_argument("--hold-until", type=Path)
     args = parser.parse_args()
@@ -78,7 +79,11 @@ def main() -> int:
     workspace.mkdir()
     (workspace / "sentinel.txt").write_text("independent action completed\n", encoding="utf-8")
     auth = frozen_codex_auth(proof / "private-codex")
-    source = folder_input(proof, args.kind) if args.kind in {"Indexing", "Download"} else None
+    source = (
+        folder_input(proof, args.kind, file_count=args.storage_files)
+        if args.kind in {"Indexing", "Download"}
+        else None
+    )
     payload_server = PayloadServer(proof) if args.slow_payload else None
     target = payload_server.url if payload_server is not None else TARGET
     web = Path.home() / ".cache/clio-kit/mcp-projects/web" / WEB_DIGEST

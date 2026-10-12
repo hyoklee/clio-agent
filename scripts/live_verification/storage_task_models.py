@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -27,6 +28,26 @@ CORE = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(CORE))
 from tests._cte_isolation import eagerly_attach_private_daemon, isolate_cte_env
 from tests._process_hygiene import release_this_process_client
+
+
+def remove_owned_scratch(root: Path, owner: Path) -> None:
+    """Remove only this controller's real owned directories, including read-only snapshots."""
+    root = root.absolute()
+    assert root == owner or root.parent == owner
+    assert owner.parent == CORE.parent and owner.name.startswith("storage-models-live-")
+    assert owner.resolve() == owner
+    assert not root.is_symlink() and root.stat().st_uid == os.getuid()
+    directories = [root]
+    for directory, names, _ in os.walk(root, followlinks=False):
+        for name in names:
+            path = Path(directory) / name
+            info = path.lstat()
+            if stat.S_ISDIR(info.st_mode):
+                assert info.st_uid == os.getuid(), f"Scratch ownership changed: {path}"
+                directories.append(path)
+    for directory in directories:
+        directory.chmod(0o700, follow_symlinks=False)
+    shutil.rmtree(root)
 
 
 def bounded_case(raw: dict[str, Any], number: int) -> dict[str, Any]:
@@ -90,6 +111,7 @@ def main() -> int:
     parser.add_argument("--kind", choices=["Download", "Indexing"], required=True)
     parser.add_argument("--port", type=int, default=18865)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--storage-files", type=int)
     args = parser.parse_args()
     root = args.root.resolve()
     assert root.parent == CORE.parent and root.name.startswith("storage-models-live-")
@@ -107,6 +129,7 @@ def main() -> int:
         "transport": "websocket",
         "started": time.time(),
         "cycles": [],
+        "requested_storage_files": args.storage_files,
     }
     identities: set[tuple[int, float]] = set()
     core_identity: tuple[int, float] | None = None
@@ -120,19 +143,22 @@ def main() -> int:
         for number in range(1, args.repeats + 1):
             proof = root / f"cycle-{number}"
             with (root / f"cycle-{number}-console.log").open("w") as log:
+                command = [
+                    sys.executable,
+                    str(Path(__file__).with_name("agent_async_tasks.py")),
+                    "--proof",
+                    str(proof),
+                    "--phase",
+                    "acceptance",
+                    "--kind",
+                    args.kind,
+                    "--port",
+                    str(args.port),
+                ]
+                if args.storage_files is not None:
+                    command.extend(["--storage-files", str(args.storage_files)])
                 process = subprocess.Popen(
-                    [
-                        sys.executable,
-                        str(Path(__file__).with_name("agent_async_tasks.py")),
-                        "--proof",
-                        str(proof),
-                        "--phase",
-                        "acceptance",
-                        "--kind",
-                        args.kind,
-                        "--port",
-                        str(args.port),
-                    ],
+                    command,
                     cwd=CORE,
                     stdout=log,
                     stderr=subprocess.STDOUT,
@@ -164,7 +190,7 @@ def main() -> int:
             ]
             assert all(settled), "An owned child remained active"
             assert proof.resolve().parent == root and not proof.is_symlink()
-            shutil.rmtree(proof)
+            remove_owned_scratch(proof, root)
         report["pass"] = True
     except (AssertionError, OSError, RuntimeError, ValueError, TimeoutError) as exc:
         report["error"] = f"{type(exc).__name__}: {exc}"
@@ -176,7 +202,10 @@ def main() -> int:
         report["listener_absent"] = common.port_is_free(args.port)
         assert root.stat().st_ino == inode and not root.is_symlink()
         if report["descendants_absent"] and report["core_absent"] and report["listener_absent"]:
-            shutil.rmtree(root)
+            try:
+                remove_owned_scratch(root, root)
+            except (AssertionError, OSError) as exc:
+                report["cleanup_error"] = f"{type(exc).__name__}: {exc}"
         report["scratch_absent"] = not root.exists()
         report["cleanup_pass"] = (
             report["scratch_absent"] and report["core_absent"] and report["listener_absent"]
