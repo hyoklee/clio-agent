@@ -46,7 +46,12 @@ def remove_owned_scratch(root: Path, owner: Path) -> None:
                 assert info.st_uid == os.getuid(), f"Scratch ownership changed: {path}"
                 directories.append(path)
     for directory in directories:
-        directory.chmod(0o700, follow_symlinks=False)
+        descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            assert os.fstat(descriptor).st_uid == os.getuid()
+            os.fchmod(descriptor, 0o700)
+        finally:
+            os.close(descriptor)
     shutil.rmtree(root)
 
 
