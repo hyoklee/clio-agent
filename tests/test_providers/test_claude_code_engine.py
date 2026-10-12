@@ -315,6 +315,12 @@ def test_xml_parameter_fragment_is_a_protocol_error_not_a_completed_answer(pool:
             "XML",
             id="xml-container",
         ),
+        pytest.param(
+            '<parameter name="tool_calls">'
+            '[{"name":"search","arguments":{"q":"actual data"}}]</parameter>',
+            "XML",
+            id="xml-parameter-container",
+        ),
     ],
 )
 def test_loop_recovers_malformed_call_before_running_the_corrected_call(

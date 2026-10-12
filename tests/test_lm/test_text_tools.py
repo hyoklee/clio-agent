@@ -337,6 +337,60 @@ def test_xml_tool_calls_container_is_a_protocol_error_not_an_operation(count: in
     assert not split.text
 
 
+@pytest.mark.parametrize("quote", ['"', "'"], ids=["double-quotes", "single-quotes"])
+def test_xml_parameter_call_list_is_a_protocol_error_not_an_operation(quote: str) -> None:
+    """Live Haiku emitted a complete parameter envelope without any invoke closer."""
+    raw = (
+        f"<parameter name={quote}tool_calls{quote}>\n"
+        '[{"name":"observe_tasks","arguments":{"tasks":["task_actual"],"notify":true}}]'
+        "\n</parameter>"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"observe_tasks"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "XML" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('<parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter>', set()),
+        ('<parameter name="tool_calls">[{"name":"other","arguments":{}}]</parameter>', {"search"}),
+        ('<parameter name="q">[{"name":"search","arguments":{}}]</parameter>', {"search"}),
+        ('<parameter name="tool_calls">{"name":"search","arguments":{}}</parameter>', {"search"}),
+        (
+            'Example: <parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter>',
+            {"search"},
+        ),
+        (
+            '```xml\n<parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter>\n```',
+            {"search"},
+        ),
+        (
+            '<parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter> trailing',
+            {"search"},
+        ),
+        ('<parameter name="tool_calls">invalid JSON</parameter>', {"search"}),
+    ],
+    ids=[
+        "no-tools",
+        "unknown-tool",
+        "data-parameter",
+        "object-data",
+        "example",
+        "fenced-example",
+        "trailing-text",
+        "invalid-json",
+    ],
+)
+def test_xml_parameter_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only a whole reserved envelope with declared call objects requests correction."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 @pytest.mark.parametrize(
     ("raw", "tools"),
     [
