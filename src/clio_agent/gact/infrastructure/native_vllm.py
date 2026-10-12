@@ -210,7 +210,7 @@ def native_vllm_plan(
     manifest = {
         "definition_version": profile,
         "project": '[project]\nname="clio-native-vllm"\nversion="0.0.0"\nrequires-python='
-        + ('">=3.10"' if xpu else '">=3.12,<3.13"')
+        + ('">=3.11"' if xpu else '">=3.12,<3.13"')
         + "\ndependencies="
         + json.dumps(dependencies)
         + "\n",
