@@ -346,6 +346,7 @@ def main() -> int:
     parser.add_argument("--owned-auth-source", type=Path)
     args = parser.parse_args()
     owned_auth = args.owned_auth_source
+    auth_inode: int | None = None
     if owned_auth is not None:
         assert args.provider == "claude_code"
         assert owned_auth.parent == CORE.parent and owned_auth.name.startswith(
