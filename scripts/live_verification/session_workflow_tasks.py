@@ -18,6 +18,7 @@ import subprocess
 import sys
 import time
 import traceback
+from importlib.metadata import version
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +27,7 @@ import _lifecycle_evidence as evidence
 import psutil
 import yaml
 from _lifecycle_auth import frozen_claude_auth
+from _session_workflow_receipts import model_receipt
 from agent_async_tasks import frozen_codex_auth
 
 CORE = Path(__file__).resolve().parents[2]
@@ -88,19 +90,19 @@ def model_calls(call: Any, root: Path, sid: str, text: str, names: list[str]) ->
     common.post_message(call, sid, text)
     result = []
     for name in names:
-        result.append(
-            evidence.require(
-                lambda name=name: next(
-                    (
-                        row
-                        for row in evidence.tool_events(root, sid, name)
-                        if row["payload"]["call_id"] not in before
-                    ),
-                    None,
+        event = evidence.require(
+            lambda name=name: next(
+                (
+                    row
+                    for row in evidence.tool_events(root, sid, name)
+                    if row["payload"]["call_id"] not in before
                 ),
-                f"model {sid} invoked {name}",
-            )
+                None,
+            ),
+            f"model {sid} invoked {name}",
         )
+        result.append(event)
+        before.add(event["payload"]["call_id"])
     evidence.require(lambda: evidence.settled_turn(call, sid), f"model {sid} settled")
     return result
 
@@ -210,6 +212,7 @@ def cycle(call: Any, root: Path, wid: str, blueprints: list[str], number: int) -
     evidence.require(lambda: evidence.settled_turn(call, a), "observer automatic wake settled")
     evidence.require(lambda: evidence.settled_turn(call, b), "producer turn settled")
     assert evidence.task(call, b, run)["effective_status"] == "completed"
+    receipts = [model_receipt(call, a, h, "completed") for h in (run, shell)]
     reads = model_calls(
         call,
         root,
@@ -217,11 +220,12 @@ def cycle(call: Any, root: Path, wid: str, blueprints: list[str], number: int) -
         f"Call wait_tasks(tasks={[run, shell, 'invalid-handle']!r},return_when='any',timeout_s=0,{SCOPE}), "
         f"then wait_tasks with the same tasks and scope but return_when='all',timeout_s=0. "
         f"Then get_task_result(handle={run!r},{SCOPE}). Report actual results and partial errors.",
-        ["wait_tasks", "get_task_result"],
+        ["wait_tasks", "wait_tasks", "get_task_result"],
     )
     result = evidence.observation(reads[0])
     assert len(result["results"]) == 2 and len(result["errors"]) == 1 and not result["pending"]
-    assert evidence.observation(reads[1])["status"] == "completed"
+    assert evidence.observation(reads[1])["results"] == result["results"]
+    assert evidence.observation(reads[2])["status"] == "completed"
     assert len([r for r in evidence.mail(call, a) if r.get("correlation_id") == run]) == 1
     idle_marker = "PEER_IDLE_" + secrets.token_hex(8)
     before_reply = len(evidence.tool_events(root, b, "message_agent"))
@@ -257,6 +261,7 @@ def cycle(call: Any, root: Path, wid: str, blueprints: list[str], number: int) -
     )
     evidence.require(lambda: evidence.settled_turn(call, b), "failure producer settled")
     evidence.require(lambda: evidence.settled_turn(call, a), "failure observer settled")
+    receipts.append(model_receipt(call, a, failed_shell, "failed"))
     stopped_run, continuing_shell, continuing = start_held(call, root, b, f"workflow-{number}-stop")
     model_calls(
         call,
@@ -266,7 +271,7 @@ def cycle(call: Any, root: Path, wid: str, blueprints: list[str], number: int) -
         "Report automatic outcomes once; do not ACK or submit work.",
         ["observe_tasks"],
     )
-    call("POST", f"/v1/sessions/{b}/cancel")
+    call("POST", f"/v1/sessions/{b}/cancel", ok=(204,))
     evidence.require(
         lambda: evidence.task(call, b, stopped_run)["effective_status"] == "interrupted",
         "Stop settled finite parent run as interrupted",
@@ -286,6 +291,24 @@ def cycle(call: Any, root: Path, wid: str, blueprints: list[str], number: int) -
     )
     evidence.require(lambda: evidence.settled_turn(call, a), "stopped observer receipt settled")
     assert evidence.task(call, b, continuing_shell)["effective_status"] == "completed"
+    receipts.extend(
+        [
+            model_receipt(call, a, stopped_run, "interrupted"),
+            model_receipt(call, a, continuing_shell, "completed"),
+            model_receipt(call, b, continuing_shell, "completed"),
+        ]
+    )
+    denied = model_calls(
+        call,
+        root,
+        a,
+        f"Permission-boundary qualification: call cancel_tasks(tasks={run!r}) exactly once. "
+        "This is a peer human-owned root: require a denial, do not retry, and report it. "
+        "Do not send messages or start work.",
+        ["cancel_tasks"],
+    )[0]
+    assert evidence.observation(denied)["errors"]
+    assert evidence.task(call, b, run)["effective_status"] == "completed"
     for files in (paths, failed, continuing):
         evidence.assert_no_replay(files["starts"])
     return {
@@ -293,6 +316,7 @@ def cycle(call: Any, root: Path, wid: str, blueprints: list[str], number: int) -
         "cycle": number,
         "sessions": [a, b],
         "blueprints": blueprints,
+        "model_receipts": receipts,
         "handles": [run, shell, failed_run, failed_shell, stopped_run, continuing_shell],
         "invocations": [r["payload"]["call_id"] for r in records] + [sent["payload"]["call_id"]],
         "notices": [
@@ -326,11 +350,18 @@ def main() -> int:
     workspace.mkdir()
     (workspace / "sentinel.txt").write_text("Actual independent filesystem observation")
     report: dict[str, Any] = {"pass": False, "provider": args.provider, "cycles": []}
+    if args.report.exists():
+        prior = json.loads(args.report.read_text())
+        report["previous_attempt"] = {
+            key: prior.get(key) for key in ("source", "pass", "error", "cleanup_pass", "finished")
+        }
     server = None
     core_identity = None
     isolation = None
     source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=CORE).decode().strip()
-    report.update(source=source, python=sys.version, started=time.time())
+    report.update(
+        source=source, python=sys.version, core_package=version("iowarp-core"), started=time.time()
+    )
     try:
         env = os.environ
         env.update(
@@ -398,14 +429,25 @@ def main() -> int:
                 "finally release"
             )
         if server is not None:
+            descendants = (
+                [
+                    (p.pid, p.create_time())
+                    for p in psutil.Process(server.pid).children(recursive=True)
+                ]
+                if server.poll() is None
+                else []
+            )
             common.terminate_server(server)
             report["server_exit"] = server.poll()
+            descendant_results = [stop_identity(identity) for identity in descendants]
+            report["descendants_absent"] = all(descendant_results)
         release_this_process_client()
         report["core_absent"] = core_identity is None or stop_identity(core_identity)
         report["listener_absent"] = common.port_is_free(args.port)
         assert root.stat().st_ino == inode and not root.is_symlink()
         if (
             report["core_absent"]
+            and report.get("descendants_absent", True)
             and report["listener_absent"]
             and (server is None or server.poll() is not None)
         ):
