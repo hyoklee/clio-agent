@@ -11,6 +11,7 @@ import pytest
 
 from clio_agent.gact import context
 from clio_agent.gact.agent_mailbox import collect_agent_mail, pending_mail, stage_agent_mail
+from clio_agent.gact.agent_targets import resolve_agent_target
 from clio_agent.gact.agent_tasks import AgentTaskRegistry
 from clio_agent.gact.events import Event, EventBus
 from clio_agent.gact.mcp_task_store import SessionMetadataTaskStore
@@ -226,3 +227,60 @@ def test_wait_on_own_execution_rejected_without_deadlock(peer_app: Any) -> None:
         assert wait_tasks(handle, timeout_s=0)["pending"] == [handle]
     finally:
         unbind(tokens)
+
+
+def test_session_run_handle_messages_stable_mailbox_without_control(peer_app: Any) -> None:
+    from clio_agent.gact.agent_session_messaging import message_agent_address
+
+    app, a, b = peer_app
+    handle = accept_session_run(app, b, message(b, "run"))
+    settle_session_run(app, b, message(b, "assistant", role="assistant", turn="run"))
+    with pytest.raises(ValueError, match="requires_user_intent"):
+        resolve_agent_target(app, a, handle)
+    with pytest.raises(ValueError, match="unauthorized"):
+        resolve_agent_target(app, a, handle, control=True)
+    ack = message_agent_address(
+        app,
+        handle,
+        "Continue coordination without replaying the completed assignment",
+        caller_sid=a,
+        sender_agent="main",
+        scope="workspace",
+        user_intent="Coordinate the two human-started workflows",
+    )
+    assert ack["target_session_id"] == b and ack["source_session_id"] == a
+    assert len(pending_mail(app, b)) == 1
+    assert resolve_task(app, b, handle)["effective_status"] == "completed"
+    assert len(app.state.mcp_task_store.list()) == 1
+
+
+def test_session_run_handle_does_not_bypass_workspace_or_owner_checks(peer_app: Any) -> None:
+    app, a, b = peer_app
+    handle = accept_session_run(app, b, message(b, "run"))
+    session, task = resolve_agent_target(app, b, handle)
+    assert session.id == b and task is None
+    hidden = app.state.sessions.create(workspace_id="private", title="Private workflow")
+    private_handle = accept_session_run(app, hidden.id, message(hidden.id, "private-run"))
+    with pytest.raises(ValueError, match="scope_denied"):
+        resolve_agent_target(
+            app, a, private_handle, scope="global", user_intent="Coordinate workflows"
+        )
+    for control in (False, True):
+        with pytest.raises(ValueError, match="unauthorized" if control else "requires_user_intent"):
+            resolve_agent_target(app, a, handle, control=control)
+
+
+def test_session_run_handle_collision_and_deleted_recipient_are_rejected(peer_app: Any) -> None:
+    app, a, b = peer_app
+    handle = accept_session_run(app, b, message(b, "run"))
+    record = app.state.mcp_task_store.get(TaskKey("clio:session-run", b, "run"))
+    assert record is not None
+    app.state.mcp_task_store.put(replace(record, key=TaskKey("clio:session-run", a, "other")))
+    with pytest.raises(ValueError, match="ambiguous_agent_target"):
+        resolve_agent_target(app, a, handle, scope="workspace", user_intent="Coordinate workflows")
+    single = accept_session_run(app, b, message(b, "deleted"))
+    app.state.sessions.delete(b)
+    with pytest.raises(
+        ValueError, match="unknown_or_ambiguous_agent_target|recipient_session_gone"
+    ):
+        resolve_agent_target(app, a, single, scope="workspace", user_intent="Coordinate workflows")

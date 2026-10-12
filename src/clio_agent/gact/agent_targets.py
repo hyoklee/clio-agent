@@ -26,15 +26,28 @@ def resolve_agent_target(
     session = app.state.sessions.get(target)
     task = AgentTask.from_session(session) if session is not None else None
     if session is None:
+        from clio_agent.gact.mcp_task_store import app_task_store
+        from clio_agent.gact.session_run_tasks import SERVER_ID
+
         matches = [
             row
             for row in app.state.agent_task_registry.snapshot()
             if target in (row.task_id, row.handle_id)
         ]
-        if len(matches) != 1:
+        runs = [
+            row
+            for row in app_task_store(app).list()
+            if row.kind == "Session" and row.key.server_id == SERVER_ID and row.handle == target
+        ]
+        if len(matches) + len(runs) != 1:
             raise ValueError("unknown_or_ambiguous_agent_target")
-        task = matches[0]
-        session = app.state.sessions.get(task.child_session_id)
+        if matches:
+            task = matches[0]
+            session = app.state.sessions.get(task.child_session_id)
+        else:
+            # A finite run handle addresses its stable mailbox; messaging never
+            # replays that run or grants lifecycle authority over a human root.
+            session = app.state.sessions.get(runs[0].session_id)
     if session is None:
         raise ValueError("recipient_session_gone")
     owned = False
