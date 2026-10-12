@@ -101,6 +101,8 @@ broader deployment health is not claimed to be qualified by these local-file cas
 - Wake integration suite: 84 passed; turn-evidence/protection suite: 69 passed.
 - Current focused controls suite: 190 passed, no skipped tests.
 - CI regression checks: 83 passed, including the added-route/tool inventories.
+- Turn-runner/scheduler suite: 15 passed. Deferred wakes are asserted to inject
+  exactly once after the busy turn frees, without adding a human prompt.
 - UI injection/Work checks: 15 passed; bottom work finder/status checks: 23 passed.
 - Core schema/repository suite: 283 passed, including archived wake projection.
 - Sidebar visibility/ownership checks: 12 passed. User branches remain visible;

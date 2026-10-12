@@ -393,6 +393,11 @@ def _user_texts(client: TestClient, sid: str) -> list[str]:
     ]
 
 
+def _scheduled_wakes(client: TestClient, sid: str) -> list[dict[str, Any]]:
+    messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+    return [row for row in messages if row.get("metadata", {}).get("scheduled")]
+
+
 def test_scheduler_defers_busy_session(tmp_path: Path) -> None:
     """A due schedule whose session already has a turn in flight is NOT
     double-staged; its id is recorded in the deferred set for retry (the busy gate
@@ -408,6 +413,7 @@ def test_scheduler_defers_busy_session(tmp_path: Path) -> None:
         _fire_schedule(app, sch)  # busy -> defer, not stage
 
         assert _user_texts(client, sid) == ["first"], "scheduler double-staged onto a busy session"
+        assert _scheduled_wakes(client, sid) == [], "scheduler injected onto a busy session"
         assert sch.id in app.state.deferred_schedules, "busy schedule was not deferred for retry"
 
 
@@ -438,9 +444,18 @@ def test_scheduler_deferred_retry_fires_when_session_frees(tmp_path: Path) -> No
         assert sch.id not in app.state.deferred_schedules, "deferred schedule was not retried"
         # The scheduled occurrence actually ran (question staged) once free.
         deadline = time.monotonic() + 5.0
-        while time.monotonic() < deadline and "daily q" not in _user_texts(client, sid):
+        while time.monotonic() < deadline and not _scheduled_wakes(client, sid):
             time.sleep(0.05)
-        assert "daily q" in _user_texts(client, sid), "deferred occurrence never fired when free"
+        wakes = _scheduled_wakes(client, sid)
+        assert len(wakes) == 1, "deferred occurrence must inject exactly once when free"
+        assert wakes[0]["role"] == "system"
+        assert wakes[0]["metadata"]["schedule_id"] == sch.id
+        assert len(wakes[0]["parts"]) == 1
+        assert wakes[0]["parts"][0]["type"] == "injection"
+        assert wakes[0]["parts"][0]["source"] == "scheduled_wake"
+        assert wakes[0]["parts"][0]["text"] == "daily q"
+        assert wakes[0]["parts"][0]["metadata"]["actor"] == "algorithm"
+        assert _user_texts(client, sid) == ["first"]
 
 
 def _bus_events(app, sid: str, event_type: str) -> list:
