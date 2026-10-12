@@ -112,3 +112,24 @@ four; human-control notification completed three. During that batch the eight-CP
 host reached load above 170 and became temporarily unreachable. One isolated Core
 daemon also reported SIGSEGV (`-11`); its cause is not established. Every batch
 owner and scratch root settled and was removed. Further families run sequentially.
+
+## Fresh sequential Subagent lifecycle
+
+All five complete Codex/Luna WebSocket lifecycle cycles passed on `dce7c508`.
+The parent received the Subagent handle while its descendant Shell was running.
+Pausing held model execution and incoming mail while the Shell continued;
+observation and an immediate wait reported the held run honestly. Resume
+delivered the retained assignment nonce and queued message once. Retained and
+fresh successor runs used new linked handles, explicitly read the previous
+result and did not replay the accepted Shell operation. Separate cancellation
+settled the actual process subtree before reporting cancellation.
+
+The bounded verdict is `subagent-codex-current.json` on homelab, including
+invocation IDs, each run's handles and the cancelled worker PID/birth identity.
+The fifth cycle used parent `sess_ce2502e3b96f`, child `sess_6d3f1124c377`,
+original run `task_6d3f1124c377`, successor `task_0f309154d440` and Shell
+`task_4b4b1f52a49b4310898de2e1fe3e2c9a`. Its cancelled worker PID 4034065,
+birth 1791827894.43, was absent. All five physical starts files showed one
+launch. The service exited zero; Core, captured descendants, listener and the
+entire disposable run directory were absent. This fresh five-cycle pass
+supersedes the partial Codex lifecycle attempts above without relabeling them.

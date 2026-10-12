@@ -16,7 +16,13 @@ disposable services, native Core allocations, processes and session records were
 removed after verification. The production UI also passed one fresh actual-model
 desktop/phone cycle on `0c5bf0db`, including pause, resume, confirmation dismissal,
 subtree cancellation and physical settlement. Runtime CI passed all 19 jobs on
-`c369ec9f`; later commits through `8501b8e7` do not change `src/` or `sdk/`.
+`c369ec9f`; later commits through `ce65f72c` do not change `src/` or `sdk/`.
+Five fresh sequential Codex/Luna Subagent lifecycle cycles also passed on
+`dce7c508`: held execution with background work continuing, queued mail, resume,
+linked retained/fresh restart with explicit result reads, no operation replay,
+and cancellation with physical descendant settlement. Their complete disposable
+run state and process owners were removed. Claude and the separate parent
+human-intervention family remain under qualification.
 
 The older external receipts and archives named below were deleted during the
 human-requested disk cleanup. They describe historical results and are no longer
