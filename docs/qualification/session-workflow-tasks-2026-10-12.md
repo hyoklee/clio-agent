@@ -133,3 +133,27 @@ birth 1791827894.43, was absent. All five physical starts files showed one
 launch. The service exited zero; Core, captured descendants, listener and the
 entire disposable run directory were absent. This fresh five-cycle pass
 supersedes the partial Codex lifecycle attempts above without relabeling them.
+
+## Claude follow-up and disposable-state accounting
+
+The fresh `ce65f72c` Claude candidate passed one complete coordination cycle,
+then failed the second observer's required `query_tasks` invocation. The model
+included `_clio_task_description`, which that control's declared schema rejects,
+and chose to finish without correcting the call. Its own Shell wait did correct
+the same invalid argument and continued waiting on the original accepted handle.
+The service's private discovery overlay recorded three models with no refresh
+failure. This attempt therefore does not establish expired authentication or a
+blocked task wait. Complete run state, credential copies and process owners
+were removed; the original invocation failure remains a failure. The next
+qualification mission explicitly distinguishes correcting a call rejected
+before execution from replaying accepted work or retrying a permission denial.
+No runtime schema, assertion, deadline or parser budget changed.
+
+The operational cleanup ledger now records actual absence of another 416 ended
+private Core allocations, 154 old run/residual folders, 819 ended generated
+files (including 86 obsolete archives), and the unused Python 3.13 environment
+and its private interpreter. This audit removed approximately 2.8 GiB of logical
+data on homelab without creating archives. Only the needed source, the active
+Python 3.14/Core 2.3.1 candidate, bounded current verdicts and the current suite's
+disposable state remain. This accounting does not infer volume-free bytes or
+attribute earlier Windows native crashes to disk pressure.
