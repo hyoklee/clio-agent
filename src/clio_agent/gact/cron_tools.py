@@ -237,7 +237,9 @@ def build_cron_create_tool() -> Any:
         run_at: str = "",
         delay_s: int = 0,
         timezone: str = "",
-    ) -> dict:
+        max_fires: int = 0,
+        until: str = "",
+    ) -> dict[str, Any]:
         """Schedule a future turn for THIS session (recurring cron or one-shot).
 
         Give exactly ONE trigger:
@@ -250,6 +252,7 @@ def build_cron_create_tool() -> Any:
         ``prompt`` is the question the scheduled turn will run. ``recurring=False`` (or any
         ``run_at``/``delay_s``) makes it a one-shot that deletes itself after firing.
         ``timezone`` overrides the session default (an IANA name like "America/Chicago").
+        max_fires and until are optional explicit user limits; zero/empty are unlimited.
 
         Returns a dict with the server-generated ``schedule_id`` (use it with cron_delete),
         the resolved ``cron``/``timezone``, ``recurring``, and the ``next_fire_at`` UTC
@@ -265,6 +268,8 @@ def build_cron_create_tool() -> Any:
             delay_s=int(delay_s or 0),
             recurring=bool(recurring),
             timezone_name=timezone,
+            max_fires=max_fires,
+            until=until,
         )
         result = {
             "schedule_id": sch.id,
@@ -273,6 +278,8 @@ def build_cron_create_tool() -> Any:
             "recurring": sch.recurring,
             "timezone": sch.timezone,
             "next_fire_at": sch.next_fire_at,
+            "max_fires": sch.max_fires,
+            "until": sch.until,
         }
         # Declared structured payload (P5 wire semantics — the wait_agent_tasks
         # treatment): a one-line ``message`` naming what armed FIRST, then the
@@ -298,6 +305,14 @@ def build_cron_create_tool() -> Any:
         desc=cron_create.__doc__,
         title="Create schedule",
         args={
+            "max_fires": {
+                "type": "integer",
+                "description": "Explicit user run limit; zero means unlimited.",
+            },
+            "until": {
+                "type": "string",
+                "description": "Explicit user ISO-8601 deadline, or empty for unlimited.",
+            },
             "cron": {
                 "type": "string",
                 "description": "5-field cron in the session's local tz (or omit for a one-shot).",

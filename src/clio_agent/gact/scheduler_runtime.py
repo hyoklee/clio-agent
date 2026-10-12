@@ -136,13 +136,20 @@ def _fire_schedule(app: "FastAPI", sch: Any) -> None:
     # Resolve the turn-staging engine through the app module at fire time so tests can
     # monkeypatch ``clio_agent.gact.app._turn_start_background_user_turn``.
     from clio_agent.gact import app as _app_mod  # noqa: PLC0415
+    from clio_agent.gact.autonomous_loop import _get_loop
 
+    loop = _get_loop(app, sch.session_id)
+    loop_id = loop.get("loop_id") if loop.get("pending_schedule_id") == sch.id else None
     _app_mod._turn_start_background_user_turn(
         app,
         sch.session_id,
         sess,
         sch.question,
-        metadata={"scheduled": True, "schedule_id": sch.id},
+        metadata={
+            "scheduled": True,
+            "schedule_id": sch.id,
+            **({"loop_id": loop_id} if loop_id else {}),
+        },
         prev_status=str(getattr(sess, "status", "idle") or "idle"),
     )
     # Only count the occurrence once staging actually succeeded — see the docstring
@@ -223,6 +230,9 @@ async def _scheduler_tick(app: "FastAPI") -> None:
                 await asyncio.to_thread(reconcile_autonomous_controls, app)
                 reconciled = True
             await prepare_scheduled_host(app)
+            from clio_agent.gact.goal_control import maintain_goal_controls
+
+            await maintain_goal_controls(app)
         except (OSError, RuntimeError):
             logger.error("scheduler tick delayed reason=control_preparation_failed", exc_info=True)
         else:

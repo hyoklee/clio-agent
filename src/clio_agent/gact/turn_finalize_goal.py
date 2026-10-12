@@ -35,12 +35,8 @@ import asyncio
 import contextvars
 from typing import TYPE_CHECKING, Any, Callable
 
-from clio_agent.gact.autonomous_loop import stop_session_loop
 from clio_agent.gact.goal import dispatch_goal_at_finalize
-from clio_agent.gact.turn_finalize import (
-    compose_goal_loop_stop_at_finalize,
-    finalize_turn,
-)
+from clio_agent.gact.turn_finalize import finalize_turn
 from clio_agent.gact.turn_forward import _forward_executor
 
 if TYPE_CHECKING:
@@ -54,14 +50,7 @@ async def finalize_turn_async(
     drain_observed_tool_calls: Callable[..., Any],
     update_retry_attempt: Callable[..., Any],
 ) -> None:
-    """Run finalize on the turn executor, then await the GOAL judge and the loop compose.
-
-    Order: ``finalize_turn`` (sync, on the turn executor, contextvars copied) ->
-    ``dispatch_goal_at_finalize`` (awaited; never raises except ``CancelledError``) ->
-    ``compose_goal_loop_stop_at_finalize`` (a judge-met goal stops an armed loop with the
-    typed ``loop_goal_met`` reason). The caller's ``settle_failed_finalize`` envelope covers
-    the whole sequence: an exception in the worker propagates through the await.
-    """
+    """Finalize off-loop, apply output stops, then await the independent goal judge."""
 
     loop = asyncio.get_running_loop()
     turn_context = contextvars.copy_context()
@@ -75,19 +64,33 @@ async def finalize_turn_async(
             update_retry_attempt=update_retry_attempt,
         ),
     )
-    goal_decision = await dispatch_goal_at_finalize(
+    from clio_agent.gact.autonomy_output import observe_control_output
+    from clio_agent.gact.goal_control import pause_failed_goal
+
+    if getattr(state, "error_info", None) is not None:
+        await loop.run_in_executor(
+            _forward_executor(state),
+            lambda: pause_failed_goal(state.app, state.sid, "goal_turn_failed"),
+        )
+
+    await loop.run_in_executor(
+        _forward_executor(state),
+        lambda: observe_control_output(
+            state.app,
+            state.sid,
+            str(getattr(pred, "answer", "") or ""),
+            state.user_msg.metadata,
+            state.turn_id,
+        ),
+    )
+    await dispatch_goal_at_finalize(
         state.app,
         session_id=state.sid,
         turn_id=state.turn_id,
         trace_id=state.trace_id,
         executor=_forward_executor(state),  # #1334: the post-judge persistence, off-loop
+        caller_model=state.user_msg.metadata.get("effective_model"),
     )
-    compose_goal_loop_stop_at_finalize(state.app, state.sid, goal_decision)
-    if goal_decision is not None and getattr(goal_decision, "outcome", None) == "capped":
-        await loop.run_in_executor(
-            _forward_executor(state),
-            lambda: stop_session_loop(state.app, state.sid, reason="loop_goal_capped"),
-        )
 
 
 __all__ = ["finalize_turn_async"]

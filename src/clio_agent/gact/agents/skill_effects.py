@@ -562,20 +562,13 @@ def _execute_loop(
 def _execute_set_goal(
     effect: SkillEffect, ref: "SkillRef", app: Any, session_id: str
 ) -> SkillEffectOutcome:
-    """Perform the ``set_goal`` effect: arm a goal via :func:`arm_goal` (#P4.2).
-
-    The SANCTIONED skill-arming door (a declared, trusted effect like ``/goal`` — NOT the
-    model self-arming; goal stays non-model-tool-armable per #1080). Completion is decided by
-    the bounded LLM judge at the finalize boundary and the typed loop bounds are the hard stops
-    (the deterministic goal-predicate tier was deleted, A4 #1057) — arming only sets the
-    run-until condition. A :class:`GoalError` (empty condition) is re-raised as a typed
-    :class:`SkillEffectError`."""
-
-    from clio_agent.gact.goal import GoalError, arm_goal  # noqa: PLC0415
+    """Start a declared goal; completion belongs to the independent judge."""
+    from clio_agent.gact.goal import GoalError
+    from clio_agent.gact.goal_control import start_goal
 
     p = effect.params
     try:
-        summary = arm_goal(
+        summary = start_goal(
             app,
             session_id,
             condition=str(p.get("condition") or ""),

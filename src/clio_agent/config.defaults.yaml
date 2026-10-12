@@ -426,8 +426,8 @@ scheduler.jitter_window_s: 0
 
 # CLIO_SCHEDULER_MAX_LIFETIME_S  (int)  <- src/clio_agent/gact/scheduler.py
 # Seconds after creation a recurring schedule with no explicit "until" is
-# auto-retired; raise to let schedules run longer unattended.
-scheduler.max_lifetime_s: 2592000
+# auto-retired. Zero means no automatic expiry.
+scheduler.max_lifetime_s: 0
 
 # CLIO_SCHEDULER_MAX_RETRIES  (int)  <- src/clio_agent/gact/scheduler.py
 # Consecutive failed fires tolerated before a schedule is disabled with a

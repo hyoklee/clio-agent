@@ -25,6 +25,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
 
+import pytest
+
 from clio_agent.gact import autonomous_loop as loop_mod
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.autonomous_loop import (
@@ -184,8 +186,8 @@ def test_stop_true_ends_immediately_and_cancels_wakeup(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 # Bounded fallback                                                              #
 # --------------------------------------------------------------------------- #
-def test_bounded_fallback_fires_once_then_ends(tmp_path: Path) -> None:
-    """A loop turn that neither reschedules nor stops -> ONE fallback -> then ends."""
+def test_loop_automatically_repeats_until_explicit_stop(tmp_path: Path) -> None:
+    """Each completed iteration arms the next wake without requiring model rescheduling."""
 
     def body() -> None:
         app = _app(tmp_path)
@@ -199,7 +201,7 @@ def test_bounded_fallback_fires_once_then_ends(tmp_path: Path) -> None:
         app.state.schedules.delete(first_id)
         dispatch_loop_at_finalize(app, session_id=sid, turn_id="t1")
         loop = _loop_state(app, sid)
-        assert loop["fallback_pending"] is True
+        assert loop["fallback_pending"] is False
         assert loop["active"] is True
         fallback_id = loop["pending_schedule_id"]
         assert fallback_id and fallback_id != first_id
@@ -209,9 +211,9 @@ def test_bounded_fallback_fires_once_then_ends(tmp_path: Path) -> None:
         app.state.schedules.delete(fallback_id)
         dispatch_loop_at_finalize(app, session_id=sid, turn_id="t2")
         loop = _loop_state(app, sid)
-        assert loop["active"] is False
-        assert loop["stop_reason"] == "loop_no_reschedule"
-        assert app.state.schedules.list(session_id=sid) == []
+        assert loop["active"] is True
+        assert loop["iteration"] == 2
+        assert len(app.state.schedules.list(session_id=sid)) == 1
 
     _in_ctx(body)
 
@@ -370,49 +372,14 @@ def test_stop_session_loop_noop_without_loop(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 # Self-initiated loop via the tool                                             #
 # --------------------------------------------------------------------------- #
-def test_loop_wakeup_self_initiates_when_no_loop(tmp_path: Path) -> None:
+def test_loop_wakeup_requires_an_explicit_monitoring_control(tmp_path: Path) -> None:
     def body() -> None:
         app = _app(tmp_path)
         sid = _session(app)
         _bind(app, sid)
-        result = loop_wakeup_impl(delay_seconds=120, prompt="start looping")
-        assert result["stopped"] is False
-        assert result["loop_id"].startswith("loop_")
-        loop = _loop_state(app, sid)
-        assert loop["active"] is True
-        assert loop["prompt"] == "start looping"
-
-    _in_ctx(body)
-
-
-# --------------------------------------------------------------------------- #
-# Sticky bounds — a tripped hard bound cannot be re-armed by the model (A1)      #
-# --------------------------------------------------------------------------- #
-def test_rearm_denied_after_max_iters(tmp_path: Path) -> None:
-    """A loop that hit ``loop_max_iters`` cannot be re-armed by a model ``loop_wakeup``;
-    the user must re-issue ``/loop``. Also pins GRACE — the bound trip RETURNS
-    ``{stopped: True}`` (the turn continues), it does not raise."""
-
-    def body() -> None:
-        app = _app(tmp_path)
-        sid = _session(app)
-        _bind(app, sid)
-        start_loop(app, sid, prompt="p", interval_s=60, max_iters=1)
-
-        # Grace: reaching max_iters RETURNS stopped (turn continues), never raises.
-        tripped = loop_wakeup_impl(delay_seconds=60, prompt="p")
-        assert tripped["stopped"] is True
-        assert _loop_state(app, sid)["stop_reason"] == "loop_max_iters"
-
-        # A model re-arm attempt on the tripped loop is DENIED (sticky bound).
-        raised = False
-        try:
-            loop_wakeup_impl(delay_seconds=60, prompt="again")
-        except LoopError as exc:
-            raised = True
-            assert exc.reason == "loop_bound_tripped_rearm_denied"
-        assert raised
-        # No new wakeup was armed by the denied re-arm.
+        with pytest.raises(LoopError, match="No active loop"):
+            loop_wakeup_impl(delay_seconds=120, prompt="continue goal")
+        assert not _loop_state(app, sid)
         assert app.state.schedules.list(session_id=sid) == []
 
     _in_ctx(body)
@@ -455,8 +422,10 @@ def test_rearm_allowed_after_model_stop(tmp_path: Path) -> None:
         assert stopped["stopped"] is True
         assert _loop_state(app, sid)["stop_reason"] == "loop_user_stopped"
 
-        restarted = loop_wakeup_impl(delay_seconds=120, prompt="resume")
-        assert restarted["stopped"] is False
+        from clio_agent.gact.loop_control import build_set_loop_tool
+
+        restarted = build_set_loop_tool()(prompt="resume", interval_s=120)
+        assert not _loop_state(app, sid)["stopped"]
         assert restarted["loop_id"].startswith("loop_")
         loop = _loop_state(app, sid)
         assert loop["active"] is True

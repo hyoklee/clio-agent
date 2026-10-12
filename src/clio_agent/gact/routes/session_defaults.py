@@ -24,6 +24,9 @@ def register_session_defaults_routes(app: FastAPI) -> None:
 
     register_spotter_routes(app)
     register_runtime_settings_routes(app)
+    from clio_agent.gact.routes.fleet_settings import register_fleet_settings_routes
+
+    register_fleet_settings_routes(app)
 
     def _respond(value: SessionDefaults) -> SessionDefaultsResponse:
         # Typed load/migration facts (a quarantined file, a cleared legacy

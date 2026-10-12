@@ -363,16 +363,19 @@ def test_verdict_no_lm_escalates(monkeypatch) -> None:
     assert reason == REASON_AI_REVIEW_NO_LM
 
 
-def test_verdict_allow_and_deny_map_to_typed_reasons(monkeypatch) -> None:
+def test_risk_classification_maps_to_human_escalation(monkeypatch) -> None:
     monkeypatch.setattr(ai_review_mod, "_resolve_reviewer_lm", lambda app: (object(), None))
     app = Mock()
     app.state.sessions.get.return_value = None
 
-    monkeypatch.setattr(ai_review_mod, "_run_reviewer", lambda *a, **k: ("allow", ""))
-    assert ai_review_verdict(app, "s", _FS_WRITE, {}, None) == ("allow", REASON_AI_REVIEW_ALLOW)
-
-    monkeypatch.setattr(ai_review_mod, "_run_reviewer", lambda *a, **k: ("deny", ""))
-    assert ai_review_verdict(app, "s", _FS_WRITE, {}, None) == ("deny", REASON_AI_REVIEW_DENY)
+    for risk in ("none", "low", "medium"):
+        monkeypatch.setattr(ai_review_mod, "_run_reviewer", lambda *a, risk=risk, **k: (risk, ""))
+        assert ai_review_verdict(app, "s", _FS_WRITE, {}, None) == (
+            "allow",
+            f"ai_review_risk_{risk}",
+        )
+    monkeypatch.setattr(ai_review_mod, "_run_reviewer", lambda *a, **k: ("high", ""))
+    assert ai_review_verdict(app, "s", _FS_WRITE, {}, None) == ("escalate", "ai_review_risk_high")
 
     monkeypatch.setattr(ai_review_mod, "_run_reviewer", lambda *a, **k: ("escalate", "escalate"))
     assert ai_review_verdict(app, "s", _FS_WRITE, {}, None) == (

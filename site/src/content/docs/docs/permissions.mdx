@@ -13,7 +13,7 @@ For each action that is not a read, CLIO decides in this order:
 
 1. Mode. In Plan and Deep research, tools that write are refused. Plan mode may still write plan files in Markdown. No rule can override this.
 2. Rules. An access rule can `allow`, `deny`, or `ask`. A matching `deny` blocks the action. A matching `allow` lets it through, and the decision is recorded.
-3. A prompt to you, if nothing above settled it.
+3. The conversation's confirmation policy, if nothing above settled it. **Ask first** prompts you; **AI review** uses the risk reviewer described below.
 
 Reads skip all of this. A tool counts as a read when it is marked read-only, either by the MCP server that provides it or by CLIO's own tool catalog. A tool that is read-only in practice but not marked as such is treated as a write and asks first.
 
@@ -33,6 +33,19 @@ When an agent needs your decision, the session shows a request that describes th
 If nobody answers within 10 minutes, the request is denied. A request from an agent that has no session to ask is denied at once. A denial is reported back to the agent, so it can try another approach or ask you.
 
 The **Confirmation policy** control in the composer changes how often CLIO pauses. See [Sessions and modes](/docs/sessions/).
+
+## AI review (Automode)
+
+Choose **AI review** in the composer's confirmation policy to have an independent
+model classify an otherwise undecided operation. Risk levels **none**, **low**,
+and **medium** proceed automatically. **High** risk asks you for approval.
+Missing, invalid, failed, or timed-out reviews also ask you. Existing permission
+rules, explicit denials, mode restrictions, and the OS sandbox still apply.
+
+In **Settings → Fleet → Automode permissions**, select the reviewer model. By
+default it uses the conversation's model. Goals and Best of N/refinement have
+their own selectors. See [Goals, loops and scheduled work](/docs/long-running-work/)
+for the Fleet controls and the behavior of work waiting for your decision.
 
 ## Write rules
 

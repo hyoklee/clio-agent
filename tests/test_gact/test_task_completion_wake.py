@@ -109,6 +109,39 @@ async def test_idle_terminal_results_start_system_turn(
     assert saved.result == original.result
 
 
+@pytest.mark.parametrize("return_when", ["any", "all"])
+async def test_goal_wait_resumes_only_when_declared_dependencies_settle(
+    mailbox: Any, return_when: str
+) -> None:
+    from clio_agent.gact.goal import _get_goal, _put_goal, arm_goal
+
+    app, sid, store, calls = mailbox
+    await flush(app)
+    arm_goal(app, sid, condition="Compare both simulation results")
+    goal = _get_goal(app, sid)
+    goal.update(phase="waiting", waiting_tasks=["one", "two"], wait_return_when=return_when)
+    _put_goal(app, sid, goal)
+    first = terminal(store, sid, "one")
+    second = replace(
+        terminal(store, sid, "two"),
+        status="working",
+        effective_status="running",
+        notify_pending=False,
+    )
+    store.put(second)
+    request_completion_wake(app, sid, first.handle)
+    await flush(app)
+    assert len(calls) == (1 if return_when == "any" else 0)
+    assert not store.get(first.key).consumed_at
+    store.put(
+        replace(second, status="completed", effective_status="completed", notify_pending=True)
+    )
+    request_completion_wake(app, sid, second.handle)
+    await flush(app)
+    assert len(calls) == (2 if return_when == "any" else 1)
+    assert set(calls[-1]["metadata"]["task_completion_wake"]["handles"]) == {"one", "two"}
+
+
 @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
 async def test_subagent_terminal_publisher_drives_same_mailbox(mailbox: Any, status: str) -> None:
     """Use the existing child registry and lifecycle publisher, including cancellation."""

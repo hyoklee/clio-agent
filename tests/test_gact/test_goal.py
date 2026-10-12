@@ -1,23 +1,7 @@
-"""P4.2 (#1080): run-until-a-condition GOAL, LLM-judge-only evaluation (A4 #1057).
+"""Goal continuation, independent judging and optional human limits.
 
-Asserts the goal completion gate that rides the bounded Stop-loop re-drive seam:
-
-* the PURE decision (:func:`evaluate_goal`) — the bounded LLM judge decides met / not-met,
-  and typed bounds (max_goal_iters / budget) are the HARD STOPS that backstop an infinite
-  loop with a typed reason (the deterministic goal-predicate tier was DELETED — nobody ships
-  predicates over model-authored state; it let the model mark its own homework);
-* the finalize-boundary orchestrator (:func:`dispatch_goal_at_finalize`, judge MOCKED) —
-  re-drives when the judge says not-met (loop-inbox seam), settles + auto-clears when met;
-* the model can NEVER set/clear a goal — there is no ``set_goal``/``goal_clear`` tool, only
-  the READ-ONLY ``goal_status`` (armed-state only — it never runs the judge); the ``/goal``
-  command + the ``arm_goal`` seam are the only arming doors;
-* a ``when_state`` / ``predicate`` command arg no longer arms a self-satisfiable gate;
-* goal state lives on ``session.metadata`` (no fifth store);
-* compose with the loop (#1079) — a judge-met goal stops the loop with the typed
-  ``loop_goal_met`` reason (the finalize glue, LLM-only).
-
-Each body runs in a fresh ``contextvars.copy_context()`` so the (reset-less)
-``set_app``/``set_session_id`` bindings never leak between tests.
+Tests use canned judges only inside tests. Live verification uses actual provider
+responses and records its transcripts separately.
 """
 
 from __future__ import annotations
@@ -183,13 +167,13 @@ def test_evaluate_goal_budget_backstop_typed_reason() -> None:
     assert decision_t.outcome == "capped" and decision_t.reason == "goal_budget"
 
 
-def test_evaluate_goal_unset_iters_uses_finite_default() -> None:
-    """A goal with no explicit iteration bound still terminates (finite default ceiling)."""
+def test_evaluate_goal_unset_iters_is_unlimited() -> None:
+    """An omitted limit never caps a goal by iteration count."""
 
     goal = {"condition": "c", "iters_elapsed": DEFAULT_MAX_GOAL_ITERS}
     decision = evaluate_goal(goal, llm=GoalJudgement(met=False, reason="w"))
-    assert decision.outcome == "capped"
-    assert decision.reason == "goal_max_iters"
+    assert DEFAULT_MAX_GOAL_ITERS == 0
+    assert decision.outcome == "redrive"
 
 
 # =========================================================================== #
@@ -245,7 +229,7 @@ def test_dispatch_max_iters_settles_with_typed_reason(tmp_path: Path, monkeypatc
         sid = _session(app)
         _bind(app, sid)
         _mock_judge(monkeypatch, met=False, reason="not yet")
-        arm_goal(app, sid, condition="c", max_goal_iters=1)
+        arm_goal(app, sid, condition="c", max_goal_iters=2)
         # Iteration 1: unmet -> re-drive (iters 0 < 1).
         d1 = _dispatch(app, session_id=sid, turn_id="t1")
         assert d1 is not None and d1.outcome == "redrive"
@@ -311,7 +295,7 @@ def test_model_has_no_set_or_clear_goal_tool() -> None:
     agent_def = SimpleNamespace(id="agent", metadata={})
     names = {getattr(t, "name", "") for t in build_auto_react_tools(agent_def)}
     assert "goal_status" in names  # the read-only surface IS attached
-    assert "set_goal" not in names  # ...but arming is NOT a model tool
+    assert {"set_goal", "set_loop", "wait_for"} <= names
     assert "goal_clear" not in names
     assert "goal_set" not in names
 
@@ -429,7 +413,7 @@ def test_goal_command_message_says_llm_judge(tmp_path: Path) -> None:
         sid = _session(app)
         _bind(app, sid)
         msg = run_goal_command(app, sid, {"input": "the report reads well"})
-        assert msg == "Goal set at iteration 0. Open Session work to inspect it."
+        assert msg.startswith("Goal started.")
         assert "deterministic" not in msg.lower()
 
     _in_ctx(body)
@@ -501,79 +485,19 @@ def test_goal_state_lives_on_session_metadata(tmp_path: Path) -> None:
 # =========================================================================== #
 # Compose with the loop (#1079 loop_goal_met seam) — LLM-only, finalize glue    #
 # =========================================================================== #
-def test_loop_stops_with_loop_goal_met_when_judge_met_at_finalize(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """End-to-end compose (the turn_finalize glue): when the finalize goal eval settles ``met``
-    (the bounded LLM judge), the armed loop is stopped with the typed ``loop_goal_met`` reason
-    and its pending wakeup schedule is cancelled (cancel-both)."""
+def test_goal_completion_leaves_independent_loop_running(tmp_path: Path, monkeypatch: Any) -> None:
+    from clio_agent.gact.autonomous_loop import _get_loop, start_loop
 
-    def body() -> None:
-        from clio_agent.gact.autonomous_loop import start_loop  # noqa: PLC0415
-        from clio_agent.gact.turn_finalize import (  # noqa: PLC0415
-            compose_goal_loop_stop_at_finalize,
-        )
-
-        app = _app(tmp_path)
-        sid = _session(app)
-        _bind(app, sid)
-        start_loop(app, sid, prompt="keep working", interval_s=60, max_iters=100)
-        pending = app.state.sessions.get(sid).metadata["loop"]["pending_schedule_id"]
-        assert pending and app.state.schedules.get(pending) is not None
-        _mock_judge(monkeypatch, met=True, reason="the deliverable is complete")
-        arm_goal(app, sid, condition="the deliverable is complete")
-
-        decision = _dispatch(app, session_id=sid, turn_id="t1")
-        assert decision is not None and decision.outcome == "met"
-        # Drive the SHIPPED finalize seam (the exact function turn_finalize.finalize_turn
-        # calls) — not a hand-rolled stop — so deleting its stop_session_loop body turns
-        # this test red (the A4 review: the glue must be verified, not silently deletable).
-        stopped = compose_goal_loop_stop_at_finalize(app, sid, decision)
-        assert stopped is True
-
-        loop = app.state.sessions.get(sid).metadata["loop"]
-        assert loop["stopped"] is True
-        assert loop["stop_reason"] == "loop_goal_met"
-        # The pending wakeup schedule was cancelled (no orphan re-fire).
-        assert app.state.schedules.get(pending) is None
-        assert app.state.schedules.list(session_id=sid) == []
-
-    _in_ctx(body)
-
-
-# =========================================================================== #
-# The finalize seam is inert when the goal did not settle 'met'                 #
-# =========================================================================== #
-def test_finalize_seam_leaves_loop_running_when_goal_not_met(
-    tmp_path: Path, monkeypatch: Any
-) -> None:
-    """The shipped seam is a no-op unless the judge settled ``met``: an unmet goal (or no
-    goal at all) must NOT stop the armed loop. Guards the seam against firing on the wrong
-    outcome — the counterpart to the met-path test above."""
-
-    def body() -> None:
-        from clio_agent.gact.autonomous_loop import start_loop  # noqa: PLC0415
-        from clio_agent.gact.turn_finalize import (  # noqa: PLC0415
-            compose_goal_loop_stop_at_finalize,
-        )
-
-        app = _app(tmp_path)
-        sid = _session(app)
-        _bind(app, sid)
-        start_loop(app, sid, prompt="keep working", interval_s=60, max_iters=100)
-        _mock_judge(monkeypatch, met=False, reason="not done yet")
-        arm_goal(app, sid, condition="the deliverable is complete")
-
-        decision = _dispatch(app, session_id=sid, turn_id="t1")
-        assert decision is not None and decision.outcome != "met"
-        assert compose_goal_loop_stop_at_finalize(app, sid, decision) is False
-        # A None decision (no goal armed) is inert too.
-        assert compose_goal_loop_stop_at_finalize(app, sid, None) is False
-
-        loop = app.state.sessions.get(sid).metadata["loop"]
-        assert loop.get("stopped") is not True
-
-    _in_ctx(body)
+    app = _app(tmp_path)
+    sid = _session(app)
+    start_loop(app, sid, prompt="Monitor the simulation", interval_s=60)
+    pending = _get_loop(app, sid)["pending_schedule_id"]
+    arm_goal(app, sid, condition="The deliverable is complete")
+    _mock_judge(monkeypatch, met=True, reason="Evidence demonstrates completion")
+    decision = _dispatch(app, session_id=sid, turn_id="t1")
+    assert decision is not None and decision.met
+    assert _get_loop(app, sid)["active"]
+    assert app.state.schedules.get(pending) is not None
 
 
 # =========================================================================== #
@@ -607,3 +531,31 @@ def test_evaluate_goal_returns_goal_decision_type() -> None:
         llm=GoalJudgement(met=True),
     )
     assert isinstance(decision, GoalDecision)
+
+
+def test_goal_evidence_preserves_inputs_and_task_results_without_credentials(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    sid = _session(app)
+    app.state.messages[sid] = [
+        SimpleNamespace(
+            role="assistant",
+            parts=[
+                SimpleNamespace(
+                    type="tool_call",
+                    tool_name="shell_bash",
+                    input={"command": "sleep 60", "background": True, "api_key": "PRIVATE_KEY"},
+                ),
+                SimpleNamespace(
+                    type="injection",
+                    source="task_results",
+                    text="Shell task_owned: Status: completed; exit_code: 0",
+                ),
+            ],
+        )
+    ]
+    evidence = goal_mod._build_transcript(app, sid)
+    assert '"background": true' in evidence and "sleep 60" in evidence
+    assert "PRIVATE_KEY" not in evidence and "[redacted]" in evidence
+    assert "task_owned" in evidence and "exit_code: 0" in evidence

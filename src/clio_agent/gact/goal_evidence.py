@@ -1,0 +1,105 @@
+"""Bounded recorded evidence for the independent goal judge."""
+
+from __future__ import annotations
+
+import json
+from collections.abc import Mapping
+from typing import Any
+
+
+def bounded_inputs(value: Any) -> str:
+    """Preserve relevant inputs while redacting structured credentials and large data."""
+    secret_keys = {
+        "api_key",
+        "token",
+        "password",
+        "authorization",
+        "secret",
+        "access_token",
+        "refresh_token",
+    }
+
+    def clean(item: Any, depth: int = 0) -> Any:
+        if depth > 5:
+            return "[depth limited]"
+        if isinstance(item, Mapping):
+            return {
+                str(k): "[redacted]" if str(k).lower() in secret_keys else clean(v, depth + 1)
+                for k, v in list(item.items())[:30]
+            }
+        if isinstance(item, (list, tuple)):
+            return [clean(v, depth + 1) for v in item[:20]]
+        if isinstance(item, str):
+            return item[:1000]
+        if item is None or isinstance(item, (bool, int, float)):
+            return item
+        return str(item)[:1000]
+
+    return json.dumps(clean(value), ensure_ascii=False)[:3000]
+
+
+def _bounded_judge_fact(value: Any, *, limit: int = 500) -> str:
+    """Return one compact fact for the judge without admitting raw result payloads."""
+
+    return " ".join(str(value or "").split())[:limit]
+
+
+def _tool_result_fact(part: Any) -> str:
+    """Project the user-facing result summary already recorded on a tool part."""
+
+    for owner, keys in (
+        (getattr(part, "structured_content", None), ("message", "summary", "status")),
+        (getattr(part, "presentation", None), ("summary",)),
+        (getattr(part, "metadata", None), ("result",)),
+    ):
+        if not isinstance(owner, Mapping):
+            continue
+        for key in keys:
+            fact = _bounded_judge_fact(owner.get(key))
+            if fact:
+                return fact
+    for child in getattr(part, "content", []) or []:
+        fact = _bounded_judge_fact(getattr(child, "text", ""))
+        if fact:
+            return fact
+    return ""
+
+
+def _build_transcript(app: Any, sid: str, *, max_messages: int = 40) -> str:
+    """Render recent prose and bounded tool facts for the completion judge."""
+
+    store = getattr(app.state, "messages", None)
+    if store is None:
+        return ""
+    messages = store.get(sid, [])
+    lines: list[str] = []
+    for message in sorted(messages, key=lambda row: str(getattr(row, "created_at", "")))[
+        -max_messages:
+    ]:
+        role = str(getattr(message, "role", "") or "")
+        for part in getattr(message, "parts", []) or []:
+            part_type = str(getattr(part, "type", ""))
+            if part_type == "text":
+                text = str(getattr(part, "text", "") or "").strip()
+                if text:
+                    lines.append(f"{role}: {text}")
+            elif part_type == "injection" and getattr(part, "source", "") == "task_results":
+                lines.append(
+                    "recorded task results: "
+                    + _bounded_judge_fact(getattr(part, "text", ""), limit=4000)
+                )
+            elif part_type == "tool_call":
+                name = _bounded_judge_fact(getattr(part, "tool_name", ""), limit=120)
+                if name:
+                    inputs = getattr(part, "input", None)
+                    suffix = f": {bounded_inputs(inputs)}" if inputs else ""
+                    lines.append(f"{role} tool call: {name}{suffix}")
+            elif part_type == "tool_result":
+                name = _bounded_judge_fact(getattr(part, "tool_name", ""), limit=120)
+                if not name:
+                    continue
+                outcome = "failed" if bool(getattr(part, "is_error", False)) else "completed"
+                fact = _tool_result_fact(part)
+                suffix = f": {fact}" if fact else ""
+                lines.append(f"{role} tool result: {name} {outcome}{suffix}")
+    return "\n".join(lines)[-32_000:]
