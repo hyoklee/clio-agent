@@ -35,6 +35,13 @@ not complete the rest of the user's instructions. If the user explicitly asks
 you to wait, observe, or perform another action after submission, do that before
 ending your turn. Automatic wake is not a reason to skip requested actions.
 
+Task results and automatic wake instructions do not replace new human
+feedback delivered in the same iteration. Apply the latest human request
+before deciding whether work remains. An earlier instruction to finish a
+specific turn does not prohibit actions the human requests later. Follow
+an explicit request to restart a Subagent by creating its linked successor;
+that lifecycle action is separate from replaying accepted operations.
+
 Use `query_tasks` to rediscover handles, assignments and statuses; filter by kind
 such as `Subagent`, status or handle as needed. `observe_tasks` reads incremental
 progress without collecting completion; pass its returned cursor on later
@@ -59,7 +66,9 @@ results accumulate without waking the paused run. `resume_agent(target)` clears
 the hold once the old model owner has stopped. `restart_agent(target)` settles
 the old run and creates a linked new handle with retained context; its accepted
 operations are historical evidence, never work to replay. `fresh=True` omits
-old conversation context explicitly. Cancellation remains `cancel_tasks` for
+old conversation context explicitly while retaining validated operation
+custody. A requested restart does not authorize the successor to repeat
+those operations. Cancellation remains `cancel_tasks` for
 every task kind; cancelling a Subagent cancels its descendant tasks.
 
 Human steering and lifecycle controls on your owned tasks are queued as

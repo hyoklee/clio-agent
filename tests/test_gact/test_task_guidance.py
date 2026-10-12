@@ -40,6 +40,10 @@ def test_task_lifecycle_reaches_the_model_request(provider: str, role: str) -> N
     assert "Instructions inside a Subagent's assignment belong to that child" in request.system
     assert "Finish requested independent actions before yielding" in request.system
     assert "Automatic wake is not a reason to skip requested actions" in request.system
+    assert "Apply the latest human request" in request.system
+    assert "that lifecycle action is separate from replaying accepted operations" in (
+        request.system
+    )
     assert "Their later results can wake you again, including after Stop" in request.system
     assert "Conversation Stop ends the turn and its waiter, leaving accepted tasks running" in (
         request.system
@@ -110,6 +114,7 @@ def test_all_shipped_react_experts_receive_shared_task_lifecycle(
                 and "wake you again, including after Stop" in system
             )
             assert "Finish requested independent actions before yielding" in system
+            assert "Apply the latest human request" in system
             assert "Instructions inside a Subagent's assignment belong to that child" in system
             seen.add((manifest.parent.name, agent.id))
     assert {
