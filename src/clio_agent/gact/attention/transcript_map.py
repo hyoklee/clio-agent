@@ -30,6 +30,7 @@ _ALLOWED_DOMAINS: dict[str, frozenset[str]] = {
     "user_text": frozenset({"user"}),
     "assistant_text": frozenset({"user", "assistant_output", "tool_call"}),
     "thought": frozenset({"thinking", "user"}),
+    "reasoning": frozenset({"thinking", "user"}),
     "tool_input": frozenset({"tool_call", "user"}),
     "tool_result": frozenset({"tool_result", "user"}),
 }
@@ -64,6 +65,8 @@ def transcript_texts(messages: list[Any]) -> list[TranscriptText]:
             if ptype == "text" and getattr(part, "text", ""):
                 kind = "user_text" if role == "user" else "assistant_text"
                 out.append(TranscriptText(message.id, pid, "text", kind, part.text))
+            elif ptype == "thinking" and getattr(part, "text", ""):
+                out.append(TranscriptText(message.id, pid, "text", "reasoning", part.text))
             elif ptype == "tool_call":
                 if getattr(part, "thought", ""):
                     out.append(

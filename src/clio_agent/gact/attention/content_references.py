@@ -46,7 +46,7 @@ def message_content_references(message: Message) -> list[dict[str, Any]]:
                 }
             )
         # Even mixed tool results can contain images or embedded resources.
-        media = part.type not in {"text", "tool_call", "tool_result"} or any(
+        media = part.type not in {"text", "thinking", "tool_call", "tool_result"} or any(
             getattr(content, "type", "text") != "text" for content in part.content or []
         )
         if not media:

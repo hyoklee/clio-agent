@@ -21,7 +21,7 @@ from clio_agent.gact.attention.chat_render import ChatRenderer
 from clio_agent.gact.attention.lm_calls import LmCall
 from clio_agent.gact.attention.lookup import lookup_attention
 from clio_agent.gact.attention.reasons import AttentionUnavailable
-from clio_agent.gact.attention.selection import output_steps
+from clio_agent.gact.attention.selection import output_steps, prompt_opens_thinking
 from clio_agent.gact.attention.store import AttentionStore
 from clio_agent.gact.attention.textmap import locate_all
 from clio_agent.gact.attention.transcript_map import transcript_texts
@@ -64,7 +64,13 @@ def bind_finding_evidence(
         raise AttentionUnavailable("capture_changed", "reviewer and CLIO capture hashes differ")
     content = call.content or ""
     span = output_steps(
-        capture.renderer, content, 0, len(content), capture.summary.record, reasoning=call.reasoning
+        capture.renderer,
+        content,
+        0,
+        len(content),
+        capture.summary.record,
+        reasoning=call.reasoning,
+        opened=prompt_opens_thinking(capture.encoded.text),
     )
     selected = sorted(set(request.steps))
     if not set(selected).issubset(span.steps):

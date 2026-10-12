@@ -15,7 +15,7 @@ from clio_agent.gact.attention.content_references import message_content_referen
 from clio_agent.gact.attention.lm_calls import LmCall
 from clio_agent.gact.attention.profiles import reduce_steps
 from clio_agent.gact.attention.reasons import AttentionUnavailable
-from clio_agent.gact.attention.selection import locate_output, output_steps
+from clio_agent.gact.attention.selection import locate_output, output_steps, prompt_opens_thinking
 from clio_agent.gact.attention.service import SelectionRequest, explain_selection, resolve_generated
 from clio_agent.gact.attention.store import AttentionStore
 from clio_agent.gact.attention.textmap import locate_all
@@ -154,6 +154,7 @@ def _source_view(
         len(call.content or ""),
         capture.summary.record,
         reasoning=call.reasoning,
+        opened=prompt_opens_thinking(capture.encoded.text),
     )
     if len(span.steps) > 4096:
         raise AttentionUnavailable("selection_too_large", "model output exceeds 4096 tokens")

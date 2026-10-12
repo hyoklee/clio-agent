@@ -20,7 +20,12 @@ A reasoning model served with a reasoning parser (vLLM ``qwen3``) generates
 the content alone does not match the step count, the full generated text is
 rebuilt from those delimiters (only when the tokenizer has each as one token, so
 the content's tokens start at a clean boundary) and must match the count
-exactly; the content's steps are then offset by the prefix's tokens.
+exactly; the content's steps are then offset by the prefix's tokens. Templates
+that pre-open ``<think>`` in the generation prompt (Granite 4.2, Qwen3.5+) make
+the model generate only ``reasoning</think>content``: the rendered prompt ending
+in ``<think>`` decides which form was generated, so the stop-token tolerance can
+never absorb an off-by-one prefix. A selection inside the reasoning itself maps
+to the reasoning's own steps the same way.
 """
 
 from __future__ import annotations
@@ -43,14 +48,22 @@ class OutputSpan:
     out_hi: int
     encoding: str
     candidates: int
+    #: ``content`` (the answer) or ``reasoning`` (the call's recorded reasoning).
+    source: str = "content"
 
 
-def locate_output(calls: list[LmCall], part_text: str, sel_lo: int, sel_hi: int) -> OutputSpan:
+def _output_text(call: LmCall, source: str) -> str | None:
+    return call.reasoning if source == "reasoning" else call.content
+
+
+def locate_output(
+    calls: list[LmCall], part_text: str, sel_lo: int, sel_hi: int, source: str = "content"
+) -> OutputSpan:
     """Find the call that produced ``part_text`` and the selection's output span.
 
     Multiple compatible outputs are ambiguous; recency cannot establish origin.
     """
-    with_payload = [c for c in calls if c.content is not None]
+    with_payload = [c for c in calls if _output_text(c, source) is not None]
     if calls and not with_payload:
         raise AttentionUnavailable(
             "lm_call_payload_unavailable",
@@ -58,7 +71,7 @@ def locate_output(calls: list[LmCall], part_text: str, sel_lo: int, sel_hi: int)
         )
     hits: list[tuple[LmCall, Located]] = []
     for call in with_payload:
-        hits.extend((call, hit) for hit in locate_all(call.content or "", part_text))
+        hits.extend((call, hit) for hit in locate_all(_output_text(call, source) or "", part_text))
     if not hits:
         raise AttentionUnavailable(
             "selection_not_located" if with_payload else "lm_call_not_found",
@@ -69,7 +82,7 @@ def locate_output(calls: list[LmCall], part_text: str, sel_lo: int, sel_hi: int)
         raise AttentionUnavailable("lm_call_ambiguous", "multiple output passages match this part")
     call, hit = hits[0]
     out_lo, out_hi = hit.to_haystack(sel_lo, sel_hi)
-    return OutputSpan(call, out_lo, out_hi, hit.encoding, len(hits))
+    return OutputSpan(call, out_lo, out_hi, hit.encoding, len(hits), source)
 
 
 @dataclass(frozen=True)
@@ -85,16 +98,25 @@ class StepSpan:
 THINK_OPEN, THINK_CLOSE = "<think>", "</think>"
 
 
-def _reasoning_offset(renderer: ChatRenderer, reasoning: str, content: str) -> int | None:
-    """Token count of ``<think>reasoning</think>`` before the content, or None.
+def prompt_opens_thinking(prompt_text: str) -> bool:
+    """Whether the rendered generation prompt already opened ``<think>`` (Granite 4.2, Qwen3.5+)."""
+    return prompt_text.rstrip().endswith(THINK_OPEN)
 
+
+def _reasoning_offset(
+    renderer: ChatRenderer, reasoning: str, content: str, opened: bool = False
+) -> int | None:
+    """Token count of the generated ``[<think>]reasoning</think>`` before the content, or None.
+
+    ``<think>`` is part of the generated text unless the prompt pre-opened it.
     None when the delimiters are not single tokens of this tokenizer or the
     rebuilt text does not tokenize as prefix + content (no clean boundary).
     """
     if any(len(renderer.encode(tag).ids) != 1 for tag in (THINK_OPEN, THINK_CLOSE)):
         return None
-    prefix = renderer.encode(THINK_OPEN + reasoning + THINK_CLOSE).ids
-    full = renderer.encode(THINK_OPEN + reasoning + THINK_CLOSE + content)
+    lead = "" if opened else THINK_OPEN
+    prefix = renderer.encode(lead + reasoning + THINK_CLOSE).ids
+    full = renderer.encode(lead + reasoning + THINK_CLOSE + content)
     if full.ids != [*prefix, *renderer.encode(content).ids]:
         return None
     return len(prefix)
@@ -107,8 +129,14 @@ def output_steps(
     out_hi: int,
     record: AttentionRecord,
     reasoning: str | None = None,
+    opened: bool = False,
+    source: str = "content",
 ) -> StepSpan:
-    """Map an output char span to decode-step rows (see the module docstring)."""
+    """Map an output char span to decode-step rows (see the module docstring).
+
+    ``opened``: the prompt pre-opened ``<think>`` (:func:`prompt_opens_thinking`).
+    ``source="reasoning"``: ``out_lo``/``out_hi`` index ``reasoning``, not ``content``.
+    """
     if not record.clean:
         raise AttentionUnavailable(
             "attention_capture_partial",
@@ -119,10 +147,12 @@ def output_steps(
     encoded = renderer.encode(content)
     n = len(encoded.ids)
     offset = 0
-    if record.decode_steps not in (n, n + 1) and reasoning:
-        prefix = _reasoning_offset(renderer, reasoning, content)
+    if (record.decode_steps not in (n, n + 1) or source == "reasoning") and reasoning:
+        prefix = _reasoning_offset(renderer, reasoning, content, opened)
         if prefix is not None and record.decode_steps in (prefix + n, prefix + n + 1):
             offset = prefix
+    if source == "reasoning":
+        return _reasoning_steps(renderer, reasoning or "", out_lo, out_hi, record, offset, opened)
     if record.decode_steps not in (offset + n, offset + n + 1):
         raise AttentionUnavailable(
             "output_alignment_mismatch",
@@ -139,4 +169,40 @@ def output_steps(
         token_lo=tok_lo,
         token_hi=tok_hi,
         output_tokens=n,
+    )
+
+
+def _reasoning_steps(
+    renderer: ChatRenderer,
+    reasoning: str,
+    out_lo: int,
+    out_hi: int,
+    record: AttentionRecord,
+    prefix: int,
+    opened: bool,
+) -> StepSpan:
+    """Steps of a span inside the reasoning, once the whole output aligned (``prefix`` > 0)."""
+    if not prefix:
+        raise AttentionUnavailable(
+            "output_alignment_mismatch",
+            "the reasoning could not be aligned with the capture's decode steps",
+            {"request_id": record.request_id},
+        )
+    lead = "" if opened else THINK_OPEN
+    encoded = renderer.encode(lead + reasoning)
+    closed = renderer.encode(lead + reasoning + THINK_CLOSE).ids
+    if closed[: len(encoded.ids)] != encoded.ids or len(closed) != prefix:
+        raise AttentionUnavailable(
+            "output_alignment_mismatch",
+            "the reasoning does not end on a token boundary before </think>",
+            {"request_id": record.request_id},
+        )
+    tok_lo, tok_hi = encoded.token_span(out_lo + len(lead), out_hi + len(lead))
+    if tok_hi <= tok_lo:
+        raise AttentionUnavailable("selection_not_located", "the selection covers no tokens")
+    return StepSpan(
+        steps=list(range(tok_lo, tok_hi)),
+        token_lo=tok_lo,
+        token_hi=tok_hi,
+        output_tokens=len(encoded.ids),
     )
