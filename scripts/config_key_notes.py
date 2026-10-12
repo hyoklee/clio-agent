@@ -24,7 +24,7 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
     ),
     (
         "Agents, workflows and scheduling",
-        ("agents", "agent_tasks", "workflows", "goal", "scheduler", "variants"),
+        ("agents", "agent_tasks", "workflows", "goal", "scheduler", "variants", "fleet"),
         "Child-agent concurrency, declared-workflow step liveness, goal judging and the cron "
         "scheduler.",
     ),
@@ -542,8 +542,13 @@ KEY_NOTES: dict[str, str] = {
         "sessions warm at the cost of memory."
     ),
     "goal.judge_model": (
-        "Model id for the separate cheap LLM-judge that evaluates an armed goal condition; set a "
-        "small/cheap model to keep judging inexpensive."
+        "Legacy goal judge model override on the caller provider; Fleet goals selection takes "
+        "precedence, including an explicit null to inherit the conversation model."
+    ),
+    "fleet.judges": (
+        "Independent judge choices keyed by goals, variants and permissions. Each value is "
+        "null to inherit the conversation model, or a provider_id/model_id mapping; the "
+        "CLIO_FLEET_JUDGES environment value uses JSON. Settings Fleet writes this mapping."
     ),
     "hooks.allow_managed_only": (
         "Lockdown flag dropping every non-managed (user/project) hook source, keeping only "
@@ -1141,7 +1146,7 @@ KEY_NOTES: dict[str, str] = {
     ),
     "scheduler.max_lifetime_s": (
         'Seconds after creation a recurring schedule with no explicit "until" is auto-retired; '
-        "raise to let schedules run longer unattended."
+        "zero (the default) means unlimited; set a positive deployment lifetime explicitly."
     ),
     "scheduler.max_retries": (
         "Consecutive failed fires tolerated before a schedule is disabled with a typed reason; "

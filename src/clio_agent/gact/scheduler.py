@@ -10,12 +10,9 @@ No external cron dependency — we parse a 5-field cron expression ourselves
 (minute hour day-of-month month day-of-week, each ``* | digit | comma-list |
 A-B range | */N | A-B/N step``).
 
-P4.3 (#1081) extends the original UTC-only matcher into a **local-timezone,
-DST-correct** next-fire computation, adds one-shot ``run_at``/``delay_s`` with
-auto-delete, deterministic anti-runaway clamps (min-interval floor, max-lifetime
-ceiling, ``max_fires``/``until``), deterministic id-derived jitter, retry/backoff
-on a failed fire, and an explicit overlap policy — each degradation emitting a
-structured reason (the ``stream_fallback`` catalog style), never a silent drop.
+Schedules support local timezones, one-shot triggers, optional human limits,
+id-derived jitter, retry/backoff and explicit overlap handling. Lifetime is
+unlimited by default; deployments may explicitly configure a ceiling.
 
 Timezone / DST approach
 -----------------------
@@ -65,10 +62,9 @@ _HORIZON_MINUTES = 366 * 24 * 60
 #: floor, not below it.
 _DEFAULT_MIN_INTERVAL_S = 60
 
-#: Global anti-runaway ceiling: a recurring schedule with no explicit ``until`` is
-#: auto-retired this many seconds after creation (config ``scheduler.max_lifetime_s``
-#: / env ``CLIO_SCHEDULER_MAX_LIFETIME_S``). Default 30 days.
-_DEFAULT_MAX_LIFETIME_S = 30 * 24 * 60 * 60
+#: Optional deployment lifetime ceiling; zero is unlimited.
+#: Config scheduler.max_lifetime_s / CLIO_SCHEDULER_MAX_LIFETIME_S.
+_DEFAULT_MAX_LIFETIME_S = 0
 
 #: Deterministic id-derived jitter window (config ``scheduler.jitter_window_s`` / env
 #: ``CLIO_SCHEDULER_JITTER_WINDOW_S``). Default 0 == disabled (fires exactly on the
@@ -155,10 +151,6 @@ class Schedule:
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _utcnow_iso() -> str:
-    return _utcnow().isoformat()
 
 
 def _iso(dt: datetime) -> str:
@@ -621,7 +613,7 @@ class ScheduleStore:
             if parsed is None:
                 raise CronError(f"unparseable until {until!r}", reason="invalid_until")
             return parsed
-        if recurring:
+        if recurring and max_lifetime_s() > 0:
             return ref + timedelta(seconds=max_lifetime_s())
         return None
 
@@ -644,6 +636,24 @@ class ScheduleStore:
         if session_id is not None:
             rows = [r for r in rows if r.session_id == session_id]
         return sorted(rows, key=lambda s: s.created_at)
+
+    def set_enabled(self, sid: str, enabled: bool) -> Schedule:
+        """Stop future fires or restart from now, resetting explicitly chosen run limits.
+
+        Restarting a one-shot reuses its original delay; an expired absolute deadline
+        requires creating a new schedule. Already running work is not cancelled.
+        """
+        with self._lock:
+            sch = self._schedules.get(sid)
+            if sch is None:
+                raise CronError("schedule not found", reason="schedule_not_found")
+            if sch.enabled == enabled:
+                return sch
+            from clio_agent.gact.scheduler_controls import change_schedule_enabled
+
+            change_schedule_enabled(sch, enabled, _utcnow())
+            self._flush()
+            return sch
 
     def delete(self, sid: str) -> bool:
         with self._lock:

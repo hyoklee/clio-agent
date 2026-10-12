@@ -59,6 +59,9 @@ def advise(
         f"Its answer:\n{answer or '(empty)'}\n\n"
         f"Its score: {score:.2f} (target {target})"
     )
+    from clio_agent.gact.fleet_settings import judge_route
+
+    lm, _ = judge_route("variants", lm)
     response = lm(Request(model=lm.model, system=_SYSTEM, messages=(Message.user(prompt),)))
     text = "".join(p.text for p in response.message.parts if isinstance(p, TextPart)).strip()
     if not text:

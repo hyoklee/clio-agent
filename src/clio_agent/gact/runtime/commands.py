@@ -104,9 +104,9 @@ BACKEND_COMMANDS: list[dict[str, Any]] = [
         "id": "/loop",
         "title": "Start an autonomous loop",
         "description": (
-            "Run bounded batches: /loop [interval] [--max-iters=N] [--max-hours=N] "
+            "Repeat monitoring: /loop [interval] [--max-iters=N] [--max-hours=N] "
             "<prompt>. Optional --max-tokens=N and --max-usd=N. "
-            "/loop stop cancels the pending wakeup and paired goal."
+            "Optional --stop-text=DONE. Zero limits mean unlimited. /loop stop ends this loop."
         ),
         "source": "builtin",
         "status": "available",
@@ -126,8 +126,8 @@ BACKEND_COMMANDS: list[dict[str, Any]] = [
         "title": "Set a run-until goal condition",
         "description": (
             "Set a finishing condition: /goal [--max-iters=N] [--max-hours=N] "
-            "[--max-tokens=N] <condition>, then send the work request. "
-            "A model judges completion; an active loop controls pacing. /goal clear removes it."
+            "[--max-tokens=N] <objective>. Starts work immediately and keeps pursuing it. "
+            "An independent judge checks completion. Zero limits mean unlimited. /goal clear stops it."
         ),
         "source": "builtin",
         "status": "available",

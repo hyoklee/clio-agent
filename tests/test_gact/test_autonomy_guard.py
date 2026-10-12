@@ -37,7 +37,15 @@ def test_waiting_loop_limit_prevents_staging(tmp_path: Path, monkeypatch: Any, l
     app = _app(tmp_path)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
-    start_loop(app, sid, prompt="One checkpoint", interval_s=60, max_wallclock_s=1, max_tokens=20)
+    start_loop(
+        app,
+        sid,
+        prompt="One checkpoint",
+        interval_s=60,
+        max_iters=2,
+        max_wallclock_s=1,
+        max_tokens=20,
+    )
     loop = _get_loop(app, sid)
     schedule = app.state.schedules.get(loop["pending_schedule_id"])
     if limit == "time":
@@ -59,10 +67,12 @@ def test_waiting_loop_limit_prevents_staging(tmp_path: Path, monkeypatch: Any, l
     assert _get_loop(app, sid)["stop_reason"] == (
         "loop_max_iters" if limit == "iterations" else "loop_budget"
     )
-    assert _get_goal(app, sid)["clear_reason"] == "goal_loop_stopped"
+    assert _get_goal(app, sid)["active"]
 
 
-def test_unmet_goal_obeys_loop_pacing(tmp_path: Path, monkeypatch: Any) -> None:
+def test_unmet_goal_continues_independently_of_loop_pacing(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     app = _app(tmp_path)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
@@ -75,7 +85,7 @@ def test_unmet_goal_obeys_loop_pacing(tmp_path: Path, monkeypatch: Any) -> None:
     decision = asyncio.run(dispatch_goal_at_finalize(app, session_id=sid))
     assert decision is not None and decision.outcome == "redrive"
     assert _get_goal(app, sid)["active"] is True
-    assert inbox_for(app, sid).drain() == []
+    assert len(inbox_for(app, sid).drain()) == 1
     assert len(app.state.schedules.list(session_id=sid)) == 1
 
 
@@ -94,13 +104,9 @@ def test_goal_expiring_while_queued_prevents_another_turn(tmp_path: Path, paced:
         schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
         from clio_agent.gact.autonomy_guard import admit_loop_wakeup
 
-        assert not admit_loop_wakeup(app, schedule)
-        assert not app.state.schedules.list(session_id=sid)
-        assert _get_loop(app, sid)["stop_reason"] == "loop_goal_capped"
-    else:
-        assert not goal_redrive_is_current(
-            app, sid, {"goal_redrive": True, "goal_id": goal["goal_id"]}
-        )
+        assert admit_loop_wakeup(app, schedule)
+        assert _get_loop(app, sid)["active"]
+    assert not goal_redrive_is_current(app, sid, {"goal_redrive": True, "goal_id": goal["goal_id"]})
     assert _get_goal(app, sid)["clear_reason"] == "goal_budget"
 
 
@@ -208,6 +214,7 @@ def test_restart_preserves_only_durable_waiting_work(tmp_path: Path, status: str
             sessions=SessionStore(path=tmp_path / "sessions.json"),
             schedules=ScheduleStore(path=tmp_path / "schedules.json"),
             deferred_schedules=set(),
+            loop_inboxes={},
         )
     )
     assert reloaded.state.sessions.get(sid) is not None
@@ -218,7 +225,7 @@ def test_restart_preserves_only_durable_waiting_work(tmp_path: Path, status: str
         assert len(reloaded.state.schedules.list(session_id=sid)) == 1
     else:
         assert _get_loop(reloaded, sid)["stop_reason"] == "loop_server_interrupted"
-        assert _get_goal(reloaded, sid)["clear_reason"] == "goal_server_interrupted"
+        assert _get_goal(reloaded, sid)["phase"] == "recovering"
         assert reloaded.state.schedules.list(session_id=sid) == []
 
 
@@ -227,7 +234,8 @@ def test_restart_does_not_leave_unpaced_goal_active(tmp_path: Path) -> None:
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     reconcile_autonomous_controls(app)
-    assert _get_goal(app, sid)["clear_reason"] == "goal_server_interrupted"
+    assert _get_goal(app, sid)["phase"] == "recovering"
+    assert len(inbox_for(app, sid).drain()) == 1
 
 
 def test_normal_backend_boot_persists_schedule_without_explicit_path(
@@ -263,7 +271,7 @@ def test_composer_limits_and_user_stop_are_deterministic(tmp_path: Path) -> None
     assert loop["max_wallclock_s"] == 259200 and loop["prompt"] == "One batch"
     run_loop_command(app, sid, {"input": "stop"})
     assert _get_loop(app, sid)["stop_reason"] == "loop_user_cancelled"
-    assert not _get_goal(app, sid)["active"]
+    assert _get_goal(app, sid)["active"]
     assert app.state.schedules.list(session_id=sid) == []
 
 
@@ -311,7 +319,9 @@ def test_goal_cap_stops_paired_loop_at_real_finalize_seam(tmp_path: Path, monkey
     start_loop(app, sid, prompt="One checkpoint")
     app.state.sessions.update(sid, add_tokens_input=2)
     monkeypatch.setattr(turn_finalize_goal, "finalize_turn", lambda *args, **kwargs: None)
-    state = SimpleNamespace(app=app, sid=sid, turn_id="t", trace_id="tr")
+    state = SimpleNamespace(
+        app=app, sid=sid, turn_id="t", trace_id="tr", user_msg=SimpleNamespace(metadata={})
+    )
     asyncio.run(
         turn_finalize_goal.finalize_turn_async(
             state,
@@ -320,8 +330,8 @@ def test_goal_cap_stops_paired_loop_at_real_finalize_seam(tmp_path: Path, monkey
             update_retry_attempt=lambda *args: None,
         )
     )
-    assert _get_loop(app, sid)["stop_reason"] == "loop_goal_capped"
-    assert not app.state.schedules.list(session_id=sid)
+    assert _get_loop(app, sid)["active"]
+    assert len(app.state.schedules.list(session_id=sid)) == 1
 
 
 def test_judge_retains_precise_artifact_facts_and_recent_chronology(tmp_path: Path) -> None:
@@ -394,7 +404,7 @@ def test_exhausted_schedule_retries_settle_loop_and_goal(tmp_path: Path, monkeyp
     _fire_one(app, schedule)
     _fire_one(app, schedule)
     assert _get_loop(app, sid)["stop_reason"] == "loop_schedule_failed"
-    assert _get_goal(app, sid)["clear_reason"] == "goal_loop_stopped"
+    assert _get_goal(app, sid)["active"]
     assert not app.state.schedules.list(session_id=sid)
 
 

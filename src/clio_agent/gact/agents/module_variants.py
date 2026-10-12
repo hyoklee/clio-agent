@@ -499,7 +499,11 @@ def compile_reward_fn(spec: VariantSpec, *, agent_id: str) -> Callable[[dict, Pr
                 name: str(kwargs.get(name, "") or "") for name in reward_inputs
             }
             judge_inputs[target_field] = str(getattr(pred, target_field, "") or "")
-            judged = dspy.Predict(signature)(**judge_inputs)
+            from clio_agent.gact.fleet_settings import judge_route
+
+            lm, adapter = judge_route("variants", dspy.settings.lm, dspy.settings.adapter)
+            with dspy.context(lm=lm, adapter=adapter):
+                judged = dspy.Predict(signature)(**judge_inputs)
             score = _clamp_score(getattr(judged, "score", None))
         except Exception as exc:  # noqa: BLE001 - typed 0.0 degrade, never a crash
             from clio_agent.lm.policy import LMOutputTruncatedError  # noqa: PLC0415

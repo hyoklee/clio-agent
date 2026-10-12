@@ -598,7 +598,12 @@ def test_native_question_deadline_atomically_expires_and_releases_root(tmp_path)
 
     arm_ask_user_deadline(app, row)
     deadline = time.monotonic() + 2.0
-    while app.state.user_questions[row.id].status == "pending" and time.monotonic() < deadline:
+    # Expiration publishes the question state before the separate session-store update.
+    # Observe the complete asynchronous transition, retaining both final assertions.
+    while time.monotonic() < deadline and (
+        app.state.user_questions[row.id].status == "pending"
+        or app.state.sessions.get(root.id).status == "waiting_user"
+    ):
         time.sleep(0.01)
 
     assert app.state.user_questions[row.id].status == "expired"

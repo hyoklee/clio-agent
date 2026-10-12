@@ -551,9 +551,8 @@ def test_loop_effect_arms_bounded_loop(tmp_path: Path) -> None:
     assert "armed loop" in out and "GRIND_BODY_MARKER." in out
 
 
-def test_loop_effect_unset_bounds_still_finite(tmp_path: Path) -> None:
-    """A loop effect with NO declared bounds cannot run away — start_loop resolves finite hard
-    defaults + clamps the interval (the anti-runaway holds for the skill door too)."""
+def test_loop_effect_unset_bounds_are_unlimited(tmp_path: Path) -> None:
+    """Skills inherit unlimited defaults while preserving the scheduling interval floor."""
 
     ws = tmp_path / "ws"
     _write_skill(ws, "openloop", "effect: loop\n", "BODY.")
@@ -563,7 +562,8 @@ def test_loop_effect_unset_bounds_still_finite(tmp_path: Path) -> None:
     _invoke(app, sess.id, ws, "openloop")
 
     loop = _get_loop(app, sess.id)
-    assert int(loop.get("max_iters")) > 0  # finite default, never unbounded
+    assert int(loop.get("max_iters")) == 0
+    assert float(loop.get("max_wallclock_s")) == 0
     assert int(loop.get("interval_s")) >= 60  # clamped to the min-interval floor
 
 
