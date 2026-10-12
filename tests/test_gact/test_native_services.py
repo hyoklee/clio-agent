@@ -68,15 +68,109 @@ def plan(action: str = "install", **configuration: str) -> Any:
     )
 
 
+def _compatible(**values: Any) -> set[str]:
+    return {item.id for item in native_variants(facts(**values)) if item.compatible}
+
+
 def test_native_compatibility_uses_host_facts_not_container_availability() -> None:
-    assert all(item.compatible for item in native_variants(facts(docker_available=False)))
+    assert _compatible(docker_available=False) == {"native-cuda", "native-cuda-attention"}
+    assert _compatible(accelerator="intel") == {"native-xpu", "native-xpu-attention"}
     for override in (
         {"os": "windows"},
         {"accelerator": "none"},
+        {"accelerator": "amd"},
         {"uv_available": False},
         {"arch": "unknown"},
+        {"accelerator": "intel", "arch": "aarch64"},
     ):
-        assert not any(item.compatible for item in native_variants(facts(**override)))
+        assert not _compatible(**override)
+    reasons = {item.id: item.reason for item in native_variants(facts(accelerator="none"))}
+    assert "Intel Data Center GPU" in reasons["native-xpu"]
+    assert "NVIDIA" in reasons["native-cuda"]
+
+
+def xpu_plan(action: str = "install", variant: str = "native-xpu-attention", **configuration: str) -> Any:
+    return build_driver_plan(
+        service_id="vllm",
+        action=action,
+        variant_id=variant,
+        configuration={
+            "model": "/data/models/qualified",
+            "flowcept_settings": "/data/provenance/settings.yaml",
+            "host_setup": "module load frameworks/2026.1.0",
+            "param.xpu_devices": "0,1",
+            "param.tensor_parallel_size": "2",
+            **configuration,
+        },
+        facts=facts(accelerator="intel"),
+        target=InfrastructureTarget(id="node", label="Node", kind="ssh"),
+        api_key="test-secret-value",
+    )
+
+
+def test_xpu_layers_add_ons_over_the_host_vllm_build() -> None:
+    manifest = json.loads(xpu_plan().commands[-1].stdin)["manifest"]
+    assert manifest["definition_version"].startswith("vllm-host-xpu-attention-1+")
+    # vLLM and torch come from the host; only the connector and Flowcept are installed.
+    assert "vllm==" not in manifest["project"]
+    assert CONNECTOR_REVISION in manifest["project"] and FLOWCEPT_REVISION in manifest["project"]
+    assert manifest["host_python"] == {
+        "setup": "module load frameworks/2026.1.0",
+        "system_site_packages": True,
+    }
+    assert manifest["environment"]["ZE_AFFINITY_MASK"] == "0,1"
+    flags = manifest["arguments"]
+    assert flags[flags.index("--tensor-parallel-size") + 1] == "2"
+    assert "install_probe()" in manifest["launcher"]
+    plain = json.loads(xpu_plan(variant="native-xpu").commands[-1].stdin)["manifest"]
+    assert plain["definition_version"].startswith("vllm-host-xpu-native-1+")
+    assert "dependencies=[]" in plain["project"]
+    assert "install_probe()" not in plain["launcher"]
+
+
+def test_xpu_setup_lines_are_part_of_the_reusable_identity() -> None:
+    first = json.loads(xpu_plan().commands[-1].stdin)["manifest"]["definition_version"]
+    other = json.loads(xpu_plan(host_setup="module load frameworks/2025.3.1").commands[-1].stdin)
+    assert other["manifest"]["definition_version"] != first
+
+
+def test_xpu_variant_refuses_a_cuda_host_and_cuda_only_parameters() -> None:
+    with pytest.raises(ValueError, match="Intel Data Center GPU"):
+        build_driver_plan(
+            service_id="vllm",
+            action="install",
+            variant_id="native-xpu",
+            configuration={"model": "/data/models/qualified"},
+            facts=facts(),
+        )
+    with pytest.raises(ValueError, match="does not apply"):
+        plan(**{"param.xpu_devices": "0"})
+
+
+def test_host_environment_runs_setup_in_a_login_shell(tmp_path: Path) -> None:
+    env = node_service.host_environment(
+        "export CLIO_TEST_SITE=\"a b\"; export PATH=/opt/site/bin:$PATH",
+        {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+    )
+    assert env["CLIO_TEST_SITE"] == "a b"
+    assert env["PATH"].startswith("/opt/site/bin:")
+    assert "SHLVL" not in env and "_" not in env
+    with pytest.raises(ValueError, match="host environment setup failed"):
+        node_service.host_environment("false", {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)})
+
+
+def test_worker_environment_applies_the_host_setup_before_the_service_venv(
+    tmp_path: Path,
+) -> None:
+    env = node_service.worker_environment(
+        tmp_path,
+        {"host_python": {"setup": "export PATH=/opt/site/bin:$PATH"}},
+        {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
+    )
+    assert env["PATH"].split(os.pathsep)[:2] == [
+        str(tmp_path / "environment/.venv/bin"),
+        "/opt/site/bin",
+    ]
 
 
 def test_native_install_and_start_are_distinct_and_pinned() -> None:

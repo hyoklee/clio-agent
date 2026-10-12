@@ -23,7 +23,16 @@ ATTENTION_PROFILE = "vllm-0.27.0-attention-1"
 #: Overrides the pinned connector source with a PEP 508 direct reference
 #: (git+file://... or a wheel path) to qualify an unreleased connector build.
 CONNECTOR_SOURCE_ENV = "CLIO_VLLM_ATTN_CONNECTOR"
-NATIVE_VARIANTS = frozenset({"native-cuda", "native-cuda-attention"})
+CUDA_VARIANTS = ("native-cuda", "native-cuda-attention")
+#: Intel XPU: PyPI ships no XPU vLLM, so these run the host's own build (a site
+#: module such as ALCF's frameworks) in a venv layered over its interpreter.
+XPU_VARIANTS = ("native-xpu", "native-xpu-attention")
+NATIVE_VARIANTS = frozenset({*CUDA_VARIANTS, *XPU_VARIANTS})
+ATTENTION_VARIANTS = frozenset({"native-cuda-attention", "native-xpu-attention"})
+XPU_ATTENTION_PROFILE = "vllm-host-xpu-attention-1"
+XPU_PROFILE = "vllm-host-xpu-native-1"
+#: Shell lines that put the host's XPU vLLM ``python3`` on PATH (e.g. ``module load ...``).
+HOST_SETUP_FIELD = "host_setup"
 
 
 def connector_source() -> str:
@@ -45,26 +54,45 @@ def served_model(model: str, flags: Sequence[str]) -> str:
 
 
 def native_variants(facts: TargetFacts) -> list[ServiceVariant]:
-    """Offer native CUDA only after the selected host actually reports a usable GPU."""
-    compatible = (
-        facts.os == "linux"
-        and facts.arch in {"x86_64", "aarch64"}
-        and facts.accelerator == "nvidia"
-        and facts.uv_available
-    )
-    reason = "Requires Linux, a working NVIDIA GPU and uv on this execution host."
-    return [
+    """Offer native CUDA/XPU only after the selected host actually reports that GPU."""
+    linux = facts.os == "linux" and facts.uv_available
+    cuda = linux and facts.arch in {"x86_64", "aarch64"} and facts.accelerator == "nvidia"
+    xpu = linux and facts.arch == "x86_64" and facts.accelerator == "intel"
+    cuda_reason = "Requires Linux, a working NVIDIA GPU and uv on this execution host."
+    xpu_reason = "Requires Linux x86_64, an Intel Data Center GPU and uv on this execution host."
+    variants = [
         ServiceVariant(
             id=variant,
             label="Native CUDA + attention" if variant.endswith("attention") else "Native CUDA",
             version="0.27.0" if variant.endswith("attention") else "0.28.0",
             install_type="native_uv",
             artifact=ATTENTION_PROFILE if variant.endswith("attention") else "vllm==0.28.0",
-            compatible=compatible,
-            reason="Ready for native installation." if compatible else reason,
+            compatible=cuda,
+            reason="Ready for native installation." if cuda else cuda_reason,
         )
-        for variant in ("native-cuda", "native-cuda-attention")
+        for variant in CUDA_VARIANTS
     ]
+    variants.extend(
+        ServiceVariant(
+            id=variant,
+            label="Native Intel XPU + attention" if variant.endswith("attention") else "Native Intel XPU",
+            version="host",
+            install_type="native_uv",
+            artifact=XPU_ATTENTION_PROFILE if variant.endswith("attention") else XPU_PROFILE,
+            compatible=xpu,
+            reason=(
+                "Uses this host's XPU vLLM build; set its environment setup (e.g. module load)."
+                if xpu
+                else xpu_reason
+            ),
+        )
+        for variant in XPU_VARIANTS
+    )
+    return variants
+
+
+def _variant_row(facts: TargetFacts, variant_id: str) -> ServiceVariant:
+    return next(row for row in native_variants(facts) if row.id == variant_id)
 
 
 # vLLM binds ZMQ IPC sockets at $VLLM_RPC_BASE_PATH/<uuid4> (default: the temp dir). A deep
@@ -145,9 +173,11 @@ def native_vllm_plan(
     """Install packages, start serving, and retain evidence as separate operations."""
     if facts.os != "linux":
         raise ValueError("Native vLLM lifecycle requires its Linux execution host")
-    if action in {"install", "reinstall", "start"} and not native_variants(facts)[0].compatible:
-        raise ValueError(native_variants(facts)[0].reason)
-    attention = variant_id == "native-cuda-attention"
+    row = _variant_row(facts, variant_id)
+    if action in {"install", "reinstall", "start"} and not row.compatible:
+        raise ValueError(row.reason)
+    attention = variant_id in ATTENTION_VARIANTS
+    xpu = variant_id in XPU_VARIANTS
     version = "0.27.0" if attention else "0.28.0"
     model = configuration.get("model", "").strip()
     if action in {"install", "reinstall", "start"} and not posixpath.isabs(model):
@@ -155,7 +185,9 @@ def native_vllm_plan(
     settings = configuration.get("flowcept_settings", "").strip()
     if attention and action in {"install", "reinstall", "start"} and not posixpath.isabs(settings):
         raise ValueError("Choose the managed Flowcept settings file before enabling attention")
-    dependencies = [f"vllm=={version}"]
+    host_setup = configuration.get(HOST_SETUP_FIELD, "").strip() if xpu else ""
+    # The host provides vLLM (and torch) for XPU; only the add-ons are installed.
+    dependencies = [] if xpu else [f"vllm=={version}"]
     if attention:
         dependencies.extend(
             [
@@ -165,13 +197,21 @@ def native_vllm_plan(
         )
     if action in {"install", "reinstall", "start"}:
         configuration = {**configuration, **parser_defaults(model, configuration)}
-    compiled = compile_parameters("vllm", "cuda", configuration)
+    compiled = compile_parameters("vllm", "xpu" if xpu else "cuda", configuration)
     ownership = hashlib.sha256(
         f"{facts.target_id}:{facts.hostname}:{directory}".encode()
     ).hexdigest()
+    if xpu:
+        profile = XPU_ATTENTION_PROFILE if attention else XPU_PROFILE
+        # The setup lines pick the host build, so they are part of the reusable identity.
+        profile += "+" + hashlib.sha256(host_setup.encode()).hexdigest()[:12]
+    else:
+        profile = ATTENTION_PROFILE if attention else "vllm-0.28.0-native-1"
     manifest = {
-        "definition_version": ATTENTION_PROFILE if attention else "vllm-0.28.0-native-1",
-        "project": '[project]\nname="clio-native-vllm"\nversion="0.0.0"\nrequires-python=">=3.12,<3.13"\ndependencies='
+        "definition_version": profile,
+        "project": '[project]\nname="clio-native-vllm"\nversion="0.0.0"\nrequires-python='
+        + ('">=3.10"' if xpu else '">=3.12,<3.13"')
+        + "\ndependencies="
         + json.dumps(dependencies)
         + "\n",
         "launcher": launcher(attention),
@@ -193,6 +233,8 @@ def native_vllm_plan(
         "flowcept_settings": settings,
         "workflow_id": configuration.get("workflow_id") or f"clio-{ownership[:16]}",
     }
+    if xpu:
+        manifest["host_python"] = {"setup": host_setup, "system_site_packages": True}
     resolved = {
         **configuration,
         "storage.service_directory": directory,

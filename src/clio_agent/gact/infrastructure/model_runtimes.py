@@ -343,7 +343,15 @@ def model_runtime_definition(service_id: str, facts: TargetFacts) -> ManagedServ
                 label="Flowcept settings on this host",
                 placeholder="/data/provenance/settings.yaml",
                 required=True,
-                variants=["native-cuda-attention"],
+                variants=["native-cuda-attention", "native-xpu-attention"],
+            )
+        )
+        fields.append(
+            ServiceConfigurationField(
+                id="host_setup",
+                label="Host environment setup",
+                placeholder="module load frameworks",
+                variants=["native-xpu", "native-xpu-attention"],
             )
         )
     return ManagedServiceDefinition(
