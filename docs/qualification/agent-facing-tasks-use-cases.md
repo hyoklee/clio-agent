@@ -7,6 +7,18 @@ run does not become a live pass for a later commit.
 
 ## Current readiness, October 12
 
+Fresh cross-workflow execution is recorded in
+[`session-workflow-tasks-2026-10-12.md`](session-workflow-tasks-2026-10-12.md).
+Five actual Codex/Luna cycles passed on `26749f2d` using distinct blueprints and
+root sessions, including independent subscriptions, busy/idle messaging, mixed
+waits, failure wakes, Stop independence and denied peer cancellation. Their
+disposable services, native Core allocations, processes and session records were
+removed after verification. Later source corrections require affected checks.
+
+The older external receipts and archives named below were deleted during the
+human-requested disk cleanup. They describe historical results and are no longer
+available as retained evidence. Current acceptance must use fresh executions.
+
 The earlier statement that MCP, Download and Indexing human-control relay lacked
 fresh model acceptance is superseded. On runtime `fa294aff`, actual Codex/Luna
 parents received the human cancellation notice in five complete cycles for each
@@ -39,13 +51,16 @@ Full readiness is still incomplete:
 
 - Protected Windows native/Core and confinement routes remain blocked and
   unverified under the existing rejected-launch boundaries.
-- Distinct local/remote inference routes lack qualified provider evidence.
-  Availability has not been freshly established by this evidence audit.
-- Remote relay pause, retained-context restart and peer addressing remain
-  unimplemented and explicitly refused.
+- Distinct local/remote inference routes lack fresh qualified provider evidence.
+  Default localhost LM Studio/Ollama endpoints were not listening on Windows or
+  homelab in the current probe; an alternative endpoint/profile is requested.
 - The retained provider-SSE failure rejected a 65,700-byte line at the unchanged
   65,536-byte bound. The original raw line was not captured, so its cause and fix
   remain unestablished. Ordinary SSE passes do not close it.
+
+Remote relay execution is outside the current qualification scope, as directed
+by the human. Its future migration to ordinary MCP Tasks is separate work;
+missing relay pause/restart/peer support is not a current completion blocker.
 
 CI passed 19 jobs on `8ac5cf9a` with identical production/runtime trees. The 66
 excluded Python cases per interpreter, one flake-check exclusion and native

@@ -183,7 +183,17 @@ def task_views(
 
                     held = execution_held(app, task.child_session_id)
                     row["supported_actions"].append("resume" if held else "pause")
-    return list({row["handle"]: row for row in rows}.values())
+    # Workspace reads can encounter the same owner through multiple authorized
+    # paths. Deduplicate that full identity, never the public handle: a handle
+    # collision must remain visible so resolution/custody reject ambiguity.
+    return list(
+        {
+            ("Subagent", row["id"])
+            if row["task_kind"] == "Subagent"
+            else TaskKey.from_wire(row["key"]): row
+            for row in rows
+        }.values()
+    )
 
 
 def resolve_task(

@@ -1062,7 +1062,7 @@ class ARCLike(Protocol):
 
     def get_cache_stats(self) -> dict[str, Any]: ...  # pragma: no cover
     def set_highway_sink(self, sink: Any) -> None: ...  # pragma: no cover
-    def set_segment_op_logger(self, logger: Any) -> None: ...  # pragma: no cover
+    def set_segment_op_logger(self, logger: Any, /) -> None: ...  # pragma: no cover
 
 
 def build_app(

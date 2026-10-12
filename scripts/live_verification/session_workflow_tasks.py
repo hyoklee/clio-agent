@@ -337,6 +337,7 @@ def main() -> int:
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--provider", choices=["codex", "claude_code"], default="codex")
+    parser.add_argument("--transport", choices=["websocket", "sse"], default="websocket")
     parser.add_argument("--port", type=int, default=18862)
     parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
@@ -377,8 +378,10 @@ def main() -> int:
                 "provider": "codex",
                 "model": "gpt-6-luna",
                 "api_base": "",
-                "transport": "websocket",
+                "transport": args.transport,
             }
+            if args.transport == "sse":
+                env["CLIO_QUALIFICATION_SSE_DIAGNOSTICS"] = str(root / "sse-sizes.json")
         else:
             report["auth"] = frozen_claude_auth(
                 Path(env["CLIO_TASK_PROOF_AUTH_SOURCE"]), root / "private-claude"
@@ -423,6 +426,9 @@ def main() -> int:
         )
         print(json.dumps({"error": report["error"]}), flush=True)
     finally:
+        sizes = root / "sse-sizes.json"
+        if sizes.exists():
+            report["sse_diagnostics"] = json.loads(sizes.read_text())
         # Release physical owned workers before shutting their actual owners down.
         for path in workspace.glob("*-script.py"):
             path.with_name(path.name.replace("-script.py", "-release.txt")).write_text(

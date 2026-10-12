@@ -52,6 +52,7 @@ from clio_agent.gact.workflows import (
     run_declared_workflow,
     workflow_validation_errors,
 )
+from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -615,11 +616,15 @@ def test_declared_absolute_budget_must_be_positive_number() -> None:
     # Absent timeout_s → valid, and the parsed step carries the 0.0 "no budget" sentinel.
     ok = _wf_def([{"id": "s", "child": "a", "task": "x"}])
     assert workflow_validation_errors(ok, {"a"}) == []
-    assert parse_workflow(ok).steps[0].timeout_s == 0.0
+    parsed = parse_workflow(ok)
+    assert parsed is not None
+    assert parsed.steps[0].timeout_s == 0.0
     # A positive declared budget parses through.
     budgeted = _wf_def([{"id": "s", "child": "a", "task": "x", "timeout_s": 600}])
     assert workflow_validation_errors(budgeted, {"a"}) == []
-    assert parse_workflow(budgeted).steps[0].timeout_s == 600.0
+    parsed = parse_workflow(budgeted)
+    assert parsed is not None
+    assert parsed.steps[0].timeout_s == 600.0
 
 
 # ===========================================================================
@@ -648,6 +653,7 @@ class _ActiveChildAgent:
         self.app: Any = None
         self.seen: list[tuple[str, str]] = []
         self._lock = threading.Lock()
+        self.first_progress = threading.Event()
 
     def forward(self, question: str, session_id: str, **_kw: Any) -> Any:
         import time as _time
@@ -667,6 +673,7 @@ class _ActiveChildAgent:
             self.app.state.bus.publish(
                 Event(type="turn.text.delta", session_id=session_id, payload={"i": _i})
             )
+            self.first_progress.set()
             _time.sleep(self.interval_s)
         wf = self.states.get(expert, {})
         if wf and self.app is not None:
@@ -679,7 +686,7 @@ class _ActiveChildAgent:
 def test_slow_but_active_child_is_not_stalled(tmp_path: Path, monkeypatch) -> None:
     """A child that keeps publishing progress for MUCH longer than the inactivity window is
     NOT stalled — the step watch is progress-based, not a total-duration bound (#992). The
-    child stays active ~1.5s against a 0.4s window (well past the old fixed budget in
+    child stays active ~4s against a 2s window (well past the old fixed budget in
     principle) and the workflow COMPLETES."""
 
     steps = [{"id": "s_a", "child": "a", "task": "do a"}]
@@ -696,6 +703,22 @@ def test_slow_but_active_child_is_not_stalled(tmp_path: Path, monkeypatch) -> No
         run_declared_workflow(
             app, _wf_def(steps), warm_parent, requesting_expert_id="main", inactivity_window_s=30.0
         )
+        # This test measures progressing execution, not per-session dispatch
+        # latency under CI contention. Start its unchanged 2s watch at the first
+        # actual progress event; neither the probe nor the inactivity budget is
+        # patched. The silent-child and probe-sabotage tests cover true stalls.
+        from clio_agent.gact import workflows
+
+        real_watch = workflows.watch_step
+        agent.first_progress.clear()
+
+        def watch_active(
+            app: Any, task_id: str, child_session_id: str, **kwargs: Any
+        ) -> tuple[Any, str, float]:
+            assert agent.first_progress.wait(TURN_SIGNAL_BACKSTOP_S), "child never began execution"
+            return real_watch(app, task_id, child_session_id, **kwargs)
+
+        monkeypatch.setattr(workflows, "watch_step", watch_active)
         parent = client.post("/v1/sessions", json={"title": "p"}).json()["id"]
         record = run_declared_workflow(
             app, _wf_def(steps), parent, requesting_expert_id="main", inactivity_window_s=2.0

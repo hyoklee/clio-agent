@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import faulthandler
+import os
 import signal
 import sys
 import threading
 import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from types import FrameType
 from typing import Any
 
@@ -80,6 +82,10 @@ def main() -> None:
 
     from clio_agent.gact.app import build_app
 
+    if diagnostic_path := os.environ.get("CLIO_QUALIFICATION_SSE_DIAGNOSTICS"):
+        from _sse_diagnostics import install
+
+        install(Path(diagnostic_path))
     faulthandler.enable()
     diagnostic_signal = getattr(signal, "SIGUSR1", None)
     if diagnostic_signal is not None:

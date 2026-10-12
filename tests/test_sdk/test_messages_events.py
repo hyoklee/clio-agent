@@ -102,8 +102,18 @@ def test_live_sse_consume_of_a_stubbed_turn(client: ClioClient) -> None:
                 break
 
         types = [e.type for e in seen]
-        assert types[0] == "session.status_changed"
-        running = seen[0]
+        # Durable root-task acceptance precedes dispatch/running and uses the
+        # same handle returned in the SDK acknowledgement.
+        assert types[:2] == ["mcp_task.updated", "session.status_changed"]
+        accepted = seen[0].payload
+        assert ack.task_handle.startswith("run_")
+        assert accepted["handle"] == ack.task_handle
+        assert accepted["kind"] == "Session"
+        assert accepted["key"]["session_id"] == sess.id
+        assert accepted["key"]["task_id"] == ack.message_id
+        assert accepted["invocation_id"] == ack.message_id
+        assert accepted["effective_status"] == "running"
+        running = seen[1]
         assert isinstance(running, SessionStatusChanged)
         assert running.status == "running"
 
