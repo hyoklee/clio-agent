@@ -4,12 +4,20 @@ description: Pursue an objective, monitor a job, or schedule a future turn, with
 ---
 
 import { Aside, Steps } from "@astrojs/starlight/components";
-import { Image } from "astro:assets";
+import Capture from "../../../components/overview/Capture";
+import { captureImage } from "../../../lib/captures";
 import fleet from "../../../assets/captures/docs-fleet-judges.png";
+import workGoal from "../../../assets/captures/docs-work-goal.png";
+import goalInjections from "../../../assets/captures/docs-goal-injections.png";
+import loopInjections from "../../../assets/captures/docs-loop-injections.png";
+import scheduleInjection from "../../../assets/captures/docs-schedule-injection.png";
 
 Use a **goal** for a project that needs continued planning, action and evaluation.
 Use a **loop** to monitor something that changes over time. Use a **schedule** to
 run an instruction later. These are independent controls in the same conversation.
+Starting a goal, loop or schedule does not create another sidebar conversation.
+Only conversations you start or fork appear there; delegated agents are followed
+from their owning conversation's work views.
 
 | Need | Control | Example |
 |---|---|---|
@@ -37,6 +45,16 @@ bounded tool results. It checks completion against the objective and gives
 concrete guidance for the next step. An unmet goal continues without a separate
 user message. If an approach fails, the agent can change its plan and tools.
 Completion stops goal continuation. It does not stop an independent loop.
+
+Automatic continuation appears in the conversation as a **Goal judgment injection**,
+between the previous response and the next work. **Loop wake** and **Scheduled wake**
+use the same injection display. These are CLIO-provided context, never messages
+labelled “You”. Expand an injection to read the exact instruction the agent received.
+
+<Capture client:visible image={await captureImage(goalInjections)}
+  alt="Three checkpoint responses separated by expandable Goal judgment injections"
+  caption="A real goal saved one checkpoint per turn. Goal judgment injections continued the work between responses without inventing another human message."
+/>
 
 **Limits are optional.** An omitted or zero iteration, time or token limit means
 unlimited. For a short trial you can explicitly choose limits:
@@ -100,6 +118,11 @@ conversation waits for its current turn; two turns do not run concurrently.
 Goals continue independently of loop pacing. `/loop stop` ends only that loop;
 `/goal clear` ends only that goal.
 
+<Capture client:visible image={await captureImage(loopInjections)}
+  alt="Two monitoring responses with an expanded Loop wake injection showing its recorded instruction"
+  caption="This explicitly bounded loop ran two monitoring checks. Show what it got expands the recorded wake instruction."
+/>
+
 ## Schedule a future instruction
 
 Ask in ordinary language:
@@ -121,12 +144,23 @@ schedule after firing. A recurring schedule advances until stopped or its explic
 limit is reached. Busy runs queue; failed staging uses bounded retries and exposes
 its failure rather than silently disappearing.
 
+<Capture client:visible image={await captureImage(scheduleInjection)}
+  alt="Expanded Scheduled wake injection followed by its saved report"
+  caption="The scheduled instruction appears as an injection, followed by the agent's work and saved output."
+/>
+
 ## Inspect and control Work
 
-Open the conversation's **Data / Work** finder and choose **Work**. Goals,
+Click the bottom **Session work** status, or open the conversation's **Data / Work**
+finder and choose **Work**. Goals,
 loops and schedules show their state. Expand **Details** for the objective,
 configured limits, stop text, waiting handles and judge guidance. Zero limits are
 shown as **Unlimited**. Completed and stopped controls remain under **Previous**.
+
+<Capture client:visible image={await captureImage(workGoal)}
+  alt="Completed goal with three iterations, Unlimited limits, judge guidance and verified progress, beside an independent active monitoring loop"
+  caption="A real three-turn goal saved plan.md, results.md and report.md. Expand Previous and Details to inspect its completion evidence or restart it. The monitoring loop remains active independently."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
 
 - **Stop** prevents future goal continuation, loop wakeups or schedule occurrences.
 - **Restart** explicitly starts a fresh goal or loop identity with the retained
@@ -145,10 +179,10 @@ refinement**, and **Automode permissions**. Each defaults to the conversation's
 model and can be reset to **Use conversation model**. Explicit selections use the
 selected provider's own configuration.
 
-<figure>
-  <Image src={fleet} alt="Fleet settings with separate Goals, Best of N and refinement, and Automode permissions model selectors, each set to Conversation model" />
-  <figcaption>Choose a judge independently for each role. Leaving Conversation model selected follows the model used for that conversation's turn.</figcaption>
-</figure>
+<Capture client:visible image={await captureImage(fleet)}
+  alt="Fleet settings with separate Goals, Best of N and refinement, and Automode permissions model selectors, each set to Conversation model"
+  caption="Choose a judge independently for each role. Conversation model follows the model used for that conversation's turn."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
 
 Automode's reviewer classifies operations as **none**, **low**, **medium**, or
 **high** risk. None through medium proceed automatically; high risk asks you for

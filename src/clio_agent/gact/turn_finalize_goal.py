@@ -65,7 +65,13 @@ async def finalize_turn_async(
         ),
     )
     from clio_agent.gact.autonomy_output import observe_control_output
-    from clio_agent.gact.goal_control import pause_failed_goal
+    from clio_agent.gact.goal_control import pause_failed_goal, retain_shutdown_goal
+
+    if getattr(getattr(state.app.state, "uvicorn_server", None), "should_exit", False):
+        await loop.run_in_executor(
+            _forward_executor(state), lambda: retain_shutdown_goal(state.app, state.sid)
+        )
+        return  # Recovery inspects retained effects; shutdown must not judge or redrive.
 
     if getattr(state, "error_info", None) is not None:
         await loop.run_in_executor(

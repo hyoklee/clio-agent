@@ -9,6 +9,7 @@ import pytest
 
 from clio_agent.gact import context
 from clio_agent.gact.autonomous_loop import loop_wakeup_impl, start_loop
+from clio_agent.gact.loop_control import build_set_loop_tool
 from tests.test_gact.test_loop import _app, _bind, _loop_state, _session
 
 
@@ -45,6 +46,7 @@ def test_self_initiated_loop_counts_repeated_call_once(tmp_path: Path) -> None:
         sid = _session(app)
         _bind(app, sid)
         context.set_turn_id("initiating-turn")
+        build_set_loop_tool()(prompt="first", interval_s=60)
         loop_wakeup_impl(60, "first")
         loop_wakeup_impl(120, "second")
         assert _loop_state(app, sid)["iteration"] == 0

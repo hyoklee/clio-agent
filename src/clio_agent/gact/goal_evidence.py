@@ -77,15 +77,24 @@ def _build_transcript(app: Any, sid: str, *, max_messages: int = 40) -> str:
         -max_messages:
     ]:
         role = str(getattr(message, "role", "") or "")
+        turn_id = _bounded_judge_fact(getattr(message, "turn_id", ""), limit=120) or "unassigned"
+        message_id = _bounded_judge_fact(getattr(message, "id", ""), limit=120) or "unassigned"
+        lines.append(f"--- {role} turn {turn_id}; message {message_id} ---")
         for part in getattr(message, "parts", []) or []:
             part_type = str(getattr(part, "type", ""))
             if part_type == "text":
                 text = str(getattr(part, "text", "") or "").strip()
                 if text:
                     lines.append(f"{role}: {text}")
-            elif part_type == "injection" and getattr(part, "source", "") == "task_results":
+            elif part_type == "injection" and getattr(part, "source", "") in {
+                "task_results",
+                "goal_judgment",
+                "loop_wake",
+                "scheduled_wake",
+                "task_completion",
+            }:
                 lines.append(
-                    "recorded task results: "
+                    f"recorded harness injection ({getattr(part, 'source', '')}): "
                     + _bounded_judge_fact(getattr(part, "text", ""), limit=4000)
                 )
             elif part_type == "tool_call":

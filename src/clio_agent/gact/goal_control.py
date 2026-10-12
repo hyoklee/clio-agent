@@ -44,6 +44,17 @@ def pause_failed_goal(app: Any, sid: str, reason: str) -> None:
             _put_goal(app, sid, goal)
 
 
+def retain_shutdown_goal(app: Any, sid: str) -> None:
+    """Keep an interrupted objective recoverable without reviving a user stop."""
+    from clio_agent.gact.goal import _GOAL_MUTEX, _put_goal
+
+    with _GOAL_MUTEX:
+        goal = _get_goal(app, sid)
+        if goal.get("active") and not goal.get("cleared"):
+            goal.update(phase="recovering", clear_reason="goal_server_interrupted")
+            _put_goal(app, sid, goal)
+
+
 async def maintain_goal_controls(app: Any) -> None:
     """Enforce explicit waiting budgets and launch retained recovery inboxes."""
     from clio_agent.gact.autonomy_guard import expire_goal_budget

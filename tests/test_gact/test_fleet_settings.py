@@ -10,12 +10,27 @@ from fastapi.testclient import TestClient
 from clio_agent import conf
 from clio_agent.gact.fleet_settings import (
     FleetUpdate,
+    fleet_role_configured,
     fleet_settings,
     judge_route,
     save_fleet_settings,
 )
 from clio_agent.gact.routes.fleet_settings import register_fleet_settings_routes
 from tests._config_layer import read_config, set_config
+
+
+def test_environment_judge_mapping_and_explicit_inherit(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(
+        "CLIO_FLEET_JUDGES",
+        '{"goals": null, "permissions": {"provider_id": "codex", "model_id": "gpt-6-luna"}}',
+    )
+    conf.reload()
+    assert fleet_role_configured("goals")
+    assert not fleet_role_configured("variants")
+    assert fleet_settings()["judges"]["permissions"]["provider_id"] == "codex"
+    monkeypatch.setenv("CLIO_FLEET_JUDGES", '{"misspelled": null}')
+    with pytest.raises(ValueError, match="Fleet judges"):
+        fleet_settings()
 
 
 def test_independent_choices_persist_and_inherit_exact_caller(

@@ -108,6 +108,7 @@ def test_goal_judge_transcript_includes_bounded_tool_call_and_result(tmp_path: P
     ]
 
     assert goal_mod._build_transcript(app, sid) == (
+        "--- assistant turn unassigned; message unassigned ---\n"
         "assistant tool call: goal_status\n"
         "assistant tool result: goal_status completed: Goal is active: save the final report"
     )
@@ -559,3 +560,35 @@ def test_goal_evidence_preserves_inputs_and_task_results_without_credentials(
     assert '"background": true' in evidence and "sleep 60" in evidence
     assert "PRIVATE_KEY" not in evidence and "[redacted]" in evidence
     assert "task_owned" in evidence and "exit_code: 0" in evidence
+
+
+def test_goal_evidence_preserves_turn_boundaries_after_automatic_injections(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    sid = _session(app)
+    app.state.messages[sid] = [
+        SimpleNamespace(
+            id=f"wake_{number}",
+            turn_id=f"turn_{number}",
+            role="system",
+            created_at=f"2026-10-12T00:00:0{number}Z",
+            parts=[
+                SimpleNamespace(
+                    type="injection", source="goal_judgment", text="Save the next file."
+                )
+            ],
+        )
+        for number in (1, 3)
+    ] + [
+        SimpleNamespace(
+            id=f"answer_{number}",
+            turn_id=f"turn_{number - 1}",
+            role="assistant",
+            created_at=f"2026-10-12T00:00:0{number}Z",
+            parts=[SimpleNamespace(type="text", text=f"Saved checkpoint-{number // 2}.md")],
+        )
+        for number in (2, 4)
+    ]
+    evidence = goal_mod._build_transcript(app, sid)
+    assert "recorded harness injection (goal_judgment): Save the next file." in evidence
+    assert evidence.index("Saved checkpoint-1.md") < evidence.index("system turn turn_3")
+    assert evidence.index("assistant turn turn_3") < evidence.index("Saved checkpoint-2.md")

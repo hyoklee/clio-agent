@@ -133,6 +133,34 @@ def test_unreadable_evidence_pauses_instead_of_judging_an_empty_history(
     assert not verdict.available and not verdict.met
 
 
+@pytest.mark.parametrize("shutdown,user_stopped", [(True, False), (False, False), (True, True)])
+def test_shutdown_retains_goal_but_user_stop_and_work_failure_do_not_resume(
+    tmp_path: Path, monkeypatch: Any, shutdown: bool, user_stopped: bool
+) -> None:
+    """The real async finalizer distinguishes service exit from user cancellation."""
+    app = _app(tmp_path)
+    sid = _session(app)
+    arm_goal(app, sid, condition="Inspect the retained simulation outcome")
+    if user_stopped:
+        clear_goal(app, sid)
+    app.state.uvicorn_server = SimpleNamespace(should_exit=shutdown)
+    state = _turn_state()
+    state.app, state.sid = app, sid
+    state.error_info = {"error": "cancelled"}
+    monkeypatch.setattr(turn_finalize_goal, "finalize_turn", lambda *a, **kw: None)
+    monkeypatch.setattr(turn_finalize_goal, "_forward_executor", lambda _state: None)
+    asyncio.run(
+        turn_finalize_goal.finalize_turn_async(
+            state, None, drain_observed_tool_calls=lambda: [], update_retry_attempt=lambda *a: None
+        )
+    )
+    goal = goal_mod._get_goal(app, sid)
+    assert bool(goal["active"]) is (shutdown and not user_stopped)
+    assert goal.get("phase") == (
+        "stopped" if user_stopped else "recovering" if shutdown else "paused"
+    )
+
+
 def _turn_state() -> SimpleNamespace:
     """The minimal turn state ``finalize_turn_async`` reads (a top-level, non-child turn)."""
 

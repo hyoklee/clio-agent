@@ -5,12 +5,14 @@ for (const width of [390, 1440]) {
     await page.addInitScript(() => localStorage.setItem('starlight-theme', 'light'));
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/docs/long-running-work/');
-    await expect(page.getByRole('heading', { level: 1, name: 'Goals and long-running work' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Goals, loops and scheduled work' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Wait for a simulation or other task' })).toBeVisible();
     for (const [index, title] of [
-      'Completed three-checkpoint goal',
-      'Active goal and hourly loop',
-      'Completed paced goal and stopped loop',
-      'Loop waiting for a human answer',
+      'Three checkpoint responses',
+      'Two monitoring responses',
+      'Expanded Scheduled wake injection',
+      'Completed goal with three iterations',
+      'Fleet settings with separate Goals',
     ].entries()) {
       const button = page.getByRole('button', { name: new RegExp(`^View larger: ${title}`) });
       await button.scrollIntoViewIfNeeded();

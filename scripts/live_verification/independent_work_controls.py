@@ -36,7 +36,7 @@ class Qualification(LongHorizonAcceptance):
         self.save(sid + "-work", self.call("GET", f"/v1/sessions/{sid}/work"))
         return rows
 
-    def completed(self, sid: str) -> dict[str, Any]:
+    def completed(self, sid: str, *, allow_shutdown_cancel: bool = False) -> dict[str, Any]:
         """Wait for goal completion, retaining an explicit failure instead of retrying."""
         value = self.until(
             "goal completion",
@@ -47,7 +47,13 @@ class Qualification(LongHorizonAcceptance):
         rows = self.transcript(sid)
         self.check("goal met " + sid, value["goal"].get("met") is True, value["goal"])
         self.check(
-            "no turn errors " + sid, not any(row.get("error_info") for row in rows), len(rows)
+            "no unexpected turn errors " + sid,
+            not any(
+                row.get("error_info")
+                and not (allow_shutdown_cancel and row["error_info"]["error"] == "cancelled")
+                for row in rows
+            ),
+            len(rows),
         )
         return value
 
@@ -332,7 +338,7 @@ class Qualification(LongHorizonAcceptance):
             self.check(
                 "schedule " + ("restart" if enabled else "stop"), row["enabled"] is enabled, row
             )
-        self.call("DELETE", f"/v1/schedules/{schedule['id']}")
+        self.call("DELETE", f"/v1/schedules/{schedule['id']}", status=204)
         self.transcript(sid)
 
     def recovery(self, restart: Callable[[], None]) -> None:
@@ -352,7 +358,12 @@ class Qualification(LongHorizonAcceptance):
             seconds=90,
         )
         loop_sid = self.session("Recovery: pending monitoring wake")
-        self.command(loop_sid, "loop", "60s --max-iters=1 Report RECOVERY_TICK and finish.")
+        self.command(
+            loop_sid,
+            "loop",
+            "60s --max-iters=1 Report RECOVERY_TICK. Do not call loop_wakeup; "
+            "the controller owns the explicit one-iteration limit.",
+        )
         pending = self.metadata(loop_sid)["loop"]["pending_schedule_id"]
         restart()
         self.check(
@@ -360,7 +371,7 @@ class Qualification(LongHorizonAcceptance):
             self.metadata(loop_sid)["loop"]["pending_schedule_id"] == pending,
             self.metadata(loop_sid)["loop"],
         )
-        self.completed(sid)
+        self.completed(sid, allow_shutdown_cancel=True)
         rows = self.transcript(sid)
         launches = [
             part
@@ -441,6 +452,7 @@ def main() -> int:
     parser.add_argument("--root", required=True, type=Path)
     parser.add_argument("--port", type=int, default=17965)
     parser.add_argument("--hold-for-review", action="store_true")
+    parser.add_argument("--only", choices=("all", "recovery", "fleet"), default="all")
     args = parser.parse_args()
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=False)
@@ -488,17 +500,17 @@ def main() -> int:
             process = start_server()
             runner.until(
                 "restarted service",
-                lambda: requests.get(runner.endpoint + "/v1/health", timeout=10).status_code,
-                lambda code: code == 200,
-                seconds=90,
+                lambda: requests.get(runner.endpoint + "/v1/health", timeout=10).json(),
+                lambda state: state.get("tool_hooks_installed") is True,
+                seconds=120,
             )
 
         process = start_server()
         runner.until(
-            "healthy service",
-            lambda: requests.get(runner.endpoint + "/v1/health", timeout=10).status_code,
-            lambda code: code == 200,
-            seconds=90,
+            "agent and tool hooks ready",
+            lambda: requests.get(runner.endpoint + "/v1/health", timeout=10).json(),
+            lambda state: state.get("tool_hooks_installed") is True,
+            seconds=120,
         )
         runner.workspace = runner.call(
             "POST",
@@ -506,14 +518,18 @@ def main() -> int:
             {"name": "Long horizon control verification", "root_path": str(workspace)},
             status=201,
         )["id"]
-        cases = runner.start_cases()
-        runner.task_goal()
-        runner.agent_controls()
-        runner.agent_monitoring()
-        runner.inspect_cases(cases)
-        runner.fleet_and_reviewer()
-        runner.lifecycle()
-        runner.recovery(restart_server)
+        if args.only == "all":
+            cases = runner.start_cases()
+            runner.task_goal()
+            runner.agent_controls()
+            runner.agent_monitoring()
+            runner.inspect_cases(cases)
+            runner.fleet_and_reviewer()
+        if args.only == "fleet":
+            runner.fleet_and_reviewer()
+        else:
+            runner.lifecycle()
+            runner.recovery(restart_server)
         passed = True
         runner.save(
             "complete", {"passed": True, "sessions": runner.sessions, "workspace": runner.workspace}

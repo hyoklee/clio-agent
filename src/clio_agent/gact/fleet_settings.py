@@ -22,10 +22,19 @@ ROLES: tuple[JudgeRole, ...] = ("goals", "variants", "permissions")
 
 def fleet_role_configured(role: JudgeRole) -> bool:
     """Distinguish an explicit inherit choice from an older model-only setting."""
+    return role in _judge_choices()
+
+
+def _judge_choices() -> dict[str, Any]:
     value: Any = conf.resolve(
-        "fleet.judges", env="CLIO_FLEET_JUDGES", default={}, cast=lambda raw: raw
+        "fleet.judges",
+        env="CLIO_FLEET_JUDGES",
+        default={},
+        cast=lambda raw: json.loads(raw) if isinstance(raw, str) else raw,
     )
-    return isinstance(value, dict) and role in value
+    if not isinstance(value, dict) or value.keys() - set(ROLES):
+        raise ValueError("Fleet judges must map goals, variants or permissions to a model or null")
+    return value
 
 
 class JudgeModel(BaseModel):
@@ -46,18 +55,11 @@ class FleetUpdate(BaseModel):
 
 def fleet_settings() -> dict[str, Any]:
     """Read effective choices without exposing credentials."""
-    raw = {
-        role: conf.resolve(
-            f"fleet.judges.{role}",
-            env=f"CLIO_FLEET_JUDGE_{role.upper()}",
-            default=None,
-            cast=lambda value: value,
-        )
-        for role in ROLES
-    }
+    raw = _judge_choices()
     judges = {
         role: JudgeModel.model_validate(value).model_dump() if value is not None else None
-        for role, value in raw.items()
+        for role in ROLES
+        for value in [raw.get(role)]
     }
     revision = hashlib.sha256(json.dumps(judges, sort_keys=True).encode()).hexdigest()
     return {"revision": revision, "judges": judges}

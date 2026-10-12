@@ -288,10 +288,8 @@ def _check_bounds(app: Any, sid: str, loop: dict[str, Any]) -> str:
     """Return the typed stop reason for the FIRST tripped bound, or ``""``.
 
     Evaluated against ``loop``'s already-incremented ``iteration`` and the live session
-    token/cost rollup. Order: iters -> wall-clock -> tokens/usd. (The goal compose is
-    LLM-only and lives in the ``turn_finalize`` glue: a judge-met goal stops the loop with
-    ``loop_goal_met`` — the loop cannot cheaply/authoritatively decide an NL condition
-    here, A4 #1057.)"""
+    token/cost rollup. Order: iters -> wall-clock -> tokens/usd. Goal evaluation is
+    independent; goal completion never stops this monitoring loop."""
 
     max_iters = int(loop.get("max_iters") or 0)
     if max_iters > 0 and int(loop.get("iteration", 0)) >= max_iters:

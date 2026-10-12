@@ -1,5 +1,9 @@
 # Long-horizon conversation controls: bounded live acceptance
 
+> Historical acceptance of the previous capped, paired controls. The updated
+> independent, unlimited-by-default semantics and new qualification evidence are
+> documented in [Independent controls acceptance](independent-controls-2026-10-12.md).
+
 Date: October 11, 2026. Base: develop `d66de87a7a4c00e4160ef1445c8e7e3b049d56a0`.
 Scope: ordinary conversations, goals, loops, scheduler admission, limits and recovery.
 Task/subagent ownership and scientific optimization are excluded.
