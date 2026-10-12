@@ -339,7 +339,7 @@ def main() -> int:
     parser.add_argument("--provider", choices=["codex", "claude_code"], default="codex")
     parser.add_argument("--transport", choices=["websocket", "sse"], default="websocket")
     parser.add_argument(
-        "--suite", choices=["workflows", "subagents", "subagent-human"], default="workflows"
+        "--suite", choices=["workflows", "subagents", "subagent-human", "ui"], default="workflows"
     )
     parser.add_argument("--port", type=int, default=18862)
     parser.add_argument("--repeats", type=int, default=5)
@@ -462,10 +462,16 @@ def main() -> int:
                 result = cycle(call, root, wid, packs, number)
             else:
                 from _lifecycle_human_controls import human_control_cycle
+                from _lifecycle_ui import ui_cycle
                 from subagent_lifecycle import lifecycle_cycle
 
-                run_cycle = lifecycle_cycle if args.suite == "subagents" else human_control_cycle
-                raw = run_cycle(call, root, wid, packs[0], number, server.pid)
+                if args.suite == "ui":
+                    raw = ui_cycle(call, root, wid, packs[0], server.pid)
+                else:
+                    run_cycle = (
+                        lifecycle_cycle if args.suite == "subagents" else human_control_cycle
+                    )
+                    raw = run_cycle(call, root, wid, packs[0], number, server.pid)
                 # Keep bounded identities/verdicts; full transient records are
                 # removed with the run root, including each helper's snapshots.
                 result = {
@@ -481,6 +487,8 @@ def main() -> int:
                             "successor",
                             "cancelled_process",
                             "cancelled_process_absent",
+                            "worker_absent",
+                            "browser",
                         )
                         if key in raw
                     },
