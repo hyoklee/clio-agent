@@ -3,11 +3,40 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from pathlib import Path
 from typing import Any
 
 import _common as common
 import _lifecycle_evidence as evidence
+
+
+def provider_failure_receipt(root: Path) -> dict[str, Any]:
+    """Retain public discovery verdicts without credentials or full service logs."""
+    path = root / "clio-home/data/model_catalog.json"
+    if not path.exists():
+        return {"overlay_present": False}
+    overlay = json.loads(path.read_text())
+    return {
+        "overlay_present": True,
+        "providers": {
+            provider: {
+                "model_count": len(entry.get("models", [])),
+                **{
+                    key: str(entry.get(key, ""))[:1200]
+                    for key in (
+                        "source",
+                        "generated_at",
+                        "last_attempt_at",
+                        "failed_reason",
+                        "default_model",
+                    )
+                },
+            }
+            for provider, entry in overlay.items()
+            if provider in {"codex", "claude_code"} and isinstance(entry, dict)
+        },
+    }
 
 
 def failure_receipts(call: Any, root: Path) -> list[dict[str, Any]]:

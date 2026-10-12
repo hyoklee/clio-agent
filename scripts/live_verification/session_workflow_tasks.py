@@ -27,7 +27,7 @@ import _lifecycle_evidence as evidence
 import psutil
 import yaml
 from _lifecycle_auth import frozen_claude_auth
-from _session_workflow_receipts import failure_receipts, model_receipt
+from _session_workflow_receipts import failure_receipts, model_receipt, provider_failure_receipt
 from agent_async_tasks import frozen_codex_auth
 
 CORE = Path(__file__).resolve().parents[2]
@@ -505,6 +505,10 @@ def main() -> int:
         report.update(
             error=f"{type(exc).__name__}: {exc}", traceback=traceback.format_exc()[-6000:]
         )
+        try:
+            report["provider_failure"] = provider_failure_receipt(root)
+        except (OSError, ValueError) as diagnostic_error:
+            report["provider_failure_error"] = str(diagnostic_error)[:600]
         if call is not None:
             try:
                 report["failure_context"] = failure_receipts(call, root)
