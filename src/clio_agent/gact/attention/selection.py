@@ -103,23 +103,36 @@ def prompt_opens_thinking(prompt_text: str) -> bool:
     return prompt_text.rstrip().endswith(THINK_OPEN)
 
 
-def _reasoning_offset(
-    renderer: ChatRenderer, reasoning: str, content: str, opened: bool = False
-) -> int | None:
-    """Token count of the generated ``[<think>]reasoning</think>`` before the content, or None.
+#: Whitespace a reasoning parser may strip between the reasoning and ``</think>``.
+_THINK_SEPARATORS = ("", "\n", "\n\n")
 
-    ``<think>`` is part of the generated text unless the prompt pre-opened it.
-    None when the delimiters are not single tokens of this tokenizer or the
-    rebuilt text does not tokenize as prefix + content (no clean boundary).
+
+def _reasoning_offset(
+    renderer: ChatRenderer,
+    reasoning: str,
+    content: str,
+    opened: bool = False,
+    decode_steps: int | None = None,
+) -> tuple[int, str] | None:
+    """``(tokens, separator)`` of the generated ``[<think>]reasoning<sep></think>`` prefix, or None.
+
+    ``<think>`` is generated unless the prompt pre-opened it. The parser may have
+    stripped whitespace before ``</think>``: a separator is accepted only when the
+    rebuilt output re-tokenizes to the capture's step count (``decode_steps``,
+    stop row included or not). None when the delimiters are not single tokens or
+    no rebuild tokenizes as prefix + content (no clean boundary).
     """
     if any(len(renderer.encode(tag).ids) != 1 for tag in (THINK_OPEN, THINK_CLOSE)):
         return None
     lead = "" if opened else THINK_OPEN
-    prefix = renderer.encode(lead + reasoning + THINK_CLOSE).ids
-    full = renderer.encode(lead + reasoning + THINK_CLOSE + content)
-    if full.ids != [*prefix, *renderer.encode(content).ids]:
-        return None
-    return len(prefix)
+    tail = renderer.encode(content).ids
+    for sep in _THINK_SEPARATORS:
+        prefix = renderer.encode(lead + reasoning + sep + THINK_CLOSE).ids
+        if renderer.encode(lead + reasoning + sep + THINK_CLOSE + content).ids != [*prefix, *tail]:
+            continue
+        if decode_steps is None or decode_steps in (len(prefix) + len(tail), len(prefix) + len(tail) + 1):
+            return len(prefix), sep
+    return None
 
 
 def output_steps(
@@ -147,12 +160,15 @@ def output_steps(
     encoded = renderer.encode(content)
     n = len(encoded.ids)
     offset = 0
+    separator = ""
     if (record.decode_steps not in (n, n + 1) or source == "reasoning") and reasoning:
-        prefix = _reasoning_offset(renderer, reasoning, content, opened)
-        if prefix is not None and record.decode_steps in (prefix + n, prefix + n + 1):
-            offset = prefix
+        found = _reasoning_offset(renderer, reasoning, content, opened, record.decode_steps)
+        if found is not None:
+            offset, separator = found
     if source == "reasoning":
-        return _reasoning_steps(renderer, reasoning or "", out_lo, out_hi, record, offset, opened)
+        return _reasoning_steps(
+            renderer, reasoning or "", out_lo, out_hi, record, offset, opened, separator
+        )
     if record.decode_steps not in (offset + n, offset + n + 1):
         raise AttentionUnavailable(
             "output_alignment_mismatch",
@@ -180,6 +196,7 @@ def _reasoning_steps(
     record: AttentionRecord,
     prefix: int,
     opened: bool,
+    separator: str = "",
 ) -> StepSpan:
     """Steps of a span inside the reasoning, once the whole output aligned (``prefix`` > 0)."""
     if not prefix:
@@ -190,7 +207,7 @@ def _reasoning_steps(
         )
     lead = "" if opened else THINK_OPEN
     encoded = renderer.encode(lead + reasoning)
-    closed = renderer.encode(lead + reasoning + THINK_CLOSE).ids
+    closed = renderer.encode(lead + reasoning + separator + THINK_CLOSE).ids
     if closed[: len(encoded.ids)] != encoded.ids or len(closed) != prefix:
         raise AttentionUnavailable(
             "output_alignment_mismatch",
