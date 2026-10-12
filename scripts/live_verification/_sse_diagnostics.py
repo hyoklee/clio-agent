@@ -24,7 +24,10 @@ def install(path: Path) -> None:
             with lock:
                 state["lines"] += 1
                 state["max_line_bytes"] = max(state["max_line_bytes"], len(raw))
-                if len(raw) > 32768 and len(state["large_lines"]) < 20:
+                largest = state["large_lines"]
+                if len(raw) > 32768 and (
+                    len(largest) < 20 or len(raw) > min(row["bytes"] for row in largest)
+                ):
                     record: dict[str, Any] = {
                         "bytes": len(raw),
                         "sha256": hashlib.sha256(raw).hexdigest(),
@@ -48,7 +51,9 @@ def install(path: Path) -> None:
                                         str(key)[:80]: len(json.dumps(item).encode())
                                         for key, item in list(response.items())[:40]
                                     }
-                    state["large_lines"].append(record)
+                    largest.append(record)
+                    largest.sort(key=lambda row: row["bytes"], reverse=True)
+                    del largest[20:]
                 # No transcript, token, tool arguments or authentication retained.
                 path.write_text(json.dumps(state))
             yield raw

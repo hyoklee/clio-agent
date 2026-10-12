@@ -338,6 +338,9 @@ def main() -> int:
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--provider", choices=["codex", "claude_code"], default="codex")
     parser.add_argument("--transport", choices=["websocket", "sse"], default="websocket")
+    parser.add_argument(
+        "--suite", choices=["workflows", "subagents", "subagent-human"], default="workflows"
+    )
     parser.add_argument("--port", type=int, default=18862)
     parser.add_argument("--repeats", type=int, default=5)
     args = parser.parse_args()
@@ -350,7 +353,12 @@ def main() -> int:
     workspace = root / "workspace"
     workspace.mkdir()
     (workspace / "sentinel.txt").write_text("Actual independent filesystem observation")
-    report: dict[str, Any] = {"pass": False, "provider": args.provider, "cycles": []}
+    report: dict[str, Any] = {
+        "pass": False,
+        "provider": args.provider,
+        "suite": args.suite,
+        "cycles": [],
+    }
     if args.report.exists():
         prior = json.loads(args.report.read_text())
         report["previous_attempt"] = {
@@ -410,14 +418,60 @@ def main() -> int:
         assert common.wait_health(call, max_elapsed=120)
         wid = common.create_workspace(call, "Distinct task workflow qualification", workspace)
         common.allow_all(call)
-        packs = [blueprint(call, workspace, wid, role) for role in ("observer", "producer")]
+        if args.suite == "workflows":
+            packs = [blueprint(call, workspace, wid, role) for role in ("observer", "producer")]
+        else:
+            pack = common.materialize_testing_pack(
+                CORE / "scripts/live_verification/agents/task-subagent-testing", workspace, {}
+            )
+            if args.provider == "claude_code":
+                for expert in (pack / "experts").glob("*.md"):
+                    with expert.open("a") as prompt:
+                        prompt.write(
+                            "\nInvoke CLIO tools through the complete fenced tool_calls protocol "
+                            "in the system instructions. Include the opening ```tool_calls fence, "
+                            "JSON call list and closing ``` fence; bare JSON invokes no tool.\n"
+                        )
+            packs = [common.install_blueprint(call, pack, wid)["id"]]
         call("PUT", "/v1/providers/lm", selection)
         evidence.require(
             lambda: call("GET", "/v1/providers/lm").get("state") == "ready", "real provider ready"
         )
         report["model"] = selection
         for number in range(1, args.repeats + 1):
-            report["cycles"].append(cycle(call, root, wid, packs, number))
+            if args.suite == "workflows":
+                result = cycle(call, root, wid, packs, number)
+            else:
+                from _lifecycle_human_controls import human_control_cycle
+                from subagent_lifecycle import lifecycle_cycle
+
+                run_cycle = lifecycle_cycle if args.suite == "subagents" else human_control_cycle
+                raw = run_cycle(call, root, wid, packs[0], number, server.pid)
+                # Keep bounded identities/verdicts; full transient records are
+                # removed with the run root, including each helper's snapshots.
+                result = {
+                    "pass": raw["pass"],
+                    "cycle": number,
+                    "identities": {
+                        key: raw[key]
+                        for key in (
+                            "parent",
+                            "child",
+                            "original",
+                            "shell",
+                            "successor",
+                            "cancelled_process",
+                            "cancelled_process_absent",
+                        )
+                        if key in raw
+                    },
+                    "invocations": [
+                        value["invocation"]["payload"]["call_id"]
+                        for value in raw.values()
+                        if isinstance(value, dict) and isinstance(value.get("invocation"), dict)
+                    ],
+                }
+            report["cycles"].append(result)
             print(json.dumps(report["cycles"][-1]), flush=True)
         report["pass"] = True
     except Exception as exc:
