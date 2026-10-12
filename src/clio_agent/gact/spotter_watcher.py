@@ -472,9 +472,35 @@ def sync_watcher_for_mode(
         refusal = validate_watcher_arming(app, session_id=session.id)
         if refusal is not None:
             refuse_watcher_arming(app, session, refusal, prior_approval_mode=prior_approval_mode)
-        ensure_spotter_watcher(app, session)
+        task = ensure_spotter_watcher(app, session)
+        if task is not None:
+            _wake_on_arm(app, session, task)
     elif left_spotter_ai:
         disarm_spotter_watcher(app, session)
+
+
+def _wake_on_arm(app: "FastAPI", session: "Session", task: "AgentTask") -> None:
+    """Review what already happened when a user arms SPOTTER mid-session.
+
+    A user typically switches to SPOTTER review because they noticed something in
+    the conversation so far; a watcher that only waits for the NEXT activity would
+    say nothing about it. A fresh session (no completed turn) keeps the standing
+    default: armed and idle until the first push. Facts only, like every wake.
+    """
+    messages = app.state.messages.get(session.id, []) or []
+    turns = sum(1 for message in messages if getattr(message, "role", "") == "assistant")
+    if not turns:
+        return
+    logger.info("spotter_wake_on_arm session=%s turns=%d", session.id, turns)
+    trace.event("SPOTTER", "spotter_wake_on_arm session=%s turns=%d", session.id, turns)
+    _push_wake(
+        app,
+        session.id,
+        task,
+        f"SPOTTER was armed on a session that already has {turns} completed turn(s). "
+        "Their model calls, tool activity and attention captures may already be in the "
+        "provenance stores.",
+    )
 
 
 def disarm_spotter_watcher(
