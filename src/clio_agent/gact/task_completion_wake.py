@@ -82,6 +82,16 @@ def _wake_idle_session(app: Any, sid: str) -> None:
     if child_task is not None and child_task.is_terminal:
         return
     try:
+        from clio_agent.gact.goal import _get_goal
+        from clio_agent.gact.goal_wait import waiting_on_tasks
+
+        goal = _get_goal(app, sid)
+        if (
+            goal.get("active")
+            and goal.get("phase") == "waiting"
+            and waiting_on_tasks(app, sid, goal)
+        ):
+            return  # Keep partial results durable until the declared any/all dependency is ready.
         handles = _pending_handles(app, sid)
         attempted = getattr(app.state, "task_completion_wake_attempts", None)
         if attempted is None:

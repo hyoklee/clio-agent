@@ -477,7 +477,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # Ratchet down 2469 -> 2467 (naming reversal): removed the now-unneeded
     # codex->chatgpt boot migration call (the provider id never changed).
     # Ratchet down 2435 -> 2419: the transcript-store boot moved to gact/transcript_file.py.
-    "src/clio_agent/gact/app.py": 2403,
+    "src/clio_agent/gact/app.py": 2385,
     # #971 GAP A (S5 live gate): the artifact mint funnel was at the 800 cap; +24
     # adds the designation-by-RESULT channel (ndp_stage_resource writes an
     # intermediate whose path rides only ``local_path`` in the result — the arg
@@ -579,7 +579,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # gact/agent_blueprint_requires.py (install_refusal_http_exception,
     # path_activation_invalid_http_exception) instead of building the
     # ErrorEnvelope inline here.
-    "src/clio_agent/gact/routes/catalog.py": 898,  # +4: /goal command dispatch wiring (#1080; logic in gact/goal.py)
+    "src/clio_agent/gact/routes/catalog.py": 830,  # +4: /goal command dispatch wiring (#1080; logic in gact/goal.py)
     # #1201 (adversarial review, PR #1202): +6 for two direct-connect era-
     # classification call sites (call_external_mcp_tool + _external_mcp_inventory's
     # prompt/list branches) -- the classification logic itself lives in the owner
@@ -707,7 +707,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # gact/compaction.py::compact_session_context (one operation, two triggers); the
     # whole manual-compact body, gact/compact_memory.py's import, and the dead
     # session_archives snapshot are gone -- 1407 -> 1176.
-    "src/clio_agent/gact/routes/sessions.py": 1094,  # shared question cancellation settlement
+    "src/clio_agent/gact/routes/sessions.py": 1028,  # fork route has its own owner
     # #1215 S5: crossed the 800 new-file cap (793 -> 809) for enrich_turn_context —
     # a thin timed combinator wrapping the TWO existing enrichment calls
     # (_enrich_with_context_files + _enrich_with_requested_memory_search) in ONE
@@ -873,7 +873,6 @@ RATCHET_BASELINE: dict[str, int] = {
     # gact/stream_fallbacks.py, only the stamp lands here.
     # 861 -> 856 (#1333): the GOAL judge step moved to turn_finalize_goal.py (awaited).
     # 856 -> 839 (#1334): file_diff indexing moved to the guarded diff_ledger.py owner.
-    "src/clio_agent/gact/turn_finalize.py": 814,  # Interaction pause ownership moved to user_question_pause.py.; #1333: 837 -> 835, context_usage_by_scope moved to turn_usage.context_usage_metadata_patch; 835 -> 814: terminal status publish moved to turn_settle_status.py (runs on slot release)
     # (claude_code_sessions.py's entry retired: 771 lines, back under the flat 800 cap.)
     # #900: +2 for wiring probe_process_tree into the doctor collect().
     # owner ruling 2026-07-14: +3 for the DEGRADED-by-policy local-ARC doctor row.

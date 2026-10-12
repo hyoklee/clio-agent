@@ -104,9 +104,9 @@ BACKEND_COMMANDS: list[dict[str, Any]] = [
         "id": "/loop",
         "title": "Start an autonomous loop",
         "description": (
-            "Re-drive this session repeatedly toward continued work: /loop [interval] "
-            "<prompt>. Self-paced, hard-bounded (iters/wall-clock/tokens/no-progress), "
-            "and cancelled when the session ends. Never runs away."
+            "Repeat monitoring: /loop [interval] [--max-iters=N] [--max-hours=N] "
+            "<prompt>. Optional --max-tokens=N and --max-usd=N. "
+            "Optional --stop-text=DONE. Zero limits mean unlimited. /loop stop ends this loop."
         ),
         "source": "builtin",
         "status": "available",
@@ -125,9 +125,9 @@ BACKEND_COMMANDS: list[dict[str, Any]] = [
         "id": "/goal",
         "title": "Set a run-until goal condition",
         "description": (
-            "Gate completion on a condition: /goal <condition>. Re-drives while unmet, "
-            "auto-clears when satisfied, hard-bounded (max_goal_iters/budget). Evaluation is "
-            "the bounded LLM judge; the bounds are the hard stops. /goal clear to remove."
+            "Set a finishing condition: /goal [--max-iters=N] [--max-hours=N] "
+            "[--max-tokens=N] <objective>. Starts work immediately and keeps pursuing it. "
+            "An independent judge checks completion. Zero limits mean unlimited. /goal clear stops it."
         ),
         "source": "builtin",
         "status": "available",

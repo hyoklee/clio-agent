@@ -65,6 +65,23 @@ def _work_row(record: Mapping[str, Any], kind: str, current_id: str) -> dict[str
         "created_at": str(record.get("created_at") or ""),
         "iterations": int(record.get("iters_elapsed" if kind == "goal" else "iteration") or 0),
         "reason": str(record.get("clear_reason" if kind == "goal" else "stop_reason") or ""),
+        "phase": str(record.get("phase") or state),
+        "details": {
+            name: record[name]
+            for name in (
+                "max_goal_iters",
+                "max_iters",
+                "max_wallclock_s",
+                "max_tokens",
+                "max_usd",
+                "interval_s",
+                "stop_text",
+                "waiting_tasks",
+                "judge_reason",
+                "progress",
+            )
+            if name in record
+        },
     }
 
 

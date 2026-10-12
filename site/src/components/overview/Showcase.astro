@@ -1,47 +1,52 @@
 ---
 import Showcase from './Showcase';
 import { captureImage } from '@/lib/captures';
-import figure from '@/assets/captures/opal-figure-viewer.png';
-import report from '@/assets/captures/opal-report-review.png';
-import evidence from '@/assets/captures/opal-review-evidence.png';
+import figure from '@/assets/captures/current-report.png';
+import dashboard from '@/assets/captures/current-dashboard.png';
+import activity from '@/assets/captures/current-data.png';
 
 const items = await Promise.all([
 	{
 		id: 'figures' as const,
-		label: 'Figures',
-		title: 'Read the figure. Check the interpretation.',
-		description: 'Open a result at full size, with its axes, units and uncertainty intact.',
-		href: '/docs/widgets/linked-data/',
-		link: 'Explore linked data',
-		image: figure,
-		alt: 'CLIO’s full-size image viewer showing six OPAL plant growth curves with units, dates and interquartile bands',
-		caption: 'Development preview: OPAL plant area by recorded label. The bands show interquartile ranges; the labels are not confirmed treatment doses.',
-	},
-	{
-		id: 'documents' as const,
-		label: 'Documents',
-		title: 'Review a report beside the conversation.',
-		description: 'Keep editable Word and PowerPoint files, and inspect their rendered PDF previews.',
+		label: 'Files',
+		title: 'Keep the findings with their source files.',
+		description: 'Preview a report, inspect its versions and follow the evidence behind its conclusions.',
 		href: '/docs/examples/reports-and-slides/',
-		link: 'Open the worked example',
-		image: report,
-		alt: 'A CLIO session reviewing a three-page OPAL Word report with the rendered first page open beside the answer',
-		caption: 'Development preview: a real review session publishing an existing three-page Word report and an 11-slide deck with PDF previews. The example includes the editable files and a recording.',
+		link: 'Explore file workflows',
+		image: figure,
+		alt: 'Current CLIO file viewer showing the complete fictional bike findings report, its limitations and source filenames',
+		caption: 'Synthetic worked example: the report distinguishes dock counts from trips and keeps its limitations beside the finding. Authored through CLIO’s production tools; no model run.',
 	},
 	{
-		id: 'evidence' as const,
+		id: 'dashboards' as const,
+		label: 'Dashboards',
+		title: 'Explore a connected report, then inspect its data.',
+		description: 'Keep the finding, time series, station comparison, map and exact records together.',
+		href: '/docs/dashboards/',
+		link: 'Build a dashboard',
+		image: dashboard,
+		alt: 'Current CLIO dashboard showing morning bike availability, station balances, a linked map and the complete five-station table',
+		caption: 'Synthetic worked example, authored through CLIO’s production tools for this walkthrough. Fictional counts and locations illustrate the workflow; this is not a new model run.',
+	},
+	{
+		id: 'activity' as const,
 		label: 'Evidence',
-		title: 'Follow the files and steps behind a result.',
-		description: 'Inspect recorded tool calls, source documents and output artifacts in the same workspace.',
-		href: '/docs/memory-and-evidence/',
-		link: 'Understand the evidence',
-		image: evidence,
-		alt: 'CLIO’s Evidence panel beside the OPAL review, showing 21 tool calls, two source documents and two artifacts',
-		caption: 'Development preview: the same document review, with its recorded evidence open. Sources and artifacts are separate; the source filenames remain inspectable.',
+		title: 'Find the files behind the result.',
+		description: 'Open the source table, derived balances, findings and dashboard from one evidence record.',
+		href: '/docs/evidence/#data-and-work',
+		link: 'Inspect a run',
+		image: activity,
+        alt: 'Current CLIO Evidence view showing all six registered files for the fictional bike walkthrough',
+		caption: 'The same synthetic example, with all six registered files visible. Open an artifact to inspect its preview, versions and recorded lineage.',
 	},
 ].map(async (item) => ({ ...item, image: await captureImage(item.image) })));
 ---
 
 <section class="not-content" aria-label="Inside the CLIO workspace">
+	<p class="capture-edition">Current development UI · captured 10 October 2026</p>
 	<Showcase client:load items={items} />
 </section>
+
+<style>
+	.capture-edition { color: var(--muted); font-size: .8rem; margin: 0 0 .75rem; }
+</style>

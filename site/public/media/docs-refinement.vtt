@@ -1,0 +1,22 @@
+WEBVTT
+
+00:00.000 --> 00:06.050
+Request user-judged refinement: one draft at a time. Typing plays at 2x speed.
+
+00:06.050 --> 00:08.520
+CLIO writes the first candidate. Actual generation plays at 2x speed.
+
+00:08.520 --> 00:12.500
+Read Draft 1. Refinement starts with one candidate, rather than independent alternatives.
+
+00:12.500 --> 00:20.800
+Enter a comment: use plain language, preserve the figures, and explain the limits of the snapshots.
+
+00:20.800 --> 00:23.800
+Click Refine Draft 1. CLIO uses this draft and your feedback to write the revision.
+
+00:23.800 --> 00:29.800
+Draft 2 says Refined from Draft 1. Check its clearer wording and the added limit on journey inference.
+
+00:29.800 --> 00:35.160
+Leave the comment empty and click Pick Draft 2 to accept the revised introduction.

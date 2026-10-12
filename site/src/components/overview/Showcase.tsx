@@ -1,10 +1,10 @@
-import { ArrowRight, ChartNoAxesCombined, FileText, Layers } from 'lucide-react';
+import { ArrowRight, FileText, LayoutDashboard, Files } from 'lucide-react';
 import { useState } from 'react';
 import Capture, { type CaptureImage } from './Capture';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 export interface ShowcaseItem {
-	id: 'figures' | 'documents' | 'evidence';
+	id: 'figures' | 'dashboards' | 'activity';
 	label: string;
 	title: string;
 	description: string;
@@ -15,11 +15,11 @@ export interface ShowcaseItem {
 	caption: string;
 }
 
-const icons = { figures: ChartNoAxesCombined, documents: FileText, evidence: Layers };
+const icons = { figures: FileText, dashboards: LayoutDashboard, activity: Files };
 
 /** Real product captures with keyboard-accessible tabs and full-size viewing. */
 export default function Showcase({ items }: { items: ShowcaseItem[] }) {
-	const [active, setActive] = useState('documents');
+	const [active, setActive] = useState('dashboards');
 	return (
 		<Tabs value={active} onValueChange={(value) => setActive(String(value))} className="product-showcase">
 			<TabsList aria-label="Explore the CLIO workspace" activateOnFocus variant="line" className="showcase-tabs">
@@ -37,7 +37,7 @@ export default function Showcase({ items }: { items: ShowcaseItem[] }) {
 						</div>
 						<a href={item.href}>{item.link}<ArrowRight aria-hidden="true" size={16} /></a>
 					</div>
-					<Capture image={item.image} alt={item.alt} caption={item.caption} priority={item.id === 'documents'} sizes="(min-width: 80rem) 76rem, 100vw" />
+					<Capture image={item.image} alt={item.alt} caption={item.caption} priority={item.id === 'dashboards'} sizes="(min-width: 80rem) 76rem, 100vw" />
 				</TabsContent>
 			))}
 		</Tabs>

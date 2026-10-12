@@ -4,7 +4,9 @@ description: Start sessions in a workspace, pick an agent blueprint, set how muc
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
-import WidgetRecording from '../../../components/WidgetRecording.astro';
+import { Image } from 'astro:assets';
+import messagePreview from '../../../assets/captures/docs-message-preview.png';
+import markedMessages from '../../../assets/captures/docs-marked-messages.png';
 
 A workspace is a folder on your computer that CLIO treats as one body of work. A session is one conversation with an agent inside a workspace. Files the agent reads and creates, and the evidence recorded for them, stay attached to the session that produced them.
 
@@ -53,7 +55,7 @@ In Plan and Deep research, tools that write are refused. Plan mode may still wri
 |---|---|
 | Ask first | Pause before protected actions. |
 | Workspace edits | Make workspace edits without a separate confirmation. |
-| AI review | Continue when automated review accepts the action. |
+| AI review | Continue for none, low or medium risk; ask you for high risk or an unavailable review. |
 | SPOTTER review | Require the configured SPOTTER policy. |
 | Bypass checks | Do not stop for supported action checks. |
 
@@ -82,16 +84,52 @@ While the agent works, the transcript shows its steps as they happen: tool calls
 
 - Evidence: files read, changed files, and artifacts.
 - Timeline: every step in order.
-- Gantt: the main agent, child agents, and tool calls over time, with a "Background work" section for activity that continues outside the main thread.
+- Gantt: recorded execution timing and tool calls. Conversations with user branches start with their family's recorded responses and branch points. **Relationships** swaps to the navigable conversation graph. See [branch and rewind](/docs/branch-and-rewind/#find-and-compare-related-conversations) for screenshots and examples.
 - Context: what is in the agent's working context.
 
-The status bar at the bottom of the window shows whether anything is running. See [Memory and evidence](/docs/memory-and-evidence/) for how to read each tab.
+The status bar at the bottom of the window shows whether anything is running. See [Evidence and lineage](/docs/evidence/) for how to read each tab.
 
 Expert agents run as child sessions. Open one to see its own transcript, and use the back arrow in its header, labeled "Return to parent conversation", to return.
 
 Use **+ → Attach** to [add files, folders, or connected data](/docs/files/attach/). Use **+ → Reference**, or type **@**, to [point to existing files and evidence](/docs/files/references/). Inspect the selected items before sending; [downloads and links](/docs/files/download-or-link/) have different rules for edits.
 
+## Find and mark messages
+
+The slim rail on the left of the conversation helps you find an earlier message.
+Point to a line to see a **short bold title** and a few lines of context; select
+the line to jump there. A question's preview includes the following answer when
+one is available. These are excerpts of the recorded conversation, not new
+AI-generated summaries.
+
+<figure>
+  <Image src={messagePreview} alt="Message rail preview with a bold title, two lines of answer context, and a filled bookmark button" />
+  <figcaption>A filled bookmark means this message is saved in your marked list.</figcaption>
+</figure>
+
+Choose the bookmark in a preview, or **Mark message** beside a message's other
+actions. The bookmark above the rail opens **Marked messages**; select an entry
+to return to it. On a narrow window, open **Transcript outline** and choose
+**Marked**. Choose **Unmark message** to remove a mark.
+
+<figure>
+  <Image src={markedMessages} alt="Marked messages list opened from the bookmark above the conversation rail" />
+  <figcaption>Each entry keeps its title and a short excerpt, so you can choose where to return.</figcaption>
+</figure>
+
+Marks are saved **with the conversation** and appear in other CLIO clients and
+session exports. An exported HTML review shows the bookmark beside marked
+messages; importing the transcript preserves them. Branching copies marks on
+the copied messages, and each branch can change its marks independently.
+Rewind and undo remove marks for messages they discard. Marking a message
+does not add it to the model's context or change its content.
+
+These screenshots show the development build, using recorded Codex/Luna
+responses about fictional calibration readings.
+
 ## Steer or stop a run
+
+For repeated work with a finishing condition, delays and explicit limits, see
+[Goals and long-running work](/docs/long-running-work/).
 
 For alternative answers, see [Best of N and refinement](/docs/best-of-n/).
 For a report that connects several outputs in the side panel, see
@@ -105,7 +143,10 @@ background work continues and a later result can wake the agent again. Use
 **Cancel task** to stop that work, or **Pause** to hold a subagent's model while
 its accepted tasks continue. See [Subagent controls](/docs/tasks/subagents/).
 
-The session header also has actions to fork a session, compact its history, share it, and undo.
+To compare another approach, or continue from an earlier message, see
+[Branch and rewind conversations](/docs/branch-and-rewind/). The guide shows both
+controls, their effect on the model's context, and what happens to shared files.
+The session header also has actions to compact its history, share it, and undo.
 
 ## Export a session for someone else
 
@@ -113,10 +154,6 @@ For a scope comparison, the development menu's named checkboxes, and where saved
 files appear, see [Exports and downloads](/docs/exports/).
 
 Open the session's sidebar menu and choose **Export session**, then **Download transcript HTML**. The default is one **Transcript HTML file** with everything needed to read the conversation: tool inputs and outputs, recorded intermediate steps, loaded skill instructions, traces, child-agent work and supported saved views. Styles, scripts and captured images are embedded; there are no companion skill or data files.
-
-<WidgetRecording name="clio-session-export" title="Read and inspect an exported session" caption="Real Opal 1 exports: follow Activity, expand a skill at its original call, read a command and its recorded result, enlarge a saved plot, and find included files." formatLabel="Screenshot walkthrough" timingNote="Five actual archive states with reading pauses; this is an explanation made from screenshots, not a continuous interaction recording." />
-
-[View the short GIF (1.1 MB)](/media/clio-session-export.gif). The video above provides playback controls and a full-screen view.
 
 The review uses the same conversation, **Activity** groups and tool controls as CLIO. Open Activity to follow the recorded work; choose **Full activity view** to inspect every retained step. A skill's **Show more** opens its saved instructions at the call that loaded them. Commands show their inputs and results together, including recorded failures. Nothing is rerun when you inspect it.
 

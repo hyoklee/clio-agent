@@ -1,0 +1,130 @@
+---
+title: Evidence and lineage
+description: Inspect what a run read, changed, and produced, follow artifact lineage, and export its provenance record.
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import evidence from '../../../assets/captures/current-data.png';
+import lineage from '../../../assets/captures/current-lineage.png';
+import { Image } from 'astro:assets';
+
+CLIO records the inputs, actions and outputs of a session so you can check how
+a result was produced. Start with the source files and expanded tool results,
+then follow the artifact versions and declared input relationships.
+
+[Memory and recall](/docs/memory/) has its own guide: finding earlier
+conversation excerpts, understanding session summaries, and checking compaction.
+
+## Data and Work
+
+Use the **Evidence layout** button in the session toolbar to show the compact panels. **Data** contains context usage, sources and artifacts. **Work** contains tool calls and agent activity. You can move these panels to the top or bottom, show both, or hide them to give the transcript more room.
+
+Choose **Open full details** to inspect the record in the canvas. Its tabs are **Evidence**, **Timeline**, **Gantt** and **Context**.
+
+<Image src={evidence} alt="Current CLIO Evidence view listing the synthetic bike example's source table, derived table, findings report and dashboard" />
+
+*Current development UI, captured 10 October 2026. These files were authored through CLIO's production tools for a synthetic walkthrough; this is not a model run.*
+
+### Evidence
+
+Evidence lists what the run touched:
+
+- Files the agent read, and files it proposed to change.
+- Changed files, each with a diff.
+- Artifacts the run created.
+
+### Read a tool result
+
+Expand a tool row in the transcript or Work panel to read its result. Supported tools show a human-readable view, such as a command and its output, an artifact name and version, or an environment summary. Use the information button for recorded arguments and technical result details.
+
+Failures retain their recorded error and exit status. A sandbox launch failure means the command could not start; it does not establish that the command itself ran and failed. Inspect the expanded result before deciding what to retry.
+
+### Timeline and Gantt
+
+**Timeline** lists recorded activity in order, with a named strand for each agent. Select an agent name to filter its activity. Select an event to open its transcript or artifact; child-agent rows open the child conversation.
+
+**Gantt** starts with an overview of agent durations, fitted to the recorded execution interval. Expand an agent to see its tool calls on separate rows. Select a row or bar to read its timing and outcome, then open the related conversation when available. **Fit** restores the execution overview after zooming.
+
+When a conversation has user branches, **Gantt** starts with the conversation
+family: named rows, recorded response durations and saved branch creation
+diamonds. **Execution details** opens the latest execution's tools. The
+**Relationships** button swaps to a navigable ancestry graph, with solid user
+branch arrows and dashed delegated-agent arrows. Select a node to open its
+conversation or fork source. Open an output and choose **Lineage** to trace its
+inputs. See the [branching walkthrough and screenshots](/docs/branch-and-rewind/#find-and-compare-related-conversations).
+
+### Context
+
+The Context tab shows the context the agent is working with, for the agent you select.
+
+### Inspect additions and recovered context
+
+When CLIO adds instructions or recovers earlier conversation context, a receipt appears in the transcript. Choose **Open exact details** to inspect the recorded content in a separate window. You can also expand it in place with **Show what it got**.
+
+Recovery uses the complete saved context records when available, including recorded tool inputs, results and loaded instructions. If only a transcript is available, the receipt identifies that reconstruction and its missing continuation state. A normal restart with retained context does not need a recovery receipt.
+
+The receipt distinguishes a restored context from a reconstructed transcript.
+
+## Changed files and diffs
+
+An agent proposes a file change as a diff. Nothing is written until you approve it. Review the diff, then choose **Apply change** or **Reject change**. A confirmation asks "Apply this file change?" before the write happens, and you can choose **Keep reviewing** instead.
+
+Approving a diff is separate from the permission prompt for tools that write directly. See [Permissions and sandbox](/docs/permissions/).
+
+## Artifacts
+
+When a run produces a file you may want to keep, such as a report or a plot, it is registered as an artifact. Each artifact has:
+
+- A content hash (SHA-256), so you can tell whether a file is the one the run produced.
+- Versions. Changing the artifact creates a new version, and earlier versions are kept.
+- Lineage, which shows the inputs and earlier artifacts it was derived from.
+
+Open an artifact to see a preview and its **Versions** and **Lineage** tabs.
+
+### Follow artifact lineage
+
+Open **Lineage** on the findings report. In this synthetic example, `bike-stations.csv` supplies station snapshots to three independent checks: `station-balance.csv`, `availability-check.csv` and `capacity-check.csv`. Their declared input relationships join in `morning-findings.md`.
+
+<Image src={lineage} alt="Artifact lineage graph with bike-stations.csv, producing actions, station-balance.csv and morning-findings.md connected by Used and Generated edges" />
+
+Read the graph from the source toward the result:
+
+1. **Used** connects an input version to an action that declared it as an input.
+2. **Generated** connects that action to the file it produced.
+3. Select a related artifact to inspect its preview and recorded versions. Use **Fit view** to bring the whole graph into view.
+
+The graph records declared relationships and hashed versions. It does not prove that an interpretation is scientifically correct, and it does not invent missing inputs. An older artifact with no recorded input relationships may appear by itself. That gap remains visible.
+
+## Charts, maps, and tables
+
+Charts, maps, and tables render inside the session. When a series is too large to draw in full, the chart is downsampled and says so, for example "1,000 evenly sampled rows from 857,957 total". Tables show how many rows are visible out of the total. You always see how much of the data the view represents.
+
+## Provenance export
+
+CLIO records provenance for every run. By default it keeps a durable local record in a file-based format (JSONL). To send the record to Flowcept as well, set the list of providers:
+
+```sh
+export CLIO_PROVENANCE_PROVIDERS=jsonl,flowcept
+```
+
+Or in your configuration file:
+
+```yaml
+provenance:
+  agentic:
+    providers: [jsonl, flowcept]
+```
+
+The accepted provider names are `jsonl` and `flowcept`; `file` and `native` are accepted as other names for `jsonl`. Set the path of the JSONL record with `CLIO_PROVENANCE_JSONL_PATH`. To see which providers are active and whether each is healthy, use `GET /v1/provenance/providers`.
+
+<Aside type="note">
+Provenance records describe what the agent did, including network domains contacted and files written. Review them before sharing them outside your team.
+</Aside>
+
+## Next steps
+
+<CardGrid>
+	<LinkCard title="Memory and recall" description="Find earlier decisions and understand where summaries come from." href="/docs/memory/" />
+	<LinkCard title="Sessions and modes" description="Control how much the agent may do on its own." href="/docs/sessions/" />
+	<LinkCard title="Your first analysis" description="See evidence for a real run." href="/tutorials/guides/first-analysis/" />
+</CardGrid>

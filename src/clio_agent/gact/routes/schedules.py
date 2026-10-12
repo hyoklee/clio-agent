@@ -49,6 +49,10 @@ def register_schedules_routes(app: FastAPI, deps: "GactDeps") -> None:
     :mod:`clio_agent.gact.app`, so these handlers only mutate the store.
     """
 
+    from clio_agent.gact.routes.work_controls import register_work_controls_routes
+
+    register_work_controls_routes(app)
+
     @app.get("/v1/sessions/{sid}/work")
     async def session_work(sid: str, cursor: int = Query(default=0, ge=0)) -> dict[str, Any]:
         """Read work state without changing, starting, pausing, or judging work."""
@@ -81,6 +85,7 @@ def register_schedules_routes(app: FastAPI, deps: "GactDeps") -> None:
                 cursor=cursor,
             )
         )
+        snapshot["schedules"] = current_schedules
         return snapshot
 
     @app.get("/v1/sessions/{sid}/schedules")

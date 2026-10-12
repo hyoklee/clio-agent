@@ -63,9 +63,13 @@ export default defineConfig({
 							],
 						},
 						{ label: 'Best of N and refinement', slug: 'docs/best-of-n' },
+						{ label: 'Branch and rewind', slug: 'docs/branch-and-rewind' },
+						{ label: 'Goals and long-running work', slug: 'docs/long-running-work' },
+						{ label: 'Working with files', slug: 'docs/working-with-files' },
 						{ label: 'Dashboards', slug: 'docs/dashboards' },
 						{ label: 'Exports and downloads', slug: 'docs/exports' },
-						{ label: 'Working with files', slug: 'docs/working-with-files' },
+						{ label: 'Evidence and lineage', slug: 'docs/evidence' },
+						{ label: 'Memory and recall', slug: 'docs/memory' },
 						{
 							label: 'Worked examples', collapsed: true,
 							items: [{ label: 'Report and presentation', slug: 'docs/examples/reports-and-slides' }],
@@ -77,10 +81,17 @@ export default defineConfig({
 								{ label: 'Attach files and folders', slug: 'docs/files/attach' },
 								{ label: '@ references', slug: 'docs/files/references' },
 								{ label: 'Connect sources', slug: 'docs/files/connect' },
+								{ label: 'Knowledge source', slug: 'docs/files/knowledge' },
 								{ label: 'Download or link', slug: 'docs/files/download-or-link' },
 								{ label: 'Manage sources', slug: 'docs/files/manage' },
 							],
 						},
+					],
+				},
+				{
+					label: 'Go further',
+					items: [
+						{ label: 'Compare and refine answers', slug: 'docs/best-of-n' },
 						{
 							label: 'Widget gallery',
 							collapsed: true,
@@ -102,7 +113,6 @@ export default defineConfig({
 						{ label: 'Tools and MCP servers', slug: 'docs/mcp-servers' },
 						{ label: 'Permissions and sandbox', slug: 'docs/permissions' },
 						{ label: 'Hooks', slug: 'docs/hooks' },
-						{ label: 'Memory and evidence', slug: 'docs/memory-and-evidence' },
 					],
 				},
 				{

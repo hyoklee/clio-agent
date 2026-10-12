@@ -59,6 +59,9 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         paths.user_config_dir() / "storage-auth" / "credentials.json",
     )
     app.state.connected_storage = service
+    from clio_agent.gact.routes.knowledge import register_knowledge_routes
+
+    register_knowledge_routes(app)
     controller_loop: asyncio.AbstractEventLoop | None = None
     source_changes = asyncio.Lock()
 
@@ -249,6 +252,7 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         definitions = []
         for identifier, label, logo in [
             ("local", "Files on this CLIO", "folder"),
+            ("obsidian", "Obsidian vault", "knowledge"),
             ("sftp", "SSH / SFTP", "ssh"),
             ("google_drive", "Google Drive", "google-drive"),
             ("globus", "Globus", "globus"),
@@ -660,7 +664,7 @@ def register_connected_storage_routes(app: FastAPI) -> None:
                         raise PermissionError(options["reason"])
                     if body.access == "write_through" and not body.confirm_remote:
                         raise ValueError("Confirm that saving edits will update the originals")
-                record.link_access = body.access
+                service.set_link_access(record, body.access)
                 service.store.put("source", source_id, record)
             validate_task_owner(app, wid, body.session_id if body else "")
             return record

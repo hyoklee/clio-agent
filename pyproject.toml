@@ -39,6 +39,7 @@ classifiers = [
 ]
 
 dependencies = [
+    "pyyaml>=6.0.3,<7",
     # Runtime preparation must also work for pip-installed Clio without a host uv.
     "uv>=0.8,<1",
     "truststore==0.10.4",
@@ -65,7 +66,7 @@ dependencies = [
     "fastmcp==4.0.0b5",  # 2026-07-28 line (#1107); b1->b5 beta-track hardening bump (#1285
     # C1-S5 item 5, LAST commit -- everything else verified green on b1 first).
     "fastmcp-tasks==4.0.0b5",
-  "clio-schemas @ git+https://github.com/iowarp/clio-schemas.git@90f55a3b990e9fb7c29aa7aa73b9a410a33d2e2d",
+  "clio-schemas @ git+https://github.com/iowarp/clio-schemas.git@27c9b7fdce041306ee54edb3a58b3e23863cb6b3",
     "pydantic>=2.12,<2.14",
     # A2UI catalog validation: official catalog.json files are validated at runtime
     # with Draft 2020-12 (docs/design/a2ui-compat-campaign-2026-09.md, S2).

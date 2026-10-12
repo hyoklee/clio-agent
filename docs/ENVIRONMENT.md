@@ -114,6 +114,7 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_DEFAULT_WORKSPACE` | `paths.default_workspace` | str | _(unset)_ | `src/clio_agent/gact/workspaces.py` |
 | `CLIO_DOCUMENT_PROCESSOR_URL` | `resources.document_processor_url` | str | _(unset)_ | `src/clio_agent/gact/composer_runtime.py` |
 | `CLIO_ENVIRONMENT` | `runtime.environment` | str | `dev` | `src/clio_agent/config.py` |
+| `CLIO_FLEET_JUDGES` | `fleet.judges` | str | `{}` _(computed)_ | `src/clio_agent/gact/fleet_settings.py` |
 | `CLIO_FLOWCEPT_CAMPAIGN_ID` | `provenance.agentic.flowcept.campaign_id` | str | _(unset)_ | `src/clio_agent/gact/provenance/factory.py` |
 | `CLIO_FLOWCEPT_CAMPAIGN_SCOPE` | `provenance.agentic.flowcept.campaign_scope` | str | `session` | `src/clio_agent/gact/provenance/factory.py` |
 | `CLIO_FLOWCEPT_CHECK_SAFE_STOPS` | `provenance.agentic.flowcept.check_safe_stops` | bool | `true` | `src/clio_agent/gact/provenance/factory.py` |
@@ -284,7 +285,7 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_RESOURCE_UPLOAD_CHUNK_BYTES` | `resources.upload_chunk_bytes` | int | `8388608` | `src/clio_agent/gact/routes/resources.py` |
 | `CLIO_SANDBOX_ENABLED` | `sandbox.enabled` | bool | `true` | `src/clio_agent/runtime/sandbox.py` |
 | `CLIO_SCHEDULER_JITTER_WINDOW_S` | `scheduler.jitter_window_s` | int | `0` | `src/clio_agent/gact/scheduler.py` |
-| `CLIO_SCHEDULER_MAX_LIFETIME_S` | `scheduler.max_lifetime_s` | int | `2592000` | `src/clio_agent/gact/scheduler.py` |
+| `CLIO_SCHEDULER_MAX_LIFETIME_S` | `scheduler.max_lifetime_s` | int | `0` | `src/clio_agent/gact/scheduler.py` |
 | `CLIO_SCHEDULER_MAX_RETRIES` | `scheduler.max_retries` | int | `5` | `src/clio_agent/gact/scheduler.py` |
 | `CLIO_SCHEDULER_MIN_INTERVAL_S` | `scheduler.min_interval_s` | int | `60` | `src/clio_agent/gact/scheduler.py` |
 | `CLIO_SCHEDULER_TZ` | `scheduler.timezone` | str | _(unset)_ | `src/clio_agent/gact/scheduler.py` |
@@ -356,6 +357,7 @@ These deliberately bypass the config store (a shared file must not be able to re
 | `CLIO_GACT_PUBLIC_URL` | unmigrated | `src/clio_agent/gact/documents/editors.py` |
 | `CLIO_KIT_CACHE_DIR` | unmigrated | `src/clio_agent/runtime/disk_gc.py`, `src/clio_agent/runtime/sandbox_cli.py`, `src/clio_agent/tools/desktop_mcp_runtime.py` |
 | `CLIO_LM_API_KEY` | secret | `src/clio_agent/config.py`, `src/clio_agent/providers/model_discovery/overlay.py`, `src/clio_agent/runtime/status.py` |
+| `CLIO_OBSIDIAN_HEADLESS_CLI` | unmigrated | `src/clio_agent/gact/storage/obsidian_sync.py` |
 | `CLIO_ONLYOFFICE_JWT_SECRET` | unmigrated | `src/clio_agent/gact/documents/editors.py` |
 | `CLIO_ONLYOFFICE_URL` | unmigrated | `src/clio_agent/gact/documents/editors.py` |
 | `CLIO_RELAY_API_TOKEN` | secret | `src/clio_agent/tools/relay_factory.py`, `src/clio_agent/tools/relay_transport.py` |

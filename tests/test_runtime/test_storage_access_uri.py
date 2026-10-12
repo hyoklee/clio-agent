@@ -65,3 +65,34 @@ def test_corrupt_ledger_still_refuses_access(
     monkeypatch.setattr(storage_access.paths, "user_data_dir", lambda: tmp_path)
     with pytest.raises(PermissionError, match="access decisions could not be read"):
         storage_access._source_records()
+
+
+def test_vault_is_read_only_and_private_folders_are_denied(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Project persisted vault permissions into generic filesystem and child fences."""
+    vault = tmp_path / "vault"
+    (vault / ".obsidian").mkdir(parents=True)
+    (vault / ".git").mkdir()
+    directory = tmp_path / "data" / "connected-sources"
+    directory.mkdir(parents=True)
+    record = {
+        "source": {"id": "vault", "provider": "obsidian", "root": str(vault)},
+        "connected": True,
+        "configuration": {"obsidian_excluded_folders": ["Private"]},
+    }
+    with sqlite3.connect(directory / "sources.sqlite3") as db:
+        db.execute("CREATE TABLE records (kind TEXT, body TEXT)")
+        db.execute("INSERT INTO records VALUES ('source', ?)", (json.dumps(record),))
+    monkeypatch.setattr(storage_access.paths, "user_data_dir", lambda: tmp_path / "data")
+    monkeypatch.setattr(storage_access.paths, "user_config_dir", lambda: tmp_path / "config")
+    storage_access.check_storage_access(vault / "note.md")
+    with pytest.raises(PermissionError, match="read-only"):
+        storage_access.check_storage_access(vault / "note.md", write=True)
+    for path in (
+        vault / ".obsidian" / "config.json",
+        vault / ".git" / "config",
+        vault / "Private" / "note.md",
+    ):
+        with pytest.raises(PermissionError, match="private"):
+            storage_access.check_storage_access(path)

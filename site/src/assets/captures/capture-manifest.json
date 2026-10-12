@@ -1,0 +1,28 @@
+{
+  "captured": "2026-10-10",
+  "theme": "light",
+  "scale": 1,
+  "agent_base": "99655c3ed31a90efbaaa3873cd8d92e0b1b70eb4",
+  "ui_revision": "d539ce4cf8bf6f2e9665fe1d21adfdeee41c93ce",
+  "synthetic_only": true,
+  "model_run": false,
+  "captures": [
+    {
+      "file": "current-dashboard.png",
+      "sha256": "7dfc940be1255574a2507986f4cbd71069ba1bd307225a0a3ad0bf630bb624a9"
+    },
+    {
+      "file": "current-data.png",
+      "sha256": "be4cc9ecb0851507c93e6dd61ae42fc4739633057694191069d24831cd6a9bcd"
+    },
+    {
+      "file": "current-lineage.png",
+      "sha256": "a9da395161e6755fec8891a33ba2f16603e15e95b482c64c579fd2b9a1d32a4d"
+    },
+    {
+      "file": "current-report.png",
+      "sha256": "a0b4109cbfe2fef59c85a44ecb30f4a16b869614dfa16d0047683ec5f29cf066"
+    }
+  ],
+  "observability_review": "Test-only fictional fixture: four child agents and twelve tool calls, not a model run"
+}

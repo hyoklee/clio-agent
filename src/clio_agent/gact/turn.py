@@ -681,12 +681,21 @@ def _start_background_user_turn(
     require_execution_allowed(app, sid)
     now = time.time()
     user_metadata = dict(metadata or {})
+    from clio_agent.gact.automatic_turn_injection import automatic_turn_injection
+
+    automatic_injection = automatic_turn_injection(user_metadata, user_text)
+    user_parts = (
+        _user_message_parts(
+            request_parts=list(request_parts or []),
+            user_text=user_text,
+        )
+        if automatic_injection is None
+        else [automatic_injection]
+    )
+    if automatic_injection is not None:
+        message_role = "system"
     if message_role == "system":
         user_metadata = {**retained_model_metadata(app, sid), **user_metadata}
-    user_parts = _user_message_parts(
-        request_parts=list(request_parts or []),
-        user_text=user_text,
-    )
     record_context_reference_deliveries(user_metadata, user_parts)
     image_count = sum(1 for part in user_parts if part.type == "image")
     if image_count:

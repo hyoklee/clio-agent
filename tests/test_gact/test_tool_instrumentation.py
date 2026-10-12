@@ -587,6 +587,9 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             "cron_list": {},
             "cron_delete": {"schedule_id": "does-not-exist"},
             "loop_wakeup": {"stop": True},
+            "set_loop": {"prompt": "Monitor a fictional result"},
+            "set_goal": {"condition": "Save the fictional report"},
+            "wait_for": {"tasks": "missing-task"},
             "goal_status": {},
             # No parent AgentTask in this harness -> returns the typed
             # alert_card_no_parent error rather than raising; the tool_call part

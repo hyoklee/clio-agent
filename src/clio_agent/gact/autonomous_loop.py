@@ -1,37 +1,8 @@
-"""Autonomous cross-turn LOOP — self-paced iteration with first-class typed bounds (#1079).
+"""Independent monitoring loops with optional human limits and automatic repetition.
 
-clio has no cross-turn self-paced loop: ``loop_inbox`` injects mid-turn *events*,
-``max_iters`` bounds ONE turn's ReAct steps, and ``workflows`` is a one-way DAG with no
-cycle edge. This module adds the missing primitive — a loop that **re-drives a session's
-turn repeatedly** toward continued work — by **reusing the P4.3 scheduler** (#1081):
-
-* **Self-pace via the scheduler one-shot.** :func:`_arm` schedules the loop's ``prompt``
-  as a ``recurring=False`` / ``delay_s`` one-shot on the SAME
-  :class:`~clio_agent.gact.scheduler.ScheduleStore` cron drives. When it fires,
-  :func:`clio_agent.gact.scheduler_runtime._fire_schedule` stages the prompt as a
-  background user turn (the re-drive seam) exactly like a scheduled cron turn — no
-  parallel scheduler is built. The ``loop_wakeup`` model tool is the self-pace control
-  (the ``ScheduleWakeup`` analog): reschedule yourself after a delay, or ``stop:true``.
-
-* **First-class typed bounds (NOT prose).** :func:`_check_bounds` enforces ``max_iters``,
-  ``max_wallclock_s``, and ``max_tokens`` / ``max_usd`` (token accounting is available via
-  the session rollup). Every stop emits a **typed reason** (:data:`LOOP_STOP_REASONS`, the
-  ``stream_fallback`` catalog convention), never a silent halt.
-
-* **Bounded fallback.** If a loop iteration ends calling NEITHER a fresh ``loop_wakeup``
-  NOR ``stop:true``, :func:`dispatch_loop_at_finalize` schedules exactly ONE fallback
-  wakeup (a fixed delay) and ENDS the loop with ``loop_no_reschedule`` if that iteration
-  also does not reschedule — never an unbounded silent wait.
-
-* **Cancel-both.** A ``stop:true``, a tripped bound, ending/cancelling the session
-  (:func:`stop_session_loop`) — critically for the daemon that outlives clients — and a
-  **restart** (:func:`start_loop` called while a prior loop is still active) all cancel
-  the pending wakeup through :func:`clio_agent.gact.cron_tools.cancel_schedule` (store row
-  + daemon deferred entry), so no orphan wakeup burns tokens unattended.
-
-Loop state lives on ``session.metadata["loop"]`` (#948 pattern — no fifth store). The
-module is a stdlib+leaf: it imports the scheduler cancel helper and context; it never
-imports :mod:`clio_agent.gact.app`.
+The existing scheduler owns each one-shot wakeup. Finalization arms the next
+interval unless the agent already rescheduled or stopped the loop. Zero limits
+mean unlimited; goals have their own continuation and waiting lifecycle.
 """
 
 from __future__ import annotations
@@ -44,28 +15,25 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from clio_agent.gact import context as _ctx
+from clio_agent.gact.autonomy_limits import normalize_limits, parse_limit_options
 from clio_agent.gact.cron_tools import cancel_schedule
 from clio_agent.runtime import trace
 
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
-# Anti-runaway constants. Every loop ALWAYS carries a finite ceiling so it can  #
-# never run away even when the model/user omits a bound (⚑ never-runaway).      #
+# Pacing defaults and optional human limits. Zero limits are unlimited.       #
 # --------------------------------------------------------------------------- #
 #: ``loop_wakeup`` delay clamp window (seconds) — a min-interval floor + a max
 #: ceiling, the field-wide #1 anti-runaway mechanism (Claude ``/loop``: 1-min min).
 WAKEUP_MIN_S = 60
 WAKEUP_MAX_S = 3600
-#: The fixed delay for the single bounded-fallback wakeup.
-FALLBACK_DELAY_S = 60
 #: Default self-pace interval when none is given at ``/loop`` start.
 DEFAULT_INTERVAL_S = 300
-#: Hard iteration ceiling applied when ``max_iters`` is unset (0). A loop with no
-#: explicit iteration bound still terminates.
-DEFAULT_MAX_ITERS = 100
-#: Hard wall-clock ceiling (seconds) applied when ``max_wallclock_s`` is unset.
-DEFAULT_MAX_WALLCLOCK_S = 24 * 60 * 60
+#: Zero means unlimited iterations.
+DEFAULT_MAX_ITERS = 0
+#: Zero means no wall-clock limit.
+DEFAULT_MAX_WALLCLOCK_S = 0
 
 #: Typed stop reasons (the ``stream_fallback`` catalog convention): every loop halt
 #: records exactly one so audit/trace branch on a code, never on prose.
@@ -77,6 +45,12 @@ LOOP_STOP_REASONS = (
     "loop_no_reschedule",  # the bounded fallback fired once and still no reschedule
     "loop_session_ended",  # session end/cancel cancelled the loop (cancel-both)
     "loop_restarted",  # a new start_loop() superseded a still-active prior loop
+    "loop_goal_capped",  # the paired goal exhausted a limit or lost its judge
+    "loop_server_interrupted",  # restart cannot safely replay an interrupted turn
+    "loop_user_cancelled",  # the user's /loop stop cannot be undone by the model
+    "loop_schedule_failed",  # scheduling retries were exhausted
+    "loop_stop_text",
+    "loop_repeated_output",
 )
 
 #: STICKY stop reasons: a loop that halted for one of these hit a HARD bound (the
@@ -86,7 +60,19 @@ LOOP_STOP_REASONS = (
 #: the field pattern (Claude ``/loop``, Codex): a tripped hard bound is a wall the model
 #: cannot self-lift. ``loop_user_stopped`` is deliberately EXCLUDED — the model's own
 #: stop is a decision it may reverse; a bound is not.
-LOOP_STICKY_STOP_REASONS = frozenset({"loop_max_iters", "loop_budget", "loop_session_ended"})
+LOOP_STICKY_STOP_REASONS = frozenset(
+    {
+        "loop_max_iters",
+        "loop_budget",
+        "loop_session_ended",
+        "loop_goal_capped",
+        "loop_server_interrupted",
+        "loop_user_cancelled",
+        "loop_schedule_failed",
+        "loop_stop_text",
+        "loop_repeated_output",
+    }
+)
 
 #: Typed delay-clamp reasons (never a silent clamp).
 CLAMP_FLOOR = "loop_delay_clamped_floor"
@@ -302,12 +288,11 @@ def _check_bounds(app: Any, sid: str, loop: dict[str, Any]) -> str:
     """Return the typed stop reason for the FIRST tripped bound, or ``""``.
 
     Evaluated against ``loop``'s already-incremented ``iteration`` and the live session
-    token/cost rollup. Order: iters -> wall-clock -> tokens/usd. (The goal compose is
-    LLM-only and lives in the ``turn_finalize`` glue: a judge-met goal stops the loop with
-    ``loop_goal_met`` — the loop cannot cheaply/authoritatively decide an NL condition
-    here, A4 #1057.)"""
+    token/cost rollup. Order: iters -> wall-clock -> tokens/usd. Goal evaluation is
+    independent; goal completion never stops this monitoring loop."""
 
-    if int(loop.get("iteration", 0)) >= int(loop.get("max_iters", DEFAULT_MAX_ITERS)):
+    max_iters = int(loop.get("max_iters") or 0)
+    if max_iters > 0 and int(loop.get("iteration", 0)) >= max_iters:
         return "loop_max_iters"
     created = _parse_iso(loop.get("created_at"))
     wall = float(loop.get("max_wallclock_s") or 0.0)
@@ -343,11 +328,11 @@ def start_loop(
     max_wallclock_s: float = 0.0,
     max_tokens: int = 0,
     max_usd: float = 0.0,
+    stop_text: str = "",
 ) -> dict[str, Any]:
     """Initialise loop state on ``session.metadata`` and arm the first wakeup.
 
-    Typed bounds are settable here (the ``/loop`` start); an unset bound (0) resolves to
-    a finite hard default so the loop can never run away. If a PRIOR loop is still active
+    Typed bounds are optional; zero means unlimited. If a PRIOR loop is still active
     on this session (a restart — a user re-issuing ``/loop``, or a model self-initiate
     racing an existing loop), its pending wakeup is cancelled first (``loop_restarted``,
     cancel-both) so the old one-shot never survives as an orphan. ``max_tokens`` /
@@ -358,15 +343,26 @@ def start_loop(
     resolved bounds)."""
 
     text = (prompt or "").strip()
+    try:
+        limits = normalize_limits(
+            {
+                "max_iters": max_iters,
+                "max_wallclock_s": max_wallclock_s,
+                "max_tokens": max_tokens,
+                "max_usd": max_usd,
+            }
+        )
+    except ValueError as exc:
+        raise LoopError(str(exc), reason="loop_invalid_limit") from exc
+    max_iters, max_tokens = int(limits["max_iters"]), int(limits["max_tokens"])
+    max_wallclock_s, max_usd = float(limits["max_wallclock_s"]), float(limits["max_usd"])
     if not text:
         raise LoopError(
             "a loop needs a prompt to re-drive each iteration", reason="loop_missing_prompt"
         )
     delay, _clamp = clamp_delay(interval_s or DEFAULT_INTERVAL_S)
-    eff_iters = int(max_iters) if int(max_iters or 0) > 0 else DEFAULT_MAX_ITERS
-    eff_wall = (
-        float(max_wallclock_s) if float(max_wallclock_s or 0.0) > 0 else DEFAULT_MAX_WALLCLOCK_S
-    )
+    eff_iters = int(max_iters)
+    eff_wall = float(max_wallclock_s)
     loop_id = "loop_" + uuid.uuid4().hex[:12]
 
     # The restart-cancel, fresh-dict write, and first arm are one atomic read-check-write
@@ -396,6 +392,7 @@ def start_loop(
             "loop_id": loop_id,
             "active": True,
             "prompt": text,
+            "stop_text": stop_text.strip(),
             "iteration": 0,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "max_iters": eff_iters,
@@ -447,10 +444,11 @@ def loop_wakeup_impl(
     """Reschedule this session's loop after a delay, or ``stop:true`` to end it.
 
     The model's control door (⚑ RULE 1 — the model decides; clio enforces). On a
-    non-stop call: clamps ``delay_seconds`` (typed reason if clamped), increments the
-    iteration, and — if no typed bound trips — arms the next wakeup (reusing the scheduler
-    one-shot). When a bound trips OR ``stop:true``, the loop ends with a typed reason and
-    the pending wakeup is cancelled (cancel-both). Returns
+    non-stop call: clamps ``delay_seconds`` (typed reason if clamped), counts at most one
+    rescheduling iteration per turn, and — if no typed bound trips — arms the next scheduler
+    one-shot. When a bound trips OR ``stop:true``, the loop ends with a typed reason and
+    the pending wakeup is cancelled. Use set_loop to create a loop; goals continue
+    automatically without a monitoring loop. Returns
     ``{loop_id, next_fire_at, stopped}``.
 
     The read-check-write body runs under :data:`_LOOP_MUTEX` so a concurrent
@@ -462,7 +460,7 @@ def loop_wakeup_impl(
     with _LOOP_MUTEX:
         loop = _get_loop(app, sid)
 
-        # No active loop: the model self-initiates one (the /loop command is the other).
+        # Creating monitoring work is explicit through set_loop or /loop.
         if not loop or not loop.get("active"):
             if stop:
                 return {"loop_id": "", "next_fire_at": "", "stopped": True}
@@ -479,12 +477,9 @@ def loop_wakeup_impl(
                     "be re-armed from loop_wakeup; the user must restart it via /loop.",
                     reason="loop_bound_tripped_rearm_denied",
                 )
-            started = start_loop(app, sid, prompt=prompt, interval_s=delay_seconds)
-            return {
-                "loop_id": started["loop_id"],
-                "next_fire_at": started["next_fire_at"],
-                "stopped": False,
-            }
+            raise LoopError(
+                "No active loop; use set_loop to create monitoring work", reason="loop_not_active"
+            )
 
         loop_id = str(loop.get("loop_id") or "")
         if stop:
@@ -502,7 +497,10 @@ def loop_wakeup_impl(
                 delay,
             )
 
-        loop["iteration"] = int(loop.get("iteration", 0)) + 1
+        turn_id = _ctx.active_turn_id()
+        if not turn_id or loop.get("last_reschedule_turn_id") != turn_id:
+            loop["iteration"] = int(loop.get("iteration", 0)) + 1
+            loop["last_reschedule_turn_id"] = turn_id
 
         stop_reason = _check_bounds(app, sid, loop)
         if stop_reason:
@@ -522,23 +520,15 @@ def loop_wakeup_impl(
 
 
 # --------------------------------------------------------------------------- #
-# Bounded fallback — the turn-end hook (never a silent hang).                    #
+# Automatic next interval — the turn-end hook.                    #
 # --------------------------------------------------------------------------- #
 def dispatch_loop_at_finalize(app: Any, *, session_id: str, turn_id: str = "") -> None:
-    """Bounded-fallback hook, fired once per turn from ``finalize_turn`` (never raises).
+    """Arm the next interval after a fired iteration unless already rescheduled.
 
-    Detection is store-state, needing no turn-start hook: a loop's pending wakeup is a
-    one-shot the scheduler POPS (``mark_fired``) the moment it fires. So at a loop
-    iteration's turn end, the fired wakeup's id is GONE from the store UNLESS the model
-    armed a replacement this turn (a ``loop_wakeup`` reschedule installs a fresh live id).
-    Thus:
-
-    * pending id still resolves -> the model rescheduled (or this ending turn was not the
-      loop iteration and the future wakeup is still queued) -> nothing to decide;
-    * pending id is gone -> the iteration ran and the model armed nothing. If the single
-      fallback was already spent, END with ``loop_no_reschedule``; otherwise arm exactly
-      ONE fixed-delay fallback wakeup (still bound-checked) so a stalled loop gets one
-      bounded retry, never an unbounded silent wait."""
+    A still-pending schedule belongs to a future iteration. An absent one means
+    the iteration completed; count it once and enforce optional limits before
+    arming its successor. Goals and unrelated scheduled turns do not consume it.
+    """
 
     try:
         with _LOOP_MUTEX:
@@ -550,22 +540,23 @@ def dispatch_loop_at_finalize(app: Any, *, session_id: str, turn_id: str = "") -
                 # The armed wakeup is still queued (a fresh reschedule, or a not-yet-fired
                 # future wakeup on an unrelated turn). Nothing to decide.
                 return
-            if loop.get("fallback_pending"):
-                # The one fallback wakeup fired and STILL no reschedule — end (bounded).
-                end_loop(app, session_id, reason="loop_no_reschedule", loop=loop)
-                return
-            # A loop iteration ran and the model armed no replacement: grant ONE bounded
-            # fallback turn, but only if no typed bound trips first.
+            # A completed iteration needs its next interval unless an explicit limit trips.
             loop["iteration"] = int(loop.get("iteration", 0)) + 1
             stop_reason = _check_bounds(app, session_id, loop)
             if stop_reason:
                 end_loop(app, session_id, reason=stop_reason, loop=loop)
                 return
-            next_fire = _arm(app, session_id, loop, str(loop.get("prompt") or ""), FALLBACK_DELAY_S)
-            loop["fallback_pending"] = True
+            next_fire = _arm(
+                app,
+                session_id,
+                loop,
+                str(loop.get("prompt") or ""),
+                int(loop.get("interval_s") or DEFAULT_INTERVAL_S),
+            )
+            loop["fallback_pending"] = False
             _put_loop(app, session_id, loop)
             logger.info(
-                "loop fallback armed reason=loop_no_reschedule loop_id=%s next_fire_at=%s",
+                "loop next interval armed reason=loop_continue loop_id=%s next_fire_at=%s",
                 loop.get("loop_id"),
                 next_fire,
             )
@@ -623,8 +614,8 @@ def parse_loop_command(request_body: Mapping[str, Any]) -> tuple[int, str, dict[
         interval_s = _parse_interval(str(args.get("interval"))) or 0
     prompt = text or str(args.get("prompt") or "").strip()
 
-    bounds: dict[str, Any] = {}
-    for key in ("max_iters", "max_wallclock_s", "max_tokens", "max_usd"):
+    prompt, bounds = parse_limit_options(prompt)
+    for key in ("max_iters", "max_wallclock_s", "max_tokens", "max_usd", "stop_text"):
         if key in args:
             bounds[key] = args[key]
     return interval_s, prompt, bounds
@@ -636,7 +627,14 @@ def run_loop_command(app: Any, sid: str, request_body: Mapping[str, Any]) -> str
     The whole parse + start + message logic lives here so the catalog dispatch route stays
     a thin one-liner (no-accretion — the route file is a ratcheted god-file)."""
 
-    interval_s, prompt, bounds = parse_loop_command(request_body)
+    text = str(request_body.get("input") or request_body.get("text") or "").strip().lower()
+    if text in {"stop", "clear", "cancel", "off"}:
+        stop_session_loop(app, sid, reason="loop_user_cancelled")
+        return "Loop stopped. Its pending wakeup was cancelled."
+    try:
+        interval_s, prompt, bounds = parse_loop_command(request_body)
+    except ValueError as exc:
+        return f"/loop rejected: {exc} (reason=loop_invalid_limit)"
     if not prompt:
         return (
             "usage: /loop [interval] <prompt> — a prompt is required to re-drive each "
@@ -676,7 +674,7 @@ def build_loop_wakeup_tool() -> Any:
           iteration; clamped to [60, 3600] — a shorter/longer value is clamped with a
           logged reason) and the ``prompt`` to re-run (defaults to the loop's prompt).
         - to END the loop, pass ``stop=True``. Ending is EXPLICIT — the loop does not stop
-          just because you go quiet (a bounded fallback would fire once, then end).
+          just because you go quiet: the next interval is armed automatically.
 
         ``reason`` is a short note logged to the trace (why you continued/stopped). If no
         loop is active yet, a non-stop call STARTS one with default bounds. The loop also

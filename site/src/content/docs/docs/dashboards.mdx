@@ -1,169 +1,130 @@
 ---
 title: Dashboards
-description: Ask CLIO to author and revise a connected report in the side panel, with composed layouts, shared controls, visual references, and downloadable results.
+description: Build a report from your data, explore linked views, and save an image or an interactive HTML copy.
 ---
 
-import {
-  Aside,
-  CardGrid,
-  LinkCard,
-  Steps,
-} from "@astrojs/starlight/components";
+import { Aside, Steps } from "@astrojs/starlight/components";
 import Capture from "../../../components/overview/Capture";
+import WidgetRecording from "../../../components/WidgetRecording.astro";
 import { captureImage } from "../../../lib/captures";
-import dashboard from "../../../assets/captures/bike-station-report.png";
+import dashboard from "../../../assets/captures/current-dashboard.png";
+import exportMenu from "../../../assets/captures/docs-dashboard-export-menu.png";
+import exportedPng from "../../../assets/captures/docs-dashboard-export.png";
 
-A dashboard brings an analysis into one interactive report beside the
-conversation. Ask the agent to decide what belongs together: explain the main
-finding, compare selected results, remove repeated views, and keep the supporting
-data accessible. It can combine text, metrics, charts, maps, tables, images, and
-3D views using the same [widget components](/docs/widgets/components/).
+A dashboard brings a finding, its figures, and the underlying records into one
+report beside your conversation. Use it when a colleague needs to explore an
+analysis rather than read a single answer.
 
 <Aside type="note" title="Development preview">
-  This guide shows the reviewed development build. The example uses fictional
-  station counts and locations, clearly labelled in the report.
-  The saved-dashboard and visual-review controls shown here are not included in beta 5.2.
+  The saved-dashboard and export controls shown here are not included in beta 5.2.
+  Captures use the development build and fictional bike-station data. The report
+  was prepared through CLIO's production tools; its export demonstrations are real
+  interactions with that report, rather than a new model analysis.
 </Aside>
 
-<Capture
-  client:visible
-  image={await captureImage(dashboard)}
-  alt="CLIO bike-station report with a wide annotated time chart, narrower station balance, linked map and comparison table"
-  caption="One coherent synthetic example: when does Fernhill run empty, and where do dock counts rise? The report keeps the finding, comparisons and exact records together."
-  sizes="(min-width: 50rem) 46rem, 100vw"
-/>
-
-## Ask the agent to compose the report
-
-```text
-Build a dashboard from these station counts. Explain when Fernhill first runs
-empty and compare the net change by area. Keep the time chart, station comparisons, map and exact evidence together. Keep time, capacity and units visible, use consistent area
-colours, and distinguish dock counts from trips.
-```
-
-This is an authoring task. The agent reads relevant earlier outputs and their
-data, chooses a structure, and can add a new figure or explanation when it helps
-answer the question. You can also specify which views to keep or omit.
-
-The dashboard opens with its authored title and dashboard icon in the side panel. Follow-up requests revise
-that report over multiple tool calls; it does not have to fit in a single widget
-generation or a pair of graphs.
-
-## Explore one connected system
-
-| Element         | What to ask for                                                                                     |
-| --------------- | --------------------------------------------------------------------------------------------------- |
-| Overview        | The finding, a few key measures, and the scope of the data.                                         |
-| Composed rows   | Give the main chart twice the width of its comparison, then use equal panels for the map and table. |
-| Optional depth  | Use tabs for separate workflows or detailed evidence after the main comparison.                     |
-| Shared controls | One filter or selected entity driving the relevant views.                                           |
-| Linked views    | Highlight the same records across a map, chart, or table.                                           |
-| Explanations    | Units, definitions, captions, limitations, and why a view matters.                                  |
-| Optional detail | A readable default with additional series or sections you can reveal.                               |
-
-Views only move together when their controls and data are connected. Two plots
-on the same page do not automatically share filters, and paired 3D views need a
-shared camera binding to rotate together. See [Linked data](/docs/widgets/linked-data/).
-
-The report is also a place to continue investigating. Select a station to
-highlight its matching chart, map and table records, reference that evidence in
-the conversation, and ask CLIO to explain or revise it. The agent can inspect
-the same rendered view and recheck a correction. **Versions** and **Lineage**
-retain the report's earlier states and inputs while the conversation presents
-the latest deliverable.
-
-## Arrange the evidence deliberately
-
-Ask for a wide chart next to a smaller supporting comparison, then two equal
-panels in the next row. CLIO uses the existing relative layout weights: 2:1
-above and 1.5:1.5 below. Expanded reports retain those proportions; a narrow
-side panel stacks analytical rows to keep labels readable.
-
-Put images beside the measurements and text that explain them. For a research
-report, material images and parameters can sit beside linked 3D views and
-result distributions. Keep controls close to the views they affect and retain
-the same object identifiers across a viewport, chart and table.
-
-Tabs remain useful for independent workflows and optional depth. The central
-comparison should be visible together when you first open or export the report.
-
-## Point to a part and revise it
+## Build a report from a file
 
 <Steps>
 
-1. Open the dashboard and find the relevant view.
+1. [Attach your dataset](/docs/files/attach/) in a session. To follow this example,
+   use the [fictional station counts](/datasets/bike-stations.csv).
 
-2. Select records and use **Reference this**, or use **Capture labelled regions**
-   to attach a visual area to the next message.
+2. Describe the question and the views that will help you answer it.
 
-3. Give a concrete request: “Explain this cluster,” “Show the original only once,”
-   or “Hide the minor series by default and let me turn them on.”
+   ```text
+   Build a dashboard from bike-stations.csv. When is Fernhill first recorded
+   empty? Compare the change from 6 to 9 am by station. Put the time chart,
+   station comparison, map, and exact counts together. Keep units and capacities
+   visible. These are fictional dock counts, not individual bike journeys.
+   ```
 
-4. Open the revised artifact. **Versions** keeps earlier reports;
-   **Lineage** shows the inputs and steps behind them.
+3. Open the resulting dashboard in the side panel. Expand the canvas if the
+   report needs more room. Start with its finding, then check the figures and
+   source table.
 
 </Steps>
 
-The reference carries the selected data or visual context, so you do not need
-to describe a location from memory. The same interaction is demonstrated in
-[Human-agent interaction](/docs/widgets/interaction/).
+<Capture client:visible image={await captureImage(dashboard)}
+  alt="Fictional bike-station dashboard with the finding, two charts, map, and five-station comparison visible"
+  caption="The complete report overview. Fernhill first reaches zero at 8:15 am; Hill loses 37 bikes while Downtown gains 37. The counts alone do not identify journeys. Select the image to inspect it at full size."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
 
-## The agent checks its presentation
+## Explore and revise the same report
 
-The dashboard and visual-review skills instruct CLIO to inspect the rendered
-overview and relevant tabs before presenting a substantial report. It can
-change declared filters, tabs and cameras, receive the matching screenshot as
-image input, and correct an unclear view. A newly published report opens in
-the currently viewed conversation so the agent can check that version.
+Select a station in the map, chart, or comparison table. In this example, the
+same station is highlighted across the connected views. Open **Every source
+snapshot** to inspect all six recorded times instead of just the first and last.
 
-You can also request another pass with a specific concern:
+Use **Reference this** to carry selected records into your next question, or
+**Capture labelled regions** to mark a visible area. Then ask for a specific
+revision: “Explain this station's decline,” or “Keep the main comparison visible
+and move the detailed table below it.” [See the reference controls in action](/docs/widgets/interaction/).
+
+Related views only share a selection when their data and controls are connected.
+Tell CLIO which records should move together. **Versions** retains earlier
+reports; **Lineage** shows the inputs and recorded steps behind the saved result.
+
+## Find the export buttons
+
+The **down-arrow download icon** is at the upper right of the dashboard viewer,
+on the same bar as **Preview**, **Versions**, and **Lineage**. Click it to choose
+the format. This is different from downloading the original dashboard definition.
+
+<Capture client:visible image={await captureImage(exportMenu)}
+  alt="Dashboard viewer download menu showing PNG image, HTML dashboard, and Original file"
+  caption="Click the down-arrow icon in the viewer toolbar. Choose PNG image (displayed view) or HTML dashboard (all tabs and data). Original file saves the editable dashboard definition."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+| Choose | What you receive | Use it for |
+| --- | --- | --- |
+| **PNG image (displayed view)** | An image of the currently rendered report and selected state. | A slide, paper draft, or quick visual review. |
+| **HTML dashboard (all tabs and data)** | One HTML file containing the report, captured records, and supported interactions. | A colleague who needs to explore the results without CLIO. |
+| **Original file** | The saved dashboard definition. | Keeping an editable definition; it is not the portable interactive report. |
+
+### An image you can put in a slide
+
+Set the filters and selections you want before choosing **PNG image**. Check the
+downloaded image for readable labels and complete figures before sharing it.
+
+<Capture client:visible image={await captureImage(exportedPng)}
+  alt="Actual PNG downloaded from the fictional bike-station dashboard"
+  caption="This is the downloaded PNG itself, including the report below the first screen. It preserves the charts, map, comparison, and visible source-table columns. It is an image: recipients cannot change filters or select stations."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+[Download this example PNG](/examples/bike-dashboard.png).
+
+### A report your colleague can explore
+
+Choose **HTML dashboard**, then open the downloaded file in a browser. In this
+recording, networking is disabled before the file opens. Selecting Fernhill still
+updates the captured charts and tables.
+
+<WidgetRecording name="docs-dashboard-html"
+  title="Download the report. Explore the saved HTML."
+  caption="The actual HTML download reopens offline. All five fictional stations and their counts remain available, and selection reaches both charts. External map tiles are not bundled: the map reports that its background is unavailable while its station markers remain usable."
+  timingNote="Continuous recording; normal-speed actions."
+  pointerGuide />
+
+[Open the saved example HTML](/examples/bike-dashboard.html) ·
+[Download the source counts](/datasets/bike-stations.csv).
+
+The saved report cannot call a live agent. External services and uncaptured media
+do not become available merely because you export it. If the recipient also
+needs your questions, the recorded work, and supporting files,
+[export the session](/docs/exports/) instead.
+
+## Check the report before sharing
+
+Ask CLIO to inspect each relevant view, then review it yourself at the size your
+colleague will use. Look for clipped labels, crowded legends, missing units,
+and a finding that is not supported by the counts. A successful publication
+does not establish that a visual check completed.
 
 ```text
-Check this dashboard at side-panel size. Inspect each tab for clipped labels,
-overlapping legends, and too many visible series. Fix unclear views, keep the
-underlying data, and recheck the result before presenting the final version.
+Check this dashboard at side-panel size. Inspect each tab for clipped labels
+and overlapping legends. Keep the source data intact, correct unclear views,
+and tell me which views you actually inspected.
 ```
 
-The check follows controls the view actually exposes. Hidden tabs need to be
-selected before capture. If the conversation is not open or no viewer can supply
-pixels, CLIO should state that limitation. A successful publication only accepts
-the definition; it does not prove the agent saw it. Visual review also does not
-replace calculations or establish causality from a pattern.
-
-## Read the report before opening every detail
-
-Start with the question, the main finding and a few useful measures. Related
-views should carry the same category meanings, units and time interval. Subdued
-grids and context marks let the key comparison stand out; a direct annotation
-can explain an empty station without making the reader hunt for it.
-
-Keep complementary views visible together so you can compare them and a PNG
-contains the main story. Use tabs for separate workflows or optional depth;
-use selectors for additional series instead of drawing every series at once. Keep the complete evidence accessible and state the
-initial slice. In this example, the total remains 54 bikes at every snapshot;
-matching area changes do not identify individual journeys or missed trips.
-
-## Download an image or an interactive report
-
-Use the dashboard's **PNG** action for an image of the displayed view. Use **HTML**
-for a self-contained report with its tabs, supported interactions, and referenced
-data bundled. Dependencies that cannot be captured are reported rather than
-quietly left out. A saved report cannot call a live agent on its own.
-Offline maps keep included points and geometry; external basemap tiles are not
-bundled.
-
-If the dashboard belongs to a larger investigation, [export the session](/docs/exports/)
-with its artifacts to retain the conversation and evidence alongside it.
-
-<CardGrid>
-  <LinkCard
-    title="Widget gallery"
-    description="Explore the views, inputs, layouts, and media a dashboard can use."
-    href="/docs/widgets/"
-  />
-  <LinkCard
-    title="Exports and downloads"
-    description="Choose between a view, a report, and the whole investigation."
-    href="/docs/exports/"
-  />
-</CardGrid>
+Continue with [Exports and downloads](/docs/exports/) to send the investigation,
+or [Evidence and lineage](/docs/evidence/) to follow its history.

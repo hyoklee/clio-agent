@@ -27,6 +27,13 @@ import logging
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
+from clio_agent.gact.autonomy_guard import (
+    admit_loop_wakeup,
+    prepare_scheduled_host,
+    reconcile_autonomous_controls,
+    settle_failed_loop_schedule,
+)
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
@@ -75,6 +82,8 @@ def _fire_schedule(app: "FastAPI", sch: Any) -> None:
     (including this mark, for anything it successfully fires) before ``due_now()`` is
     queried, so a schedule fired via the retry path can't reappear in the due-scan."""
 
+    if not admit_loop_wakeup(app, sch):
+        return
     sess = app.state.sessions.get(sch.session_id)
     if sess is None:
         app.state.schedules.mark_fired(sch.id)
@@ -84,10 +93,23 @@ def _fire_schedule(app: "FastAPI", sch: Any) -> None:
             sch.session_id,
         )
         return
+    if (hasattr(app.state, "agent") and app.state.agent is None) or (
+        getattr(app.state, "lm_config_status", {}).get("state") == "configuring"
+    ):
+        app.state.deferred_schedules.add(sch.id)
+        logger.info(
+            "scheduler tick deferred reason=schedule_agent_unavailable schedule_id=%s session_id=%s",
+            sch.id,
+            sch.session_id,
+        )
+        return
     # #948 S1: the within-session busy gate applies to EVERY turn producer. A due
     # schedule whose session already has a turn in flight must NOT double-stage a
     # concurrent turn (which would orphan the running one).
-    if app.state.turn_runner.busy(sch.session_id):
+    if app.state.turn_runner.busy(sch.session_id) or sess.status in {
+        "waiting_user",
+        "waiting_permission",
+    }:
         policy = str(getattr(sch, "overlap_policy", "queue") or "queue")
         if policy == "skip":
             # Drop THIS occurrence and advance to the next fire (mark_fired recomputes
@@ -114,13 +136,20 @@ def _fire_schedule(app: "FastAPI", sch: Any) -> None:
     # Resolve the turn-staging engine through the app module at fire time so tests can
     # monkeypatch ``clio_agent.gact.app._turn_start_background_user_turn``.
     from clio_agent.gact import app as _app_mod  # noqa: PLC0415
+    from clio_agent.gact.autonomous_loop import _get_loop
 
+    loop = _get_loop(app, sch.session_id)
+    loop_id = loop.get("loop_id") if loop.get("pending_schedule_id") == sch.id else None
     _app_mod._turn_start_background_user_turn(
         app,
         sch.session_id,
         sess,
         sch.question,
-        metadata={"scheduled": True, "schedule_id": sch.id},
+        metadata={
+            "scheduled": True,
+            "schedule_id": sch.id,
+            **({"loop_id": loop_id} if loop_id else {}),
+        },
         prev_status=str(getattr(sess, "status", "idle") or "idle"),
     )
     # Only count the occurrence once staging actually succeeded — see the docstring
@@ -176,6 +205,7 @@ def _fire_one(app: "FastAPI", sch: Any) -> None:
         # occurrence. record_fire_failure disables with a typed reason once retries run out.
         try:
             app.state.schedules.record_fire_failure(sch.id, repr(exc))
+            settle_failed_loop_schedule(app, sch)
         except Exception:  # noqa: BLE001,S110 - retry bookkeeping must never kill the loop
             logger.warning(
                 "scheduler tick error reason=schedule_retry_bookkeeping_failed schedule_id=%s",
@@ -193,6 +223,18 @@ async def _scheduler_tick(app: "FastAPI") -> None:
     with a typed reason (never silently dropped), and the sleep is aligned to just past
     the next minute boundary so slow ticks don't drift past cron minutes."""
 
+    reconciled = False
     while True:
-        _scheduler_tick_once(app)
+        try:
+            if not reconciled:
+                await asyncio.to_thread(reconcile_autonomous_controls, app)
+                reconciled = True
+            await prepare_scheduled_host(app)
+            from clio_agent.gact.goal_control import maintain_goal_controls
+
+            await maintain_goal_controls(app)
+        except (OSError, RuntimeError):
+            logger.error("scheduler tick delayed reason=control_preparation_failed", exc_info=True)
+        else:
+            _scheduler_tick_once(app)
         await asyncio.sleep(_seconds_until_next_minute(datetime.now(timezone.utc)))

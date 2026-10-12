@@ -414,9 +414,17 @@ agents.react_extract.after_steps: 3
 # strict one-call-per-step contract.
 agents.react_extract.enabled: true
 
+# CLIO_FLEET_JUDGES  (str)  <- src/clio_agent/gact/fleet_settings.py
+# Independent judge choices keyed by goals, variants and permissions. Each
+# value is null to inherit the conversation model, or a provider_id/model_id
+# mapping; the CLIO_FLEET_JUDGES environment value uses JSON. Settings Fleet
+# writes this mapping.
+# fleet.judges:  # computed at runtime: {}
+
 # CLIO_GOAL_JUDGE_MODEL  (str)  <- src/clio_agent/gact/goal.py
-# Model id for the separate cheap LLM-judge that evaluates an armed goal
-# condition; set a small/cheap model to keep judging inexpensive.
+# Legacy goal judge model override on the caller provider; Fleet goals
+# selection takes precedence, including an explicit null to inherit the
+# conversation model.
 # goal.judge_model:  # default unset; resolved in code
 
 # CLIO_SCHEDULER_JITTER_WINDOW_S  (int)  <- src/clio_agent/gact/scheduler.py
@@ -426,8 +434,9 @@ scheduler.jitter_window_s: 0
 
 # CLIO_SCHEDULER_MAX_LIFETIME_S  (int)  <- src/clio_agent/gact/scheduler.py
 # Seconds after creation a recurring schedule with no explicit "until" is
-# auto-retired; raise to let schedules run longer unattended.
-scheduler.max_lifetime_s: 2592000
+# auto-retired; zero (the default) means unlimited; set a positive
+# deployment lifetime explicitly.
+scheduler.max_lifetime_s: 0
 
 # CLIO_SCHEDULER_MAX_RETRIES  (int)  <- src/clio_agent/gact/scheduler.py
 # Consecutive failed fires tolerated before a schedule is disabled with a

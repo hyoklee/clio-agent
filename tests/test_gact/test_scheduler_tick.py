@@ -94,11 +94,15 @@ def test_fired_schedule_is_registered_and_cancellable(
             ]
             assert status_events, "no session.status_changed event for the scheduled turn"
 
-            # The staged user message carries the schedule metadata.
+            # The staged injection carries the schedule metadata, never human authorship.
             msgs = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-            user_msgs = [m for m in msgs if m["role"] == "user"]
-            assert user_msgs
-            meta = user_msgs[0].get("metadata", {})
+            wakes = [m for m in msgs if m["role"] == "system"]
+            assert wakes
+            assert wakes[0]["parts"][0]["type"] == "injection"
+            assert wakes[0]["parts"][0]["source"] == "scheduled_wake"
+            assert wakes[0]["parts"][0]["text"] == "scheduled q"
+            assert not [m for m in msgs if m["role"] == "user"]
+            meta = wakes[0].get("metadata", {})
             assert meta.get("scheduled") is True
             assert meta.get("schedule_id", "").startswith("sched_")
 

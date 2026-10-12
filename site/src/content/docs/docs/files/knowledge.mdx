@@ -1,0 +1,130 @@
+---
+title: Knowledge source
+description: Bring an Obsidian vault or a selected folder into CLIO, explore its links, and give the agent tools for working with your notes.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import FilesGuideNav from '../../../../components/FilesGuideNav.astro';
+import GuideScreenshot from '../../../../components/GuideScreenshot.astro';
+
+<FilesGuideNav active="knowledge" />
+
+Connect your Obsidian notes as a **knowledge source** in CLIO. Browse a graph of
+their links, switch to a file list, and read notes beside the conversation. The
+agent gains tools to search notes, follow their relationships, and capture the
+material it uses in an answer.
+
+<Aside type="note" title="Next release preview">
+  This guide shows the development build for the next release. All screenshots
+  use a fictional **Field study** notebook created for this walkthrough. No
+  personal vault content is shown.
+</Aside>
+
+## Connect a vault—or just one folder
+
+1. In a workspace, open **+ → Attach → Obsidian vault**.
+2. Name the source and choose **Vault on this host**.
+3. Choose the vault folder, or a folder inside it. New sources start **Read only**.
+4. Select **Connect vault**. A Knowledge tab opens in the workspace canvas.
+
+The path is on the machine running the connected CLIO service. Connecting a local
+vault needs no Obsidian cloud login or plugin. CLIO recognizes the enclosing vault
+by its `.obsidian` directory and keeps those private settings out of the source.
+
+<GuideScreenshot name="knowledge-connect" alt="Connect an Obsidian knowledge source using the Field study folder and read-only access" caption="Choose a whole vault or a folder inside it. This example connects only Field study, rather than the rest of the example notebook." />
+
+**The selected folder is the boundary.** Search, the graph, the reader, and note
+edits use only its contents. Paths are relative to that folder. A link to a note
+outside it does not grant access to that note; connect another source if you want
+to use more of the vault. Hidden folders, symlinks, and junctions are excluded.
+
+To try the same workflow, [download the example vault](/examples/field-notebook.zip),
+extract it, and select its **Field study** folder. The ZIP includes the minimal
+`.obsidian` directory needed to recognize the example as a vault.
+
+## Explore the graph and read a note
+
+Select a node to open its note in the reader. Pan or zoom the graph to inspect
+connections, then choose **Explore links** to focus on that note's outgoing links
+and backlinks. **Show vault** returns to the selected source's full view.
+
+<GuideScreenshot name="knowledge-graph" alt="Knowledge graph for the fictional Field study notebook with Calibration selected and its note open in the reader" caption="The graph and reader share one selection. These edges come from links written in the notes; they are not inferred similarities." />
+
+The reader shows note properties, tags, links, and backlinks. Follow a resolved
+link to read its target. Missing or ambiguous links stay labeled so you can see
+when a target cannot be chosen reliably.
+
+Large sources use bounded pages. Search for a topic or explore a note's links
+when the complete vault cannot fit in one view.
+
+## Switch to files, search, and attach
+
+Choose **Files** to browse the same source as a list. Search matches note text,
+paths, titles, tags, aliases, and headings. Selecting a result opens the same
+reader used by the graph. **Refresh** picks up added, changed, or removed files.
+
+<GuideScreenshot name="knowledge-files" alt="The Files view filters the example notebook by calibration and opens the Calibration decision note" caption="Graph and Files are two views of the same source. Search narrows the list without copying the vault into your conversation." />
+
+Choose **Attach note** to add the selected note to your draft, then write
+your question and send it. CLIO retains the captured bytes and their source,
+path, and content revision. An existing capture remains readable if the original
+note changes or the source is disconnected.
+
+## Ask the agent to work with the notebook
+
+You can also ask a question directly about the connected source:
+
+```text
+Find our calibration decision, follow its links and backlinks, and explain
+the checks before collecting an observation. Cite the notes you use.
+```
+
+The knowledge tools are available only when the active workspace has a connected
+knowledge source with the corresponding capabilities. A regular folder connection
+does not automatically become a knowledge source.
+
+| Tool | What it lets the agent do |
+|---|---|
+| `knowledge_search` | Find notes by text or metadata and inspect bounded results. |
+| `knowledge_related` | Follow authored links, embeds, and backlinks around a note. |
+| `knowledge_open` | Capture a chosen note or attachment as a workspace resource. The agent reads that capture with `workspace_resource_read`. |
+| `knowledge_edit` | Replace an existing Markdown note when the source permits edits, using its captured revision to reject stale changes. |
+
+<GuideScreenshot name="knowledge-tools" alt="A real CLIO agent turn uses knowledge tools to answer a question about the fictional field notebook" caption="An actual Codex/Luna turn over the example source. The tools find and capture the notes used to explain the daily checks." />
+
+Search snippets help find a note; opening and reading its capture provides the
+content for the answer. Notes remain source material and cannot change the
+agent's permissions or instructions.
+
+## Control edits and source access
+
+**Read only** is the default and keeps note editing unavailable. If you choose a
+working copy, edits are staged for review before publication. With direct writes,
+approved edits update the original note and retain its previous contents. Sync
+direction and agent edit permission are separate choices.
+
+Reopen the tab with **Files → Sources → your source → Open knowledge**. Disconnect
+to stop further access through that connection, or remove it from the saved list.
+Original notes and captures already retained in the workspace remain. See
+[Manage sources](/docs/files/manage/) and [Download or link](/docs/files/download-or-link/)
+for the shared source controls.
+
+## Optional: keep a synced copy on the CLIO host
+
+For a vault delivered through Obsidian Sync, use the official
+[Headless Sync client](https://help.obsidian.md/sync/headless) to set up a dedicated
+local copy on the CLIO host. Complete login, vault selection, and initial sync
+privately with that client, then choose **Obsidian Headless Sync copy** when
+connecting it in CLIO. The client is currently in open beta and requires an
+Obsidian Sync subscription. Follow Obsidian's setup guidance to use one sync
+method per device.
+
+The Knowledge tab offers **Start sync** and **Stop sync** for the configured copy,
+and shows sync state separately from the knowledge index. Pull-only is the
+default. Choose **Refresh** after synchronized changes arrive.
+
+You can select a folder within that copy as the knowledge source. The official
+client still synchronizes the enclosing vault copy; the folder selection limits
+what CLIO's knowledge tools can access. Account credentials and encryption keys
+stay in the official client's private setup. The screenshots here demonstrate
+local access; they do not show an authenticated Sync session.
