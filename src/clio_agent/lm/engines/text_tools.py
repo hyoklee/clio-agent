@@ -242,6 +242,16 @@ def _xml_call_block(reply: str, available_tools: Collection[str]) -> bool:
             return _known_call_list(json.loads(container[1]), available_tools)
         except ValueError:
             return False
+    parameter_calls = re.fullmatch(
+        r"""\s*<parameter\s+name=(["'])tool_calls\1\s*>\s*(.*?)\s*</parameter>\s*""",
+        reply,
+        re.DOTALL,
+    )
+    if parameter_calls:
+        try:
+            return _known_call_list(json.loads(parameter_calls[2]), available_tools)
+        except ValueError:
+            return False
     match = re.match(r"""\s*<invoke\s+name=(["'])([^"']+)\1\s*>""", reply)
     if match:
         return match[2] in available_tools and "</invoke>" in reply[match.end() :]
