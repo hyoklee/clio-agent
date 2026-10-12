@@ -343,7 +343,16 @@ def main() -> int:
     )
     parser.add_argument("--port", type=int, default=18862)
     parser.add_argument("--repeats", type=int, default=5)
+    parser.add_argument("--owned-auth-source", type=Path)
     args = parser.parse_args()
+    owned_auth = args.owned_auth_source
+    if owned_auth is not None:
+        assert args.provider == "claude_code"
+        assert owned_auth.parent == CORE.parent and owned_auth.name.startswith(
+            "owned-claude-token-"
+        )
+        assert owned_auth.is_file() and not owned_auth.is_symlink()
+        auth_inode = owned_auth.stat().st_ino
     root = args.root.resolve()
     assert root.parent == CORE.parent and root.name.startswith("session-workflows-live-")
     assert args.report.resolve().parent == CORE.parent
@@ -391,8 +400,10 @@ def main() -> int:
             if args.transport == "sse":
                 env["CLIO_QUALIFICATION_SSE_DIAGNOSTICS"] = str(root / "sse-sizes.json")
         else:
+            for key in ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"):
+                env.pop(key, None)
             report["auth"] = frozen_claude_auth(
-                Path(env["CLIO_TASK_PROOF_AUTH_SOURCE"]), root / "private-claude"
+                owned_auth or Path(env["CLIO_TASK_PROOF_AUTH_SOURCE"]), root / "private-claude"
             )
             env["CLAUDE_CONFIG_DIR"] = str(root / "private-claude")
             selection = {"provider": "claude_code", "model": "haiku", "api_base": ""}
@@ -480,6 +491,10 @@ def main() -> int:
         )
         print(json.dumps({"error": report["error"]}), flush=True)
     finally:
+        if owned_auth is not None:
+            assert owned_auth.stat().st_ino == auth_inode and not owned_auth.is_symlink()
+            owned_auth.unlink()
+            report["auth_source_absent"] = not owned_auth.exists()
         sizes = root / "sse-sizes.json"
         if sizes.exists():
             report["sse_diagnostics"] = json.loads(sizes.read_text())
