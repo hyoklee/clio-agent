@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import socket
+import subprocess
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
@@ -89,7 +90,9 @@ def test_native_compatibility_uses_host_facts_not_container_availability() -> No
     assert "NVIDIA" in reasons["native-cuda"]
 
 
-def xpu_plan(action: str = "install", variant: str = "native-xpu-attention", **configuration: str) -> Any:
+def xpu_plan(
+    action: str = "install", variant: str = "native-xpu-attention", **configuration: str
+) -> Any:
     return build_driver_plan(
         service_id="vllm",
         action=action,
@@ -147,30 +150,21 @@ def test_xpu_variant_refuses_a_cuda_host_and_cuda_only_parameters() -> None:
         plan(**{"param.xpu_devices": "0"})
 
 
-def test_host_environment_runs_setup_in_a_login_shell(tmp_path: Path) -> None:
-    env = node_service.host_environment(
-        "export CLIO_TEST_SITE=\"a b\"; export PATH=/opt/site/bin:$PATH",
-        {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
-    )
-    assert env["CLIO_TEST_SITE"] == "a b"
-    assert env["PATH"].startswith("/opt/site/bin:")
-    assert "SHLVL" not in env and "_" not in env
-    with pytest.raises(ValueError, match="host environment setup failed"):
-        node_service.host_environment("false", {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)})
+def test_host_setup_wraps_the_command_in_a_login_shell(tmp_path: Path) -> None:
+    command = ["python3", "-c", "print(1)"]
+    assert node_service.with_host_setup("", command) == command
+    wrapped = node_service.with_host_setup("module load frameworks/2026.1.0", command)
+    assert wrapped[:3] == ["bash", "--login", "-c"]
+    assert "set -e\nmodule load frameworks/2026.1.0\n" in wrapped[3]
+    assert wrapped[4:] == ["bash", *command]
 
 
-def test_worker_environment_applies_the_host_setup_before_the_service_venv(
-    tmp_path: Path,
-) -> None:
-    env = node_service.worker_environment(
-        tmp_path,
-        {"host_python": {"setup": "export PATH=/opt/site/bin:$PATH"}},
-        {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)},
-    )
-    assert env["PATH"].split(os.pathsep)[:2] == [
-        str(tmp_path / "environment/.venv/bin"),
-        "/opt/site/bin",
-    ]
+def test_a_failing_host_setup_line_fails_the_wrapped_command(tmp_path: Path) -> None:
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    ok = node_service.with_host_setup("export CLIO_SITE=1", ["sh", "-c", 'echo "$CLIO_SITE"'])
+    assert subprocess.run(ok, env=env, capture_output=True, text=True).stdout.strip() == "1"
+    failing = node_service.with_host_setup("false", ["true"])
+    assert subprocess.run(failing, env=env, check=False).returncode != 0
 
 
 def test_native_install_and_start_are_distinct_and_pinned() -> None:

@@ -469,37 +469,11 @@ def launch(root: Path, request: dict[str, Any]) -> None:
     write_json(root / "receipt.json", receipt)
 
 
-#: Shell-internal variables a captured setup environment must not carry over.
-_SHELL_ONLY = {"_", "SHLVL", "PWD", "OLDPWD", "PS1", "BASH_ENV", "ENV"}
-
-
-def host_environment(setup: str, base: dict[str, str]) -> dict[str, str]:
-    """``base`` after running the deployment's host setup lines (``module load ...``).
-
-    A login shell defines site helpers such as ``module``; its environment after
-    the setup is captured NUL-separated, so values may hold any character.
-    """
+def with_host_setup(setup: str, command: list[str]) -> list[str]:
+    """``command`` after the host setup lines (``module load ...``) in a login shell; fails on error."""
     if not setup.strip():
-        return dict(base)
-    marker = "__clio_host_environment__"
-    completed = subprocess.run(
-        ["bash", "--login", "-c", f"set -e\n{setup}\nset +e\nprintf '%s\\0' {marker}; env -0"],
-        env=base,
-        capture_output=True,
-        timeout=300,
-        check=False,
-    )
-    output = completed.stdout
-    if completed.returncode != 0 or (marker + "\0").encode() not in output:
-        detail = completed.stderr.decode(errors="replace").strip()[-2000:]
-        raise ValueError(f"The host environment setup failed: {detail or completed.returncode}")
-    captured = output.split((marker + "\0").encode(), 1)[1]
-    env: dict[str, str] = {}
-    for item in captured.split(b"\0"):
-        name, sep, value = item.decode(errors="replace").partition("=")
-        if sep and name and name not in _SHELL_ONLY and not name.startswith("BASH_FUNC_"):
-            env[name] = value
-    return env
+        return command
+    return ["bash", "--login", "-c", f'set -e\n{setup}\nexec "$@"', "bash", *command]
 
 
 def worker_environment(
@@ -510,9 +484,6 @@ def worker_environment(
     Runtimes JIT-compile with console scripts installed beside their interpreter (vLLM's flashinfer
     runs ``ninja``), so the service environment's ``bin`` leads ``PATH``.
     """
-    host = manifest.get("host_python") or {}
-    if host.get("setup"):
-        base = host_environment(str(host["setup"]), base)
     env = {**base, **manifest.get("environment", {})}
     for name in ("UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME"):
         env.pop(name, None)
@@ -581,19 +552,7 @@ def worker(root: Path, action: str, generation: str) -> None:
     # ignores SIGTERM, the controller can still safely kill the exact group.
     signal.signal(signal.SIGTERM, handle_stop)
     manifest = json.loads((root / "manifest.json").read_text())
-    try:
-        env = worker_environment(root, manifest, dict(os.environ))
-    except (OSError, ValueError, subprocess.SubprocessError) as exc:
-        # Nothing ran yet: say why in the action's log and fail the receipt.
-        log = root / "logs" / ("install.log" if action == "install" else "server.log")
-        log.parent.mkdir(parents=True, exist_ok=True)
-        log.write_text(f"clio: {exc}\n", encoding="utf-8")
-        with locked(root):
-            current = read_receipt(root)
-            if current.get("generation") == generation:
-                current.update(phase="failed", error=str(exc)[:500], pid=0, process_identity="")
-                write_json(root / "receipt.json", current)
-        return
+    env = worker_environment(root, manifest, dict(os.environ))
     started = time.monotonic()
     helper = reuse_helper() if action == "install" else None
     profile = str(manifest.get("definition_version", ""))
@@ -602,7 +561,7 @@ def worker(root: Path, action: str, generation: str) -> None:
         command = [sys.executable, "-c", "print('clio: the service environment is reused')"]
     elif action == "install" and manifest.get("host_python"):
         # Layer the environment over the host's interpreter (it provides vLLM/torch).
-        uv = shutil.which("uv", path=env.get("PATH")) or str(Path.home() / ".local/bin/uv")
+        uv = shutil.which("uv") or str(Path.home() / ".local/bin/uv")
         environment = str(root / "environment")
         command = [
             "sh",
@@ -632,6 +591,8 @@ def worker(root: Path, action: str, generation: str) -> None:
             str(root / "launch.py"),
             *manifest["arguments"],
         ]
+    if not reused:
+        command = with_host_setup(str(manifest.get("host_python", {}).get("setup", "")), command)
     names = {"VLLM_API_KEY", *env.get("CLIO_SECRET_VARIABLES", "").split(",")}
     secrets = [env[name] for name in sorted(names) if name and env.get(name)]
     credentials = root / "credentials.json"

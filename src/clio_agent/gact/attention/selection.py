@@ -130,7 +130,10 @@ def _reasoning_offset(
         prefix = renderer.encode(lead + reasoning + sep + THINK_CLOSE).ids
         if renderer.encode(lead + reasoning + sep + THINK_CLOSE + content).ids != [*prefix, *tail]:
             continue
-        if decode_steps is None or decode_steps in (len(prefix) + len(tail), len(prefix) + len(tail) + 1):
+        if decode_steps is None or decode_steps in (
+            len(prefix) + len(tail),
+            len(prefix) + len(tail) + 1,
+        ):
             return len(prefix), sep
     return None
 

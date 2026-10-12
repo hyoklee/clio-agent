@@ -75,7 +75,9 @@ def native_variants(facts: TargetFacts) -> list[ServiceVariant]:
     variants.extend(
         ServiceVariant(
             id=variant,
-            label="Native Intel XPU + attention" if variant.endswith("attention") else "Native Intel XPU",
+            label="Native Intel XPU + attention"
+            if variant.endswith("attention")
+            else "Native Intel XPU",
             version="host",
             install_type="native_uv",
             artifact=XPU_ATTENTION_PROFILE if variant.endswith("attention") else XPU_PROFILE,
