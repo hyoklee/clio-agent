@@ -342,7 +342,9 @@ def main() -> int:
     parser.add_argument("--provider", choices=["codex", "claude_code"], default="codex")
     parser.add_argument("--transport", choices=["websocket", "sse"], default="websocket")
     parser.add_argument(
-        "--suite", choices=["workflows", "subagents", "subagent-human", "ui"], default="workflows"
+        "--suite",
+        choices=["workflows", "subagents", "subagent-human", "ui", "mcp"],
+        default="workflows",
     )
     parser.add_argument("--port", type=int, default=18862)
     parser.add_argument("--repeats", type=int, default=5)
@@ -436,6 +438,10 @@ def main() -> int:
         common.allow_all(call)
         if args.suite == "workflows":
             packs = [blueprint(call, workspace, wid, role) for role in ("observer", "producer")]
+        elif args.suite == "mcp":
+            from _mcp_model_tasks import blueprint as mcp_blueprint
+
+            packs = [mcp_blueprint(call, workspace, wid)]
         else:
             pack = common.materialize_testing_pack(
                 CORE / "scripts/live_verification/agents/task-subagent-testing", workspace, {}
@@ -463,6 +469,10 @@ def main() -> int:
         for number in range(1, args.repeats + 1):
             if args.suite == "workflows":
                 result = cycle(call, root, wid, packs, number)
+            elif args.suite == "mcp":
+                from _mcp_model_tasks import cycle as mcp_cycle
+
+                result = mcp_cycle(call, root, wid, packs[0], number)
             else:
                 from _lifecycle_human_controls import human_control_cycle
                 from _lifecycle_ui import ui_cycle
