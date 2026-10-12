@@ -12,7 +12,8 @@ import GuideScreenshot from '../../../../components/GuideScreenshot.astro';
 
 Use **observe** when you want to check progress and keep working. Use **wait**
 when the next action depends on a result. Both accept the same task handles,
-including a mixture of downloads, indexing, shell commands, MCP tasks and subagents.
+including downloads, indexing, shell commands, MCP tasks, subagents and finite
+session runs.
 
 <TasksPreview />
 
@@ -88,9 +89,11 @@ cancel_tasks(download_handle)
 
 `query_tasks` also filters by status, handle, tool and agent, with cursor-based
 pagination. `observe_tasks` accepts an optional output pattern and timeout.
-Its returned cursor supports subsequent incremental reads. Task controls are
-limited to the caller's conversation and descendants; peer messaging does not
-grant cross-session task control.
+Its returned cursor supports subsequent incremental reads. Reads default to the
+caller's conversation and descendants. Authorized peer reads use an explicit
+broader scope and user intent; `observe_tasks(..., notify=True)` creates an
+independent result subscription. Peer reads and messaging do not grant permission
+to cancel, pause or restart that peer. See [Session coordination](/docs/tasks/session-coordination/).
 
 </details>
 

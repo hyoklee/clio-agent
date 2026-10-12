@@ -76,3 +76,39 @@ regression and SDK live-SSE event-order test individually on `dce7c508`, one
 worker, zero skips. These are client integration checks, not live model or
 Windows native acceptance. Pytest removed its own disposable allocation tree;
 subsequent ownership inspection confirmed it absent.
+
+Runtime CI [38282435588](https://github.com/iowarp/clio-agent/actions/runs/38282435588)
+completed all 19 jobs successfully on `c369ec9f`. Later harness/documentation
+commits through `0c5bf0db` do not change `src/` or `sdk/`. The 66 excluded cases
+per interpreter remain exclusions.
+
+## Fresh production UI interaction
+
+On `0c5bf0db`, actual Codex/Luna created parent `sess_ccc3936c438a`, Subagent
+`task_267f1b7af446` and descendant Shell
+`task_43d0b8272f90454eaf5455f7ff85f4f5`. GACT `96e592f9`'s production build was
+copied with all 521 file hashes matching (manifest SHA-256
+`890fdb9138ef258792f7f200605f4dc4f81114a8cabf15b13f3560eb394cdf28`).
+
+Actual browser controls passed desktop 1280×900 and phone 390×844: assignment
+disclosure and child navigation action, pause while Shell remained running,
+phone resume, cancellation confirmation dismissal, and confirmed cancellation
+of both Subagent and descendant Shell. No page errors or horizontal overflow
+occurred. Images were visually inspected. The parent woke with attributed human
+intervention feedback. This is one fresh UI cycle, not five repetitions.
+
+The harness verified the physical worker (PID 3981951, birth 1791826694.77)
+absent, exactly one launch and no successful completion marker. The service,
+isolated Core allocation, complete session tree, temporary production bundle and
+temporary detached source checkout are absent. The bounded verdict is
+`task-ui-current.json` on homelab. Automatic approval review rejected the combined
+local browser-folder removal/SSH-tunnel termination command as `blocked by policy`;
+it did not run. Those two local residuals are recorded as manual-only in the
+operational ledger and were not retried through another method.
+
+The preceding overlapping batch is not a five-cycle pass: Claude workflows
+completed two cycles before an initialization timeout; Codex lifecycle completed
+four; human-control notification completed three. During that batch the eight-CPU
+host reached load above 170 and became temporarily unreachable. One isolated Core
+daemon also reported SIGSEGV (`-11`); its cause is not established. Every batch
+owner and scratch root settled and was removed. Further families run sequentially.

@@ -59,7 +59,7 @@ export default defineConfig({
 								{ label: 'Subagent controls', slug: 'docs/tasks/subagents' },
 								{ label: 'Messages and feedback', slug: 'docs/tasks/messages' },
 								{ label: 'Tools and sources', slug: 'docs/tasks/tools-and-sources' },
-								{ label: 'Session coordination proposal', slug: 'docs/tasks/session-coordination' },
+								{ label: 'Session coordination', slug: 'docs/tasks/session-coordination' },
 							],
 						},
 						{ label: 'Best of N and refinement', slug: 'docs/best-of-n' },

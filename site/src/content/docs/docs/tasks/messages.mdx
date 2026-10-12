@@ -74,8 +74,10 @@ recipient scope and explicit user intent. Reading another session does not grant
 permission to pause, restart or cancel it. Recipient execution retains its own
 permissions; a peer message is not new human authority.
 
-Task observation and waits still cover the caller's own task tree. A peer's
-session address is not automatically a handle usable by every task control.
+Task observation and waits default to the caller's own task tree. Explicit,
+authorized broader reads can discover finite `Session` run handles, observe or
+wait on them, and subscribe independently to their results. A stable session
+address is a mailbox; a run handle identifies one execution and its outcome.
 
 ## What has been demonstrated
 
@@ -84,6 +86,9 @@ independent root sessions in one workspace. The model performed search, summary
 reading, exact addressing and attributed replies. Busy recipients collected mail
 at the next iteration; idle recipients and senders woke automatically.
 
-These runs shared a blueprint. They do not establish coordination between two
-distinct workflow executions or remote relay peers. That wider contract is
-described separately in the [session coordination proposal](/docs/tasks/session-coordination/).
+Those runs shared a blueprint. Fresh Codex/Luna qualification also completed five
+cycles between independent root sessions using two distinct blueprints, including
+peer observations, waits and independent result subscriptions. These checks do
+not qualify a distributed workflow graph, scheduler integration or remote relay
+execution. See [Session coordination](/docs/tasks/session-coordination/) for the
+implemented contract and its current qualification limits.

@@ -1,6 +1,6 @@
 ---
-title: Session coordination proposal
-description: A proposed shared task model for human-started sessions, workflow runs and authorized peer coordination.
+title: Session coordination
+description: Durable session run handles, authorized peer observation and independent completion notifications.
 ---
 
 import { Aside } from '@astrojs/starlight/components';
@@ -9,28 +9,29 @@ import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
 <TasksGuideNav active="coordination" />
 
 Consider two sessions: one acquires data while another evaluates the current
-analysis. Shared task handles could let them observe progress, wait for the
+analysis. Shared task handles let authorized peers observe progress, wait for the
 required outcome, exchange feedback and continue without a human copying messages
 between them.
 
-<Aside type="note" title="Proposal, not an available workflow">
-  Peer-session messaging exists in the development build. Treating every
-  human-started session as a task, cross-workflow task subscriptions and shared
-  peer waits are proposed extensions. They have not been implemented or live-qualified.
+<Aside type="note" title="Development build; qualification has limits">
+  Root session runs now have task handles. Authorized peer queries, observation,
+  waits, result subscriptions and messaging are implemented. Five Codex/Luna cycles
+  exercised independent sessions using two distinct blueprints. This does not
+  qualify every provider, platform, distributed workflow engine or scheduler adapter.
 </Aside>
 
 ## One human owner, several cooperating sessions
 
-The human would own each root assignment. Sessions would retain stable addresses
-and mailboxes; particular executions would receive durable run/task handles.
-Delegation would record its actual parent separately from a peer relationship.
+The human owns each root assignment. Sessions retain stable addresses and
+mailboxes; particular executions receive durable run/task handles before
+acceptance returns. Delegation records its actual parent separately from a peer relationship.
 
-| Identity | Proposed role |
+| Identity | Role |
 | --- | --- |
 | Human owner | Owns root work and grants coordination or control rights. |
 | Session | Retains the conversation, address and mailbox across executions. |
 | Run/task handle | Identifies one assignment or execution, its status and outcome. |
-| Workflow | Groups related runs and their declared dependencies. |
+| Workflow | Groups related work; scheduler and distributed dependency adapters require their own implementation. |
 
 An idle session is not necessarily finished with its assignment. Keep activity
 such as busy, idle or paused separate from work outcomes such as completed,
@@ -39,15 +40,37 @@ silently switch to a later run when another message arrives.
 
 ## Reuse the shared controls
 
-The extension would project root runs through the existing task system, allowing
-authorized peers to query, observe and wait on them. Messages would still enter
+Root runs appear as `Session` tasks through the existing task system, allowing
+authorized peers to query, observe and wait on them. Messages enter
 the existing mailbox at the next iteration or an idle wake. Starting, pausing,
-stopping and cancelling would retain their distinct effects on accepted work.
+stopping and cancelling retain their distinct effects on accepted work.
 
-An observer's subscription would have its own delivery record. Reading or waiting
+An observer's subscription has its own delivery record. Reading or waiting
 on another run must not consume that run's own parent notification. Permission to
-message or observe a peer would not automatically grant lifecycle control.
-Human interventions would continue to notify the actual owning agent.
+message or observe a peer does not grant lifecycle control.
+Human interventions continue to notify the actual owning agent.
+
+<details>
+<summary>Find a run and subscribe to its result</summary>
+
+These are agent tool calls. Broader reads require explicit user intent and the
+existing session-discovery permission. Authorization is applied before filtering
+and pagination; knowing a handle does not bypass it.
+
+```python
+query_tasks("Session", scope="workspace", user_intent="Coordinate the requested analysis")
+observe_tasks(run_handle, scope="workspace",
+              user_intent="Coordinate the requested analysis", notify=True)
+wait_tasks(run_handle, timeout_s=0, scope="workspace",
+           user_intent="Coordinate the requested analysis")
+```
+
+Use a returned run handle for a particular outcome. Use the stable session
+address for messages across executions. A subscribed completion enters the next
+model iteration when busy or wakes the observer when idle. It does not consume
+the owner's notification. A later message can start a new run with a new handle.
+
+</details>
 
 ## A possible workflow
 
@@ -64,13 +87,18 @@ The scheduler adapter must distinguish job submission from job completion. The
 workflow also needs explicit outcomes for partial failure, interruption and
 cancellation; a finished submission command cannot stand in for them.
 
-## Qualification still required
+## What has been demonstrated
 
-Use two distinct workflow executions and actual models to demonstrate busy/idle
-messages, attributed replies, cross-workflow observation and waits, independent
-completion delivery, Stop independence and permission boundaries. Remote routes
-need their own recovery and lifecycle evidence. Existing same-workspace peer
-messaging passes do not qualify that wider contract.
+Five actual Codex/Luna cycles used independent root sessions with distinct
+activated blueprints. They covered busy and idle messages, attributed replies,
+mixed session/shell observation and any/all waits, independent completion and
+failure delivery, Stop independence and denied peer cancellation. The runs used
+the isolated Linux Core 2.3.1/Python 3.14 candidate and the Codex WebSocket route.
+
+These were separate single-expert blueprints, not a distributed workflow graph
+or Slurm job integration. Claude, alternate inference routes, SSE transport and
+Windows/native qualification still have outstanding gates. Session coordination
+does not imply that these wider integrations are ready.
 
 Read [Messages and feedback](/docs/tasks/messages/) for the implemented addressing
 and mailbox behavior, and [Background work](/docs/tasks/) for accepted task execution.

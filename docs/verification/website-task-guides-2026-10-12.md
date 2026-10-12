@@ -1,5 +1,32 @@
 # Website task and coordination guides, 2026-10-12
 
+## Session coordination refresh
+
+The current guides describe implemented finite `Session` run handles, authorized
+peer query/observation/waits and independent `notify=True` subscriptions. The
+sidebar, section navigation, overview and messaging guide no longer call those
+features an unimplemented proposal. The possible Slurm workflow remains explicitly
+an example requiring a scheduler adapter. Five Codex/Luna cycles across independent
+root sessions with distinct single-expert blueprints qualify their concrete route;
+they do not establish a distributed workflow graph or every provider/platform.
+
+Astro check passed with zero errors/warnings and five existing hints. The
+82-page production build passed internal-link validation. Three focused Chromium
+cases passed individually/sequentially, one worker, zero skips: ownership and
+subscription disclosure, all six guide routes at 390px and at 1440px. The first
+ownership case exposed an ambiguous test locator after the navigation label
+changed; the locator now selects the prose paragraph link explicitly. Assertions
+for permissions, subscription arguments and qualification limits remain required.
+The refreshed coordination page was visually inspected at both widths.
+
+This reused the existing build copy and frozen dependencies. The test runner's
+`pnpm preview` launcher failed before executing a case; direct Astro preview
+worked, and a temporary test configuration used that owned production server.
+The preview and browser processes ended. The earlier rejected build-root cleanup
+remains prohibited; no removal was retried, and no second build copy was created.
+
+## Original guide qualification
+
 Six linked website guides explain background work, observation and waits,
 subagent lifecycle controls, messages and feedback, task-capable tools and
 sources, and the proposed session coordination model. They live under

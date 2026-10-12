@@ -6,7 +6,7 @@ const guides = [
 	{ slug: 'subagents/', title: 'Subagent controls', nav: 'Subagents' },
 	{ slug: 'messages/', title: 'Messages and feedback', nav: 'Messages' },
 	{ slug: 'tools-and-sources/', title: 'Task-capable tools and sources', nav: 'Tools and sources' },
-	{ slug: 'session-coordination/', title: 'Session coordination proposal', nav: 'Coordination proposal' },
+	{ slug: 'session-coordination/', title: 'Session coordination', nav: 'Session coordination' },
 ];
 
 for (const theme of ['light', 'dark']) {
@@ -30,7 +30,7 @@ for (const theme of ['light', 'dark']) {
 				await expect(nav.locator('[aria-current="page"]')).toHaveText(guide.nav);
 				const note = page.locator('.sl-markdown-content .starlight-aside');
 				await expect(note).toContainText(guide.slug === 'session-coordination/'
-					? 'Proposal, not an available workflow' : 'Development preview');
+					? 'Development build; qualification has limits' : 'Development preview');
 				await page.evaluate(async () => {
 					await document.fonts.ready;
 					for (const image of document.querySelectorAll<HTMLImageElement>('.guide-screenshot img')) {
@@ -90,7 +90,7 @@ test('task screenshots enlarge and optional tool details stay collapsed', async 
 	await expect.poll(() => original.evaluate((element: HTMLImageElement) => element.naturalWidth)).toBeGreaterThan(0);
 });
 
-test('task guides distinguish Stop, ownership and proposals at existing entry points', async ({ page }) => {
+test('task guides distinguish Stop, peer read permissions and qualification at existing entry points', async ({ page }) => {
 	await page.goto('/docs/sessions/');
 	await page.locator('.sl-markdown-content').getByRole('link', { name: 'task development preview', exact: true }).last().click();
 	await expect(page).toHaveURL(/\/docs\/tasks\/$/);
@@ -99,10 +99,17 @@ test('task guides distinguish Stop, ownership and proposals at existing entry po
 	await expect(actions.getByRole('row').filter({ hasText: 'Pause' })).toContainText('messages and results accumulate');
 	await expect(actions.getByRole('row').filter({ hasText: 'Cancel task' })).toContainText('cancels its descendants');
 	await page.goto('/docs/tasks/messages/');
-	await expect(page.locator('.sl-markdown-content')).toContainText('Task observation and waits still cover the caller');
-	await expect(page.locator('.sl-markdown-content')).toContainText('They do not establish coordination between two distinct workflow executions');
-	await page.locator('.sl-markdown-content').getByRole('link', { name: 'session coordination proposal', exact: true }).click();
-	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('They have not been implemented or live-qualified.');
+	await expect(page.locator('.sl-markdown-content')).toContainText('Task observation and waits default to the caller');
+	await expect(page.locator('.sl-markdown-content')).toContainText('do not qualify a distributed workflow graph');
+	await page.locator('.sl-markdown-content p').getByRole('link', { name: 'Session coordination', exact: true }).click();
+	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('Authorized peer queries, observation, waits, result subscriptions and messaging are implemented.');
+	const subscription = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Find a run and subscribe to its result' }) });
+	await expect(subscription).not.toHaveAttribute('open');
+	await subscription.locator('summary').click();
+	await expect(subscription).toContainText('scope="workspace"');
+	await expect(subscription).toContainText('notify=True');
+	await expect(subscription).toContainText('knowing a handle does not bypass it');
+	await expect(page.locator('.sl-markdown-content')).toContainText('does not grant lifecycle control');
 	for (const route of ['/docs/', '/docs/memory-and-evidence/', '/docs/files/connect/']) {
 		await page.goto(route);
 		await expect(page.locator('.sl-markdown-content a[href^="/docs/tasks/"]').first()).toBeAttached();
