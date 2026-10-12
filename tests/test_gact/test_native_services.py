@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import socket
+import subprocess
 import threading
 from collections.abc import Iterator
 from contextlib import contextmanager, nullcontext
@@ -68,15 +69,102 @@ def plan(action: str = "install", **configuration: str) -> Any:
     )
 
 
+def _compatible(**values: Any) -> set[str]:
+    return {item.id for item in native_variants(facts(**values)) if item.compatible}
+
+
 def test_native_compatibility_uses_host_facts_not_container_availability() -> None:
-    assert all(item.compatible for item in native_variants(facts(docker_available=False)))
+    assert _compatible(docker_available=False) == {"native-cuda", "native-cuda-attention"}
+    assert _compatible(accelerator="intel") == {"native-xpu", "native-xpu-attention"}
     for override in (
         {"os": "windows"},
         {"accelerator": "none"},
+        {"accelerator": "amd"},
         {"uv_available": False},
         {"arch": "unknown"},
+        {"accelerator": "intel", "arch": "aarch64"},
     ):
-        assert not any(item.compatible for item in native_variants(facts(**override)))
+        assert not _compatible(**override)
+    reasons = {item.id: item.reason for item in native_variants(facts(accelerator="none"))}
+    assert "Intel Data Center GPU" in reasons["native-xpu"]
+    assert "NVIDIA" in reasons["native-cuda"]
+
+
+def xpu_plan(
+    action: str = "install", variant: str = "native-xpu-attention", **configuration: str
+) -> Any:
+    return build_driver_plan(
+        service_id="vllm",
+        action=action,
+        variant_id=variant,
+        configuration={
+            "model": "/data/models/qualified",
+            "flowcept_settings": "/data/provenance/settings.yaml",
+            "host_setup": "module load frameworks/2026.1.0",
+            "param.xpu_devices": "0,1",
+            "param.tensor_parallel_size": "2",
+            **configuration,
+        },
+        facts=facts(accelerator="intel"),
+        target=InfrastructureTarget(id="node", label="Node", kind="ssh"),
+        api_key="test-secret-value",
+    )
+
+
+def test_xpu_layers_add_ons_over_the_host_vllm_build() -> None:
+    manifest = json.loads(xpu_plan().commands[-1].stdin)["manifest"]
+    assert manifest["definition_version"].startswith("vllm-host-xpu-attention-1+")
+    # vLLM and torch come from the host; only the connector and Flowcept are installed.
+    assert "vllm==" not in manifest["project"]
+    assert CONNECTOR_REVISION in manifest["project"] and FLOWCEPT_REVISION in manifest["project"]
+    assert manifest["host_python"] == {
+        "setup": "module load frameworks/2026.1.0",
+        "system_site_packages": True,
+    }
+    assert manifest["environment"]["ZE_AFFINITY_MASK"] == "0,1"
+    flags = manifest["arguments"]
+    assert flags[flags.index("--tensor-parallel-size") + 1] == "2"
+    assert "install_probe()" in manifest["launcher"]
+    plain = json.loads(xpu_plan(variant="native-xpu").commands[-1].stdin)["manifest"]
+    assert plain["definition_version"].startswith("vllm-host-xpu-native-1+")
+    assert "dependencies=[]" in plain["project"]
+    assert "install_probe()" not in plain["launcher"]
+
+
+def test_xpu_setup_lines_are_part_of_the_reusable_identity() -> None:
+    first = json.loads(xpu_plan().commands[-1].stdin)["manifest"]["definition_version"]
+    other = json.loads(xpu_plan(host_setup="module load frameworks/2025.3.1").commands[-1].stdin)
+    assert other["manifest"]["definition_version"] != first
+
+
+def test_xpu_variant_refuses_a_cuda_host_and_cuda_only_parameters() -> None:
+    with pytest.raises(ValueError, match="Intel Data Center GPU"):
+        build_driver_plan(
+            service_id="vllm",
+            action="install",
+            variant_id="native-xpu",
+            configuration={"model": "/data/models/qualified"},
+            facts=facts(),
+        )
+    with pytest.raises(ValueError, match="does not apply"):
+        plan(**{"param.xpu_devices": "0"})
+
+
+def test_host_setup_wraps_the_command_in_a_login_shell(tmp_path: Path) -> None:
+    command = ["python3", "-c", "print(1)"]
+    assert node_service.with_host_setup("", command) == command
+    wrapped = node_service.with_host_setup("module load frameworks/2026.1.0", command)
+    assert wrapped[:3] == ["bash", "--login", "-c"]
+    assert "set -e\nmodule load frameworks/2026.1.0\n" in wrapped[3]
+    assert wrapped[4:] == ["bash", *command]
+
+
+def test_a_failing_host_setup_line_fails_the_wrapped_command(tmp_path: Path) -> None:
+    env = {"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)}
+    ok = node_service.with_host_setup("export CLIO_SITE=1", ["sh", "-c", 'echo "$CLIO_SITE"'])
+    assert subprocess.run(ok, env=env, capture_output=True, text=True).stdout.strip() == "1"
+    failing = node_service.with_host_setup("false", ["true"])
+    assert subprocess.run(failing, env=env, check=False).returncode != 0
 
 
 def test_native_install_and_start_are_distinct_and_pinned() -> None:
