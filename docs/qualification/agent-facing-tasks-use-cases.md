@@ -16,7 +16,9 @@ disposable services, native Core allocations, processes and session records were
 removed after verification. The production UI also passed one fresh actual-model
 desktop/phone cycle on `0c5bf0db`, including pause, resume, confirmation dismissal,
 subtree cancellation and physical settlement. Runtime CI passed all 19 jobs on
-`c369ec9f`; later commits through `ce65f72c` do not change `src/` or `sdk/`.
+`c369ec9f`; commits through `986d1b64` do not change `src/` or `sdk/`.
+The later Claude protocol correction in `ae2df7a8` has its own fresh CI run;
+earlier green CI is not promoted to that changed production source.
 Five fresh sequential Codex/Luna Subagent lifecycle cycles also passed on
 `dce7c508`: held execution with background work continuing, queued mail, resume,
 linked retained/fresh restart with explicit result reads, no operation replay,
@@ -25,7 +27,12 @@ run state and process owners were removed. Five fresh parent human-intervention
 cycles passed on `cbb49790`, including busy iteration injection, idle wakes,
 45 actual-model notice acknowledgements, cancellation settlement and restart
 without replay. Their session trees and process owners are absent. Claude
-coordination remains under qualification.
+coordination remains under qualification. The latest attempt passed four
+complete cycles, then Haiku emitted an XML parameter envelope instead of a
+tool call in cycle five. That failure is not counted as a five-cycle pass.
+The exact output reproduces the parser gap; the correction passes ten pure
+parser cases, including data/example negative controls. Actual-model
+qualification of the correction remains pending.
 
 The older external receipts and archives named below were deleted during the
 human-requested disk cleanup. They describe historical results and are no longer

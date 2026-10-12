@@ -184,3 +184,36 @@ parent `sess_4a399a290685`, child run `task_4f2519e58d9e`, parent Shell
 The service exited zero. Core, descendants, listener, credential copies,
 complete session tree and temporary console are absent; only the bounded
 current verdicts remain.
+
+## Continued Claude protocol diagnosis
+
+The sequential Claude/Haiku run on `cbb49790` passed four complete workflow
+cycles. In cycle five, its failure-subscription reply at
+`2026-10-12T18:47:01.149373+00:00` contained the requested `observe_tasks` JSON
+inside `<parameter name="tool_calls">...</parameter>`, with no invoke closer.
+The text bridge treated this exact form as a final answer, so no corresponding
+tool invocation occurred. This is a protocol-recovery gap, rather than evidence
+that the underlying task wait failed. The unchanged gate failed; service exit
+was zero and all owners, scratch, copied credentials and console are absent.
+
+The new exact regression fails before correction on `986d1b64`. Runtime
+`ae2df7a8` recognizes only a complete reserved parameter envelope containing
+declared call objects and sends it to the existing bounded correction path.
+It executes none of that malformed content. Ten pure parser cases pass
+individually/sequentially, including ordinary data, unknown tools, quoted
+examples and trailing text that must remain answers. These Windows Python
+checks used `--noconftest`; they did not launch native Core or a model and do
+not qualify either Windows native route. No execution deadline, retry budget,
+parser size ceiling or accepted-operation semantics changed.
+
+The live receipt collector also now sorts the message API's newest-first page
+chronologically before selecting the latest assistant response. The bounded
+Claude verdict retains the directly observed latest malformed reply alongside
+the original collector's older failure excerpt. Fresh model checks must qualify
+the corrected production source; the four-cycle partial attempt remains failed.
+
+Fresh CI [38293893815](https://github.com/iowarp/clio-agent/actions/runs/38293893815)
+was dispatched on exact source `ae2df7a8`. It is separate from the earlier green
+runtime run. Download, Indexing and MCP current-receipt suites run sequentially
+with disposable state; no outcome is claimed before its owner and model checks
+finish.
