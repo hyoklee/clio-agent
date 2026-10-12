@@ -70,6 +70,18 @@ For an audit, look for the actual checks and their outcomes. “Completed” alo
 does not establish that data passed validation or that every requested file was
 created.
 
+### SPOTTER review
+
+When SPOTTER is available and you enable it for a conversation, it watches the
+recorded activity using its configured provenance services. In the development
+version, enabling it after work has already happened also requests a review of
+the existing conversation. A new conversation waits for its first activity.
+
+The transcript shows a compact SPOTTER review entry. Open the reviewer to read
+its findings and supporting evidence. Its presence or completed status alone
+does not certify the analysis. Attention findings require captures from the
+model service; see [attention evidence](/docs/evidence/#inspect-model-attention).
+
 ## Understand a wait
 
 A wait observes work already started. It does not launch another copy of the task.

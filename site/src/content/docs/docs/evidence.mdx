@@ -63,11 +63,34 @@ The Context tab shows the context the agent is working with, for the agent you s
 
 ### Inspect additions and recovered context
 
-When CLIO adds instructions or recovers earlier conversation context, a receipt appears in the transcript. Choose **Open exact details** to inspect the recorded content in a separate window. You can also expand it in place with **Show what it got**.
+When CLIO adds instructions or recovers earlier conversation context, an
+**Injection** row appears in the activity collection. Expand that row to read
+the supplied content, or choose **Open exact details** to inspect it in a
+separate window. See [Injections and reminders](/docs/injections/).
 
 Recovery uses the complete saved context records when available, including recorded tool inputs, results and loaded instructions. If only a transcript is available, the receipt identifies that reconstruction and its missing continuation state. A normal restart with retained context does not need a recovery receipt.
 
 The receipt distinguishes a restored context from a reconstructed transcript.
+
+### Inspect model attention
+
+For a response with recorded attention capture, select a passage and choose
+**Understand attention** to inspect the source tokens associated with its
+generation. The development interface also provides two selection actions:
+
+- **Trace later use** follows a selected passage into later captured generation.
+- **Add to attention set** combines passages for inspection. Overlapping captured
+  tokens count once; the set accepts up to 32 selections.
+
+Selections can refer to generated answer text and captured thinking. The
+interface maps each selection to its recorded content revision and token range.
+If the service cannot map a selection or has no capture for it, inspect the
+reported reason rather than treating missing heat as zero attention.
+
+Attention is a recorded model measurement. It does not establish that a claim
+is correct, that the model intended something, or that a passage caused an
+error. Check the underlying files, operations, and returned evidence alongside
+the attention view.
 
 ## Changed files and diffs
 
