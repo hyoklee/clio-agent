@@ -21,8 +21,11 @@ Five fresh sequential Codex/Luna Subagent lifecycle cycles also passed on
 `dce7c508`: held execution with background work continuing, queued mail, resume,
 linked retained/fresh restart with explicit result reads, no operation replay,
 and cancellation with physical descendant settlement. Their complete disposable
-run state and process owners were removed. Claude and the separate parent
-human-intervention family remain under qualification.
+run state and process owners were removed. Five fresh parent human-intervention
+cycles passed on `cbb49790`, including busy iteration injection, idle wakes,
+45 actual-model notice acknowledgements, cancellation settlement and restart
+without replay. Their session trees and process owners are absent. Claude
+coordination remains under qualification.
 
 The older external receipts and archives named below were deleted during the
 human-requested disk cleanup. They describe historical results and are no longer

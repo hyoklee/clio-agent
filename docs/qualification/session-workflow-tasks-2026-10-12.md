@@ -157,3 +157,30 @@ data on homelab without creating archives. Only the needed source, the active
 Python 3.14/Core 2.3.1 candidate, bounded current verdicts and the current suite's
 disposable state remain. This accounting does not infer volume-free bytes or
 attribute earlier Windows native crashes to disk pressure.
+
+## Fresh parent receipt of human intervention
+
+Five complete sequential Codex/Luna WebSocket human-control cycles passed on
+`cbb49790`. Actual models created both a Subagent's background Shell and an
+independent parent Shell. While the parent was inside a real foreground tool,
+human Stop, pause, steering and resume reached it at the next model iteration.
+The parent reported the steering nonce, which was supplied only through the
+human intervention notice. Subsequent pause/resume actions woke the idle parent
+without requiring a task completion or another message to that parent.
+
+Human cancellation of the parent Shell and the Subagent subtree settled the
+physical processes. The parent acknowledged each intervention's identity and
+outcome. Human restart created a distinct linked successor without replaying
+either accepted command. An additional model turn left delivered message IDs
+and timestamps unchanged, checking that those notices were not delivered again.
+
+`subagent-human-codex-current.json` records the five verdicts and runtime cleanup.
+`human-intervention-receipts-current.json` retains 45 intervention notices with
+actual assistant message IDs, timestamps, bounded excerpts and hashes, plus
+handles, invocation IDs and captured process identities. The fifth cycle used
+parent `sess_4a399a290685`, child run `task_4f2519e58d9e`, parent Shell
+`task_c0c9080b3eac415285d5a3d85134260e`, child Shell
+`task_30f183f2ff0f40039400879cd21b607e` and successor `task_4d1be2fa5bb4`.
+The service exited zero. Core, descendants, listener, credential copies,
+complete session tree and temporary console are absent; only the bounded
+current verdicts remain.
