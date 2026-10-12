@@ -34,6 +34,14 @@ def build_task_tools() -> list[Any]:
         "description": "Omit for an unbounded wait; zero snapshots immediately. Expiry ends only the waiter.",
     }
     optional_string = {"type": ["string", "null"]}
+    read_scope = {
+        "scope": {
+            "type": "string",
+            "enum": ["session", "workspace", "global"],
+            "description": "Default session tree; peer reads require explicit user_intent.",
+        },
+        "user_intent": {"type": "string", "description": "User-authorized coordination purpose."},
+    }
     declarations: list[tuple[Callable[..., Any], dict[str, Any], bool]] = [
         (
             query_tasks,
@@ -43,6 +51,7 @@ def build_task_tools() -> list[Any]:
                 ),
                 "active_only": {"type": "boolean"},
                 "limit": {"type": "integer"},
+                **read_scope,
             },
             True,
         ),
@@ -53,8 +62,13 @@ def build_task_tools() -> list[Any]:
                 "cursor": {"type": ["string", "integer", "null"]},
                 "pattern": optional_string,
                 "timeout_s": timeout_arg,
+                "notify": {
+                    "type": "boolean",
+                    "description": "Subscribe to peer completion via your mailbox; busy injection or idle wake.",
+                },
+                **read_scope,
             },
-            True,
+            False,
         ),
         (
             wait_tasks,
@@ -62,11 +76,12 @@ def build_task_tools() -> list[Any]:
                 "tasks": task_arg,
                 "return_when": {"type": "string", "enum": ["any", "all"]},
                 "timeout_s": timeout_arg,
+                **read_scope,
             },
             False,
         ),
         (cancel_tasks, {"tasks": task_arg}, False),
-        (get_task_result, {"handle": {"type": "string"}}, False),
+        (get_task_result, {"handle": {"type": "string"}, **read_scope}, False),
     ]
     return [
         native_tool(

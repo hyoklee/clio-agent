@@ -737,6 +737,11 @@ def accept_message(
     # feedback uses the inbox re-drive and must leave this pause intact.
     app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": False})
     _commit_resource_deliveries(app, sid, resource_deliveries)
+    from clio_agent.gact.mcp_task_store import app_task_store
+    from clio_agent.gact.session_run_tasks import SERVER_ID
+    from clio_agent.tools.mcp_task_records import TaskKey
+
+    run = app_task_store(app).get(TaskKey(SERVER_ID, sid, user_msg.turn_id or user_msg.id))
     ack = PostMessageResponse(
         message_id=user_msg.id,
         accepted_at=user_msg.created_at,
@@ -744,6 +749,7 @@ def accept_message(
         state="started",
         effective_model=effective_model,
         behavior=req.behavior,
+        task_handle=run.handle if run else None,
     )
     app.state.message_intents.record_acceptance(sid, key, ack)
     # Acceptance is UNIFORM across both branches. Publishing this only on the

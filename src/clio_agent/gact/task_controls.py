@@ -45,13 +45,15 @@ def query_snapshot(
     active_only: bool = False,
     cursor: str | None = None,
     limit: int = 50,
+    scope: str = "session",
+    user_intent: str = "",
 ) -> dict[str, Any]:
     """Return an authorized, filtered keyset page from the existing projection."""
     if kind is not None and kind not in KINDS:
         raise ValueError(f"kind must be one of {sorted(KINDS)}")
     if not 1 <= limit <= 200:
         raise ValueError("limit must be between 1 and 200")
-    filters = [sid, kind, status, handle, tool, agent, active_only]
+    filters = [sid, kind, status, handle, tool, agent, active_only, scope, user_intent]
     fingerprint = hashlib.sha256(json.dumps(filters).encode()).hexdigest()
     after = None
     if cursor:
@@ -72,7 +74,7 @@ def query_snapshot(
             raise ValueError("invalid task cursor") from exc
     rows = [
         row
-        for row in task_views(app, sid)
+        for row in task_views(app, sid, scope=scope, user_intent=user_intent)
         if (kind is None or row["task_kind"] == kind)
         and (status is None or row["effective_status"] == status)
         and (handle is None or row["handle"] == handle)
@@ -108,8 +110,14 @@ def query_tasks(
     active_only: bool = False,
     cursor: str | None = None,
     limit: int = 50,
+    scope: str = "session",
+    user_intent: str = "",
 ) -> dict[str, Any]:
-    """List task handles, assignments and status. query_tasks('Subagent') filters children."""
+    """List task handles, assignments and status; kind='Session' lists finite root runs.
+
+    Default scope is this conversation and descendants. Explicit workspace/global
+    reads require user_intent and session-discovery permission, not peer control.
+    """
     app, sid = _scope()
     return query_snapshot(
         app,
@@ -122,16 +130,18 @@ def query_tasks(
         active_only=active_only,
         cursor=cursor,
         limit=limit,
+        scope=scope,
+        user_intent=user_intent,
     )
 
 
 def _selected(
-    app: Any, sid: str, tasks: str | list[str]
+    app: Any, sid: str, tasks: str | list[str], *, scope: str = "session", user_intent: str = ""
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     rows, errors = [], []
     for handle in handles(tasks):
         try:
-            rows.append(resolve_task(app, sid, handle))
+            rows.append(resolve_task(app, sid, handle, scope=scope, user_intent=user_intent))
         except ValueError as exc:
             errors.append({"handle": handle, "error": str(exc)})
     return rows, errors
@@ -146,6 +156,10 @@ def collect_result(
     if row["effective_status"] not in TERMINAL:
         return {"handle": row["handle"], "status": row["effective_status"], "pending": True}
     if consume_delivery:
+        from clio_agent.gact.task_subscriptions import collect_subscription
+
+        collect_subscription(app, sid, row["handle"])
+    if consume_delivery and row["owner"]["session_id"] == sid:
         consume_task(app, sid, row["handle"])
     result = row.get("result")
     if row["task_kind"] == "Subagent":
@@ -176,7 +190,7 @@ def collect_result(
     }
 
 
-def get_task_result(handle: str) -> dict[str, Any]:
+def get_task_result(handle: str, scope: str = "session", user_intent: str = "") -> dict[str, Any]:
     """Read a terminal result again, including a retained predecessor's known handle.
 
     Historical access is read-only and does not consume the prior run's mailbox.
@@ -184,7 +198,7 @@ def get_task_result(handle: str) -> dict[str, Any]:
     """
     app, sid = _scope()
     try:
-        row = resolve_task(app, sid, handle)
+        row = resolve_task(app, sid, handle, scope=scope, user_intent=user_intent)
     except ValueError as exc:
         if str(exc) != "unknown_or_unauthorized_task":
             raise
@@ -215,17 +229,25 @@ def _wait_change(app: Any, sid: str, version: int, deadline: float | None) -> No
 
 
 def wait_tasks(
-    tasks: str | list[str], return_when: str = "all", timeout_s: float | None = None
+    tasks: str | list[str],
+    return_when: str = "all",
+    timeout_s: float | None = None,
+    scope: str = "session",
+    user_intent: str = "",
 ) -> dict[str, Any]:
     """Wait for any/all mixed tasks. Default is unbounded; expiry or Stop ends only the wait."""
     from clio_agent.runtime.commitment_activity import track
 
     with track(timeout_s is None):
-        return _wait_tasks(tasks, return_when, timeout_s)
+        return _wait_tasks(tasks, return_when, timeout_s, scope, user_intent)
 
 
 def _wait_tasks(
-    tasks: str | list[str], return_when: str, timeout_s: float | None
+    tasks: str | list[str],
+    return_when: str,
+    timeout_s: float | None,
+    scope: str = "session",
+    user_intent: str = "",
 ) -> dict[str, Any]:
     if return_when not in {"any", "all"}:
         raise ValueError("return_when must be any or all")
@@ -233,7 +255,20 @@ def _wait_tasks(
     deadline = _deadline(timeout_s)
     while True:
         version = app.state.bus.highest_event_id
-        rows, errors = _selected(app, sid, tasks)
+        rows, errors = _selected(app, sid, tasks, scope=scope, user_intent=user_intent)
+        if timeout_s != 0:
+            current = [
+                r
+                for r in rows
+                if r["task_kind"] == "Session"
+                and r["owner"]["session_id"] == sid
+                and r["effective_status"] not in TERMINAL
+            ]
+            errors.extend(
+                {"handle": r["handle"], "error": "cannot_wait_on_current_execution"}
+                for r in current
+            )
+            rows = [r for r in rows if r not in current]
         settled = [r for r in rows if r["effective_status"] in TERMINAL]
         pending = [r["handle"] for r in rows if r["effective_status"] not in TERMINAL]
         expired = deadline is not None and time.monotonic() >= deadline
@@ -262,16 +297,21 @@ def observe_tasks(
     cursor: str | int | None = None,
     pattern: str | None = None,
     timeout_s: float | None = None,
+    scope: str = "session",
+    user_intent: str = "",
+    notify: bool = False,
 ) -> dict[str, Any]:
     """Observe without collecting; a pattern waits for output or settlement.
 
+    notify=True subscribes to a peer/descendant result via your own mailbox;
+    completion wakes an idle recipient, or arrives before its next model call.
     Drain earlier bounded pages with the returned cursor while ``has_more`` is true.
     ``matched`` always refers to evidence in this returned page.
     """
     from clio_agent.runtime.commitment_activity import track
 
     with track(pattern is not None and timeout_s is None):
-        return _observe_tasks(tasks, cursor, pattern, timeout_s)
+        return _observe_tasks(tasks, cursor, pattern, timeout_s, scope, user_intent, notify)
 
 
 def _observe_tasks(
@@ -279,6 +319,9 @@ def _observe_tasks(
     cursor: str | int | None,
     pattern: str | None,
     timeout_s: float | None,
+    scope: str = "session",
+    user_intent: str = "",
+    notify: bool = False,
 ) -> dict[str, Any]:
     app, sid = _scope()
     deadline = _deadline(timeout_s)
@@ -299,7 +342,12 @@ def _observe_tasks(
         start = 0
     while True:
         version = app.state.bus.highest_event_id
-        rows, errors = _selected(app, sid, tasks)
+        rows, errors = _selected(app, sid, tasks, scope=scope, user_intent=user_intent)
+        if notify:
+            from clio_agent.gact.task_subscriptions import subscribe_result
+
+            for row in rows:
+                subscribe_result(app, sid, row, scope=scope, user_intent=user_intent)
         events = []
         for row in rows:
             session_ids = [row["owner"]["session_id"]]
@@ -313,13 +361,18 @@ def _observe_tasks(
                         continue
                     key = event.payload.get("key")
                     selected = (
-                        owner == row.get("child_session_id")
+                        _session_run_event(app, row, event)
+                        or owner == row.get("child_session_id")
                         or event.payload.get("handle") == row["handle"]
                         or (
                             key == row.get("key")
                             if key
                             else event.payload.get("task_id") == row["id"]
-                            and sum(r["id"] == row["id"] for r in task_views(app, sid)) == 1
+                            and sum(
+                                r["id"] == row["id"]
+                                for r in task_views(app, sid, scope=scope, user_intent=user_intent)
+                            )
+                            == 1
                         )
                     )
                     if selected:
@@ -350,6 +403,18 @@ def _observe_tasks(
                 "timed_out": expired and not settled,
             }
         _wait_change(app, sid, version, deadline)
+
+
+def _session_run_event(app: Any, row: dict[str, Any], event: Any) -> bool:
+    """Bound session progress to the accepted execution and original event epoch."""
+    backend = row.get("backend", {})
+    return bool(
+        row["task_kind"] == "Session"
+        and backend.get("event_epoch") == app.state.bus.task_cursor_epoch
+        and backend.get("start_event_id", event.id)
+        < event.id
+        <= backend.get("end_event_id", app.state.bus.highest_event_id)
+    )
 
 
 def _observe_cursor(app: Any, cursor: str | int | None) -> tuple[int, bool]:

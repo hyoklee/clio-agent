@@ -751,6 +751,10 @@ def publish_agent_task_event(app: "FastAPI", task: AgentTask, event_type: str) -
                 },
             )
         )
+    if task.is_terminal:
+        from clio_agent.gact.task_subscriptions import schedule_subscriptions
+
+        schedule_subscriptions(app, task.handle_id or task.task_id)
     if task.is_terminal and task.notify_pending and task.project_to_parent:
         from clio_agent.gact.task_completion_wake import request_completion_wake
 

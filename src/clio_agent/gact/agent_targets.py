@@ -69,10 +69,16 @@ def session_address(app: Any, sid: str) -> dict[str, Any]:
     """Project discovery identity only after the caller has passed read-scope checks."""
     session = app.state.sessions.get(sid)
     task = AgentTask.from_session(session) if session is not None else None
+    from clio_agent.gact.mcp_task_store import app_task_store
+
+    runs = [r for r in app_task_store(app).list() if r.kind == "Session" and r.session_id == sid]
+    latest = max(runs, key=lambda r: r.created_at, default=None)
     return {
         "session_id": sid,
         "message_target": sid,
-        "handle": (task.handle_id or task.task_id) if task else None,
+        "handle": (task.handle_id or task.task_id) if task else latest.handle if latest else None,
+        "handle_kind": "Subagent" if task else "Session" if latest else None,
+        "run_status": latest.display_status if latest else None,
         "status": (task.live_state or task.status)
         if task
         else getattr(session, "status", "unknown"),

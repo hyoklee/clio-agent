@@ -722,6 +722,9 @@ def _start_background_user_turn(
     transcript_job = stage_intent_user_message(
         app, sid, user_msg, replace_existing=replace_existing_user_message, defer_atoms=True
     )
+    from clio_agent.gact.session_run_tasks import accept_session_run
+
+    accept_session_run(app, sid, user_msg)
     app.state.sessions.update(
         sid,
         status="running",

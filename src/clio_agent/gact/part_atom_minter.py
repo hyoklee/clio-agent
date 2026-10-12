@@ -486,6 +486,7 @@ def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
     """
 
     from clio_agent.gact.app import _append_session_message  # noqa: PLC0415
+    from clio_agent.gact.session_run_tasks import settle_session_run
     from clio_agent.gact.transcript_projection import (  # noqa: PLC0415
         record_state_merge_best_effort,
     )
@@ -495,6 +496,7 @@ def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
         if minter is not None:
             minter.barrier()
         _append_session_message(app, session_id, message)
+        settle_session_run(app, session_id, message)
         return
     # The in-memory ledger + local store copy lands FIRST — the order
     # ``_append_session_message`` has always used (append, then mint). That retained
@@ -505,6 +507,7 @@ def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
     _append_session_message(app, session_id, message, atoms_minted=True)
     minter.mint_remainder(message)
     record_state_merge_best_effort(minter.arc, session_id, message)
+    settle_session_run(app, session_id, message)
 
 
 def failed_finalize_identity(app: Any, session_id: str) -> tuple[str, list[Any]]:

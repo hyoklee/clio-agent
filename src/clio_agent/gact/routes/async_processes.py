@@ -184,7 +184,7 @@ def register_async_process_routes(app: FastAPI, deps: "GactDeps") -> None:
                 for row in await asyncio.to_thread(
                     task_views, app, sid, include_children=include_children
                 )
-                if not row.get("dismissed")
+                if not row.get("dismissed") and row["task_kind"] != "Session"
             ]
         }
 
@@ -199,6 +199,8 @@ def register_async_process_routes(app: FastAPI, deps: "GactDeps") -> None:
         active_only: bool = False,
         cursor: str | None = None,
         limit: int = 50,
+        scope: str = "session",
+        user_intent: str = "",
     ) -> dict[str, Any]:
         from clio_agent.gact.task_controls import query_snapshot
 
@@ -217,6 +219,8 @@ def register_async_process_routes(app: FastAPI, deps: "GactDeps") -> None:
                 active_only=active_only,
                 cursor=cursor,
                 limit=limit,
+                scope=scope,
+                user_intent=user_intent,
             )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -230,7 +234,9 @@ def register_async_process_routes(app: FastAPI, deps: "GactDeps") -> None:
         return await asyncio.to_thread(cancel_selected, app, sid, body.tasks, human_origin=True)
 
     @app.get("/v1/sessions/{sid}/async-tasks/{handle}/result")
-    async def get_result(sid: str, handle: str) -> dict[str, Any]:
+    async def get_result(
+        sid: str, handle: str, scope: str = "session", user_intent: str = ""
+    ) -> dict[str, Any]:
         from clio_agent.gact.task_controls import collect_result
         from clio_agent.gact.task_projection import resolve_task
 
@@ -238,7 +244,9 @@ def register_async_process_routes(app: FastAPI, deps: "GactDeps") -> None:
             raise _not_found("session", sid)
         try:
             return await asyncio.to_thread(
-                lambda: collect_result(app, sid, resolve_task(app, sid, handle))
+                lambda: collect_result(
+                    app, sid, resolve_task(app, sid, handle, scope=scope, user_intent=user_intent)
+                )
             )
         except ValueError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

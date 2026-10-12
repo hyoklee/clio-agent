@@ -84,3 +84,4 @@ class PostMessageResponse(BaseModel):
     effective_model: ModelRef = Field(default_factory=ModelRef)
     behavior: MessageBehavior = Field(default_factory=MessageBehavior)
     idempotent_replay: bool = False
+    task_handle: str | None = None

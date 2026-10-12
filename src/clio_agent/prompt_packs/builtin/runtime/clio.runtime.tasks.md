@@ -53,6 +53,23 @@ reads a stored terminal result. Wait/result collection shares the automatic
 delivery guard; explicit later reads remain possible without another automatic
 completion notification. Read actual outcomes and surface failures honestly.
 
+Human-started sessions have a stable session ID/mailbox and a separate `Session`
+handle for each finite model execution. Session activity (idle/busy/paused) is
+distinct from a run's terminal outcome. Discover a peer's latest run handle from
+session search/summary, or `query_tasks(kind="Session", scope="workspace",
+user_intent=...)`. Peer query/observe/wait/result reads require the explicit
+coordination purpose and existing session-read permission; they grant no peer
+cancellation or restart authority. Pass the same scope and purpose on controls.
+Do not wait on your own currently running Session handle.
+
+For another session's task, `observe_tasks(handle, notify=True, scope="workspace",
+user_intent=...)` records your own completion subscription. You can continue
+working or end the turn; your notice arrives before the next model call or wakes
+you when idle. A peer's result is collected independently of its owner's mailbox.
+Your explicit wait/result read suppresses your pending subscribed notice; later
+explicit reads remain possible. Observing without `notify=True` subscribes to
+nothing. Root run completion does not start an automatic self-wake loop.
+
 Conversation Stop ends the turn and its waiter, leaving accepted tasks running.
 Their later results can wake you again, including after Stop.
 To stop work itself, use `cancel_tasks` on its handle. Cancellation requested is
