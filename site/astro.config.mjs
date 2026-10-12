@@ -51,6 +51,17 @@ export default defineConfig({
 					label: 'Use CLIO',
 					items: [
 						{ label: 'Sessions and modes', slug: 'docs/sessions' },
+						{
+							label: 'Tasks and coordination', collapsed: true,
+							items: [
+								{ label: 'Background work', slug: 'docs/tasks' },
+								{ label: 'Observe and wait', slug: 'docs/tasks/observe-and-wait' },
+								{ label: 'Subagent controls', slug: 'docs/tasks/subagents' },
+								{ label: 'Messages and feedback', slug: 'docs/tasks/messages' },
+								{ label: 'Tools and sources', slug: 'docs/tasks/tools-and-sources' },
+								{ label: 'Session coordination proposal', slug: 'docs/tasks/session-coordination' },
+							],
+						},
 						{ label: 'Best of N and refinement', slug: 'docs/best-of-n' },
 						{ label: 'Dashboards', slug: 'docs/dashboards' },
 						{ label: 'Exports and downloads', slug: 'docs/exports' },

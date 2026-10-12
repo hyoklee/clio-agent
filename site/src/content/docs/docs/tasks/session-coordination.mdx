@@ -1,0 +1,76 @@
+---
+title: Session coordination proposal
+description: A proposed shared task model for human-started sessions, workflow runs and authorized peer coordination.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
+
+<TasksGuideNav active="coordination" />
+
+Consider two sessions: one acquires data while another evaluates the current
+analysis. Shared task handles could let them observe progress, wait for the
+required outcome, exchange feedback and continue without a human copying messages
+between them.
+
+<Aside type="note" title="Proposal, not an available workflow">
+  Peer-session messaging exists in the development build. Treating every
+  human-started session as a task, cross-workflow task subscriptions and shared
+  peer waits are proposed extensions. They have not been implemented or live-qualified.
+</Aside>
+
+## One human owner, several cooperating sessions
+
+The human would own each root assignment. Sessions would retain stable addresses
+and mailboxes; particular executions would receive durable run/task handles.
+Delegation would record its actual parent separately from a peer relationship.
+
+| Identity | Proposed role |
+| --- | --- |
+| Human owner | Owns root work and grants coordination or control rights. |
+| Session | Retains the conversation, address and mailbox across executions. |
+| Run/task handle | Identifies one assignment or execution, its status and outcome. |
+| Workflow | Groups related runs and their declared dependencies. |
+
+An idle session is not necessarily finished with its assignment. Keep activity
+such as busy, idle or paused separate from work outcomes such as completed,
+failed or cancelled. A wait needs a defined run or completion event; it must not
+silently switch to a later run when another message arrives.
+
+## Reuse the shared controls
+
+The extension would project root runs through the existing task system, allowing
+authorized peers to query, observe and wait on them. Messages would still enter
+the existing mailbox at the next iteration or an idle wake. Starting, pausing,
+stopping and cancelling would retain their distinct effects on accepted work.
+
+An observer's subscription would have its own delivery record. Reading or waiting
+on another run must not consume that run's own parent notification. Permission to
+message or observe a peer would not automatically grant lifecycle control.
+Human interventions would continue to notify the actual owning agent.
+
+## A possible workflow
+
+This is a design example, not a recorded demonstration:
+
+1. An acquisition session accepts five scheduler jobs and returns handles tied
+   to the actual scheduled work.
+2. An analysis session observes those handles and works on the existing data.
+3. When the jobs settle, its subscription wakes it with the available outcomes.
+4. It collects the results, messages the acquisition session with revised inputs,
+   and starts the next iteration.
+
+The scheduler adapter must distinguish job submission from job completion. The
+workflow also needs explicit outcomes for partial failure, interruption and
+cancellation; a finished submission command cannot stand in for them.
+
+## Qualification still required
+
+Use two distinct workflow executions and actual models to demonstrate busy/idle
+messages, attributed replies, cross-workflow observation and waits, independent
+completion delivery, Stop independence and permission boundaries. Remote routes
+need their own recovery and lifecycle evidence. Existing same-workspace peer
+messaging passes do not qualify that wider contract.
+
+Read [Messages and feedback](/docs/tasks/messages/) for the implemented addressing
+and mailbox behavior, and [Background work](/docs/tasks/) for accepted task execution.

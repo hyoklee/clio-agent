@@ -1,0 +1,18 @@
+---
+const { active } = Astro.props as { active: string };
+const sections = [
+  ['overview', 'Background work', '/docs/tasks/'],
+  ['wait', 'Observe and wait', '/docs/tasks/observe-and-wait/'],
+  ['subagents', 'Subagents', '/docs/tasks/subagents/'],
+  ['messages', 'Messages', '/docs/tasks/messages/'],
+  ['tools', 'Tools and sources', '/docs/tasks/tools-and-sources/'],
+  ['coordination', 'Coordination proposal', '/docs/tasks/session-coordination/'],
+];
+---
+<nav class="widget-section-tabs" aria-label="Tasks and coordination guides">
+  {sections.map(([id, label, href]) => <a href={href} aria-current={active === id ? 'page' : undefined}>{label}</a>)}
+</nav>
+<style>
+  nav { flex-wrap: wrap; overflow-x: visible; }
+  nav a { padding: .5rem .7rem; }
+</style>

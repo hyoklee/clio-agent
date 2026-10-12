@@ -1,0 +1,89 @@
+---
+title: Messages and feedback
+description: Deliver feedback at the next model iteration, wake an idle recipient, and coordinate with an authorized session.
+---
+
+import { Steps } from '@astrojs/starlight/components';
+import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
+import TasksPreview from '../../../../components/TasksPreview.astro';
+
+<TasksGuideNav active="messages" />
+
+Give feedback while an agent works. The message can join its next model iteration;
+it does not have to wait for the whole answer to your original request. An
+authorized agent can use the same durable mailbox to coordinate with another session.
+
+<TasksPreview />
+
+## Busy, idle and paused recipients
+
+| Recipient | Message delivery |
+| --- | --- |
+| Busy | Queued before its next model call at a safe iteration boundary. An active foreground tool call must return first. |
+| Idle | The queued message can wake the recipient automatically. |
+| Paused | The message remains queued. Sending ordinary peer mail does not remove the hold. |
+| Terminal subagent | Addressing the child can create a linked successor while preserving the earlier run and result. |
+
+A durable acknowledgement means CLIO accepted the message. It does not mean the
+recipient has read or acted on it. Messages carry source and target identities;
+replies can refer to the original message and correlation ID.
+
+## Find an earlier conversation, then address it exactly
+
+```text
+Find the session where we investigated the calibration mismatch. Read its summary
+and ask that session to check whether its conclusions apply to this dataset.
+Use the exact session returned by the search, and report the reply here.
+```
+
+This is an example request. Discovery and messaging require the tools declared
+by the blueprint and the permitted session scope.
+
+<Steps>
+
+1. Search relevant retained context with `memory_search_sessions`.
+2. Read the matching session with `memory_read_session_summary`; inspect a saved
+   context frame when useful.
+3. Use the returned exact message target with `message_agent`.
+4. Continue other work. The recipient can reply through the mailbox; an idle
+   sender can wake to receive that reply.
+
+</Steps>
+
+<details>
+<summary>What the memory tools actually return</summary>
+
+- **Search sessions** matches terms in retained transcript text, thinking and
+  errors. It returns bounded excerpts and their session/message identities.
+- **Read session summary** constructs an on-demand overview from session metadata,
+  message counts and up to five recent message excerpts. It is not a model-written
+  account of the entire session.
+- **Read context frame** inspects one saved context assembly: references, inclusion
+  decisions and token estimates. It does not read the complete contents of every
+  file or message referenced there.
+
+Use exact source references for deeper reading. A short summary is a starting
+point, not proof that every earlier decision is represented.
+
+</details>
+
+## Scope and ownership
+
+Knowing a session ID does not grant access to it. Peer messaging checks the
+recipient scope and explicit user intent. Reading another session does not grant
+permission to pause, restart or cancel it. Recipient execution retains its own
+permissions; a peer message is not new human authority.
+
+Task observation and waits still cover the caller's own task tree. A peer's
+session address is not automatically a handle usable by every task control.
+
+## What has been demonstrated
+
+Real Codex and Claude runs each passed five busy/idle peer-message cycles between
+independent root sessions in one workspace. The model performed search, summary
+reading, exact addressing and attributed replies. Busy recipients collected mail
+at the next iteration; idle recipients and senders woke automatically.
+
+These runs shared a blueprint. They do not establish coordination between two
+distinct workflow executions or remote relay peers. That wider contract is
+described separately in the [session coordination proposal](/docs/tasks/session-coordination/).

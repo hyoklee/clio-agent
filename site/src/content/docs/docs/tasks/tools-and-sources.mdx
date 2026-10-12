@@ -1,0 +1,84 @@
+---
+title: Task-capable tools and sources
+description: Understand background MCP calls, downloads, folder indexing, shell commands and subagent work.
+---
+
+import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
+import TasksPreview from '../../../../components/TasksPreview.astro';
+
+<TasksGuideNav active="tools" />
+
+A task has one handle and one owner even when its progress arrives through a
+different transport. The agent uses shared controls to inspect and wait; the
+original tool or service remains responsible for executing and cancelling the work.
+
+<TasksPreview />
+
+## Which work becomes a task?
+
+| Kind | Acceptance and progress |
+| --- | --- |
+| **MCP** | A task-capable server accepts work and CLIO returns a handle. Ordinary synchronous calls still return ordinary results. |
+| **Download** | An approved connected-source transfer returns a handle with available byte progress. |
+| **Indexing** | Connecting or refreshing a source starts persisted indexing with enumeration progress. |
+| **Shell** | An explicitly backgrounded command returns a handle and incremental output. Foreground execution remains the default. |
+| **Subagent** | Asynchronous spawning returns the child's assignment handle. |
+
+Cancellation works across task kinds. Messaging, pause/resume and restart remain
+[subagent controls](/docs/tasks/subagents/).
+
+## MCP calls
+
+CLIO uses its existing MCP Tasks machinery. Accepted task work is supervised
+independently of the initiating model turn. The model receives the handle instead
+of the client silently waiting for the terminal result.
+
+CLIO retains the full backend identity, including server, session and task.
+Reconnecting uses that identity; it does not submit the operation again. A backend
+that cannot recover its work is reported as interrupted. Input and permission
+questions remain attributed to their task.
+
+## Downloads and indexing
+
+Use the normal [source connection](/docs/files/connect/) and
+[download or link](/docs/files/download-or-link/) choices. Background execution
+does not broaden the selected paths, provider permissions or requested revision.
+Signing in, selecting data and authorizing access remain separate steps.
+The agent-facing `connected_data_download` tool uses the approved transfer path.
+
+Equivalent active indexing requests are deduplicated. A refresh builds its new
+manifest separately so it cannot replace a complete earlier manifest with a
+partial one. Download cancellation settles its staging cleanup before reporting
+the cancelled terminal result.
+
+Indexing a source does not mean the source has been downloaded. A download task
+does not make every file in a remote account available to the agent.
+
+## Background shell commands
+
+Ask the agent to use `shell_bash` with `background=true` for work that should
+continue independently. Omitting that argument keeps foreground execution.
+
+```text
+Run the existing conversion script in the background. Keep its handle, inspect
+its new output periodically, and review the README while it runs. If it fails,
+report the actual error rather than starting it again automatically.
+```
+
+This example does not invoke a command. The command still follows the workspace's
+confinement, confirmation and output limits. `timeout_s` is the command's explicit
+execution limit; it is separate from the timeout on `wait_tasks`.
+
+On service shutdown, CLIO stops its owned process trees and records interruption.
+It does not reattach to a process using only a PID or automatically replay the command.
+
+## Combining kinds
+
+A parent can review files while a download and a child analysis run, observe both,
+then wait for all required outcomes. Start with the handles returned by accepted
+work. [Observe and wait](/docs/tasks/observe-and-wait/) explains partial failures,
+expired waits and stored result collection.
+
+A remote scheduler submission has its own boundary: finishing a command that
+submits a Slurm job does not prove that the scheduled job has completed. Tracking
+that job's lifecycle requires an adapter that observes the actual scheduler outcome.

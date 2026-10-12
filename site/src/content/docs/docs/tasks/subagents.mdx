@@ -1,0 +1,77 @@
+---
+title: Subagent controls
+description: Inspect a child's assignment, pause and resume it, cancel its descendants, or create a linked restart.
+---
+
+import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
+import TasksPreview from '../../../../components/TasksPreview.astro';
+import GuideScreenshot from '../../../../components/GuideScreenshot.astro';
+
+<TasksGuideNav active="subagents" />
+
+A subagent works on an assignment in its own conversation. Its task handle lets
+the parent inspect progress and collect the outcome while continuing other work.
+Open the child conversation when you want to see what it actually received or did.
+
+<TasksPreview />
+
+## Inspect the assignment
+
+Open **Work**, then the child's row. The row shows the original assignment and
+available result. **Open conversation** takes you to the child's transcript;
+the parent navigation returns you to the owning conversation.
+
+A child shown through its durable task record appears once in Background work.
+Older records can lack an assignment or some controls; CLIO identifies missing
+descriptions rather than inventing an assignment.
+
+## Pause and resume
+
+Pause holds the child's model execution and retains its context. The handle
+stays the same. Its accepted shell commands, downloads and other background
+tasks continue. Incoming messages and results remain queued while it is held.
+
+<GuideScreenshot name="tasks-phone-paused" format="png" portrait alt="Work shows a paused worker with a resume control while its Bash task remains running" caption="The worker is paused while Bash continues. Resume releases the model hold; it does not start the command again." />
+
+Resume lets the same run continue with its saved context and pending messages.
+Wait for a requested pause to settle before resuming. An ordinary peer message
+does not lift another agent's pause.
+
+## Cancel the run and its descendants
+
+Choose **×** on the task. The confirmation names the task and warns that
+descendant agents, downloads and shell processes will also be cancelled.
+**View assignment** reveals the full original request before you decide.
+**Keep running** dismisses the dialog without cancelling anything.
+
+<GuideScreenshot name="tasks-phone-cancel-confirmation" format="png" portrait alt="Cancel this task dialog identifies worker number one and warns about cancelling descendant agents, downloads and shell processes" caption="Cancellation is an explicit action. The dialog keeps its consequence and decision visible, with the full assignment available on demand." />
+
+After confirmation, **Cancellation requested** means the owner is still settling.
+It is not proof that the process or transfer has stopped. The terminal outcome
+is published after the required owner settlement and cleanup.
+
+## Restart with a new handle
+
+A restart creates a linked successor run with a new handle. A retained-context
+restart carries the previous context and accepted-operation identities. A fresh
+restart resets copied conversation history while retaining explicit custody of
+previously accepted work. Neither mode is permission to replay an old command.
+
+The old task and outcome remain inspectable. A message to a terminal child can
+create a linked successor; it does not change the old task back to running.
+
+## Human controls notify the parent
+
+If you steer, pause, resume, cancel or restart a child, CLIO queues an attributed
+notice for its owning parent. A busy parent receives it at its next model
+iteration; an idle parent can wake for it. A held parent retains it until resume.
+The notice explains the action and outcome, including a successor handle when
+one was created. Agent messages retain their own sender identity.
+
+## Placement limits
+
+The reviewed lifecycle controls apply to local subagents. Remote relay pause,
+retained-context restart and peer addressing remain unsupported; CLIO refuses
+them explicitly rather than showing a local hold as a successful remote pause.
+
+See [Messages and feedback](/docs/tasks/messages/) for steering and peer discovery.

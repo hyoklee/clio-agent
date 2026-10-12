@@ -72,7 +72,7 @@ An agent can pause and ask you a question instead of guessing. A banner above th
 - A confirmation, before something that you may want to review.
 - An interactive view, such as a map where you pick a station, or a form.
 
-Answer it, or choose **Cancel question** to dismiss it. Permission requests appear in the same place. The agent waits for you, and nothing continues until you respond.
+Answer it, or choose **Cancel question** to dismiss it. Permission requests appear in the same place. The requesting agent waits for your answer. In the [task development preview](/docs/tasks/), other accepted background tasks can continue while that question is pending.
 
 If a child agent asks, the question is attributed to that child so you can see who is asking.
 
@@ -99,7 +99,11 @@ For a report that connects several outputs in the side panel, see
 
 While the agent is working, a **Steer** button appears next to the composer. Type a message and choose it, and the message joins the active turn at the next safe boundary instead of waiting for it to finish.
 
-During a run the send button is labeled **Stop**. Choose it to cancel the current work.
+During a run the send button is labeled **Stop**. Choose it to interrupt the
+current response. In the [task development preview](/docs/tasks/), accepted
+background work continues and a later result can wake the agent again. Use
+**Cancel task** to stop that work, or **Pause** to hold a subagent's model while
+its accepted tasks continue. See [Subagent controls](/docs/tasks/subagents/).
 
 The session header also has actions to fork a session, compact its history, share it, and undo.
 
