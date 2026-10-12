@@ -55,3 +55,24 @@ the real activity probe and the silent-child/sabotage checks remain in place.
 Affected focused cases run individually/sequentially with one worker and zero
 skips. Source CI and additional live routes must pass before full qualification
 can be claimed. Original historical exclusions remain unverified.
+
+Fresh SSE diagnosis on `aa8ec28e` captured valid `response.completed` JSON lines
+of 65,796 and 65,849 bytes rejected by the vendor parser's 65,536-byte line
+limit. They include tool definitions, instructions and usage metadata. The
+separate event ceiling is 1 MiB. Qualification instrumentation records only
+sizes, hashes and field names, delegates to the unchanged parser and removes
+its scratch file with the run. No size limit, timeout or assertion was relaxed.
+
+The first fresh subagent lifecycle run on `aa8ec28e` passed three complete
+cycles, then failed the fourth successor's required fresh result-read gate.
+The first fresh Claude workflow run passed one cycle and failed the second
+peer-cancellation invocation gate. Neither family is counted as a five-cycle
+pass. All owners, scratch and private authentication copies settled and were
+removed. The next controller records bounded failure context before deleting
+transcripts, so a missing model action can be distinguished from a failed tool.
+
+The nullable SDK acknowledgement correction passed its actual CLI session-reuse
+regression and SDK live-SSE event-order test individually on `dce7c508`, one
+worker, zero skips. These are client integration checks, not live model or
+Windows native acceptance. Pytest removed its own disposable allocation tree;
+subsequent ownership inspection confirmed it absent.

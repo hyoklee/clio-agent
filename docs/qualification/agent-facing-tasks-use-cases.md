@@ -50,13 +50,23 @@ unexecuted attempts remain recorded alongside successful follow-ups.
 Full readiness is still incomplete:
 
 - Protected Windows native/Core and confinement routes remain blocked and
-  unverified under the existing rejected-launch boundaries.
+  unverified under the existing rejected-launch boundaries. Earlier native runs
+  exited with `0xC0000374` (heap corruption) and `0xC0000005` (access violation).
+  Those observations do not establish disk pressure as their cause. The later
+  automatic-review launch/confinement rejections prohibit retrying or bypassing
+  those particular actions; no fresh Windows native launch is claimed here.
 - Distinct local/remote inference routes lack fresh qualified provider evidence.
   Default localhost LM Studio/Ollama endpoints were not listening on Windows or
   homelab in the current probe; an alternative endpoint/profile is requested.
-- The retained provider-SSE failure rejected a 65,700-byte line at the unchanged
-  65,536-byte bound. The original raw line was not captured, so its cause and fix
-  remain unestablished. Ordinary SSE passes do not close it.
+- Fresh Codex SSE runs reproduce rejection at the unchanged 65,536-byte line
+  bound: 65,658 bytes on `df285214`, then 65,796 and 65,849 bytes on `aa8ec28e`.
+  The second observer captured the exact rejected frames' hashes and shapes:
+  valid JSON `response.completed` events containing tool schemas, instructions
+  and usage metadata. The separate whole-event bound is 1 MiB. No parser budget
+  was changed, frames discarded or operation resubmitted to make this pass.
+  `session-workflows-sse-current.json` and `subagent-sse-current.json` on homelab
+  retain bounded verdicts; both failed attempts cleaned up their complete run
+  directories and process owners. Ordinary SSE passes do not close this failure.
 
 Remote relay execution is outside the current qualification scope, as directed
 by the human. Its future migration to ordinary MCP Tasks is separate work;
