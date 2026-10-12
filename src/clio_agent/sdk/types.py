@@ -313,7 +313,7 @@ class PostMessageAck(_WireModel):
 
     message_id: str
     accepted_at: str = ""
-    task_handle: str = ""
+    task_handle: str | None = None
 
 
 # --------------------------------------------------------------------------- #

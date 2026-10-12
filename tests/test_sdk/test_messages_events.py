@@ -106,7 +106,7 @@ def test_live_sse_consume_of_a_stubbed_turn(client: ClioClient) -> None:
         # same handle returned in the SDK acknowledgement.
         assert types[:2] == ["mcp_task.updated", "session.status_changed"]
         accepted = seen[0].payload
-        assert ack.task_handle.startswith("run_")
+        assert isinstance(ack.task_handle, str) and ack.task_handle.startswith("run_")
         assert accepted["handle"] == ack.task_handle
         assert accepted["kind"] == "Session"
         assert accepted["key"]["session_id"] == sess.id
