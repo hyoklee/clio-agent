@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -39,7 +38,26 @@ def connected_data_connect(
     when idle; Conversation Stop leaves accepted indexing running. An already
     linked source or a sign-in requirement returns its connection status directly.
     """
-    app = context.active_app()
+    from clio_agent.tools.native_task_host import call_builtin_task
+
+    return call_builtin_task(
+        "connected_data_connect",
+        {
+            "provider": provider,
+            "root": root,
+            "label": label,
+            "mode": mode,
+            "configuration": configuration,
+        },
+    )
+
+
+def prepare_connect(
+    app: Any, arguments: dict[str, Any], *, human_action: bool = False
+) -> dict[str, Any]:
+    """Approve source attachment and reserve inputs before native indexing submission."""
+    provider, root, label = (arguments[key] for key in ("provider", "root", "label"))
+    mode, configuration = arguments.get("mode", "read_only"), arguments.get("configuration")
     sid = context.active_session_id()
     session = app.state.sessions.get(sid) if app is not None and sid else None
     if app is None or session is None:
@@ -78,7 +96,7 @@ def connected_data_connect(
             getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
         )
         args = body.model_dump(mode="json")
-        if (
+        if not human_action and (
             _invoke_permission_gate(gate, "connected_data_connect", args, {"kind": "native"})
             != "allow"
         ):
@@ -88,7 +106,7 @@ def connected_data_connect(
     if provider in {"github", "google_drive", "globus"} and not service.auth.connected(existing):
         result = connected_data_status()
         result["connection"] = {"source_id": existing.source.id, "state": "sign_in_required"}
-        return result
+        return {"immediate_result": result}
     if not existing.linked_manifest_id:
         if provider == "github":
             from clio_agent.gact.storage.github_preflight import source_cli
@@ -102,24 +120,12 @@ def connected_data_connect(
                 existing,
                 ["api", f"repos/{org}/{repo}/contents" + (f"/{folder}" if folder else "")],
             )
-        from clio_agent.gact.artifacts.observer_bridge import observer_call_id
+        from clio_agent.tools.servers.storage_server import index_inputs
 
-        invocation = observer_call_id()
-
-        async def submit() -> dict[str, Any]:
-            from clio_agent.gact.storage.indexing import start_index
-            from clio_agent.gact.storage.task_adapter import storage_handle
-
-            require_admission(app, sid)
-            operation = start_index(service, existing)
-            accepted = storage_handle(app, sid, operation, f"Index {label}: {root}", invocation)
-            accepted["connection"] = {"source_id": existing.source.id, "state": "indexing"}
-            return accepted
-
-        return asyncio.run_coroutine_threadsafe(submit(), app.state.mcp_app_loop).result()
+        return index_inputs(app, existing)
     result = connected_data_status()
     result["connection"] = {"source_id": existing.source.id, "state": "linked"}
-    return result
+    return {"immediate_result": result}
 
 
 def build_connected_data_connect_tool() -> Any:

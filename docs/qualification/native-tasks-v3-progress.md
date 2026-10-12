@@ -11,8 +11,8 @@ V3 replaces the accumulated task implementation. Earlier live results do not qua
 
 ## Gates
 
-1. Native Shell vertical slice: pending.
-2. MCP and native connected storage: pending.
+1. Native Shell vertical slice: source foundation committed in `50402149`; final/live gates pending.
+2. MCP and native connected storage: storage source replacement built; external MCP replacement pending.
 3. Core assignment/mailbox and coordination: pending.
 4. Unified admission, prompts and UI: pending.
 5. Final migration, live matrix, website and CI: pending.
@@ -25,6 +25,27 @@ Record launches before executing them. No qualification service has been launche
 - Dependency cache: use the existing uv cache, no copied runtime or archived environment.
 - Focused tests: identity-stamped children beneath `D:/Temp/clio-v3-native-tests`, isolated Core ports in the existing 20000–32000 test window. Normal fixture teardown releases Core and removes each disposable child.
 - Installed Desktop, primary checkout environment, credentials, defaults and released pins: outside this work.
+
+## Native storage development checks
+
+The old storage scheduler and mirrored task polling adapter are removed. Download and Indexing
+run on their independent FastMCP root. Core reserves the trusted envelope and active indexing
+deduplication before submission; the actual worker resolves it before resource effects. The
+retained transfer/index algorithms own atomic publication, byte/hash accounting and cleanup.
+The REST operation view also projects native queued work before a resource operation exists.
+
+Individually/sequentially executed development cases passed with one worker: selected real
+download bytes/hash, held indexing progress/deduplication/cancellation/previous-manifest
+retention, Core failure before submission, saturated Shell pool with independent storage,
+HTTP Indexing and Download acceptance/ownership/results, Connect approval/reuse, queued REST
+visibility and never-started cancellation, and abandoned-download cleanup. Startup import
+isolation also passed. Scoped Ruff and Pyright report no errors; file-size and silent-fallback
+guards pass. These are real SDK/Core/filesystem development checks, **not model acceptance**.
+
+The seven fresh HTTP/Connect/queued/storage scratch parents printed during these checks were
+inspected afterward and were absent: their fixtures released Core and removed disposable data.
+The Core binding still prints nanobind reference-leak diagnostics at interpreter exit; that
+diagnostic remains unresolved and is not described as clean runtime qualification.
 
 ## Qualification
 

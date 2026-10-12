@@ -81,6 +81,22 @@ class CoreTaskJournal:
         async with self.lock:
             return await self._commit(change(self.get(handle)))
 
+    async def reserve(self, row: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+        """Atomically reuse equivalent active work or confirm a new submission intent."""
+        async with self.lock:
+            key = row.get("dedup_key")
+            if key:
+                for candidate in [*self.rows.values(), *self.unconfirmed.values()]:
+                    if (
+                        candidate.get("dedup_key") == key
+                        and candidate["session_id"] == row["session_id"]
+                        and candidate["effective_status"]
+                        not in {"completed", "cancelled", "failed", "interrupted"}
+                        and not candidate.get("cancel_requested")
+                    ):
+                        return self.get(candidate["handle"]), True
+            return await self._commit(row), False
+
     async def _commit(self, row: dict[str, Any]) -> dict[str, Any]:
         arc = await self._arc()
         stamped = {

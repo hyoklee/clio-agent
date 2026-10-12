@@ -90,7 +90,9 @@ class SourceStore:
             )
         return operation
 
-    def begin_operation(self, source_id: str, kind: str) -> TransferOperation:
+    def begin_operation(
+        self, source_id: str, kind: str, *, identifier: str = ""
+    ) -> TransferOperation:
         """Reject overlapping changes to the same source, including from another client."""
         with self.transaction() as db:
             rows = db.execute("SELECT body FROM records WHERE kind='operation'").fetchall()
@@ -99,7 +101,11 @@ class SourceStore:
                 if previous.source_id == source_id and previous.state in {"queued", "running"}:
                     raise ValueError("A transfer is already active for this source")
             operation = TransferOperation.model_validate(
-                {"id": "transfer_" + uuid.uuid4().hex, "source_id": source_id, "kind": kind}
+                {
+                    "id": identifier or "transfer_" + uuid.uuid4().hex,
+                    "source_id": source_id,
+                    "kind": kind,
+                }
             )
             db.execute(
                 "INSERT INTO records VALUES ('operation', ?, ?)",

@@ -70,13 +70,13 @@ def test_selected_download_retains_prior_copies_and_does_not_download_siblings(
     service, record, _, workspace = local_source(tmp_path)
     first = service.store.begin_operation(record.source.id, "materialize")
     first = service.store.update_operation(first.id, selected_paths=["a.txt"])
-    asyncio.run(service._transfer(record, workspace, first))
+    asyncio.run(service.execute_transfer(record, workspace, first))
     record = service.get("w", record.source.id)
     assert Path(record.source.local_path, "a.txt").read_bytes() == b"first file"
     assert not Path(record.source.local_path, "nested", "b.txt").exists()
     second = service.store.begin_operation(record.source.id, "materialize")
     second = service.store.update_operation(second.id, selected_paths=["nested"])
-    asyncio.run(service._transfer(record, workspace, second))
+    asyncio.run(service.execute_transfer(record, workspace, second))
     record = service.get("w", record.source.id)
     assert Path(record.source.local_path, "a.txt").read_bytes() == b"first file"
     assert Path(record.source.local_path, "nested", "b.txt").read_bytes() == b"second file"
@@ -104,7 +104,7 @@ def test_github_link_only_and_human_folder_links(tmp_path: Path) -> None:
     )
     assert not service.download_available(record)
     with pytest.raises(ValueError, match="transfer backend"):
-        service.start_transfer(record, tmp_path)
+        service.validate_download(record)
     for invalid in (
         "https://example.com/repo",
         "https://github.com/a/b/blob/main/code.py",

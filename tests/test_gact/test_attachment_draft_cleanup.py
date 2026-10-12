@@ -39,7 +39,7 @@ def setup(
 
 def materialize(service: StorageService, record: SourceRecord, workspace: Path) -> SourceRecord:
     operation = service.store.begin_operation(record.source.id, "materialize")
-    asyncio.run(service._transfer(record, workspace, operation))
+    asyncio.run(service.execute_transfer(record, workspace, operation))
     assert service.store.get("operation", operation.id, TransferOperation).state == "completed"
     return service.get("w", record.source.id)
 
@@ -138,10 +138,10 @@ def test_removed_running_download_cannot_publish_a_late_copy(tmp_path: Path) -> 
     lease = drafts.begin(record)
 
     async def download() -> None:
-        operation = service.start_transfer(record, workspace)
-        task = service.tasks[operation.id]
+        operation = service.store.begin_operation(record.source.id, "materialize")
         drafts.finish(record.source.id, lease)
-        await task
+        await service.execute_transfer(record, workspace, operation)
+        await asyncio.to_thread(drafts.cleanup)
         assert service.store.get("operation", operation.id, TransferOperation).state == "cancelled"
 
     asyncio.run(download())

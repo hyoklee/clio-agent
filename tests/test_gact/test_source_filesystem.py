@@ -130,7 +130,7 @@ def test_create_delete_and_path_confinement(tmp_path: Path) -> None:
 def test_download_from_writable_link_is_independent(tmp_path: Path) -> None:
     fs, service, record, original, workspace = setup(tmp_path)
     operation = service.store.begin_operation(record.source.id, "materialize")
-    asyncio.run(service._transfer(record, workspace, operation))
+    asyncio.run(service.execute_transfer(record, workspace, operation))
     downloaded = service.get("w", record.source.id)
     copy = Path(downloaded.source.local_path) / "data.txt"
     copy.write_bytes(b"local edit")

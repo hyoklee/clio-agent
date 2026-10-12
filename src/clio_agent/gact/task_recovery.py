@@ -20,14 +20,11 @@ logger = logging.getLogger(__name__)
 def start_task_recovery(app: Any) -> None:
     """Reproject storage and reconnect recoverable MCP work; never attach a recorded shell PID."""
     from clio_agent.gact.session_run_tasks import recover_session_runs
-    from clio_agent.gact.storage.task_adapter import recover_storage_handles
 
     recover_session_runs(app)
     from clio_agent.gact.task_subscriptions import schedule_subscriptions
 
     schedule_subscriptions(app)
-    if getattr(app.state, "connected_storage", None) is not None:
-        recover_storage_handles(app)
     supervisor, store = task_supervisor(app), app_task_store(app)
     from clio_agent.gact.task_relay_owner import retain_relay_owner
 

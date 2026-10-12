@@ -39,24 +39,19 @@ def _default_test_arc(request, tmp_path, monkeypatch):
         yield
         return
 
-    from clio_agent.arc.live import _MemoryStore
     from clio_agent.arc.memory import ARCMemory
+    from clio_agent.arc.storage import make_arc_store
 
     counter = {"n": 0}
 
     def _build_app_with_default_arc(*args, **kwargs):
         if "arc" not in kwargs:
             counter["n"] += 1
-            # In-memory ARCStore: a real ARCMemory (so the op-logger / cache-stats /
-            # live-fold surfaces the GACT layer drives are all present), but with no
-            # filesystem persistence. The latter matters because the live tool observer
-            # runs ON the turn thread and the per-turn settle reads the same in-process
-            # ledger; an FS-backed record on the emit path adds I/O latency that races
-            # that ordering. The in-memory store keeps record fast, as the old in-memory
-            # sink fallback was, so the per-test ordering assertions hold.
+            # Native task hosts require the same confirmed Core writer as production.
+            # The suite's private daemon and namespace fixture own and clear this store.
             kwargs["arc"] = ARCMemory(
                 data_dir=str(tmp_path / f"arc_{counter['n']}"),
-                store=_MemoryStore(),
+                store=make_arc_store(backend="cte"),
             )
         return real_build_app(*args, **kwargs)
 

@@ -69,23 +69,13 @@ class StorageService:
         from clio_agent.gact.storage.obsidian_sync import ObsidianSync
 
         self.obsidian_sync = ObsidianSync()
+        self.transfer_settled: Callable[[], None] | None = None
         # GACT currently authenticates one owner (loopback or the instance bearer).
         # Bind to that OS owner, not an ephemeral Desktop launch token or a
         # client-supplied username. Future multi-user auth supplies distinct subjects.
         self.principal = "os-owner:" + getpass.getuser()
-        self.tasks: dict[str, asyncio.Task[None]] = {}
-        self.transfer_settled: Callable[[], None] | None = None
         self.target_source: Callable[[SourceRecord], SshTargetSource | SftpSource] | None = None
         self.store.recover()
-
-    def reconcile(self, workspaces: dict[str, Path]) -> None:
-        """Resume observing native jobs after restart without duplicating submissions."""
-        for operation in self.store.list("operation", TransferOperation):
-            if operation.native_request and operation.state == "interrupted":
-                record = self.store.get("source", operation.source_id, SourceRecord)
-                workspace = workspaces.get(record.source.workspace_id or "")
-                if record.connected and workspace is not None and workspace.is_dir():
-                    self.start_transfer(record, workspace)
 
     def set_link_access(
         self, record: SourceRecord, access: Literal["read_only", "publish_later", "write_through"]
@@ -102,31 +92,8 @@ class StorageService:
             )
 
     async def shutdown(self) -> None:
-        """Cooperatively stop local transfers and retain native jobs for later reconciliation."""
+        """Stop the independent note synchronizer; native task hosts own storage execution."""
         await asyncio.to_thread(self.obsidian_sync.shutdown)
-        tasks = list(self.tasks.items())
-        interrupted = set()
-        for identifier, task in tasks:
-            operation = self.store.get("operation", identifier, TransferOperation)
-            if operation.native_request:
-                task.cancel()
-            else:
-                if not operation.cancel_requested:
-                    interrupted.add(identifier)
-                self.store.update_operation(identifier, cancel_requested=True)
-        if tasks:
-            _, pending = await asyncio.wait([task for _, task in tasks], timeout=10)
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*(task for _, task in tasks), return_exceptions=True)
-        for identifier in interrupted:
-            operation = self.store.get("operation", identifier, TransferOperation)
-            if operation.state == "cancelled":
-                self.store.update_operation(
-                    identifier,
-                    state="interrupted",
-                    error="Service stopped the local operation after cleanup",
-                )
 
     def create(
         self, workspace_id: str, body: CreateSource, workspace_root: Path | None = None
@@ -397,116 +364,67 @@ class StorageService:
             if isinstance(adapter, (DriveSource, SftpSource)):
                 adapter.close()
 
-    def start_transfer(
-        self, record: SourceRecord, workspace_root: Path, selected_paths: list[str] | None = None
-    ) -> TransferOperation:
-        """Queue explicit materialization or resume the same native transfer identity."""
+    def validate_download(self, record: SourceRecord) -> None:
+        """Reject unsupported or conflicting downloads before native submission."""
         if record.origin == "desktop_upload":
             raise ValueError("Choose the desktop folder again to explicitly upload a new revision")
         if not self.download_available(record):
             raise ValueError("Downloads require this connector's transfer backend; use Link folder")
-        existing = next(
-            (
-                row
-                for row in reversed(self.store.list("operation", TransferOperation))
-                if row.source_id == record.source.id
-                and row.native_request
-                and row.state == "interrupted"
-            ),
-            None,
-        )
-        if not existing:
-            self.require_idle(record)
-        operation = existing or self.store.begin_operation(
-            record.source.id, "refresh" if record.manifest_id else "materialize"
-        )
-        if not existing and selected_paths is not None:
-            operation = self.store.update_operation(operation.id, selected_paths=selected_paths)
-        if existing:
-            if existing.id in self.tasks:
-                raise ValueError("This source already has an active transfer")
-            operation = self.store.update_operation(existing.id, state="queued", error=None)
-        record.source = record.source.model_copy(
-            update={"materialization": "transferring", "operation_id": operation.id}
-        )
-        self.store.put("source", record.source.id, record)
-        self.tasks[operation.id] = asyncio.create_task(
-            self._transfer(record, workspace_root, operation)
-        )
-        self.tasks[operation.id].add_done_callback(lambda _: self.tasks.pop(operation.id, None))
-        return operation
+        self.require_idle(record)
 
-    async def _transfer(
-        self, record: SourceRecord, workspace_root: Path, operation: TransferOperation
+    async def execute_transfer(
+        self,
+        record: SourceRecord,
+        workspace_root: Path,
+        operation: TransferOperation,
+        *,
+        progress: Callable[[int, int], None] | None = None,
     ) -> None:
+        """Execute one native-owned transfer and join its provider/cleanup on cancellation."""
+
         def step() -> bool:
             current = self.store.get("operation", operation.id, TransferOperation)
             with self.adapter(record) as adapter:
                 if isinstance(adapter, GlobusSource):
                     result = adapter.poll(self.store, current, workspace_root)
+                    if progress is not None:
+                        progress(result.bytes_done, result.bytes_total)
                     return result.state in {"completed", "failed", "cancelled"}
-                materialize(self.store, record, adapter, workspace_root, current)
+                materialize(self.store, record, adapter, workspace_root, current, progress=progress)
                 return True
 
-        try:
-            while True:
-                worker = asyncio.create_task(asyncio.to_thread(step))
+        interrupted = False
+        while True:
+            worker = asyncio.create_task(asyncio.to_thread(step))
+            while not worker.done():
                 try:
-                    settled = await asyncio.shield(worker)
+                    await asyncio.shield(worker)
                 except asyncio.CancelledError:
-                    current = self.store.get("operation", operation.id, TransferOperation)
-                    if not current.native_request:
-                        self.store.update_operation(operation.id, cancel_requested=True)
-                    # asyncio cancellation cannot stop the provider's worker thread.
-                    # Keep custody until that thread and staging cleanup actually exit.
-                    await asyncio.gather(worker, return_exceptions=True)
+                    interrupted = True
+                    # The native cancellation request must reach the provider,
+                    # including cloud transfers, before its worker can settle.
+                    self.store.update_operation(operation.id, cancel_requested=True)
+                except (OSError, ValueError, RuntimeError):
+                    break  # The joined worker's error and cleanup state are inspected below.
+            try:
+                settled = worker.result()
+            except (OSError, ValueError, RuntimeError) as exc:
+                current = self.store.get("operation", operation.id, TransferOperation)
+                if current.state not in {"completed", "failed", "cancelled"}:
+                    self.store.update_operation(operation.id, state="interrupted", error=str(exc))
                     raise
-                if settled:
-                    break
+                if interrupted:
+                    raise asyncio.CancelledError from exc
+                return
+            if settled:
+                if interrupted:
+                    raise asyncio.CancelledError
+                return
+            try:
                 await asyncio.sleep(5)
-        except asyncio.CancelledError:
-            # The provider job may still be running. Keep its immutable request
-            # and submission ID, and reconcile it after reconnection.
-            self.store.update_operation(
-                operation.id,
-                state="interrupted",
-                error="CLIO stopped; reconnect to resume checking this transfer",
-            )
-            raise
-        except (OSError, ValueError, RuntimeError) as exc:
-            current = self.store.get("operation", operation.id, TransferOperation)
-            if current.state not in {"failed", "cancelled"}:
-                self.store.update_operation(
-                    operation.id,
-                    state="interrupted" if current.native_request else "failed",
-                    error=str(exc),
-                )
-            record = self.store.get("source", record.source.id, SourceRecord)
-            record.source = record.source.model_copy(
-                update={"materialization": "stale" if record.manifest_id else "failed"}
-            )
-            self.store.put("source", record.source.id, record)
-
-        except Exception:
-            logger.exception(
-                "Storage transfer failed source_id=%s operation_id=%s",
-                record.source.id,
-                operation.id,
-            )
-            self.store.update_operation(
-                operation.id,
-                state="interrupted",
-                error="Storage transfer stopped unexpectedly; inspect and retry",
-            )
-            record = self.store.get("source", record.source.id, SourceRecord)
-            record.source = record.source.model_copy(
-                update={"materialization": "stale" if record.manifest_id else "failed"}
-            )
-            self.store.put("source", record.source.id, record)
-
-        finally:
-            if self.transfer_settled is not None:
-                await asyncio.to_thread(self.transfer_settled)
+            except asyncio.CancelledError:
+                interrupted = True
+                self.store.update_operation(operation.id, cancel_requested=True)
 
     def download_available(self, record: SourceRecord) -> bool:
         """Offer copies only when the selected connector's transfer backend is ready."""

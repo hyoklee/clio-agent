@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import uuid
+from collections.abc import Callable
 from pathlib import Path
 from time import monotonic
 from typing import Literal
@@ -73,6 +74,8 @@ def materialize(
     adapter: SourceAdapter,
     workspace_root: Path,
     operation: TransferOperation,
+    *,
+    progress: Callable[[int, int], None] | None = None,
 ) -> SourceRecord:
     """Stream selected data on the connected CLIO and publish only a complete copy.
 
@@ -95,6 +98,7 @@ def materialize(
     settled_state: Literal["completed", "cancelled", "failed"] | None = None
     settled_error: str | None = None
     done = 0
+    total = 0
     published_bytes = 0
     progress_published_at: float | None = None
     store.update_operation(operation.id, state="running")
@@ -104,6 +108,8 @@ def materialize(
         revision = snapshot_revision(entries)
         total = sum(row.size for row in entries if row.kind == "file")
         store.update_operation(operation.id, bytes_total=total)
+        if progress is not None:
+            progress(0, total)
         required = total * (2 if not record.download_read_only else 1)
         if shutil.disk_usage(owner_root).free < required:
             raise ValueError("Insufficient capacity for the source baseline and working copy")
@@ -147,6 +153,8 @@ def materialize(
                     # a synchronous SQLite commit for every small source file.
                     if progress_published_at is None or current_time - progress_published_at >= 0.2:
                         store.update_operation(operation.id, bytes_done=done)
+                        if progress is not None:
+                            progress(done, total)
                         published_bytes = done
                         progress_published_at = current_time
                 writer.flush()
@@ -239,6 +247,8 @@ def materialize(
             store.update_operation(
                 operation.id, state=settled_state, error=settled_error, bytes_done=done
             )
+        if progress is not None:
+            progress(done, total)
 
 
 def local_hashes(root: Path) -> dict[str, str]:

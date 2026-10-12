@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from clio_agent.gact.storage.models import Manifest, SourceRecord, TransferOperation, now
@@ -65,7 +64,11 @@ def publish_index(
 
 
 async def run_index(
-    service: StorageService, record: SourceRecord, operation: TransferOperation
+    service: StorageService,
+    record: SourceRecord,
+    operation: TransferOperation,
+    *,
+    report_progress: Callable[[int], None] | None = None,
 ) -> None:
     """Enumerate off-loop, observe cancellation per entry, retain prior manifests on failure."""
     from clio_agent.gact.storage.linked import link_folder
@@ -78,38 +81,39 @@ async def run_index(
         if count - last_count >= 32:
             service.store.update_operation(operation.id, entries_done=count)
             last_count = count
+            if report_progress is not None:
+                report_progress(count)
 
     def cancelled() -> bool:
         return service.store.get("operation", operation.id, TransferOperation).cancel_requested
 
-    worker = asyncio.create_task(
-        asyncio.to_thread(
-            link_folder,
+    def enumerate_and_report() -> None:
+        linked = link_folder(
             service,
             record,
             progress=progress,
             cancelled=cancelled,
             operation_id=operation.id,
         )
-    )
-    try:
-        await asyncio.shield(worker)
-    except asyncio.CancelledError:
-        service.store.update_operation(operation.id, cancel_requested=True)
+        if report_progress is not None:
+            manifest_id = linked.linked_manifest_id
+            if manifest_id is None:
+                raise RuntimeError("Index publication returned no manifest identity")
+            manifest = service.store.get("manifest", manifest_id, Manifest)
+            report_progress(len(manifest.entries))
+
+    worker = asyncio.create_task(asyncio.to_thread(enumerate_and_report))
+    interrupted = False
+    while not worker.done():
         try:
-            await worker
-        except Exception:
-            # The enumerator has exited, including provider errors during shutdown.
-            # Its outcome is recorded as interruption below, never a running owner.
-            logger.exception(
-                "Index worker exited during service interruption operation=%s", operation.id
-            )
-        current = service.store.get("operation", operation.id, TransferOperation)
-        if current.state != "completed":
-            service.store.update_operation(
-                operation.id, state="interrupted", error="Service stopped indexing"
-            )
-        raise
+            await asyncio.shield(worker)
+        except asyncio.CancelledError:
+            interrupted = True
+            service.store.update_operation(operation.id, cancel_requested=True)
+        except (InterruptedError, OSError, ValueError, RuntimeError):
+            break  # Inspect the actual joined worker result below.
+    try:
+        worker.result()
     except InterruptedError as exc:
         logger.info("Index cancelled operation=%s reason=%s", operation.id, exc)
         service.store.update_operation(operation.id, state="cancelled", error=str(exc))
@@ -117,31 +121,10 @@ async def run_index(
         logger.exception("Index failed operation=%s", operation.id)
         service.store.update_operation(operation.id, state="failed", error=str(exc))
 
-
-def start_index(service: StorageService, record: SourceRecord) -> TransferOperation:
-    """Deduplicate an equivalent active index; otherwise persist before starting enumeration."""
-    signature = hashlib.sha256(
-        json.dumps(
-            [
-                record.source.root,
-                record.configuration.model_dump(mode="json"),
-                record.link_access,
-                record.linked_manifest_id,
-            ],
-            sort_keys=True,
-        ).encode()
-    ).hexdigest()
-    for operation in service.store.list("operation", TransferOperation):
-        if (
-            operation.source_id == record.source.id
-            and operation.kind == "indexing"
-            and operation.state in {"queued", "running"}
-        ):
-            if operation.index_signature != signature:
-                raise ValueError("An index of a different source revision is already running")
-            return operation
-    operation = service.store.begin_operation(record.source.id, "indexing")
-    operation = service.store.update_operation(operation.id, index_signature=signature)
-    service.tasks[operation.id] = asyncio.create_task(run_index(service, record, operation))
-    service.tasks[operation.id].add_done_callback(lambda _: service.tasks.pop(operation.id, None))
-    return operation
+    if interrupted:
+        current = service.store.get("operation", operation.id, TransferOperation)
+        if current.state not in {"completed", "failed", "cancelled"}:
+            service.store.update_operation(
+                operation.id, state="cancelled", error="Indexing cancelled"
+            )
+        raise asyncio.CancelledError

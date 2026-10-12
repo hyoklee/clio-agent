@@ -218,7 +218,7 @@ def test_real_sftp_browse_read_and_no_secret_serialization(
         workspace,
     )
     operation = service.store.begin_operation(record.source.id, "materialize")
-    asyncio.run(service._transfer(record, workspace, operation))
+    asyncio.run(service.execute_transfer(record, workspace, operation))
     materialized = service.get("workspace", record.source.id)
     assert Path(materialized.source.local_path, "sample.txt").read_bytes() == b"real SFTP bytes\n"
     request = InspectSftp(route=route, credentials=credentials)

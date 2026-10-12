@@ -262,12 +262,12 @@ class GlobusSource:
         stage = owner / ("native-" + operation.id)
         if task["status"] == "SUCCEEDED":
             if operation.cancel_requested:
+                remove_owned_tree(stage, owner)
                 store.update_operation(
                     operation.id,
                     state="cancelled",
                     error="Transfer completed before cancellation; the unexposed local staging copy was removed",
                 )
-                remove_owned_tree(stage, owner)
                 return store.get("operation", operation.id, TransferOperation)
             # The collection mapping must lead to real files on this CLIO; a
             # successful cloud job alone is not successful local materialization.
@@ -276,6 +276,7 @@ class GlobusSource:
             remove_owned_tree(stage, owner)
         elif task["status"] == "FAILED":
             state = "cancelled" if operation.cancel_requested else "failed"
+            remove_owned_tree(stage, owner)
             store.update_operation(
                 operation.id,
                 state=state,
@@ -283,7 +284,6 @@ class GlobusSource:
                 if operation.cancel_requested
                 else "Globus transfer failed; inspect the native task before retrying",
             )
-            remove_owned_tree(stage, owner)
         current = store.get("operation", operation.id, TransferOperation)
         if current.state in {"failed", "cancelled"}:
             self.record.source = self.record.source.model_copy(

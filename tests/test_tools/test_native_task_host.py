@@ -29,6 +29,12 @@ from clio_agent.tools.native_task_tool import SUBMISSION_REF
 from clio_agent.tools.task_call_context import TASK_CALL, TaskCall
 
 
+async def _close_hosts(app: Any, host: NativeTaskHost) -> None:
+    """Settle every application-owned native root created by this case."""
+    for owner in getattr(app.state, "native_task_hosts", {"standalone": host}).values():
+        await owner.close()
+
+
 @pytest.fixture
 def native_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     sessions = SessionStore(path=tmp_path / "sessions.json")
@@ -100,7 +106,7 @@ async def test_native_progress_preserves_chunks_between_status_polls(native_app:
     finally:
         release.set()
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 async def _definition(value: int, background: bool = True) -> dict[str, Any]:
@@ -151,7 +157,7 @@ async def test_native_cancellation_waits_for_attempt_receipt(
     finally:
         release.set()
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -190,7 +196,7 @@ async def test_native_acceptance_and_core_rebuild(native_app: Any) -> None:
     finally:
         release.set()
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -220,7 +226,7 @@ async def test_native_reference_cannot_run_another_task(native_app: Any) -> None
         assert effects == [3]
     finally:
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -239,7 +245,7 @@ async def test_native_rejects_public_reference_before_submission(native_app: Any
         assert not journal.rows and not host.handles
     finally:
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 def _shell_process_command(workspace: Path) -> tuple[str, Path]:
@@ -317,7 +323,7 @@ async def test_native_shell_survives_product_bridge_close(
             await asyncio.to_thread(bridge.close)
         for token in reversed(tokens):
             context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -358,7 +364,7 @@ async def test_native_shell_keeps_descendant_after_command_parent_exits(
     finally:
         TASK_CALL.reset(call_token)
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -413,7 +419,7 @@ async def test_native_stop_during_acceptance_records_once_and_keeps_background_r
         TASK_CALL.reset(call_token)
         for token in reversed(tokens):
             context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -446,7 +452,7 @@ async def test_native_shell_background_waiter_stop_and_cancellation(
         assert all(attempt["cleanup_confirmed"] for attempt in row["attempts"].values())
     finally:
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -472,7 +478,7 @@ async def test_native_shell_foreground_stop_waits_for_process_tree(
         assert all(attempt["cleanup_confirmed"] for attempt in row["attempts"].values())
     finally:
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -542,7 +548,7 @@ async def test_native_delivery_crash_before_and_after_recipient_input_commit(
         assert not drain_task_completions(native_app, native_app.session.id)
     finally:
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -581,7 +587,7 @@ async def test_native_queued_cancellation_never_enters_workload(
     finally:
         release.set()
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -625,7 +631,7 @@ async def test_native_lost_acceptance_reply_retains_original_identity(
     finally:
         release.set()
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)
 
 
 @pytest.mark.asyncio
@@ -666,4 +672,4 @@ async def test_native_core_outage_cancellation_remains_effective(
     finally:
         monkeypatch.setattr(host.journal, "_commit", original_commit)
         context.reset(token)
-        await host.close()
+        await _close_hosts(native_app, host)

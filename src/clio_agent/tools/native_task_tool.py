@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from contextlib import ExitStack
@@ -64,10 +65,26 @@ class NativeWorkloadTool(Tool):
 
     _host: Any = PrivateAttr()
     _workload: Any = PrivateAttr()
+    _kind: str = PrivateAttr(default="MCP")
+    _prepare: Any = PrivateAttr(default=None)
 
     def bind(self, host: Any, workload: Any) -> None:
         """Bind this application-owned worker to its native root and real workload."""
         self._host, self._workload = host, workload
+
+    def configure(self, kind: str, prepare: Any = None) -> None:
+        """Declare workload metadata and submission validation, never a separate queue."""
+        self._kind, self._prepare = kind, prepare
+
+    async def prepare(
+        self, arguments: dict[str, Any], *, human_action: bool = False
+    ) -> dict[str, Any]:
+        """Resolve approved workload inputs before persisting the native submission."""
+        if self._prepare is None:
+            return {}
+        return await asyncio.to_thread(
+            self._prepare, self._host.app, arguments, human_action=human_action
+        )
 
     def validate_public(self, arguments: dict[str, Any]) -> None:
         """Reject internal references and unknown public fields before queueing work."""
@@ -115,7 +132,7 @@ class NativeWorkloadTool(Tool):
                 "acceptance": "accepted",
                 "activity": "withdrawn" if admission_error else "running",
                 "admission_error": admission_error,
-                "effective_status": "working",
+                "effective_status": "queued" if admission_error else "running",
                 "attempts": {
                     **row.get("attempts", {}),
                     **(

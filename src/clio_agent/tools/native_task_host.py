@@ -39,6 +39,35 @@ def native_route(app: Any, name: str) -> tuple[NativeTaskHost, str] | None:
     return app.state.native_task_hosts[identity], tool
 
 
+def call_builtin_task(name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Bridge a synchronous agent tool onto its application-owned native MCP client."""
+    from clio_agent.gact.context import active_app, active_session_id
+
+    app = active_app()
+    if app is None:
+        raise RuntimeError("Native built-ins require an application-owned client")
+    route = native_route(app, name)
+    if route is None:
+        raise RuntimeError(f"Native built-in is unavailable: {name}")
+    host, tool = route
+    from clio_agent.tools.execution import get_active_tool_workspace_root, tool_workspace_context
+
+    session = app.state.sessions.get(active_session_id())
+    workspace = app.state.workspaces.get(session.workspace_id) if session is not None else None
+    if workspace is None:
+        raise RuntimeError("Native built-in requires its owning workspace")
+    try:
+        current = asyncio.get_running_loop()
+    except RuntimeError:
+        current = None
+    if current is app.state.mcp_app_loop:
+        raise RuntimeError("Synchronous task bridge cannot block its application loop")
+    with tool_workspace_context(get_active_tool_workspace_root() or workspace.root_path):
+        return asyncio.run_coroutine_threadsafe(
+            host.submit(tool, arguments), app.state.mcp_app_loop
+        ).result()
+
+
 class NativeTaskHost:
     """Retain one independently pooled native runtime root on the application loop."""
 
@@ -83,7 +112,9 @@ class NativeTaskHost:
         self.submissions: set[asyncio.Task[Any]] = set()
         self.lifespan: Any = None
 
-    def register(self, definition: Tool, workload: Any) -> None:
+    def register(
+        self, definition: Tool, workload: Any, *, kind: str | None = None, prepare: Any = None
+    ) -> None:
         """Register a native callable with a public schema hiding the host reference."""
         if self.client is not None:
             raise RuntimeError("Register native tools before starting the root")
@@ -96,6 +127,7 @@ class NativeTaskHost:
             task_config=TaskConfig(mode="required"),
         )
         tool.bind(self, workload)
+        tool.configure(kind or self.identity.title(), prepare)
         self.server.add_tool(tool)
         self.tools[tool.name] = tool
 
@@ -151,7 +183,9 @@ class NativeTaskHost:
                     },
                 )
 
-    async def submit(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def submit(
+        self, name: str, arguments: dict[str, Any], *, human_action: bool = False
+    ) -> dict[str, Any]:
         """Persist intent, retain one submission RPC, then return acceptance or uncertainty."""
         from clio_agent.gact import context
         from clio_agent.tools.execution import get_active_tool_workspace_root
@@ -166,6 +200,9 @@ class NativeTaskHost:
             raise RuntimeError("Native task host is not admitting work")
         tool = self.tools[name]
         tool.validate_public(arguments)
+        prepared = await tool.prepare(arguments, human_action=human_action)
+        if "immediate_result" in prepared:
+            return prepared["immediate_result"]
         background = arguments.get(
             "background",
             tool.parameters.get("properties", {}).get("background", {}).get("default", True),
@@ -177,7 +214,7 @@ class NativeTaskHost:
         if session is None or not workspace:
             raise RuntimeError("Native task requires an owning session and bound workspace")
         handle = "task_" + uuid4().hex
-        row = await self.journal.commit(
+        row, reused = await self.journal.reserve(
             {
                 "handle": handle,
                 "session_id": sid,
@@ -188,14 +225,19 @@ class NativeTaskHost:
                 "assignment": session.metadata.get("assignment_handle", ""),
                 "turn_id": context.active_turn_id(),
                 "invocation_id": call.invocation_id,
-                "kind": self.identity.title(),
+                "kind": tool._kind,
                 "tool": name,
-                "description": call.description or safe_description(name, arguments),
+                "description": call.description
+                or prepared.get("description")
+                or safe_description(name, arguments),
                 "arguments": arguments,
+                "prepared": prepared,
+                "human_action": human_action,
+                "dedup_key": prepared.get("dedup_key"),
                 "argument_digest": argument_digest(name, arguments),
                 "created_at": datetime.now(timezone.utc).isoformat(),
                 "acceptance": "submitting",
-                "effective_status": "working",
+                "effective_status": "queued",
                 "raw_status": "unknown",
                 "activity": "submitting",
                 "cancel_requested": False,
@@ -205,10 +247,12 @@ class NativeTaskHost:
                 "result": None,
                 "placement": "local",
                 "transport": "mcp",
-                "confinement": {"profile": "shell", "workspace": workspace},
+                "confinement": {"profile": self.identity, "workspace": workspace},
                 "execution_limit_s": arguments.get("timeout_s", 0),
             }
         )
+        if reused:
+            return {**self.receipt(row), "reused": True}
         submission = asyncio.create_task(self._submit(row), name=f"native-submit:{handle}")
         self.submissions.add(submission)
         submission.add_done_callback(self.submissions.discard)
@@ -313,6 +357,11 @@ class NativeTaskHost:
             "activity": row["activity"],
             "recording": row["recording"],
             "retry_safe": False,
+            **(
+                {"connection": row["prepared"]["connection"]}
+                if row.get("prepared", {}).get("connection")
+                else {}
+            ),
         }
 
     async def _observe(self, handle: str) -> None:
@@ -361,6 +410,8 @@ class NativeTaskHost:
             effective = (
                 "cancelled"
                 if raw.status == "cancelled"
+                or isinstance(value, dict)
+                and value.get("operation", {}).get("state") == "cancelled"
                 else "failed"
                 if result.is_error
                 else "completed"
@@ -479,6 +530,7 @@ class NativeTaskHost:
 async def start_native_hosts(app: Any) -> None:
     """Create independent Shell and connected-storage roots owned by GACT's lifespan."""
     from clio_agent.tools.servers.shell_server import bash
+    from clio_agent.tools.servers.storage_server import register_storage
 
     journal = CoreTaskJournal(app)
     app.state.core_task_journal = journal
@@ -488,6 +540,19 @@ async def start_native_hosts(app: Any) -> None:
         return await bash(**{**arguments, "background": False}, ctx=ctx)
 
     shell.register(Tool.from_function(bash), shell_workload)
-    await shell.start()
-    app.state.native_task_hosts = {"shell": shell}
-    app.state.native_task_routes = {"shell_bash": ("shell", "bash")}
+    storage = NativeTaskHost(app, journal, "storage")
+    register_storage(storage)
+    app.state.native_task_hosts = {"shell": shell, "storage": storage}
+    app.state.native_task_routes = {
+        "shell_bash": ("shell", "bash"),
+        **{name: ("storage", name) for name in storage.tools},
+    }
+    opened: list[NativeTaskHost] = []
+    try:
+        for host in (shell, storage):
+            await host.start()
+            opened.append(host)
+    except BaseException:
+        for host in reversed(opened):
+            await host.close()
+        raise

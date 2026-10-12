@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from clio_agent import paths
@@ -47,9 +46,6 @@ async def prune_orphans_and_cache(app: FastAPI) -> None:
 
 def reconcile_connected_storage(app: FastAPI) -> None:
     """Recover interrupted source operations for the server's registered workspaces."""
-    storage = getattr(app.state, "connected_storage", None)
-    if storage is not None:
-        storage.reconcile({row.id: Path(row.root_path) for row in app.state.workspaces.list()})
     from clio_agent.gact.task_recovery import start_task_recovery
 
     start_task_recovery(app)
@@ -63,9 +59,6 @@ async def shutdown_connected_storage(app: FastAPI) -> None:
     task_supervisor(app).closing = True
     if storage is not None:
         await storage.shutdown()
-        from clio_agent.gact.storage.task_adapter import recover_storage_handles
-
-        recover_storage_handles(app)
 
 
 async def shutdown_tasks(app: FastAPI) -> None:

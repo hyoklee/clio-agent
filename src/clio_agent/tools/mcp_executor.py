@@ -411,7 +411,7 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
                 return _MCPCallOutcome(
                     model_text=_result_to_text(result),
                     raw_result=result,
-                    source_namespace="shell",
+                    source_namespace=host.identity,
                 )
             finally:
                 task_calls.TASK_CALL.reset(token)
