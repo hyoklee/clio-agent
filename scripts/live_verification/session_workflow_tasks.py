@@ -27,7 +27,7 @@ import _lifecycle_evidence as evidence
 import psutil
 import yaml
 from _lifecycle_auth import frozen_claude_auth
-from _session_workflow_receipts import model_receipt
+from _session_workflow_receipts import failure_receipts, model_receipt
 from agent_async_tasks import frozen_codex_auth
 
 CORE = Path(__file__).resolve().parents[2]
@@ -377,6 +377,7 @@ def main() -> int:
     server = None
     core_identity = None
     isolation = None
+    call = None
     source = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=CORE).decode().strip()
     report.update(
         source=source, python=sys.version, core_package=version("iowarp-core"), started=time.time()
@@ -490,6 +491,11 @@ def main() -> int:
         report.update(
             error=f"{type(exc).__name__}: {exc}", traceback=traceback.format_exc()[-6000:]
         )
+        if call is not None:
+            try:
+                report["failure_context"] = failure_receipts(call, root)
+            except (OSError, RuntimeError, ValueError) as diagnostic_error:
+                report["failure_context_error"] = str(diagnostic_error)[:600]
         print(json.dumps({"error": report["error"]}), flush=True)
     finally:
         if owned_auth is not None:
