@@ -199,7 +199,12 @@ def _wait_change(app: Any, sid: str, version: int, deadline: float | None) -> No
 def wait_tasks(
     tasks: str | list[str], return_when: str = "all", timeout_s: float | None = None
 ) -> dict[str, Any]:
-    """Wait for any/all mixed tasks. Default is unbounded; expiry or Stop ends only the wait."""
+    """Wait for mixed tasks. Defaults: return_when='all', timeout_s=null (no deadline).
+
+    Omit timeout_s or pass null to wait until the requested tasks finish.
+    timeout_s=0 only checks status once and returns immediately, even with
+    return_when='all'. A positive timeout or Stop ends only the wait, not tasks.
+    """
     from clio_agent.runtime.commitment_activity import track
 
     with track(timeout_s is None):

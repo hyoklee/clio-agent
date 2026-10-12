@@ -937,7 +937,7 @@ def test_auto_react_tools_carry_their_declared_presentation() -> None:
     assert declared_tool_title("create_artifact") == "Create Artifact"
     for name, title in [
         ("plan_exit", "Exit Plan"),
-        ("write_todos", "Update tasks"),
+        ("write_todos", "Update Todos"),
         ("cron_create", "Create schedule"),
         ("cron_list", "List schedules"),
         ("cron_delete", "Delete schedule"),

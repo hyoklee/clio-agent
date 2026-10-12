@@ -57,3 +57,30 @@ tool result from that same retained session.
 
 Raw contextual and detail screenshots, source responses and capture code are
 archived under `D:/Libraries/Videos/clio_recordings/2026-10-10-docs-memory-evidence/`.
+
+## Questions, operations, and injections — 12 October 2026
+
+Four new light-mode detail captures accompany the end-user work guides:
+
+| File | Source and meaning |
+| --- | --- |
+| `docs-question-choice.png` | A real native question from the retained public `question-04` qualification, replayed with the current production question response component. No answer is submitted. |
+| `docs-question-visual-controls.png` | The actual website Choice Picker gallery, with Region selected through its control. An illustrative gallery view, not a pending agent question. |
+| `docs-tool-call.png` | The actual recorded shell command, result, timing, and presentation from `docs-final-transcript.json`, replayed with the current compact tool component. The recorded successful result maps to the production `succeeded` state. |
+| `docs-injection-detail.png` | The actual `loop_wake` text from that same transcript, expanded in the current production injection component. |
+
+These are unmodified browser detail captures at 1.5 device pixels per CSS pixel.
+The component replays preserve the recorded prompts, options, instructions,
+commands, and results. They do not launch a model, rerun a command, or create a
+fresh unanswered question. The website captions disclose the replay and gallery
+sources. The guides also reuse the existing Evidence, conversation-family Gantt,
+and Work captures with their recorded provenance.
+
+Originals, selected source records, display projections, rejected framing,
+browser review, and authoring notes are retained at
+`D:/Libraries/Videos/clio_recordings/2026-10-12-user-work-guides/`.
+`user-work-guides-manifest.json` records file checksums and source identity.
+The question/operation disclosure changes are local development work, not a
+claim about the public release. A complete visual question with images and a
+submitted structured answer still needs a dedicated public-safe live capture;
+the gallery screenshot is explicitly not that acceptance evidence.

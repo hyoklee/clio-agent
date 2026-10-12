@@ -33,8 +33,9 @@ class ClioNativeTool(dspy.Tool):
                     args[arg_name] = {"anyOf": [schema, {"type": "null"}]}
                     # An annotation describes the argument, including its null
                     # alternative. Keep it on the argument's public schema.
-                    if "description" in schema:
-                        args[arg_name]["description"] = schema.pop("description")
+                    for annotation in ("description", "default"):
+                        if annotation in schema:
+                            args[arg_name][annotation] = schema.pop(annotation)
         super().__init__(func, name, desc, args, arg_types, arg_desc)
 
     def format_as_litellm_function_call(self) -> dict[str, Any]:

@@ -51,6 +51,10 @@ export default defineConfig({
 					label: 'Use CLIO',
 					items: [
 						{ label: 'Sessions and modes', slug: 'docs/sessions' },
+						{ label: 'Answering questions', slug: 'docs/questions' },
+						{ label: 'Following tools and tasks', slug: 'docs/following-work' },
+						{ label: 'Understanding injections', slug: 'docs/injections' },
+						{ label: 'Right-hand panels', slug: 'docs/workspace-panels' },
 						{ label: 'Branch and rewind', slug: 'docs/branch-and-rewind' },
 						{ label: 'Goals and long-running work', slug: 'docs/long-running-work' },
 						{ label: 'Working with files', slug: 'docs/working-with-files' },

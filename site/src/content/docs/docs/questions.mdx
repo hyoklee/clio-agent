@@ -1,0 +1,119 @@
+---
+title: Answering CLIO's questions
+description: Answer in text, choose an option, or respond through a visual form while keeping track of open questions.
+---
+
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Capture from '../../../components/overview/Capture';
+import { captureImage } from '../../../lib/captures';
+import question from '../../../assets/captures/docs-question-choice.png';
+import visualControls from '../../../assets/captures/docs-question-visual-controls.png';
+
+When CLIO needs your judgment, it can ask a question in the conversation. Open the
+question, read its context, and answer using the offered controls. Your answer
+stays associated with that question, including when a delegated agent asked it.
+
+<Aside type="note" title="Development interface">
+This guide describes the development interface. Question placement, the open
+question list, and remembered panel choices can differ in an installed release.
+The recorded examples below use fictional data.
+</Aside>
+
+## Ways to answer
+
+| What you see | How to respond | Example |
+| --- | --- | --- |
+| A text question | Write an answer in the composer opened for that question. | “What timezone should I use?” |
+| A list of choices | Choose the option that fits. An **Other** answer is available when the question allows it. | “Compare by station or by day?” |
+| A confirmation | Choose the offered response. | “Keep this version of the report?” |
+| Checkboxes or a multiple-selection list | Select the requested items, then submit. | “Which measurements should the export include?” |
+| A form from a connected tool | Fill in the named fields and choose **Send response**. Required fields and invalid values are identified in the form. | A location, date range, and output format. |
+| A request to open a link | Read the destination, then choose **Open link** or **Decline**. | A connected service asks you to finish a browser step. |
+| A visual question | Inspect the accompanying image, chart, table, or form, then use its answer control. | “Which of these plots should go in the report?” |
+
+The agent's ordinary questions support text, a single choice, and confirmations.
+Connected tools can also request structured forms and multiple selections. A
+visual question can combine several controls in one view; the available inputs
+depend on the question and the connected tool.
+
+Several open questions are separate decisions. A form groups related fields into
+one response; multiple selection lets you choose several items for one question.
+These are different from having several independent questions waiting at once.
+
+<Capture client:visible image={await captureImage(question)}
+  alt="Recorded question asking whether to use blue or green, with separate choice buttons"
+  caption="A real recorded choice question displayed with the development question controls. This is a replay of the recorded question, without a new model run."
+/>
+
+## Questions with images and interactive views
+
+CLIO can put visual evidence beside a question. This is sometimes called an
+**A2UI question**: the agent supplies an interactive view as part of the question.
+You can ask for this in ordinary language:
+
+```text
+Compare these two plots. Show both images and ask me which one to keep, with space for a comment.
+```
+
+Other useful combinations include a chart with a choice of time ranges, a table
+with checkboxes, or an image with a text field for your explanation. These are
+examples of requests, rather than guaranteed layouts: CLIO chooses from the
+controls available in the current workspace.
+
+<Capture client:visible image={await captureImage(visualControls)}
+  alt="Interactive Choice Picker example in the CLIO widget gallery"
+  caption="The widget gallery lets you try a choice control used in interactive views. This is a gallery example, rather than an unanswered agent question."
+/>
+
+Changing a filter, zooming a plot, or adjusting a field does not by itself answer
+the question. Use the question's submit or answer control when ready. A completed
+chart or dashboard can remain interactive after the question is answered.
+
+Try the [choice picker](/docs/widgets/choice-picker/),
+[checkbox](/docs/widgets/check-box/), and
+[text field](/docs/widgets/text-field/) examples. To send a selection from a
+finished view back to CLIO, see [Human-agent interaction](/docs/widgets/interaction/).
+
+## Does CLIO wait for me?
+
+There are two behaviors, independent of whether the question contains text or visuals:
+
+| Question status | What happens |
+| --- | --- |
+| **Answer needed to continue** | The agent that asked is waiting for your answer before continuing. |
+| **Answer when ready** | The question stays open while the agent can continue independent work. Your answer is queued for that conversation. |
+
+An answer from CLIO does not necessarily close an **Answer when ready** question.
+Check the open question count when you return to a conversation. A waiting child
+agent can also need your answer while other work continues.
+
+You can make the dependency clear in your request:
+
+```text
+Ask me which region to analyze. While I decide, check the column names and missing values.
+```
+
+If the work depends on your answer, say so: “Wait for my choice before running the
+analysis.” Dismissing a question cancels that question; it is different from
+answering “No” or stopping every background task.
+
+## Find an unanswered question
+
+Hover over or open the question count near the conversation to see **Open questions**.
+Each entry has a short preview, a control to show the full question, and actions
+to answer or go to its location in the conversation. The list also appears in
+the full **Work** view, so opening the right-hand panel keeps questions accessible.
+
+When answering in the composer, check which question is selected before sending.
+After submission, its recorded answer remains in the conversation. A question
+from a delegated agent identifies its owner; the response goes back to that agent.
+
+Permission requests, plan review, and choosing between generated drafts have
+their own controls. A normal confirmation question does not replace approval
+for a protected action.
+
+<CardGrid>
+  <LinkCard title="Follow tools and tasks" href="/docs/following-work/" description="Tell a running operation from a checklist item or a completed result." />
+  <LinkCard title="Permissions" href="/docs/permissions/" description="Review an action before allowing it to run." />
+  <LinkCard title="Compare generated drafts" href="/docs/best-of-n/" description="Inspect alternatives and choose the draft to keep." />
+</CardGrid>

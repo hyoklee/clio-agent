@@ -1,0 +1,98 @@
+{
+  "date": "2026-10-12",
+  "mode": "Four browser detail captures; historical records replayed in current production components and one real gallery interaction",
+  "main_head": "4cd92841076f83dd131f6282a2645a70e42f183e",
+  "ui_head": "dbe5903c55e746639f8ba6ce4cc5f86639c7f603",
+  "source_status": "Dirty development checkout; per-file hashes retained",
+  "no_new_inference": true,
+  "no_opal": true,
+  "originals": "D:/Libraries/Videos/clio_recordings/2026-10-12-user-work-guides/originals",
+  "assets": [
+    {
+      "name": "docs-question-choice.png",
+      "bytes": 21430,
+      "width": 960,
+      "height": 381,
+      "sha256": "4cb8a4c2df978dde2971af6d34cd3f93e076d8a88e9163f83b0805913f6091d5",
+      "source": "2026-10-12 component replay or gallery capture"
+    },
+    {
+      "name": "docs-question-visual-controls.png",
+      "bytes": 10035,
+      "width": 1044,
+      "height": 104,
+      "sha256": "1a18942cfee283623b27a7ebabc7122bc32f37af9a208d5df598930b04161181",
+      "source": "2026-10-12 component replay or gallery capture"
+    },
+    {
+      "name": "docs-tool-call.png",
+      "bytes": 57308,
+      "width": 1275,
+      "height": 705,
+      "sha256": "bdc090e7f5c79242888ff4a4d82c2b2a914ac9182ac4be9a2f0f2100bf24a274",
+      "source": "2026-10-12 component replay or gallery capture"
+    },
+    {
+      "name": "docs-injection-detail.png",
+      "bytes": 15100,
+      "width": 960,
+      "height": 219,
+      "sha256": "06ef73d76ea160cacb84a5442683615b755a07d6dca990d6c0f5ac1ea2beaf85",
+      "source": "2026-10-12 component replay or gallery capture"
+    },
+    {
+      "name": "current-data.png",
+      "bytes": 87932,
+      "width": 1120,
+      "height": 820,
+      "sha256": "be4cc9ecb0851507c93e6dd61ae42fc4739633057694191069d24831cd6a9bcd",
+      "source": "existing authenticated product capture; see captures README and original guide"
+    },
+    {
+      "name": "docs-conversation-family-gantt.png",
+      "bytes": 107121,
+      "width": 1440,
+      "height": 664,
+      "sha256": "172519c8bad5ec6ebff78946839c33f39dc8a94045314c215309f3c2cdf38fd1",
+      "source": "existing authenticated product capture; see captures README and original guide"
+    },
+    {
+      "name": "docs-work-goal.png",
+      "bytes": 118674,
+      "width": 1440,
+      "height": 1000,
+      "sha256": "abb93fd604a0ac77d2e093b298b90c097b83001052c7c87134bff637f3c4494d",
+      "source": "existing authenticated product capture; see captures README and original guide"
+    }
+  ],
+  "sources": [
+    {
+      "path": "src/clio_agent/gact/ask_user_tool.py",
+      "sha256": "39e23965b1e9c274613eaf77fac1ad4af8ad57a0de9aee102b8d4e01ee3effab"
+    },
+    {
+      "path": "src/clio_agent/gact/async_user_question.py",
+      "sha256": "7c9477248ec6e23811c96c930542817e3f6c30b53a92ad0636ec6e70852a537d"
+    },
+    {
+      "path": "src/clio_agent/gact/task_controls.py",
+      "sha256": "46d164145b15e3fdb5f76844d65d9e4675569593293d991ced8543afa4cfb376"
+    },
+    {
+      "path": "external/gact-tui/web/src/components/clio/pending-interaction-question-response.tsx",
+      "sha256": "574ecc00ad736ecc1656851b7d5ba7ef44d08ae39ddbeb5bf533488321aa5c6f"
+    },
+    {
+      "path": "external/gact-tui/web/src/components/clio/conversation-harness-injection.tsx",
+      "sha256": "8a60a1fc3f282fcbfba0875626c279ed86d3f7d7ae6964f3ef96d2c03c62872a"
+    },
+    {
+      "path": "external/gact-tui/web/src/components/clio/tool-invocation.tsx",
+      "sha256": "a1f44c1d3b30693422e9dd17f907d0640ac51e93b585ad1e580e9575a57cc7f1"
+    },
+    {
+      "path": "external/gact-tui/web/src/components/clio/tool-terminal-result.tsx",
+      "sha256": "1f057ff3615dda787496f87d96ce04b5a12655c9c05b4d7f4c718ccb0c48c980"
+    }
+  ]
+}
