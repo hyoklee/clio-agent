@@ -437,6 +437,12 @@ def main() -> int:
             pack = common.materialize_testing_pack(
                 CORE / "scripts/live_verification/agents/task-subagent-testing", workspace, {}
             )
+            if args.suite == "subagent-human":
+                main_expert = pack / "experts/main.md"
+                _, frontmatter, body = main_expert.read_text().split("---", 2)
+                metadata = yaml.safe_load(frontmatter)
+                metadata["tools"].append("shell_bash")
+                main_expert.write_text("---\n" + yaml.safe_dump(metadata) + "---\n" + body)
             if args.provider == "claude_code":
                 for expert in (pack / "experts").glob("*.md"):
                     with expert.open("a") as prompt:
