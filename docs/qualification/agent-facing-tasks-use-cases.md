@@ -13,14 +13,19 @@ Five actual Codex/Luna cycles passed on `26749f2d` using distinct blueprints and
 root sessions, including independent subscriptions, busy/idle messaging, mixed
 waits, failure wakes, Stop independence and denied peer cancellation. Their
 disposable services, native Core allocations, processes and session records were
-removed after verification. Later source corrections require affected checks.
+removed after verification. The production UI also passed one fresh actual-model
+desktop/phone cycle on `0c5bf0db`, including pause, resume, confirmation dismissal,
+subtree cancellation and physical settlement. Runtime CI passed all 19 jobs on
+`c369ec9f`; later commits through `8501b8e7` do not change `src/` or `sdk/`.
 
 The older external receipts and archives named below were deleted during the
 human-requested disk cleanup. They describe historical results and are no longer
 available as retained evidence. Current acceptance must use fresh executions.
 
-The earlier statement that MCP, Download and Indexing human-control relay lacked
-fresh model acceptance is superseded. On runtime `fa294aff`, actual Codex/Luna
+## Historical qualification before disk cleanup
+
+Before cleanup, runtime `fa294aff` had actual Codex/Luna acceptance for MCP,
+Download and Indexing human-control notification. Actual Codex/Luna
 parents received the human cancellation notice in five complete cycles for each
 kind. MCP used the real FastMCP conformance backend through the production CLIO
 bridge. Each backend received one cancellation and no answer. Download owners
@@ -28,24 +33,27 @@ settled their physical cleanup; Indexing retained the previous 96,194-entry
 manifest. The parents received their intervention identities and terminal
 outcomes automatically, and later turns received no duplicate.
 
-The receipts are `mcp-input-ten221.json`, `storage-coverage111.json` and
+The deleted historical receipts were `mcp-input-ten221.json`, `storage-coverage111.json` and
 `indexing-retention-fifteen208.json` in the external qualification directory.
-Read-only audit `status-audit246/relay-status-audit246.json` verifies all seven
-native gate verdicts, their custody records and source-tree equivalence. It
-reconciles retained live evidence; it does not represent a new model execution.
+The historical read-only audit `status-audit246/relay-status-audit246.json`
+reconciled seven native gate verdicts, custody and source-tree equivalence. That
+deleted audit is not current retained proof or a new model execution.
 Core production and live-controller trees at `8ac5cf9a` are identical to the
-qualified runtime. The current UI receipt is
+qualified runtime. The historical UI receipt is
 `task-ui-progressive-disclosure-2026-10-12.md`.
 
 Human-control relay means notifying a task's parent about a human action. It is
 separate from running a subagent on a remote CLIO relay.
 
-The Linux model matrix covers all five kinds, independent work after acceptance,
+The historical Linux model matrix covered all five kinds, independent work after acceptance,
 query/observe/mixed waits, queued successes and failures, automatic idle wakes,
 Stop independence, human cancellation, subagent lifecycle and session messaging,
-input/reconnect and isolated service recovery. Its 91 passed gates include
+input/reconnect and isolated service recovery. Its 91 reported passed gates included
 different numbers of repetitions. Fourteen original failed attempts and four
-unexecuted attempts remain recorded alongside successful follow-ups.
+unexecuted attempts were recorded alongside successful follow-ups. These counts
+are historical, not fresh qualification after the records were deleted.
+
+## Current blockers
 
 Full readiness is still incomplete:
 
@@ -72,7 +80,7 @@ Remote relay execution is outside the current qualification scope, as directed
 by the human. Its future migration to ordinary MCP Tasks is separate work;
 missing relay pause/restart/peer support is not a current completion blocker.
 
-CI passed 19 jobs on `8ac5cf9a` with identical production/runtime trees. The 66
+CI passed 19 jobs on `c369ec9f`. The 66
 excluded Python cases per interpreter, one flake-check exclusion and native
 permission-card exclusion remain unverified. Advanced-develop conflict
 integration, merge, release and installation are separate unfinished actions.
