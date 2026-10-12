@@ -25,6 +25,36 @@ _FAMILY_PARSERS: dict[str, tuple[str, str]] = {
 }
 
 
+def _chat_template(model_dir: Path) -> str:
+    """The model's chat template text (``chat_template.jinja`` or the tokenizer config)."""
+    try:
+        return (model_dir / "chat_template.jinja").read_text(encoding="utf-8")
+    except OSError:
+        pass
+    try:
+        config = json.loads((model_dir / "tokenizer_config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    template = config.get("chat_template")
+    return template if isinstance(template, str) else ""
+
+
+def _template_parsers(family: str, model_dir: Path) -> tuple[str, str] | None:
+    """Parsers a family only gets for one template generation.
+
+    Granite 4.2 switched to Qwen3-Coder XML tool calls (``<function=...>``) and a
+    pre-opened ``<think>`` block that ``enable_thinking=False`` closes empty --
+    exactly vLLM's ``nemotron_v3`` parser. Earlier Granite templates keep vLLM's
+    default.
+    """
+    if family != "granite":
+        return None
+    template = _chat_template(model_dir)
+    if "<function=" not in template:
+        return None
+    return ("qwen3_coder", "nemotron_v3" if "<think>" in template else "")
+
+
 def parser_defaults(model_dir: str, configuration: dict[str, str]) -> dict[str, str]:
     """Return ``param.*`` parser entries to add for a locally readable model directory."""
     try:
@@ -32,7 +62,7 @@ def parser_defaults(model_dir: str, configuration: dict[str, str]) -> dict[str, 
     except (OSError, ValueError):
         return {}
     family = str(config.get("model_type", "")).lower()
-    parsers = _FAMILY_PARSERS.get(family)
+    parsers = _template_parsers(family, Path(model_dir)) or _FAMILY_PARSERS.get(family)
     if parsers is None:
         logger.info("vllm parser defaults: reason=unknown_model_family family=%s", family)
         return {}

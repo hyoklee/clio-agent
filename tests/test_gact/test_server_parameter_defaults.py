@@ -41,3 +41,27 @@ def test_off_overrides_the_model_family_default_and_launches_no_parser(tmp_path:
     assert compiled.values == {"tool_call_parser": "off", "reasoning_parser": "off"}
     chosen = compile_parameters("vllm", "native-cuda", {"param.tool_call_parser": "hermes"})
     assert chosen.flags == ("--enable-auto-tool-choice", "--tool-call-parser", "hermes")
+
+
+def test_granite_42_template_selects_qwen3_coder_tools_and_nemotron_v3_reasoning(
+    tmp_path: Path,
+) -> None:
+    model = _model(tmp_path, "granite")
+    (tmp_path / "chat_template.jinja").write_text(
+        "{{- '<tool_call>\\n<function=' ~ name ~ '>' -}}"
+        "{%- if enable_thinking %}{{- '<|im_start|>assistant\\n<think>\\n' }}{%- endif %}"
+    )
+    assert parser_defaults(model, {}) == {
+        "param.tool_call_parser": "qwen3_coder",
+        "param.reasoning_parser": "nemotron_v3",
+    }
+    compiled = compile_parameters("vllm", "xpu", parser_defaults(model, {}))
+    assert "--reasoning-parser" in compiled.flags and "nemotron_v3" in compiled.flags
+
+
+def test_an_older_granite_template_keeps_vllms_default(tmp_path: Path) -> None:
+    model = _model(tmp_path, "granite")
+    (tmp_path / "tokenizer_config.json").write_text(
+        json.dumps({"chat_template": "<|start_of_role|>available_tools<|end_of_role|>"})
+    )
+    assert parser_defaults(model, {}) == {}
