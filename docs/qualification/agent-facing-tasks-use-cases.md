@@ -5,6 +5,53 @@ Subagent lifecycle extension. Implementation, focused checks, source CI and
 actual-model acceptance are separate columns of evidence. An older successful
 run does not become a live pass for a later commit.
 
+## Current readiness, October 12
+
+The earlier statement that MCP, Download and Indexing human-control relay lacked
+fresh model acceptance is superseded. On runtime `fa294aff`, actual Codex/Luna
+parents received the human cancellation notice in five complete cycles for each
+kind. MCP used the real FastMCP conformance backend through the production CLIO
+bridge. Each backend received one cancellation and no answer. Download owners
+settled their physical cleanup; Indexing retained the previous 96,194-entry
+manifest. The parents received their intervention identities and terminal
+outcomes automatically, and later turns received no duplicate.
+
+The receipts are `mcp-input-ten221.json`, `storage-coverage111.json` and
+`indexing-retention-fifteen208.json` in the external qualification directory.
+Read-only audit `status-audit246/relay-status-audit246.json` verifies all seven
+native gate verdicts, their custody records and source-tree equivalence. It
+reconciles retained live evidence; it does not represent a new model execution.
+Core production and live-controller trees at `8ac5cf9a` are identical to the
+qualified runtime. The current UI receipt is
+`task-ui-progressive-disclosure-2026-10-12.md`.
+
+Human-control relay means notifying a task's parent about a human action. It is
+separate from running a subagent on a remote CLIO relay.
+
+The Linux model matrix covers all five kinds, independent work after acceptance,
+query/observe/mixed waits, queued successes and failures, automatic idle wakes,
+Stop independence, human cancellation, subagent lifecycle and session messaging,
+input/reconnect and isolated service recovery. Its 91 passed gates include
+different numbers of repetitions. Fourteen original failed attempts and four
+unexecuted attempts remain recorded alongside successful follow-ups.
+
+Full readiness is still incomplete:
+
+- Protected Windows native/Core and confinement routes remain blocked and
+  unverified under the existing rejected-launch boundaries.
+- Distinct local/remote inference routes lack qualified provider evidence.
+  Availability has not been freshly established by this evidence audit.
+- Remote relay pause, retained-context restart and peer addressing remain
+  unimplemented and explicitly refused.
+- The retained provider-SSE failure rejected a 65,700-byte line at the unchanged
+  65,536-byte bound. The original raw line was not captured, so its cause and fix
+  remain unestablished. Ordinary SSE passes do not close it.
+
+CI passed 19 jobs on `8ac5cf9a` with identical production/runtime trees. The 66
+excluded Python cases per interpreter, one flake-check exclusion and native
+permission-card exclusion remain unverified. Advanced-develop conflict
+integration, merge, release and installation are separate unfinished actions.
+
 ## Continued qualification on October 11
 
 ### Fresh-context replay found by actual Codex execution
@@ -495,7 +542,7 @@ explicitly instructed the model how to continue after protocol feedback. They
 demonstrate cooperative recovery plumbing, not spontaneous recovery from the
 original failure, general provider acceptance or a root-cause diagnosis.
 
-## Human-control relay checkpoint
+## Historical human-control relay checkpoint
 
 Core `c4ee4299` adds notices through the existing durable mailbox. The live
 controller in `1cc00989` checks intervention IDs supplied only to the parent model,
@@ -528,13 +575,13 @@ Exact-source CI `38115363030` on `4ade8463` passes all 19 jobs. Python 3.14
 reports 12,495 passed and 66 skipped; the skips remain exclusions. Later
 documentation commits leave the production and live-controller trees unchanged.
 
-Current source, model receipts and CI are recorded in
+At this earlier checkpoint, source, model receipts and CI were recorded in
 `mcp-agent-tasks/human-intervention-status-current.json`. The live human-control
 cycles exercise real Shell and Subagent owners; MCP, Download and Indexing
-cancellation relay use the shared controls covered by focused cases. No fresh
-actual-model acceptance for those three cancellation routes is claimed here.
-This relay checkpoint does not qualify every workload, platform or transport in
-the wider Tasks matrix.
+cancellation relay then had focused coverage only. The October 12 readiness
+section above supersedes that three-route evidence gap with actual-model
+receipts. This historical checkpoint does not qualify every workload, platform
+or transport in the wider Tasks matrix.
 
 ## Earlier complete-lifecycle checkpoint
 
