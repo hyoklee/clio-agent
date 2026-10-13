@@ -1,7 +1,8 @@
 """Response ratings stored in ARC/clio-core, separate from model context.
 
-Each change is an immutable record. A cleared rating is a tombstone, so later
-evaluation can distinguish an unrated answer from feedback the user withdrew.
+Each change is an immutable record. A cleared rating remains in the history,
+so evaluation can distinguish an unrated answer from a withdrawn thumb. An
+attached comment can remain when the thumb is cleared.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ class ResponseFeedback(BaseModel):
     feedback_id: UUID
     previous_feedback_id: UUID | None = None
     rating: Rating | None
+    comment: str = Field(default="", max_length=4000)
     created_at: str = ""
     session_id: str
     message_id: str
@@ -97,10 +99,15 @@ class ResponseFeedbackLedger:
                 saved = ResponseFeedback.model_validate_json(existing)
                 if saved.rating != feedback.rating:
                     raise FeedbackConflict("Feedback id was already used for a different rating.")
+                if "comment" in feedback.model_fields_set and saved.comment != feedback.comment:
+                    raise FeedbackConflict("Feedback id was already used for a different comment.")
                 return current or saved
             current_id = current.feedback_id if current else None
             if current_id != expected_feedback_id:
                 raise FeedbackConflict("The rating changed elsewhere. Refresh it and try again.")
+            # Rating-only clients must not erase a comment attached elsewhere.
+            if current and "comment" not in feedback.model_fields_set:
+                feedback = feedback.model_copy(update={"comment": current.comment})
             now = datetime.now(timezone.utc)
             if current:
                 now = max(

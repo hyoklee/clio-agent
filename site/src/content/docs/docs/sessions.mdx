@@ -7,6 +7,10 @@ import { Aside, Steps } from '@astrojs/starlight/components';
 import { Image } from 'astro:assets';
 import messagePreview from '../../../assets/captures/docs-message-preview.png';
 import markedMessages from '../../../assets/captures/docs-marked-messages.png';
+import Capture from '../../../components/overview/Capture';
+import { captureImage } from '../../../lib/captures';
+import ratingMenu from '../../../assets/captures/docs-response-rating-menu.png';
+import ratingComment from '../../../assets/captures/docs-response-rating-comment.png';
 
 A workspace is a folder on your computer that CLIO treats as one body of work. A session is one conversation with an agent inside a workspace. Files the agent reads and creates, and the evidence recorded for them, stay attached to the session that produced them.
 
@@ -126,6 +130,28 @@ does not add it to the model's context or change its content.
 
 These screenshots show the development build, using recorded Codex/Luna
 responses about fictional calibration readings.
+
+## Rate a response or attach a comment
+
+Open the thumb control below a finished response and choose **Good response** or
+**Bad response**. Select the checked option again to clear the rating.
+
+<Capture client:visible image={await captureImage(ratingMenu)}
+  alt="Response feedback menu with Bad response checked and a plus action in the top-right corner"
+  caption="Choose the checked rating again to remove it. The top-right plus opens the comment editor." />
+
+Choose **+** to explain what worked or what could improve, then select **Save
+feedback**. A comment can be attached without a thumb rating. Reopen the menu to
+read or edit it. Clearing the thumb keeps the comment; clear its text and save
+to remove the comment separately.
+
+<Capture client:visible image={await captureImage(ratingComment)}
+  alt="Response feedback editor with Good and Bad choices, a comment field, Cancel and Save feedback"
+  caption="These native captures use a fictional browser-test response. The comment remains in the editor if saving fails so you can retry." />
+
+Feedback is attached to that response and saved by the connected service. It
+does not send a follow-up to the agent. Use the composer to ask for a correction
+or steer ongoing work.
 
 ## Steer or stop a run
 

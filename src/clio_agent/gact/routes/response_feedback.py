@@ -9,7 +9,7 @@ from typing import Literal, TypeVar
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from clio_agent.arc.response_feedback import (
     FeedbackConflict,
@@ -33,10 +33,11 @@ class RateResponseRequest(BaseModel):
     feedback_id: UUID
     expected_feedback_id: UUID | None
     rating: Rating | None
+    comment: str | None = Field(default=None, max_length=4000)
 
 
 class ResponseFeedbackState(BaseModel):
-    """Latest stored change; ``rating=null`` means the rating was removed."""
+    """Latest stored rating and optional comment; either can be cleared separately."""
 
     feedback: ResponseFeedback | None
 
@@ -153,6 +154,8 @@ def register_response_feedback_routes(app: FastAPI) -> None:
             },
             model_ref_source=model_source if isinstance(recorded_model, dict) else "unknown",
         )
+        if body.comment is not None:
+            record = record.model_copy(update={"comment": body.comment.strip()})
         saved = await persist_or_read(
             lambda: ledger().record(record, expected_feedback_id=body.expected_feedback_id)
         )
