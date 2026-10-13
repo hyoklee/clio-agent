@@ -116,7 +116,7 @@ async def prepare_sandbox_before_tools(app: Any) -> None:
     if not getattr(app.state, "server_boot", False):
         return
     task = getattr(app.state, "sandbox_boot_task", None)
-    if task is None:
+    if task is None or (task.done() and (task.cancelled() or task.exception() is not None)):
         task = asyncio.create_task(asyncio.to_thread(prepare_sandbox_at_startup, app))
         app.state.sandbox_boot_task = task
     await asyncio.shield(task)

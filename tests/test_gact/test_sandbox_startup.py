@@ -1,5 +1,6 @@
 """Startup prepares protection without elevation before constructing tool clients."""
 
+import asyncio
 from collections.abc import Callable
 from types import SimpleNamespace
 
@@ -37,3 +38,38 @@ def test_startup_refreshes_state_without_elevation(
     assert app.state.sandbox is state
     assert calls == ["prepare", "refresh"]
     assert not sandbox_setup.setup_in_progress()
+
+
+@pytest.mark.asyncio
+async def test_boot_and_provider_share_preparation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Concurrent construction callers must not launch duplicate setup workers."""
+    app = SimpleNamespace(state=SimpleNamespace(server_boot=True))
+    calls: list[object] = []
+
+    def prepare(target: object) -> None:
+        calls.append(target)
+
+    monkeypatch.setattr(sandbox_setup, "prepare_sandbox_at_startup", prepare)
+    await asyncio.gather(
+        sandbox_setup.prepare_sandbox_before_tools(app),
+        sandbox_setup.prepare_sandbox_before_tools(app),
+    )
+    assert calls == [app]
+
+
+@pytest.mark.asyncio
+async def test_unexpected_failure_can_be_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed startup task must not permanently poison provider configuration."""
+    app = SimpleNamespace(state=SimpleNamespace(server_boot=True))
+    calls: list[object] = []
+
+    def prepare(target: object) -> None:
+        calls.append(target)
+        if len(calls) == 1:
+            raise OSError("temporary access failure")
+
+    monkeypatch.setattr(sandbox_setup, "prepare_sandbox_at_startup", prepare)
+    with pytest.raises(OSError, match="temporary access"):
+        await sandbox_setup.prepare_sandbox_before_tools(app)
+    await sandbox_setup.prepare_sandbox_before_tools(app)
+    assert calls == [app, app]
