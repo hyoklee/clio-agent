@@ -1,11 +1,15 @@
 ---
-title: Permissions and sandbox
-description: How CLIO decides what an agent may do, how to answer permission requests and write rules, and how the optional OS sandbox enforces file boundaries.
+title: "Choose what CLIO may do"
+description: Review requested actions, choose an approval policy and understand access limits.
 ---
 
 import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
 
-CLIO checks what an agent is about to do before it does it. Reading is always allowed. Anything else, such as writing a file, running a command, or reaching the network, goes through a decision order that ends with you.
+CLIO checks protected actions such as writing a file, running a command or
+reaching the network. Start with **Ask first** when you want to review those
+actions. Read-only tools normally need no separate action approval, but can only
+access material allowed by the connected service, source settings and filesystem
+boundaries.
 
 ## The decision order
 
@@ -15,9 +19,9 @@ For each action that is not a read, CLIO decides in this order:
 2. Rules. An access rule can `allow`, `deny`, or `ask`. A matching `deny` blocks the action. A matching `allow` lets it through, and the decision is recorded.
 3. The conversation's confirmation policy, if nothing above settled it. **Ask first** prompts you; **AI review** uses the risk reviewer described below.
 
-Reads skip all of this. A tool counts as a read when it is marked read-only, either by the MCP server that provides it or by CLIO's own tool catalog. A tool that is read-only in practice but not marked as such is treated as a write and asks first.
+Tools classified as read-only skip this action-approval sequence; access boundaries still apply. A tool counts as a read when it is marked read-only, either by the MCP server that provides it or by CLIO's own tool catalog. A tool that is read-only in practice but not marked as such is treated as a write and asks first.
 
-For the modes, see [Sessions and modes](/docs/sessions/).
+For the modes, see [Start and steer a conversation](/docs/sessions/).
 
 ## Answer a permission request
 
@@ -32,7 +36,7 @@ When an agent needs your decision, the session shows a request that describes th
 
 If nobody answers within 10 minutes, the request is denied. A request from an agent that has no session to ask is denied at once. A denial is reported back to the agent, so it can try another approach or ask you.
 
-The **Confirmation policy** control in the composer changes how often CLIO pauses. See [Sessions and modes](/docs/sessions/).
+The **Confirmation policy** control in the composer changes how often CLIO pauses. See [Start and steer a conversation](/docs/sessions/).
 
 ## AI review (Automode)
 

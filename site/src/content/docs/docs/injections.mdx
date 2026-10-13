@@ -1,8 +1,9 @@
 ---
-title: Understanding injections
-description: See the reminders, recovered context, and background results CLIO supplies to an agent.
+title: "Updates during a conversation"
+description: Understand reminders, background results and recovered context that appear while CLIO works.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
@@ -10,10 +11,12 @@ import collection from '../../../assets/captures/docs-injection-collection.png';
 import injection from '../../../assets/captures/docs-injection-collection-open.png';
 import goal from '../../../assets/captures/docs-injection-goal.png';
 
-An **Injection** is context CLIO supplies to the agent during its work. It can
-deliver a background result, remind the agent of unfinished todos, or restore
-context from earlier conversation. The row records what the agent received and
-why it received it.
+<PreviewGuide features="The grouped update rows pictured here" />
+
+CLIO can receive an update while it is working: a background check finishes, a
+scheduled instruction becomes due, or an earlier decision is brought back into
+context. These updates appear in the activity record as **Injection** rows.
+Open one when you want to understand why the agent continued or changed direction.
 
 <Capture client:visible priority image={await captureImage(collection)}
   alt="Activity collection labelled Received loop wake, ran commands, containing an Injection Loop wake row followed by Run"
@@ -24,7 +27,7 @@ These images replay retained fictional workflow records in the development
 interface. They preserve the supplied text and recorded command results.
 Click an image to enlarge it.
 
-## Read an injection
+## Understand an update
 
 Expand the activity collection and find the syringe icon followed by
 **Injection** and its description. Open the row to read the supplied text. Use
@@ -41,7 +44,7 @@ also does not mean the requested work succeeded. A background completion notice
 delivers an outcome for the agent to inspect; the task's actual result provides
 the evidence.
 
-## Types you may see
+## Common updates and what they mean
 
 | Type | Why CLIO supplies it |
 | --- | --- |
@@ -95,6 +98,6 @@ the controls in **Work**; collapsing an injection only changes its display.
 
 <CardGrid>
   <LinkCard title="Goals, loops and scheduled work" href="/docs/long-running-work/" description="Set up continued work and inspect its controls." />
-  <LinkCard title="Follow tools and tasks" href="/docs/following-work/" description="Find the operation and result behind a notification." />
-  <LinkCard title="Memory and recall" href="/docs/memory/" description="Inspect retained information used in a conversation." />
+  <LinkCard title="Follow work in progress" href="/docs/following-work/" description="Find the operation and result behind a notification." />
+  <LinkCard title="What CLIO remembers" href="/docs/memory/" description="Inspect retained information used in a conversation." />
 </CardGrid>

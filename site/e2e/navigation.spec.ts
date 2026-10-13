@@ -17,11 +17,11 @@ for (const width of [360, 390, 412]) {
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: test.info().outputPath('mobile-docs-index.png') });
     await lastLink.click();
-    await expect(page).toHaveURL(/\/tutorials\/guides\/first-analysis\//);
+    await expect(page).toHaveURL(/\/docs\/examples\/check-a-dataset\//);
     await expect(sidebar).toBeHidden();
     await page.goto('/docs/');
     await page.locator('mobile-starlight-toc summary').click();
-    await expect(page.locator('mobile-starlight-toc').getByRole('link', { name: 'Next steps' })).toBeVisible();
+    await expect(page.locator('mobile-starlight-toc').getByRole('link', { name: 'Try one small investigation' })).toBeVisible();
     await page.screenshot({ path: test.info().outputPath('mobile-page-index.png') });
   });
 }
@@ -47,6 +47,28 @@ test('mobile gallery keeps the complete docs index without a page table of conte
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   }
   await page.screenshot({ path: test.info().outputPath('mobile-gallery-index.png') });
+});
+
+test('worked examples share one docs entry point and old tutorial bookmarks still work', async ({ page }) => {
+  await page.goto('/docs/examples/');
+  const article = page.locator('.sl-markdown-content');
+  for (const [name, route] of [
+    ['Check a small dataset', '/docs/examples/check-a-dataset/'],
+    ['Explore ground motion', '/docs/examples/ground-motion/'],
+    ['Find a decision in research notes', '/docs/examples/research-notes/'],
+    ['Create a report and presentation', '/docs/examples/reports-and-slides/'],
+  ]) {
+    await expect(article.getByRole('link', { name, exact: true })).toHaveAttribute('href', route);
+  }
+  for (const [oldRoute, newRoute] of [
+    ['/tutorials/', '/docs/examples/'],
+    ['/tutorials/guides/first-analysis/', '/docs/examples/ground-motion/'],
+    ['/tutorials/guides/install-a-blueprint/', '/docs/marketplaces/#choose-a-blueprint-for-a-conversation'],
+  ]) {
+    await page.goto(oldRoute);
+    await expect(page).toHaveURL(new RegExp(`${newRoute}$`));
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+  }
 });
 
 test('header and footer use real vector artwork on home and documentation pages', async ({ page }) => {

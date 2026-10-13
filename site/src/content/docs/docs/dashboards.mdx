@@ -1,8 +1,9 @@
 ---
-title: Dashboards
-description: Build a report from your data, explore linked views, and save an image or an interactive HTML copy.
+title: "Explore charts and dashboards"
+description: Read a finding alongside linked plots, maps and the underlying table.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { Aside, Steps } from "@astrojs/starlight/components";
 import Capture from "../../../components/overview/Capture";
 import WidgetRecording from "../../../components/WidgetRecording.astro";
@@ -15,12 +16,7 @@ A dashboard brings a finding, its figures, and the underlying records into one
 report beside your conversation. Use it when a colleague needs to explore an
 analysis rather than read a single answer.
 
-<Aside type="note" title="Development preview">
-  The saved-dashboard and export controls shown here are not included in beta 5.2.
-  Captures use the development build and fictional bike-station data. The report
-  was prepared through CLIO's production tools; its export demonstrations are real
-  interactions with that report, rather than a new model analysis.
-</Aside>
+<PreviewGuide features="The saved-dashboard and export controls" />
 
 ## Build a report from a file
 
@@ -126,5 +122,5 @@ and overlapping legends. Keep the source data intact, correct unclear views,
 and tell me which views you actually inspected.
 ```
 
-Continue with [Exports and downloads](/docs/exports/) to send the investigation,
-or [Evidence and lineage](/docs/evidence/) to follow its history.
+Continue with [Save and share your work](/docs/exports/) to send the investigation,
+or [Check answers and sources](/docs/evidence/) to follow its history.

@@ -3,6 +3,7 @@ title: Answering CLIO's questions
 description: Answer in text, choose an option, or respond through a visual form while keeping track of open questions.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
@@ -10,6 +11,8 @@ import confirmation from '../../../assets/captures/docs-question-confirmation.pn
 import textResponse from '../../../assets/captures/docs-question-text.png';
 import visualQuestion from '../../../assets/captures/docs-visual-question.png';
 import openQuestions from '../../../assets/captures/docs-open-questions.png';
+
+<PreviewGuide features="The pending-question list and its Work integration" />
 
 When CLIO needs your judgment, it can ask a question in the conversation. Open the
 question, read its context, and answer using the offered controls. Your answer
@@ -136,7 +139,7 @@ their own controls. A normal confirmation question does not replace approval
 for a protected action.
 
 <CardGrid>
-  <LinkCard title="Follow tools and tasks" href="/docs/following-work/" description="Tell a running operation from a checklist item or a completed result." />
+  <LinkCard title="Follow work in progress" href="/docs/following-work/" description="Tell a running operation from a checklist item or a completed result." />
   <LinkCard title="Permissions" href="/docs/permissions/" description="Review an action before allowing it to run." />
   <LinkCard title="Compare generated drafts" href="/docs/best-of-n/" description="Inspect alternatives and choose the draft to keep." />
 </CardGrid>

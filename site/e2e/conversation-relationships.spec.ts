@@ -5,7 +5,7 @@ for (const width of [390, 1440]) {
     await page.addInitScript(() => localStorage.setItem('starlight-theme', 'light'));
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/docs/branch-and-rewind/');
-    await expect(page.getByRole('heading', { level: 1, name: 'Branch and rewind conversations' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Try another approach' })).toBeVisible();
     const captures = [
       'Copied offset calculation',
       'Relationships view with Calibration baseline',

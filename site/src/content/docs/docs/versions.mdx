@@ -1,0 +1,52 @@
+---
+title: Features and versions
+description: Understand why a guide can look different from your installed app and how to check what is available.
+---
+
+CLIO's documentation covers the current development version as well as the
+published app. **Development build** means the feature is implemented in the
+source being prepared for a release. It does not mean your installed app has
+already received it.
+
+## If a screenshot does not match your app
+
+1. Check the app's version in its About or update information.
+2. Open **Settings → Desktop → App updates** to inspect available updates.
+3. Look for the **Newer than the published beta** note in the guide.
+4. If you use a lab service, ask its administrator which Agent version is running.
+   Updating Desktop alone does not update a remote lab service.
+
+The published release checked on **13 October 2026** is
+[v0.9.5-beta.5.2](https://github.com/iowarp/clio-agent/releases/tag/v0.9.5-beta.5.2).
+Use the [release list](https://github.com/iowarp/clio-agent/releases) for subsequent
+releases. Draft releases are not available through normal app updates.
+
+## Guides with newer controls
+
+| Guide | What may differ in beta 5.2 |
+| --- | --- |
+| [Your workspace](/docs/workspace-panels/) | Compact Data/Work layouts and remembered expansion choices. |
+| [Conversations](/docs/sessions/) | Message marks, attached feedback comments and updated family views. |
+| [Questions](/docs/questions/) | The pending-question list and its integration with Work. |
+| [Work in progress](/docs/following-work/) | Compact tool rows, current todos and child-agent follow-ups. |
+| [Continue work over time](/docs/long-running-work/) | Updated goal, monitoring and schedule controls. |
+| [Search](/docs/search/) | Highlighted matching passages and the CLIO Search assistant. |
+| [Research notes](/docs/files/knowledge/) | Obsidian source browsing and linked-note exploration. |
+| [Compare answers](/docs/best-of-n/) | Independent draft tabs and evaluation controls. |
+| [Dashboards](/docs/dashboards/) | Saved dashboards and their export menus. |
+| [Save and share](/docs/exports/) | Named export checkboxes; older builds use Transcript, Effects and Full. |
+
+You can still use ordinary conversations, attach supported files and review the
+outputs your installation provides. Follow the labels you actually see; a missing
+preview feature is not evidence that your data or model is configured incorrectly.
+
+## A feature may depend on the connection
+
+The selected model, connected CLIO service and installed tools determine which
+features can run. For example, a local model connection does not automatically
+provide model-attention records, and a specialist blueprint can need an
+institutional service or credentials. Read its requirements before selecting it.
+
+For a supported source build, your administrator can use
+[Server and terminal setup](/docs/server-setup/#from-source).
+You do not need to build CLIO from source to follow the basic introduction.

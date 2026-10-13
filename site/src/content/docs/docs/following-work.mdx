@@ -1,8 +1,9 @@
 ---
-title: Following tools and tasks
-description: Read the activity log, distinguish background tasks from todos, and inspect what actually finished.
+title: "Follow work in progress"
+description: See what is running, what is waiting for you and which results are ready to inspect.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
@@ -13,6 +14,9 @@ import currentTodos from '../../../assets/captures/docs-todos-current.png';
 import completedTodos from '../../../assets/captures/docs-todos-completed.png';
 import childFollowup from '../../../assets/captures/docs-child-followup.png';
 import childTab from '../../../assets/captures/docs-child-tab.png';
+
+
+<PreviewGuide features="The compact activity rows, current todos and child follow-ups shown here" />
 
 Expand the activity collection under a CLIO response to follow its operations.
 You can read a command, inspect a result, and open the details of delegated work.
@@ -158,6 +162,6 @@ Show what is still running, what needs my answer, and the evidence for the check
 ```
 
 <CardGrid>
-  <LinkCard title="Right-hand panels" href="/docs/workspace-panels/" description="Choose Work, Evidence, Timeline, Gantt, or Context for the detail you need." />
+  <LinkCard title="Your workspace" href="/docs/workspace-panels/" description="Choose Work, Evidence, Timeline, Gantt, or Context for the detail you need." />
   <LinkCard title="Answer an open question" href="/docs/questions/" description="Respond without losing track of the work that asked." />
 </CardGrid>

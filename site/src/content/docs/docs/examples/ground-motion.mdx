@@ -1,8 +1,6 @@
 ---
-title: 'Your first analysis: ground motion near Palm Springs'
+title: Explore ground motion near Palm Springs
 description: Ask CLIO for the GNSS stations nearest Palm Springs, choose one on a map, chart its motion, and check the evidence behind the result.
-sidebar:
-  label: Your first analysis
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -19,7 +17,7 @@ You need a computer where you can install the desktop app and a model you can co
 
 2. Connect a model.
 
-   Follow [Connect a model](/docs/connect-a-model/). A larger model gives the most reliable results for a multi-step analysis like this one.
+   Follow [Connect a model](/docs/connect-a-model/). Choose a model that supports tools. If a step fails, inspect the recorded error before retrying.
 
 3. Start a session with the EarthScope blueprint.
 
@@ -27,7 +25,7 @@ You need a computer where you can install the desktop app and a model you can co
 
    If EarthScope Skills is not in the list, install it first from the default marketplace: open Settings, choose **Marketplaces & blueprints**, open the **Marketplaces** tab, and choose **Install** next to it. See [Agent blueprints](/docs/blueprints/).
 
-   Under the message box, leave **Execute** as the execution mode and **Ask first** as the confirmation policy. You may be asked to approve some actions as the run goes. Answering **Allow for session** keeps the rest of the tutorial uninterrupted. See [Permissions and sandbox](/docs/permissions/).
+   Under the message box, leave **Execute** as the execution mode and **Ask first** as the confirmation policy. You may be asked to approve some actions as the run goes. Review each requested action. **Allow once** applies only to that action; **Allow for session** grants broader matching permission for this conversation. See [Permissions and sandbox](/docs/permissions/).
 
 4. Ask the question.
 
@@ -74,5 +72,5 @@ If a tool fails to start, see [Troubleshooting](/docs/troubleshooting/).
 ## Next steps
 
 - Ask for a second station and compare the two charts.
-- Read how evidence, artifacts, and lineage work in [Evidence and lineage](/docs/evidence/).
-- Write your own agent in [Agent blueprints](/docs/blueprints/).
+- Read how evidence, artifacts, and lineage work in [Check answers and sources](/docs/evidence/).
+- [Create a report or presentation](/docs/examples/reports-and-slides/) from findings you have reviewed.
