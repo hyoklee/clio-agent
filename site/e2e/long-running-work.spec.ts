@@ -5,15 +5,24 @@ for (const width of [390, 1440]) {
     await page.addInitScript(() => localStorage.setItem('starlight-theme', 'light'));
     await page.setViewportSize({ width, height: 1000 });
     await page.goto('/docs/long-running-work/');
-    await expect(page.getByRole('heading', { level: 1, name: 'Goals, loops and scheduled work' })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1, name: 'Continue work over time' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Wait for a simulation or other task' })).toBeVisible();
-    for (const [index, title] of [
+    const readerCaptures = [
+      'A scheduled instruction recorded in the conversation',
+      'Work showing a completed goal',
+    ];
+    const referenceCaptures = [
       'Three checkpoint responses',
       'Two monitoring responses',
       'Expanded Scheduled wake injection',
       'Completed goal with three iterations',
       'Fleet settings with separate Goals',
-    ].entries()) {
+    ];
+    for (const [index, title] of [...readerCaptures, ...referenceCaptures].entries()) {
+      if (index === readerCaptures.length) {
+        await page.getByRole('link', { name: 'Background work: limits and API reference', exact: true }).click();
+        await expect(page).toHaveURL(/\/docs\/background-work-reference\/$/);
+      }
       const button = page.getByRole('button', { name: new RegExp(`^View larger: ${title}`) });
       await button.scrollIntoViewIfNeeded();
       await expect.poll(() => button.getByRole('img').evaluate(element => (element as HTMLImageElement).complete && (element as HTMLImageElement).naturalWidth > 0)).toBe(true);
@@ -28,7 +37,7 @@ for (const width of [390, 1440]) {
       await expect(button).toBeFocused();
     }
     await page.goto('/docs/sessions/');
-    await page.getByRole('link', { name: 'Goals and long-running work', exact: true }).last().click();
+    await page.getByRole('link', { name: 'Continue work over time', exact: true }).last().click();
     await expect(page).toHaveURL(/\/docs\/long-running-work\/$/);
   });
 }
