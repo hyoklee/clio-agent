@@ -93,6 +93,7 @@ runs CLIO. When setup is needed, choose **Set up protected execution**.
 - On supported Windows systems with the newer native runtime, preparation can complete without administrator approval.
 - The older Windows backend needs administrator approval to create its sandbox accounts the first time. Existing accounts can be checked again without another approval prompt.
 - Setup shows its current step and elapsed time. Preparing access to runtime packages can take several minutes. You can leave Infrastructure: setup continues in the connected CLIO service, and a notification reports the result.
+- After successful setup, startup, the setup button and the command line reuse checks for unchanged runtime folders. A runtime or permission change can require a repair; choosing setup again does not automatically repeat the full installation work.
 - **Ready** means verification succeeded. If CLIO asks you to restart, use **Restart CLIO** before retrying work: already-running background tool processes need to be replaced.
 
 For a command-line installation:

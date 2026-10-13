@@ -476,7 +476,7 @@ def provision_codex_windows(
 
     if scx.parse_version(det.version) >= MXC_MIN_VERSION:
         mxc = (mxc_preparer or prepare_mxc)(
-            det.binary_path, det.version, progress=progress, force=allow_elevation
+            det.binary_path, det.version, progress=progress, force=False
         )
         if mxc["status"] == "verified":
             return CodexProvisionResult(
@@ -491,7 +491,9 @@ def provision_codex_windows(
             progress(
                 f"Native MXC unavailable ({mxc['reason']}); checking legacy protected execution..."
             )
-    grant_fn = grantor if grantor is not None else grant_fleet_runtime_access
+    from clio_agent.runtime.codex_desktop_access import ensure_runtime_access  # noqa: PLC0415
+
+    grant_fn = grantor if grantor is not None else lambda: ensure_runtime_access(progress=progress)
     if det.source == scx.CODEX_SOURCE_BUNDLED:
         from clio_agent.runtime.codex_windows_helpers import (  # noqa: PLC0415
             CodexWindowsHelpersError,
@@ -516,11 +518,10 @@ def provision_codex_windows(
     if ready:
         if progress:
             progress("Checking runtime access for the existing protected execution sandbox...")
-        # Idempotent: already provisioned + enforcement-verified. STILL (re)apply the fleet-runtime
-        # RX grants — a box provisioned by a PRIOR clio version has the accounts but NOT the grants,
-        # so its confined fleet children fail CreateProcessAsUserW/WinError 5 until granted. icacls RX
-        # is idempotent (no-op when already present), so this is a safe, prompt-free upgrade path.
+        # All entry points reuse validated access receipts, repairing only changed roots.
         grant_reasons = grant_fn()
+        if failed := _runtime_access_failure(grant_reasons):
+            return failed
         logger.info(
             "fleet-runtime grants (already-provisioned) statuses=%s",
             [r.get("status") for r in grant_reasons],
@@ -569,6 +570,8 @@ def provision_codex_windows(
     if progress:
         progress("Preparing protected access to CLIO's runtime packages...")
     grant_reasons = grant_fn()
+    if failed := _runtime_access_failure(grant_reasons, elevated=elevated):
+        return failed
     logger.info(
         "fleet-runtime grants applied statuses=%s",
         [r.get("status") for r in grant_reasons],
@@ -624,6 +627,22 @@ def provision_codex_windows(
 # --------------------------------------------------------------------------- #
 
 
+def _runtime_access_failure(
+    grants: list[dict[str, Any]], *, elevated: bool = False
+) -> CodexProvisionResult | None:
+    if not any(item.get("status") == "failed" for item in grants):
+        return None
+    return CodexProvisionResult(
+        ok=False,
+        status=OUTCOME_SETUP_FAILED,
+        reason="fleet_runtime_access_failed",
+        detail="Could not prepare protected access to CLIO's runtime packages.",
+        next_action="Retry Set up protected execution and inspect Technical details if it fails again.",
+        elevated=elevated,
+        extra={"fleet_runtime_grants": grants},
+    )
+
+
 def run_sandbox_cli(
     action: Optional[str], *, json_output: bool = False, assume_yes: bool = False
 ) -> int:
@@ -675,7 +694,9 @@ def _sandbox_setup_cli(*, json_output: bool) -> int:
             msg, json_output, payload={"status": STATUS_NOT_WINDOWS, "reason": REASON_NOT_WINDOWS}
         )
         return 0
-    result = provision_codex_windows()
+    result = provision_codex_windows(
+        progress=lambda detail: print(detail, file=sys.stderr, flush=True)
+    )
     if json_output:
         import json  # noqa: PLC0415
 

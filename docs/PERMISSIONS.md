@@ -164,6 +164,12 @@ UAC. Packaged installation and explicit **Set up protected execution** can reque
 administrator approval for first-time legacy account creation. Missing or failed
 verification stays degraded; protection is never inferred from account presence.
 
+Startup, installer, button and CLI call the same provisioning engine. Its shared
+runtime-access cache checks directory identity and the root ACL before reuse;
+changed roots are repaired with one traversal for both restricted users. Allowing
+UAC does not force a fresh native probe. A failed access grant is unsuccessful
+for every entry point.
+
 Open **Infrastructure > CLIO hosts > Protected execution**, or run:
 
 ```powershell

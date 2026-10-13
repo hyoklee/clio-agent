@@ -8,6 +8,14 @@ exit code zero, with the real Windows fence active. No model inference was run.
 
 ## Changes
 
+- All four entry points use `runtime/sandbox_cli.py:provision_codex_windows` and
+  its shared `codex_desktop_access.py:ensure_runtime_access` default. Previously,
+  startup supplied the cached grant function while button/CLI calls selected
+  unconditional per-user recursive grants. Now unchanged directory/ACL receipts
+  are reused; changed roots are repaired once for both sandbox users. Allowing
+  elevation no longer forces a fresh native MXC probe. Failed runtime grants are
+  unsuccessful for every caller. Actual first-repair and repeat-call timings are
+  retained in the local receipt directory's `shared-setup-timings.json`.
 - Prepare Windows protection off the event loop before constructing the agent or
   configuring its provider. This covers local/headless launches without a desktop
   installer hook. Shared startup callers await one operation. Routine startup
