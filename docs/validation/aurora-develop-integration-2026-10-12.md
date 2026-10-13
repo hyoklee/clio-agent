@@ -148,8 +148,10 @@ panel access; use the source's registered resource reference when available.
 
 Manual browser review opened protocol and CSV source tabs using the production
 components with labeled fictional fixture files. Light/dark desktop and 390px
-layout review found no page errors or document overflow. Screenshots, exact
-source copies and validation metadata are retained under
+layout review found no document overflow. The development server reported
+ResizeObserver notices during resizing and HMR notices during fixture edits;
+these are retained with the review limits. Screenshots, exact source copies
+and validation metadata are retained under
 `D:/Libraries/Videos/clio_recordings/2026-10-12-source-citations/`.
 This is component interaction evidence, not live OPAL or Aurora qualification.
 
