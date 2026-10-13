@@ -25,6 +25,7 @@ from collections.abc import Mapping
 from dataclasses import asdict, is_dataclass
 from typing import TYPE_CHECKING, Any
 
+from clio_agent.gact.agents.response_formatting import RESPONSE_FORMATTING_GUIDANCE
 from clio_agent.gact.catalog import (
     _builtin_agents,
     _builtin_tools,
@@ -381,13 +382,11 @@ def _runtime_dynamic_agent_children_context(
 
 
 def _runtime_active_workspace_context(app: "FastAPI", *, session_id: str = "") -> str:
-    """Surface the active workspace root and write-allowed roots to an expert.
+    """Surface workspace scope and supported response syntax to an expert.
 
-    Data only: it tells the expert where the current session's workspace lives
-    and which roots writes are permitted under, so the expert can naturally
-    place generated artifacts inside the workspace. It does NOT reroute, rename,
-    or force any path — file_policy still validates every write, and out-of-root
-    writes still surface as errors / permission prompts.
+    Workspace facts tell the expert where generated artifacts belong. Shared
+    renderer syntax remains available even when the workspace is unresolved.
+    Neither changes permissions or forces paths: file_policy validates access.
     """
 
     if app is None:
@@ -396,7 +395,7 @@ def _runtime_active_workspace_context(app: "FastAPI", *, session_id: str = "") -
 
     root = _resolution._runtime_workspace_catalog_cwd(app, session_id=session_id)
     if root is None:
-        return ""
+        return RESPONSE_FORMATTING_GUIDANCE
     try:
         from clio_agent.tools.file_policy import FileAccessPolicy  # noqa: PLC0415
 
@@ -411,6 +410,7 @@ def _runtime_active_workspace_context(app: "FastAPI", *, session_id: str = "") -
             "active workspace root using absolute paths so they stay with the "
             "session. Read inputs from wherever the user points you."
         ),
+        RESPONSE_FORMATTING_GUIDANCE,
     ]
     if allowed_roots:
         lines.append("Writes are only permitted under: " + ", ".join(allowed_roots) + ".")

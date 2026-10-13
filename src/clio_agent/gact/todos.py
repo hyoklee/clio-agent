@@ -237,7 +237,7 @@ def build_write_todos_tool(agent_def: Any) -> Any:
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
     def write_todos(todos: list) -> str:
-        """Record your task checklist for a multi-step job (execution phase only).
+        """Record your todo checklist for a multi-step job (execution phase only).
 
         Pass the COMPLETE list every call — this REPLACES the whole list (there is no per-item
         update). Each todo is ``{"content": <str>, "status": "pending"|"in_progress"|"completed"}``.
@@ -275,7 +275,7 @@ def build_write_todos_tool(agent_def: Any) -> Any:
         presentation="todos",
         domain="planning",
         desc=write_todos.__doc__,
-        title="Update tasks",
+        title="Update Todos",
         args={
             "todos": {
                 "type": "array",

@@ -17,7 +17,23 @@ Preserve the shared tools:
 - cancel_tasks(tasks)
 - get_task_result(handle)
 
-Accept one handle or a list. Kinds are Subagent, Session, MCP, Download, Indexing and Shell; transport/placement are separate fields. Queries expose assignment, display label, owner, raw backend status, effective status, activity, progress, timestamps, supported actions and result reference. Preserve the original subagent assignment before launch enrichment. Optional CLIO task-description metadata is removed before backend arguments; derive safe descriptions otherwise and identify missing legacy descriptions.
+Accept one handle or a list. Kinds are Subagent, Session, MCP, Download, Indexing, Shell and Question; transport/placement are separate fields. Queries expose assignment, display label, owner, raw backend status, effective status, activity, progress, timestamps, supported actions and result reference. Preserve the original subagent assignment before launch enrichment. Optional CLIO task-description metadata is removed before backend arguments; derive safe descriptions otherwise and identify missing legacy descriptions.
+
+The user-approved Question extension is an implementation and qualification gate.
+ask_user always posts through the existing question owner and returns a durable
+handle immediately. It is a short FastMCP control operation, with no execution
+worker or separate scheduler. The question owner records full history in Core;
+its live UI dictionary is a rebuildable projection. Shared query/observe/wait,
+result collection and cancellation use that owner through the same task surface.
+wait_tasks(question_handle) explicitly waits for an answer, unbounded by default.
+An answer already recorded returns immediately. Stop cancels the waiter and
+leaves the question open; cancel_tasks explicitly dismisses the question.
+Answers use the recipient-input completion boundary instead of the composer FIFO,
+so they can enter the next iteration or wake an idle session without duplicate
+automatic delivery. Permission and external MCP input gates retain their own
+authorization requirements. Qualify mixed Question/Shell/Subagent waits, busy
+and idle answers, Stop independence, recovery and attributed human controls with
+actual models before claiming this extension complete.
 
 Authorize before lookup disclosure, filtering, counts and pagination. Default scope is the caller's tree. scope="authorized" permits peer/root discovery only through trusted owner grants; model-supplied intent is not authority. Reuse existing permission policy and explicitly represent missing coordination grants as Core relationships (granting human, recipient session/assignment, target scope, read/observe/message/control rights); only authenticated human actions or trusted configured policy create grants. Reading/messaging does not grant cancellation. Memory session discovery returns stable session addresses and task links subject to the same permissions.
 

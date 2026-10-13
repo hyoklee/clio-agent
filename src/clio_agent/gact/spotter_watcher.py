@@ -464,7 +464,11 @@ def sync_watcher_for_mode(
         refusal = validate_watcher_arming(app, session_id=session.id)
         if refusal is not None:
             refuse_watcher_arming(app, session, refusal, prior_approval_mode=prior_approval_mode)
-        ensure_spotter_watcher(app, session)
+        task = ensure_spotter_watcher(app, session)
+        if task is not None:
+            from clio_agent.gact.spotter_arm_review import wake_on_arm  # noqa: PLC0415
+
+            wake_on_arm(app, session, task)
     elif left_spotter_ai:
         disarm_spotter_watcher(app, session)
 

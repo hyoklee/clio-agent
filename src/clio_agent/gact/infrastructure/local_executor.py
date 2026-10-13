@@ -15,6 +15,7 @@ import os
 import signal
 import socket
 import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from typing import IO
@@ -93,6 +94,21 @@ def _stop(process: subprocess.Popen[str]) -> None:
             continue
 
 
+def local_environment(base: dict[str, str] | None = None) -> dict[str, str]:
+    """The environment for a CLIO-generated command on this host.
+
+    CLIO's node scripts run as ``python3 -c`` and need CLIO's own Python
+    (>= 3.12). The system ``python3`` can be far older (SUSE/RHEL HPC nodes ship
+    3.6), so CLIO's interpreter directory leads ``PATH``, as under ``uv run``.
+    """
+
+    env = dict(os.environ if base is None else base)
+    interpreter = os.path.dirname(sys.executable)
+    if interpreter:
+        env["PATH"] = os.pathsep.join(item for item in (interpreter, env.get("PATH", "")) if item)
+    return env
+
+
 async def run_local(spec: CommandSpec, on_output: OutputSink | None = None) -> CommandResult:
     """Run ``spec`` locally; stream chunks to ``on_output`` on the event loop."""
 
@@ -100,6 +116,7 @@ async def run_local(spec: CommandSpec, on_output: OutputSink | None = None) -> C
     try:
         process = subprocess.Popen(
             [spec.program, *spec.args],
+            env=local_environment(),
             stdin=subprocess.PIPE if spec.stdin else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -161,4 +178,11 @@ async def run_local(spec: CommandSpec, on_output: OutputSink | None = None) -> C
     )
 
 
-__all__ = ["MAX_OPERATION_LOG_CHARS", "OutputSink", "bounded", "run_local", "tcp_reachable"]
+__all__ = [
+    "MAX_OPERATION_LOG_CHARS",
+    "OutputSink",
+    "bounded",
+    "local_environment",
+    "run_local",
+    "tcp_reachable",
+]

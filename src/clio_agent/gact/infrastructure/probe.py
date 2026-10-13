@@ -72,6 +72,31 @@ def _command_available(program: str, args: list[str]) -> bool:
     return completed.returncode == 0
 
 
+#: PCI vendor of Intel GPUs and the 3D-controller class Intel Data Center GPUs
+#: (Max/Ponte Vecchio, Flex) report; integrated graphics report VGA (0x0300).
+INTEL_PCI_VENDOR = "0x8086"
+PCI_3D_CONTROLLER = "0x0380"
+
+
+def _intel_datacenter_gpu(drm: str = "/sys/class/drm") -> bool:
+    """Whether Linux sysfs lists an Intel Data Center GPU (the XPU runtimes' target)."""
+    try:
+        cards = [name for name in os.listdir(drm) if name.startswith("card") and "-" not in name]
+    except OSError:
+        return False
+    for card in cards:
+        try:
+            with open(os.path.join(drm, card, "device", "vendor"), encoding="ascii") as handle:
+                vendor = handle.read().strip().lower()
+            with open(os.path.join(drm, card, "device", "class"), encoding="ascii") as handle:
+                device_class = handle.read().strip().lower()
+        except OSError:
+            continue
+        if vendor == INTEL_PCI_VENDOR and device_class.startswith(PCI_3D_CONTROLLER):
+            return True
+    return False
+
+
 def _local_facts(target: InfrastructureTarget) -> TargetFacts:
     runtimes = local_runtime_facts(_resolve_command)
     docker = next(fact for fact in runtimes if fact.name == "docker")
@@ -83,6 +108,8 @@ def _local_facts(target: InfrastructureTarget) -> TargetFacts:
         accelerator = "nvidia"
     elif _command_available("rocminfo", ["--version"]):
         accelerator = "amd"
+    elif _intel_datacenter_gpu():
+        accelerator = "intel"
     return TargetFacts(
         target_id=target.id,
         label=target.label,
@@ -156,6 +183,9 @@ async def probe_target(
                 "if nvgpu=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null) "
                 '&& [ -n "$nvgpu" ]; then gpu=nvidia; fi; '
                 'if [ "$gpu" = none ] && rocminfo 2>/dev/null | grep -q "Name:.*gfx"; then gpu=amd; fi; '
+                'if [ "$gpu" = none ]; then for c in /sys/class/drm/card*/device; do '
+                '[ "$(cat "$c/vendor" 2>/dev/null)" = 0x8086 ] && case "$(cat "$c/class" 2>/dev/null)" in '
+                "0x0380*) gpu=intel ;; esac; done; fi; "
                 "di=0; dr=0; uv=0; command -v docker >/dev/null 2>&1 && di=1; "
                 "docker info >/dev/null 2>&1 && dr=1; command -v uv >/dev/null 2>&1 && uv=1; "
                 'printf \'%s|%s|%s|%s|%s|%s\\n\' "$os" "$arch" "$gpu" "$di" "$dr" "$uv"; '

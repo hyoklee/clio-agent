@@ -86,7 +86,18 @@ RESERVE: dict[EngineId, tuple[float, int]] = {
     "ollama": (1.25, GIB),
 }
 #: Variants whose KV cache lives in accelerator memory.
-GPU_VARIANTS = frozenset({"cuda", "rocm", "vulkan", "native-cuda", "native-cuda-attention"})
+GPU_VARIANTS = frozenset(
+    {
+        "cuda",
+        "rocm",
+        "vulkan",
+        "xpu",
+        "native-cuda",
+        "native-cuda-attention",
+        "native-xpu",
+        "native-xpu-attention",
+    }
+)
 #: vLLM's own --gpu-memory-utilization default.
 VLLM_DEFAULT_UTILIZATION = 0.9
 _CHOICES = ("number", "max", "fit_to_gpu")

@@ -93,15 +93,15 @@ def present_schedule_family(
             ]
             blocks.append({"id": "next", "type": "text", "text": "\n".join(filter(None, details))})
     elif declaration == "todos":
-        header_action = "Update tasks"
+        header_action = "Update Todos"
         changes = [change for change in row.get("changes", []) if isinstance(change, Mapping)]
         changed = [change for change in changes if change.get("change") != "unchanged"]
         if changes:
-            summary = f"{len(changed)} task{'' if len(changed) == 1 else 's'} changed"
+            summary = f"{len(changed)} todo{'' if len(changed) == 1 else 's'} changed"
             source = changes
         else:
             source = [todo for todo in row.get("todos", []) if isinstance(todo, Mapping)]
-            summary = "" if source else "No tasks in this list"
+            summary = "" if source else "No todos in this list"
         for index, todo in enumerate(source):
             block = {
                 "id": f"todo-{index}",

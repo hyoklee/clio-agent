@@ -469,6 +469,13 @@ def launch(root: Path, request: dict[str, Any]) -> None:
     write_json(root / "receipt.json", receipt)
 
 
+def with_host_setup(setup: str, command: list[str]) -> list[str]:
+    """``command`` after the host setup lines (``module load ...``) in a login shell; fails on error."""
+    if not setup.strip():
+        return command
+    return ["bash", "--login", "-c", f'set -e\n{setup}\nexec "$@"', "bash", *command]
+
+
 def worker_environment(
     root: Path, manifest: dict[str, Any], base: dict[str, str]
 ) -> dict[str, str]:
@@ -552,6 +559,20 @@ def worker(root: Path, action: str, generation: str) -> None:
     reused = helper.uv_environment_reuse(root / "environment", profile) if helper else ""
     if reused:
         command = [sys.executable, "-c", "print('clio: the service environment is reused')"]
+    elif action == "install" and manifest.get("host_python"):
+        # Layer the environment over the host's interpreter (it provides vLLM/torch).
+        uv = shutil.which("uv") or str(Path.home() / ".local/bin/uv")
+        environment = str(root / "environment")
+        command = [
+            "sh",
+            "-c",
+            'set -e; uv="$0"; project="$1"; shift; '
+            '"$uv" venv --allow-existing --system-site-packages --python python3 "$project/.venv"; '
+            'exec "$uv" sync --no-config --project "$project" --python "$project/.venv/bin/python" "$@"',
+            uv,
+            environment,
+            *(["--refresh"] if env.get("CLIO_FROM_SCRATCH") == "1" else []),
+        ]
     elif action == "install":
         uv = shutil.which("uv") or str(Path.home() / ".local/bin/uv")
         command = [
@@ -570,6 +591,8 @@ def worker(root: Path, action: str, generation: str) -> None:
             str(root / "launch.py"),
             *manifest["arguments"],
         ]
+    if not reused:
+        command = with_host_setup(str(manifest.get("host_python", {}).get("setup", "")), command)
     names = {"VLLM_API_KEY", *env.get("CLIO_SECRET_VARIABLES", "").split(",")}
     secrets = [env[name] for name in sorted(names) if name and env.get(name)]
     credentials = root / "credentials.json"

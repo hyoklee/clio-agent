@@ -104,7 +104,8 @@ Clio's UI
 opens the saved PDF when the source artifact is selected; users can still download
 or edit the original. Check `pdf_previews` for conversion failures. A preview is
 not visual review. Name the published artifact in the final response; Clio shows
-its artifact card. Do not format local filesystem paths as Markdown links.
+its artifact card. Use the runtime's workspace-file or registered artifact/resource
+citation format for clickable references; do not use browser-local `file://` links.
 Publish and name the requested editable document. Keep PDFs made only for review
 or display as derivatives; do not separately register or list them as deliverables.
 Publish a separate PDF only when the user asked for that output. In `used`, cite

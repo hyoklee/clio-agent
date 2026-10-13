@@ -13,13 +13,16 @@ from clio_agent.gact.task_controls import (
     query_tasks,
     wait_tasks,
 )
+from clio_agent.gact.task_wait_presentation import wait_presentation
 
 
 def task_presentation(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
     """Present task control outcomes while keeping full structured results available."""
-    del args, structured
+    del structured
     rows = result.get("tasks", result.get("results", [])) if isinstance(result, dict) else []
     count = len(rows) if isinstance(rows, list) else 0
+    if isinstance(result, dict) and isinstance(result.get("pending"), list):
+        return wait_presentation(args, result)
     return {"summary": f"{count} task outcomes", "blocks": []}
 
 
@@ -31,7 +34,12 @@ def build_task_tools() -> list[Any]:
     }
     timeout_arg = {
         "type": ["number", "null"],
-        "description": "Omit for an unbounded wait; zero snapshots immediately. Expiry ends only the waiter.",
+        "default": None,
+        "description": (
+            "Default: null (no deadline). Omit or pass null for an unbounded wait. "
+            "Zero is only an immediate status check, not a wait for completion. "
+            "A positive timeout ends only the waiter; pending tasks keep running."
+        ),
     }
     optional_string = {"type": ["string", "null"]}
     read_scope = {
@@ -73,7 +81,7 @@ def build_task_tools() -> list[Any]:
             wait_tasks,
             {
                 "tasks": task_arg,
-                "return_when": {"type": "string", "enum": ["any", "all"]},
+                "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"},
                 "timeout_s": timeout_arg,
                 **read_scope,
             },

@@ -8,6 +8,10 @@ import evidence from '../../../assets/captures/current-data.png';
 import lineage from '../../../assets/captures/current-lineage.png';
 import { Image } from 'astro:assets';
 
+For a tour of Data, Work, Timeline, Gantt, and Context, see
+[Using the right-hand panels](/docs/workspace-panels/). To inspect operations
+while CLIO is working, see [Following tools and tasks](/docs/following-work/).
+
 CLIO records the inputs, actions and outputs of a session so you can check how
 a result was produced. Start with the source files and expanded tool results,
 then follow the artifact versions and declared input relationships.
@@ -59,7 +63,10 @@ The Context tab shows the context the agent is working with, for the agent you s
 
 ### Inspect additions and recovered context
 
-When CLIO adds instructions or recovers earlier conversation context, a receipt appears in the transcript. Choose **Open exact details** to inspect the recorded content in a separate window. You can also expand it in place with **Show what it got**.
+When CLIO adds instructions or recovers earlier conversation context, an
+**Injection** row appears in the activity collection. Expand that row to read
+the supplied content, or choose **Open exact details** to inspect it in a
+separate window. See [Injections and reminders](/docs/injections/).
 
 Recovery uses the complete saved context records when available, including recorded tool inputs, results and loaded instructions. If only a transcript is available, the receipt identifies that reconstruction and its missing continuation state. A normal restart with retained context does not need a recovery receipt.
 

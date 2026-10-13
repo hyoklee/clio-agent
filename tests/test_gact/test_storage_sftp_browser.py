@@ -135,7 +135,8 @@ def sftp_host(
             transport.set_subsystem_handler("sftp", paramiko.SFTPServer, Files)
             try:
                 transport.start_server(server=Login())
-            except (OSError, paramiko.SSHException):
+            except (EOFError, OSError, paramiko.SSHException):
+                # A peer may leave during handshake; keep accepting later sign-ins.
                 transport.close()
 
     thread = threading.Thread(target=serve, daemon=True)
@@ -148,6 +149,25 @@ def sftp_host(
         for transport in transports:
             transport.close()
         thread.join(timeout=3)
+
+
+def test_sftp_host_keeps_accepting_after_a_peer_disappears(
+    sftp_host: tuple[SshRoute, str, Path],
+) -> None:
+    """A dropped handshake must not kill the server for the next real client."""
+    route, _, _ = sftp_host
+    with socket.create_connection((route.host, route.port), timeout=2) as peer:
+        peer.shutdown(socket.SHUT_RDWR)
+    source = SftpSource.from_route(
+        route, "/input", credentials=SftpCredentials(password=SecretStr("test-password"))
+    )
+    try:
+        entries = source.entries()
+        assert len(entries) == 1
+        with source.open_read(entries[0]) as reader:
+            assert reader.read() == b"real SFTP bytes\n"
+    finally:
+        source.close()
 
 
 @pytest.mark.parametrize("commit", [True, False])

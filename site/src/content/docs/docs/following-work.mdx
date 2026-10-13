@@ -1,0 +1,130 @@
+---
+title: Following tools and tasks
+description: Read the activity log, distinguish background tasks from todos, and inspect what actually finished.
+---
+
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Capture from '../../../components/overview/Capture';
+import { captureImage } from '../../../lib/captures';
+import collapsedTool from '../../../assets/captures/docs-tool-collapsed.png';
+import tool from '../../../assets/captures/docs-tool-command-output.png';
+import waitResult from '../../../assets/captures/docs-wait-all-result.png';
+import currentTodos from '../../../assets/captures/docs-todos-current.png';
+import completedTodos from '../../../assets/captures/docs-todos-completed.png';
+
+Expand the activity collection under a CLIO response to follow its operations.
+You can read a command, inspect a result, and open the details of delegated work.
+The **Work** summary on the right keeps ongoing work accessible while you read
+the conversation.
+
+<Capture client:visible priority image={await captureImage(collapsedTool)}
+  alt="Collapsed Run tool row showing a command, exit code zero, duration and disclosure arrow"
+  caption="Start with the compact receipt: what ran, its exit code and its duration. Open the row for the command and output; the information icon opens technical details."
+/>
+
+The images use the development interface and fictional examples. Command and
+task results are replays of retained operations, without rerunning them.
+Click any image to inspect it at full size.
+
+## Tools, tasks, and todos
+
+| Item | What it represents | Where to look |
+| --- | --- | --- |
+| Tool call | One operation requested by the agent, such as reading a file, running a command, or asking a question. | The conversation's activity collection and **Tool calls**. |
+| Background task | Work that can continue after the operation that started it returns. Examples include a shell job, a delegated agent, or a task from a connected tool. | **Background tasks**, its linked details, and recorded task results. |
+| Child agent | A delegated agent carrying out an assignment with its own conversation and operations. | **Child agents** and the child's conversation. |
+| Todo | A checklist item describing planned work. Its status is maintained by the agent. | **Todos** in the Work summary and full Work view. |
+
+A tool call can start a task. For example, delegation returns an accepted
+assignment while the child agent continues working. A todo can describe that
+assignment, but marking a todo complete does not independently verify the task's
+output.
+
+## Inspect a tool call
+
+Tool calls start collapsed. Open a row when you need its details. A **Run** row
+separates the **Command** from the **Output**. Long output may offer a full saved
+version; use that link when the preview is insufficient. Other tools show their
+input and the returned result.
+
+<Capture client:visible image={await captureImage(tool)}
+  alt="A recorded tool call expanded to show the input and returned result"
+  caption="The same Run row, opened. Command is what CLIO executed; Output is what the process returned. Show more expands the retained preview."
+/>
+
+An exit code or failure belongs to that operation. Read its output and CLIO's
+explanation to see whether it recovered, needs your input, or left work incomplete.
+A later successful call does not erase an earlier failure from the record.
+
+The activity collection also includes [injections](/docs/injections/), such as a
+todo reminder or a background result delivered to the agent. Expand one to see
+the context CLIO supplied.
+
+## Follow background work
+
+Open a task's details to inspect its assignment, status, and available result.
+For a child agent, follow its conversation to inspect the operations behind the
+returned summary. The parent may continue independent work while a task runs.
+
+| Status or result | What it tells you |
+| --- | --- |
+| Accepted or queued | CLIO accepted the work; a final result is not yet available. |
+| Running | The operation or delegated agent is still working. |
+| Input required | Work needs a response or approval before it can proceed. |
+| Completed or turn ended | The operation or agent turn ended. Inspect the returned result to learn whether the assignment succeeded. |
+| Failed, cancelled, or interrupted | Work ended without ordinary completion. Inspect the reason and any retained output. |
+
+For an audit, look for the actual checks and their outcomes. “Completed” alone
+does not establish that data passed validation or that every requested file was
+created.
+
+## Understand a wait
+
+A wait observes work already started. It does not launch another copy of the task.
+**Wait for all tasks** waits for every selected task to settle; **Wait for any
+task** returns when one settles. A bounded wait can return with tasks still pending.
+An immediate status check can therefore show no collected results while work runs.
+
+The agent's ordinary task wait has no deadline by default. If a task remains
+pending after a wait returns, inspect whether the agent requested a timeout or an
+immediate check. Stopping a wait and cancelling its background task are separate
+actions. Use the task's cancellation control when you intend to stop that work.
+
+<Capture client:visible image={await captureImage(waitResult)}
+  alt="Expanded Wait for all tasks receipt showing No deadline, one result collected, and the subagent's mean calculation"
+  caption="This recorded wait had no deadline and returned one collected result. Turn ended describes the child agent's status; the text beneath it is the result to inspect."
+/>
+
+Long-running goals can also park until a task finishes and resume when its result
+arrives. See [Goals, loops and scheduled work](/docs/long-running-work/).
+
+## Focus on current todos
+
+Pending and in-progress items appear first. **Show completed** reveals finished
+items when you need the history. A count such as **3/5 current** means three items
+remain open out of five total.
+
+<Capture client:visible image={await captureImage(currentTodos)}
+  alt="Todos showing three current items and a Show completed control for two finished items"
+  caption="Keep attention on the three open items. The yellow icon marks work in progress; empty boxes mark pending work. Two completed items stay under Show completed."
+/>
+
+Open **Show completed** when you need the history. The current items remain
+above the finished ones, and **Hide completed** returns to the focused list.
+
+<Capture client:visible image={await captureImage(completedTodos)}
+  alt="The same todo list with completed dashboard and capacity-check items revealed below the current work"
+  caption="The same checklist after opening completed history. Revealing these items changes the display, not their status."
+/>
+
+Use the checklist to understand the plan and the tool results to check the work.
+You can ask:
+
+```text
+Show what is still running, what needs my answer, and the evidence for the checks that finished.
+```
+
+<CardGrid>
+  <LinkCard title="Right-hand panels" href="/docs/workspace-panels/" description="Choose Work, Evidence, Timeline, Gantt, or Context for the detail you need." />
+  <LinkCard title="Answer an open question" href="/docs/questions/" description="Respond without losing track of the work that asked." />
+</CardGrid>

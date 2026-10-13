@@ -65,6 +65,12 @@ output or reports pending. Explicit collection and automatic delivery share the
 recipient's input boundary; later explicit reads remain available. Peer collection
 never consumes the owner's delivery.
 
+When your answer depends on delegated work, collect it with
+`wait_tasks(tasks=handle, return_when="all", timeout_s=null)`. Zero returns one
+snapshot; it does not wait for completion. Pending handles with no results mean
+the required work has not returned an answer. Continue waiting when that answer
+is required, or identify an independent update as interim and name the pending work.
+
 Cancellation requested is not settled cancellation. Required owner cleanup must
 finish; missing settlement evidence remains uncertain. Cancelling an agent closes
 descendant admission and cancels its active subtree, including inherited work.

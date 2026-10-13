@@ -96,7 +96,7 @@ def _int(
     )
 
 
-_GPU = ["cuda", "rocm"]
+_GPU = ["cuda", "rocm", "xpu"]
 
 ENGINE_PARAMETERS: dict[EngineId, tuple[ServerParameter, ...]] = {
     "vllm": (
@@ -161,6 +161,20 @@ ENGINE_PARAMETERS: dict[EngineId, tuple[ServerParameter, ...]] = {
             default_behavior="vLLM's CPU default",
         ),
         ServerParameter(
+            id="xpu_devices",
+            label="Intel GPU devices",
+            description=(
+                "Level Zero devices the server may use, such as 0,1 (in FLAT mode each GPU "
+                "tile is one device). Match the count to the tensor parallel size."
+            ),
+            kind="text",
+            delivery="env",
+            name="ZE_AFFINITY_MASK",
+            variants=["xpu"],
+            default_behavior="All devices this host exposes",
+            effective_key="xpu_devices",
+        ),
+        ServerParameter(
             id="cpu_omp_threads_bind",
             label="CPU cores",
             description="Cores the CPU build pins its threads to, such as 0-15, or auto.",
@@ -221,6 +235,7 @@ ENGINE_PARAMETERS: dict[EngineId, tuple[ServerParameter, ...]] = {
                 "openai_gptoss",
                 "granite",
                 "glm45",
+                "nemotron_v3",
                 "hunyuan_a13b",
                 "kimi_k2",
                 "minimax_m2",
