@@ -193,6 +193,10 @@ keyboard send/newline, parent navigation, light/dark and narrow long-draft layou
 This is UI/transport evidence, not a live provider or Aurora run. Captures and
 request receipts are retained at
 `D:/Libraries/Videos/clio_recordings/2026-10-13-child-followups/`.
+The full workspace child-follow-up regression passed in CI. CI also exposed
+pointer hover leaking into the existing summarization screenshot after scrolling;
+that test now moves the pointer away before capture, retaining the exact baseline
+and threshold.
 The separate task-system rewrite remains excluded.
 
 ## Marketplace locking on shared filesystems
