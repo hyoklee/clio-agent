@@ -124,6 +124,7 @@ def test_provision_fresh_success_elevates_verifies_and_marks() -> None:
     assert progress == [
         "Creating protected execution sandbox - Windows approval required...",
         "Sandbox accounts created. Preparing runtime access...",
+        "Preparing protected access to CLIO's runtime packages...",
         "Verifying protected execution...",
     ]
 
