@@ -18,12 +18,14 @@ runs must never race each other or double-prompt. A second concurrent call gets 
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 import threading
 from dataclasses import dataclass
 from typing import Any
 
+from clio_agent.gact.sandbox_setup_progress import begin_setup, finish_setup, report_setup
 from clio_agent.runtime import sandbox, sandbox_cli
 from clio_agent.runtime.sandbox_doctor import probe_sandbox
 from clio_agent.runtime.status import IntegrationStatus
@@ -74,6 +76,50 @@ def setup_in_progress() -> bool:
     concurrent setup's own ``acquire``.
     """
     return _SETUP_LOCK.locked()
+
+
+def prepare_sandbox_at_startup(app: Any, *, platform: str = sys.platform) -> None:
+    """Prepare Windows protection before tools connect, without requesting elevation.
+
+    Developer and headless launches have no desktop installer hook. Missing
+    prerequisites remain visible in Infrastructure; preparation never disables
+    the access fence or turns an unsuccessful probe into a ready state.
+    """
+    from clio_agent.runtime.codex_desktop_setup import prepare_existing_windows_fence
+    from clio_agent.runtime.document_runtime import DocumentRuntimeError
+
+    if not platform.startswith("win"):
+        return
+    with _SETUP_LOCK:
+        begin_setup()
+        try:
+            result = prepare_existing_windows_fence(allow_elevation=False, progress=report_setup)
+            finish_setup(
+                result["status"], result.get("next_action", "Protected execution is ready.")
+            )
+        except DocumentRuntimeError as exc:
+            logger.warning("protected execution startup preparation failed: %s", exc)
+            finish_setup("failed", str(exc))
+        except Exception as exc:
+            finish_setup("failed", str(exc))
+            raise
+        finally:
+            app.state.sandbox = sandbox.reresolve_after_setup()
+
+
+async def prepare_sandbox_before_tools(app: Any) -> None:
+    """Share one off-loop preparation across boot and provider configuration.
+
+    In-process test apps do not own host provisioning. A cancelled HTTP caller
+    cannot cancel the real service's shared startup worker.
+    """
+    if not getattr(app.state, "server_boot", False):
+        return
+    task = getattr(app.state, "sandbox_boot_task", None)
+    if task is None:
+        task = asyncio.create_task(asyncio.to_thread(prepare_sandbox_at_startup, app))
+        app.state.sandbox_boot_task = task
+    await asyncio.shield(task)
 
 
 def _fleet_already_running(app: Any) -> bool:
@@ -169,16 +215,27 @@ def run_sandbox_setup(
     """
     if not _SETUP_LOCK.acquire(blocking=False):
         raise SandboxSetupConflict()
+    begin_setup()
     try:
         before = sandbox.current_state()
         was_active_before = bool(before is not None and before.active)
         provision = sandbox_cli.provision_codex_windows(
-            elevator=elevator, verifier=verifier, gate=gate, platform=platform
+            elevator=elevator,
+            verifier=verifier,
+            gate=gate,
+            platform=platform,
+            progress=report_setup,
         )
         after = sandbox.reresolve_after_setup()
         if not was_active_before and after.active and _fleet_already_running(app):
             sandbox.mark_fence_pending_restart()
         row = probe_sandbox()
+        finish_setup(
+            "ready" if provision.ok else "failed",
+            row.next_action
+            if row.details.get("reason") == sandbox.REASON_FENCE_PENDING_RESTART
+            else provision.detail,
+        )
         logger.info(
             "sandbox setup run status=%s reason=%s elevated=%s row_state=%s",
             provision.status,
@@ -192,6 +249,9 @@ def run_sandbox_setup(
             elevated=provision.elevated,
             row=row,
         )
+    except Exception as exc:
+        finish_setup("failed", str(exc))
+        raise
     finally:
         _SETUP_LOCK.release()
 

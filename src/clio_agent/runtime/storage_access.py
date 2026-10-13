@@ -156,7 +156,8 @@ def require_storage_fence(mechanism: str, active: bool, write_roots: tuple[Path,
     if has_credentials or protected:
         raise PermissionError(
             "This host's child-process sandbox cannot enforce connected-source exclusions. "
-            "Open CLIO Infrastructure > Agent > Protected execution and select "
+            "Open Infrastructure > CLIO hosts > Protected execution and select "
             "Set up protected execution, then retry. For a headless installation, "
-            "run `clio sandbox setup`. Shell and MCP tools remain blocked until verification succeeds."
+            "run `clio sandbox setup`. Shell and MCP tools remain blocked until verification succeeds. "
+            "Bypass checks skips action approvals; it does not disable source-access protection."
         )

@@ -3,7 +3,7 @@ title: "Choose what CLIO may do"
 description: Review requested actions, choose an approval policy and understand access limits.
 ---
 
-import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import { Aside } from '@astrojs/starlight/components';
 
 CLIO checks protected actions such as writing a file, running a command or
 reaching the network. Start with **Ask first** when you want to review those
@@ -81,37 +81,46 @@ A path outside them fails with `outside_allowed_roots`, and the agent sees that 
 
 The rules above work at the tool boundary. An agent can also start programs, and a program can write anywhere your account can. The sandbox closes that gap. It confines every process the agent starts to the same folders, so a write outside them is refused by the operating system itself.
 
-The sandbox uses the OS sandbox built into the [Codex CLI](https://www.npmjs.com/package/@openai/codex). Install it with npm:
+Desktop CLIO includes its protected-execution runtime. It checks Windows protection
+at startup, before connecting the agent's tools. You do not need to install a
+separate model or sign in to Codex for this protection.
 
-```sh
-npm install -g @openai/codex
-```
+### Windows setup and progress
 
-On Linux, if Codex is not available, CLIO falls back to the kernel's Landlock file-system fence where the kernel supports it.
+Open **Infrastructure → CLIO hosts → Protected execution** on the computer that
+runs CLIO. When setup is needed, choose **Set up protected execution**.
 
-<Tabs syncKey="os">
-  <TabItem label="macOS and Linux">
+- On supported Windows systems with the newer native runtime, preparation can complete without administrator approval.
+- The older Windows backend needs administrator approval to create its sandbox accounts the first time. Existing accounts can be checked again without another approval prompt.
+- Setup shows its current step and elapsed time. Preparing access to runtime packages can take several minutes. You can leave Infrastructure: setup continues in the connected CLIO service, and a notification reports the result.
+- **Ready** means verification succeeded. If CLIO asks you to restart, use **Restart CLIO** before retrying work: already-running background tool processes need to be replaced.
 
-Once Codex is installed, the sandbox turns on automatically for each process. Check it with:
-
-```sh
-clio sandbox status
-```
-
-  </TabItem>
-  <TabItem label="Windows">
-
-Windows needs one setup step. It asks for administrator approval once, and running it again changes nothing.
+For a command-line installation:
 
 ```powershell
 clio sandbox setup
 clio sandbox status
 ```
 
-  </TabItem>
-</Tabs>
+On macOS and Linux, CLIO uses the available Codex sandbox automatically. Linux
+can fall back to Landlock where the kernel supports it. A command-line installation
+without the bundled runtime needs the relevant sandbox runtime installed.
 
-`clio sandbox status` reports which mechanism is active, the reason if it is not, and the next action to take. Without the sandbox, CLIO still applies the tool-level rules, and it says so: an out-of-bounds write by a program the agent started can succeed, and it is recorded as a gap in the provenance record rather than hidden. Hosts such as shared login nodes often run in this mode.
+### Why Bypass checks can still be blocked
+
+**Bypass checks** skips supported action-approval prompts. It does not grant access
+to connected-source credentials, change a source's read-only setting, or turn off
+protected execution.
+
+If CLIO cannot enforce those source-access boundaries, it refuses shell and MCP
+processes that could expose protected material. Changing the confirmation policy
+will not resolve that failure. Finish protected-execution setup on the connected
+computer, check the result, and restart if requested.
+
+`clio sandbox status` reports the active mechanism, a reason when unavailable,
+and the next action. On hosts where no fence is available, tool-level rules still
+apply. Any permitted unfenced process is explicitly recorded as such; protected
+source access can require the process to be refused altogether.
 
 When a sandboxed process is stopped from writing outside its folders, the denial is recorded with the process, the path, and the time. The agent is given a way to ask for access, and you decide.
 

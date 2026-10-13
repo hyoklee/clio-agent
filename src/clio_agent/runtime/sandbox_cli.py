@@ -515,7 +515,7 @@ def provision_codex_windows(
     )
     if ready:
         if progress:
-            progress("Reusing the existing protected execution sandbox.")
+            progress("Checking runtime access for the existing protected execution sandbox...")
         # Idempotent: already provisioned + enforcement-verified. STILL (re)apply the fleet-runtime
         # RX grants — a box provisioned by a PRIOR clio version has the accounts but NOT the grants,
         # so its confined fleet children fail CreateProcessAsUserW/WinError 5 until granted. icacls RX
@@ -544,7 +544,7 @@ def provision_codex_windows(
                 status=OUTCOME_SETUP_FAILED,
                 reason=scx.REASON_CODEX_WINDOWS_UNPROVISIONED,
                 detail="Windows protected execution requires its one-time account setup.",
-                next_action="Open Infrastructure > Agent > Protected execution and select Set up protected execution.",
+                next_action="Open Infrastructure > CLIO hosts > Protected execution and select Set up protected execution.",
             )
         elevate = elevator if elevator is not None else _elevated_codex_setup
         if progress:
@@ -566,6 +566,8 @@ def provision_codex_windows(
     # launch (the launcher + uv-managed python/tools + clio-kit cache + Temp traverse) BEFORE the
     # enforcement probe spawns a confined child — CreateProcessAsUserW fails WinError 5 otherwise
     # (proven live). Own-profile DACL edit → no admin. Structured reasons kept on the result.
+    if progress:
+        progress("Preparing protected access to CLIO's runtime packages...")
     grant_reasons = grant_fn()
     logger.info(
         "fleet-runtime grants applied statuses=%s",
