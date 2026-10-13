@@ -105,9 +105,22 @@ def answer_question_after_independent_work(
     if mode in {"idle", "stop"}:
         if mode == "stop":
             checkpoint["stop"] = call("POST", f"/v1/sessions/{sid}/cancel", {}, ok=(204,))
-        checkpoint["before_answer_turn_status"] = common.wait_turn(
-            call, wid, sid, max_elapsed=max_elapsed
-        )
+            checkpoint["before_answer_turn_status"] = common.expanding_wait(
+                lambda: (
+                    status
+                    if (status := call("GET", f"/v1/sessions/{sid}")["status"])
+                    in {"cancelled", "idle"}
+                    else None
+                ),
+                what="stopped execution segment",
+                max_elapsed=max_elapsed,
+            )
+        else:
+            checkpoint["before_answer_turn_status"] = common.wait_turn(
+                call, wid, sid, max_elapsed=max_elapsed
+            )
+        if checkpoint["before_answer_turn_status"] not in {"idle", "cancelled", "completed"}:
+            raise RuntimeError("The prior execution segment did not settle before its answer")
     question = checkpoint["question"]
     checkpoint["tasks_before_answer"] = call("GET", f"/v1/sessions/{sid}/async-processes")
     if answer_delay_s > 0:
