@@ -524,52 +524,6 @@ def _session_workspace(app: "FastAPI", session_id: str) -> Optional[str]:
     return str(getattr(session, "workspace_id", "") or "") or None
 
 
-def _workspace_single_writer(app: "FastAPI", workspace_id: str, session_id: str) -> bool:
-    """Whether NO OTHER active session/task can be writing ``workspace_id`` right now.
-
-    The real single-writer proof (finding [3/4]): the per-workspace-root executor
-    lock only serializes calls WITHIN one process AND one root — concurrent sessions
-    or spawned children on the SAME workspace each run their own executor and break
-    it. So we consult the two live registries that name every active writer:
-
-    * ``app.state.in_flight_turns`` — every session with a running turn (the child
-      task turns register here too);
-    * ``app.state.agent_task_registry`` — every non-terminal (queued/running) spawned
-      task, resolved to its child session's workspace.
-
-    CLEAN only when every OTHER active writer provably targets a DIFFERENT workspace.
-    Any ambiguity — an unresolvable peer workspace, a registry that raises, a peer on
-    the same workspace — is DIRTY (precision over recall, #966.10). ``session_id`` is
-    the current writer, excluded from the scan.
-    """
-    if not workspace_id:
-        return False  # cannot scope the proof to a workspace
-    in_flight = getattr(app.state, "in_flight_turns", None)
-    if in_flight:
-        try:
-            other_sids = [s for s in list(in_flight.keys()) if s and s != session_id]
-        except RuntimeError:
-            return False  # mutating concurrently — cannot enumerate, so cannot prove
-        for other_sid in other_sids:
-            ws = _session_workspace(app, other_sid)
-            if ws is None or ws == workspace_id:
-                return False
-    reg = getattr(app.state, "agent_task_registry", None)
-    if reg is not None:
-        try:
-            tasks = reg.snapshot()
-        except Exception:  # noqa: BLE001 — an unreadable registry cannot prove anything
-            return False
-        for task in tasks:
-            if getattr(task, "is_terminal", True):
-                continue
-            child_sid = str(getattr(task, "child_session_id", "") or "")
-            if not child_sid or child_sid == session_id:
-                continue
-            ws = _session_workspace(app, child_sid)
-            if ws is None or ws == workspace_id:
-                return False
-    return True
 
 
 def workspace_lease_clean(app: "FastAPI", workspace_id: str, *, session_id: str = "") -> bool:

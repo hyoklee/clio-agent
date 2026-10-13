@@ -15,13 +15,6 @@ _CANCELLATION_POLL_SECONDS = 0.05
 _MCP_WIRE_CANCELLATION_SETTLE_SECONDS = 1.0
 
 
-def call_limits(executor: Any, name: str, arguments: Any) -> tuple[float | None, bool]:
-    """Keep native execution limits with its owner and retain other MCP RPC budgets."""
-    from clio_agent.gact.context import active_app
-    from clio_agent.tools.native_task_host import native_route
-
-    native = native_route(active_app(), name) is not None
-    return (None if native else executor._timeout_budget_for_call(name, arguments).seconds), native
 
 
 def _tool_cancellation_error(

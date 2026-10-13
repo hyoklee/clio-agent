@@ -137,10 +137,6 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.agent_elicitation_answer_inline import _run_agent_answer_inline
-from clio_agent.gact.agent_elicitation_answer_turn import (
-    _run_agent_answer_turn,
-    _spawn_agent_answer_turn,
-)
 from clio_agent.gact.agent_elicitation_dispatch import _dispatch_agent_answer
 from clio_agent.gact.agent_elicitation_policy import (
     _default_unhinted,

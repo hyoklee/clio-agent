@@ -12,11 +12,9 @@ from starlette.concurrency import run_in_threadpool
 from clio_agent import conf
 from clio_agent.errors import ClioError
 from clio_agent.gact.a2ui_actions.record import last_action_wire
-from clio_agent.gact.mcp_task_store import app_task_store
 from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.permission_delivery import attended_session_id
 from clio_agent.gact.permission_gate import GRANTOR_USER, resolve_permission
-from clio_agent.gact.routes.async_processes import mcp_task_display_title
 from clio_agent.gact.routes.interaction_surface_projection import (
     _latest_action_record as _latest_action_record,
 )
@@ -38,7 +36,6 @@ from clio_agent.gact.types import (
     RespondInteractionRequest,
     UserQuestion,
 )
-from clio_agent.tools.mcp_task_records import TaskRecord
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
@@ -143,37 +140,6 @@ def _question_correlation(app: FastAPI, question: UserQuestion) -> dict[str, str
     }
 
 
-def _agent_answer_task_projection(app: FastAPI, value: object) -> dict[str, Any] | None:
-    """Enrich a question's stored answer-turn identity with live task lifecycle.
-
-    ``UserQuestion.metadata`` retains only the stable task/session correlation.
-    The existing ``AgentTaskRegistry`` remains authoritative for lifecycle, so
-    this read-side projection never copies answer text or creates another task
-    record. Missing registry state is preserved honestly as identity-only data.
-    """
-
-    if not isinstance(value, Mapping):
-        return None
-    projected = {
-        key: str(value.get(key) or "") for key in ("task_id", "child_session_id") if value.get(key)
-    }
-    task_id = projected.get("task_id", "")
-    registry = getattr(app.state, "agent_task_registry", None)
-    task = registry.get(task_id) if task_id and registry is not None else None
-    if task is None:
-        return projected or None
-    projected.update(
-        {
-            "status": task.status,
-            "live_state": task.live_state,
-            "created_at": task.created_at,
-            "updated_at": task.updated_at,
-            "run_label": task.run_label,
-        }
-    )
-    if task.error_reason:
-        projected["error_reason"] = task.error_reason
-    return {key: value for key, value in projected.items() if value not in ("", None)}
 
 
 def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingInteraction:
@@ -423,21 +389,6 @@ def _a2ui_interactions(
     return rows, list(quarantined)
 
 
-def _orphan_mcp_interaction(app: FastAPI, record: TaskRecord) -> PendingInteraction:
-    owner = str(record.session_id or "")
-    return PendingInteraction(
-        id=f"mcp_task_input:{record.key.server_id}:{record.task_id}",
-        kind="mcp_task_input",
-        owner_session_id=owner,
-        attended_session_id=attended_session_id(app, owner),
-        task_id=record.task_id,
-        title=f"{mcp_task_display_title(record)} needs input",
-        source=PendingInteractionSource(protocol="mcp", tool_name=record.tool),
-        created_at=record.created_at,
-        revision=str(getattr(record, "updated_at", "") or record.created_at),
-        payload={"server_id": record.key.server_id, "awaiting_question": True},
-        actions=[],
-    )
 
 
 def interactions_projection_limit() -> int:

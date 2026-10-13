@@ -531,13 +531,6 @@ def run_declared_workflow(
 
     window = inactivity_window_s if inactivity_window_s is not None else resolve_step_inactivity_s()
 
-    from clio_agent.gact.agent_tasks import STATUS_COMPLETED  # noqa: PLC0415
-    from clio_agent.gact.agents.invoker import SpawnError, TaskSpec  # noqa: PLC0415
-    from clio_agent.gact.agents.spawn_runtime import (  # noqa: PLC0415
-        _current_session_depth,  # noqa: PLC0415
-        emit_workflow_step_return,
-        emit_workflow_step_start,
-    )
     from clio_agent.gact.runtime.globals import (  # noqa: PLC0415
         _active_semantic_turn_id,
     )

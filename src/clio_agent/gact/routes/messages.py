@@ -35,7 +35,6 @@ from typing import TYPE_CHECKING, Any, Mapping, cast
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from clio_agent.gact.agent_tasks import display_run_name
 from clio_agent.gact.events import Event
 from clio_agent.gact.message_submission import accept_message_async
 from clio_agent.gact.message_wire import normalize_thought_ownership
@@ -113,7 +112,6 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             row.message_id == message_id for row in intents.list_pending(sid)
         ):
             return
-        from clio_agent.gact.agent_mailbox import withdraw_human_feedback
 
         try:
             withdraw_human_feedback(app, sid, message_id)
@@ -455,26 +453,7 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         # tool_call.thought reloads with the redundant copy cleared (op-identity,
         # never a string compare); a no-op for post-S2 rows.
         def project_v3() -> JSONResponse:
-            task_registry = getattr(app.state, "agent_task_registry", None)
             subagent_links: dict[str, dict[str, Any]] = {}
-            if task_registry is not None:
-                for task in task_registry.for_parent(sid):
-                    if not task.project_to_parent:
-                        continue
-                    agent_id = str(task.agent_ref.get("expert_id") or "")
-                    result = task.result if isinstance(task.result, Mapping) else {}
-                    answer_excerpt = str(result.get("answer_excerpt") or "")
-                    subagent_links[task.task_id] = {
-                        "child_session_id": str(task.child_session_id or ""),
-                        "agent_id": agent_id,
-                        "title": display_run_name(agent_id, task.run_index, task.run_label),
-                        "state": str(task.live_state or task.status),
-                        "parent_run_id": str(task.parent_turn_id or ""),
-                        "created_at": str(task.created_at or ""),
-                        "summary": str(task.error_reason or answer_excerpt),
-                        "result": answer_excerpt,
-                        "task": task.description,
-                    }
             # ``rows`` is newest-first for the 0.2 page; the v3 projection is
             # ledger-ordered and preserves what it is given, so hand it the
             # chronological view rather than making it re-sort by wall clock.

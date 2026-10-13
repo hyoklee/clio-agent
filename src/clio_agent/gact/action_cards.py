@@ -39,7 +39,6 @@ from clio_agent.runtime import trace
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from clio_agent.gact.agent_tasks import AgentTask
 
 logger = logging.getLogger(__name__)
 
@@ -171,35 +170,6 @@ def emit_action_card_part(app: "FastAPI", session_id: str, part: Part) -> bool:
     return True
 
 
-def _calling_task(app: "FastAPI", session_id: str) -> tuple[Optional["AgentTask"], str]:
-    """The calling session's OWN :class:`~clio_agent.gact.agent_tasks.AgentTask` row.
-
-    Looked up by ``child_session_id == session_id`` over its parent's task index
-    (``AgentTaskRegistry.for_parent``) — the cheap, indexed lookup, since a spawned
-    child always knows its own ``parent_session_id``.
-
-    Returns:
-        ``(task, "")`` on success. On failure, two DISTINCT typed realities:
-        ``(None, "no_parent_session")`` when ``session_id`` has no
-        ``parent_session_id`` at all (a bare/root session, never spawned), or
-        ``(None, "task_row_missing")`` when it DOES have a parent but the
-        registry has no matching row (a race with the spawn record, or a
-        session predating the agent-task projection).
-    """
-
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return None, "task_row_missing"
-    session = app.state.sessions.get(session_id)
-    parent_id = str(getattr(session, "parent_session_id", "") or "") if session is not None else ""
-    if not parent_id:
-        return None, "no_parent_session"
-    task = next(
-        (t for t in registry.for_parent(parent_id) if t.child_session_id == session_id), None
-    )
-    if task is None:
-        return None, "task_row_missing"
-    return task, ""
 
 
 def _coerce_stub_actions(raw: Any) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:

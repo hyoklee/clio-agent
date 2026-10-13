@@ -670,7 +670,6 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
         apply_spawn_skill_effect,
         parse_skill_effect,
     )
-    from clio_agent.gact.agents.spawn_runtime import emit_spawn_started  # noqa: PLC0415
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
     spawnable: dict[str, Any] = {}

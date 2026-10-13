@@ -46,11 +46,6 @@ from clio_agent.gact.storage.models import (
 from clio_agent.gact.storage.service import StorageService, provider_capabilities
 from clio_agent.gact.storage.sftp import SftpSource
 from clio_agent.gact.storage.ssh_target import SshTargetSource
-from clio_agent.tools.servers.storage_server import (
-    source_operation_views,
-    submit_source_action,
-    validate_task_owner,
-)
 
 T = TypeVar("T")
 
@@ -714,7 +709,6 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         if operation is None:
             raise HTTPException(404, "Transfer not found for this source")
         if operation.task_handle and operation.owner_session_id:
-            from clio_agent.gact.task_controls import cancel_selected
 
             outcome = await asyncio.to_thread(
                 cancel_selected,

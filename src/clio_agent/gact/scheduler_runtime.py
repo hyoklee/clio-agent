@@ -110,7 +110,6 @@ def _fire_schedule(app: "FastAPI", sch: Any) -> None:
             "scheduler overlap skipped schedule_id=%s session_id=%s", sch.id, sch.session_id
         )
         return
-    from clio_agent.gact.agent_mailbox import accept_session_input
     from clio_agent.gact.autonomous_loop import _get_loop
 
     loop = _get_loop(app, sch.session_id)

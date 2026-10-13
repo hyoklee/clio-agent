@@ -250,7 +250,6 @@ def _clearance_state(app: "FastAPI", parent_session_id: str) -> tuple[str, bool]
     if runner is not None and runner.busy(task.child_session_id):
         return CLEARANCE_GRANTED, True
 
-    from clio_agent.gact.agent_mailbox import pending_session_inputs  # noqa: PLC0415
 
     mail, results = pending_session_inputs(app, task.child_session_id)
     return CLEARANCE_GRANTED, bool(mail or results)

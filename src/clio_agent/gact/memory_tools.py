@@ -5,7 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from clio_agent.gact.agent_targets import session_address as _session_address
 from clio_agent.gact.runtime.memory_search import _memory_search_response
 from clio_agent.gact.workspace_scope import GLOBAL_WORKSPACE_ID
 

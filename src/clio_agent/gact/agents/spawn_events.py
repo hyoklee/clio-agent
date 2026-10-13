@@ -7,7 +7,6 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.agents.spawn_group import spawn_group_fields
-from clio_agent.gact.agents.spawn_placement import run_handle_fields
 from clio_agent.gact.runtime.globals import (
     _active_semantic_trace_id,
     _active_semantic_turn_id,
@@ -70,56 +69,4 @@ def _started_handoff_part(
         status="running",
         text=f"{agent_def.id} -> {child_id}",
         metadata={**_handoff_part_metadata(started_row), "stream_source": "live"},
-    )
-
-
-def emit_spawn_started(
-    app: Any,
-    session_id: str,
-    agent_def: AgentDef,
-    child_id: str,
-    task_text: str,
-    depth: int,
-    spawned: Any,
-    *,
-    emit_semantic_event: Callable[..., Any] = _emit_semantic_event,
-    append_live_part: Callable[..., Any] = _append_live_assistant_part,
-    input_task_ids: list[str] | None = None,
-    workflow_step: bool = False,
-) -> None:
-    """Publish one canonical started handoff for any real child-task spawn."""
-    emit_semantic_event(
-        app,
-        session_id,
-        "blueprint.delegation.started",
-        turn_id=_active_semantic_turn_id(),
-        trace_id=_active_semantic_trace_id(),
-        status="running",
-        summary=f"{agent_def.id} spawned {child_id}" + (" (workflow)" if workflow_step else ""),
-        actor={"agent_id": agent_def.id, "role": "parent_expert"},
-        subject={"agent_id": child_id, "role": "child_expert"},
-        blueprint={
-            "agent_blueprint_id": agent_def.metadata.get("agent_blueprint_id") or "",
-            "parent_expert": agent_def.id,
-            "child_expert": child_id,
-        },
-        payload={
-            "run_index": spawned.run_index,
-            **({"workflow_step": True} if workflow_step else {}),
-        },
-    )
-    registry = getattr(app.state, "agent_task_registry", None)
-    record = registry.get(spawned.task_id) if registry is not None else None
-    append_live_part(
-        app,
-        session_id,
-        _started_handoff_part(
-            agent_def,
-            child_id,
-            task_text,
-            depth,
-            spawned,
-            input_task_ids=input_task_ids,
-            description=record.description if record is not None else "",
-        ),
     )

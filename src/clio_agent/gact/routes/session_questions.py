@@ -25,11 +25,6 @@ from clio_agent.gact.types import (
     ErrorInfo,
     UserQuestion,
 )
-from clio_agent.gact.user_question_ledger import record_user_question
-from clio_agent.gact.user_question_resume import (
-    dispatch_answered_question,
-    finish_cancelled_question,
-)
 
 
 def register_session_question_routes(
@@ -202,7 +197,6 @@ def register_session_question_routes(
         from clio_agent.gact.elicitation_bridge import claim_question_transition  # noqa: PLC0415
 
         if row.task_handle:
-            from clio_agent.gact.task_controls import cancel_selected
 
             outcome = await asyncio.to_thread(
                 cancel_selected, app, row.owner_session_id, row.task_handle, human_origin=True

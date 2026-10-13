@@ -52,7 +52,6 @@ from clio_agent.gact.planning import (
     recorded_plan_variant,
     recorded_playbook,
 )
-from clio_agent.gact.user_question_ledger import record_user_question
 from clio_agent.runtime import trace
 
 if TYPE_CHECKING:

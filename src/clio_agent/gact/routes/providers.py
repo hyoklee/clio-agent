@@ -70,7 +70,6 @@ from clio_agent.gact.providers.selection_store import (
     persist_lm_selection,
     selection_status_fields,
 )
-from clio_agent.gact.relay_wiring import construct_agent_with_relay
 from clio_agent.gact.routes.provider_auth import supports_logout
 from clio_agent.gact.routes.provider_catalog_routes import register_provider_catalog_routes
 from clio_agent.gact.runtime.globals import _set_app_arc

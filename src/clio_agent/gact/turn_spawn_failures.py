@@ -20,7 +20,6 @@ def _error_field(error_info: Any, field: str, default: Any = None) -> Any:
 def child_task_error_reason(error_info: Any) -> str:
     """Project a child turn's typed cause onto the AgentTask vocabulary."""
 
-    from clio_agent.gact.agent_tasks import ERROR_REASONS  # noqa: PLC0415
 
     details = _error_field(error_info, "details", {})
     declared = str(details.get("reason") or "") if isinstance(details, dict) else ""

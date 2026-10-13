@@ -283,36 +283,6 @@ def _session_results(app: "FastAPI", workspace_id: str) -> list[dict[str, Any]]:
     return results
 
 
-def _agent_run_results(app: "FastAPI", workspace_id: str) -> list[dict[str, Any]]:
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return []
-    results: list[dict[str, Any]] = []
-    for task in registry.snapshot():
-        child = app.state.sessions.get(task.child_session_id)
-        parent = app.state.sessions.get(task.parent_session_id)
-        owner = child or parent
-        if owner is None or owner.workspace_id != workspace_id:
-            continue
-        expert = str((task.agent_ref or {}).get("expert_id") or "agent")
-        label = task.run_label or f"{expert} #{task.run_index + 1}"
-        results.append(
-            _reference_result(
-                kind="agent_run",
-                ref_id=task.task_id,
-                label=label,
-                detail=f"Agent run · {task.status} · {expert}",
-                media_type="application/vnd.clio.agent-run-summary+json",
-                revision=task.updated_at,
-                navigation={
-                    "workspace_id": workspace_id,
-                    "task_id": task.task_id,
-                    "session_id": task.child_session_id,
-                    "route": "/v1/agent-tasks/{task_id}",
-                },
-            )
-        )
-    return results
 
 
 async def search_workspace_references(

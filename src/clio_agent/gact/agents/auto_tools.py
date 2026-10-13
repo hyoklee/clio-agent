@@ -60,7 +60,6 @@ from clio_agent.gact.autonomous_loop import build_loop_wakeup_tool
 from clio_agent.gact.cron_tools import build_cron_tools
 from clio_agent.gact.goal import build_goal_status_tool
 from clio_agent.gact.goal_control import build_set_goal_tool
-from clio_agent.gact.goal_wait import build_goal_wait_tool
 from clio_agent.gact.loop_control import build_set_loop_tool
 from clio_agent.gact.memory_tools import build_memory_tools
 from clio_agent.gact.plan_mode import build_plan_exit_tool
@@ -73,7 +72,6 @@ from clio_agent.gact.storage.setup_tool import (
     build_connected_data_status_tool,
     build_connected_data_write_tool,
 )
-from clio_agent.gact.task_tools import build_task_tools
 from clio_agent.gact.todos import build_write_todos_tool
 from clio_agent.gact.weather_tools import build_weather_forecast_tool
 from clio_agent.providers.model_discovery import build_refresh_provider_models_tool

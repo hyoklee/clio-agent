@@ -13,7 +13,6 @@ from urllib.parse import quote
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
-from clio_agent.gact.agent_mailbox import accept_session_input
 from clio_agent.gact.artifacts.cas import CASStore, sha256_file
 from clio_agent.gact.artifacts.records import ArtifactRecord, ArtifactVersion, Custody
 from clio_agent.gact.artifacts.registry import get_registry

@@ -168,7 +168,6 @@ def register_message_intent_routes(app: FastAPI, deps: "GactDeps") -> None:
         """
 
         require_session(sid)
-        from clio_agent.gact.agent_mailbox import withdraw_human_feedback
 
         try:
             await run_off_loop(withdraw_human_feedback, app, sid, message_id)

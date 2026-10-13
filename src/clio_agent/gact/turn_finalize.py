@@ -86,7 +86,6 @@ from clio_agent.gact.types import (
     Tokens,
 )
 from clio_agent.gact.usage import capture_reasoning_log
-from clio_agent.gact.user_question_pause import maybe_pause_for_user as maybe_pause_for_user
 from clio_agent.runtime import trace
 
 if TYPE_CHECKING:

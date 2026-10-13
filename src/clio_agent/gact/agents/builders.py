@@ -840,9 +840,6 @@ def _build_blueprint_dspy_module(base_agent: Any, agent_def: "AgentDef") -> Any:
                 # old inline per-child delegate/fan-out tools and the settle loop
                 # are deleted. The spawn runtime re-emits the wire
                 # blueprint.delegation.* events for TUI parity.
-                from clio_agent.gact.agents.spawn_runtime import (  # noqa: PLC0415
-                    build_spawn_runtime_tools,
-                )
 
                 _declared_tools = _dynamic_agent_tools(
                     base_agent,

@@ -42,7 +42,6 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
-from clio_agent.gact.agent_mailbox import stage_session_inputs
 from clio_agent.gact.enrichment import (
     _context_file_turn_provenance,
     _record_context_frame,
@@ -167,7 +166,6 @@ def _prepare_turn_off_loop_steps(
     if job is not None:
         job()
 
-    from clio_agent.gact.session_run_tasks import accept_session_run
 
     accept_session_run(state.app, state.sid, state.user_msg)
 

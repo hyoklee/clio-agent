@@ -109,7 +109,6 @@ def submit_tool(signature: Any) -> dspy.Tool:
         disposition = kwargs.pop("assignment_disposition", None)
         if disposition is not None:
             from clio_agent.gact.context import active_app, active_session_id, active_turn_id
-            from clio_agent.gact.session_run_tasks import set_assignment_disposition
 
             app = active_app()
             if app is not None:

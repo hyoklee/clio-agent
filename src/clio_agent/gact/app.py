@@ -263,7 +263,6 @@ from clio_agent.gact import (  # noqa: E402
     desktop_boot,  # noqa: E402
     desktop_lifecycle,
     provenance_wiring,
-    relay_wiring,
 )
 from clio_agent.gact._params import (  # noqa: E402,F401
     _gact_turn_timeout_s,
@@ -306,7 +305,6 @@ from clio_agent.gact.agents.composition import (  # noqa: E402, F401
     _runtime_active_workspace_context,
     _runtime_dynamic_agent_children_context,
 )
-from clio_agent.gact.agents.invoker import InProcessExpertInvoker  # noqa: E402
 from clio_agent.gact.agents.resolution import (  # noqa: E402, F401
     _agent_definition_is_agent_blueprint,
     _agent_definition_uses_blueprint_runtime,
@@ -333,7 +331,6 @@ from clio_agent.gact.agents.runners import (  # noqa: E402
     _run_prompt_user_agent,
     _run_tool_user_agent,
 )
-from clio_agent.gact.ask_user_tool import restore_pending_ask_user_questions  # noqa: E402
 
 # gact/delegation.py -- delegation + workflow-state derivation cluster.
 from clio_agent.gact.delegation import (  # noqa: E402,F401
@@ -405,14 +402,8 @@ from clio_agent.gact.providers.lmstudio import (  # noqa: E402,F401
 )
 from clio_agent.gact.routes import artifact_workspace  # noqa: E402
 from clio_agent.gact.routes.a2ui import register_a2ui_routes  # noqa: E402
-from clio_agent.gact.routes.agent_tasks import (  # noqa: E402
-    register_agent_task_routes,
-)
 from clio_agent.gact.routes.agents import (  # noqa: E402
     register_agents_routes,
-)
-from clio_agent.gact.routes.async_processes import (  # noqa: E402
-    register_async_process_routes,
 )
 from clio_agent.gact.routes.blueprint_updates import register_blueprint_updates_routes  # noqa: E402
 from clio_agent.gact.routes.blueprints import (  # noqa: E402
@@ -453,7 +444,6 @@ from clio_agent.gact.routes.provider_models_refresh import (
     register_provider_models_refresh_routes,  # noqa: E402
 )
 from clio_agent.gact.routes.providers import register_providers_routes  # noqa: E402
-from clio_agent.gact.routes.relay import register_relay_routes  # noqa: E402
 from clio_agent.gact.routes.sandbox_setup import register_sandbox_setup_routes  # noqa: E402
 from clio_agent.gact.routes.schedules import (  # noqa: E402
     register_schedules_routes,
@@ -552,7 +542,6 @@ from clio_agent.gact.runtime.type_parsing import (  # noqa: E402,F401
     _parse_field_annotation,
     _sanitize_model_name,
 )
-from clio_agent.gact.user_question_ledger import restore_user_questions  # noqa: E402
 
 # gact/workflow_state/merge.py -- pure workflow_state merge/normalize helpers.
 from clio_agent.gact.workflow_state.merge import (  # noqa: E402,F401
@@ -599,10 +588,6 @@ def _clear_session_model_refs(app: "FastAPI") -> None:
 # stay green; ``_start_background_user_turn`` is the explicit-``app`` engine the  #
 # thin ``build_app`` closure wrapper (and ``GactDeps``) delegate to.             #
 # --------------------------------------------------------------------------- #
-from clio_agent.gact.agent_tasks import (  # noqa: E402
-    install_agent_task_registry,
-)
-from clio_agent.gact.mcp_task_events import install_mcp_task_event_publisher  # noqa: E402
 from clio_agent.gact.turn import (  # noqa: E402,F401
     _run_turn_in_background,
     _start_background_user_turn,
@@ -610,10 +595,6 @@ from clio_agent.gact.turn import (  # noqa: E402,F401
 from clio_agent.gact.turn_runner import (  # noqa: E402
     drain_app_turns,
     install_turn_runner,
-)
-from clio_agent.gact.turn_spawn import (  # noqa: E402
-    install_agent_task_executor,
-    shutdown_agent_task_executors,
 )
 
 # Alias kept so the thin ``build_app`` closure wrapper (which shadows the
@@ -660,7 +641,6 @@ from clio_agent.gact.expert_packs import (
     load_expert_packs,
     validate_expert_hierarchy,
 )
-from clio_agent.gact.loop_inbox import _make_loop_inbox_drain, drain_inbox_and_notify_spotter
 from clio_agent.gact.permission_gate import (  # noqa: E402,F401
     _direct_permission_denied,
     _guard_direct_destructive_action,
@@ -805,11 +785,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     provider_catalog_task = server_boot.start_provider_catalog(app)
 
-    await server_boot.start_task_hosts(app)
 
     yield
 
-    await server_boot.shutdown_connected_storage(app)
 
     # Agent construction runs on an executor thread. Cancelling its asyncio task
     # does not stop that thread, and Python waits for executor workers at process
@@ -828,7 +806,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # completion during teardown stages new work. The deferred resume is simply
     # not run (honest: no false 'resumed' claim), consistent with shutdown losing
     # other in-memory in-flight state.
-    app.state.turn_runner.set_idle_hook(None)
     await asyncio.to_thread(app.state.document_store.close)
     # #948 S1 (#662): quiesce the internal turn-PRODUCERS (the scheduler tick, the
     # agent-construction and lm-config tasks) BEFORE draining turns, so nothing can
@@ -850,7 +827,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     # Settle turns and task owners while their durable stores are still alive.
     await drain_app_turns(app, logger)
-    await server_boot.shutdown_tasks(app)
 
     # Desktop Quit must release the shared runtime before any later executor join can
     # block on a provider/tool worker.  The turn drain above is the safety boundary:
@@ -866,12 +842,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # loop, symmetric to their lazy install. Without this their non-daemon workers
     # leak across app lifecycles and a worker still in a slow child forward blocks
     # process exit (concurrent.futures' atexit joins all workers).
-    try:
-        await asyncio.get_running_loop().run_in_executor(
-            None, lambda: shutdown_agent_task_executors(app)
-        )
-    except Exception:  # noqa: BLE001,S110 - defensive shutdown cleanup
-        pass
 
     # MCP Apps may own browser attachments or other remote resources. Close
     # every retained record while the exact originating MCP transports are
@@ -930,7 +900,6 @@ async def _construct_agent_async(app: "FastAPI") -> None:
         # ARC churn / trace ⊋ ARC split). Built on a worker thread (server_boot): a clio-core
         # attach can take tens of seconds and must never block /v1/health on this loop.
         arc = await server_boot.process_arc_off_loop(app)
-        relay_kwargs = await relay_wiring.relay_agent_kwargs(app)
         # Pre-import the heavy LM stack ON THIS THREAD before any builder thread
         # runs: the deferred init here and a concurrent provider bind otherwise
         # import litellm simultaneously on two executor threads.
@@ -966,7 +935,7 @@ async def _construct_agent_async(app: "FastAPI") -> None:
         # this exact config (credential included — the boot/default config is the
         # sanctioned env-credential read, design §6), so a GACT booted purely from
         # ``CLIO_LM_*`` still authenticates.
-        agent = ClioAgent(verbose=False, arc=arc, provider_config=cfg, **relay_kwargs)
+        agent = ClioAgent(verbose=False, arc=arc, provider_config=cfg)
         agent_initialization.update_provider_profile(app, agent)
         return agent
 
@@ -1227,21 +1196,15 @@ def build_app(
     install_turn_runner(app)
     # #948 S2 (#950): in-memory AgentTask projection over the session store, rebuilt
     # from agent-task sessions; feeds events, the task API, and S3+ spawns.
-    install_agent_task_registry(app)
     # #1205: bridge every durable MCP TaskRecord write (#1115) to this app's event
     # bus, so the async-processes tray refreshes live instead of polling.
-    install_mcp_task_event_publisher(app)
     # #948 S3 (#951): dedicated child-forward pool, sized to the concurrency cap,
     # prevents a waiting parent from starving its children.
-    install_agent_task_executor(app)
-    app.state.expert_invoker = InProcessExpertInvoker(app)
-    relay_wiring.configure_relay_expert_invokers(app)
     # #948 S1: schedule ids deferred because their session was busy at the cron
     # minute; _scheduler_tick_once retries them until the session frees (a coarse
     # cron can't be retried via due_now, which only re-yields on a cron match).
     app.state.deferred_schedules = set()
     # #1035/#1036 (epic #1031 Pillar 2): per-session loop inboxes — the mid-turn
-    app.state.turn_runner.set_idle_hook(lambda sid: drain_inbox_and_notify_spotter(app, sid))
     # iowarp/clio-agent#2: per-session ledger of tool calls observed
     # during the in-flight turn. The global tool_observer appends
     # here; _run_turn_in_background drains it post-forward to attach
@@ -1296,7 +1259,6 @@ def build_app(
     set_tool_runtime_resolver(resolve_tool_runtime)
     # #1035: install the injected loop-inbox drain (both boot branches run turns);
     # resolve_tool_runtime folds it into ToolRuntimeHooks (acyclic edge preserved).
-    app.state.pending_loop_inbox_drain = _make_loop_inbox_drain(app)
     if agent is not None:
         try:
             _install_tool_runtime_hooks(app)
@@ -2067,11 +2029,9 @@ def build_app(
     # ---- /v1/agent-tasks + /v1/sessions/{sid}/agent-tasks (#948 S2 / #950) ----
     # The AgentTask projection read + cancel routes, over
     # ``app.state.agent_task_registry`` (rebuilt at boot from agent-task sessions).
-    register_agent_task_routes(app, deps)
     # ---- /v1/sessions/{sid}/async-processes (#1205) ----
     # Session-scoped union of spawned AgentTask rows and durable MCP TaskRecord
     # rows, kind-discriminated, for the tray's single fetch.
-    register_async_process_routes(app, deps)
 
     # ---- /v1/artifacts + /v1/{sessions,workspaces}/{id}/artifacts (#966 S2/#968) ----
     artifact_workspace.register_artifact_workspace_routes(app, deps)
@@ -2159,7 +2119,6 @@ def build_app(
     register_system_routes(app, deps)
     register_sandbox_setup_routes(app)  # /v1/system/sandbox (+/setup) -- routes/sandbox_setup.py
     register_lifecycle_routes(app)
-    register_relay_routes(app, deps)
     register_infrastructure_routes(app, session_store_path.parent)
     register_connected_storage_routes(app)
     # ---- /v1/sessions/{sid}/tasks + /v1/tasks/{tid} + memory/events + share ----

@@ -280,9 +280,6 @@ class SessionStore:
             # lets the tools layer reach a durable store without importing gact; an
             # in-memory registry deliberately does not publish, because it would be
             # claiming a crash-recovery guarantee it cannot keep.
-            from clio_agent.gact.mcp_task_store import (  # noqa: PLC0415 - keep leaf
-                install_session_task_store,
-            )
 
             # Retained so ``build_app`` can publish an APP-SCOPED handle: the
             # process-global the install also sets is overwritten by the next

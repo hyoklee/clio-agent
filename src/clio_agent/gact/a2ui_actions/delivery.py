@@ -159,7 +159,6 @@ async def deliver_to_agent(
 
     busy = session_busy_error_payload(getattr(app.state, "turn_runner", None), session_id)
     if busy is not None:
-        from clio_agent.gact.agent_mailbox import accept_session_input_async
 
         try:
             await accept_session_input_async(
@@ -173,7 +172,6 @@ async def deliver_to_agent(
         _publish(app, session_id, delivered)
         return delivered
 
-    from clio_agent.gact.agent_mailbox import accept_session_input_async
 
     try:
         message_id = await accept_session_input_async(

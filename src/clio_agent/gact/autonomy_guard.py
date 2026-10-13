@@ -111,7 +111,6 @@ def reconcile_autonomous_controls(app: Any) -> None:
     """Keep durable waiting wakeups; stop interrupted work instead of replaying effects."""
     from clio_agent.gact.autonomous_loop import _get_loop, end_loop
     from clio_agent.gact.goal import GoalDecision, _enqueue_goal_redrive, _get_goal, _put_goal
-    from clio_agent.gact.goal_wait import waiting_on_tasks
 
     for session in app.state.sessions.list():
         loop = _get_loop(app, session.id)

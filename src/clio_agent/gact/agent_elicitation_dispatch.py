@@ -17,7 +17,6 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.agent_elicitation_activity import stamp_agent_answer_turn
-from clio_agent.gact.agent_elicitation_answer_turn import _run_agent_answer_turn
 from clio_agent.gact.agent_elicitation_context import _build_answer_prompt
 from clio_agent.gact.agent_elicitation_policy import (
     _OUTER_TIMEOUT_MARGIN_S,
@@ -126,7 +125,6 @@ async def _dispatch_agent_answer(
     degrade in this codebase ("never silent, never a crash").
     """
 
-    from clio_agent.gact.turn_spawn import SpawnError  # noqa: PLC0415
 
     answer_session_id = str(getattr(invocation, "session_id", "") or "") or question.session_id
     prompt = _build_answer_prompt(question, translation)

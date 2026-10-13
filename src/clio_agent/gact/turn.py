@@ -450,7 +450,6 @@ async def _run_turn_in_background(
         # Re-read the shared mailbox after the prologue's abort/veto checks. This
         # stages content only; the Core recipient-input boundary acknowledges it
         # immediately before each model call, including subsequent iterations.
-        from clio_agent.gact.agent_mailbox import refresh_session_inputs
 
         await _run_turn_setup_off_loop(state, lambda: refresh_session_inputs(state))
 
@@ -678,10 +677,6 @@ def _start_background_user_turn(
     durably, so staging replaces that row in place, its accepted stamp kept.
     """
     with app.state.turn_runner.reservation(sid, user_msg_id) as reservation:
-        from clio_agent.gact.subagent_lifecycle import (
-            require_execution_allowed,
-            retained_model_metadata,
-        )
 
         require_execution_allowed(app, sid)
         now = time.time()

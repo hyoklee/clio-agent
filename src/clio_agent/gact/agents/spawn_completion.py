@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.agents.spawn_group import spawn_group_fields
-from clio_agent.gact.agents.spawn_placement import run_handle_fields
 from clio_agent.gact.tool_observer import _handoff_part_metadata
 from clio_agent.gact.turn_spawn_result import message_text
 from clio_agent.gact.types import Part

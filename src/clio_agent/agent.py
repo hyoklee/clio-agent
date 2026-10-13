@@ -73,15 +73,11 @@ from clio_agent.tools.gateway import (
     build_gateway,
     build_tool_catalog,
     list_builtin_tool_definitions,
-    list_jarvis_tool_definitions,
-    list_relay_tool_definitions,
     namespace_proxies,
     namespace_specs,
 )
-from clio_agent.tools.jarvis_jobs import JarvisJobs
 from clio_agent.tools.mcp_discovery import NamespaceDiscoveryHealer, discover_declared_tools_bounded
 from clio_agent.tools.reaper import WorkspaceExecutorReaper
-from clio_agent.tools.remote_mcp import RemoteMcpFederation
 from clio_agent.tools.workspace_root import canonical_workspace_root
 
 
@@ -132,10 +128,6 @@ class ClioAgent(dspy.Module):
         data_dir: str | None = None,
         arc: ARCMemory | None = None,
         provider_config: LMProviderConfig | None = None,
-        remote_mcp_federation: RemoteMcpFederation | None = None,
-        jarvis_jobs: JarvisJobs | None = None,
-        relay_install: Any | None = None,
-        relay_status: Mapping[str, Any] | None = None,
     ):
         """Initialize the ClioAgent host: chat, tool execution, ARC, and runtime storage.
 
@@ -158,21 +150,13 @@ class ClioAgent(dspy.Module):
                 environment independently (the dropped boot env-handoff). ``None``
                 reads :func:`load_config_from_env` directly — the standalone CLI / test
                 baseline, byte-identical to before.
-            remote_mcp_federation: Optional relay catalog projection added to every
                 default and per-workspace execution gateway.
-            jarvis_jobs: Optional durable JARVIS application surface added to every
                 default and per-workspace execution gateway.
-            relay_install: Optional curated cluster-lifecycle tool surface
                 (clio-relay#209 A2) added to every default and per-workspace
                 execution gateway.
-            relay_status: Typed production wiring status retained by every gateway.
         """
         super().__init__()
         self.verbose = verbose
-        self._remote_mcp_federation = remote_mcp_federation
-        self._jarvis_jobs = jarvis_jobs
-        self._relay_install = relay_install
-        self._relay_status = dict(relay_status or {})
 
         # ARC Memory: reuse the injected one (the gact server owns the single per-process
         # ARC and re-injects it on every bind) or mint one; None in History mode.
@@ -343,10 +327,6 @@ class ClioAgent(dspy.Module):
             cwd=cwd,
             handlers=make_correlated_handlers(),
             capabilities=correlated_capabilities(),
-            remote_mcp_federation=getattr(self, "_remote_mcp_federation", None),
-            jarvis_jobs=getattr(self, "_jarvis_jobs", None),
-            relay_install=getattr(self, "_relay_install", None),
-            relay_status=getattr(self, "_relay_status", None),
         )
         if not set_catalog:
             return tool_gateway
@@ -361,13 +341,7 @@ class ClioAgent(dspy.Module):
             # discovered catalog already holds their Tool objects, so they seed
             # synchronously with the builtins — only spawned MCP namespaces are
             # deferred to the background pass.
-            self._tool_definitions.update(
-                list_relay_tool_definitions(getattr(self, "_remote_mcp_federation", None))
-            )
             # v1.7.0 cold-boot gap: see list_jarvis_tool_definitions.
-            self._tool_definitions.update(
-                list_jarvis_tool_definitions(getattr(self, "_jarvis_jobs", None))
-            )
             catalog = build_tool_catalog(
                 tool_gateway, experts=experts, tools=list(self._tool_definitions.values())
             )

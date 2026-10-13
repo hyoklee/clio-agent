@@ -243,7 +243,6 @@ def _settle_answer(
 ) -> None:
     from clio_agent.gact.elicitation_bridge import claim_question_transition
     from clio_agent.gact.events import Event
-    from clio_agent.gact.user_question_resume import settled_question_metadata
 
     text = "\n".join(part.text for part in parts if part.type == "text").strip()
     attachments = _attachments(parts)

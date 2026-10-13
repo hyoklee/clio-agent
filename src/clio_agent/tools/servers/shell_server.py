@@ -609,9 +609,7 @@ async def bash(
         if process.returncode is None:
             process.kill()
         await process.wait()
-        from clio_agent.tools.native_task_tool import confirm_workload_cleanup
 
-        confirm_workload_cleanup()
         raise
     readers = [
         asyncio.create_task(read_process_stream(pipe, capture=capture, ctx=ctx))
@@ -647,7 +645,6 @@ async def bash(
         finally:
             tree.close()
             if physical_settlement:
-                from clio_agent.tools.native_task_tool import confirm_workload_cleanup
 
                 base = {
                     "command": command,
@@ -659,7 +656,6 @@ async def bash(
                 result = compose_output_fields(
                     base, captures, root=spill_root, budget=shell_result_char_budget()
                 )
-                confirm_workload_cleanup(result)
     if result is None:
         raise RuntimeError("Shell exited without confirmed process-tree settlement")
     return result
@@ -668,7 +664,6 @@ async def bash(
 async def _cancel_pending_spawn(spawn: asyncio.Task[asyncio.subprocess.Process]) -> None:
     """Resolve an exact spawn race and physically settle it without replaying the command."""
     from clio_agent.runtime.task_process_tree import TaskProcessTree
-    from clio_agent.tools.native_task_tool import confirm_workload_cleanup
 
     async def cleanup() -> None:
         process = await spawn
@@ -685,7 +680,6 @@ async def _cancel_pending_spawn(spawn: asyncio.Task[asyncio.subprocess.Process])
             elif process.returncode is None:
                 process.kill()
                 await process.wait()
-        confirm_workload_cleanup()
 
     pending = asyncio.create_task(cleanup())
     while True:

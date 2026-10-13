@@ -273,3 +273,74 @@ The removal commit intentionally has no compatibility aliases. Only confirmed sh
 Read-only preflight on 2026-10-13 found the feature checkout and GACT at the required commits with only the three protected human design files and six authorized unfinished test migrations changed. Feature Python is 3.14.6; iowarp-core 2.3.1 and its binding are installed; FastMCP/fastmcp-tasks 4.0.0b5, MCP 2.0.0 and Docket 0.25.0 are available. Codex credentials exist and Claude credentials have an unexpired token; neither is a successful live-model acceptance result. Actual Claude Code is installed. Read-only SSH to homelab succeeds on Linux 5.10 with Python3; uv is absent from its default PATH, so isolated Linux runtime preparation remains a prerequisite.
 
 No product/native qualification was launched in preflight. Prior automatic-review prohibitions still apply to their exact operations/paths. Local permitted source/native routes must be selected without retrying those prohibited launches. A route that cannot be made available within those boundaries remains blocked, never waived.
+
+
+## Expanded deletion bindings
+
+The caller audit additionally identified these dedicated wrappers as part of the same removed architecture:
+
+- `src/clio_agent/gact/agent_lifecycle_tools.py`
+- `src/clio_agent/gact/ask_user_tool.py`
+- `src/clio_agent/gact/background_exit.py`
+- `src/clio_agent/gact/goal_wait.py`
+- `src/clio_agent/gact/live_handle.py`
+- `src/clio_agent/gact/message_admission.py`
+- `src/clio_agent/gact/user_question_ledger.py`
+- `src/clio_agent/gact/user_question_resume.py`
+- `src/clio_agent/gact/user_question_pause.py`
+- `src/clio_agent/gact/agent_elicitation_answer_turn.py`
+- `src/clio_agent/gact/agents/invoker.py`
+- `src/clio_agent/gact/agents/observe_runtime.py`
+- `src/clio_agent/gact/agents/spawn_placement.py`
+- `src/clio_agent/gact/agents/spawn_runtime.py`
+- `src/clio_agent/gact/agents/spawn_runtime_declarations.py`
+- `src/clio_agent/gact/agents/skill_spawn_effect.py`
+- `src/clio_agent/tools/jarvis_jobs.py`
+- `src/clio_agent/tools/jarvis_result_contract.py`
+- `src/clio_agent/tools/remote_mcp.py`
+- `src/clio_agent/gact/routes/agent_lifecycle.py`
+- `src/clio_agent/tools/servers/storage_server.py`
+
+The partial-removal inventory includes the following old definitions. Their unrelated containing modules and workload algorithms are retained; missing replacement bindings are intentional in the removal commit.
+
+- `gact/server_boot.py`: `reconcile_connected_storage`, `shutdown_connected_storage`, `shutdown_tasks`, `start_task_hosts`
+- `gact/turn_forward.py`: `_forward_executor`, `_run_turn_setup_off_loop`, `_run_module`, `forward_turn`
+- `gact/turn_runner.py`: `TurnRunner.set_idle_hook`, `TurnRunner.idle_hook`, `TurnRunner.drain`, `install_turn_runner`, `_admit_pending_inputs`, `drain_app_turns`
+- `gact/composer_runtime.py`: `_install_composer_idle_hook`, `recover_pending_feedback`
+- `gact/agent_initialization.py`: `refuse_parked_inputs`
+- `gact/elicitation_correlation.py`: `invocation_with_request_correlation`
+- `gact/elicitation_forwarding.py`: `relay_forwarded_cancel`, `deliver_forwarded_answer`
+- `gact/enrichment.py`: `_notify_block`
+- `gact/goal.py`: `_enqueue_goal_redrive`
+- `gact/goal_control.py`: `launch_pending_goal`, `maintain_goal_controls`
+- `gact/spotter_watcher.py`: `_live_watcher_tasks`
+- `tools/foreground_cancellation.py`: `call_limits`
+- `tools/mcp_executor.py`: `AsyncMCPToolExecutor.call_tool_result`
+- `tools/mcp_extension_registry.py`: `_build_tasks`
+- `tools/task_receipt.py`: `record_invalid_result`
+- `tools/gateway.py`: `list_relay_tool_definitions`, `list_jarvis_tool_definitions`
+- `gact/agents/agent_task_output_digest.py`: `get_agent_task_output_impl`
+- `gact/routes/interactions.py`: `_agent_answer_task_projection`
+- `gact/storage/download_tool.py`: `connected_data_download`, `build_connected_data_download_tool`
+- `gact/storage/connect_tool.py`: `connected_data_connect`
+- `gact/action_cards.py`: `_calling_task`
+- `gact/context_references.py`: `_resolve_agent_run`
+- `gact/context_reference_search.py`: `_agent_run_results`
+- `gact/session_descendants.py`: `descendant_walk`, `purge_session_tasks`
+- `gact/turn_reasoning.py`: `_parent_turn_reasoning`
+- `gact/workflow_step_watch.py`: `watch_step`
+- `tools/task_call_context.py`: `require_admission`
+- `gact/agents/agent_task_input_refs.py`: `resolve_input_task_evidence`
+- `gact/agents/native_presenters_tasks.py`: `_child_session`, `_child_name`
+- `gact/agents/spawn_events.py`: `emit_spawn_started`
+- `gact/artifacts/versions.py`: `_workspace_single_writer`
+- `gact/artifacts/wire.py`: `append_turn_child_resource_links`
+- `gact/provenance/child_projection.py`: `_task_index`
+- `gact/routes/interaction_surface_projection.py`: `_task_id_for_owner`
+- `gact/protocol/v3/event.py`: `_task_path`
+- `gact/agents/clio_react_record.py`: `StepRecorder.commit_input`, `StepRecorder.carry_over`
+- `tools/builtin_control_host.py`: `builtin_control_bridge`
+
+The static guard runs independently of product imports. A passing guard proves its retired import/symbol/state/config denylist only. It does not prove every remaining policy/caller is removed: the independent removal reviews must inspect actual code and diffs before rebuilding. Product compilation/collection and old public bindings are deliberately not repaired in this commit. No replacement authority, stub or fallback is installed.
+
+Independent algorithm tests retained include `test_shell_server`, `test_shell_output_spill`, `test_shell_workspace_state`, `test_connected_storage_boundary`, `test_connected_storage_adapters`, `test_source_transfer_async_lifecycle`, `test_transfer_progress_persistence` and all sandbox/confinement suites. Old coupled fixtures may require fresh public-contract setup after rebuilding; this is not permission to discard their underlying behaviors.

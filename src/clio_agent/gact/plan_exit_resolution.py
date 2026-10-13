@@ -27,7 +27,6 @@ def _stage_plan_exit_resume(
 ) -> None:
     """Resume an approved or rejected plan through the deferred-resume fold."""
 
-    from clio_agent.gact.agent_mailbox import accept_session_input
     from clio_agent.gact.events import Event
 
     message_id = accept_session_input(
@@ -70,7 +69,6 @@ def _stage_plan_revision_message(
 ) -> None:
     """Resume rejected plan review with the reviewer's prose as the user message."""
 
-    from clio_agent.gact.agent_mailbox import accept_session_input
     from clio_agent.gact.events import Event
 
     metadata = {

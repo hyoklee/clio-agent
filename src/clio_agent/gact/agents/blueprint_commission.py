@@ -27,7 +27,6 @@ def resolve_commission_target(
     if not target_id:
         return requested_agent, None, "", ""
     from clio_agent.gact.spawn_context import resolve_installed_blueprint_target  # noqa: PLC0415
-    from clio_agent.gact.turn_spawn import SpawnError  # noqa: PLC0415
 
     parent_session = app.state.sessions.get(session_id)
     workspace_id = str(getattr(parent_session, "workspace_id", "") or "")

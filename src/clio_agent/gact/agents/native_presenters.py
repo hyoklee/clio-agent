@@ -52,7 +52,6 @@ def build_wait_tool(callback: Callable[..., Any]) -> Any:
 def waiting_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
     """Identify the requested children while the single committed wait is open."""
     from clio_agent.gact import context
-    from clio_agent.gact.agent_tasks import resolve_waited_task_rows
 
     task_ids = args.get("task_ids", [])
     if not isinstance(task_ids, list) or not all(isinstance(tid, str) for tid in task_ids):

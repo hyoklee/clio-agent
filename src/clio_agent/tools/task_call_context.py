@@ -48,20 +48,6 @@ def permission_snapshot(app: Any, sid: str) -> dict[str, Any]:
     )
 
 
-def require_admission(app: Any = None, sid: str | None = None) -> None:
-    """Reject submissions once their conversation subtree or application starts cancelling."""
-    from clio_agent.gact.context import active_app, active_session_id
-
-    app = app if app is not None else active_app()
-    sid = sid if sid is not None else active_session_id()
-    if app is not None:
-        session = app.state.sessions.get(sid) if sid else None
-        if (
-            sid in getattr(app.state, "task_admission_closed", set())
-            or bool((getattr(session, "metadata", None) or {}).get("task_admission_closed"))
-            or getattr(getattr(app.state, "task_supervisor", None), "closing", False)
-        ):
-            raise RuntimeError("Task admission is closed")
 
 
 def begin_backend_call(

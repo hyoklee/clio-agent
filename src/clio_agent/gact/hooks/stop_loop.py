@@ -214,7 +214,6 @@ def _loop_limits() -> dict[str, int]:
 def _enqueue_redrive(app: "FastAPI", session_id: str, result: StopLoopResult) -> None:
     """Confirm an attributed hook continuation before hinting shared admission."""
 
-    from clio_agent.gact.agent_mailbox import accept_session_input  # noqa: PLC0415
 
     text = (result.reason or "").strip()
     if result.additional_context.strip():

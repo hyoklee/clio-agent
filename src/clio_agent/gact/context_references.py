@@ -468,49 +468,6 @@ def _resolve_session(app: "FastAPI", workspace_id: str, part: Part) -> tuple[Par
     return resolved, metadata
 
 
-def _resolve_agent_run(
-    app: "FastAPI", workspace_id: str, part: Part
-) -> tuple[Part, dict[str, Any]]:
-    registry = getattr(app.state, "agent_task_registry", None)
-    task = registry.get(part.ref_id) if registry is not None else None
-    child = app.state.sessions.get(task.child_session_id) if task is not None else None
-    parent = app.state.sessions.get(task.parent_session_id) if task is not None else None
-    owner = child or parent
-    if task is None or owner is None or owner.workspace_id != workspace_id:
-        raise _failure(
-            status_code=403 if task is not None else 404,
-            error="context_ref_inaccessible",
-            message="agent run reference is missing or outside the active workspace",
-            ref_kind="agent_run",
-            ref_id=part.ref_id,
-            workspace_id=workspace_id,
-        )
-    summary = _agent_run_summary(task)
-    expert = str((task.agent_ref or {}).get("expert_id") or "agent")
-    label = task.run_label or f"{expert} #{task.run_index + 1}"
-    metadata = {
-        "kind": "agent_run",
-        "ref_id": task.task_id,
-        "workspace_id": workspace_id,
-        "requested_revision": part.revision,
-        "resolved_revision": task.updated_at,
-        "media_type": "application/vnd.clio.agent-run-summary+json",
-        "navigation": {
-            "workspace_id": workspace_id,
-            "task_id": task.task_id,
-            "session_id": task.child_session_id,
-        },
-        "delivery": {"mode": "task_summary", "summary": summary},
-        "provenance": summary["provenance"],
-    }
-    resolved = part.model_copy(
-        update={
-            "label": label,
-            "revision": task.updated_at,
-            "metadata": {**dict(part.metadata), "context_reference": metadata},
-        }
-    )
-    return resolved, metadata
 
 
 def _resolve_evidence_snapshot(

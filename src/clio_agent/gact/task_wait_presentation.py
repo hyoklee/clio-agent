@@ -12,7 +12,6 @@ _UNSUCCESSFUL = {"failed", "error", "cancelled", "interrupted", "denied"}
 def wait_start_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
     """Describe an active wait using authorized task kinds, before a result exists."""
     from clio_agent.gact.context import active_app, active_session_id
-    from clio_agent.gact.task_projection import resolve_task
 
     if args.get("timeout_s") == 0:
         return {"summary": "Checking task status", "blocks": []}

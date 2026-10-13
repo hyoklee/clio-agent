@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
-from clio_agent.gact.agent_tasks import display_run_name
 from clio_agent.gact.session_descendants import _DEFAULT_DESCENDANT_DEPTH, descendant_walk
 
 if TYPE_CHECKING:
@@ -250,11 +249,6 @@ def _session_label(app: "FastAPI", session_id: str) -> str:
     return str(getattr(session, "title", "") or session_id)
 
 
-def _task_index(app: "FastAPI") -> dict[str, dict[str, Any]]:
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return {}
-    return {task.task_id: asdict(task) for task in registry.snapshot()}
 
 
 def _entity_node(

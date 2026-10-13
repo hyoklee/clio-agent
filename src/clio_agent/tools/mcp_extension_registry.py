@@ -146,22 +146,6 @@ class ExtensionsDeclaration:
     entries: tuple[MCPExtensionDeclaration, ...]
 
 
-def _build_tasks(client_cls: Any, target: Any) -> MCPExtensionDeclaration:
-    """Registry entry #1: tasks, wrapping ``tasks_declaration`` UNCHANGED.
-
-    The behavior this entry produces (suppression check, backend identity,
-    the typed ``mcp_tasks_declaration_suppressed`` reason) is EXACTLY what
-    ``make_mcp_client`` called directly before this registry existed -- the
-    C1-S1 task-routing test set proves it byte-identical.
-    """
-
-    from clio_agent.tools.mcp_task_extension import tasks_declaration  # noqa: PLC0415
-
-    declaration = tasks_declaration(client_cls, target)
-    extension = declaration.extensions[0] if declaration.extensions else None
-    return MCPExtensionDeclaration(
-        identifier=TASKS_EXTENSION_ID, extension=extension, reason=declaration.reason
-    )
 
 
 def _build_ui(client_cls: Any, target: Any) -> MCPExtensionDeclaration:  # noqa: ARG001 - uniform entry signature

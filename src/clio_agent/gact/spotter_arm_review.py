@@ -15,7 +15,6 @@ from clio_agent.runtime import trace
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from clio_agent.gact.agent_tasks import AgentTask
     from clio_agent.gact.types import Session
 
 logger = logging.getLogger(__name__)

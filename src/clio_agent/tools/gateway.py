@@ -32,10 +32,7 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-    from clio_agent.tools.jarvis_jobs import JarvisJobs
     from clio_agent.tools.mcp_runtime import MCPClientCapabilities, MCPClientHandlers
-    from clio_agent.tools.relay_install_surface import RelayInstallSurface
-    from clio_agent.tools.remote_mcp import RemoteMcpFederation
 
 from clio_agent.tools import listing_attempts
 from clio_agent.tools.builtin_gateway import (
@@ -202,10 +199,6 @@ def build_gateway(
     proxy_factory: Callable[..., FastMCP] | None = None,
     handlers: "MCPClientHandlers | None" = None,
     capabilities: "MCPClientCapabilities | None" = None,
-    remote_mcp_federation: "RemoteMcpFederation | None" = None,
-    jarvis_jobs: "JarvisJobs | None" = None,
-    relay_install: "RelayInstallSurface | None" = None,
-    relay_status: Mapping[str, Any] | None = None,
 ) -> FastMCP:
     """Build the agent's tool gateway: built-ins PLUS the declared MCP servers.
 
@@ -238,16 +231,12 @@ def build_gateway(
         capabilities: Optional client-capability declaration (#1111) forwarded to
             the default proxy factory so each declared server's backend advertises
             it. Ignored when ``proxy_factory`` is supplied.
-        remote_mcp_federation: Optional relay catalog snapshot projected under the
             reserved ``remote`` namespace. Its bare server names are mounted back
             into the exact relay aliases ``remote_<ns>_<tool>``.
 
-        jarvis_jobs: Optional curated durable application surface mounted under the
             reserved jarvis namespace.
-        relay_install: Optional curated cluster-lifecycle tool surface (clio-relay#209
             A2: register/bootstrap/status/session/proxy over the local clio-relay
             CLI) mounted under the reserved relay_ops namespace.
-        relay_status: Optional typed production wiring status. A non-empty reason is
             retained on the gateway for diagnostics even when only part of the relay
             surface could be mounted.
 
@@ -282,81 +271,6 @@ def build_gateway(
     # -- resolves the ordering problem (capability is learned after mount).
     direct_factories: dict[str, Any] = getattr(gw, "_clio_namespace_direct_factories", {})
     degraded: dict[str, dict[str, Any]] = getattr(gw, "_clio_degraded_capabilities", {})
-
-    reason = str((relay_status or {}).get("reason") or "")
-    relay_details = (relay_status or {}).get("details")
-    if remote_mcp_federation is None and jarvis_jobs is None and not reason:
-        reason = "relay_tools_not_configured"
-    if reason:
-        definitions = {
-            "relay_tools_not_configured": {
-                "category": "relay_configuration",
-                "description": "Relay-backed remote MCP and JARVIS tools are not configured.",
-                "recovery_actions": ["configure_relay"],
-            },
-            "relay_catalog_discovery_failed": {
-                "category": "relay_connectivity",
-                "description": "Relay catalog discovery failed during agent construction.",
-                "recovery_actions": ["check_relay_service", "retry_agent_construction"],
-            },
-        }
-        definition = definitions.get(
-            reason,
-            {
-                "category": "relay_configuration",
-                "description": "Relay-backed tools are unavailable.",
-                "recovery_actions": ["configure_relay"],
-            },
-        )
-        degraded["relay"] = {
-            "reason": reason,
-            **definition,
-            **({"details": dict(relay_details)} if isinstance(relay_details, Mapping) else {}),
-        }
-        logger.warning("relay tool surface degraded reason=%s", reason)
-    else:
-        degraded.pop("relay", None)
-
-    if remote_mcp_federation is not None:
-        from clio_agent.tools.remote_mcp import (  # noqa: PLC0415
-            RELAY_FOLLOW_NAMESPACE,
-            REMOTE_MCP_NAMESPACE,
-        )
-
-        occupied = _mounted_namespaces(gw) | set(BUILTIN_SERVER_NAMES)
-        federation_namespaces = {REMOTE_MCP_NAMESPACE}
-        if remote_mcp_federation.catalog.follow_tools:
-            federation_namespaces.add(RELAY_FOLLOW_NAMESPACE)
-        collision = occupied & federation_namespaces
-        if collision:
-            raise ValueError("remote MCP federation namespace is already provided")
-        remote_server = remote_mcp_federation.server
-        _mount_with_namespace(gw, remote_server, REMOTE_MCP_NAMESPACE)
-        registry[REMOTE_MCP_NAMESPACE] = remote_server
-        if remote_mcp_federation.catalog.follow_tools:
-            follow_server = remote_mcp_federation.follow_server
-            _mount_with_namespace(gw, follow_server, RELAY_FOLLOW_NAMESPACE)
-            registry[RELAY_FOLLOW_NAMESPACE] = follow_server
-
-    if jarvis_jobs is not None:
-        from clio_agent.tools.jarvis_jobs import JARVIS_NAMESPACE  # noqa: PLC0415
-
-        occupied = _mounted_namespaces(gw) | set(BUILTIN_SERVER_NAMES)
-        if JARVIS_NAMESPACE in occupied:
-            raise ValueError("curated JARVIS jobs namespace is already provided")
-        jarvis_server = jarvis_jobs.server
-        _mount_with_namespace(gw, jarvis_server, JARVIS_NAMESPACE)
-        registry[JARVIS_NAMESPACE] = jarvis_server
-
-    if relay_install is not None:
-        from clio_agent.tools.relay_install_surface import RELAY_INSTALL_NAMESPACE  # noqa: PLC0415
-
-        occupied = _mounted_namespaces(gw) | set(BUILTIN_SERVER_NAMES)
-        if RELAY_INSTALL_NAMESPACE in occupied:
-            raise ValueError("curated relay install surface namespace is already provided")
-        relay_install_server = relay_install.server
-        _mount_with_namespace(gw, relay_install_server, RELAY_INSTALL_NAMESPACE)
-        registry[RELAY_INSTALL_NAMESPACE] = relay_install_server
 
     # Names already provided (built-ins / earlier mounts) must not be shadowed.
     existing = _mounted_namespaces(gw) | set(BUILTIN_SERVER_NAMES)
@@ -458,63 +372,8 @@ def list_builtin_tool_definitions() -> dict[str, Any]:
     return tools
 
 
-def list_relay_tool_definitions(federation: Any) -> dict[str, Any]:
-    """List the relay federation's projected tools — fast, no I/O (#1232 gap).
-
-    The federation catalog already holds the discovered Tool objects
-    (``remote_*`` aliases + the projected ``relay_*`` follow tools), so like
-    the built-ins they are listable synchronously. Deferring them to the
-    background namespace pass left the boot/first-turn ``_tool_definitions``
-    builtins-only, and every custom-agent ACL naming a relay tool bricked
-    typed (L3 runs 4-9: ``available=['fs_*', 'shell_bash']`` with
-    ``federation=present``).
-
-    ``relay_fetch_artifact`` (#1200, v1.7.0 gap): clio-agent's own tool,
-    mounted onto ``follow_server`` outside ``catalog.follow_tools`` so the
-    loop above misses it; seeded off the mounted server itself (no I/O).
-    Plain assignment lets this SERVED projection win over the raw catalog.
-    """
-
-    if federation is None:
-        return {}
-    catalog = getattr(federation, "catalog", None)
-    if catalog is None:
-        return {}
-    tools: dict[str, Any] = {}
-    for source in (getattr(catalog, "tools", {}), getattr(catalog, "follow_tools", {})):
-        for name, tool in dict(source).items():
-            tools[str(name)] = tool
-    follow_server = getattr(federation, "follow_server", None)
-    if follow_server is not None:
-        from clio_agent.tools.remote_mcp import RELAY_FOLLOW_NAMESPACE  # noqa: PLC0415
-
-        for tool in _list_tools_sync(follow_server):
-            prefixed = f"{RELAY_FOLLOW_NAMESPACE}_{tool.name}"
-            tools[prefixed] = tool.model_copy(update={"name": prefixed})
-    return tools
 
 
-def list_jarvis_tool_definitions(jarvis_jobs: Any) -> dict[str, Any]:
-    """List the curated JARVIS surface's tools — fast, no I/O (v1.7.0 gap).
-
-    ``jarvis_jobs.server`` is in-process (no transport), like fs/shell.
-    Pre-fix, the six ``jarvis_*`` tools were absent from every snapshot AND
-    unreachable via on-demand mount (``jarvis`` has no ``MCPServerSpec``) —
-    a silent no-attempt brick even on a fully-discovered cold boot.
-    """
-
-    if jarvis_jobs is None:
-        return {}
-    server = getattr(jarvis_jobs, "server", None)
-    if server is None:
-        return {}
-    from clio_agent.tools.jarvis_jobs import JARVIS_NAMESPACE  # noqa: PLC0415
-
-    tools: dict[str, Any] = {}
-    for tool in _list_tools_sync(server):
-        prefixed = f"{JARVIS_NAMESPACE}_{tool.name}"
-        tools[prefixed] = tool.model_copy(update={"name": prefixed})
-    return tools
 
 
 def list_tool_definitions(gw: FastMCP) -> dict[str, Any]:

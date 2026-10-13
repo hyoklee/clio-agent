@@ -32,7 +32,6 @@ from clio_agent.gact.protocol_v3 import capabilities_to_v3, project_for_request
 from clio_agent.gact.provenance.child_projection import CHILD_ACTIVITY_PROJECTION_CAPABILITY
 from clio_agent.gact.providers.boot_selection import explicit_lm_provider
 from clio_agent.gact.providers.config import _effective_lm_config
-from clio_agent.gact.relay_status import relay_capabilities
 from clio_agent.gact.routes import health_boot
 from clio_agent.gact.routes.health_projection import (
     integration_to_wire,
@@ -76,7 +75,6 @@ from clio_agent.runtime.status import (
     RuntimeReport,
     collect_runtime_status,
 )
-from clio_agent.tools.mcp_task_records import task_record_store_is_durable
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps

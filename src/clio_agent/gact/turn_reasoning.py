@@ -121,22 +121,6 @@ def forget_session_reasoning(app: "FastAPI", session_id: str) -> None:
         registry.pop(turn_id, None)
 
 
-def _parent_turn_reasoning(app: "FastAPI | None", user_msg: "Message") -> dict[str, str] | None:
-    metadata = user_msg.metadata if isinstance(user_msg.metadata, dict) else {}
-    task_id = str(metadata.get("agent_task_id") or "")
-    tasks = getattr(getattr(app, "state", None), "agent_task_registry", None)
-    task = tasks.get(task_id) if task_id and tasks is not None else None
-    parent_turn_id = str(getattr(task, "parent_turn_id", "") or "")
-    if app is None or not parent_turn_id:
-        return None
-    record = _registry(app).get(parent_turn_id)
-    if not isinstance(record, dict) or not record.get("level"):
-        return None
-    # Only a level the parent's MESSAGE chose is inherited; an agent/global level
-    # already governs the child the same way.
-    if record.get("source") not in {"per_message", "parent_message"}:
-        return None
-    return record
 
 
 def apply_turn_reasoning(

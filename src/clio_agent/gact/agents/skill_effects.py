@@ -755,8 +755,5 @@ def maybe_apply_skill_effect(ref: "SkillRef", *, agent_id: str) -> str | None:
 
 def apply_spawn_skill_effect(ref: "SkillRef", *, agent_id: str, task: str) -> tuple[str, Any, str]:
     """Delegate the explicit child launch to the skill-spawn effect owner."""
-    from clio_agent.gact.agents.skill_spawn_effect import (  # noqa: PLC0415
-        apply_spawn_skill_effect as apply_effect,
-    )
 
     return apply_effect(ref, agent_id=agent_id, task=task)

@@ -287,7 +287,6 @@ def new_turn_state(
         )
 
         execution_blueprint_id = DEEP_RESEARCH_BLUEPRINT_ID
-    from clio_agent.gact.assignment_history import task_for_session
 
     assignment = task_for_session(app, sess)
     _ctx.set_turn_identity(

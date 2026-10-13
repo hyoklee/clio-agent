@@ -7,12 +7,10 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from clio_agent.gact.assignment_history import task_for_session
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from clio_agent.gact.turn_spawn import TaskSpec
 
 
 def current_session_depth(app: "FastAPI", session_id: str) -> int:
@@ -44,7 +42,6 @@ def inherited_session_scope_metadata(parent: Any) -> dict[str, Any]:
 def resolve_spawn_bindings(parent: Any, spec: "TaskSpec") -> tuple[str, str, dict[str, Any]]:
     """Resolve child context with field-wise spec-first, parent-second precedence."""
 
-    from clio_agent.gact.turn_spawn import SpawnError  # noqa: PLC0415
 
     workspace_id = (
         spec.workspace_id
@@ -109,10 +106,6 @@ def validate_task_spec(app: "FastAPI", spec: "TaskSpec") -> tuple[str, str, dict
 
     from clio_agent.gact.agents.resolution import (  # noqa: PLC0415
         _runtime_declared_child_ids,
-    )
-    from clio_agent.gact.turn_spawn import (  # noqa: PLC0415
-        MAX_SPAWN_DEPTH,
-        SpawnError,
     )
 
     if spec.depth > MAX_SPAWN_DEPTH:
@@ -192,7 +185,6 @@ def resolve_installed_blueprint_target(
         _merge_agent_def_rows,
         _runtime_workspace_catalog_cwd,
     )
-    from clio_agent.gact.turn_spawn import SpawnError  # noqa: PLC0415
 
     target_id = str(blueprint_id or "").strip()
     if not target_id:

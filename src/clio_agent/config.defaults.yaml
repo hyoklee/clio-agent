@@ -380,15 +380,22 @@ limits.view_pdf_source_max_bytes: 536870912
 # Child-agent concurrency, declared-workflow step liveness, goal judging and
 # the cron scheduler.
 
-# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)  <- src/clio_agent/gact/turn_spawn_executor.py
-# Max child agent-task threads run concurrently at one spawn depth; raise to
-# widen fan-out on a big host, lower to cap CPU use.
+# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)
+# Child inference budget at one spawn depth; does not cap active sessions
+# or hold a permit while a child runs tools or waits.
 agent_tasks.max_concurrent: 3
 
-# CLIO_CHILD_FORWARD_DEADLINE_S  (float)  <- src/clio_agent/gact/child_forward.py
-# Seconds before an unattended parent's forwarded HITL question auto-fails
-# the waiting child task; defaults to the elicitation window.
-# agents.child_forward_deadline_s:  # computed at runtime: DEFAULT_ELICITATION_TIMEOUT_S
+# Independent native task roots retain their backend and capacity settings.
+# Memory-backed work is interrupted by process loss; persistence does not
+# guarantee exactly-once effects. Queue identity defaults are generated per root.
+gact.tasks.shell.url: "memory://"
+gact.tasks.shell.concurrency: 10
+gact.tasks.storage.url: "memory://"
+gact.tasks.storage.concurrency: 10
+
+# 0/unset is unlimited. Positive capacity counts undelivered peer messages,
+# including staged inputs; human input/controls and accepted results are exempt.
+gact.mailbox.max_pending_messages: 0
 
 # CLIO_DEFAULT_AGENT_BLUEPRINT_ID  (str)  <- src/clio_agent/gact/agent_blueprint_refresh.py
 # Installed marketplace Agent Blueprint a fresh deployment bootstraps and
@@ -1434,132 +1441,6 @@ search.searxng.request_timeout_s: 10.0
 # CLIO_SEARCH_SEARXNG_SAFE_SEARCH  (int)  <- src/clio_agent/search/settings.py
 # SearXNG safe-search level: 0 off, 1 moderate (default), 2 strict.
 search.searxng.safe_search: 1
-
-# ==========================================================================
-# Relay
-# ==========================================================================
-# The clio-relay integration: console/artifact transfer, the install-surface
-# CLI and remote agents.
-
-# CLIO_RELAY_CLUSTER  (str)  <- src/clio_agent/tools/relay_factory.py
-# This deployment's registered relay cluster identity; set it to route
-# jarvis/remote-MCP tool calls to a specific cluster.
-# relay.cluster:  # default unset; resolved in code
-
-# CLIO_RELAY_CONSOLE_ENABLED  (bool)  <- src/clio_agent/tools/relay_console.py
-# Whether the live job console tail folds into the task record; disable to
-# stop the periodic console pull entirely.
-relay.console.enabled: true
-
-# CLIO_RELAY_CONSOLE_PULL_LIMIT_BYTES  (int)  <- src/clio_agent/tools/relay_console.py
-# Bytes requested per poll of a relay job's console log (clamped to relay's
-# 1 MiB cap); raise to refill a window faster after a gap.
-relay.console.pull_limit_bytes: 65536
-
-# CLIO_RELAY_CONSOLE_STREAM  (str)  <- src/clio_agent/tools/relay_console.py
-# Which relay log stream ("console", "stdout", "stderr") the console fold
-# pulls from; switch to stdout/stderr only for diagnostics.
-relay.console.stream: "console"
-
-# CLIO_RELAY_CONSOLE_TAIL_CAP_BYTES  (int)  <- src/clio_agent/tools/relay_console.py
-# Byte cap on the rolling console tail kept on the task record for UI
-# display; raise for more scrollback, lower to shrink records.
-relay.console.tail_cap_bytes: 8192
-
-# CLIO_RELAY_FETCH_MAX_BYTES  (int)  <- src/clio_agent/tools/relay_artifact_fetch.py
-# Max artifact size in bytes this deployment transfers inline via
-# relay_fetch_artifact; raise for larger downloads, lower to block big ones.
-relay.fetch_max_bytes: 104857600
-
-# CLIO_RELAY_HTTP_URL  (str)  <- src/clio_agent/tools/relay_factory.py
-# Relay job/artifact HTTP endpoint URL; set together with relay.mcp_url to
-# enable the relay transport.
-# relay.http_url:  # default unset; resolved in code
-
-# CLIO_RELAY_INSTALL_ATTENTION_IDLE_S  (float)  <- src/clio_agent/tools/relay_cli_runner.py
-# Seconds of no subprocess output before a relay CLI job is relabeled "needs
-# operator attention" (e.g. SSH/2FA); tune for slow networks.
-relay.install_surface.attention_idle_seconds: 45.0
-
-# CLIO_RELAY_INSTALL_BOUNDED_TIMEOUT_S  (float)  <- src/clio_agent/tools/relay_cli_runner.py
-# Timeout in seconds for a fast, non-SSH-dialing clio-relay CLI sub-probe
-# (register/doctor/status); raise if calls time out on a slow host.
-relay.install_surface.bounded_timeout_seconds: 60.0
-
-# CLIO_RELAY_CLI_PATH  (str)  <- src/clio_agent/tools/relay_cli_runner.py
-# Explicit path to the deployed clio-relay executable, overriding PATH
-# discovery; set when it's installed somewhere non-standard.
-# relay.install_surface.cli_path:  # default unset; resolved in code
-
-# CLIO_RELAY_INSTALL_JOB_RETENTION_HARD_CAP  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Hard ceiling on tracked relay CLI jobs before even a running one is force-
-# evicted; raise on a box driving many concurrent relay ops.
-relay.install_surface.job_retention_hard_cap: 400
-
-# CLIO_RELAY_INSTALL_JOB_RETENTION_MAX  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Soft cap on tracked relay CLI jobs; past this the oldest terminal job is
-# evicted first to bound memory.
-relay.install_surface.job_retention_max: 200
-
-# CLIO_RELAY_INSTALL_LONG_OP_TIMEOUT_S  (float)  <- src/clio_agent/tools/relay_cli_runner.py
-# Runaway timeout (seconds) for SSH-dialing relay CLI ops (bootstrap,
-# session start/attach/teardown); raise for slow SSH targets.
-relay.install_surface.long_operation_timeout_seconds: 900.0
-
-# CLIO_RELAY_INSTALL_OUTPUT_TAIL_BYTES  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Byte cap on the retained stdout/stderr tail from a relay CLI subprocess
-# call; raise for more diagnostic context on failures.
-relay.install_surface.output_tail_bytes: 4096
-
-# CLIO_RELAY_INSTALL_PARSED_DOCUMENT_MAX_BYTES  (int)  <- src/clio_agent/tools/relay_cli_runner.py
-# Byte buffer size for parsing a whole clio-relay CLI JSON document; raise
-# if a large session document is failing to parse.
-relay.install_surface.parsed_document_max_bytes: 262144
-
-# CLIO_RELAY_JARVIS_DOOR_NAMESPACE  (str)  <- src/clio_agent/tools/relay_factory.py
-# The relay-registered JARVIS tool-name namespace prefix; set to "" to use
-# relay's older compact-name door instead.
-relay.jarvis_door_namespace: "remote_jarvis"
-
-# CLIO_RELAY_MCP_URL  (str)  <- src/clio_agent/tools/relay_factory.py
-# Relay MCP control endpoint URL; set together with relay.http_url to enable
-# relay tool discovery.
-# relay.mcp_url:  # default unset; resolved in code
-
-# CLIO_RELAY_SESSION_GENERATION_ID  (str)  <- src/clio_agent/tools/relay_factory.py
-# Generation id paired with relay.owner_session_id identifying this
-# deployment's owned relay session; set both together or neither.
-# relay.owner_session_generation_id:  # default unset; resolved in code
-
-# CLIO_RELAY_OWNER_SESSION_ID  (str)  <- src/clio_agent/tools/relay_factory.py
-# This deployment's owned relay HTTP-API session id, required with
-# owner_session_generation_id when the relay door is session-bound.
-# relay.owner_session_id:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_MCP_CONFIG_PATH  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Path to the MCP config file used by a remote relay-placed agent
-# invocation; set to give spawned agents a specific tool config.
-# relay.remote_agent.mcp_config_path:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_MODEL  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Model identifier used for agents spawned onto a relay cluster; override to
-# run remote relay agents on a non-default model.
-# relay.remote_agent.model:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_PROMPT_PATH  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Path to the prompt file for a relay-cluster-placed remote agent; required
-# (with the cluster) for relay agent spawning to work.
-# relay.remote_agent.prompt_path:  # default unset; resolved in code
-
-# CLIO_RELAY_REMOTE_AGENT_WORKDIR  (str)  <- src/clio_agent/gact/relay_wiring.py
-# Working directory used for a relay-placed remote agent invocation; set to
-# point remote execution at a specific cluster directory.
-# relay.remote_agent.workdir:  # default unset; resolved in code
-
-# CLIO_RELAY_TOOL_SURFACES_TTL_SECONDS  (int)  <- src/clio_agent/gact/relay_wiring.py
-# Seconds a discovered relay tool catalog is trusted before re-discovery;
-# lower for faster pickup of new tools, raise to cut overhead.
-relay.tool_surfaces_ttl_seconds: 300
 
 # ==========================================================================
 # Provenance, trace and debug

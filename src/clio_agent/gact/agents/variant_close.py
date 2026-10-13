@@ -135,7 +135,6 @@ def _release(
     app: Any, sid: str, variants_id: str, question_id: str, closed: VariantRun | None
 ) -> None:
     """Clear the session's pointer at ``variants_id`` (and its surfaced question)."""
-    from clio_agent.gact.ask_user_tool import PENDING_ASK_USER_META  # noqa: PLC0415
 
     row = app.state.sessions.get(sid)
     metadata = (getattr(row, "metadata", None) or {}) if row is not None else {}

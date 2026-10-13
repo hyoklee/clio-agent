@@ -91,19 +91,3 @@ def validate_terminal(record: Any, current: Any) -> None:
         raise TaskResultValidationError(
             "Backend schema contains an unresolved external reference"
         ) from exc
-
-
-def record_invalid_result(store: Any, key: Any, error: TaskResultValidationError) -> None:
-    """Preserve raw settlement while publishing a terminal contract failure honestly."""
-    row = store.get(key)
-    if row is not None:
-        store.put(
-            replace(
-                row,
-                status="completed",
-                effective_status="failed",
-                effective_status_reason=str(error),
-                result={"error": str(error)},
-                notify_pending=not bool(row.consumed_at),
-            )
-        )

@@ -24,7 +24,6 @@ from clio_agent.gact.context_reference_delivery import (
 )
 from clio_agent.gact.context_references import authorize_context_reference_parts_sync
 from clio_agent.gact.events import Event
-from clio_agent.gact.message_admission import accept_message, accept_message_async
 from clio_agent.gact.message_intents import DuplicateIntentError, PendingSteer
 from clio_agent.gact.message_submission_errors import (
     a2ui_client_metadata_error as _a2ui_client_metadata_error,

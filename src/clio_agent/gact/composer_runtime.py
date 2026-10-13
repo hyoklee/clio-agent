@@ -143,28 +143,6 @@ def stop_session_composer_autostart(app: Any, session_id: str) -> dict[str, Any]
     return summary
 
 
-def _install_composer_idle_hook(app: Any, deps: Any) -> None:
-    """Start the head queued message when a session goes idle.
-
-    COMPOSES with the idle hook ``build_app`` installed earlier (the loop-inbox
-    drain + SPOTTER clearance) rather than replacing it: the previous hook runs
-    first and the queue promotion is appended after it. Overwriting the slot is
-    what silently unregistered the drain.
-    """
-
-    from clio_agent.gact.loop_inbox import drain_inbox_and_notify_spotter  # noqa: PLC0415
-
-    previous = app.state.turn_runner.idle_hook
-
-    def on_session_idle(session_id: str) -> None:
-        if previous is not None:
-            previous(session_id)
-        else:  # pragma: no cover - build_app always installs the drain first
-            drain_inbox_and_notify_spotter(app, session_id)
-        promote_queue_head(app, deps, session_id)
-        app.state.turn_runner.request_input_admission(session_id)
-
-    app.state.turn_runner.set_idle_hook(on_session_idle)
 
 
 def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
@@ -183,7 +161,6 @@ async def promote_queue_head_async(app: Any, deps: Any, session_id: str) -> None
     from clio_agent.gact.events import Event  # noqa: PLC0415
     from clio_agent.gact.message_intents import RevisionConflictError  # noqa: PLC0415
     from clio_agent.gact.message_submission import accept_message_async  # noqa: PLC0415
-    from clio_agent.gact.subagent_lifecycle import execution_held
     from clio_agent.gact.types import PostMessageRequest  # noqa: PLC0415
 
     session = app.state.sessions.get(session_id)
@@ -517,63 +494,3 @@ def delete_workspace_resources(app: Any, workspace_id: str) -> None:
         store = getattr(app.state, store_name, None)
         if store is not None:
             store.delete_workspace(workspace_id)
-
-
-def recover_pending_feedback(app: Any, append_message: AppendMessage) -> None:
-    """Migrate pending legacy steers to Core and rebuild their local transcript view."""
-    from clio_agent.gact.agent_mailbox import accept_human_feedback
-    from clio_agent.gact.core_task_journal import core_task_journal
-
-    journal = core_task_journal(app)
-    from clio_agent.gact.message_admission import reconcile_input_effects
-    from clio_agent.gact.session_run_tasks import TURN_RESULT
-
-    for session in app.state.sessions.list():
-        for intent in journal.records(session.id, "task.assignment.input_intent"):
-            message = Message.model_validate(intent["message"])
-            ack = journal.get_record(
-                session.id, "task.assignment.input_acceptance", intent["identity"]
-            )
-            segment = journal.get_record(session.id, "task.assignment.segment", message.turn_id)
-            handle = (
-                (ack["ack"].get("task_handle") if ack else "")
-                or (segment["handle"] if segment else "")
-                or intent.get("target_assignment", "")
-            )
-            reconcile_input_effects(app, append_message, session.id, intent, handle)
-            if (
-                journal.get_record(session.id, TURN_RESULT, message.turn_id)
-                or not journal.pending(session.id, "human-input:" + message.id)
-                or not journal.pending(session.id, "mail:" + message.id)
-                or journal.get_record(session.id, "task.mail.withdrawal", message.id) is not None
-            ):
-                continue
-            accept_human_feedback(app, session.id, message, intent["model_text"])
-            if not any(row.id == message.id for row in app.state.messages.get(session.id, [])):
-                append_message(app, session.id, message)
-            app.state.turn_runner.request_input_admission(session.id)
-    for pending in app.state.message_intents.list_all_pending():
-        if app.state.sessions.get(pending.session_id) is None:
-            continue
-        message = Message(
-            id=pending.message_id,
-            session_id=pending.session_id,
-            role="user",
-            created_at=pending.accepted_at,
-            updated_at=pending.accepted_at,
-            parts=list(pending.parts),
-            metadata={**pending.metadata, "pending_steer": True},
-        )
-        accept_human_feedback(app, pending.session_id, message, pending.text)
-        if (
-            not journal.pending(pending.session_id, "mail:" + pending.message_id)
-            or journal.get_record(pending.session_id, "task.mail.withdrawal", pending.message_id)
-            is not None
-        ):
-            app.state.message_intents.mark_input_committed(pending.session_id, pending.message_id)
-            continue
-        if not any(
-            row.id == pending.message_id for row in app.state.messages.get(pending.session_id, [])
-        ):
-            append_message(app, pending.session_id, message)
-        app.state.turn_runner.request_input_admission(pending.session_id)

@@ -27,7 +27,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact import agent_initialization
-from clio_agent.gact.relay_wiring import construct_agent_with_relay
 from clio_agent.gact.server_boot import process_arc_off_loop
 
 if TYPE_CHECKING:

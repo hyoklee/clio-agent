@@ -277,9 +277,6 @@ def _builtin_tool_declarations() -> list[tuple[str, str, str, Any]]:
     from clio_agent.gact.agents.declared_native_tools import (  # noqa: PLC0415
         resolve_declared_native_tools,
     )
-    from clio_agent.gact.agents.spawn_runtime_declarations import (  # noqa: PLC0415
-        assemble_spawn_runtime_tools,
-    )
 
     seen: dict[str, tuple[str, str, str, Any]] = {}
     main = _builtin_main_agent()

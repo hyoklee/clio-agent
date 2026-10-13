@@ -486,7 +486,6 @@ def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
     """
 
     from clio_agent.gact.app import _append_session_message  # noqa: PLC0415
-    from clio_agent.gact.session_run_tasks import settle_session_run
     from clio_agent.gact.transcript_projection import (  # noqa: PLC0415
         record_state_merge_best_effort,
     )

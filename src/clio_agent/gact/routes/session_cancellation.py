@@ -8,11 +8,9 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
 
-from clio_agent.gact.assignment_history import task_for_session
 from clio_agent.gact.autonomous_loop import stop_session_loop
 from clio_agent.gact.events import Event
 from clio_agent.gact.goal import stop_session_goal
-from clio_agent.gact.human_task_intervention import human_task_intervention
 from clio_agent.gact.runtime.globals import _new_cancellation_attempt_id
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
 
@@ -52,7 +50,6 @@ def cancel_session_state(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, 
 
 async def cancel_session_state_async(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, Any]:
     """Record human Stop off-loop, applying the turn control on its application owner."""
-    from clio_agent.gact.human_task_intervention import async_human_task_intervention
 
     task = task_for_session(app, app.state.sessions.get(sid))
     async with async_human_task_intervention(app, task, "stop", actor_sid=sid) as outcome:

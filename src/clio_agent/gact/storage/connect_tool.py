@@ -13,43 +13,6 @@ from clio_agent.gact.storage.setup_tool import connected_data_status, setup_pres
 from clio_agent.tools.task_call_context import require_admission
 
 
-def connected_data_connect(
-    provider: str,
-    root: str,
-    label: str,
-    mode: str = "read_only",
-    configuration: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Attach a requested source to this workspace after permission approval.
-
-    Reuse an approved source with the same provider, location and access mode.
-    A new connection uses the normal approval gate, including bypass mode.
-    Default to read_only; working_copy stages edits for review, write_enabled
-    changes originals. Sign-in remains private and user-operated; if missing,
-    return the login action for an A2UI Button in the answer. No credentials
-    may be passed in configuration. Linking exposes references, not a shell mount.
-    A GitHub URL or a request to inspect, clone or work on a repository does not
-    request source attachment: use gh through the normal shell for that work.
-
-    When indexing is needed, return a durable Indexing task handle immediately;
-    acceptance is not a complete source manifest. Continue independent work and
-    use query_tasks, observe_tasks, wait_tasks, get_task_result or cancel_tasks
-    with the handle. Completion arrives at the next model iteration or wakes you
-    when idle; Conversation Stop leaves accepted indexing running. An already
-    linked source or a sign-in requirement returns its connection status directly.
-    """
-    from clio_agent.tools.native_task_host import call_builtin_task
-
-    return call_builtin_task(
-        "connected_data_connect",
-        {
-            "provider": provider,
-            "root": root,
-            "label": label,
-            "mode": mode,
-            "configuration": configuration,
-        },
-    )
 
 
 def prepare_connect(
@@ -120,7 +83,6 @@ def prepare_connect(
                 existing,
                 ["api", f"repos/{org}/{repo}/contents" + (f"/{folder}" if folder else "")],
             )
-        from clio_agent.tools.servers.storage_server import index_inputs
 
         return index_inputs(app, existing)
     result = connected_data_status()

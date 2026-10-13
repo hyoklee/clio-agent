@@ -15,7 +15,6 @@ from clio_agent.gact.a2ui_producer import (
     build_update_a2ui_data_model_tool,
 )
 from clio_agent.gact.agents import toolset_inventory
-from clio_agent.gact.ask_user_tool import build_ask_user_tool
 from clio_agent.gact.document_tools import (
     build_prepare_document_runtime_tool,
     build_prepare_document_tool,

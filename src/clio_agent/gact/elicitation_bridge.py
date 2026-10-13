@@ -51,22 +51,7 @@ from clio_agent.gact.elicitation_schema import (
     validate_elicitation_answer,
 )
 from clio_agent.gact.permission_delivery import attended_session_id
-from clio_agent.gact.task_input_questions import (
-    TaskInputIdentityError,
-    cancel_published_task_input,
-    preserve_input_on_disconnect,
-    recover_input_question,
-)
 from clio_agent.gact.types import UserQuestion, UserQuestionOption
-from clio_agent.gact.user_question_ledger import (
-    claim_question_transition as claim_question_transition,
-)
-from clio_agent.gact.user_question_ledger import (
-    record_user_question,
-)
-from clio_agent.gact.user_question_ledger import (
-    stamp_question_routing_fields as stamp_question_routing_fields,
-)
 from clio_agent.tools.mcp_handlers import MCPClientCapabilities, MCPInvocationContext
 
 logger = logging.getLogger(__name__)

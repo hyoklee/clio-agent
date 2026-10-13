@@ -248,59 +248,6 @@ async def correlated_elicitation_handler(
     )
 
 
-def invocation_with_request_correlation(
-    invocation: "MCPInvocationContext",
-    request_context: Any,
-    *,
-    app: Any = None,
-) -> "MCPInvocationContext":
-    """Add authoritative SEP-2663 task/input identity from a callback request."""
-
-    request_id = str(getattr(request_context, "request_id", "") or "")
-    if not request_id.startswith("task-") or not invocation.session_id:
-        return invocation
-    if invocation.task_key is not None:
-        prefix = f"task-{invocation.task_key.task_id}-"
-        if request_id.startswith(prefix):
-            return replace(
-                invocation,
-                task_id=invocation.task_key.task_id,
-                input_key=request_id.removeprefix(prefix) or None,
-            )
-        return invocation
-    try:
-        from clio_agent.tools.mcp_task_records import iter_task_records  # noqa: PLC0415
-
-        store = getattr(getattr(app.state, "sessions", None), "task_store", None) if app else None
-        if app is not None and store is None:
-            logger.warning("Task input correlation unavailable reason=app_store_absent")
-            return invocation
-        candidates = [
-            record
-            for record in iter_task_records(store)
-            if record.session_id == invocation.session_id
-            and record.invocation_id == invocation.invocation_id
-            and record.key.server_id == invocation.namespace
-            and request_id.startswith(f"task-{record.task_id}-")
-        ]
-    except Exception as exc:  # noqa: BLE001 - enrichment must not reject an elicitation
-        logger.warning(
-            "elicitation correlation degraded reason=task_record_lookup_failed "
-            "request_id=%s session=%s err=%r",
-            request_id,
-            invocation.session_id,
-            exc,
-        )
-        return invocation
-    if len(candidates) != 1:
-        return invocation
-    task_id = candidates[0].task_id
-    return replace(
-        invocation,
-        task_id=task_id,
-        input_key=request_id.removeprefix(f"task-{task_id}-") or None,
-        task_key=candidates[0].key,
-    )
 
 
 def correlated_session_id(session: Any) -> str | None:

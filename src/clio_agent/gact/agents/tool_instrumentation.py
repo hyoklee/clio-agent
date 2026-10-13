@@ -153,7 +153,6 @@ def _wait_agent_tasks_call_metadata(app: Any, args: Mapping[str, Any]) -> dict[s
     the tool's own argument validation surfaces the real error.
     """
 
-    from clio_agent.gact.agent_tasks import resolve_waited_task_rows  # noqa: PLC0415
 
     task_ids = args.get("task_ids")
     if task_ids is None:

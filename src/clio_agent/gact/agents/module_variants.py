@@ -560,7 +560,6 @@ def spawn_scope_with_strategy(
 
     An invalid strategy is a typed refused spawn (``invalid_strategy``): no child exists.
     """
-    from clio_agent.gact.turn_spawn import SpawnError  # noqa: PLC0415
 
     if not strategy:
         return None if scope is None else dict(scope)

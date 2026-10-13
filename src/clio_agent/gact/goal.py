@@ -491,37 +491,6 @@ def stop_session_goal(app: Any, sid: str, *, reason: str = "goal_abandoned") -> 
 
 
 # Finalize-boundary dispatch — the goal RIDES the Stop-loop re-drive seam.
-def _enqueue_goal_redrive(
-    app: Any, sid: str, decision: GoalDecision, goal: Mapping[str, Any]
-) -> None:
-    """Confirm goal continuation in Core and hint the common conversation admission."""
-
-    from clio_agent.gact.agent_mailbox import accept_session_input  # noqa: PLC0415
-
-    condition = str(goal.get("condition") or "")
-    guidance = (decision.guidance or "").strip()
-    if guidance:
-        text = f"The goal is not yet satisfied: {guidance}\n\nContinue working toward: {condition}"
-    else:
-        text = f"The goal is not yet satisfied. Continue working toward: {condition}"
-    text += (
-        "\n\nThe goal controller continues work automatically after this turn. Do not start "
-        "a loop or schedule to continue this goal. Loops are independent monitoring work. "
-        "If progress depends on accepted background tasks, use wait_for(task_handle) "
-        "and finish this turn. Task completion resumes the goal. Do not poll or resubmit accepted work."
-    )
-    accept_session_input(
-        app,
-        sid,
-        text,
-        metadata={
-            "goal_redrive": True,
-            "goal_id": str(goal.get("goal_id") or ""),
-            "goal_iters": int(decision.new_state.get("iters_elapsed", 0) or 0),
-            "goal_reason": decision.reason,
-            "coalesce_key": f"goal:{goal.get('goal_id', '')}",
-        },
-    )
 
 
 def _settle_goal_decision(
@@ -579,7 +548,6 @@ async def dispatch_goal_at_finalize(
             return None
         if caller_model:
             goal = {**goal, "_caller_model": dict(caller_model)}
-        from clio_agent.gact.goal_wait import waiting_on_tasks
 
         if await run_off_loop(waiting_on_tasks, app, session_id, goal, executor=executor):
             return None

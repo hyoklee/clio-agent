@@ -518,7 +518,6 @@ def _stage_resume_turn(
     Mirrors ``plan_mode._stage_plan_exit_resume`` — no held thread, no new store.
     """
 
-    from clio_agent.gact.agent_mailbox import accept_session_input  # noqa: PLC0415
 
     if session is None:
         raise ValueError("deferred_input_recipient_missing")

@@ -40,7 +40,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
 from clio_agent.gact import context_reference_delivery
-from clio_agent.gact.agent_task_notifications import compose_task_notification
 from clio_agent.gact.conversation_projection import model_context_messages
 from clio_agent.gact.events import Event
 from clio_agent.gact.permission_gate import (
@@ -58,12 +57,6 @@ from clio_agent.gact.runtime.globals import (
 )
 from clio_agent.gact.runtime.memory_search import _memory_search_response
 from clio_agent.gact.runtime.retention import enforce_list_bound, ledger_guard
-from clio_agent.gact.task_notifications import (
-    consume_pending_agent_task_notifications as consume_pending_agent_task_notifications,
-)
-from clio_agent.gact.task_notifications import (
-    pending_task_notifications as pending_task_notifications,
-)
 from clio_agent.gact.types import ErrorInfo
 from clio_agent.tools.execution import tool_workspace_context
 from clio_agent.tools.file_policy import validate_write_path
@@ -667,10 +660,6 @@ PENDING_TASK_NOTIFICATION_MARKER = "## Background task results"
 _MAX_NOTIFY_BLOCKS = 8
 
 
-def _notify_block(task: Any, *, app: "FastAPI | None" = None) -> str:
-    """Compose one uniform task block through its focused rendering owner."""
-
-    return compose_task_notification(task, app=app, marker=PENDING_TASK_NOTIFICATION_MARKER)
 
 
 def _context_file_turn_provenance(app: "FastAPI", sid: str, *, status: str) -> dict[str, Any]:

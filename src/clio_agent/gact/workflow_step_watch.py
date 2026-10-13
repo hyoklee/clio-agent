@@ -35,7 +35,6 @@ from clio_agent.runtime.lm_activity import lm_call_in_flight
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from clio_agent.gact.agent_tasks import AgentTask
 
 # Config-first per #985: file ``workflows.step_inactivity_s`` → env
 # ``CLIO_WORKFLOW_STEP_INACTIVITY_S`` → default. The no-activity window in seconds.
@@ -83,49 +82,3 @@ def step_watch_poll_s(inactivity_window_s: float, absolute_budget_s: float) -> f
 
     windows = [w for w in (inactivity_window_s, absolute_budget_s) if w and w > 0]
     return max(0.02, min([2.0, *windows]))
-
-
-def watch_step(
-    app: "FastAPI",
-    task_id: str,
-    child_session_id: str,
-    *,
-    inactivity_window_s: float,
-    absolute_budget_s: float,
-) -> tuple[Optional["AgentTask"], str, float]:
-    """Watch a step's child to a terminal state OR a liveness verdict (#992).
-
-    Returns ``(task, outcome, observed_inactivity_s)`` where ``outcome`` is one of:
-
-    * ``"terminal"`` — the child reached a terminal status (its wait-Event fired). The
-      caller distinguishes completed vs failed off the returned record.
-    * ``"stalled"`` — the child showed NO observable activity for ``inactivity_window_s``
-      while still non-terminal (the progress-based liveness stall). ``observed_inactivity_s``
-      carries the measured silent gap.
-    * ``"timeout"`` — the child exceeded the pack-DECLARED ``absolute_budget_s`` while still
-      non-terminal (the opt-in absolute budget). Only reachable when a step declares one.
-    * ``"unknown"`` — the task is not on the registry (never spawned / already gone).
-
-    The absolute budget (when declared) is checked FIRST each tick, so a legitimately-active
-    child that a pack chose to hard-bound stops at its budget rather than running forever;
-    absent a budget, only inactivity can stop a progressing child.
-    """
-
-    reg = app.state.agent_task_registry
-    if reg.get(task_id) is None:
-        return None, "unknown", 0.0
-    event = reg.event(task_id)
-    started = time.monotonic()
-    last_activity = started
-    poll = step_watch_poll_s(inactivity_window_s, absolute_budget_s)
-    while True:
-        if event.wait(timeout=poll):
-            return reg.get(task_id), "terminal", 0.0
-        now = time.monotonic()
-        if absolute_budget_s and absolute_budget_s > 0 and now - started >= absolute_budget_s:
-            return reg.get(task_id), "timeout", now - last_activity
-        activity = step_activity_monotonic(app, child_session_id, now=now)
-        if activity > last_activity:
-            last_activity = activity
-        if inactivity_window_s > 0 and now - last_activity >= inactivity_window_s:
-            return reg.get(task_id), "stalled", now - last_activity

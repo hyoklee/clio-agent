@@ -17,27 +17,8 @@ _TERMINAL_TASK_STATUSES = frozenset(
 )
 
 
-def _child_session(task_id: str) -> str:
-    from clio_agent.gact import context
-
-    app = context.active_app()
-    registry = getattr(app.state, "agent_task_registry", None) if app is not None else None
-    task = registry.get(task_id) if registry is not None else None
-    return str(getattr(task, "child_session_id", "") or "")
 
 
-def _child_name(task_id: str) -> str:
-    """Resolve the recorded child label without exposing an opaque task id."""
-    from clio_agent.gact import context
-    from clio_agent.gact.agent_tasks import display_run_name
-
-    app = context.active_app()
-    registry = getattr(app.state, "agent_task_registry", None) if app is not None else None
-    task = registry.get(task_id) if registry is not None else None
-    if task is None:
-        return ""
-    agent_id = str(task.agent_ref.get("expert_id") or task.agent_ref.get("blueprint_id") or "Task")
-    return display_run_name(agent_id, task.run_index, task.run_label)
 
 
 def _context_leaf_lines(value: Any, path: tuple[str, ...] = ()) -> list[str]:

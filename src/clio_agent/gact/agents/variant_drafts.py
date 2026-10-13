@@ -394,10 +394,6 @@ def _drafting_note(run: VariantRun) -> str:
 def _pause(app: Any, run: VariantRun) -> None:
     """Yield the drafts to the user as a ``choice`` question (surfaced after the turn)."""
     from clio_agent.gact.artifacts.observer_bridge import observer_call_id  # noqa: PLC0415
-    from clio_agent.gact.ask_user_tool import (  # noqa: PLC0415
-        PENDING_ASK_USER_META,
-        ask_user_expires_at,
-    )
     from clio_agent.gact.permission_delivery import attended_session_id  # noqa: PLC0415
 
     candidates = [t for t in run.tries if t.status == "completed"]

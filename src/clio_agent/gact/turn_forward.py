@@ -69,80 +69,10 @@ if TYPE_CHECKING:
     from clio_agent.prompts import PromptRegistry
 
 
-def _forward_executor(state: "TurnState") -> Any:
-    """The executor a turn's forward should run in: the DEDICATED agent-task pool
-    for the CHILD turn's DEPTH (a ``session_type=="agent_task"`` session, #948 S3),
-    else ``None`` (the default pool). Routing children onto a PER-DEPTH pool keeps a
-    parent blocked in a wait on ``pool[d]`` from starving its own children on
-    ``pool[d+1]`` — a single shared pool deadlocks nested orchestrators (#948 S4
-    adversarial review)."""
-
-    sess = state.app.state.sessions.get(state.sid)
-    meta = (getattr(sess, "metadata", {}) or {}) if sess is not None else {}
-    if meta.get("session_type") != "agent_task":
-        return None
-    block = meta.get("agent_task")
-    depth = block.get("depth", 1) if isinstance(block, dict) else 1
-    from clio_agent.gact.turn_spawn import agent_task_executor_for_depth  # noqa: PLC0415
-
-    return agent_task_executor_for_depth(state.app, depth)
 
 
-async def _run_turn_setup_off_loop(state: "TurnState", operation: Callable[[], Any]) -> Any:
-    """Run blocking blueprint/tool setup without freezing REST, SSE, or heartbeats.
-
-    Cold MCP discovery may install and launch a scientific server before the
-    DSPy module can be built. That work is synchronous, so invoking it directly
-    from ``_forward_turn_leased`` stalled the application's event loop for tens
-    of seconds. Copy the exact turn/tool context into the same executor family
-    used by the child and leave the request loop free to report progress.
-    """
-
-    loop = asyncio.get_running_loop()
-    turn_context = contextvars.copy_context()
-    return await loop.run_in_executor(_forward_executor(state), lambda: turn_context.run(operation))
 
 
-async def _run_module(state: "TurnState", module: Any, cancel_cb: Callable[[], bool]) -> Any:
-    """Run the built module's forward ONCE in the turn's forward executor.
-
-    The executor gets a copy of the turn context (identity, cancellation checker,
-    tool session), so the loop's live text and thinking stream through the LM
-    token hooks while it runs. A failure propagates to the turn as itself.
-
-    First, the session's drafts pick still waiting when this turn starts is superseded
-    (:mod:`clio_agent.gact.agents.variant_close`); what the agent must know about a run
-    closed without a pick joins the turn's injections.
-    """
-    from clio_agent.gact.agents.variant_close import turn_start_notices  # noqa: PLC0415
-
-    state.injections.extend(
-        await run_off_loop(
-            lambda: turn_start_notices(state.app, state.sid, message_id=state.user_msg.id)
-        )
-    )
-    native = await run_off_loop(
-        lambda: native_input_kwargs(
-            state.app, state.sid, module, images=state.native_images, files=state.native_files
-        )
-    )
-    kwargs: dict[str, Any] = {
-        "question": state.enriched_text,
-        "session_id": state.sid,
-        "session_mode": getattr(state.sess, "mode", "edit"),
-        "session_edit_mode": getattr(state.sess, "edit_mode", "diff"),
-        "cancel_requested": cancel_cb,
-        **native,
-    }
-    loop = asyncio.get_running_loop()
-    injections_token = _ctx.set_turn_injections(state.injections)
-    try:
-        turn_context = contextvars.copy_context()
-    finally:
-        _ctx.reset(injections_token)
-    return await loop.run_in_executor(
-        _forward_executor(state), lambda: turn_context.run(module, **kwargs)
-    )
 
 
 def _apply_turn_model_selection(state: "TurnState", agent_def: "AgentDef") -> "AgentDef":
@@ -174,23 +104,6 @@ def _apply_turn_model_selection(state: "TurnState", agent_def: "AgentDef") -> "A
     )
 
 
-async def forward_turn(state: "TurnState") -> Any:
-    """Run one complete forward/delegation turn under its workspace lease."""
-
-    # #1215 S5: workspace.lease is the OUTER bring-up phase for this whole call
-    # (the lease is held for its entire body) -- blueprint.resolve NESTS inside
-    # it in _forward_turn_leased below, by necessity: the two are not
-    # sequential in real execution (blueprint resolution happens WHILE the
-    # lease is held), so treating them as independent depth-0 phases would
-    # double-count wall time (see the module docstring's SEAM WIRING note in
-    # bringup_timing.py). Nesting is correct here, not a flattening shortcut.
-    with bringup_timing.timer_for_session(state.app, state.sid).phase("workspace.lease"):
-        # Tool wrappers bind a concrete workspace executor while modules are built.
-        # Pin that fleet across initial construction, every delegated child, parent
-        # resumes, and the gaps between them; otherwise the idle reaper can close a
-        # still-referenced executor during a long multi-expert turn.
-        async with _async_tool_session_context(state.sid):
-            return await _forward_turn_leased(state)
 
 
 async def _forward_turn_leased(state: "TurnState") -> Any:
@@ -303,11 +216,7 @@ async def _forward_turn_leased(state: "TurnState") -> Any:
     # #1227 D2: re-discover the relay catalog once its TTL has elapsed instead
     # of trusting the boot-time snapshot forever -- a no-op read on every turn
     # until the TTL fires, so this is not a per-turn relay round trip.
-    from clio_agent.gact.relay_wiring import (  # noqa: PLC0415
-        refresh_relay_tool_surfaces_if_stale,
-    )
 
-    await refresh_relay_tool_surfaces_if_stale(state.app)
 
     if (
         run_builtin_main

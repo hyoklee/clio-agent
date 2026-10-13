@@ -20,15 +20,6 @@ def start_goal(app: Any, sid: str, *, condition: str, **limits: Any) -> dict[str
     return result
 
 
-async def launch_pending_goal(app: Any, sid: str) -> None:
-    """Prepare the conversation's model and drain an explicitly started goal."""
-    from clio_agent.gact.loop_inbox import drain_inbox_to_new_turn
-    from clio_agent.gact.message_contract import PostMessageRequest
-    from clio_agent.gact.session_host_agent import ensure_host_agent
-
-    await ensure_host_agent(app, sid, PostMessageRequest(text="Continue the active goal"))
-    app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": False})
-    drain_inbox_to_new_turn(app, sid)
 
 
 def pause_failed_goal(app: Any, sid: str, reason: str) -> None:
@@ -55,23 +46,6 @@ def retain_shutdown_goal(app: Any, sid: str) -> None:
             _put_goal(app, sid, goal)
 
 
-async def maintain_goal_controls(app: Any) -> None:
-    """Enforce explicit waiting budgets and launch retained recovery inboxes."""
-    from clio_agent.gact.autonomy_guard import expire_goal_budget
-    from clio_agent.gact.loop_inbox import drain_inbox_to_new_turn
-    from clio_agent.gact.off_loop import run_off_loop
-
-    for session in app.state.sessions.list():
-        goal = _get_goal(app, session.id)
-        if not goal.get("active"):
-            continue
-        expired = await run_off_loop(expire_goal_budget, app, session.id, goal)
-        if (
-            not expired
-            and goal.get("phase") == "recovering"
-            and getattr(app.state, "agent", None) is not None
-        ):
-            drain_inbox_to_new_turn(app, session.id)
 
 
 def build_set_goal_tool() -> Any:

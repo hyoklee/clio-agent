@@ -747,9 +747,6 @@ def build_resident_ledger_set(app: "FastAPI") -> ResidentLedgerSet:
     registry with ``transcript.file`` off -- :mod:`clio_agent.gact.transcript_file`).
     """
 
-    from clio_agent.gact.background_exit import (  # noqa: PLC0415 - avoid import cycle
-        sweep_stale_handoff_parts,
-    )
     from clio_agent.gact.transcript_projection import (  # noqa: PLC0415 - avoid import cycle
         materialize_ledger,
     )

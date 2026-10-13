@@ -79,7 +79,6 @@ def mark_agent_ready(app: Any, agent: Any, *, boot: bool = False) -> None:
         boot_handshake.schedule(app, agent)
 
     def drain() -> None:
-        from clio_agent.gact.task_completion_wake import redrive_pending_completion_wakes
 
         redrive_pending_completion_wakes(app)
 
@@ -114,61 +113,6 @@ def record_init_failure(app: Any, exc: BaseException, *, stage: str) -> None:
     refuse_parked_inputs(app, stage=stage, detail=repr(exc))
 
 
-def refuse_parked_inputs(app: Any, *, stage: str, detail: str) -> int:
-    """Expose pending Core inputs as retained when their provider is unavailable."""
-
-    from clio_agent.gact.agent_mailbox import pending_mail
-    from clio_agent.gact.core_task_journal import core_task_journal
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-
-    refused = 0
-    for session_id in core_task_journal(app).recipient_sessions():
-        events = pending_mail(app, session_id)
-        if not events:
-            continue
-        for event in events:
-            refused += 1
-            app.state.bus.publish(
-                Event(
-                    type="session.input_refused",
-                    session_id=session_id,
-                    payload={
-                        "session_id": session_id,
-                        "reason": AGENT_INIT_FAILED_REASON,
-                        "stage": stage,
-                        "detail": detail,
-                        "kind": event.get("source_kind", "agent_message"),
-                        "message_id": event["message_id"],
-                        "task_id": event.get("handle", ""),
-                        "question_id": str(event.get("metadata", {}).get("question_id") or ""),
-                        "recoverable": True,
-                        "retained": True,
-                        "recovery_actions": list(AGENT_INIT_RECOVERY_ACTIONS),
-                    },
-                )
-            )
-        logger.error(
-            "parked inputs refused reason=%s session=%s stage=%s count=%d retained=%d",
-            AGENT_INIT_FAILED_REASON,
-            session_id,
-            stage,
-            len(events),
-            len(events),
-        )
-        app.state.sessions.update(
-            session_id,
-            status="error",
-            metadata_patch={
-                "agent_init_error": {
-                    "reason": AGENT_INIT_FAILED_REASON,
-                    "stage": stage,
-                    "detail": detail,
-                    "retained_inputs": len(events),
-                    "recovery_actions": list(AGENT_INIT_RECOVERY_ACTIONS),
-                }
-            },
-        )
-    return refused
 
 
 def update_provider_profile(app: Any, agent: Any) -> None:

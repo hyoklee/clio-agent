@@ -71,14 +71,12 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
 
-from clio_agent.gact.agent_tasks import STATUS_RUNNING
 from clio_agent.gact.spotter_clearance import release_clearance_event, signal_clearance
 from clio_agent.runtime import trace
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from clio_agent.gact.agent_tasks import AgentTask
     from clio_agent.gact.types import Session
 
 logger = logging.getLogger(__name__)
@@ -240,122 +238,10 @@ def _watcher_expert_id() -> str:
     )
 
 
-def _live_watcher_tasks(app: "FastAPI", parent_session_id: str) -> list["AgentTask"]:
-    """Every NON-TERMINAL AgentTask for ``parent_session_id`` running the watcher expert.
-
-    A standing, armed watcher's ``status`` stays ``STATUS_RUNNING`` for its
-    WHOLE armed lifetime (never terminal until disarm — see the module
-    docstring), so this is also the "is a watcher currently armed" check.
-    """
-
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return []
-    expert_id = _watcher_expert_id()
-    return [
-        task
-        for task in registry.for_parent(parent_session_id)
-        if not task.is_terminal and task.agent_ref.get("expert_id") == expert_id
-    ]
 
 
-def _set_live_state(
-    app: "FastAPI", task_id: str, live_state: str, *, error_reason: str = ""
-) -> Optional["AgentTask"]:
-    """Confirm a standing watcher's activity without completing its assignment.
-
-    Read and commit under the existing lifecycle lock so disarm cannot race
-    this update. Missing or settled owners are a typed no-op. Core confirmation
-    precedes the registry projection; no independent second write is required.
-    """
-
-    from clio_agent.gact.agent_tasks import ERROR_REASONS, persist_agent_task  # noqa: PLC0415
-
-    registry = app.state.agent_task_registry
-    with registry.lifecycle_lock:
-        current = registry.get(task_id)
-        if current is None or current.status != STATUS_RUNNING:
-            logger.info(
-                "spotter_watcher_live_state_skip reason=not_running task=%s live_state=%s",
-                task_id,
-                live_state,
-            )
-            return None
-        normalized_reason = error_reason if error_reason in ERROR_REASONS else ""
-        if live_state == "error" and not normalized_reason:
-            normalized_reason = "agent_error"
-        if current.live_state == live_state and current.error_reason == normalized_reason:
-            return current
-        return persist_agent_task(
-            app,
-            replace(
-                current,
-                live_state=live_state,
-                error_reason=normalized_reason,
-                updated_at=datetime.now(timezone.utc).isoformat(),
-            ),
-        )
 
 
-def _arm_watcher(app: "FastAPI", session: "Session") -> Optional["AgentTask"]:
-    """One raw ARM attempt (NO idempotency check) — mints the watcher child
-    session + a STANDING AgentTask, WITHOUT starting a turn.
-
-    Never raises: a mint failure is caught, logged with a typed
-    ``spotter_watcher_arm_failed`` reason, and returns ``None``.
-    """
-
-    from clio_agent.gact.turn_spawn import (  # noqa: PLC0415
-        SpawnError,
-        TaskSpec,
-        spawn_child_turn_threadsafe,
-    )
-
-    session_id = session.id
-    spec = TaskSpec(
-        child_expert_id=_watcher_expert_id(),
-        task_text="",  # unused: start_turn=False never launches a turn
-        parent_session_id=session_id,
-        requesting_expert_id=_WATCHER_REQUESTING_EXPERT_ID,
-        skip_declared_check=True,
-        run_label=WATCHER_RUN_LABEL,
-        session_scope_metadata={"active_agent_blueprint_id": _watcher_blueprint_id()},
-        session_approval_profile="spotter-watcher",
-        start_turn=False,
-    )
-    try:
-        task = spawn_child_turn_threadsafe(app, spec)
-    except SpawnError as exc:
-        logger.warning(
-            "spotter_watcher_arm_failed reason=%s session=%s err=%r", exc.reason, session_id, exc
-        )
-        trace.event(
-            "SPOTTER",
-            "spotter_watcher_arm_failed reason=%s session=%s err=%r",
-            exc.reason,
-            session_id,
-            exc,
-        )
-        return None
-    except Exception as exc:  # noqa: BLE001 - arming must never fail session create/patch
-        logger.warning(
-            "spotter_watcher_arm_failed reason=spawn_unexpected_error session=%s err=%r",
-            session_id,
-            exc,
-        )
-        trace.event(
-            "SPOTTER",
-            "spotter_watcher_arm_failed reason=spawn_unexpected_error session=%s err=%r",
-            session_id,
-            exc,
-        )
-        return None
-
-    # Standing default (module docstring): armed and idle, awaiting the first push.
-    task = _set_live_state(app, task.task_id, "waiting") or task
-    logger.info("spotter_watcher_armed session=%s task=%s", session_id, task.task_id)
-    trace.event("SPOTTER", "spotter_watcher_armed session=%s task=%s", session_id, task.task_id)
-    return task
 
 
 def ensure_spotter_watcher(app: "FastAPI", session: "Session") -> Optional["AgentTask"]:
@@ -473,59 +359,6 @@ def sync_watcher_for_mode(
         disarm_spotter_watcher(app, session)
 
 
-def disarm_spotter_watcher(
-    app: "FastAPI", session: "Session", *, reason: str = "mode_changed"
-) -> int:
-    """Cancel the parent's live watcher task(s) ONLY — never its other children.
-
-    Uses the targeted per-task cancel primitive
-    (:func:`clio_agent.gact.turn_spawn.cancel_agent_task`), NOT
-    :func:`clio_agent.gact.turn_spawn.cancel_children_of` (which cascades to every
-    descendant of the parent, spotter-armed or not). Already correct for the
-    standing-task shape unchanged: it transitions ``status`` RUNNING ->
-    CANCELLED (a legal transition, terminal) and cooperatively/hard-cancels any
-    in-flight check turn — a no-op when the watcher is idle/"waiting", since
-    there is nothing in flight to cancel.
-
-    Args:
-        app: The GACT app (agent-task registry + cancel substrate on ``app.state``).
-        session: The session that just left spotter-ai mode (its NEW approval_mode,
-            already persisted).
-        reason: The typed reason recorded on the disarm log line. Defaults to
-            ``"mode_changed"`` (the only caller today: a PATCH that flips
-            ``approval_mode`` away from ``"spotter-ai"``).
-
-    Returns:
-        The count of watcher tasks actually cancelled (0 when none were live —
-        logged as a typed no-op, not silently ignored).
-    """
-
-    session_id = session.id
-    live = _live_watcher_tasks(app, session_id)
-    if not live:
-        logger.info("spotter_watcher_skip reason=no_active_watcher session=%s", session_id)
-        trace.event(
-            "SPOTTER", "spotter_watcher_skip reason=no_active_watcher session=%s", session_id
-        )
-        return 0
-
-    from clio_agent.gact.turn_spawn import cancel_agent_task  # noqa: PLC0415
-
-    cancelled = sum(1 for task in live if cancel_agent_task(app, task.task_id))
-    # Bounded retention: the parent's clearance event outlives nothing — release
-    # it here (waiters wake and fail closed typed, since no watcher is live).
-    release_clearance_event(app, session_id)
-    logger.info(
-        "spotter_watcher_disarmed reason=%s session=%s count=%s", reason, session_id, cancelled
-    )
-    trace.event(
-        "SPOTTER",
-        "spotter_watcher_disarmed reason=%s session=%s count=%s",
-        reason,
-        session_id,
-        cancelled,
-    )
-    return cancelled
 
 
 # --------------------------------------------------------------------------- #
@@ -580,35 +413,6 @@ def wake_on_parent_activity(
     _push_wake(app, parent_session_id, task, wake_text)
 
 
-def _push_wake(app: "FastAPI", parent_session_id: str, task: "AgentTask", wake_text: str) -> None:
-    """Push one wake into the watcher's session: start a check turn if idle,
-    coalesce onto an already-pending one if busy — never more than one
-    buffered wake behind a running check turn (a 20-tool-call parent turn
-    must produce at most ONE queued wake, not 20).
-
-    A burst that coalesces does not just drop the newer facts on the floor
-    (#1218 e): the SECOND-and-later push in a busy window overwrites the
-    buffered wake with the generic multi-activity summary
-    (:data:`_WAKE_COALESCED_TEXT`) via the coalesce key's replace semantics
-    (confirmed Core messages with supersession references)
-    — still exactly one buffered wake, now honestly describing "several
-    things happened" instead of stale single-event text.
-    """
-
-    from clio_agent.gact.agent_mailbox import accept_session_input, pending_mail
-
-    child_sid = task.child_session_id
-    coalescing = any(
-        row.get("metadata", {}).get("coalesce_key") == _WAKE_COALESCE_KEY
-        for row in pending_mail(app, child_sid)
-    )
-    accept_session_input(
-        app,
-        child_sid,
-        _WAKE_COALESCED_TEXT if coalescing else wake_text,
-        {"coalesce_key": _WAKE_COALESCE_KEY, "spotter_parent": parent_session_id},
-    )
-    signal_clearance(app, parent_session_id)
 
 
 def on_turn_finalized(app: "FastAPI", session_id: str) -> None:

@@ -44,61 +44,12 @@ async def prune_orphans_and_cache(app: FastAPI) -> None:
     await boot_prune_off_loop()
 
 
-async def reconcile_connected_storage(app: FastAPI) -> None:
-    """Recover interrupted source operations for the server's registered workspaces."""
-    from clio_agent.gact.task_recovery import start_task_recovery
-
-    await start_task_recovery(app)
 
 
-async def shutdown_connected_storage(app: FastAPI) -> None:
-    """Drain trusted source operations before the server tears down its runtime."""
-    storage = getattr(app.state, "connected_storage", None)
-    from clio_agent.gact.task_supervisor import task_supervisor
-
-    task_supervisor(app).closing = True
-    if storage is not None:
-        await storage.shutdown()
 
 
-async def shutdown_tasks(app: FastAPI) -> None:
-    """Settle supervised tasks before the application's sessions and bus close."""
-    from clio_agent.gact.task_supervisor import task_supervisor
-
-    await task_supervisor(app).shutdown()
-    for host in getattr(app.state, "native_task_hosts", {}).values():
-        await host.close()
 
 
-async def start_task_hosts(app: FastAPI) -> None:
-    """Recover existing work and enter independent application-owned native roots."""
-    from clio_agent.gact.core_task_journal import core_task_journal
-    from clio_agent.gact.mcp_task_store import app_task_store
-    from clio_agent.tools.mcp_task_records import set_task_record_store
-    from clio_agent.tools.native_task_host import start_native_hosts
-
-    app.state.task_hosts_ready = False
-    await core_task_journal(app).restore()
-    from clio_agent.gact.user_question_ledger import restore_user_questions
-
-    await asyncio.to_thread(restore_user_questions, app)
-    from clio_agent.gact.assignment_history import restore_assignment_history
-
-    await asyncio.to_thread(restore_assignment_history, app)
-    from clio_agent.gact.composer_runtime import recover_pending_feedback
-
-    store = app_task_store(app)
-    await asyncio.to_thread(store.migrate, app)
-    set_task_record_store(store)
-    await reconcile_connected_storage(app)
-    await start_native_hosts(app)
-    app.state.task_hosts_ready = True
-    await asyncio.to_thread(
-        recover_pending_feedback, app, app.state.gact_deps.append_session_message
-    )
-    from clio_agent.gact.task_completion_wake import redrive_pending_completion_wakes
-
-    redrive_pending_completion_wakes(app)
 
 
 def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:
