@@ -203,3 +203,22 @@ Reviewed committed source and diffs read-only. I ran no tests, guard, builds or 
 
 
 Actual Claude Code's independent second report is retained in task-replacement-removal-review-claude-2.json. Both withheld approval pending scoped corrections; no replacement acceptance is claimed.
+
+
+## Removal approvals — 4804dd6f
+
+**I approve `4804dd6f` for rebuilding. No remaining removal blockers in the requested `adfde88a..4804dd6f` delta.** This is my independent approval; Claude’s approval remains separate.
+
+The corrections resolve my previous findings:
+
+- [Globus submission data is restored](/C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/storage/models.py:175), including the payload needed to preserve its submission ID after a lost response.
+- The JSON-steer cancellation helper and storage’s dual cancellation route are deleted.
+- Plain first-agent construction is restored off-loop with the process ARC, without relay integration.
+- Retired Question, forwarding, queue-route and elicitation-dispatch paths are removed. Independent schema, reply and trust helpers remain.
+- The [acceptance ledger](/C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/docs/qualification/task-replacement-acceptance.md:27) now preserves the recovery, queue, attachment, routing and execution-ownership lessons.
+
+Later construction must implement those contracts: Core-backed input commitment and Questions, asynchronous provider bridges, ownership until physical worker exit, local-transfer interruption versus provider reattachment, and preserved queue/disposition behavior. These are rebuild obligations, not reasons to restore old owners.
+
+This approval establishes removal readiness only. I ran no guard, tests, builds, models or services and made no changes. GACT remains `32044a38`; protected human files and prohibited caches were untouched.
+
+Actual Claude Code independently approved removal in task-replacement-removal-review-claude-3.json. Its remaining notes are construction obligations, not removal blockers. No replacement runtime qualification is implied. The c1/c2/c3 caches remain manual-only after automatic-review cleanup rejections.

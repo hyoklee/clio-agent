@@ -47,5 +47,20 @@
       "original_authentication_unchanged": true
     },
     "root_absence_verified": false
+  },
+  "review_cache_c3": {
+    "root": "D:/Temp/clio-task-removal-review-4804dd6f-c3",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "review_process": {
+      "pid": 64520,
+      "birth": 1791921715.7990081,
+      "controller_exit_code": 0,
+      "tool_calls": 21,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
   }
 }

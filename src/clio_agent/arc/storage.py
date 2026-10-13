@@ -107,6 +107,7 @@ ARC_KINDS: tuple[str, ...] = (
     "variants",
     "response_feedback",  # immutable user ratings; never added to model context
     "segments",  # live context plane: one record per (session_id, scope)
+    "task_index",  # rebuildable task/mail pointers; canonical observations remain in segments
 )
 
 # Suffix for the optional plain-text companion blob (BM25 discovery, Thread D) a
