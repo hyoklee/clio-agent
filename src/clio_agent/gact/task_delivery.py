@@ -47,6 +47,8 @@ def completion_rows(app: Any, sid: str) -> list[dict[str, Any]]:
     for row in task_views(app, sid):
         if row["owner"]["session_id"] != sid or row["effective_status"] not in TERMINAL:
             continue
+        if row["task_kind"] == "Session":
+            continue  # Human-owned assignment completion cannot wake itself indefinitely.
         if (
             row.get("consumed_at")
             or row.get("recording") == "unconfirmed"
@@ -70,17 +72,23 @@ def pending_completions(app: Any, sid: str, *, limit: int = 8) -> tuple[str, lis
 
 def commit_staged_completions(state: Any) -> None:
     """Refresh staged hints; acknowledgement occurs in the model input writer later."""
-    from clio_agent.gact.agent_mailbox import commit_agent_mail
+    from clio_agent.gact.agent_mailbox import stage_session_inputs
     from clio_agent.gact.subagent_lifecycle import CONTROL_LOCK, require_execution_allowed
     from clio_agent.gact.task_context_frame import commit_task_context_frame
 
     with CONTROL_LOCK:
         require_execution_allowed(state.app, state.sid)
-        commit_agent_mail(state)
         state.injections = [
-            (source, text) for source, text in state.injections if source != "task_results"
+            (source, text)
+            for source, text in state.injections
+            if source not in {"task_results", "agent_messages"}
         ]
-        state.injections.extend(drain_task_completions(state.app, state.sid))
+        initial = "mail:" + state.user_msg.id
+        state.injections.extend(
+            (source, text)
+            for source, text in stage_session_inputs(state.app, state.sid)
+            if initial not in getattr(text, "notification_ids", ())
+        )
         commit_task_context_frame(state)
 
 
@@ -95,7 +103,9 @@ def completion_block(row: dict[str, Any]) -> str:
     )
 
 
-def drain_task_completions(app: Any, sid: str) -> list[tuple[str, str]]:
+def drain_task_completions(
+    app: Any, sid: str, *, rows: list[dict[str, Any]] | None = None, limit: int = 8
+) -> list[tuple[str, str]]:
     """Stage one stable identity per injection without modifying delivery state."""
     from clio_agent.gact.task_controls import collect_result
 
@@ -113,5 +123,5 @@ def drain_task_completions(app: Any, sid: str) -> list[tuple[str, str]]:
                 [row["notification_id"]],
             ),
         )
-        for row in completion_rows(app, sid)[:8]
+        for row in (completion_rows(app, sid) if rows is None else rows)[:limit]
     ]

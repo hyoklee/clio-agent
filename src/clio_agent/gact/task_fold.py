@@ -57,9 +57,8 @@ def fold_agent_task_transition(
     """
 
     reg = app.state.agent_task_registry
-    # ``transition()`` updates the projection before the authoritative session
-    # write and ledger publication. Keep that complete lifecycle edge ordered so
-    # an older nonterminal fold cannot persist or publish after a terminal fold.
+    # Only confirmed Core publication changes the projection or releases waiters.
+    # Keep candidate validation, confirmation and event publication serialized.
     with reg.lifecycle_lock:
         current = reg.get(task_id)
         if (
@@ -72,7 +71,8 @@ def fold_agent_task_transition(
             from clio_agent.gact.task_submission_custody import pending_submissions
 
             if pending_submissions(app, current.child_session_id) or any(
-                row["effective_status"] not in TERMINAL
+                row["handle"] != (current.handle_id or current.task_id)
+                and row["effective_status"] not in TERMINAL
                 for row in task_views(app, current.child_session_id)
             ):
                 # The retained relay driver will re-read the same backend terminal
@@ -99,7 +99,7 @@ def fold_agent_task_transition(
                 raise AgentTaskError(f"unknown task {task_id!r}", reason="unknown_task") from exc
             return AgentTaskFoldOutcome(task=current, applied=False, reason=exc.reason)
 
-        persist_agent_task(app, updated)
+        updated = persist_agent_task(app, updated)
         publish_agent_task_event(app, updated, AGENT_TASK_EVENTS[updated.status])
         return AgentTaskFoldOutcome(task=updated, applied=True)
 
@@ -114,6 +114,8 @@ def finish_agent_task_transition(app: "FastAPI", outcome: AgentTaskFoldOutcome) 
 
     if not outcome.applied or not outcome.task.is_terminal:
         return
+    if outcome.task.assignment_kind == "Session":
+        return  # Root assignment history has no delegation-return or SubagentStop effects.
     from clio_agent.gact.background_exit import reconcile_stored_handoff_part  # noqa: PLC0415
     from clio_agent.gact.delegation_return import stamp_delegation_return  # noqa: PLC0415
     from clio_agent.gact.turn_spawn import (  # noqa: PLC0415
@@ -132,23 +134,7 @@ def finish_agent_task_transition(app: "FastAPI", outcome: AgentTaskFoldOutcome) 
     # independent of whether/when the parent gets another turn. Idempotent and
     # never-raising, the same discipline as stamp_delegation_return above.
     reconcile_stored_handoff_part(app, outcome.task)
-    # #1305: fires SubagentStop + releases the child's provider connection(s)
-    # deterministically (see turn_spawn.finalize_child_task_terminal). This is
-    # ONE of FOUR terminal paths that call it -- NOT the sole choke point (a
-    # prior version of this comment claimed that; #1305 review round F3
-    # proved 3 others -- turn_spawn._cancel_one_child_task and
-    # child_forward.fail_child_task / _complete_forwarded_task -- also
-    # terminalize a child task and now route through the SAME shared helper).
-    # This one is race-guarded exactly-once by ``outcome.applied`` +
-    # ``outcome.task.is_terminal`` above; _cancel_one_child_task carries an
-    # equivalent guard (a swallowed transition exception returns early,
-    # never reaching the helper). fail_child_task / _complete_forwarded_task
-    # do NOT -- round 3 finding, stated honestly rather than silently
-    # papered over: both swallow a losing reg.transition() and fall back to
-    # the current row regardless, so either can double-fire SubagentStop (and
-    # a harmless redundant release call) on an already-terminal race. Real
-    # exactly-once hardening for those two is a tracked follow-up, not built
-    # here.
+    # Every terminal producer reaches this winner-only effects path.
     finalize_child_task_terminal(app, outcome.task, outcome.task.child_session_id)
     _admit_next_queued(app)
 

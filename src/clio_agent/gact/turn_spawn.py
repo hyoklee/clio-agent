@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
+from uuid import uuid4
 
 from clio_agent.gact.agent_task_admission import _batch_key, _queued_admissible, _running_in_batch
-from clio_agent.gact.agent_task_artifacts import returned_artifact_ref
-from clio_agent.gact.agent_task_wake import build_child_done_callback, resume_on_continuation_turn
 from clio_agent.gact.agent_tasks import (
     AGENT_TASK_EVENTS,
-    STATUS_CANCELLED,
-    STATUS_COMPLETED,
-    STATUS_FAILED,
     STATUS_QUEUED,
     STATUS_RUNNING,
     AgentTask,
@@ -25,7 +21,6 @@ from clio_agent.gact.runtime.permission_policies import inherit_child_session_po
 from clio_agent.gact.session_descendants import MAX_SPAWN_DEPTH as _MAX_SPAWN_DEPTH
 from clio_agent.gact.session_store import _inherit_session_context_files
 from clio_agent.gact.spawn_context import validate_task_spec
-from clio_agent.gact.task_fold import finish_agent_task_transition, fold_agent_task_transition
 from clio_agent.gact.turn_spawn_executor import (
     agent_task_executor_for_depth as agent_task_executor_for_depth,
 )
@@ -35,13 +30,6 @@ from clio_agent.gact.turn_spawn_executor import (
 from clio_agent.gact.turn_spawn_executor import (
     shutdown_agent_task_executors as shutdown_agent_task_executors,
 )
-from clio_agent.gact.turn_spawn_failures import (
-    child_task_error_reason,
-    child_task_failure_result,
-)
-from clio_agent.gact.turn_spawn_result import child_workflow_state as _child_workflow_state
-from clio_agent.gact.turn_spawn_result import final_assistant_message
-from clio_agent.gact.turn_spawn_result import message_text as _message_text
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -219,28 +207,12 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
             "Task subtree cancellation has closed child admission", reason="cancelled_by_parent"
         )
     workspace_id, parent_mode, session_scope_metadata = validate_task_spec(app, spec)
+    parent = app.state.sessions.get(spec.parent_session_id)
+    predecessor = None
     if spec.continuation_task_id:
         from clio_agent.gact.subagent_restart import validate_successor_source
 
-        validate_successor_source(app, spec)
-    parent = app.state.sessions.get(spec.parent_session_id)
-    if (
-        spec.start_turn
-        and parent is not None
-        and (
-            getattr(parent, "status", "") == "cancelled"
-            or spec.parent_session_id in app.state.cancel_flags
-        )
-    ):
-        # A provider/tool call can finish on an executor thread after the parent
-        # cancellation cascade took its registry snapshot.  Refuse that late spawn
-        # before minting a child session; otherwise the cancelled parent grows a new
-        # live child seconds after the user pressed Stop.
-        raise SpawnError(
-            f"parent session was cancelled before child {spec.child_expert_id!r} could start",
-            reason="parent_turn_cancelled",
-        )
-
+        predecessor, _source = validate_successor_source(app, spec)
     # ---- backpressure: queue (never fail) at the cap ----------------------
     # PER-DEPTH admission: each depth has its own pool, so the cap is counted
     # against RUNNING tasks at the SAME depth. A depth-2 fan-out never queues
@@ -268,31 +240,35 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
     # plan/architect-mode parent could spawn a full-authority edit-mode child and
     # write what the parent itself is denied (the plan-override bypass). See
     # ``_RESTRICTIVE_SESSION_MODES`` above.
-    child = app.state.sessions.create(
-        workspace_id=workspace_id,
-        title=f"{spec.child_expert_id} task",
-        parent_session_id=spec.parent_session_id,
-        agent={"id": spec.child_expert_id, "mode": "subagent"},
-        mode=parent_mode,
-        # A child is part of the parent's authorization scope, so it must inherit
-        # the user-selected confirmation posture as well as the work mode.  The
-        # previous implicit Session default (``ask``) made a bypass/auto-edits
-        # parent silently park every effectful child tool behind a permission the
-        # parent UI did not expose.  A server-owned approval profile is the one
-        # deliberate exception: SPOTTER's watcher stays ``ask`` and receives only
-        # its narrow containment grants through ``approval_profile`` below.
-        approval_mode=(
-            getattr(parent, "approval_mode", "ask")
-            if spec.session_approval_profile is None
-            else "ask"
-        ),
-        approval_profile=spec.session_approval_profile or "",
-    )
+    if predecessor is not None:
+        child = app.state.sessions.get(predecessor.child_session_id)
+    else:
+        child = app.state.sessions.create(
+            workspace_id=workspace_id,
+            title=f"{spec.child_expert_id} task",
+            parent_session_id=spec.parent_session_id,
+            agent={"id": spec.child_expert_id, "mode": "subagent"},
+            mode=parent_mode,
+            # A child is part of the parent's authorization scope, so it must inherit
+            # the user-selected confirmation posture as well as the work mode.  The
+            # previous implicit Session default (``ask``) made a bypass/auto-edits
+            # parent silently park every effectful child tool behind a permission the
+            # parent UI did not expose.  A server-owned approval profile is the one
+            # deliberate exception: SPOTTER's watcher stays ``ask`` and receives only
+            # its narrow containment grants through ``approval_profile`` below.
+            approval_mode=(
+                getattr(parent, "approval_mode", "ask")
+                if spec.session_approval_profile is None
+                else "ask"
+            ),
+            approval_profile=spec.session_approval_profile or "",
+        )
     # The narrowing axis composes too: the parent's session-scoped ``ask``/``deny`` rows are
     # keyed to the PARENT's session id, so without this projection a call the parent would
     # prompt for runs unprompted in the child (widening-only inheritance).
     inherit_child_session_policies(app, spec.parent_session_id, child.id)
-    _inherit_session_context_files(app, spec.parent_session_id, child.id)
+    if predecessor is None:
+        _inherit_session_context_files(app, spec.parent_session_id, child.id)
     if parent_mode in _RESTRICTIVE_SESSION_MODES:
         # Typed, queryable note (no-silent-fallback ground rule): this is a real
         # behavior change from the pre-fix default (child always got ``edit``), so
@@ -309,8 +285,12 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
     # persisted, so the first spawn of the child in this parent turn gets 0, the next 1…
     run_index = _next_run_index(app, spec)
     now = _now()
+    identity = "task_" + uuid4().hex
+    from clio_agent.gact.core_task_journal import core_task_journal
+    from clio_agent.tools.task_call_context import permission_snapshot
+
     task = AgentTask(
-        task_id="task_" + child.id.split("_")[-1],
+        task_id=identity,
         parent_session_id=spec.parent_session_id,
         child_session_id=child.id,
         parent_turn_id=spec.parent_turn_id,
@@ -326,7 +306,20 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
         fanout_bound=spec.fanout_bound,
         spawn_group_id=spec.spawn_group_id,
         group_size=spec.group_size,
-        handle_id="task_" + child.id.split("_")[-1],
+        handle_id=identity,
+        context_checkpoint=dict(core_task_journal(app).input_boundaries.get(child.id, {})),
+        context_epoch=identity
+        if spec.fresh_context
+        else predecessor.context_epoch
+        if predecessor
+        else "",
+        launch_context={
+            **asdict(spec),
+            "workspace_id": workspace_id,
+            "session_mode": parent_mode,
+            "session_scope_metadata": session_scope_metadata,
+        },
+        launch_permissions=permission_snapshot(app, spec.parent_session_id) if parent else {},
         run_label=spec.run_label or f"{spec.child_expert_id} #{run_index + 1}",
         project_to_parent=spec.project_to_parent,
         live_state=STATUS_QUEUED,
@@ -337,10 +330,14 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
         created_at=now,
         updated_at=now,
     )
-    persist_agent_task(app, task)
-    # Persist the launch data on the child session so a queued task can be launched
-    # faithfully later (the AgentTask record deliberately carries no task_text), AND
-    # inherit the parent's session-scoped blueprint / expert-pack activation keys so
+    task = persist_agent_task(app, task)
+    if predecessor is not None:
+        from clio_agent.gact.session_run_tasks import reopen_assignment_admission
+
+        reopen_assignment_admission(app, task, resume=True)
+    # Core retains launch context. Session metadata contains only capability projections
+    # needed before resolving the first turn.
+    #     # inherit the parent's session-scoped blueprint / expert-pack activation keys so
     # the child resolves its expert against the parent's active blueprint (not the
     # global/default catalog — see ``inherited_session_scope_metadata``).
     app.state.sessions.update(
@@ -372,38 +369,17 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
                 if parent_mode in _RESTRICTIVE_SESSION_MODES
                 else {}
             ),
-            "pending_spawn": {
-                "task_text": spec.task_text,
-                "workflow_state": spec.workflow_state or {},
-                "mode": spec.mode,
-                # P1.0 (#1062): persist the skill seed + self-directed flag so a QUEUED
-                # skill-subagent launches faithfully later (parity with task_text).
-                "seed_context": spec.seed_context,
-                "skip_declared_check": spec.skip_declared_check,
-                "target_blueprint_id": spec.target_blueprint_id,
-                # Persist resolved values so queued admission stays self-contained
-                # even when the parent session disappears before launch.
-                "workspace_id": workspace_id,
-                "session_mode": parent_mode,
-                "session_scope_metadata": session_scope_metadata,
-                "session_approval_profile": spec.session_approval_profile,
-                "continuation_task_id": spec.continuation_task_id,
-            },
+            "pending_spawn": None,
         },
     )
     publish_agent_task_event(app, task, AGENT_TASK_EVENTS[STATUS_QUEUED])
-    if spec.continuation_task_id:
-        from clio_agent.gact.subagent_continuation import schedule_successor_context
-
-        schedule_successor_context(app, task, spec)
-        return reg.get(task.task_id) or task
     if not spec.start_turn:
         # Standing task: never queued-at-cap, never _launch()ed -- transitions
         # straight to its RUNNING/"waiting" standing state. A later, independent
         # wake (gact/spotter_watcher.py) drives real turns on this same child
         # session without ever re-entering spawn_child_turn.
         running = reg.transition(task.task_id, STATUS_RUNNING, updated_at=_now())
-        persist_agent_task(app, running)
+        running = persist_agent_task(app, running)
         publish_agent_task_event(app, running, AGENT_TASK_EVENTS[STATUS_RUNNING])
         return running
     if at_cap:
@@ -414,25 +390,31 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
     return _launch(app, task, spec)
 
 
-def spawn_child_turn_threadsafe(app: "FastAPI", spec: TaskSpec) -> AgentTask:
-    """Loop-safe entry point: run :func:`spawn_child_turn` on the app event loop
-    regardless of the caller's thread. S5's model-facing tools call this from the
-    parent's forward (an executor thread); tests / the live-gate seam call it from
-    the main thread. Directly reentrant when already on the loop."""
+async def spawn_child_turn_async(app: "FastAPI", spec: TaskSpec) -> AgentTask:
+    """Serialize conversation admission while confirming its assignment off the app loop."""
+    import asyncio
 
-    import asyncio  # noqa: PLC0415
+    lock = getattr(app.state, "conversation_admission_lock", None)
+    if lock is None:
+        lock = app.state.conversation_admission_lock = asyncio.Lock()
+    async with lock:
+        return await asyncio.to_thread(spawn_child_turn, app, spec)
+
+
+def spawn_child_turn_threadsafe(app: "FastAPI", spec: TaskSpec) -> AgentTask:
+    """Submit from a model bridge without moving Core writes onto the app loop."""
+    import asyncio
 
     loop = getattr(app.state, "mcp_app_loop", None)
-    try:
-        running = asyncio.get_running_loop()
-    except RuntimeError:
-        running = None
-    if loop is None or running is loop:
+    if loop is None or not loop.is_running():
         return spawn_child_turn(app, spec)
-
-    from clio_agent.gact.loop_handoff import call_on_loop  # noqa: PLC0415 - typed (#1577)
-
-    return call_on_loop(loop, lambda: spawn_child_turn(app, spec), op="spawn_child_turn")
+    try:
+        current = asyncio.get_running_loop()
+    except RuntimeError:
+        current = None
+    if current is loop:
+        raise RuntimeError("Use await spawn_child_turn_async on the application loop")
+    return asyncio.run_coroutine_threadsafe(spawn_child_turn_async(app, spec), loop).result()
 
 
 def _cancel_one_child_task(app: "FastAPI", reg: Any, task: "AgentTask") -> Optional["AgentTask"]:
@@ -441,6 +423,8 @@ def _cancel_one_child_task(app: "FastAPI", reg: Any, task: "AgentTask") -> Optio
     from clio_agent.gact.task_subagent_owner import request_subagent_cancel
 
     del reg
+    if task.is_terminal:
+        return None
     return request_subagent_cancel(app, task)
 
 
@@ -479,64 +463,59 @@ def cancel_agent_task(app: "FastAPI", task_id: str) -> bool:
     task = reg.get(task_id)
     if task is None:
         return False
-    from clio_agent.gact.task_subagent_owner import close_subtree_admission
-
-    close_subtree_admission(app, task.child_session_id)
     updated = _cancel_one_child_task(app, reg, task)
-    descendants = cancel_children_of(app, task.child_session_id)
     if updated is not None:
         _admit_next_queued(app)
-    return updated is not None or descendants > 0
+    return updated is not None
 
 
 def _launch(app: "FastAPI", task: AgentTask, spec: TaskSpec) -> AgentTask:
-    """Stage the child turn + wire the completion hook. Transitions queued→running."""
+    """Confirm running admission, then stage the segment through the conversation runner."""
+    import json
 
-    from clio_agent.gact.turn import _start_background_user_turn  # noqa: PLC0415
+    from clio_agent.gact.hooks import dispatch_subagent_start
+    from clio_agent.gact.loop_handoff import call_on_loop
+    from clio_agent.gact.subagent_lifecycle import retained_model_metadata
+    from clio_agent.gact.turn import _start_background_user_turn
 
     child = app.state.sessions.get(task.child_session_id)
-    # workflow_state round-trip: inject the parent's typed state into the child's
-    # staged user message so the child sees the shared plan (the child's own state
-    # rides back on result.workflow_state at completion).
     text = spec.task_text
-    # P1.0 (#1062): a seeded subagent (skill-as-subagent) gets the skill body prepended
-    # verbatim to its staged input, so the child runs the skill's procedure in a fresh
-    # context instead of the caller inlining the body.
     if spec.seed_context:
         text = f"{spec.seed_context}\n\n---\n\n{text}"
     if spec.workflow_state:
-        import json  # noqa: PLC0415
-
-        text = f"{text}\n\n[workflow_state]\n{json.dumps(spec.workflow_state, sort_keys=True, default=str)}"
-
-    from clio_agent.gact.subagent_lifecycle import retained_model_metadata
-
-    _start_background_user_turn(
+        text += "\n\n[workflow_state]\n" + json.dumps(
+            spec.workflow_state, sort_keys=True, default=str
+        )
+    running = persist_agent_task(
         app,
-        task.child_session_id,
-        child,
-        text,
-        metadata={
-            **(
-                retained_model_metadata(app, task.child_session_id)
-                if spec.continuation_task_id
-                else {}
-            ),
-            "agent_task_id": task.task_id,
-            "spawned_by": spec.requesting_expert_id,
-        },
-        prev_status="idle",
-        turn_agent_id=spec.child_expert_id,
+        app.state.agent_task_registry.transition(task.task_id, STATUS_RUNNING, updated_at=_now()),
     )
-    running = app.state.agent_task_registry.transition(
-        task.task_id, STATUS_RUNNING, updated_at=_now()
-    )
-    persist_agent_task(app, running)
     publish_agent_task_event(app, running, AGENT_TASK_EVENTS[STATUS_RUNNING])
-    # P2.3 SubagentStart lifecycle hook (observation): fires exactly once when the
-    # child turn transitions queued→running (reuses the AgentTask lifecycle).
-    from clio_agent.gact.hooks import dispatch_subagent_start  # noqa: PLC0415
 
+    def start() -> Any:
+        return _start_background_user_turn(
+            app,
+            task.child_session_id,
+            child,
+            text,
+            metadata={
+                **(
+                    retained_model_metadata(app, task.child_session_id)
+                    if spec.continuation_task_id
+                    else {}
+                ),
+                "agent_task_id": task.task_id,
+                "spawned_by": spec.requesting_expert_id,
+            },
+            prev_status="idle",
+            turn_agent_id=spec.child_expert_id,
+        )
+
+    loop = getattr(app.state, "mcp_app_loop", None)
+    if loop is not None and loop.is_running():
+        call_on_loop(loop, start, op="launch_assignment_segment")
+    else:
+        start()
     dispatch_subagent_start(
         session_id=task.child_session_id,
         cwd=str(getattr(child, "workspace_root", "") or ""),
@@ -548,18 +527,7 @@ def _launch(app: "FastAPI", task: AgentTask, spec: TaskSpec) -> AgentTask:
             "mode": spec.mode,
         },
     )
-
-    child_task = app.state.in_flight_turns.get(task.child_session_id)
-    if child_task is not None:
-        child_task.add_done_callback(
-            build_child_done_callback(
-                _on_child_done, app, task.task_id, task.child_session_id, spec.mode
-            )
-        )
-    else:
-        # The turn already settled (a very fast child); collect now.
-        _on_child_done(app, task.task_id, task.child_session_id, spec.mode)
-    return running
+    return app.state.agent_task_registry.get(task.task_id) or running
 
 
 def _fire_subagent_stop(app: "FastAPI", updated: AgentTask, child_sid: str) -> None:
@@ -607,110 +575,17 @@ def finalize_child_task_terminal(app: "FastAPI", task: AgentTask, child_sid: str
 
 
 def _on_child_done(
-    app: "FastAPI",
-    task_id: str,
-    child_sid: str,
-    mode: str,
-    *,
-    finished_turn: Any = None,
+    app: "FastAPI", task_id: str, child_sid: str, mode: str, *, finished_turn: Any = None
 ) -> None:
-    """Completion hook: read the child's terminal message, transition the task to a
-    terminal state with a result (message ref + bounded excerpt + workflow_state),
-    publish + fire the wait-Event, and admit one queued task into the freed slot."""
+    """Compatibility alias for the conversation owner's settled-segment fold."""
+    from clio_agent.gact.session_run_tasks import complete_assignment_segment
 
-    reg = app.state.agent_task_registry
-    task = reg.get(task_id)
-    if task is None or task.is_terminal:
-        return
-    from clio_agent.gact.subagent_lifecycle import defer_paused_settlement
-
-    if defer_paused_settlement(app, task, mode):
-        return
-    from clio_agent.gact.task_subagent_owner import defer_subagent_settlement
-
-    if defer_subagent_settlement(app, task):
-        return
-    now = _now()
-
-    # HITL-in-child (#1113): see child_forward.forward_waiting_child.
-    from clio_agent.gact.child_forward import forward_waiting_child  # noqa: PLC0415
-
-    child_sess = app.state.sessions.get(child_sid)
-    if not task.cancel_requested and forward_waiting_child(app, task, child_sess, child_sid, mode):
-        return
-
-    # A residual steer accepted mid-turn is promoted to a continuation turn the
-    # turn-runner's idle hook owns; see agent_task_wake.resume_on_continuation_turn.
-    if not task.cancel_requested and resume_on_continuation_turn(
-        app, task_id, child_sid, mode, finished_turn, _on_child_done
-    ):
-        return
-
-    msgs = app.state.messages.get(child_sid, []) or []
-    final = final_assistant_message(msgs)
-    code = _err_code(getattr(final, "error_info", None) if final is not None else None)
-    from clio_agent.gact.task_subagent_owner import defer_background_settlement
-
-    if not task.cancel_requested and final is not None and code in ("", "cancelled"):
-        if defer_background_settlement(app, task, mode):
-            return
-
-    try:
-        if code == "cancelled" or task.cancel_requested:
-            # Explicit subtree cancellation settles here, after descendant owners.
-            outcome = fold_agent_task_transition(
-                app, task_id, STATUS_CANCELLED, notify_pending=(mode == "async"), updated_at=now
-            )
-        elif code:
-            error_info = getattr(final, "error_info", None)
-            outcome = fold_agent_task_transition(
-                app,
-                task_id,
-                STATUS_FAILED,
-                error_reason=child_task_error_reason(error_info),
-                result=child_task_failure_result(
-                    app,
-                    child_sid,
-                    final,
-                    workflow_state=_child_workflow_state,
-                    excerpt_limit=_ANSWER_EXCERPT_MAX,
-                ),
-                notify_pending=(mode == "async"),
-                updated_at=now,
-            )
-        elif final is None:
-            outcome = fold_agent_task_transition(
-                app,
-                task_id,
-                STATUS_FAILED,
-                error_reason="agent_error",
-                notify_pending=(mode == "async"),
-                updated_at=now,
-            )
-        else:
-            result = {
-                "message_ref": getattr(final, "id", ""),
-                "answer_excerpt": _message_text(final)[:_ANSWER_EXCERPT_MAX],
-                "workflow_state": _child_workflow_state(app, child_sid, final),
-            }
-            artifact_ref = returned_artifact_ref(app, final)
-            outcome = fold_agent_task_transition(
-                app,
-                task_id,
-                STATUS_COMPLETED,
-                result=result,
-                artifact_ref=artifact_ref or None,
-                notify_pending=(mode == "async"),
-                updated_at=now,
-            )
-    except Exception:  # noqa: BLE001 - a hook error must not vanish (no-silent-fallback)
-        logger.exception("agent_task completion hook failed task=%s child=%s", task_id, child_sid)
-        return
-
-    finish_agent_task_transition(app, outcome)
+    task = app.state.agent_task_registry.get(task_id)
+    if task is not None and not task.is_terminal:
+        complete_assignment_segment(app, child_sid, task.child_turn_id)
 
 
-def _admit_next_queued(app: "FastAPI") -> None:
+def _admit_queued_on_worker(app: "FastAPI") -> None:
     """FIFO PER DEPTH: launch queued tasks into every currently-free slot (a cancel
     can free several at once, so admit up to the free-slot count, not just one).
 
@@ -733,7 +608,6 @@ def _admit_next_queued(app: "FastAPI") -> None:
                     t.parent_session_id, t.agent_ref.get("requesting_expert_id", ""), t.depth
                 )
                 running_by_batch[key] = running_by_batch.get(key, 0) + 1
-        from clio_agent.gact.subagent_continuation import context_preparing
         from clio_agent.gact.subagent_lifecycle import execution_held
 
         queued = sorted(
@@ -743,7 +617,6 @@ def _admit_next_queued(app: "FastAPI") -> None:
                 if t.status == STATUS_QUEUED
                 and not t.cancel_requested
                 and not execution_held(app, t.child_session_id)
-                and not context_preparing(app, t.child_session_id)
             ),
             key=lambda t: t.created_at,
         )
@@ -753,28 +626,70 @@ def _admit_next_queued(app: "FastAPI") -> None:
         )
         if task is None:
             return
-        child = app.state.sessions.get(task.child_session_id)
-        pending = (getattr(child, "metadata", {}) or {}).get("pending_spawn", {}) if child else {}
-        spec = TaskSpec(
-            child_expert_id=task.agent_ref.get("expert_id", ""),
-            task_text=pending.get("task_text", ""),
-            parent_session_id=task.parent_session_id,
-            target_blueprint_id=str(
-                pending.get("target_blueprint_id") or task.agent_ref.get("blueprint_id") or ""
-            ),
-            requesting_expert_id=task.agent_ref.get("requesting_expert_id", "main"),
-            parent_turn_id=task.parent_turn_id,
-            depth=task.depth,
-            mode=pending.get("mode", "async"),
-            workflow_state=pending.get("workflow_state") or None,
-            fanout_bound=task.fanout_bound,
-            seed_context=pending.get("seed_context", ""),
-            skip_declared_check=bool(pending.get("skip_declared_check", False)),
-            workspace_id=pending.get("workspace_id"),
-            session_mode=pending.get("session_mode"),
-            session_scope_metadata=pending.get("session_scope_metadata"),
-            session_approval_profile=pending.get("session_approval_profile"),
-            continuation_task_id=pending.get("continuation_task_id", task.supersedes_task_id),
+        defaults = {
+            "child_expert_id": task.agent_ref.get("expert_id", ""),
+            "task_text": task.description,
+            "parent_session_id": task.parent_session_id,
+            "requesting_expert_id": task.agent_ref.get("requesting_expert_id", "main"),
+            "parent_turn_id": task.parent_turn_id,
+            "depth": task.depth,
+            "fanout_bound": task.fanout_bound,
+            "continuation_task_id": task.supersedes_task_id,
+        }
+        spec = TaskSpec(**{**defaults, **task.launch_context})
+        from clio_agent.gact.task_fold import (
+            finish_agent_task_transition,
+            fold_agent_task_transition,
         )
-        reg.register(replace(task, queued_reason=""))  # clear queued_reason as it launches
-        _launch(app, reg.get(task.task_id), spec)
+        from clio_agent.tools.task_call_context import permission_snapshot, require_admission
+
+        try:
+            require_admission(app, task.parent_session_id)
+            validate_task_spec(app, spec)
+            if task.launch_permissions and task.launch_permissions != permission_snapshot(
+                app, task.parent_session_id
+            ):
+                raise SpawnError(
+                    "Parent permissions changed while the assignment was queued",
+                    reason="spawn_admission_revoked",
+                )
+        except (SpawnError, RuntimeError) as exc:
+            outcome = fold_agent_task_transition(
+                app,
+                task.task_id,
+                "failed",
+                error_reason="spawn_admission_revoked",
+                result={"error": str(exc), "execution_started": False},
+                notify_pending=task.project_to_parent,
+                updated_at=_now(),
+            )
+            finish_agent_task_transition(app, outcome)
+            continue
+        task = reg.register(replace(task, queued_reason=""))
+        _launch(app, task, spec)
+
+
+async def _admit_queued_async(app: "FastAPI") -> None:
+    """Share the conversation admission lock with initial child submissions."""
+    import asyncio
+
+    lock = getattr(app.state, "conversation_admission_lock", None)
+    if lock is None:
+        lock = app.state.conversation_admission_lock = asyncio.Lock()
+    async with lock:
+        await asyncio.to_thread(_admit_queued_on_worker, app)
+
+
+def _admit_next_queued(app: "FastAPI") -> None:
+    """Hint the conversation owner's admission path; no independent launch worker."""
+    runner = getattr(app.state, "turn_runner", None)
+    loop = getattr(app.state, "mcp_app_loop", None)
+    if runner is None or loop is None or not loop.is_running():
+        _admit_queued_on_worker(app)
+        return
+    queued = next(
+        (task for task in app.state.agent_task_registry.snapshot() if task.status == STATUS_QUEUED),
+        None,
+    )
+    if queued is not None:
+        runner.request_input_admission(queued.child_session_id)

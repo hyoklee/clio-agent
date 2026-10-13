@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -183,6 +183,7 @@ class MessageIntentStore:
         self._lock = threading.RLock()
         self._pending: dict[str, PendingSteer] = {}
         self._queued: dict[str, QueuedMessage] = {}
+        self._promoting: set[str] = set()
         self._acceptances: dict[str, dict[str, Any]] = {}
         self._load()
 
@@ -365,6 +366,49 @@ class MessageIntentStore:
             self._flush_locked()
             return settled
 
+    def mark_input_committed(self, session_id: str, message_id: str) -> PendingSteer | None:
+        """Rebuild the local steer view only after Core confirms recipient input."""
+        with self._lock:
+            row = self._pending.get(message_id)
+            if row is None or row.session_id != session_id or row.state in _SETTLED_STEER_STATES:
+                return None
+            row.state = "consumed"
+            row.consumed_at = _now_iso()
+            self._flush_locked()
+            return row.model_copy(deep=True)
+
+    async def promote_queued_async(
+        self,
+        session_id: str,
+        message_id: str,
+        revision: int,
+        promote: Callable[[QueuedMessage], Awaitable[Any]],
+    ) -> tuple[QueuedMessage, Any] | None:
+        """Retain the durable queue row until asynchronous acceptance confirms."""
+        with self._lock:
+            row = self._queued.get(message_id)
+            if row is None or row.session_id != session_id:
+                return None
+            if row.revision != revision:
+                raise RevisionConflictError(row.model_copy(deep=True))
+            if message_id in self._promoting:
+                raise ValueError("queued_message_promotion_in_progress")
+            self._promoting.add(message_id)
+            selected = row.model_copy(deep=True)
+        try:
+            result = await promote(selected)
+            with self._lock:
+                current = self._queued.get(message_id)
+                if current is None or current.revision != revision:
+                    raise RuntimeError("accepted_queue_reservation_changed")
+                self._queued.pop(message_id)
+                self._normalize_positions_locked(session_id)
+                self._flush_locked()
+            return selected, result
+        finally:
+            with self._lock:
+                self._promoting.discard(message_id)
+
     def list_queued(self, session_id: str) -> list[QueuedMessage]:
         """Return authoritative server order for a session's queued messages."""
 
@@ -431,6 +475,8 @@ class MessageIntentStore:
                 return None
             if row.revision != revision:
                 raise RevisionConflictError(row.model_copy(deep=True))
+            if message_id in self._promoting:
+                raise RevisionConflictError(row.model_copy(deep=True))
             if parts is not None:
                 row.parts = list(parts)
             if metadata is not None:
@@ -453,6 +499,8 @@ class MessageIntentStore:
             row = self._queued.get(message_id)
             if row is None or row.session_id != session_id:
                 return None
+            if message_id in self._promoting:
+                raise RevisionConflictError(row.model_copy(deep=True))
             if row.revision != revision:
                 raise RevisionConflictError(row.model_copy(deep=True))
             deleted = self._queued.pop(message_id)
@@ -473,7 +521,10 @@ class MessageIntentStore:
             if len(ordered_ids) != len(set(ordered_ids)) or set(ordered_ids) != set(current):
                 raise ValueError("queued message reorder set does not match server state")
             for message_id, row in current.items():
-                if expected_revisions.get(message_id) != row.revision:
+                if (
+                    expected_revisions.get(message_id) != row.revision
+                    or message_id in self._promoting
+                ):
                     raise RevisionConflictError(row.model_copy(deep=True))
             stamp = _now_iso()
             for position, message_id in enumerate(ordered_ids):
@@ -501,40 +552,17 @@ class MessageIntentStore:
         revision: int,
         promote: Callable[[QueuedMessage], T],
     ) -> tuple[QueuedMessage, T] | None:
-        """Accept and remove one queued row as one revision-checked transaction.
+        """Worker-only compatibility alias over the single asynchronous promotion policy."""
+        import asyncio
 
-        RESERVE-then-accept, not accept-under-lock. The row is removed from the
-        queue under the lock, which is what actually makes the transaction
-        exclusive — edit, delete, reorder, a manual promotion and the idle
-        auto-dispatch all miss a row that is no longer in ``_queued``. The
-        callback then runs OUTSIDE the lock: it stages a whole turn (transcript
-        write, provider validation, background task), and holding the store's
-        RLock across that blocked every other queue reader for its duration.
+        async def accept(row: QueuedMessage) -> T:
+            return await asyncio.to_thread(promote, row)
 
-        If acceptance raises, the reservation is rolled back — the row is durable
-        and editable again at its ORIGINAL revision, so a client's revision guard
-        still matches. Acceptance idempotency makes a process interruption after
-        acceptance but before removal safe to replay on the next attempt.
-        """
-
-        with self._lock:
-            row = self._queued.get(message_id)
-            if row is None or row.session_id != session_id:
-                return None
-            if row.revision != revision:
-                raise RevisionConflictError(row.model_copy(deep=True))
-            reserved = self._queued.pop(message_id)
-            self._normalize_positions_locked(session_id)
-            self._flush_locked()
         try:
-            result = promote(reserved.model_copy(deep=True))
-        except BaseException:
-            with self._lock:
-                self._queued[reserved.id] = reserved
-                self._normalize_positions_locked(session_id)
-                self._flush_locked()
-            raise
-        return reserved.model_copy(deep=True), result
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(self.promote_queued_async(session_id, message_id, revision, accept))
+        raise RuntimeError("Await promote_queued_async on the application loop")
 
     def delete_session(self, session_id: str) -> None:
         """Remove every pending, queued, and idempotency row owned by a session."""

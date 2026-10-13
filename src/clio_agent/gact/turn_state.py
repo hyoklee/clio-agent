@@ -293,12 +293,16 @@ def new_turn_state(
         )
 
         execution_blueprint_id = DEEP_RESEARCH_BLUEPRINT_ID
+    from clio_agent.gact.assignment_history import task_for_session
+
+    assignment = task_for_session(app, sess)
     _ctx.set_turn_identity(
         app=app,
         session_id=sid,
         turn_id=turn_id,
         trace_id=trace_id,
         execution_blueprint_id=execution_blueprint_id,
+        context_epoch=assignment.context_epoch if assignment is not None else "",
     )
     from clio_agent.gact.app import _dspy_images_from_parts  # noqa: PLC0415
     from clio_agent.gact.messaging import _dspy_files_from_parts  # noqa: PLC0415

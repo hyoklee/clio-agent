@@ -37,10 +37,9 @@ def build_task_tools() -> list[Any]:
     read_scope = {
         "scope": {
             "type": "string",
-            "enum": ["session", "workspace", "global"],
-            "description": "Default session tree; peer reads require explicit user_intent.",
+            "enum": ["tree", "authorized"],
+            "description": "Own session tree by default; authorized also includes peers explicitly granted by a human.",
         },
-        "user_intent": {"type": "string", "description": "User-authorized coordination purpose."},
     }
     declarations: list[tuple[Callable[..., Any], dict[str, Any], bool]] = [
         (
@@ -63,8 +62,8 @@ def build_task_tools() -> list[Any]:
                 "pattern": optional_string,
                 "timeout_s": timeout_arg,
                 "notify": {
-                    "type": "boolean",
-                    "description": "Subscribe to peer completion via your mailbox; busy injection or idle wake.",
+                    "type": ["boolean", "null"],
+                    "description": "True subscribes to this exact handle, false unsubscribes, omission preserves the subscription. Busy injection or idle wake.",
                 },
                 **read_scope,
             },

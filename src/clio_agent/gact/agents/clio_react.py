@@ -47,14 +47,13 @@ import math
 import threading
 import traceback
 import uuid
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
 import anyio
 import dspy
-import pydantic
 from dspy.lm15 import (
     CacheConfig,
     Config,
@@ -69,6 +68,7 @@ from dspy.lm15 import (
     TextPart,
     ThinkingPart,
     ToolCallPart,
+    ToolResultPart,
 )
 from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError, LMUnexpectedError
 
@@ -76,7 +76,14 @@ from clio_agent.errors import ClioError, MCPProtocolError
 from clio_agent.gact.agents import clio_react_extract as extract
 from clio_agent.gact.agents import clio_react_record as record
 from clio_agent.gact.agents import clio_react_stream as stream
-from clio_agent.gact.agents.clio_react_submit import active_react_scope_safe, record_submit_audit
+from clio_agent.gact.agents.clio_react_submit import (
+    active_react_scope_safe,
+    pending_turn_yield,
+    record_submit_audit,
+)
+from clio_agent.gact.agents.clio_react_submit import (
+    submit_tool as _submit_tool,
+)
 from clio_agent.gact.agents.github_shell_guidance import github_shell_guidance
 from clio_agent.gact.agents.task_guidance import task_guidance
 from clio_agent.gact.injection_parts import emit_injection
@@ -161,13 +168,19 @@ class ClioReAct(dspy.Module):
 
     def __init__(self, signature: Any, tools: Iterable[Any], max_iters: int = 20) -> None:
         super().__init__()
-        self.signature = dspy.ensure_signature(signature)
+        self.signature: Any = dspy.ensure_signature(signature)
+        if self.signature is None:
+            raise ValueError("ClioReAct requires an output signature")
         self.max_iters = max_iters
         # The module's own LM, as on a DSPy predictor: ``dspy.BestOfN`` / ``dspy.Refine``
         # read it and set a per-rollout copy; unset, the context's LM is used.
         self.lm: Any = None
         user_tools = [t if isinstance(t, dspy.Tool) else dspy.Tool(t) for t in tools]
-        self.tools: dict[str, dspy.Tool] = {t.name: t for t in user_tools}
+        self.tools: dict[str, dspy.Tool] = {}
+        for tool in user_tools:
+            if not isinstance(tool.name, str) or not tool.name.strip():
+                raise ValueError("Agent tools require an explicit nonempty name")
+            self.tools[tool.name] = tool
         if "submit" in self.tools:
             raise ValueError("`submit` is reserved as the final-output tool.")
         self.tools["submit"] = _submit_tool(self.signature)
@@ -198,37 +211,6 @@ class ClioReAct(dspy.Module):
 # --------------------------------------------------------------------------- #
 # The request pieces                                                          #
 # --------------------------------------------------------------------------- #
-def _submit_tool(signature: Any) -> dspy.Tool:
-    """The reserved ``submit`` tool: its args are the signature's outputs.
-
-    An output field declared with a Pydantic default may be omitted (the default is
-    filled -- the author declared it droppable); every other field is required.
-    """
-    output_fields = signature.output_fields
-    names = list(output_fields)
-    defaults = {
-        name: default
-        for name, field in output_fields.items()
-        for has_default, default in [_declared_default(field)]
-        if has_default
-    }
-
-    def submit(**kwargs: Any) -> dict[str, Any]:
-        missing = [n for n in names if n not in kwargs and n not in defaults]
-        if missing:
-            raise ValueError(f"Missing required final output field(s): {', '.join(missing)}")
-        return {n: kwargs[n] if n in kwargs else defaults[n] for n in names}
-
-    return dspy.Tool(
-        submit,
-        name="submit",
-        desc=(
-            "Submit the final outputs for the task. Use it only when these structured "
-            "outputs are required; otherwise reply without calling a tool."
-        ),
-        args={name: _json_schema(field.annotation) for name, field in output_fields.items()},
-        arg_types={name: field.annotation for name, field in output_fields.items()},
-    )
 
 
 def _function_tool(tool: dspy.Tool) -> FunctionTool:
@@ -320,6 +302,9 @@ def _place_tool_media(messages: list[Message], placement: str) -> list[Message]:
         if message.role == "tool":
             parts = []
             for part in message.parts:
+                if not isinstance(part, ToolResultPart):
+                    parts.append(part)
+                    continue
                 kept = [p for p in part.content if not isinstance(p, ImagePart | DocumentPart)]
                 moved = [p for p in part.content if isinstance(p, ImagePart | DocumentPart)]
                 if moved:
@@ -477,7 +462,7 @@ class _Loop:
                 return self._prediction({}, "draft_alternatives_yield")
             self.recorder.completed({"answer": answer}, self.step + 1)
             return self._prediction({"answer": answer}, "variant_selected")
-        if yield_name := record.pending_turn_yield(calls):
+        if yield_name := pending_turn_yield(calls):
             return self._prediction({}, f"{yield_name}_yield")
         if final is not None:
             if (self.max_iters <= 0 or self.step + 1 < self.max_iters) and self._arrivals():
@@ -742,26 +727,6 @@ def _turn_cancelled() -> BaseException:
     return _TurnCancelled(
         _cancelled_error_info(_ctx.active_session_id(), execution_cancellation="cooperative")
     )
-
-
-def _declared_default(field: Any) -> tuple[bool, Any]:
-    """``(True, default)`` for an output field declared with a Pydantic default."""
-    from pydantic_core import PydanticUndefined  # noqa: PLC0415
-
-    default = getattr(field, "default", PydanticUndefined)
-    if default is not PydanticUndefined:
-        return True, default
-    factory: Callable[[], Any] | None = getattr(field, "default_factory", None)
-    if factory is not None:
-        return True, factory()
-    return False, None
-
-
-def _json_schema(annotation: Any) -> dict[str, Any]:
-    try:
-        return pydantic.TypeAdapter(annotation).json_schema()
-    except (pydantic.PydanticSchemaGenerationError, TypeError, ValueError):
-        return {"type": "string"}
 
 
 def _fmt_exc(err: BaseException, *, limit: int = 5) -> str:

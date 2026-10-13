@@ -87,9 +87,9 @@ def task_views(
         subagent = row["kind"] == "agent"
         if subagent:
             handle = row.get("handle_id") or row["id"]
-            kind = "Subagent"
+            kind = row.get("assignment_kind", "Subagent")
             description = row.get("description", "")
-            owner = row["parent_session_id"]
+            owner = row["child_session_id"] if kind == "Session" else row["parent_session_id"]
             if row.get("placement", "").startswith("relay:"):
                 from clio_agent.gact.task_backend_identity import relay_key
 
@@ -159,7 +159,7 @@ def task_views(
         if kind == "Session":
             row["owner"]["kind"] = "human"
             row["label"] = row.get("backend", {}).get("name") or row["title"]
-            row["supported_actions"] = ["observe", "wait", "result", "message"]
+            row["supported_actions"].append("message")
         if id(row) not in owned_rows:
             row["access"] = "peer"
             if kind in {"Session", "Subagent"}:
@@ -181,7 +181,7 @@ def task_views(
     projected = list(
         {
             ("Subagent", row["id"])
-            if row["task_kind"] == "Subagent"
+            if row.get("kind") == "agent"
             else TaskKey.from_wire(row["key"]): row
             for row in rows
         }.values()

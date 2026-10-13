@@ -12,8 +12,11 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
 
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.storage import make_arc_store
 from clio_agent.gact import context as _ctx
 from clio_agent.gact import goal as goal_mod
+from clio_agent.gact.events import EventBus
 from clio_agent.gact.goal import (
     DEFAULT_MAX_GOAL_ITERS,
     GOAL_OUTCOME_REASONS,
@@ -30,16 +33,18 @@ from clio_agent.gact.goal import (
 )
 from clio_agent.gact.scheduler import ScheduleStore
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.turn_runner import TurnRunner
 
 
-class _Bus:
+class _Bus(EventBus):
     """Minimal bus exposing the activity heartbeat the loop's stall probe reads."""
 
     def __init__(self) -> None:
+        super().__init__()
         self._m: dict[str, float] = {}
 
-    def last_publish_monotonic(self, sid: str) -> float:
-        return self._m.get(sid, 0.0)
+    def last_publish_monotonic(self, session_id: str) -> float:
+        return self._m.get(session_id, 0.0)
 
     def bump(self, sid: str, value: float) -> None:
         self._m[sid] = value
@@ -53,8 +58,9 @@ def _app(tmp_path: Path) -> SimpleNamespace:
         deferred_schedules=set(),
         sessions=SessionStore(path=None),
         bus=_Bus(),
+        arc=ARCMemory(store=make_arc_store(backend="cte")),
+        turn_runner=TurnRunner({}),
         messages={},  # dict-like ledger set: .get(sid, []) returns []
-        loop_inboxes={},
         semantic_event_sink=None,  # _emit_semantic_event no-ops
     )
     return SimpleNamespace(state=state)
@@ -194,11 +200,11 @@ def test_dispatch_redrives_when_judge_not_met(tmp_path: Path, monkeypatch: Any) 
         assert goal["active"] is True
         assert goal["iters_elapsed"] == 1
         # A re-drive was enqueued on the loop-inbox seam (the same one the Stop-loop rides).
-        from clio_agent.gact.loop_inbox import inbox_for  # noqa: PLC0415
+        from clio_agent.gact.agent_mailbox import pending_mail  # noqa: PLC0415
 
-        events = inbox_for(app, sid).drain()
+        events = pending_mail(app, sid)
         assert len(events) == 1
-        assert events[0].metadata.get("goal_redrive") is True
+        assert events[0]["metadata"].get("goal_redrive") is True
 
     _in_ctx(body)
 
@@ -217,9 +223,9 @@ def test_dispatch_settles_and_autoclears_when_judge_met(tmp_path: Path, monkeypa
         assert goal["cleared"] is True
         assert goal["met"] is True
         # No re-drive enqueued on a met goal.
-        from clio_agent.gact.loop_inbox import inbox_for  # noqa: PLC0415
+        from clio_agent.gact.agent_mailbox import pending_mail  # noqa: PLC0415
 
-        assert inbox_for(app, sid).drain() == []
+        assert pending_mail(app, sid) == []
 
     _in_ctx(body)
 

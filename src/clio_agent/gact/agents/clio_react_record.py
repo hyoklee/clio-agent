@@ -49,14 +49,6 @@ from clio_agent.gact.injection_parts import emit_injection
 
 logger = logging.getLogger(__name__)
 
-# Tools whose successful call is itself the terminal outcome of the current model
-# turn. Their authoritative payload stays in session metadata until the post-forward
-# pause seam mints the user-facing interaction.
-TURN_YIELD_METADATA: dict[str, str] = {
-    "ask_user": "pending_ask_user",
-    "plan_exit": "pending_plan_exit",
-}
-
 _FOLDED_KINDS = frozenset({"user", "thought", "tool_call", "observation", "summary"})
 # clio-core record kinds that are never the agent's context (skipped by declaration).
 _NON_CONTEXT_KINDS = frozenset(
@@ -441,7 +433,14 @@ class StepRecorder:
 
     def user_message(self, message: Message) -> None:
         """Record the forward's user message; the projection starts every turn with it."""
-        self.head_id = self._write("user", user_to_record(message), 0, "")
+        content = user_to_record(message)
+        from clio_agent.gact.context import active_app
+
+        journal = getattr(getattr(active_app(), "state", None), "core_task_journal", None)
+        if journal is not None:
+            if identities := journal.initial_input_notifications(self.session, self.turn_id):
+                content["notification_ids"] = identities
+        self.head_id = self._write("user", content, 0, "")
 
     def carry_over(self, ledger: Sequence[Any]) -> None:
         """Restore an absent scope from its recorded operations, once.
@@ -450,6 +449,10 @@ class StepRecorder:
         it preserves recorded tool parts and declares any missing information.
         """
         if self.arc is None or self.arc.has_segments(self.session, self.scope):
+            return
+        if "#epoch:" in self.scope:
+            # Fresh context is another scope in the existing Core hierarchy.
+            # Its first input must not reconstruct the predecessor's transcript.
             return
         from clio_agent.gact.conversation_projection import (  # noqa: PLC0415
             model_context_messages,
@@ -571,16 +574,11 @@ class StepRecorder:
 
     def commit_input(self, step: int) -> None:
         """Confirm this iteration's fixed context before model execution."""
-        import asyncio
-
         from clio_agent.gact.context import active_app
 
-        app = active_app()
-        journal = getattr(getattr(app, "state", None), "core_task_journal", None)
-        if app is not None and journal is not None:
-            asyncio.run_coroutine_threadsafe(
-                journal.commit_input(self, step), app.state.mcp_app_loop
-            ).result()
+        journal = getattr(getattr(active_app(), "state", None), "core_task_journal", None)
+        if journal is not None:
+            journal.commit_input_from_worker(self, step)
 
     def step_open(self, step: int, span: str, text: str, calls: Sequence[ToolCallPart]) -> None:
         """The pre-execution breadcrumb: a crash mid-step still leaves the step's opening."""
@@ -760,37 +758,6 @@ def _token_estimate(content: Mapping[str, Any]) -> int:
 
 def _field(row: Any, name: str) -> Any:
     return row.get(name) if isinstance(row, Mapping) else getattr(row, name, None)
-
-
-def pending_turn_yield(calls: Sequence[ToolCallPart]) -> str:
-    """The successful turn-ending tool in this step (``ask_user`` / ``plan_exit``), if any.
-
-    The tool name alone is not enough: a rejected ``plan_exit`` or malformed
-    ``ask_user`` stays an ordinary tool error. The un-surfaced session-metadata record
-    the tool wrote is the proof it completed and the turn should yield to the user.
-    """
-    from clio_agent.gact import context as _ctx  # noqa: PLC0415
-
-    names = {call.name for call in calls}
-    if not names.intersection(TURN_YIELD_METADATA):
-        return ""
-    app = _ctx.active_app()
-    session_id = _ctx.active_session_id()
-    sessions = getattr(getattr(app, "state", None), "sessions", None)
-    session = sessions.get(session_id) if sessions is not None and session_id else None
-    metadata = getattr(session, "metadata", None)
-    if not isinstance(metadata, Mapping):
-        return ""
-    for tool_name, key in TURN_YIELD_METADATA.items():
-        pending = metadata.get(key)
-        if (
-            tool_name in names
-            and isinstance(pending, Mapping)
-            and pending
-            and not pending.get("surfaced")
-        ):
-            return tool_name
-    return ""
 
 
 def _text(value: Any) -> str:

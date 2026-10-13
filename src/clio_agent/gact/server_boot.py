@@ -77,12 +77,25 @@ async def start_task_hosts(app: FastAPI) -> None:
     from clio_agent.tools.mcp_task_records import set_task_record_store
     from clio_agent.tools.native_task_host import start_native_hosts
 
+    app.state.task_hosts_ready = False
     await core_task_journal(app).restore()
+    from clio_agent.gact.assignment_history import restore_assignment_history
+
+    await asyncio.to_thread(restore_assignment_history, app)
+    from clio_agent.gact.composer_runtime import recover_pending_feedback
+
     store = app_task_store(app)
     await asyncio.to_thread(store.migrate, app)
     set_task_record_store(store)
     await reconcile_connected_storage(app)
     await start_native_hosts(app)
+    app.state.task_hosts_ready = True
+    await asyncio.to_thread(
+        recover_pending_feedback, app, app.state.gact_deps.append_session_message
+    )
+    from clio_agent.gact.task_completion_wake import redrive_pending_completion_wakes
+
+    redrive_pending_completion_wakes(app)
 
 
 def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:

@@ -13,6 +13,7 @@ from threading import RLock
 from typing import Any, Callable, TypeVar
 
 from clio_agent.gact.agent_tasks import AgentTask, persist_agent_task, publish_agent_task_event
+from clio_agent.gact.assignment_history import persist_assignment_control, task_for_session
 
 HOLD_KEY = "agent_execution_hold"
 CONTROL_LOCK = RLock()
@@ -34,9 +35,21 @@ def on_app_loop(app: Any, fn: Callable[[], T]) -> T:
 
 
 def execution_held(app: Any, sid: str) -> bool:
-    """Read the persisted hold, including after an application restart."""
+    """Read the Core-backed owner hold or its explicitly provisional outage control."""
     session = app.state.sessions.get(sid)
-    return bool((getattr(session, "metadata", None) or {}).get(HOLD_KEY))
+    task = task_for_session(app, session)
+    hold = getattr(app.state, "agent_execution_holds", {}).get(sid)
+    legacy = (getattr(session, "metadata", None) or {}).get(HOLD_KEY)
+    if task is not None:
+        if task.is_terminal:
+            return False
+        return task.live_state in {"paused", "pause_requested"} or bool(
+            hold
+            and hold.get("task_id") == task.task_id
+            or legacy
+            and (not isinstance(legacy, dict) or legacy.get("task_id") == task.task_id)
+        )
+    return bool(hold or legacy)
 
 
 def require_execution_allowed(app: Any, sid: str) -> None:
@@ -62,23 +75,17 @@ def retained_model_metadata(app: Any, sid: str) -> dict[str, Any]:
     return {}
 
 
-def _publish(app: Any, task: AgentTask, state: str) -> AgentTask:
+def _publish(
+    app: Any, task: AgentTask, state: str, *, allow_unconfirmed: bool = False
+) -> AgentTask:
     updated = replace(task, live_state=state, updated_at=datetime.now(timezone.utc).isoformat())
-    persist_agent_task(app, updated)
+    updated = (
+        persist_assignment_control(app, updated)
+        if allow_unconfirmed
+        else persist_agent_task(app, updated)
+    )
     publish_agent_task_event(app, updated, "agent.task.updated")
     return updated
-
-
-def defer_paused_settlement(app: Any, task: AgentTask, mode: str) -> bool:
-    """Keep the same run nonterminal when its stopped model owner reaches idle."""
-    if task.cancel_requested or not execution_held(app, task.child_session_id):
-        return False
-    app.state.sessions.update(
-        task.child_session_id,
-        metadata_patch={"background_task_continuation": {"task_id": task.task_id, "mode": mode}},
-    )
-    _publish(app, task, "paused")
-    return True
 
 
 def pause_subagent(app: Any, task: AgentTask) -> dict[str, Any]:
@@ -92,15 +99,9 @@ def pause_subagent(app: Any, task: AgentTask) -> dict[str, Any]:
             raise ValueError("relay_pause_unsupported")
         sid = task.child_session_id
         if not execution_held(app, sid):
-            app.state.sessions.update(
-                sid,
-                metadata_patch={
-                    HOLD_KEY: {
-                        "task_id": task.task_id,
-                        "requested_at": datetime.now(timezone.utc).isoformat(),
-                    }
-                },
-            )
+            holds = getattr(app.state, "agent_execution_holds", {})
+            app.state.agent_execution_holds = holds
+            holds[sid] = {"task_id": task.task_id}
         busy = app.state.turn_runner.busy(sid)
         if busy:
             app.state.cancel_flags.add(sid)
@@ -110,9 +111,9 @@ def pause_subagent(app: Any, task: AgentTask) -> dict[str, Any]:
             from clio_agent.providers.claude_code_cancel import abort_session_streams
 
             abort_session_streams(sid)
-        updated = _publish(app, task, "pause_requested" if busy else "paused")
-        if not busy:
-            defer_paused_settlement(app, updated, "async")
+        updated = _publish(
+            app, task, "pause_requested" if busy else "paused", allow_unconfirmed=True
+        )
         return lifecycle_result(updated)
 
 
@@ -127,31 +128,21 @@ def resume_subagent(app: Any, task: AgentTask) -> dict[str, Any]:
             return lifecycle_result(task)
         if app.state.turn_runner.busy(sid):
             raise ValueError("pause_not_settled")
-        session = app.state.sessions.get(sid)
+        updated = _publish(app, task, task.status)
+        getattr(app.state, "agent_execution_holds", {}).pop(sid, None)
         app.state.sessions.update(sid, metadata_patch={HOLD_KEY: None})
         app.state.cancel_flags.discard(sid)
         app.state.cancel_events.pop(sid, None)
-        updated = _publish(app, task, task.status)
-        if task.status == "queued":
-            from clio_agent.gact.turn_spawn import _admit_next_queued
+        from clio_agent.gact.agent_mailbox import accept_session_input
 
-            _admit_next_queued(app)
-        else:
-            from clio_agent.gact.task_subagent_owner import resume_background_subagent
-            from clio_agent.gact.turn import _start_background_user_turn
-
-            _start_background_user_turn(
-                app,
-                sid,
-                session,
-                "Resume the retained assignment from its current state. Review pending "
-                "messages and task results. Accepted operations retain their handles; "
-                "do not replay them. This is an execution resume, not a new user request.",
-                message_role="system",
-                metadata={"subagent_resume": {"handle": task.handle_id or task.task_id}},
-                prev_status=session.status,
-            )
-            resume_background_subagent(app, sid)
+        accept_session_input(
+            app,
+            sid,
+            "Resume the retained assignment from its current state. Review pending "
+            "messages and task results. Accepted operations retain their handles; "
+            "do not replay them. This is an execution resume, not a new user request.",
+            metadata={"subagent_resume": {"handle": task.handle_id or task.task_id}},
+        )
         return lifecycle_result(app.state.agent_task_registry.get(task.task_id) or updated)
 
 
@@ -164,4 +155,6 @@ def lifecycle_result(task: AgentTask) -> dict[str, Any]:
         "status": task.live_state or task.status,
         "raw_status": task.status,
         "cancel_requested": task.cancel_requested,
+        "recording": task.recording,
+        "recording_error": task.recording_error,
     }

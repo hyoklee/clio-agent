@@ -10,7 +10,7 @@ def build_agent_lifecycle_tools() -> list[Any]:
     from clio_agent.gact import context
     from clio_agent.gact.agent_targets import resolve_agent_target
     from clio_agent.gact.agents.tool_instrumentation import native_tool
-    from clio_agent.gact.subagent_lifecycle import on_app_loop, pause_subagent, resume_subagent
+    from clio_agent.gact.subagent_lifecycle import pause_subagent, resume_subagent
     from clio_agent.gact.subagent_restart import restart_subagent
 
     def _target(target: str) -> tuple[Any, Any]:
@@ -27,12 +27,12 @@ def build_agent_lifecycle_tools() -> list[Any]:
         reaches idle; it does not cancel the task. Resume explicitly with resume_agent.
         """
         app, task = _target(target)
-        return on_app_loop(app, lambda: pause_subagent(app, task))
+        return pause_subagent(app, task)
 
     def resume_agent(target: str) -> dict[str, Any]:
         """Resume a paused Subagent on the same handle with retained context and results."""
         app, task = _target(target)
-        return on_app_loop(app, lambda: resume_subagent(app, task))
+        return resume_subagent(app, task)
 
     def restart_agent(target: str, fresh: bool = False) -> dict[str, Any]:
         """Restart a Subagent as a linked new handle with retained context by default.

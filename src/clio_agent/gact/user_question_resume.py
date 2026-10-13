@@ -12,11 +12,42 @@ import logging
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from clio_agent.gact.agent_mailbox import accept_session_input
 from clio_agent.gact.events import Event
-from clio_agent.gact.loop_inbox import enqueue_user_steer
 from clio_agent.gact.types import UserQuestion
 
 logger = logging.getLogger(__name__)
+
+
+def dispatch_answered_question(
+    app: Any,
+    deps: Any,
+    sid: str,
+    question: UserQuestion,
+    *,
+    set_session_status: Callable[..., None],
+) -> None:
+    """Resolve one authoritative answer through its existing owner, off the API loop."""
+    from clio_agent.gact.elicitation_bridge import resolve_answered_question
+    from clio_agent.gact.routes.session_question_helpers import pending_user_questions
+
+    if resolve_answered_question(app, deps, sid, question):
+        return
+    resume_answered_question(
+        app,
+        deps,
+        sid,
+        question,
+        has_pending=any(q.response_mode == "blocking" for q in pending_user_questions(app, sid)),
+        set_session_status=set_session_status,
+    )
+    app.state.bus.publish(
+        Event(
+            type="user_question.answered",
+            session_id=sid,
+            payload=question.model_dump(exclude_none=True),
+        )
+    )
 
 
 def settled_question_metadata(app: Any, sid: str, question: Any) -> dict[str, Any]:
@@ -102,55 +133,33 @@ def resume_answered_question(
         # fresh idle/steer delivery.
         **dict(question.answer_metadata or {}),
     }
-    agent_initializing = app.state.agent is None
-    if should_resume and (agent_initializing or app.state.turn_runner.busy(sid)):
-        enqueue_user_steer(
+    if should_resume:
+        message_id = accept_session_input(
             app,
             sid,
             deps.ask_user_resume_text(question),
             {**resume_metadata, "question_id": question.id},
+            steer_message_id="question-answer_" + question.id,
+            source_kind="human",
         )
         app.state.sessions.update(
             sid,
-            status="idle" if agent_initializing else None,
-            metadata_patch=metadata_patch,
+            status="idle" if not app.state.turn_runner.busy(sid) else None,
+            metadata_patch={**metadata_patch, "automatic_input_hold": None},
         )
-        reason = "agent_initializing" if agent_initializing else "session_busy"
         app.state.bus.publish(
             Event(
                 type="user_question.resume_deferred",
                 session_id=sid,
-                payload={"question_id": question.id, "session_id": sid, "reason": reason},
-            )
-        )
-        logger.info(
-            "user_question resume deferred reason=%s session_id=%s question_id=%s",
-            reason,
-            sid,
-            question.id,
-        )
-        return
-    if should_resume:
-        app.state.sessions.update(sid, metadata_patch=metadata_patch)
-        resumed_msg = deps.start_background_user_turn(
-            sid,
-            session,
-            deps.ask_user_resume_text(question),
-            metadata=resume_metadata,
-            prev_status=session.status if session is not None else "waiting_user",
-        )
-        app.state.bus.publish(
-            Event(
-                type="user_question.resumed",
-                session_id=sid,
                 payload={
                     "question_id": question.id,
                     "session_id": sid,
-                    "queued_user_message_id": resumed_msg.id,
-                    "source_turn_id": question.turn_id,
+                    "message_id": message_id,
+                    "reason": "pending_input_admission",
                 },
             )
         )
+        app.state.turn_runner.request_input_admission(sid)
         return
     set_session_status(
         sid,

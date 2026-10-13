@@ -14,7 +14,7 @@ from clio_agent.gact.message_intents import (
     QueuedMessage,
     RevisionConflictError,
 )
-from clio_agent.gact.message_submission import accept_message, prepare_references
+from clio_agent.gact.message_submission import accept_message_async, prepare_references
 from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.question_answer_message import (
     ANSWERS_QUESTION_KEY,
@@ -168,6 +168,12 @@ def register_message_intent_routes(app: FastAPI, deps: "GactDeps") -> None:
         """
 
         require_session(sid)
+        from clio_agent.gact.agent_mailbox import withdraw_human_feedback
+
+        try:
+            await run_off_loop(withdraw_human_feedback, app, sid, message_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
         cancelled = app.state.message_intents.cancel_pending(sid, message_id)
         if cancelled is None:
             current = app.state.message_intents.get_pending(sid, message_id)
@@ -177,9 +183,6 @@ def register_message_intent_routes(app: FastAPI, deps: "GactDeps") -> None:
                 status_code=409,
                 detail={"error": "steer_already_settled", "state": current.state},
             )
-        inbox = app.state.loop_inboxes.get(sid)
-        if inbox is not None:
-            inbox.cancel_user_message(message_id)
         messages = [row for row in app.state.messages.get(sid, []) if row.id != message_id]
         await run_off_loop(deps.replace_session_messages, app, sid, messages)  # #1334
         payload = {"message_id": message_id, "session_id": sid}
@@ -345,11 +348,11 @@ def register_message_intent_routes(app: FastAPI, deps: "GactDeps") -> None:
         )
         prepared = await prepare_references(app, sid, promotion_request)
         try:
-            promoted = app.state.message_intents.promote_queued(
+            promoted = await app.state.message_intents.promote_queued_async(
                 sid,
                 message_id,
                 req.revision,
-                lambda row: accept_message(
+                lambda row: accept_message_async(
                     app,
                     deps,
                     sid,

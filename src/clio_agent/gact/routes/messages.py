@@ -42,7 +42,6 @@ from clio_agent.gact.message_wire import normalize_thought_ownership
 from clio_agent.gact.messaging import raise_on_reserved_metadata
 from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.protocol_v3 import project_for_request, transcript_entities
-from clio_agent.gact.question_answer_message import prepare_question_answer
 from clio_agent.gact.routes.response_feedback import register_response_feedback_routes
 from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui
 from clio_agent.gact.types import (
@@ -110,11 +109,27 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         """
 
         intents = getattr(app.state, "message_intents", None)
-        if intents is None or intents.cancel_pending(sid, message_id) is None:
+        if intents is None or not any(
+            row.message_id == message_id for row in intents.list_pending(sid)
+        ):
             return
-        inbox = (getattr(app.state, "loop_inboxes", None) or {}).get(sid)
-        if inbox is not None:
-            inbox.cancel_user_message(message_id)
+        from clio_agent.gact.agent_mailbox import withdraw_human_feedback
+
+        try:
+            withdraw_human_feedback(app, sid, message_id)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=ErrorEnvelope(
+                    error=ErrorInfo(
+                        error="feedback_already_committed",
+                        message="The feedback has entered model context and cannot be withdrawn.",
+                        details={"session_id": sid, "message_id": message_id},
+                        recoverable=False,
+                    )
+                ).model_dump(exclude_none=True),
+            ) from exc
+        intents.cancel_pending(sid, message_id)
         app.state.bus.publish(
             Event(
                 type="pending_steer.cancelled",
@@ -146,10 +161,10 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             # carries their parts would delete a live surface as a side effect
             # of a prose edit, with no lifecycle event. Preserve them the way
             # compaction and rollback do (routes/session_a2ui_preservation.py).
+            await run_off_loop(_retire_pending_steer_intent, sid, message_id)
             removed = msgs.pop(i)
             retained = preserve_a2ui(sid, msgs, [removed], "message_delete")
             await run_off_loop(deps.replace_session_messages, app, sid, retained)  # #1334
-            _retire_pending_steer_intent(sid, message_id)
             if sess is not None:
                 app.state.sessions.update(sid, message_count=len(retained))
             app.state.bus.publish(
@@ -299,8 +314,7 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         # reference-carrying POST no longer hashes files and folds evidence
         # ledgers on the event loop.
         # #1448: a message naming a pending question IS that question's answer.
-        answer = prepare_question_answer(app, sid, dict(req.metadata))
-        ack, status_code = await accept_message_async(app, deps, sid, req, answer=answer)
+        ack, status_code = await accept_message_async(app, deps, sid, req)
         del background_tasks
         response.status_code = status_code
         return ack

@@ -5,7 +5,7 @@ forwards the pending question to the parent's HITL surface (see
 :mod:`clio_agent.gact.elicitation_bridge`) instead of failing with the deleted
 ``child_requires_user_input`` reason. This module binds that forward's lifecycle to
 the :class:`~clio_agent.gact.agent_tasks.AgentTask` so EVERY edge terminates typed
-and frees the concurrency slot — never a hang:
+and frees the concurrency slot â€” never a hang:
 
 * no pending question to forward -> :func:`fail_child_task` now;
 * a headless parent that never answers -> :func:`arm_forward_deadline` fails it
@@ -23,11 +23,8 @@ import threading
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.agent_tasks import (
-    AGENT_TASK_EVENTS,
     STATUS_COMPLETED,
     STATUS_FAILED,
-    persist_agent_task,
-    publish_agent_task_event,
 )
 
 if TYPE_CHECKING:
@@ -79,34 +76,21 @@ def forward_waiting_child(
 
 
 def fail_child_task(app: "FastAPI", task: Any, child_sid: str, reason: str, mode: str) -> None:
-    """Terminate a child task with a typed FAILED reason + full lifecycle side effects.
+    """Commit a forwarded failure through the same lifecycle winner as local completion."""
+    from clio_agent.gact.task_fold import finish_agent_task_transition, fold_agent_task_transition
+    from clio_agent.gact.turn_spawn import _now
 
-    Mirrors the completion path (persist, publish, SubagentStop, admit next queued)
-    so a HITL edge that cannot proceed frees its concurrency slot instead of hanging.
-    ``notify_pending`` follows the async-observe contract.
-    """
-
-    from clio_agent.gact.turn_spawn import (  # noqa: PLC0415
-        _admit_next_queued,
-        _now,
-        finalize_child_task_terminal,
+    if task.child_session_id != child_sid:
+        raise ValueError("forwarded_child_identity_mismatch")
+    outcome = fold_agent_task_transition(
+        app,
+        task.task_id,
+        STATUS_FAILED,
+        error_reason=reason,
+        notify_pending=(mode == "async"),
+        updated_at=_now(),
     )
-
-    reg = app.state.agent_task_registry
-    try:
-        updated = reg.transition(
-            task.task_id,
-            STATUS_FAILED,
-            error_reason=reason,
-            notify_pending=(mode == "async"),
-            updated_at=_now(),
-        )
-    except Exception:  # noqa: BLE001 - a transition race falls back to the current row
-        updated = reg.get(task.task_id) or task
-    persist_agent_task(app, updated)
-    publish_agent_task_event(app, updated, AGENT_TASK_EVENTS[updated.status])
-    finalize_child_task_terminal(app, updated, child_sid)  # #1305 review round F3
-    _admit_next_queued(app)
+    finish_agent_task_transition(app, outcome)
 
 
 def fail_forwarded_child_task(app: "FastAPI", task_id: str, reason: str) -> None:
@@ -144,7 +128,7 @@ def arm_forward_deadline(app: "FastAPI", forwarded_qid: str) -> None:
     """Arm a bounded backstop so an unanswered forwarded question cannot hang a task.
 
     After the deadline, if the forwarded question is still pending (headless parent),
-    terminalize it, cancel the child question, and fail the task typed — freeing the
+    terminalize it, cancel the child question, and fail the task typed â€” freeing the
     concurrency slot. A parent answer/cancel before then makes this a no-op.
     """
 
@@ -161,7 +145,7 @@ def arm_forward_deadline(app: "FastAPI", forwarded_qid: str) -> None:
         # Atomically claim expiry (first-wins vs a parent answer/cancel landing now).
         forwarded = claim_question_transition(app, forwarded_qid, "expired")
         if forwarded is None:
-            return  # the parent answered/cancelled in time — nothing to do
+            return  # the parent answered/cancelled in time â€” nothing to do
         # Cancel the child question + fail the task with the TIMEOUT reason, freeing
         # the concurrency slot for a headless (never-answering) parent.
         relay_forwarded_cancel(app, forwarded, reason="child_forward_unattended_timeout")
@@ -172,65 +156,27 @@ def arm_forward_deadline(app: "FastAPI", forwarded_qid: str) -> None:
 
 
 def settle_or_attach_forwarded_task(app: "FastAPI", task_id: str) -> None:
-    """Bind a forwarded task to the outcome of applying its answer (#1113 finding 5 remnant).
-
-    Called after a forwarded child answer is applied. If applying it launched a child
-    turn (resume / plan-exit that resumes), attach :func:`_on_child_done` to that turn
-    so the task settles at the turn's real completion. If NO turn launched (plan-exit
-    ``exit_only`` — the question was answered and honored, the child went idle), the task
-    would otherwise hang forever (its deadline is disabled once the parent question is
-    answered): terminalize it SUCCESS and admit the next queued task, freeing the slot.
-    """
-
-    reg = app.state.agent_task_registry
-    task = reg.get(task_id)
-    if task is None or task.is_terminal:
-        return
-    child_sid = task.child_session_id
-
-    from clio_agent.gact.agent_task_wake import build_child_done_callback  # noqa: PLC0415
-    from clio_agent.gact.turn_spawn import _on_child_done  # noqa: PLC0415
-
-    in_flight = getattr(app.state, "in_flight_turns", {}).get(child_sid)
-    if in_flight is not None:
-        # #1334 review round: MUST pass the finished-turn identity through (the
-        # same builder _launch uses) so _on_child_done's continuation check
-        # (agent_task_wake.resume_on_continuation_turn) recognizes THIS callback
-        # as belonging to the very turn it fired on, rather than mistaking the
-        # still-in-flight entry for a newer continuation and re-chaining forever
-        # (a bare no-finished_turn lambda here stalled the task at RUNNING).
-        in_flight.add_done_callback(
-            build_child_done_callback(_on_child_done, app, task_id, child_sid, "async")
-        )
-        return
-    _complete_forwarded_task(app, task)
+    """Recheck recipient input; the conversation owner settles resumed segments."""
+    task = app.state.agent_task_registry.get(task_id)
+    if task is not None and not task.is_terminal:
+        app.state.turn_runner.request_input_admission(task.child_session_id)
 
 
 def _complete_forwarded_task(app: "FastAPI", task: Any) -> None:
-    """Terminalize a forwarded task SUCCESS (answered + honored, no turn) + admit next."""
+    """Commit a forwarded result once; a losing fold cannot repeat terminal effects."""
+    from clio_agent.gact.task_fold import finish_agent_task_transition, fold_agent_task_transition
+    from clio_agent.gact.turn_spawn import _now
 
-    from clio_agent.gact.turn_spawn import (  # noqa: PLC0415
-        _admit_next_queued,
-        _now,
-        finalize_child_task_terminal,
+    outcome = fold_agent_task_transition(
+        app,
+        task.task_id,
+        STATUS_COMPLETED,
+        result={
+            "message_ref": "",
+            "answer_excerpt": "forwarded user question answered",
+            "workflow_state": {},
+        },
+        notify_pending=True,
+        updated_at=_now(),
     )
-
-    reg = app.state.agent_task_registry
-    try:
-        updated = reg.transition(
-            task.task_id,
-            STATUS_COMPLETED,
-            result={
-                "message_ref": "",
-                "answer_excerpt": "forwarded user question answered",
-                "workflow_state": {},
-            },
-            notify_pending=True,
-            updated_at=_now(),
-        )
-    except Exception:  # noqa: BLE001 - a transition race falls back to the current row
-        updated = reg.get(task.task_id) or task
-    persist_agent_task(app, updated)
-    publish_agent_task_event(app, updated, AGENT_TASK_EVENTS[updated.status])
-    finalize_child_task_terminal(app, updated, task.child_session_id)  # #1305 review round F3
-    _admit_next_queued(app)
+    finish_agent_task_transition(app, outcome)

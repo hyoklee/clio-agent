@@ -15,6 +15,7 @@ cross-concern helpers travel on :class:`GactDeps`; private helpers stay here.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -45,7 +46,6 @@ from clio_agent.gact.routes.session_export import register_session_export_routes
 from clio_agent.gact.routes.session_fork import register_session_fork_route
 from clio_agent.gact.routes.session_question_helpers import (
     normalize_question_options,
-    pending_user_questions,
     question_already_resolved,
     question_not_found,
 )
@@ -71,7 +71,10 @@ from clio_agent.gact.types import (
 )
 from clio_agent.gact.usage import reported_cost_total
 from clio_agent.gact.user_question_ledger import record_user_question
-from clio_agent.gact.user_question_resume import finish_cancelled_question, resume_answered_question
+from clio_agent.gact.user_question_resume import (
+    dispatch_answered_question,
+    finish_cancelled_question,
+)
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
@@ -115,7 +118,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
     ) -> Session | JSONResponse:
         """Update session settings and durable user navigation metadata."""
 
-        prior_approval_mode = str(getattr(app.state.sessions.get(sid), "approval_mode", "") or "")
+        prior_mode = str(getattr(app.state.sessions.get(sid), "approval_mode", "") or "")
         sess = app.state.sessions.update(
             sid,
             title=req.title,
@@ -140,7 +143,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     )
                 ).model_dump(exclude_none=True),
             )
-        sync_watcher_for_mode(app, sess, prior_approval_mode=prior_approval_mode)
+        await asyncio.to_thread(sync_watcher_for_mode, app, sess, prior_approval_mode=prior_mode)
         # Publish so live SSE subscribers see mode flips immediately.
         app.state.bus.publish(
             Event(
@@ -763,7 +766,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         from clio_agent.gact.elicitation_bridge import (  # noqa: PLC0415
             check_elicitation_answer,
             claim_question_transition,
-            resolve_answered_question,
         )
 
         check_elicitation_answer(row, req)  # P1.3 #1113: 422 re-prompt on invalid form answer
@@ -780,25 +782,13 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         )
         if updated is None:
             raise question_already_resolved(sid, question_id)
-        # P1.4 #1066 (plan-exit) + P1.3 #1113 (elicitation) dispatch non-default resolution.
-        if resolve_answered_question(app, deps, sid, updated):
-            return updated
-        resume_answered_question(
+        await asyncio.to_thread(
+            dispatch_answered_question,
             app,
             deps,
             sid,
             updated,
-            has_pending=any(
-                q.response_mode == "blocking" for q in pending_user_questions(app, sid)
-            ),
             set_session_status=_set_session_status,
-        )
-        app.state.bus.publish(
-            Event(
-                type="user_question.answered",
-                session_id=sid,
-                payload=updated.model_dump(exclude_none=True),
-            )
         )
         return updated
 

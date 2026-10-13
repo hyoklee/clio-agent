@@ -32,6 +32,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.gact.agent_mailbox import pending_mail, retained_mail
 from clio_agent.gact.agent_tasks import STATUS_CANCELLED, STATUS_RUNNING
 from clio_agent.gact.app import build_app
 from clio_agent.gact.permission_gate import _make_permission_gate
@@ -463,10 +464,8 @@ def test_coalescing_under_burst_of_tool_completions(tmp_path: Path) -> None:
         assert _wait_for(lambda: len(agent.calls) == 1)
         assert _wait_for(lambda: app.state.turn_runner.busy(child_sid))
 
-        from clio_agent.gact.loop_inbox import inbox_for
-
-        inbox = inbox_for(app, child_sid)
-        assert not inbox.peek_nonempty()  # nothing buffered yet
+        assert not pending_mail(app, child_sid)
+        baseline = len(retained_mail(app, child_sid))
 
         # A burst of MORE activity (distinct tools) while the check turn is
         # in flight -- #1218 e: the buffered wake must not keep naming only
@@ -475,19 +474,30 @@ def test_coalescing_under_burst_of_tool_completions(tmp_path: Path) -> None:
             wake_on_parent_activity(app, sid, tool_name=f"phenotype_tool_{i}")
 
         # AT MOST ONE buffered wake, never 20.
-        assert inbox.peek_nonempty()
-        buffered = inbox.drain()
+        buffered = pending_mail(app, child_sid)
         assert len(buffered) == 1
-        assert "multiple tool calls completed" in buffered[0].text
+        assert "multiple tool calls completed" in buffered[0]["text"]
         # Never names just one of the 20 distinct tools from the burst.
-        assert "phenotype_tool_" not in buffered[0].text
+        assert "phenotype_tool_" not in buffered[0]["text"]
+        assert len(retained_mail(app, child_sid)) == baseline + 20
+        assert pending_mail(app, child_sid) == buffered, "inspection is not delivery"
 
         block.set()  # release the in-flight check turn
         assert _wait_for(lambda: not app.state.turn_runner.busy(child_sid))
-        # Still exactly one forward call -- the drained coalesced wake was
-        # consumed by this assertion (drain() above), not re-driven into a
-        # second turn (nothing left buffered for the idle hook to promote).
-        assert len(agent.calls) == 1
+        assert _wait_for(lambda: len(agent.calls) == 2)
+        from clio_agent.gact.agents.clio_react_record import StepRecorder
+        from clio_agent.gact.core_task_journal import core_task_journal
+
+        boundary = core_task_journal(app).input_boundaries[child_sid]
+        assert "mail:" + buffered[0]["message_id"] in boundary["notification_ids"]
+        recorder = StepRecorder(app.state.arc, child_sid, boundary["scope"], expert_id="watcher")
+        assert "multiple tool calls completed" in str(recorder.read_steps())
+        assert not pending_mail(app, child_sid)
+        assert len(retained_mail(app, child_sid)) == baseline + 20
+        assert [row.task_id for row in app.state.agent_task_registry.for_parent(sid)] == [
+            task.task_id
+        ]
+        assert app.state.agent_task_registry.get(task.task_id).status == STATUS_RUNNING
 
 
 @pytest.mark.usefixtures("host_agent_executor")

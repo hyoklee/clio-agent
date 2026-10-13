@@ -209,11 +209,12 @@ def test_steer_lane_carries_the_identical_declared_narration_text(
 
     assert response.status_code == 200, response.text
     assert response.json()["delivery"] == "steer"
-    inbox = app.state.loop_inboxes[sid]
-    [queued] = inbox.snapshot()
+    from clio_agent.gact.agent_mailbox import pending_mail
+
+    [queued] = pending_mail(app, sid)
     expected_prefix = 'The user selected ["MTA1","PKRD"] for earthscope-x: analyse them.'
     expected_text = f"{expected_prefix}\n\nStructured context:\n{_canonical(context)}"
-    assert queued.text == expected_text
+    assert queued["text"] == expected_text
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions

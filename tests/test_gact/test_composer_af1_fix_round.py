@@ -681,7 +681,8 @@ def test_init_failure_refuses_inputs_parked_for_an_agent_that_never_arrives(
     """
 
     from clio_agent.gact.agent_initialization import record_init_failure
-    from clio_agent.gact.loop_inbox import enqueue_user_steer
+    from clio_agent.gact.agent_mailbox import accept_session_input as enqueue_user_steer
+    from clio_agent.gact.agent_mailbox import pending_mail
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
     session = app.state.sessions.create(workspace_id="ws_default", title="stranded")
@@ -712,7 +713,7 @@ def test_init_failure_refuses_inputs_parked_for_an_agent_that_never_arrives(
     assert refusals[0]["retained"] is True
     assert refusals[0]["recovery_actions"] == ["rebind_lm_provider"]
     assert app.state.sessions.get(session.id).status == "error"
-    assert app.state.loop_inboxes[session.id].peek_nonempty(), (
+    assert bool(pending_mail(app, session.id)), (
         "the parked answer must survive for the rebind that can still deliver it"
     )
     patch = app.state.sessions.get(session.id).metadata["agent_init_error"]
@@ -727,7 +728,8 @@ def test_a_rebind_after_an_init_failure_still_delivers_the_retained_answer(
     import asyncio
 
     from clio_agent.gact.agent_initialization import mark_agent_ready, record_init_failure
-    from clio_agent.gact.loop_inbox import enqueue_user_steer
+    from clio_agent.gact.agent_mailbox import accept_session_input as enqueue_user_steer
+    from clio_agent.gact.agent_mailbox import pending_mail
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
     session = app.state.sessions.create(workspace_id="ws_default", title="recovered")
@@ -753,7 +755,7 @@ def test_a_rebind_after_an_init_failure_still_delivers_the_retained_answer(
     asyncio.run(drive())
 
     assert drained == [session.id]
-    assert app.state.loop_inboxes[session.id].peek_nonempty()
+    assert bool(pending_mail(app, session.id))
 
 
 def test_the_session_store_refuses_an_out_of_vocabulary_status(tmp_path) -> None:
@@ -808,7 +810,8 @@ def test_mark_agent_ready_drains_through_the_running_loop(tmp_path) -> None:
     import asyncio
 
     from clio_agent.gact.agent_initialization import mark_agent_ready
-    from clio_agent.gact.loop_inbox import enqueue_user_steer
+    from clio_agent.gact.agent_mailbox import accept_session_input as enqueue_user_steer
+    from clio_agent.gact.agent_mailbox import pending_mail
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
     session = app.state.sessions.create(workspace_id="ws_default", title="deferred")
@@ -827,7 +830,7 @@ def test_mark_agent_ready_drains_through_the_running_loop(tmp_path) -> None:
 
     assert app.state.agent is not None
     # The drain ran on the loop and promoted the parked steer into a real turn.
-    assert not app.state.loop_inboxes[session.id].peek_nonempty()
+    assert not bool(pending_mail(app, session.id))
 
 
 # --------------------------------------------------------------------------- #

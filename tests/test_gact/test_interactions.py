@@ -11,12 +11,14 @@ from typing import Any
 
 import dspy
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.arc.blob_frame import BlobDecodeError
 from clio_agent.gact import context as gact_context
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.agent_initialization import mark_agent_ready, record_init_failure
+from clio_agent.gact.agent_mailbox import accept_session_input, pending_mail
 from clio_agent.gact.agent_tasks import AgentTask
 from clio_agent.gact.agents.auto_tools import build_auto_react_tools
 from clio_agent.gact.agents.builders import _dynamic_agent_tools
@@ -27,7 +29,10 @@ from clio_agent.gact.elicitation_bridge import (
     claim_question_transition,
     invocation_with_request_correlation,
 )
-from clio_agent.gact.loop_inbox import InboxEvent, LoopInbox
+from clio_agent.gact.turn_runner import TurnRunner
+from tests.test_gact import test_core_task_mailbox as core_fixtures
+
+owner = core_fixtures.owner
 from clio_agent.gact.types import AgentDef, UserQuestion, UserQuestionOption
 from clio_agent.gact.user_question_ledger import record_user_question
 from clio_agent.tools.mcp_handlers import MCPInvocationContext
@@ -89,67 +94,29 @@ def test_invalid_transcript_text_degrades_surfaces_without_hiding_permissions(
     assert snapshot.json()["degradations"][0]["reason"] == "a2ui_transcript_decode_failed"
 
 
-def test_agent_init_failure_surfaces_a_deferred_question_resume() -> None:
-    """An answered question may remain queued, but it must not look silently idle.
-
-    A failed construction is NOT terminal for the process: ``PUT /v1/providers/lm``
-    rebinds and calls ``mark_agent_ready``, which drains exactly these inboxes.
-    Destroying the parked items to "release" them therefore throws away work the
-    one recovery path could still deliver.
-    """
-
-    class Sessions:
-        def __init__(self) -> None:
-            self.updates: list[tuple[str, dict[str, object]]] = []
-
-        def update(self, session_id: str, **changes: object) -> None:
-            self.updates.append((session_id, changes))
-
-    class Bus:
-        def __init__(self) -> None:
-            self.events: list[object] = []
-
-        def publish(self, event: object) -> None:
-            self.events.append(event)
-
-    inbox = LoopInbox()
-    inbox.put(
-        InboxEvent(
-            kind="user_message",
-            task_id="",
-            metadata={"ask_user_resume": True, "question_id": "question_1"},
-        )
+def test_agent_init_failure_surfaces_a_deferred_question_resume(owner: Any) -> None:
+    """Failed provider construction reports retained Core input and its recovery route."""
+    app, sid = owner.app, owner.sid
+    app.state.turn_runner = TurnRunner({})
+    accept_session_input(
+        app,
+        sid,
+        "A recoverable answer",
+        {"ask_user_resume": True, "question_id": "question_1"},
     )
-    sessions = Sessions()
-    bus = Bus()
-    app = SimpleNamespace(
-        state=SimpleNamespace(
-            agent_init_error=None,
-            bus=bus,
-            loop_inboxes={"child_session": inbox},
-            sessions=sessions,
-        )
-    )
-
     record_init_failure(app, RuntimeError("provider unavailable"), stage="init")
-
-    assert inbox.peek_nonempty(), "the recoverable answer should remain queued"
-    assert sessions.updates[0][0] == "child_session"
-    # "failed" is out of ``Session.status``'s vocabulary; "error" is the real one.
-    assert sessions.updates[0][1]["status"] == "error"
-    event = bus.events[0]
-    assert event.type == "session.input_refused"
+    assert pending_mail(app, sid), "the recoverable answer should remain queued"
+    assert app.state.sessions.get(sid).status == "error"
+    events = [e for e in app.state.bus._history[sid] if e.type == "session.input_refused"]
+    assert len(events) == 1
+    event = events[0]
     assert event.payload["question_id"] == "question_1"
     assert event.payload["reason"] == "agent_init_failed"
-    # The item is retained, so the refusal must say so and name the door that
-    # delivers it -- publishing ``recoverable: False`` next to recovery actions
-    # (which is what the drain-everything version did) is self-contradicting.
-    assert event.payload["recoverable"] is True
-    assert event.payload["retained"] is True
+    assert event.payload["recoverable"] is True and event.payload["retained"] is True
     assert event.payload["recovery_actions"] == ["rebind_lm_provider"]
 
 
-def _root_and_child(app: object) -> tuple[str, str]:
+def _root_and_child(app: FastAPI) -> tuple[str, str]:
     root = app.state.sessions.create(workspace_id="ws_default", title="root")
     child = app.state.sessions.create(
         workspace_id="ws_default",
@@ -254,7 +221,7 @@ def test_ask_user_success_ends_react_turn_before_another_model_step(tmp_path) ->
     scope_token = gact_context.set_react_scope("asker")
     react_session_token = gact_context.set_react_session(session.id)
     try:
-        with dspy.context(lm=lm):
+        with TestClient(app), dspy.context(lm=lm):
             prediction = react(question="Help me design a simulation study.")
     finally:
         gact_context.reset(react_session_token)
@@ -538,18 +505,18 @@ def test_pending_native_question_survives_backend_restart(tmp_path) -> None:
     restarted = restarted_app.state.sessions.get(session.id)
     assert restarted.metadata["pending_user_question_id"] == ""
     assert restarted.metadata["pending_ask_user"]["resolved_status"] == "answered"
-    assert restarted_app.state.loop_inboxes[session.id].peek_nonempty()
+    assert pending_mail(restarted_app, session.id)
 
 
 def test_agent_ready_promotes_inputs_deferred_during_initialization(tmp_path, monkeypatch) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
     session = app.state.sessions.create(workspace_id="ws_default", title="deferred")
-    app.state.loop_inboxes[session.id] = object()
+    accept_session_input(app, session.id, "Retained during provider initialization")
     app.state.mcp_app_loop = None
     drained: list[str] = []
     monkeypatch.setattr(
-        "clio_agent.gact.loop_inbox.drain_inbox_to_new_turn",
-        lambda _app, session_id: drained.append(session_id),
+        "clio_agent.gact.task_completion_wake.redrive_pending_completion_wakes",
+        lambda _app: drained.append(session.id),
     )
     agent = object()
 

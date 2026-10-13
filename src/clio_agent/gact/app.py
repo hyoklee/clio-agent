@@ -1241,11 +1241,6 @@ def build_app(
     # cron can't be retried via due_now, which only re-yields on a cron match).
     app.state.deferred_schedules = set()
     # #1035/#1036 (epic #1031 Pillar 2): per-session loop inboxes — the mid-turn
-    # wake + user-steer carrier (session_id -> LoopInbox). See gact/loop_inbox.py.
-    # #1036 folded the former app.state.deferred_resumes stash here: an ask-user
-    # resume that arrives while busy is enqueued as a user_message steer and the
-    # idle hook (drain_inbox_to_new_turn) re-drives residual steers into ONE turn.
-    app.state.loop_inboxes = {}
     app.state.turn_runner.set_idle_hook(lambda sid: drain_inbox_and_notify_spotter(app, sid))
     # iowarp/clio-agent#2: per-session ledger of tool calls observed
     # during the in-flight turn. The global tool_observer appends
@@ -2044,6 +2039,9 @@ def build_app(
         install_tool_runtime_hooks=_install_tool_runtime_hooks,
         clear_session_model_refs=_clear_session_model_refs,
     )
+    # The lifespan and the runner use the same bound conversation operations
+    # as HTTP routes; they must not reconstruct a second dispatch surface.
+    app.state.gact_deps = deps
 
     # ---- /v1/sessions/* lifecycle + ask-user/retry -------------------
     # Session CRUD/delete, rollback (undo/rewind), fork, export/import,

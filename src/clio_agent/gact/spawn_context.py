@@ -7,6 +7,8 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from clio_agent.gact.assignment_history import task_for_session
+
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
@@ -16,10 +18,8 @@ if TYPE_CHECKING:
 def current_session_depth(app: "FastAPI", session_id: str) -> int:
     """Return zero for a root session, otherwise its projected AgentTask depth."""
 
-    from clio_agent.gact.agent_tasks import AgentTask  # noqa: PLC0415
-
     session = app.state.sessions.get(session_id)
-    task = AgentTask.from_session(session) if session is not None else None
+    task = task_for_session(app, session) if session is not None else None
     return task.depth if task is not None else 0
 
 

@@ -38,7 +38,7 @@ def _agent_run(task: AgentTask) -> dict[str, Any]:
     host = task.host or (placement.split(":", 1)[1] if placement.startswith("relay:") else "local")
     return {
         "handle_id": handle_id,
-        "task_kind": "Subagent",
+        "task_kind": task.assignment_kind,
         "description": task.description or "Description unavailable for this older task",
         "cancel_requested": task.cancel_requested,
         "supported_actions": ["cancel"]

@@ -143,7 +143,6 @@ def test_post_judge_goal_persistence_runs_off_the_loop(monkeypatch: Any) -> None
     app = type("App", (), {})()
     app.state = type("State", (), {})()
     app.state.sessions = _Sessions()
-    app.state.loop_inboxes = {}
 
     async def _judge(*_a: Any, **_k: Any) -> Any:
         return GoalJudgement(met=True, reason="ok")

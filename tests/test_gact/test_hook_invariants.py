@@ -24,6 +24,7 @@ from pathlib import Path
 
 import pytest
 
+from clio_agent.gact.agent_mailbox import pending_mail, retained_mail
 from clio_agent.gact.app import _make_permission_gate, _tool_session_context, build_app
 from clio_agent.gact.hooks import (
     PRE_TOOL_USE,
@@ -411,8 +412,9 @@ def test_stop_loop_always_blocks_redrives_to_cap_then_settles(
         assert capped_at == 3, "the 4th firing (count==cap) trips the cap"
         caps = [r for r in hook_reasons()[baseline:] if r["reason"] == "stop_loop_cap"]
         assert caps and caps[-1]["scope"] == "global"
-        # Each re-drive enqueued exactly one loop-inbox event (the seam that re-drives).
-        assert len(app.state.loop_inboxes[sess.id].drain()) == 3
+        # Every re-drive is retained; inspecting pending input never consumes it.
+        assert len(retained_mail(app, sess.id)) == 3
+        assert len(pending_mail(app, sess.id)) == 3
         # Counters reset after the cap so a fresh sequence starts clean.
         assert read_stop_loop_state(app.state.sessions.get(sess.id))["count"] == 0
     finally:
@@ -510,14 +512,9 @@ def test_stop_loop_infra_failure_never_fail_closes_into_a_redrive(
         crashed = [r for r in hook_reasons()[baseline:] if r["reason"] == "hook_crashed"]
         assert any(r.get("hook_id") == "crasher" for r in crashed)
         # No re-drive was enqueued.
-        assert not app.state.loop_inboxes.get(sess.id, _Empty()).peek_nonempty()
+        assert not retained_mail(app, sess.id)
     finally:
         install_global_dispatcher(None)
-
-
-class _Empty:
-    def peek_nonempty(self) -> bool:  # pragma: no cover - trivial
-        return False
 
 
 def test_stop_loop_tolerates_missing_session(tmp_path: Path) -> None:

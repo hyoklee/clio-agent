@@ -137,6 +137,11 @@ def project_session_async_processes(
         for owner_session_id in owner_session_ids
         for task in app.state.agent_task_registry.for_parent(owner_session_id)
     ]
+    agent_tasks.extend(
+        task
+        for task in app.state.agent_task_registry.snapshot()
+        if task.assignment_kind == "Session" and task.child_session_id in owner_session_ids
+    )
     records = app_task_store(app).list()
     from clio_agent.gact.task_backend_identity import relay_mirrors
 

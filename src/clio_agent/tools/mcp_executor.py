@@ -403,19 +403,10 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
             try:
                 from clio_agent.gact.loop_handoff import await_on_loop
 
-                payload = await await_on_loop(
+                result = await await_on_loop(
                     app.state.mcp_app_loop,
-                    host.submit(tool, backend_args),
+                    host.submit_tool_call(tool, backend_args),
                     op=f"submit native {host.identity} task",
-                )
-                from fastmcp.client.client import CallToolResult
-
-                # Native hosts return CLIO acceptance/collection data. Give
-                # every provider and observer the SDK envelope they already
-                # consume, rather than losing a plain dictionary as empty MCP
-                # content at the public observation boundary.
-                result = CallToolResult(
-                    content=[], structured_content=payload, data=payload, is_error=False, meta=None
                 )
                 return _MCPCallOutcome(
                     model_text=_result_to_text(result),

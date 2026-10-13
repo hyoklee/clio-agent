@@ -8,6 +8,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 from types import SimpleNamespace
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
@@ -27,6 +28,8 @@ from clio_agent.gact.agents.invoker import (
 )
 from clio_agent.gact.app import build_app
 from clio_agent.gact.enrichment import pending_task_notifications
+from clio_agent.gact.events import Event
+from clio_agent.gact.task_delivery import completion_rows
 from clio_agent.gact.turn_spawn import _on_child_done
 from clio_agent.gact.types import Message, Part
 
@@ -48,7 +51,7 @@ def _task_event(task: AgentTask, *, session_id: str | None = None) -> TaskEvent:
     )
 
 
-def _terminal_events(app: object, session_id: str) -> list[object]:
+def _terminal_events(app: FastAPI, session_id: str) -> list[Event]:
     return [
         event
         for event in app.state.bus._history.get(session_id, [])
@@ -133,9 +136,9 @@ def test_folded_terminal_has_callback_payload_and_observe_later_parity(
 
         assert outcome.applied is True
         assert app.state.agent_task_registry.event(running.task_id).is_set()
-        assert [
-            (event.kind, event.task_id) for event in app.state.loop_inboxes[parent].drain()
-        ] == [("child_completed", running.task_id)]
+        assert [row["handle"] for row in completion_rows(app, parent)] == [
+            running.handle_id or running.task_id
+        ]
         parent_events = _terminal_events(app, parent)
         child_events = _terminal_events(app, running.child_session_id)
         assert len(parent_events) == len(child_events) == 1
@@ -181,7 +184,7 @@ def test_duplicate_folded_terminal_is_typed_noop(tmp_path: Path, monkeypatch: Mo
         assert second.task == first.task
         assert second.task.result == {"answer_excerpt": "first"}
         assert len(_terminal_events(app, parent)) == 1
-        assert len(app.state.loop_inboxes[parent].drain()) == 1
+        assert len(completion_rows(app, parent)) == 1
 
 
 def test_folded_terminal_racing_local_callback_is_first_wins(
@@ -245,9 +248,9 @@ def test_folded_terminal_racing_local_callback_is_first_wins(
         assert fold_outcome.reason in {"", "already_terminal"}
         assert len(_terminal_events(app, parent)) == 1
         assert len(_terminal_events(app, running.child_session_id)) == 1
-        assert [
-            (event.kind, event.task_id) for event in app.state.loop_inboxes[parent].drain()
-        ] == [("child_completed", running.task_id)]
+        assert [row["handle"] for row in completion_rows(app, parent)] == [
+            running.handle_id or running.task_id
+        ]
 
 
 def test_nonterminal_fold_updates_progress_without_terminalizing(tmp_path: Path) -> None:
@@ -306,7 +309,7 @@ def test_nonterminal_fold_cannot_publish_after_concurrent_terminal(
         terminal_persisted = threading.Event()
         original_persist = task_fold.persist_agent_task
 
-        def held_persist(app_arg: object, task: AgentTask) -> None:
+        def held_persist(app_arg: FastAPI, task: AgentTask) -> None:
             if task.status == STATUS_RUNNING:
                 running_persist_entered.set()
                 assert release_running_persist.wait(timeout=5.0)

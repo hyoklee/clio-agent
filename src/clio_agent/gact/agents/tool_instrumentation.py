@@ -343,7 +343,11 @@ def native_tool(
     setattr(func, TITLE_ATTR, sanitize_tool_title(title))
     setattr(func, DOMAIN_ATTR, _validated_domain(domain, tool_name=name))
     setattr(func, READ_ONLY_ATTR, bool(read_only))
-    return _clio_native_tool_class()(func=func, name=name, desc=desc, args=args)
+    from clio_agent.tools.builtin_control_host import builtin_control_bridge
+
+    tool = _clio_native_tool_class()(func=func, name=name, desc=desc, args=args)
+    tool.func = builtin_control_bridge(func, name=name, description=desc or "", args=tool.args)
+    return tool
 
 
 def boundary_observed_tool(
@@ -637,7 +641,10 @@ def present_native_result(
         return None
     args = _presentation_arguments(name, args)
     if callable(presenter):
-        return presenter(copy.deepcopy(args), copy.deepcopy(result), copy.deepcopy(structured))
+        presented = presenter(copy.deepcopy(args), copy.deepcopy(result), copy.deepcopy(structured))
+        if not isinstance(presented, dict):
+            raise TypeError("A native result presenter must return a mapping")
+        return presented
     return native_presentation(presenter, args, result, structured)
 
 

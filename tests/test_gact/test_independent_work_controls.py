@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from clio_agent.gact.agent_mailbox import pending_mail
 from clio_agent.gact.autonomous_loop import _get_loop, start_loop
 from clio_agent.gact.autonomy_output import observe_control_output
 from clio_agent.gact.goal import (
@@ -22,7 +23,6 @@ from clio_agent.gact.goal import (
 )
 from clio_agent.gact.goal_control import start_goal
 from clio_agent.gact.goal_wait import wait_for, waiting_on_tasks
-from clio_agent.gact.loop_inbox import inbox_for
 from clio_agent.gact.routes.work_controls import register_work_controls_routes
 from clio_agent.gact.work_controls import control_work
 from tests.test_gact.test_goal import _app, _session
@@ -36,7 +36,7 @@ def test_start_launches_once_and_zero_limits_continue(tmp_path: Path) -> None:
     app = _app(tmp_path)
     sid = _session(app)
     start_goal(app, sid, condition="Produce evidence of completion")
-    assert len(inbox_for(app, sid).drain()) == 1
+    assert len(pending_mail(app, sid)) == 1
     goal = _get_goal(app, sid)
     for index in range(5):
         decision = evaluate_goal(goal, llm=GoalJudgement(met=False, reason="Try the next approach"))
@@ -54,7 +54,6 @@ def test_goal_wait_retains_objective_without_judging_or_consuming(
     terminal: str,
 ) -> None:
     app, sid, store = scoped_app
-    app.state.loop_inboxes = {}
     arm_goal(app, sid, condition="Analyze the simulation result")
     task = record(store, sid, "simulation")
     assert wait_for("simulation")["waiting"]

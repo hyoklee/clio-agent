@@ -1818,12 +1818,14 @@ def test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight(
         sum(message.role == "user" for message in app.state.messages.get(sid, []))
         == staged_users_before
     )
-    [queued] = app.state.loop_inboxes[sid].snapshot()
-    assert queued.metadata["a2ui_action_context"] == {
+    from clio_agent.gact.agent_mailbox import pending_mail
+
+    [queued] = pending_mail(app, sid)
+    assert queued["metadata"]["a2ui_action_context"] == {
         "text": "continue the analysis",
         "selected_station_ids": ["SGPS"],
     }
-    assert '"selected_station_ids":["SGPS"]' in queued.text
+    assert '"selected_station_ids":["SGPS"]' in queued["text"]
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions

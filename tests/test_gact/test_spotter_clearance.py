@@ -24,6 +24,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.gact.agent_tasks import STATUS_RUNNING, seed_agent_task
 from clio_agent.gact.app import build_app
 from clio_agent.gact.loop_inbox import enqueue_user_steer
 from clio_agent.gact.spotter_clearance import (
@@ -92,7 +93,6 @@ def _fake_app(*, approval_mode: str = "spotter-ai") -> tuple[Any, _FakeRegistry,
         sessions=sessions,
         agent_task_registry=registry,
         turn_runner=runner,
-        loop_inboxes={},
     )
     return SimpleNamespace(state=state), registry, runner
 
@@ -131,7 +131,8 @@ def test_non_spotter_session_clears_without_a_watcher() -> None:
     assert wait_for_spotter_clearance(app, "sess_missing") == CLEARANCE_GRANTED
 
 
-def test_idle_healthy_watcher_clears_immediately() -> None:
+def test_idle_healthy_watcher_clears_immediately(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("clio_agent.gact.agent_mailbox.pending_session_inputs", lambda *_: ([], []))
     app, registry, _runner = _fake_app()
     registry.tasks["sess_parent"] = [_FakeTask("sess_watcher")]
     assert wait_for_spotter_clearance(app, "sess_parent") == CLEARANCE_GRANTED
@@ -149,7 +150,7 @@ def test_silent_busy_watcher_fails_closed_with_its_own_stall_reason() -> None:
     assert reason != CLEARANCE_WATCHER_FAILED
 
 
-def test_progress_window_restarts_on_every_watcher_signal() -> None:
+def test_progress_window_restarts_on_every_watcher_signal(monkeypatch: pytest.MonkeyPatch) -> None:
     """A watcher progressing for far longer than one window must NOT be denied.
 
     This is the ground-rule shape: the window bounds the gap BETWEEN observable
@@ -157,6 +158,7 @@ def test_progress_window_restarts_on_every_watcher_signal() -> None:
     single wall clock over the whole wait fails this test.
     """
 
+    monkeypatch.setattr("clio_agent.gact.agent_mailbox.pending_session_inputs", lambda *_: ([], []))
     app, registry, runner = _fake_app()
     registry.tasks["sess_parent"] = [_FakeTask("sess_watcher")]
     runner.busy_sessions.add("sess_watcher")
@@ -184,16 +186,25 @@ def test_progress_window_restarts_on_every_watcher_signal() -> None:
     assert time.monotonic() - started >= total  # it really did wait out the work
 
 
-def test_a_buffered_coalesced_wake_also_holds_clearance() -> None:
+def test_a_buffered_coalesced_wake_also_holds_clearance(tmp_path: Path) -> None:
     """An idle runner with a queued wake is still pending evidence."""
 
-    app, registry, _runner = _fake_app()
-    registry.tasks["sess_parent"] = [_FakeTask("sess_watcher")]
-    enqueue_user_steer(app, "sess_watcher", "wake", {"coalesce_key": "spotter_wake"})
-    assert (
-        wait_for_spotter_clearance(app, "sess_parent", progress_timeout_s=0.1)
-        == CLEARANCE_PROGRESS_STALLED
-    )
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app):
+        parent = app.state.sessions.create(
+            workspace_id="ws_default", title="watched", approval_mode="spotter-ai"
+        )
+        task = seed_agent_task(
+            app,
+            parent_session_id=parent.id,
+            agent_ref={"expert_id": _WATCHER_EXPERT_ID},
+            status=STATUS_RUNNING,
+        )
+        enqueue_user_steer(app, task.child_session_id, "wake", {"coalesce_key": "spotter_wake"})
+        assert (
+            wait_for_spotter_clearance(app, parent.id, progress_timeout_s=0.1)
+            == CLEARANCE_PROGRESS_STALLED
+        )
 
 
 def test_every_denial_reason_carries_a_model_facing_message() -> None:

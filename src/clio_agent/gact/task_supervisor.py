@@ -69,20 +69,15 @@ class TaskSupervisor:
                 host.cancel(row["handle"]), self.app.state.mcp_app_loop
             )
             return bool(future.result()["cancel_requested"])
-        if row["task_kind"] == "Subagent":
+        if row.get("kind") == "agent":
             task = self.app.state.agent_task_registry.get(row["id"])
             if task.placement.startswith("relay:"):
                 from clio_agent.gact.task_relay_owner import request_relay_cancel
 
                 return request_relay_cancel(self.app, task)
-            from clio_agent.gact.loop_handoff import call_on_loop
             from clio_agent.gact.turn_spawn import cancel_agent_task
 
-            return call_on_loop(
-                self.app.state.mcp_app_loop,
-                lambda: cancel_agent_task(self.app, row["id"]),
-                op="cancel task subtree",
-            )
+            return cancel_agent_task(self.app, row["id"])
         if row["effective_status"] in TERMINAL:
             return False
         store = app_task_store(self.app)

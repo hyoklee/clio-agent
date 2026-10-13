@@ -582,8 +582,9 @@ def test_durable_defer_busy_folds_into_loop_inbox(
 
     # No direct background turn — the resume rode the loop inbox fold instead.
     assert deps._calls["resume"] == []
-    inbox = app.state.loop_inboxes.get(sess.id)
-    assert inbox is not None and inbox.peek_nonempty()
+    from clio_agent.gact.agent_mailbox import pending_mail
+
+    assert pending_mail(app, sess.id)
     assert app.state.sessions.get(sess.id).mode == "edit"  # transition still fired
 
 

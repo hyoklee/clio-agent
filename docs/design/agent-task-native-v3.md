@@ -56,13 +56,17 @@ Preserve cancellation request separately from raw terminal status and physical s
 
 ## 3. Assignments, Core history and delivery
 
-A session is a stable address, history and mailbox. An assignment/run is finite delegated or human-started work with one task handle. A model turn is one execution segment; an iteration is one model call and its tool observations.
+A session is a stable address, history and mailbox. An assignment/run is finite delegated or human-started work with one task handle. A model turn is one execution segment; an iteration is one model call and its tool observations. Existing standing watcher assignments retain their handle across check segments, including a failed check; their owner records waiting/error activity, and explicit disarm ends the assignment. They do not publish a completed assignment after each check or wake their parent as a side effect of checking it.
 
 Ordinary yields, task-result wakes, steering, pause/resume and recovery continue the same active assignment. Do not complete its handle merely because the model turn ended. Extend the existing finish/submit boundary with a separate orchestration argument assignment_disposition="yield"|"complete"; it is not a signature output. A direct response without a disposition yields while owned tasks, declared dependencies or input remain pending; otherwise it completes. Explicit completion may leave accepted background work running, and this is recorded. Prompts explain this choice, and the parent/UI can see yielded activity and its pending dependencies. A later message/result after actual completion creates a linked new assignment in the same session and wakes it automatically under the ordinary pause/input/veto gates, as explicitly required; it does not reopen the completed handle or re-enable a stopped goal/loop. Explicit restart also creates a new linked assignment/handle. Subscription and result handles stay pinned to their original assignment; messaging aliases may resolve to the stable session, never silently retarget historical cancellation/results. scope="tree" follows the stable owning session and its delegated descendants, including predecessor assignments. Linked successors in that session retain read/collect/observe/control rights over predecessor-owned work, subject to current revocations; they do not acquire unrelated peer rights. Cancelling a successor includes still-active inherited background work and its delegated descendants, without changing the historical ownership or outcome of old handles.
 
 Pause holds model execution and preserves context; accepted background tasks continue and accumulate results. Resume releases the hold. Cancel applies to every task kind; agent-assignment cancellation closes descendant admission and cancels its task subtree, settling after required cleanup. Restart of an active assignment follows explicit cancellation/settlement; an already terminal assignment can restart directly. Uncertain settlement returns that uncertainty instead of fabricating completion or silently launching a successor.
 
 Keep complete messages, observations, assignments, subscriptions, interventions, lineage and delivery history in Core's existing hierarchy and confirmed writer path. Session metadata contains bounded rebuildable projections, not whole retained histories. There is no new canonical database, execution registry or copied transcript. Restart references a fixed Core history/checkpoint boundary and later accepted-operation observations.
+
+Every stable session owns one Core-backed mailbox. Human feedback, peer messages, attributed runtime notices and task-result references share its recipient-input boundary. A task handle addresses a finite assignment or operation; its notifications target the owning session mailbox, which survives linked assignments and restarts. A workflow groups sessions and grants rather than introducing another delivery queue. Resident projections are rebuildable Core views, not another message inbox. An application-loop signal carries only the session address and requests a fresh Core pending-input check; losing that signal cannot erase accepted content. Startup and busy-to-idle transitions recheck Core. Distributed transports can later deliver the same identities and attributed content through this acceptance boundary without changing acknowledgement or authorization.
+
+Accepted input keeps its original assignment binding. Replay verifies content identity, rechecks admission, and reconciles question answers and parent notices from the confirmed input. It neither dispatches a replacement operation nor retargets a successor. Only recipient-input persistence acknowledges delivery; inspecting or staging a message does not consume it.
 
 Use one authoritative recipient-input commit record in the existing context lane, containing assignment/iteration identity, fixed context boundary and included notification IDs/content references. Write referenced content first, then this confirmed commit; acknowledgements derive from it. put_many is not a transaction. Before the commit, interrupted staging stays pending; after it, recovery reconstructs that input, including the crash window before the model call. Explicit tool-result collection uses the same record after its observation is stored. Delivery is recoverable with stable IDs, not exactly-once external model execution.
 
@@ -93,7 +97,16 @@ Remove, rather than wrap:
 - task_completion_wake policy, mailbox wake policy and attempted-batch maps;
 - independent child-forward terminal writes;
 - subagent custody/restart/continuation/history reconstruction modules as their behavior moves into the shared conversation lifecycle and Core references;
-- mcp_wait_ladder, duplicate completion-consumption guards and loop_inbox's lossy deque as a delivery authority. A bounded in-memory wake-hint cache may remain only if discarded hints cannot lose Core-pending items.
+- mcp_wait_ladder, duplicate completion-consumption guards and loop_inbox's lossy deque, including its payload and hint caches.
+
+Each stable session has one Core-backed mailbox for accepted human feedback,
+peer messages, runtime notices and task outcomes. Task outcomes reference their
+existing durable result; they do not copy it into another execution registry.
+Assignment and task handles identify the work within a session, rather than
+creating separate inboxes. Authorization and recipient-specific input commits
+apply equally to local and remote producers. Transient TurnRunner signals only
+request a Core mailbox check; they carry no message, task result or delivery
+state. Lost signals recover from the Core recipient index on startup/readiness.
 
 Retain workload algorithms, process cleanup, native capability/backend identity routing and shipped compatibility aliases. Aliases only delegate. Preserve released completed-child messaging through stable session aliases and linked assignments; historical task results remain unchanged. Migrate records idempotently, including missing descriptions. Drain/settle old owners before cutover. No permanent old-engine fallback. When Core is unavailable, reject new durable background admission explicitly rather than introducing another store or silently calling it durable.
 

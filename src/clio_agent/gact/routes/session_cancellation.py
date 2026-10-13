@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
 
-from clio_agent.gact.agent_tasks import AgentTask
+from clio_agent.gact.assignment_history import task_for_session
 from clio_agent.gact.autonomous_loop import stop_session_loop
 from clio_agent.gact.events import Event
 from clio_agent.gact.goal import stop_session_goal
@@ -43,7 +43,7 @@ def cancellation_grace_s() -> float:
 
 def cancel_session_state(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, Any]:
     """Apply human Stop from HTTP or A2UI and inform the child's owner."""
-    task = AgentTask.from_session(app.state.sessions.get(sid))
+    task = task_for_session(app, app.state.sessions.get(sid))
     with human_task_intervention(app, task, "stop", actor_sid=sid) as outcome:
         payload = _cancel_session_state(app, deps, sid)
         outcome.update(turn_stop_requested=True, accepted_tasks_continue=True, **payload)
@@ -54,7 +54,7 @@ async def cancel_session_state_async(app: FastAPI, deps: "GactDeps", sid: str) -
     """Record human Stop off-loop, applying the turn control on its application owner."""
     from clio_agent.gact.human_task_intervention import async_human_task_intervention
 
-    task = AgentTask.from_session(app.state.sessions.get(sid))
+    task = task_for_session(app, app.state.sessions.get(sid))
     async with async_human_task_intervention(app, task, "stop", actor_sid=sid) as outcome:
         payload = _cancel_session_state(app, deps, sid)
         outcome.update(turn_stop_requested=True, accepted_tasks_continue=True, **payload)

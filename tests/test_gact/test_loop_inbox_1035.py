@@ -1,264 +1,25 @@
-"""#1035 (epic #1031 Pillar 2): loop-inbox core — structure, drain, Producer A.
+"""Replacement for #1035's transient inbox: Core owns pending session input.
 
-Covers the four invariants of the mid-turn wake slice:
-
-* :class:`LoopInbox` put/drain under concurrent writers + the typed overflow drop
-  (no silent loss — the next-turn ``notify_pending`` fallback still carries it).
-* :func:`drain_active_session_inbox` composes a ``_notify_block`` and marks the
-  completion consumed through the EXISTING once-gate, so a mid-turn drain and the
-  next-turn injection never double-surface the same task (BOTH orders).
-* The tool executor never carries inbox arrivals: a queued arrival never reaches
-  the tool result (the agent loop takes it in at the step boundary instead).
-* Producer A enqueues only when the parent is busy and never raises.
+The old drop-oldest and destructive-drain contracts are intentionally gone.
+Concurrency and result separation remain required against actual Core storage.
 """
 
 from __future__ import annotations
 
-import threading
-from contextlib import contextmanager
-from pathlib import Path
+import asyncio
 from types import SimpleNamespace
-from typing import Any, Iterator
+from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
-from clio_agent.gact import context as ctx
-from clio_agent.gact.agent_tasks import (
-    STATUS_COMPLETED,
-    STATUS_FAILED,
-    STATUS_RUNNING,
-    AgentTask,
-    consume_notification,
-    pending_notifications,
-    persist_agent_task,
-)
-from clio_agent.gact.app import build_app
-from clio_agent.gact.enrichment import (
-    PENDING_TASK_NOTIFICATION_MARKER,
-    pending_task_notifications,
-)
-from clio_agent.gact.loop_inbox import (
-    InboxEvent,
-    LoopInbox,
-    drain_active_session_inbox,
-    enqueue_completion_wake,
-    inbox_for,
-)
-from clio_agent.gact.runtime.globals import _gact_app_context
+from clio_agent.gact import context
+from clio_agent.gact.agent_mailbox import accept_agent_mail, pending_mail, retained_mail
+from clio_agent.gact.agents.clio_react_record import StepRecorder
+from clio_agent.gact.core_task_journal import CoreTaskJournal, core_task_journal
 from clio_agent.tools.execution import SyncMCPToolExecutor
+from tests.test_gact import test_core_task_mailbox as core_fixtures
 
-pytestmark = pytest.mark.usefixtures("host_agent_executor")
-
-
-# --------------------------------------------------------------------------- #
-# 1. LoopInbox structure — put / drain / peek / concurrency / overflow         #
-# --------------------------------------------------------------------------- #
-
-
-def test_put_drain_roundtrip() -> None:
-    inbox = LoopInbox()
-    assert inbox.peek_nonempty() is False
-    inbox.put(InboxEvent(kind="child_completed", task_id="t1"))
-    inbox.put(InboxEvent(kind="child_failed", task_id="t2"))
-    assert inbox.peek_nonempty() is True
-    events = inbox.drain()
-    assert [(e.kind, e.task_id) for e in events] == [
-        ("child_completed", "t1"),
-        ("child_failed", "t2"),
-    ]
-    # Drain is pop-all: a second drain is empty.
-    assert inbox.drain() == []
-    assert inbox.peek_nonempty() is False
-
-
-def test_concurrent_writers_no_loss() -> None:
-    """Many writer threads racing put must lose nothing under the RLock (total
-    stays within the bound so every event survives)."""
-
-    inbox = LoopInbox(maxlen=4096)
-    writers = 16
-    per_writer = 100
-    barrier = threading.Barrier(writers)
-
-    def _write(w: int) -> None:
-        barrier.wait()
-        for i in range(per_writer):
-            inbox.put(InboxEvent(kind="child_completed", task_id=f"w{w}-{i}"))
-
-    threads = [threading.Thread(target=_write, args=(w,)) for w in range(writers)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join()
-
-    events = inbox.drain()
-    assert len(events) == writers * per_writer
-    # No duplication / corruption: every id is distinct.
-    assert len({e.task_id for e in events}) == writers * per_writer
-
-
-def test_overflow_drops_oldest_with_typed_reason(caplog: pytest.LogCaptureFixture) -> None:
-    """On overflow the OLDEST is dropped and a TYPED reason is logged (never
-    silent); the surviving window is the most-recent ``maxlen`` events."""
-
-    inbox = LoopInbox(maxlen=2)
-    inbox.put(InboxEvent(kind="child_completed", task_id="oldest"))
-    inbox.put(InboxEvent(kind="child_completed", task_id="mid"))
-    with caplog.at_level("WARNING", logger="clio_agent.gact.loop_inbox"):
-        inbox.put(InboxEvent(kind="child_completed", task_id="newest"))
-
-    assert "reason=inbox_full" in caplog.text
-    assert "dropped_task=oldest" in caplog.text
-    surviving = [e.task_id for e in inbox.drain()]
-    assert surviving == ["mid", "newest"]
-
-
-# --------------------------------------------------------------------------- #
-# Shared app helpers (mirror test_async_observe_s6)                             #
-# --------------------------------------------------------------------------- #
-
-
-@contextmanager
-def _active_turn(app: Any, session_id: str) -> Iterator[None]:
-    with _gact_app_context(app):
-        token = ctx.set_session_id(session_id)
-        try:
-            yield
-        finally:
-            ctx.reset(token)
-
-
-def _seed_terminal_task(
-    app: Any,
-    parent_sid: str,
-    *,
-    status: str = STATUS_COMPLETED,
-    excerpt: str = "the staged CSV is ready",
-    error_reason: str = "",
-    task_id: str = "task_seed",
-) -> AgentTask:
-    """Mint a REAL child session + a terminal, notify-pending AgentTask over it."""
-
-    child = app.state.sessions.create(
-        workspace_id="ws_default", title="c", parent_session_id=parent_sid
-    )
-    task = AgentTask(
-        task_id=task_id,
-        parent_session_id=parent_sid,
-        child_session_id=child.id,
-        agent_ref={"expert_id": "data_expert", "requesting_expert_id": "main"},
-        status=status,
-        error_reason=error_reason,
-        notify_pending=True,
-        result={"answer_excerpt": excerpt, "message_ref": "msg_x", "workflow_state": {}},
-        created_at="2026-07-19T00:00:00+00:00",
-        updated_at="2026-07-19T00:00:00+00:00",
-    )
-    persist_agent_task(app, task)
-    return task
-
-
-def _bus(app: Any, sid: str, etype: str) -> list[Any]:
-    return [e for e in app.state.bus._history.get(sid, []) if e.type == etype]
-
-
-# --------------------------------------------------------------------------- #
-# 2. drain_active_session_inbox — compose + once-gate (BOTH orders)            #
-# --------------------------------------------------------------------------- #
-
-
-def test_drain_composes_block_marks_consumed_then_inject_empty(tmp_path: Path) -> None:
-    """Order A: drain first. It composes a _notify_block, marks the completion
-    consumed, publishes a parent-session progress event, and the SUBSEQUENT
-    next-turn injection finds nothing (no double-surface)."""
-
-    app = build_app(sessions_path=tmp_path / "s.json", agent=None)
-    with TestClient(app):
-        parent = app.state.sessions.create(workspace_id="ws_default", title="p").id
-        task = _seed_terminal_task(app, parent, task_id="task_seed")
-        inbox_for(app, parent).put(InboxEvent(kind="child_completed", task_id=task.task_id))
-
-        with _active_turn(app, parent):
-            arrivals = drain_active_session_inbox(app)
-
-        assert [source for source, _ in arrivals] == ["task_results"]
-        block = arrivals[0][1]
-        assert block.startswith(PENDING_TASK_NOTIFICATION_MARKER)
-        assert "task_seed" in block
-        assert "the staged CSV is ready" in block
-        # Watchdog liveness: a progress event was published on the PARENT session.
-        assert _bus(app, parent, "loop_inbox.drained"), "drain must publish parent liveness"
-        # Once-gate: the task is now consumed, so the next-turn injection is empty.
-        assert pending_notifications(app, parent) == []
-        text, ids = pending_task_notifications(app, parent)
-        assert ids == []
-        assert text == ""
-
-
-def test_drain_emits_delegation_terminal_no_dangle(tmp_path: Path) -> None:
-    """A mid-turn-drained fire-and-forget completion must emit the delegation TERMINAL —
-    it claims ``delegation_reported`` and runs the SAME choreography wait/check/next-turn
-    emit (completed + return Part + parent_resumed) — not merely clear ``notify_pending``.
-    Otherwise the child dangles started-with-no-terminal (perpetually in-progress) because
-    the next-turn path now skips the already-consumed task. The claim is once-gated, so a
-    later commit path never double-emits."""
-
-    from clio_agent.gact.enrichment import consume_pending_agent_task_notifications
-
-    app = build_app(sessions_path=tmp_path / "s.json", agent=None)
-    with TestClient(app):
-        parent = app.state.sessions.create(workspace_id="ws_default", title="p").id
-        task = _seed_terminal_task(app, parent, task_id="task_seed")
-        reg = app.state.agent_task_registry
-        assert reg.get(task.task_id).delegation_reported is False
-        inbox_for(app, parent).put(InboxEvent(kind="child_completed", task_id=task.task_id))
-
-        with _active_turn(app, parent):
-            drain_active_session_inbox(app)
-
-        # The drain claimed + emitted the delegation terminal (no dangling started-only).
-        assert reg.get(task.task_id).delegation_reported is True, (
-            "mid-turn drain must emit the delegation terminal, not just consume notify_pending"
-        )
-        # Once-gated: a later next-turn commit for the same task is a no-op (no double-emit /
-        # no re-claim), proving exactly-once terminal in either order.
-        consume_pending_agent_task_notifications(app, parent, [task.task_id])
-        assert reg.get(task.task_id).delegation_reported is True
-
-
-def test_inject_consumes_first_then_drain_is_empty(tmp_path: Path) -> None:
-    """Order B: another consumer (wait/check/inject all funnel through
-    consume_notification) claims the task first; the mid-turn drain then finds it
-    already consumed and surfaces nothing."""
-
-    app = build_app(sessions_path=tmp_path / "s.json", agent=None)
-    with TestClient(app):
-        parent = app.state.sessions.create(workspace_id="ws_default", title="p").id
-        task = _seed_terminal_task(app, parent, task_id="task_seed")
-        inbox_for(app, parent).put(InboxEvent(kind="child_completed", task_id=task.task_id))
-
-        # A prior consumer claims the notification via the shared once-gate.
-        claimed = consume_notification(app, task.task_id)
-        assert claimed is not None and claimed.notify_pending is False
-
-        with _active_turn(app, parent):
-            arrivals = drain_active_session_inbox(app)
-        assert arrivals == [], "an already-consumed completion must not be re-surfaced"
-
-
-def test_drain_no_active_session_returns_empty(tmp_path: Path) -> None:
-    """A drain with no active session (app-less boundary) returns [] and never raises."""
-
-    app = build_app(sessions_path=tmp_path / "s.json", agent=None)
-    with TestClient(app):
-        with _gact_app_context(app):
-            assert drain_active_session_inbox(app) == []
-
-
-# --------------------------------------------------------------------------- #
-# 3. The tool executor never carries inbox arrivals                            #
-# --------------------------------------------------------------------------- #
+owner = core_fixtures.owner
 
 
 class _FakeClient:
@@ -280,96 +41,76 @@ class _FakeClient:
         ]
 
     async def call_tool(
-        self, name: str, args: dict[str, Any], *, progress_handler: Any = None
+        self, name: str, arguments: dict[str, Any], *, progress_handler: Any = None
     ) -> Any:
-        return SimpleNamespace(data={"name": name, "args": args})
+        return SimpleNamespace(data={"name": name, "args": arguments})
 
     async def read_resource(self, uri: str) -> Any:
         return [SimpleNamespace(uri=uri, mimeType="text/plain", text="resource")]
 
 
-def test_a_queued_arrival_never_reaches_the_tool_result(tmp_path: Path) -> None:
-    """A finished child queued on the running session's inbox is NOT glued onto the
-    tool observation: the executor result is exactly the tool's own output, and the
-    inbox is left for the agent loop to drain at its next step boundary."""
+@pytest.mark.asyncio
+async def test_concurrent_writers_retain_history_without_destructive_reads(owner: Any) -> None:
+    """Concurrent producers persist every body; staging and restart lose no mail."""
+    app, sid = owner.app, owner.sid
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=None)
-    # Allow-all gate: this test is about the result carrier, not the approval flow.
-    executor = SyncMCPToolExecutor(
+    def send(writer: int) -> None:
+        for index in range(4):
+            accept_agent_mail(
+                app,
+                sid,
+                f"writer-{writer}:{index}",
+                source_sid=owner.child,
+                source_agent="worker",
+                message_id=f"concurrent-{writer}-{index}",
+            )
+
+    await asyncio.gather(*(asyncio.to_thread(send, writer) for writer in range(4)))
+    assert len(pending_mail(app, sid)) == len(retained_mail(app, sid)) == 16
+    assert {row["text"] for row in retained_mail(app, sid)} == {
+        f"writer-{writer}:{index}" for writer in range(4) for index in range(4)
+    }
+    from clio_agent.gact.agent_mailbox import collect_agent_mail
+
+    staged = collect_agent_mail(app, sid)
+    assert staged == collect_agent_mail(app, sid) and len(pending_mail(app, sid)) == 16
+    recorder = StepRecorder(app.state.arc, sid, "concurrent-mail", expert_id="owner")
+    await asyncio.to_thread(recorder.injections, staged)
+    await asyncio.to_thread(recorder.read_steps)
+    await core_task_journal(app).commit_input(recorder, 0)
+    assert len(pending_mail(app, sid)) == 8 and len(retained_mail(app, sid)) == 16
+    app.state.core_task_journal = CoreTaskJournal(app)
+    await app.state.core_task_journal.restore()
+    assert len(pending_mail(app, sid)) == 8 and len(retained_mail(app, sid)) == 16
+
+
+@pytest.mark.asyncio
+async def test_a_queued_arrival_never_reaches_the_tool_result(owner: Any) -> None:
+    """Tool output stays separate from session input at the next model boundary."""
+    app, sid = owner.app, owner.sid
+    await asyncio.to_thread(
+        accept_agent_mail,
+        app,
+        sid,
+        "Pending peer result",
+        source_sid=owner.child,
+        source_agent="worker",
+        message_id="pending-peer",
+    )
+    tokens = [context.set_app(app), context.set_session_id(sid)]
+    executor = await asyncio.to_thread(
+        SyncMCPToolExecutor,
         object(),
         timeout=1.0,
         client_factory=lambda _: _FakeClient(),
-        permission_gate=lambda *_args, **_kw: "allow",
+        permission_gate=lambda *_args: "allow",
     )
-    with TestClient(app):
-        parent = app.state.sessions.create(workspace_id="ws_default", title="p").id
-        task = _seed_terminal_task(app, parent, task_id="task_seed")
-        inbox_for(app, parent).put(InboxEvent(kind="child_completed", task_id=task.task_id))
-        try:
-            with _active_turn(app, parent):
-                result = executor.call_tool("fake_echo", {"value": "hi"})
-            assert '"name": "fake_echo"' in result
-            assert PENDING_TASK_NOTIFICATION_MARKER not in result
-            assert "task_seed" not in result
-            assert not result.endswith("\n\n")
-            # The executor did not drain: the arrival is still queued and unconsumed.
-            assert inbox_for(app, parent).peek_nonempty() is True
-            assert [t.task_id for t in pending_notifications(app, parent)] == ["task_seed"]
-        finally:
-            executor.close()
-
-
-# --------------------------------------------------------------------------- #
-# 4. Producer A — enqueue only when busy, never raise                          #
-# --------------------------------------------------------------------------- #
-
-
-def _wake_app(*, parent_sid: str, busy: bool, get: Any = None) -> Any:
-    task_current = SimpleNamespace(parent_session_id=parent_sid)
-    registry = SimpleNamespace(get=get or (lambda _tid: task_current))
-    runner = SimpleNamespace(busy=lambda _sid: busy)
-    state = SimpleNamespace(agent_task_registry=registry, turn_runner=runner, loop_inboxes={})
-    return SimpleNamespace(state=state)
-
-
-def test_producer_a_enqueues_completed_when_busy() -> None:
-    app = _wake_app(parent_sid="sess_p", busy=True)
-    enqueue_completion_wake(app, SimpleNamespace(status=STATUS_COMPLETED, task_id="t1"))
-    events = app.state.loop_inboxes["sess_p"].drain()
-    assert [(e.kind, e.task_id) for e in events] == [("child_completed", "t1")]
-
-
-def test_producer_a_enqueues_failed_when_busy() -> None:
-    app = _wake_app(parent_sid="sess_p", busy=True)
-    enqueue_completion_wake(app, SimpleNamespace(status=STATUS_FAILED, task_id="t2"))
-    events = app.state.loop_inboxes["sess_p"].drain()
-    assert [(e.kind, e.task_id) for e in events] == [("child_failed", "t2")]
-
-
-def test_producer_a_skips_when_parent_idle() -> None:
-    app = _wake_app(parent_sid="sess_p", busy=False)
-    enqueue_completion_wake(app, SimpleNamespace(status=STATUS_COMPLETED, task_id="t1"))
-    assert app.state.loop_inboxes == {}, "no mid-turn wake when the parent is idle"
-
-
-def test_producer_a_skips_non_notify_terminal() -> None:
-    """A non-completed/failed terminal (e.g. still running / cancelled) is not a
-    mid-turn wake."""
-
-    app = _wake_app(parent_sid="sess_p", busy=True)
-    enqueue_completion_wake(app, SimpleNamespace(status=STATUS_RUNNING, task_id="t1"))
-    enqueue_completion_wake(app, SimpleNamespace(status="cancelled", task_id="t2"))
-    assert app.state.loop_inboxes == {}
-
-
-def test_producer_a_never_raises(caplog: pytest.LogCaptureFixture) -> None:
-    """A registry fault in the wake path is caught + logged with a typed reason,
-    never raised into the child completion callback."""
-
-    def _boom(_tid: str) -> Any:
-        raise RuntimeError("registry exploded")
-
-    app = _wake_app(parent_sid="sess_p", busy=True, get=_boom)
-    with caplog.at_level("WARNING", logger="clio_agent.gact.loop_inbox"):
-        enqueue_completion_wake(app, SimpleNamespace(status=STATUS_COMPLETED, task_id="t1"))
-    assert "reason=wake_enqueue_error" in caplog.text
+    try:
+        result = await asyncio.to_thread(executor.call_tool, "fake_echo", {"value": "hi"})
+        assert '"name": "fake_echo"' in result
+        assert "Pending peer result" not in result and "pending-peer" not in result
+        assert [row["message_id"] for row in pending_mail(app, sid)] == ["pending-peer"]
+    finally:
+        await asyncio.to_thread(executor.close)
+        for token in reversed(tokens):
+            context.reset(token)

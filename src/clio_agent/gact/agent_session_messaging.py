@@ -52,17 +52,11 @@ def message_agent_address(
             ).to_wire()
         supersedes = ""
         supersedes_id = ""
-        visited: set[str] = set()
-        while task is not None and task.is_terminal:
-            from clio_agent.gact.subagent_restart import successor_task
-
-            if task.task_id in visited:
-                raise ValueError("invalid_successor_cycle")
-            visited.add(task.task_id)
-            supersedes = supersedes or task.handle_id or task.task_id
-            supersedes_id = supersedes_id or task.task_id
-            task = successor_task(app, task)
-            session = app.state.sessions.get(task.child_session_id)
+        if task is not None and task.is_terminal:
+            # Message acceptance never launches a successor. Shared admission
+            # creates the linked assignment only when the recipient may run.
+            supersedes = task.handle_id or task.task_id
+            supersedes_id = task.task_id
         # Peer messaging can retain mail on a paused recipient; only the owner may
         # explicitly lift the hold. A broad memory scope never grants lifecycle rights.
         should_resume = execution_held(app, session.id) and wake

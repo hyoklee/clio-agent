@@ -37,6 +37,7 @@ class TurnContext:
     session_id: str = ""  # _ACTIVE_GACT_SESSION_ID
     turn_id: str = ""  # _ACTIVE_GACT_TURN_ID
     trace_id: str = ""  # _ACTIVE_GACT_TRACE_ID
+    context_epoch: str = ""  # Captured from the confirmed assignment at turn admission.
     tool_session_id: str = ""  # _ACTIVE_TOOL_SESSION_ID
     # Optional Agent Blueprint selected by this message's execution mode.  This
     # is deliberately turn-scoped: Deep Research layers its coordinator over
@@ -216,6 +217,9 @@ def run_keyed_scope(scope: str) -> str:
     lockstep — while ``active_react_scope`` itself stays the bare agent id for every
     attribution reader (#953)."""
     run = _RUNTIME.get().react_run
+    if epoch := _RUNTIME.get().turn.context_epoch:
+        if scope:
+            scope = f"{scope}#epoch:{epoch}"
     if run >= 0 and scope:
         return f"{scope}#run{run}"
     return scope
@@ -279,7 +283,16 @@ def set_app(app: Any) -> contextvars.Token[RuntimeContext]:
 def set_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
     """Set ``turn.session_id`` (executor entry + copy seed)."""
     cur = _RUNTIME.get()
-    return _RUNTIME.set(replace(cur, turn=replace(cur.turn, session_id=sid)))
+    return _RUNTIME.set(
+        replace(
+            cur,
+            turn=replace(
+                cur.turn,
+                session_id=sid,
+                context_epoch=cur.turn.context_epoch if sid == cur.turn.session_id else "",
+            ),
+        )
+    )
 
 
 def set_tool_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
@@ -295,6 +308,7 @@ def set_turn_identity(
     turn_id: str,
     trace_id: str,
     execution_blueprint_id: str = "",
+    context_epoch: str = "",
 ) -> None:
     """Establish the whole turn layer at once. BARE set, NO token.
 
@@ -315,6 +329,7 @@ def set_turn_identity(
                 trace_id=trace_id,
                 tool_session_id=cur.turn.tool_session_id,
                 execution_blueprint_id=execution_blueprint_id,
+                context_epoch=context_epoch,
             ),
         )
     )

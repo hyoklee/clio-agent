@@ -11,6 +11,7 @@ from typing import Any
 import pytest
 
 from clio_agent.gact import goal as goal_mod
+from clio_agent.gact.agent_mailbox import pending_mail
 from clio_agent.gact.autonomous_loop import _get_loop, run_loop_command, start_loop
 from clio_agent.gact.autonomy_guard import (
     goal_redrive_is_current,
@@ -26,7 +27,6 @@ from clio_agent.gact.goal import (
     parse_goal_command,
     run_goal_command,
 )
-from clio_agent.gact.loop_inbox import inbox_for
 from clio_agent.gact.scheduler_runtime import _fire_schedule
 from tests.test_gact.test_goal import _app, _session
 
@@ -85,7 +85,7 @@ def test_unmet_goal_continues_independently_of_loop_pacing(
     decision = asyncio.run(dispatch_goal_at_finalize(app, session_id=sid))
     assert decision is not None and decision.outcome == "redrive"
     assert _get_goal(app, sid)["active"] is True
-    assert len(inbox_for(app, sid).drain()) == 1
+    assert len(pending_mail(app, sid)) == 1
     assert len(app.state.schedules.list(session_id=sid)) == 1
 
 
@@ -115,12 +115,12 @@ def test_unpaced_goal_redrives_then_clear_invalidates_wakeup(tmp_path: Path) -> 
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     _settle_goal_decision(app, sid, _get_goal(app, sid), GoalJudgement(met=False), "t", "tr")
-    wakeup = inbox_for(app, sid).drain()[0]
-    assert goal_redrive_is_current(app, sid, wakeup.metadata)
+    wakeup = pending_mail(app, sid)[0]
+    assert goal_redrive_is_current(app, sid, wakeup["metadata"])
     clear_goal(app, sid)
-    assert not goal_redrive_is_current(app, sid, wakeup.metadata)
+    assert not goal_redrive_is_current(app, sid, wakeup["metadata"])
     arm_goal(app, sid, condition="A different goal")
-    assert not goal_redrive_is_current(app, sid, wakeup.metadata)
+    assert not goal_redrive_is_current(app, sid, wakeup["metadata"])
 
 
 def test_clear_before_settlement_cannot_resurrect_goal(tmp_path: Path) -> None:
@@ -132,7 +132,7 @@ def test_clear_before_settlement_cannot_resurrect_goal(tmp_path: Path) -> None:
     clear_goal(app, sid)
     assert _settle_goal_decision(app, sid, stale, GoalJudgement(met=False), "t", "tr") is None
     assert not _get_goal(app, sid)["active"]
-    assert inbox_for(app, sid).drain() == []
+    assert pending_mail(app, sid) == []
 
 
 def test_stale_budget_check_cannot_clear_a_replacement_goal(tmp_path: Path) -> None:
@@ -160,7 +160,7 @@ def test_exhausted_goal_does_not_call_judge(tmp_path: Path, monkeypatch: Any) ->
     monkeypatch.setattr(goal_mod, "run_llm_judge", unexpected)
     result = asyncio.run(dispatch_goal_at_finalize(app, session_id=sid))
     assert result is not None and result.reason == "goal_budget"
-    assert inbox_for(app, sid).drain() == []
+    assert pending_mail(app, sid) == []
 
 
 def test_last_allowed_goal_continuation_can_succeed(tmp_path: Path, monkeypatch: Any) -> None:
@@ -193,7 +193,7 @@ def test_failed_judge_stops_instead_of_spending_more_turns(
     result = asyncio.run(dispatch_goal_at_finalize(app, session_id=sid))
     assert result is not None and result.reason == "goal_judge_unavailable"
     assert not result.met
-    assert inbox_for(app, sid).drain() == []
+    assert pending_mail(app, sid) == []
 
 
 @pytest.mark.parametrize("status", ["idle", "running"])
@@ -214,7 +214,6 @@ def test_restart_preserves_only_durable_waiting_work(tmp_path: Path, status: str
             sessions=SessionStore(path=tmp_path / "sessions.json"),
             schedules=ScheduleStore(path=tmp_path / "schedules.json"),
             deferred_schedules=set(),
-            loop_inboxes={},
         )
     )
     assert reloaded.state.sessions.get(sid) is not None
@@ -235,7 +234,7 @@ def test_restart_does_not_leave_unpaced_goal_active(tmp_path: Path) -> None:
     arm_goal(app, sid, condition="Finish the sweep")
     reconcile_autonomous_controls(app)
     assert _get_goal(app, sid)["phase"] == "recovering"
-    assert len(inbox_for(app, sid).drain()) == 1
+    assert len(pending_mail(app, sid)) == 1
 
 
 def test_normal_backend_boot_persists_schedule_without_explicit_path(

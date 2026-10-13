@@ -79,10 +79,6 @@ def mark_agent_ready(app: Any, agent: Any, *, boot: bool = False) -> None:
         boot_handshake.schedule(app, agent)
 
     def drain() -> None:
-        from clio_agent.gact.loop_inbox import drain_inbox_to_new_turn  # noqa: PLC0415
-
-        for session_id in list(app.state.loop_inboxes):
-            drain_inbox_to_new_turn(app, session_id)
         from clio_agent.gact.task_completion_wake import redrive_pending_completion_wakes
 
         redrive_pending_completion_wakes(app)
@@ -97,8 +93,8 @@ def mark_agent_ready(app: Any, agent: Any, *, boot: bool = False) -> None:
 def record_init_failure(app: Any, exc: BaseException, *, stage: str) -> None:
     """Expose one typed deferred-construction failure without leaving partial state.
 
-    While ``app.state.agent`` is ``None`` the ask-user resume parks answers on the
-    loop inboxes, which only :func:`mark_agent_ready` drains. Left alone those
+    While ``app.state.agent`` is ``None``, confirmed Core inputs remain pending
+    until :func:`mark_agent_ready` rechecks common conversation admission. Left alone those
     answers sit there with their sessions reporting ``idle`` -- the user answered
     a question, the session looked ready, and nothing said otherwise.
 
@@ -119,26 +115,15 @@ def record_init_failure(app: Any, exc: BaseException, *, stage: str) -> None:
 
 
 def refuse_parked_inputs(app: Any, *, stage: str, detail: str) -> int:
-    """Refuse — without destroying — every input parked for an absent agent.
+    """Expose pending Core inputs as retained when their provider is unavailable."""
 
-    One ``session.input_refused`` event per parked item (never one summary for
-    the batch: each is a distinct user intent that must be individually visible),
-    and the owning session is surfaced ``error`` rather than the ``idle`` the
-    defer path left behind. Returns the number of refused items.
-
-    The item itself STAYS on its inbox, and the durable steer intent behind it
-    stays ``pending``. Both are true: a provider rebind delivers this work, so
-    settling the intent would publish a cancellation the recovery drain then
-    contradicts, and draining the inbox would throw away an answer the user
-    already gave. ``recoverable``/``retained`` on the payload say exactly that.
-    """
-
+    from clio_agent.gact.agent_mailbox import pending_mail
+    from clio_agent.gact.core_task_journal import core_task_journal
     from clio_agent.gact.events import Event  # noqa: PLC0415
 
-    inboxes = getattr(app.state, "loop_inboxes", None) or {}
     refused = 0
-    for session_id, inbox in list(inboxes.items()):
-        events = inbox.snapshot()
+    for session_id in core_task_journal(app).recipient_sessions():
+        events = pending_mail(app, session_id)
         if not events:
             continue
         for event in events:
@@ -152,10 +137,10 @@ def refuse_parked_inputs(app: Any, *, stage: str, detail: str) -> int:
                         "reason": AGENT_INIT_FAILED_REASON,
                         "stage": stage,
                         "detail": detail,
-                        "kind": event.kind,
-                        "message_id": event.steer_message_id,
-                        "task_id": event.task_id,
-                        "question_id": str(event.metadata.get("question_id") or ""),
+                        "kind": event.get("source_kind", "agent_message"),
+                        "message_id": event["message_id"],
+                        "task_id": event.get("handle", ""),
+                        "question_id": str(event.get("metadata", {}).get("question_id") or ""),
                         "recoverable": True,
                         "retained": True,
                         "recovery_actions": list(AGENT_INIT_RECOVERY_ACTIONS),

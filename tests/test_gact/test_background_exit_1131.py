@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
-import threading
 import time
-from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from dataclasses import asdict, replace
 from pathlib import Path
@@ -13,22 +12,27 @@ from types import SimpleNamespace
 from typing import Any, Iterator
 
 import pytest
+from dspy.lm15 import ToolCallPart
 from fastapi.testclient import TestClient
 
 from clio_agent.gact import context as ctx
 from clio_agent.gact.agent_initialization import mark_agent_ready
+from clio_agent.gact.agent_mailbox import stage_session_inputs
 from clio_agent.gact.agent_tasks import STATUS_COMPLETED, STATUS_RUNNING, seed_agent_task
+from clio_agent.gact.agents.clio_react_record import StepRecorder
 from clio_agent.gact.agents.invoker import TaskEvent
 from clio_agent.gact.app import build_app
 from clio_agent.gact.background_exit import background_exit_part
+from clio_agent.gact.core_task_journal import core_task_journal
 from clio_agent.gact.enrichment import (
-    consume_pending_agent_task_notifications,
     pending_task_notifications,
 )
-from clio_agent.gact.loop_inbox import InboxEvent, drain_active_session_inbox, inbox_for
 from clio_agent.gact.protocol_v3 import event_to_v3
 from clio_agent.gact.runtime.globals import _gact_app_context
+from clio_agent.gact.task_controls import get_task_result
+from clio_agent.gact.task_delivery import result_notification_id
 from clio_agent.gact.task_fold import fold_agent_task_event
+from clio_agent.gact.task_projection import resolve_task
 
 from .conftest import complete_turn
 
@@ -203,48 +207,44 @@ def test_aborted_staging_leaves_exit_for_next_successful_turn(tmp_path: Path) ->
         assert app.state.agent_task_registry.get(task.task_id).notify_pending is False
 
 
-def test_midturn_drain_races_next_turn_injection_to_one_exit_part(tmp_path: Path) -> None:
-    """Both consumers race through mark_consumed and only the winner emits the twin."""
-
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())
+def test_explicit_collection_and_automatic_staging_share_one_recipient_input(
+    tmp_path: Path,
+) -> None:
+    """A stale automatic hint cannot duplicate an already recorded explicit result."""
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=None)
     with TestClient(app) as client:
         parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
         task = _complete_pending(app, parent, "task_racing_consumers")
-        _text, staged = pending_task_notifications(app, parent)
-        inbox_for(app, parent).put(InboxEvent(kind="child_completed", task_id=task.task_id))
-
-        registry = app.state.agent_task_registry
-        original_mark_consumed = registry.mark_consumed
-        contenders = threading.Barrier(2)
-
-        def synchronized_mark_consumed(task_id: str, consumed_at: str) -> Any:
-            contenders.wait(timeout=5.0)
-            return original_mark_consumed(task_id, consumed_at)
-
-        registry.mark_consumed = synchronized_mark_consumed
-
-        def drain_midturn() -> str:
-            with _active_turn(app, parent):
-                return drain_active_session_inbox(app)
-
-        def consume_next_turn() -> None:
-            with _active_turn(app, parent):
-                consume_pending_agent_task_notifications(app, parent, staged)
-
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            drain_future = pool.submit(drain_midturn)
-            consume_future = pool.submit(consume_next_turn)
-            drain_future.result(timeout=10.0)
-            consume_future.result(timeout=10.0)
-
-        added = [
-            event.payload["part"]
-            for event in app.state.bus._history.get(parent, [])
-            if event.type == "message.part.added"
-            and event.payload.get("part", {}).get("type") == "background_exit"
-        ]
-        assert [part["task_id"] for part in added] == [task.task_id]
-        assert app.state.agent_task_registry.get(task.task_id).notify_pending is False
+        with _active_turn(app, parent):
+            staged = stage_session_inputs(app, parent)
+            assert len(staged) == 1
+            result = get_task_result(task.handle_id or task.task_id)
+            recorder = StepRecorder(app.state.arc, parent, "collection", expert_id="main")
+            call = ToolCallPart(
+                id="result-call", name="get_task_result", input={"handle": task.task_id}
+            )
+            recorder.step_done(
+                0,
+                "collection",
+                text="",
+                thinking=[],
+                calls=[call],
+                results={call.id: (result, False)},
+            )
+            recorder.arrivals(staged, 0)
+            recorder.read_steps()
+            asyncio.run(core_task_journal(app).commit_input(recorder, 1))
+            row = resolve_task(app, parent, task.handle_id or task.task_id)
+            identity = result_notification_id(app, parent, row)
+            segments = app.state.arc.render_working_set(parent, recorder.scope)
+            included = [
+                segment
+                for segment in segments
+                if identity in segment.content.get("notification_ids", [])
+            ]
+            assert len(included) == 1 and included[0].kind == "observation"
+            assert not core_task_journal(app).pending(parent, identity)
+            assert not stage_session_inputs(app, parent)
 
 
 def test_background_exit_without_artifact_omits_default_field(tmp_path: Path) -> None:

@@ -87,6 +87,7 @@ def spawn_user_turn(
     transcript_job: Optional[Callable[[], None]],
     run_turn: Callable[..., Any],
     args: tuple[Any, ...],
+    reservation: Any = None,
 ) -> Any:
     """Spawn the turn task through the ``TurnRunner``, guarding its deferred persist.
 
@@ -98,7 +99,10 @@ def spawn_user_turn(
 
     holder = DeferredTranscriptJob(transcript_job)
     task = app.state.turn_runner.spawn(
-        run_turn(*args, transcript_job=holder), sid=session_id, turn_id=turn_id
+        run_turn(*args, transcript_job=holder),
+        sid=session_id,
+        turn_id=turn_id,
+        reservation=reservation,
     )
 
     def _flush_orphaned_job(_task: Any) -> None:
@@ -299,9 +303,32 @@ def prepare_turn_off_loop(state: "TurnState", *, update_retry_attempt: Callable[
     except BaseException as exc:  # noqa: BLE001 - carry the REAL cause to the guard
         state.prologue_error = exc
         state.prologue_phase = PROLOGUE_FAILED
+        if state.user_msg.metadata.get("task_completion_wake") or state.user_msg.metadata.get(
+            "agent_mail_wake"
+        ):
+            state.app.state.sessions.update(
+                state.sid,
+                metadata_patch={
+                    "automatic_input_hold": {
+                        "reason": "input_prepare_failed",
+                        "turn_id": state.turn_id,
+                        "detail": str(exc),
+                    }
+                },
+            )
         raise
     else:
         state.prologue_phase = PROLOGUE_COMPLETED
+        if outcome != "proceed":
+            state.app.state.sessions.update(
+                state.sid,
+                metadata_patch={
+                    "automatic_input_hold": {
+                        "reason": f"input_policy_{outcome}",
+                        "turn_id": state.turn_id,
+                    }
+                },
+            )
         return outcome
 
 

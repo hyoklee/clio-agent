@@ -23,13 +23,20 @@ def message_in_process(invoker: Any, handle: Any, text: str, metadata: Any) -> N
     ``_launch``), not this shared transport.
     """
 
-    from clio_agent.gact.agents.invoker import InvokerError  # noqa: PLC0415
-    from clio_agent.gact.live_handle import enqueue_steer_or_raise  # noqa: PLC0415
+    from clio_agent.gact.agent_mailbox import accept_agent_mail
+    from clio_agent.gact.agents.invoker import InvokerError
 
     task = invoker.app.state.agent_task_registry.get(handle.task_id)
     if task is None:
         raise InvokerError(f"unknown task {handle.task_id!r}", reason="unknown_task")
-    enqueue_steer_or_raise(invoker.app, task, text, dict(metadata or {}))
+    accept_agent_mail(
+        invoker.app,
+        task.child_session_id,
+        text,
+        source_sid=task.parent_session_id,
+        source_agent=task.agent_ref.get("requesting_expert_id", "parent"),
+        metadata=dict(metadata or {}),
+    )
 
 
 def message_via_relay(invoker: Any, handle: Any, text: str, metadata: Any) -> None:

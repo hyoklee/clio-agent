@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.gact.agent_mailbox import pending_mail, retained_mail
 from clio_agent.gact.agent_tasks import (
     STATUS_CANCELLED,
     STATUS_COMPLETED,
@@ -129,7 +130,7 @@ def test_relay_running_message_arrives_via_tasks_update_and_child_consumes(
     assert [(text, metadata) for _handle, text, metadata in relay.messages] == [
         ("Use the new boundary condition.", {})
     ]
-    assert app.state.loop_inboxes.get(task.child_session_id) is None
+    assert not retained_mail(app, task.child_session_id)
     assert parts[0].type == "agent_message"
     assert parts[0].stage == "message.queued"
 
@@ -221,7 +222,7 @@ def test_local_and_relay_running_messages_have_shape_identical_parts(
 
     assert local_result.transport == "step_boundary"
     assert relay_result.transport == "tasks/update"
-    assert len(app.state.loop_inboxes[local.child_session_id].drain()) == 1
+    assert len(pending_mail(app, local.child_session_id)) == 1
     assert len(parts) == 2
     assert set(parts[0].to_wire()) == set(parts[1].to_wire())
 

@@ -24,12 +24,14 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from clio_agent.gact.agent_mailbox import pending_mail, retained_mail
 from clio_agent.gact.agent_tasks import (
     STATUS_CANCELLED,
     persist_agent_task,
     seed_agent_task,
 )
 from clio_agent.gact.app import build_app
+from clio_agent.gact.core_task_journal import core_task_journal
 from clio_agent.gact.live_handle import (
     _CHILD_HEAD_MAX,
     _CHILD_HEAD_PART_TEXT_MAX,
@@ -37,7 +39,6 @@ from clio_agent.gact.live_handle import (
     STEER_REJECT_CHILD_IDLE,
     project_live_handle,
 )
-from clio_agent.gact.loop_inbox import USER_STEER_MARKER
 from clio_agent.gact.types import Message, Part
 
 
@@ -304,16 +305,16 @@ def test_steer_running_child_enqueues_into_child_inbox(tmp_path: Path) -> None:
         assert resp.status_code == 202
         assert resp.json()["child_session_id"] == child
 
-        # The steer landed on the CHILD inbox (not the parent), as a user_message.
-        inbox = app.state.loop_inboxes.get(child)
-        assert inbox is not None
-        events = inbox.drain()
+        # The child receives human input; its owner receives attributed control notices.
+        events = pending_mail(app, child)
         assert len(events) == 1
-        assert events[0].kind == "user_message"
-        assert events[0].text == "focus on LA stations"
-        assert events[0].metadata == {"k": "v"}
-        # Nothing was enqueued onto the parent inbox.
-        assert app.state.loop_inboxes.get(parent) is None
+        assert events[0]["source_kind"] == "human"
+        assert events[0]["text"] == "focus on LA stations"
+        assert events[0]["metadata"] == {"k": "v"}
+        assert retained_mail(app, child) == events
+        notices = core_task_journal(app).for_recipient(parent, "task.intervention")
+        assert {row["phase"] for row in notices} == {"requested", "acknowledged"}
+        assert all(row["actor"] == "human" and row["handle"] == task.handle_id for row in notices)
 
 
 def test_steer_rejects_reserved_metadata_key(tmp_path: Path) -> None:
@@ -344,7 +345,7 @@ def test_steer_rejects_reserved_metadata_key(tmp_path: Path) -> None:
         assert inner["details"]["reserved_keys"] == ["hook_defer_resume"]
         assert inner["details"]["session_id"] == child
         # The reserved key was rejected, never smuggled — nothing buffered on the child.
-        assert app.state.loop_inboxes.get(child) is None
+        assert not retained_mail(app, child)
 
 
 def test_steer_benign_metadata_still_accepted(tmp_path: Path) -> None:
@@ -365,11 +366,9 @@ def test_steer_benign_metadata_still_accepted(tmp_path: Path) -> None:
             json={"text": "focus on LA", "metadata": {"note": "human steer"}},
         )
         assert resp.status_code == 202
-        inbox = app.state.loop_inboxes.get(child)
-        assert inbox is not None
-        events = inbox.drain()
+        events = pending_mail(app, child)
         assert len(events) == 1
-        assert events[0].metadata == {"note": "human steer"}
+        assert events[0]["metadata"] == {"note": "human steer"}
 
 
 def test_steer_empty_text_rejected_422(tmp_path: Path) -> None:
@@ -386,7 +385,7 @@ def test_steer_empty_text_rejected_422(tmp_path: Path) -> None:
         resp = client.post(f"/v1/agent-tasks/{task.task_id}/steer", json={"text": "   "})
         assert resp.status_code == 422
         assert resp.json()["error"]["error"] == "invalid_request"
-        assert app.state.loop_inboxes.get(task.child_session_id) is None
+        assert not retained_mail(app, task.child_session_id)
 
 
 def test_steer_cancelled_child_is_typed_unwakeable_409(tmp_path: Path) -> None:
@@ -408,7 +407,7 @@ def test_steer_cancelled_child_is_typed_unwakeable_409(tmp_path: Path) -> None:
         assert err["error"] == "task_unwakeable"
         assert err["details"]["status"] == STATUS_CANCELLED
         # Nothing buffered anywhere.
-        assert app.state.loop_inboxes.get(task.child_session_id) is None
+        assert not retained_mail(app, task.child_session_id)
 
 
 def test_steer_idle_child_rejected_typed_409(tmp_path: Path) -> None:
@@ -424,7 +423,7 @@ def test_steer_idle_child_rejected_typed_409(tmp_path: Path) -> None:
         err = resp.json()["error"]
         assert err["error"] == "child_not_running"
         assert err["details"]["reason"] == STEER_REJECT_CHILD_IDLE
-        assert app.state.loop_inboxes.get(task.child_session_id) is None
+        assert not retained_mail(app, task.child_session_id)
 
 
 def test_steer_gone_child_rejected_typed_409(tmp_path: Path) -> None:
@@ -450,9 +449,3 @@ def test_steer_unknown_task_404(tmp_path: Path) -> None:
     with TestClient(app) as client:
         resp = client.post("/v1/agent-tasks/task_nope/steer", json={"text": "hi"})
         assert resp.status_code == 404
-
-
-def test_steer_marker_constant_matches_producer() -> None:
-    # The steer surfaces via #1036's producer, so its drained block uses the same
-    # USER_STEER_MARKER — a light guard that we reuse the existing carrier.
-    assert USER_STEER_MARKER.startswith("## Mid-turn user steer")

@@ -27,52 +27,35 @@ def _stage_plan_exit_resume(
 ) -> None:
     """Resume an approved or rejected plan through the deferred-resume fold."""
 
+    from clio_agent.gact.agent_mailbox import accept_session_input
     from clio_agent.gact.events import Event
-    from clio_agent.gact.loop_inbox import enqueue_user_steer
 
-    if app.state.agent is not None and app.state.turn_runner.busy(sid):
-        enqueue_user_steer(
-            app,
-            sid,
-            resume_text,
-            {**resume_metadata, "plan_exit_resume": True, "question_id": question_id},
-        )
-        app.state.bus.publish(
-            Event(
-                type="plan_exit.resume_deferred",
-                session_id=sid,
-                payload={"session_id": sid, "question_id": question_id, "reason": "session_busy"},
-            )
-        )
-        return
-    if app.state.agent is not None:
-        resumed = deps.start_background_user_turn(
-            sid,
-            session,
-            resume_text,
-            metadata={**resume_metadata, "plan_exit_resume": True},
-            prev_status=str(getattr(session, "status", "waiting_user") or "waiting_user"),
-        )
-        app.state.bus.publish(
-            Event(
-                type="plan_exit.resumed",
-                session_id=sid,
-                payload={
-                    "session_id": sid,
-                    "question_id": question_id,
-                    "queued_user_message_id": resumed.id,
-                },
-            )
-        )
-        return
-    app.state.sessions.update(sid, status="idle")
+    message_id = accept_session_input(
+        app,
+        sid,
+        resume_text,
+        {**resume_metadata, "plan_exit_resume": True, "question_id": question_id},
+        steer_message_id="plan-answer_" + question_id,
+        source_kind="human",
+    )
+    app.state.sessions.update(
+        sid,
+        status="idle" if not app.state.turn_runner.busy(sid) else None,
+        metadata_patch={"automatic_input_hold": None},
+    )
     app.state.bus.publish(
         Event(
-            type="session.status_changed",
+            type="plan_exit.resume_deferred",
             session_id=sid,
-            payload={"session_id": sid, "status": "idle", "prev_status": "waiting_user"},
+            payload={
+                "session_id": sid,
+                "question_id": question_id,
+                "message_id": message_id,
+                "reason": "pending_input_admission",
+            },
         )
     )
+    app.state.turn_runner.request_input_admission(sid)
 
 
 def _stage_plan_revision_message(
@@ -87,8 +70,8 @@ def _stage_plan_revision_message(
 ) -> None:
     """Resume rejected plan review with the reviewer's prose as the user message."""
 
+    from clio_agent.gact.agent_mailbox import accept_session_input
     from clio_agent.gact.events import Event
-    from clio_agent.gact.loop_inbox import enqueue_user_steer
 
     metadata = {
         "behavior": {"execution_mode": "plan"},
@@ -97,44 +80,32 @@ def _stage_plan_revision_message(
         "plan_file": plan_file,
         "question_id": question_id,
     }
-    if app.state.agent is not None and app.state.turn_runner.busy(sid):
-        enqueue_user_steer(app, sid, feedback, metadata)
-        app.state.bus.publish(
-            Event(
-                type="plan_exit.revision_deferred",
-                session_id=sid,
-                payload={"session_id": sid, "question_id": question_id},
-            )
-        )
-        return
-    if app.state.agent is not None:
-        resumed = deps.start_background_user_turn(
-            sid,
-            session,
-            feedback,
-            metadata=metadata,
-            prev_status=str(getattr(session, "status", "waiting_user") or "waiting_user"),
-        )
-        app.state.bus.publish(
-            Event(
-                type="plan_exit.revision_started",
-                session_id=sid,
-                payload={
-                    "session_id": sid,
-                    "question_id": question_id,
-                    "user_message_id": resumed.id,
-                },
-            )
-        )
-        return
-    app.state.sessions.update(sid, status="idle")
+    message_id = accept_session_input(
+        app,
+        sid,
+        feedback,
+        metadata,
+        steer_message_id="plan-revision_" + question_id,
+        source_kind="human",
+    )
+    app.state.sessions.update(
+        sid,
+        status="idle" if not app.state.turn_runner.busy(sid) else None,
+        metadata_patch={"automatic_input_hold": None},
+    )
     app.state.bus.publish(
         Event(
-            type="session.status_changed",
+            type="plan_exit.revision_deferred",
             session_id=sid,
-            payload={"session_id": sid, "status": "idle", "prev_status": "waiting_user"},
+            payload={
+                "session_id": sid,
+                "question_id": question_id,
+                "message_id": message_id,
+                "reason": "pending_input_admission",
+            },
         )
     )
+    app.state.turn_runner.request_input_admission(sid)
 
 
 def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, question: Any) -> None:

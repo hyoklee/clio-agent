@@ -8,13 +8,17 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.storage import make_arc_store
 from clio_agent.gact import context as gact_context
 from clio_agent.gact import context_reference_delivery as context_reference_delivery_module
+from clio_agent.gact.agent_mailbox import pending_mail
 from clio_agent.gact.agent_tasks import AgentTask, AgentTaskRegistry
 from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.records import (
@@ -36,6 +40,7 @@ from clio_agent.gact.protocol_v3 import part_to_v3_block
 from clio_agent.gact.routes.references import register_reference_routes
 from clio_agent.gact.runtime.constants import _CTX_MAX_BYTES
 from clio_agent.gact.runtime.globals import _ContextFileAccessError, _gact_app_context
+from clio_agent.gact.turn_runner import TurnRunner
 from clio_agent.gact.types import Message, Part
 from tests.test_gact.test_post_messages import SlowClioAgent
 
@@ -120,7 +125,7 @@ def _session(
     )
 
 
-def _app(tmp_path: Path) -> SimpleNamespace:
+def _app(tmp_path: Path) -> FastAPI:
     session_a = _session("sess_a", "ws_a", title="Shared title", message_count=12)
     session_b = _session("sess_b", "ws_a", title="Shared title")
     session_other = _session("sess_other", "ws_b", title="Private")
@@ -171,13 +176,17 @@ def _app(tmp_path: Path) -> SimpleNamespace:
         resource_store=_Resources(),
         pending_diffs={},
         context_frames={},
-        loop_inboxes={},
+        arc=ARCMemory(store=make_arc_store(backend="cte")),
+        turn_runner=TurnRunner({}),
     )
-    return SimpleNamespace(state=state)
+    app = FastAPI()
+    for name, value in vars(state).items():
+        setattr(app.state, name, value)
+    return app
 
 
 def _mint_artifact(
-    app: SimpleNamespace,
+    app: FastAPI,
     path: Path,
     *,
     workspace_id: str = "ws_a",
@@ -547,7 +556,11 @@ def test_search_and_delivery_share_the_evidence_inventory(tmp_path: Path) -> Non
             )
         )
     assert stale.value.status_code == 409
-    assert stale.value.detail["error"]["error"] == "context_ref_stale"
+    detail = cast(dict[str, Any], stale.value.detail)
+    assert isinstance(detail, dict)
+    error_detail = detail["error"]
+    assert isinstance(error_detail, dict)
+    assert error_detail["error"] == "context_ref_stale"
 
 
 def test_empty_reference_search_is_bounded_without_hiding_deep_matches(tmp_path: Path) -> None:
@@ -654,7 +667,11 @@ def test_file_reference_reports_typed_stale_and_inaccessible_failures(tmp_path: 
             )
         )
     assert stale.value.status_code == 409
-    assert stale.value.detail["error"]["error"] == "context_ref_stale"
+    detail = cast(dict[str, Any], stale.value.detail)
+    assert isinstance(detail, dict)
+    error_detail = detail["error"]
+    assert isinstance(error_detail, dict)
+    assert error_detail["error"] == "context_ref_stale"
 
     with pytest.raises(HTTPException) as inaccessible:
         asyncio.run(
@@ -672,7 +689,11 @@ def test_file_reference_reports_typed_stale_and_inaccessible_failures(tmp_path: 
             )
         )
     assert inaccessible.value.status_code == 403
-    assert inaccessible.value.detail["error"]["error"] == "context_ref_inaccessible"
+    detail = cast(dict[str, Any], inaccessible.value.detail)
+    assert isinstance(detail, dict)
+    error_detail = detail["error"]
+    assert isinstance(error_detail, dict)
+    assert error_detail["error"] == "context_ref_inaccessible"
 
 
 def test_artifact_revision_is_pinned_and_verified(tmp_path: Path) -> None:
@@ -718,7 +739,11 @@ def test_artifact_revision_is_pinned_and_verified(tmp_path: Path) -> None:
                 ],
             )
         )
-    assert stale.value.detail["error"]["error"] == "context_ref_stale"
+    detail = cast(dict[str, Any], stale.value.detail)
+    assert isinstance(detail, dict)
+    error_detail = detail["error"]
+    assert isinstance(error_detail, dict)
+    assert error_detail["error"] == "context_ref_stale"
 
 
 def test_session_and_agent_run_deliver_only_bounded_summaries(tmp_path: Path) -> None:
@@ -784,10 +809,10 @@ def test_typed_parts_survive_message_builder_and_busy_queue(tmp_path: Path) -> N
         model_text="server resolved summary",
     )
 
-    event = app.state.loop_inboxes["sess_a"].drain()[0]
-    assert event.steer_parts[0].type == "context_ref"
-    assert event.steer_parts[0].ref_id == "sess_b"
-    assert event.model_text == "server resolved summary"
+    event = pending_mail(app, "sess_a")[0]
+    assert event["message"]["parts"][0]["type"] == "context_ref"
+    assert event["message"]["parts"][0]["ref_id"] == "sess_b"
+    assert event["text"] == "server resolved summary"
 
 
 def test_normal_submission_and_retry_preserve_context_ref(
@@ -1149,4 +1174,8 @@ def test_context_reference_errors_cover_invalid_missing_revision_and_ownership(
         with pytest.raises(HTTPException) as failure:
             asyncio.run(authorize_context_reference_parts(app, session, [part]))
         assert failure.value.status_code == status_code
-        assert failure.value.detail["error"]["error"] == error
+        detail = cast(dict[str, Any], failure.value.detail)
+        assert isinstance(detail, dict)
+        error_detail = detail["error"]
+        assert isinstance(error_detail, dict)
+        assert error_detail["error"] == error

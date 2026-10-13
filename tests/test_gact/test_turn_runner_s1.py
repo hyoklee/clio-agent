@@ -27,6 +27,7 @@ from clio_agent.gact.turn_runner import (
     BUSY_ERROR_CODE,
     DRAIN_REASON_SERVER_SHUTDOWN,
     DrainOutcome,
+    TurnAdmissionError,
     TurnRunner,
     session_busy_error_payload,
 )
@@ -69,10 +70,8 @@ def test_busy_true_while_running_and_clears_when_done() -> None:
     asyncio.run(scenario())
 
 
-def test_overwritten_session_slot_keeps_strong_ref_to_first_turn() -> None:
-    """The GC-cancellation fix: replacing the per-session slot must NOT drop the
-    first turn's last strong reference. Both turns stay tracked and run to
-    completion; neither is garbage-collected mid-flight."""
+def test_busy_slot_cannot_be_overwritten_by_another_producer() -> None:
+    """All producers share the same gate; rejection closes the unused coroutine."""
 
     async def scenario() -> None:
         in_flight: dict[str, asyncio.Task] = {}
@@ -91,15 +90,20 @@ def test_overwritten_session_slot_keeps_strong_ref_to_first_turn() -> None:
             done["b"] = True
 
         task_a = runner.spawn(turn_a(), sid="s1", turn_id="a")
-        task_b = runner.spawn(turn_b(), sid="s1", turn_id="b")  # overwrites the slot
-
-        # Master set holds BOTH — the first was not dropped when the slot moved.
-        assert runner.active_count() == 2
-        assert in_flight["s1"] is task_b  # per-session view points at the latest
+        rejected = turn_b()
+        with pytest.raises(TurnAdmissionError, match="session_busy"):
+            runner.spawn(rejected, sid="s1", turn_id="b")
+        assert rejected.cr_frame is None
+        assert runner.active_count() == 1
+        assert in_flight["s1"] is task_a
+        assert done == {"a": False, "b": False}
 
         gate_a.set()
+        await task_a
+        await asyncio.sleep(0)
+        task_b = runner.spawn(turn_b(), sid="s1", turn_id="b")
         gate_b.set()
-        await asyncio.gather(task_a, task_b)
+        await task_b
         await asyncio.sleep(0)
         assert done == {"a": True, "b": True}
         assert runner.active_count() == 0
@@ -322,8 +326,10 @@ def test_second_post_while_running_steers_with_202(tmp_path: Path) -> None:
         by_id = {m["id"]: m for m in client.get(f"/v1/sessions/{sid}/messages").json()["messages"]}
         assert by_id[steer_id]["metadata"]["pending_steer"] is True
         assert by_id[steer_id]["metadata"]["delivery"] == "steer"
-        assert app.state.loop_inboxes[sid].peek_nonempty(), (
-            "the steer was not buffered for the drain"
+        from clio_agent.gact.agent_mailbox import pending_mail
+
+        assert steer_id in {row["message_id"] for row in pending_mail(app, sid)}, (
+            "the steer was not retained for the next recipient input"
         )
 
         # It did NOT start a second turn: the running turn still owns the slot and
@@ -364,6 +370,7 @@ def test_three_accepted_steers_keep_three_identities_through_idle_boundaries(
             accepted_ids.append(message_id)
 
         deadline = time.monotonic() + 6.0
+        pending = None
         while time.monotonic() < deadline:
             pending = client.get(f"/v1/sessions/{sid}/pending-steers").json()["pending_steers"]
             if not pending and not app.state.turn_runner.busy(sid):
@@ -469,7 +476,7 @@ def test_answer_resume_deferred_when_busy_then_redriven(tmp_path: Path) -> None:
     user_message steer (typed resume_deferred event), and the idle hook re-drives it
     into exactly ONE new turn the instant the session frees."""
 
-    from clio_agent.gact.loop_inbox import inbox_for
+    from clio_agent.gact.agent_mailbox import pending_mail
     from clio_agent.gact.types import UserQuestion
 
     app = build_app(sessions_path=tmp_path / "s.json", agent=_SlowAgent(sleep_s=1.0))
@@ -499,15 +506,15 @@ def test_answer_resume_deferred_when_busy_then_redriven(tmp_path: Path) -> None:
         assert _user_texts(client, sid) == ["intervening"], (
             "resume double-staged onto a busy session"
         )
-        assert inbox_for(app, sid).peek_nonempty(), "resume was dropped, not enqueued as a steer"
+        assert bool(pending_mail(app, sid)), "resume was dropped, not enqueued as a steer"
         assert _bus_events(app, sid, "user_question.resume_deferred"), "no typed deferral event"
 
         # Once the intervening turn finishes, the idle hook re-drives the resume as
         # one new turn and the inbox drains to empty.
         deadline = time.monotonic() + 8.0
-        while time.monotonic() < deadline and inbox_for(app, sid).peek_nonempty():
+        while time.monotonic() < deadline and bool(pending_mail(app, sid)):
             time.sleep(0.05)
-        assert not inbox_for(app, sid).peek_nonempty(), "buffered resume steer was never re-driven"
+        assert not bool(pending_mail(app, sid)), "buffered resume steer was never re-driven"
 
         deadline = time.monotonic() + 5.0
         while time.monotonic() < deadline and len(_user_texts(client, sid)) < 2:

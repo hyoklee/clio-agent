@@ -16,6 +16,7 @@ from typing import Any
 from uuid import uuid4
 
 from fastmcp import Client, FastMCP
+from fastmcp.client.client import CallToolResult
 from fastmcp.tools import Tool
 from fastmcp.utilities.tasks import TaskConfig
 from fastmcp_tasks import TasksExtension, ToolTask, call_tool_task
@@ -107,6 +108,8 @@ class NativeTaskHost:
         )
         self.client: Client | None = None
         self.tools: dict[str, NativeWorkloadTool] = {}
+        self.control_tools: set[str] = set()
+        self.control_requests: dict[str, Any] = {}
         self.handles: dict[str, Any] = {}
         self.observers: dict[str, asyncio.Task[Any]] = {}
         self.submissions: set[asyncio.Task[Any]] = set()
@@ -182,6 +185,13 @@ class NativeTaskHost:
                         "notification_id": f"task-result:{current['handle']}",
                     },
                 )
+
+    async def submit_tool_call(self, name: str, arguments: dict[str, Any]) -> CallToolResult:
+        """Expose native acceptance and collection through the shared MCP result envelope."""
+        payload = await self.submit(name, arguments)
+        return CallToolResult(
+            content=[], structured_content=payload, data=payload, is_error=False, meta=None
+        )
 
     async def submit(
         self, name: str, arguments: dict[str, Any], *, human_action: bool = False

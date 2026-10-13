@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
@@ -62,7 +64,7 @@ def register_session_creation_route(app: FastAPI) -> None:
         )
         bringup_timing.timer_for_session(app, sess.id).start_phase("session.create")
         # Session creation inherits territory and emits no fabricated grant (#979.2).
-        sync_watcher_for_mode(app, sess)
+        await asyncio.to_thread(sync_watcher_for_mode, app, sess)
         bringup_timing.timer_for_session(app, sess.id).end_phase("session.create")
         # Start the session's servers now, not on its first message.
         session_warmup.start_session_warmup(app, sess.id, trigger="session_created")

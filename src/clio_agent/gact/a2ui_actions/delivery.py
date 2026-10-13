@@ -159,10 +159,12 @@ async def deliver_to_agent(
 
     busy = session_busy_error_payload(getattr(app.state, "turn_runner", None), session_id)
     if busy is not None:
-        from clio_agent.gact.loop_inbox import enqueue_user_steer  # noqa: PLC0415
+        from clio_agent.gact.agent_mailbox import accept_session_input_async
 
         try:
-            enqueue_user_steer(app, session_id, narration, metadata)
+            await accept_session_input_async(
+                app, session_id, narration, metadata, source_kind="human"
+            )
         except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
             fail_and_publish(app, session_id, record, exc)
             raise
@@ -171,26 +173,22 @@ async def deliver_to_agent(
         _publish(app, session_id, delivered)
         return delivered
 
-    from clio_agent.gact.turn import _start_background_user_turn  # noqa: PLC0415
+    from clio_agent.gact.agent_mailbox import accept_session_input_async
 
-    # The gate reports idle, so this is a fresh turn: a cancellation aimed at
-    # the previous one must not poison it (mirrors the pre-S5 producer).
-    app.state.cancel_flags.discard(session_id)
-    app.state.cancel_events.pop(session_id, None)
     try:
-        user_message = _start_background_user_turn(
+        message_id = await accept_session_input_async(
             app,
             session_id,
-            sess,
             narration,
-            metadata=metadata,
-            prev_status=sess.status if sess is not None else "idle",
+            metadata,
+            source_kind="human",
+            steer_message_id="a2ui_" + record.id,
         )
-    except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
+    except Exception as exc:
         fail_and_publish(app, session_id, record, exc)
         raise
     delivered = record.transition(
-        state="delivered", delivery="start", correlation={"message_id": user_message.id}
+        state="delivered", delivery="start", correlation={"message_id": message_id}
     )
     persist_transition(app, delivered)
     _publish(app, session_id, delivered)

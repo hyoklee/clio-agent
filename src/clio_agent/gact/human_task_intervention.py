@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from clio_agent.gact.agent_mailbox import request_mail_wake
 from clio_agent.gact.agent_tasks import AgentTask
+from clio_agent.gact.assignment_history import task_for_session
 from clio_agent.gact.core_task_journal import core_task_journal
 from clio_agent.gact.events import Event
 from clio_agent.gact.subagent_lifecycle import CONTROL_LOCK
@@ -21,7 +22,7 @@ def _identity(task: AgentTask | dict[str, Any]) -> dict[str, Any]:
     if isinstance(task, AgentTask):
         return {
             "handle": task.handle_id or task.task_id,
-            "kind": "Subagent",
+            "kind": task.assignment_kind,
             "description": task.description,
             "label": task.run_label,
             "owner_session_id": task.parent_session_id,
@@ -43,7 +44,12 @@ def _record(app: Any, notice: dict[str, Any]) -> dict[str, Any]:
     """Record at the controlled owner; parent notices derive from that confirmed intent."""
     owner = notice["target_session_id"] or notice["owner_session_id"]
     identity = notice["intervention_id"] + ":" + notice["phase"]
-    recorded = core_task_journal(app).record_control(owner, identity, notice)
+    journal = core_task_journal(app)
+    with journal.writer_lock:
+        prior = journal.get_record(owner, "task.intervention", identity)
+        if prior is not None:
+            return {**prior, "recording": "confirmed"}
+        recorded = journal.record_control(owner, identity, notice)
     app.state.bus.publish(Event(type="task.human_intervention", session_id=owner, payload=recorded))
     if recorded["recording"] == "confirmed":
         request_mail_wake(app, notice["recipient_session_id"])
@@ -112,9 +118,19 @@ def human_task_intervention(
         outcome["recording"] = recorded["recording"]
 
 
-def relay_human_session_message(app: Any, sid: str, message_id: str, text: str) -> None:
+def relay_human_session_message(
+    app: Any, sid: str, message_id: str, text: str, *, task_handle: str = ""
+) -> None:
     """Report accepted user feedback to a child, including queued-message promotion."""
-    task = AgentTask.from_session(app.state.sessions.get(sid))
+    task = (
+        app.state.agent_task_registry.get(task_handle)
+        if task_handle
+        else task_for_session(app, app.state.sessions.get(sid))
+    )
+    if task_handle and (task is None or task.child_session_id != sid):
+        raise ValueError("accepted_input_owner_mismatch")
+    if task is None or task.assignment_kind == "Session" or not task.parent_session_id:
+        return  # The human owns a root session; it has no parent agent to notify.
     with human_task_intervention(
         app, task, "steer", actor_sid=sid, text=text, message_id=message_id
     ) as outcome:

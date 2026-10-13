@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from clio_agent.gact.agent_tasks import AgentTask
+from clio_agent.gact.assignment_history import task_for_session
 from clio_agent.gact.task_permissions import require_coordination
 
 
@@ -24,7 +25,7 @@ def resolve_agent_target(
     not confer authority over a peer's lifecycle.
     """
     session = app.state.sessions.get(target)
-    task = AgentTask.from_session(session) if session is not None else None
+    task = task_for_session(app, session) if session is not None else None
     if session is None:
         from clio_agent.gact.mcp_task_store import app_task_store
         from clio_agent.gact.session_run_tasks import SERVER_ID
@@ -61,7 +62,7 @@ def resolve_agent_target(
 def session_address(app: Any, sid: str) -> dict[str, Any]:
     """Project discovery identity only after the caller has passed read-scope checks."""
     session = app.state.sessions.get(sid)
-    task = AgentTask.from_session(session) if session is not None else None
+    task = task_for_session(app, session) if session is not None else None
     from clio_agent.gact.mcp_task_store import app_task_store
 
     runs = [r for r in app_task_store(app).list() if r.kind == "Session" and r.session_id == sid]
@@ -70,8 +71,8 @@ def session_address(app: Any, sid: str) -> dict[str, Any]:
         "session_id": sid,
         "message_target": sid,
         "handle": (task.handle_id or task.task_id) if task else latest.handle if latest else None,
-        "handle_kind": "Subagent" if task else "Session" if latest else None,
-        "run_status": latest.display_status if latest else None,
+        "handle_kind": task.assignment_kind if task else "Session" if latest else None,
+        "run_status": task.status if task else latest.display_status if latest else None,
         "status": (task.live_state or task.status)
         if task
         else getattr(session, "status", "unknown"),

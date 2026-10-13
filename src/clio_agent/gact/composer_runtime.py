@@ -29,9 +29,8 @@ logger = logging.getLogger(__name__)
 def initialize_composer_state(app: Any, session_store_path: Path) -> None:
     """Install the durable composer stores.
 
-    Pending-steer RECOVERY is deliberately not done here: it re-enqueues onto
-    ``app.state.loop_inboxes``, which ``build_app`` creates later, so it runs
-    from :func:`register_composer_routes` instead.
+    Pending feedback is recovered into Core during application startup, after
+    the confirmed writer and conversation operations are available.
     """
 
     state_root = session_store_path.parent
@@ -92,9 +91,6 @@ def register_composer_routes(app: Any, deps: Any) -> None:
     register_normalized_provider_catalog_routes(app, deps)
     app.state.redrive_message_queue = lambda sid: promote_queue_head(app, deps, sid)
     _install_composer_idle_hook(app, deps)
-    # Runs here, not in initialize_composer_state: recovery re-enqueues onto
-    # app.state.loop_inboxes, which build_app creates between the two calls.
-    _recover_pending_steers(app, deps.append_session_message)
 
 
 def session_autostart_suspended(app: Any, session_id: str) -> bool:
@@ -166,17 +162,17 @@ def _install_composer_idle_hook(app: Any, deps: Any) -> None:
         else:  # pragma: no cover - build_app always installs the drain first
             drain_inbox_and_notify_spotter(app, session_id)
         promote_queue_head(app, deps, session_id)
-        from clio_agent.gact.task_completion_wake import request_completion_wake
-
-        request_completion_wake(app, session_id)
-        from clio_agent.gact.agent_mailbox import wake_mail_recipient
-
-        wake_mail_recipient(app, session_id)
+        app.state.turn_runner.request_input_admission(session_id)
 
     app.state.turn_runner.set_idle_hook(on_session_idle)
 
 
 def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
+    """Compatibility hint; only TurnRunner admits queued conversation inputs."""
+    app.state.turn_runner.request_input_admission(session_id)
+
+
+async def promote_queue_head_async(app: Any, deps: Any, session_id: str) -> None:
     """Attempt one auto-promotion of ``session_id``'s queue head.
 
     Re-driven from every point where the queue can become promotable: a turn
@@ -186,11 +182,17 @@ def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
 
     from clio_agent.gact.events import Event  # noqa: PLC0415
     from clio_agent.gact.message_intents import RevisionConflictError  # noqa: PLC0415
-    from clio_agent.gact.message_submission import accept_message  # noqa: PLC0415
+    from clio_agent.gact.message_submission import accept_message_async  # noqa: PLC0415
     from clio_agent.gact.subagent_lifecycle import execution_held
     from clio_agent.gact.types import PostMessageRequest  # noqa: PLC0415
 
-    if execution_held(app, session_id) or app.state.turn_runner.busy(session_id):
+    session = app.state.sessions.get(session_id)
+    if (
+        session is None
+        or execution_held(app, session_id)
+        or session.metadata.get("automatic_input_hold")
+        or app.state.turn_runner.busy(session_id)
+    ):
         return
     if any(
         row.session_id == session_id and row.status == "pending" and row.response_mode == "blocking"
@@ -210,8 +212,8 @@ def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
             )
         return
 
-    def _accept(row: Any) -> Any:
-        return accept_message(
+    async def _accept(row: Any) -> Any:
+        return await accept_message_async(
             app,
             deps,
             session_id,
@@ -242,7 +244,7 @@ def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
             # client has been told which one to edit.
             return
         try:
-            promoted = app.state.message_intents.promote_queued(
+            promoted = await app.state.message_intents.promote_queued_async(
                 session_id, head.id, head.revision, _accept
             )
         except RevisionConflictError:
@@ -517,52 +519,61 @@ def delete_workspace_resources(app: Any, workspace_id: str) -> None:
             store.delete_workspace(workspace_id)
 
 
-def _recover_pending_steers(app: Any, append_message: AppendMessage) -> None:
-    """Restore accepted pending user identities after a process interruption.
+def recover_pending_feedback(app: Any, append_message: AppendMessage) -> None:
+    """Migrate pending legacy steers to Core and rebuild their local transcript view."""
+    from clio_agent.gact.agent_mailbox import accept_human_feedback
+    from clio_agent.gact.core_task_journal import core_task_journal
 
-    Two halves, and the second was missing. The transcript row is restored so the
-    client sees the identity its ``202`` promised, AND the delivery intent is
-    re-enqueued onto the (in-memory, therefore empty-at-boot) ``LoopInbox`` — a
-    ``PendingSteer`` that is durable but has no inbox event is stranded: no drain
-    and no idle re-drive will ever look at it, so the user's accepted message is
-    silently never delivered. The store already resets ``claimed`` to ``pending``
-    on load, so a steer interrupted mid-claim is re-drivable too.
-    """
+    journal = core_task_journal(app)
+    from clio_agent.gact.message_admission import reconcile_input_effects
+    from clio_agent.gact.session_run_tasks import TURN_RESULT
 
-    from clio_agent.gact.loop_inbox import enqueue_user_steer  # noqa: PLC0415
-
+    for session in app.state.sessions.list():
+        for intent in journal.records(session.id, "task.assignment.input_intent"):
+            message = Message.model_validate(intent["message"])
+            ack = journal.get_record(
+                session.id, "task.assignment.input_acceptance", intent["identity"]
+            )
+            segment = journal.get_record(session.id, "task.assignment.segment", message.turn_id)
+            handle = (
+                (ack["ack"].get("task_handle") if ack else "")
+                or (segment["handle"] if segment else "")
+                or intent.get("target_assignment", "")
+            )
+            reconcile_input_effects(app, append_message, session.id, intent, handle)
+            if (
+                journal.get_record(session.id, TURN_RESULT, message.turn_id)
+                or not journal.pending(session.id, "human-input:" + message.id)
+                or not journal.pending(session.id, "mail:" + message.id)
+                or journal.get_record(session.id, "task.mail.withdrawal", message.id) is not None
+            ):
+                continue
+            accept_human_feedback(app, session.id, message, intent["model_text"])
+            if not any(row.id == message.id for row in app.state.messages.get(session.id, [])):
+                append_message(app, session.id, message)
+            app.state.turn_runner.request_input_admission(session.id)
     for pending in app.state.message_intents.list_all_pending():
         if app.state.sessions.get(pending.session_id) is None:
             continue
-        metadata = {**pending.metadata, "pending_steer": True}
-        messages = app.state.messages.get(pending.session_id, [])
-        if not any(message.id == pending.message_id for message in messages):
-            append_message(
-                app,
-                pending.session_id,
-                Message(
-                    id=pending.message_id,
-                    session_id=pending.session_id,
-                    role="user",
-                    created_at=pending.accepted_at,
-                    updated_at=pending.accepted_at,
-                    parts=list(pending.parts),
-                    metadata=metadata,
-                ),
-            )
-        # Always re-enqueue: the transcript row may have survived in the durable
-        # ledger while the in-memory inbox did not.
-        enqueue_user_steer(
-            app,
-            pending.session_id,
-            pending.text,
-            metadata,
-            steer_message_id=pending.message_id,
-            steer_created_at=pending.accepted_at,
-            steer_parts=list(pending.parts),
+        message = Message(
+            id=pending.message_id,
+            session_id=pending.session_id,
+            role="user",
+            created_at=pending.accepted_at,
+            updated_at=pending.accepted_at,
+            parts=list(pending.parts),
+            metadata={**pending.metadata, "pending_steer": True},
         )
-        logger.info(
-            "recovered pending steer session=%s message=%s reason=restart_recovery",
-            pending.session_id,
-            pending.message_id,
-        )
+        accept_human_feedback(app, pending.session_id, message, pending.text)
+        if (
+            not journal.pending(pending.session_id, "mail:" + pending.message_id)
+            or journal.get_record(pending.session_id, "task.mail.withdrawal", pending.message_id)
+            is not None
+        ):
+            app.state.message_intents.mark_input_committed(pending.session_id, pending.message_id)
+            continue
+        if not any(
+            row.id == pending.message_id for row in app.state.messages.get(pending.session_id, [])
+        ):
+            append_message(app, pending.session_id, message)
+        app.state.turn_runner.request_input_admission(pending.session_id)

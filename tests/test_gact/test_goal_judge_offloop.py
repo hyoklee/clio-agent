@@ -267,8 +267,8 @@ def test_goal_cleared_during_judge_is_discarded(tmp_path: Path, monkeypatch: Any
         assert decision is None
         goal = dict(app.state.sessions.get(sid).metadata.get("goal") or {})
         assert goal.get("active") is False and goal.get("cleared") is True, goal
-        from clio_agent.gact.loop_inbox import inbox_for  # noqa: PLC0415
+        from clio_agent.gact.agent_mailbox import pending_mail  # noqa: PLC0415
 
-        assert inbox_for(app, sid).drain() == []
+        assert pending_mail(app, sid) == []
 
     _in_ctx(body)

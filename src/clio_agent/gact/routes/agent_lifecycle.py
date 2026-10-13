@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from clio_agent.gact.agent_session_messaging import message_agent_address
 from clio_agent.gact.agent_targets import resolve_agent_target
 from clio_agent.gact.human_task_intervention import async_human_task_intervention
-from clio_agent.gact.subagent_lifecycle import on_app_loop, pause_subagent, resume_subagent
+from clio_agent.gact.subagent_lifecycle import pause_subagent, resume_subagent
 from clio_agent.gact.subagent_restart import restart_subagent
 
 
@@ -104,7 +104,7 @@ def register_agent_lifecycle_routes(app: FastAPI) -> None:
                     result = await asyncio.to_thread(restart_subagent, app, task, fresh=body.fresh)
                 else:
                     operation = pause_subagent if action == "pause" else resume_subagent
-                    result = on_app_loop(app, lambda: operation(app, task))
+                    result = await asyncio.to_thread(operation, app, task)
                 outcome.update(result)
                 return result
         except (RuntimeError, ValueError) as exc:

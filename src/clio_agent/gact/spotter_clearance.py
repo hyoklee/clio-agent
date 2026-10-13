@@ -250,9 +250,10 @@ def _clearance_state(app: "FastAPI", parent_session_id: str) -> tuple[str, bool]
     if runner is not None and runner.busy(task.child_session_id):
         return CLEARANCE_GRANTED, True
 
-    from clio_agent.gact.loop_inbox import inbox_for  # noqa: PLC0415
+    from clio_agent.gact.agent_mailbox import pending_session_inputs  # noqa: PLC0415
 
-    return CLEARANCE_GRANTED, inbox_for(app, task.child_session_id).peek_nonempty()
+    mail, results = pending_session_inputs(app, task.child_session_id)
+    return CLEARANCE_GRANTED, bool(mail or results)
 
 
 def _record_denial(parent_session_id: str, reason: str, *, window_s: float) -> str:

@@ -29,7 +29,7 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Optional
@@ -87,6 +87,7 @@ ERROR_REASONS = frozenset(
         "child_forward_declined",
         "child_forward_not_resumable",
         "cancelled_by_parent",
+        "spawn_admission_revoked",
         "child_session_gone",
         "timeout",
         # #948 S6 adversarial-review [10]: a task folded at boot in a non-terminal
@@ -138,7 +139,7 @@ class AgentTaskError(ValueError):
 
 @dataclass(frozen=True)
 class AgentTask:
-    """One spawned child task, projected from its child session's metadata.
+    """One finite assignment, projected from confirmed Core observations.
 
     Immutable: lifecycle changes go through :meth:`AgentTaskRegistry.transition`,
     which produces a new record (``dataclasses.replace``) and re-persists it.
@@ -211,6 +212,14 @@ class AgentTask:
     description: str = ""
     cancel_requested: bool = False
     supersedes_task_id: str = ""
+    revision: int = 0
+    assignment_kind: str = "Subagent"
+    context_checkpoint: dict[str, Any] = field(default_factory=dict)
+    context_epoch: str = ""
+    launch_context: dict[str, Any] = field(default_factory=dict)
+    launch_permissions: dict[str, Any] = field(default_factory=dict)
+    recording: str = "confirmed"
+    recording_error: str = ""
 
     def __post_init__(self) -> None:
         """Keep lifecycle-backed live state canonical at record construction."""
@@ -225,9 +234,27 @@ class AgentTask:
             object.__setattr__(self, "live_state", self.status)
 
     def to_metadata(self) -> dict[str, Any]:
-        """The child-session metadata block that is the authoritative store."""
+        """Return a bounded, rebuildable pointer to the canonical Core assignment."""
 
-        return {"session_type": SESSION_TYPE_AGENT_TASK, "agent_task": asdict(self)}
+        fields = (
+            "task_id",
+            "parent_session_id",
+            "child_session_id",
+            "handle_id",
+            "assignment_kind",
+            "context_epoch",
+            "status",
+            "live_state",
+            "cancel_requested",
+            "revision",
+        )
+        return {
+            "session_type": "session"
+            if self.assignment_kind == "Session"
+            else SESSION_TYPE_AGENT_TASK,
+            "assignment_handle": self.handle_id or self.task_id,
+            "agent_task": {name: getattr(self, name) for name in fields},
+        }
 
     @property
     def is_terminal(self) -> bool:
@@ -259,10 +286,31 @@ class AgentTaskRegistry:
     """
 
     def __init__(self) -> None:
-        self.lifecycle_lock = self._lock = threading.RLock()
+        self.lifecycle_lock = threading.RLock()
+        self._lock = threading.RLock()  # Projection-only: never held across a Core RPC.
         self._tasks: dict[str, AgentTask] = {}
         self._by_parent: dict[str, set[str]] = {}
         self._events: dict[str, threading.Event] = {}
+        self._confirm: Callable[[AgentTask], AgentTask] | None = None
+
+    def bind_persistence(self, confirm: Callable[[AgentTask], AgentTask]) -> None:
+        """Require owner confirmation before publishing any subsequent registry mutation."""
+        with self._lock:
+            self._confirm = confirm
+
+    @property
+    def persistence_bound(self) -> bool:
+        """Whether new registry publication requires a confirmed owner write."""
+        return self._confirm is not None
+
+    def restore_confirmed(self, tasks: Iterable[AgentTask]) -> None:
+        """Rebuild views and waiter state from confirmed observations during startup."""
+        with self._lock:
+            self._tasks.clear()
+            self._by_parent.clear()
+            self._events.clear()
+            for task in tasks:
+                self._index(task)
 
     def _index(self, task: AgentTask) -> None:
         self._tasks[task.task_id] = task
@@ -274,7 +322,36 @@ class AgentTaskRegistry:
     def register(self, task: AgentTask) -> AgentTask:
         """Add (or replace) a task in the projection. Idempotent by ``task_id``."""
 
+        with self.lifecycle_lock:
+            if self._confirm is not None:
+                task = self._confirm(task)
+            with self._lock:
+                self._index(task)
+            return task
+
+    def publish_verified_control(self, task: AgentTask) -> AgentTask:
+        """Reflect known-owner controls provisionally; never invent a terminal result."""
         with self._lock:
+            current = self._tasks.get(task.task_id)
+            if current is None or current.is_terminal or task.is_terminal:
+                raise AgentTaskError(
+                    "No active owner for provisional control", reason="unknown_task"
+                )
+            control_fields = {
+                "live_state",
+                "cancel_requested",
+                "updated_at",
+                "recording",
+                "recording_error",
+            }
+            if any(
+                getattr(current, name) != getattr(task, name)
+                for name in AgentTask.__dataclass_fields__
+                if name not in control_fields
+            ):
+                raise AgentTaskError(
+                    "Provisional observation is not a control", reason="wrong_input"
+                )
             self._index(task)
             return task
 
@@ -396,36 +473,7 @@ class AgentTaskRegistry:
             if notify_pending is not None:
                 updates["notify_pending"] = notify_pending
             updated = replace(current, **updates)
-            self._index(updated)
-            return updated
-
-    def mark_consumed(self, task_id: str, consumed_at: str) -> Optional[AgentTask]:
-        """Atomically claim an async task's observe-later notification (clears
-        ``notify_pending``, stamps ``consumed_at``), returning the updated record.
-
-        The claim is a check-and-set under the registry lock — mirroring
-        :meth:`mark_delegation_reported` — so two concurrent consumers
-        (``wait_agent_tasks`` / next-turn injection) race to
-        claim exactly once: the FIRST call on a terminal, still-``notify_pending``
-        task flips the flag and returns the record; every LATER call returns ``None``
-        (already consumed) with no restamp, so :func:`consume_notification` never
-        double-publishes ``agent.task.consumed``. An unknown id or a non-terminal
-        task is a caller error (never a race) and raises ``AgentTaskError``."""
-
-        with self._lock:
-            current = self._tasks.get(task_id)
-            if current is None:
-                raise AgentTaskError(f"unknown task {task_id!r}", reason="unknown_task")
-            if not current.is_terminal:
-                raise AgentTaskError(
-                    f"cannot consume a non-terminal task (status={current.status!r})",
-                    reason="not_terminal",
-                )
-            if not current.notify_pending:
-                # Already claimed by a concurrent/earlier consumer — the once-guard.
-                return None
-            updated = replace(current, notify_pending=False, consumed_at=consumed_at)
-            self._index(updated)
+            # A candidate is not observable until persist_agent_task confirms it.
             return updated
 
     def mark_delegation_reported(self, task_id: str) -> Optional[AgentTask]:
@@ -444,9 +492,7 @@ class AgentTaskRegistry:
             current = self._tasks.get(task_id)
             if current is None or current.delegation_reported:
                 return None
-            updated = replace(current, delegation_reported=True)
-            self._index(updated)
-            return updated
+            return replace(current, delegation_reported=True)
 
     def rebuild_from_sessions(self, sessions: Iterable["Session"]) -> int:
         """Fold every ``session_type == "agent_task"`` session into the projection
@@ -537,7 +583,6 @@ def install_agent_task_registry(app: "FastAPI") -> AgentTaskRegistry:
     registry = AgentTaskRegistry()
     registry.rebuild_from_sessions(app.state.sessions.list())
     app.state.agent_task_registry = registry
-    settle_interrupted_agent_tasks(app)
     return registry
 
 
@@ -621,32 +666,19 @@ def seed_agent_task(
         created_at=now,
         updated_at=now,
     )
-    persist_agent_task(app, task)
+    task = persist_agent_task(app, task)
     publish_agent_task_event(app, task, AGENT_TASK_EVENTS.get(status, "agent.task.queued"))
     return task
 
 
-def persist_agent_task(app: "FastAPI", task: AgentTask) -> None:
-    """Write a task's authoritative fields to its child session's metadata (the
-    real store) AND update the in-memory projection. The registry is only ever a
-    view over this; a restart re-derives it from the persisted metadata."""
+def persist_agent_task(app: "FastAPI", task: AgentTask) -> AgentTask:
+    """Confirm an assignment in Core before publishing its view or waking waiters."""
 
-    result = app.state.sessions.update(task.child_session_id, metadata_patch=task.to_metadata())
-    if result is None:
-        # No-silent-fallback: the AUTHORITATIVE store write no-op'd (the child
-        # session is gone). Do NOT update the projection to a state the store can't
-        # back — emit a typed reason and refuse, so the registry never diverges
-        # from the persisted truth (a boot fold would silently drop the task).
-        logger.warning(
-            "agent_task persist skipped reason=child_session_gone task=%s child=%s",
-            task.task_id,
-            task.child_session_id,
-        )
-        raise AgentTaskError(
-            f"child session {task.child_session_id!r} is gone; task {task.task_id!r} not persisted",
-            reason="child_session_gone",
-        )
-    app.state.agent_task_registry.register(task)
+    from clio_agent.gact.assignment_history import bind_assignment_history
+
+    registry = app.state.agent_task_registry
+    bind_assignment_history(app)
+    return registry.register(task)
 
 
 # Ordered event vocabulary for the live feed, one per lifecycle edge.

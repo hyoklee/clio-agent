@@ -11,7 +11,9 @@ Three layers:
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,6 +33,7 @@ from clio_agent.gact.agent_tasks import (
     seed_agent_task,
 )
 from clio_agent.gact.app import build_app
+from clio_agent.gact.types import Session
 from clio_agent.tools.mcp_task_records import (
     InMemoryTaskRecordStore,
     TaskKey,
@@ -44,7 +47,7 @@ class _Agent:
         return type("P", (), {"answer": "ok", "selected_expert": "", "routing_rationale": ""})()
 
 
-def _task(**kw) -> AgentTask:
+def _task(**kw: Any) -> AgentTask:
     base = {
         "task_id": "task_1",
         "parent_session_id": "sess_parent",
@@ -62,32 +65,60 @@ def _task(**kw) -> AgentTask:
 # --------------------------------------------------------------------------- #
 
 
+def _legacy_metadata(task: AgentTask) -> dict[str, Any]:
+    """Build the previously shipped full metadata body for migration tests only."""
+    return {"session_type": "agent_task", "agent_task": asdict(task)}
+
+
+def _session(metadata: dict[str, Any], sid: str = "legacy") -> Session:
+    """Build an actual session for the shipped legacy reader."""
+    return Session(
+        id=sid,
+        workspace_id="owned",
+        title=sid,
+        created_at="now",
+        updated_at="now",
+        metadata=metadata,
+    )
+
+
+def _registered(registry: AgentTaskRegistry, identity: str) -> AgentTask:
+    task = registry.get(identity)
+    assert task is not None
+    return task
+
+
 def test_metadata_round_trip() -> None:
     task = _task(depth=2, agent_ref={"expert_id": "hpc", "blueprint_id": "bp"})
     meta = task.to_metadata()
     assert meta["session_type"] == "agent_task"
 
-    class _Sess:
-        metadata = meta
-
-    assert AgentTask.from_session(_Sess()) == task
+    assert set(meta["agent_task"]) <= {
+        "task_id",
+        "parent_session_id",
+        "child_session_id",
+        "handle_id",
+        "assignment_kind",
+        "status",
+        "live_state",
+        "cancel_requested",
+        "revision",
+    }
+    assert AgentTask.from_session(_session(_legacy_metadata(task))) == task
 
     # A non-agent-task session projects to None.
-    class _Plain:
-        metadata = {"session_type": "chat"}
-
-    assert AgentTask.from_session(_Plain()) is None
+    assert AgentTask.from_session(_session({"session_type": "chat"})) is None
 
 
 def test_legal_transition_chain_sets_wait_event() -> None:
     reg = AgentTaskRegistry()
     reg.register(_task(status=STATUS_QUEUED))
     assert not reg.event("task_1").is_set()
-    reg.transition("task_1", STATUS_RUNNING)
-    assert reg.get("task_1").status == STATUS_RUNNING
+    reg.register(reg.transition("task_1", STATUS_RUNNING))
+    assert _registered(reg, "task_1").status == STATUS_RUNNING
     assert not reg.event("task_1").is_set()
-    reg.transition("task_1", STATUS_COMPLETED, result={"answer_excerpt": "done"})
-    assert reg.get("task_1").is_terminal
+    reg.register(reg.transition("task_1", STATUS_COMPLETED, result={"answer_excerpt": "done"}))
+    assert _registered(reg, "task_1").is_terminal
     assert reg.event("task_1").is_set()  # terminal -> wait primitive fires
 
 
@@ -133,11 +164,11 @@ def test_terminal_records_are_immutable() -> None:
 
     reg = AgentTaskRegistry()
     reg.register(_task(status=STATUS_RUNNING))
-    reg.transition("task_1", STATUS_COMPLETED, result={"answer_excerpt": "A"})
+    reg.register(reg.transition("task_1", STATUS_COMPLETED, result={"answer_excerpt": "A"}))
     with pytest.raises(AgentTaskError) as e1:
         reg.transition("task_1", STATUS_COMPLETED, result={"answer_excerpt": "B"})
     assert e1.value.reason == "already_terminal"
-    assert reg.get("task_1").result == {"answer_excerpt": "A"}  # untouched
+    assert _registered(reg, "task_1").result == {"answer_excerpt": "A"}  # untouched
     with pytest.raises(AgentTaskError) as e2:
         reg.transition("task_1", STATUS_CANCELLED)  # terminal -> other terminal
     assert e2.value.reason == "already_terminal"
@@ -149,20 +180,9 @@ def test_boot_fold_skips_malformed_block_without_crashing() -> None:
 
     reg = AgentTaskRegistry()
 
-    class _Bad:
-        id = "sess_bad"
-        metadata = {
-            "session_type": "agent_task",
-            "agent_task": {"task_id": "x"},
-        }  # missing required
-
-    good = _task(task_id="task_ok")
-
-    class _Good:
-        id = "sess_good"
-        metadata = good.to_metadata()
-
-    n = reg.rebuild_from_sessions([_Bad(), _Good()])  # must NOT raise
+    bad = _session({"session_type": "agent_task", "agent_task": {"task_id": "x"}}, "sess_bad")
+    good = _session(_legacy_metadata(_task(task_id="task_ok")), "sess_good")
+    n = reg.rebuild_from_sessions([bad, good])
     assert n == 1
     assert reg.get("task_ok") is not None
     assert reg.get("x") is None
@@ -180,29 +200,34 @@ def test_persist_raises_child_session_gone(tmp_path: Path) -> None:
         assert exc.value.reason == "child_session_gone"
 
 
-def test_consume_requires_terminal() -> None:
+def test_transition_candidate_cannot_release_terminal_waiter() -> None:
+    """Validation alone cannot publish a result; owner confirmation must happen first."""
     reg = AgentTaskRegistry()
-    reg.register(_task(status=STATUS_RUNNING, notify_pending=True))
-    with pytest.raises(AgentTaskError) as exc:
-        reg.mark_consumed("task_1", "2026-07-17T01:00:00+00:00")
-    assert exc.value.reason == "not_terminal"
-    reg.transition("task_1", STATUS_COMPLETED, notify_pending=True)
-    consumed = reg.mark_consumed("task_1", "2026-07-17T01:00:00+00:00")
-    assert consumed.notify_pending is False
-    assert consumed.consumed_at == "2026-07-17T01:00:00+00:00"
+    reg.register(_task(status=STATUS_RUNNING))
+    candidate = reg.transition(
+        "task_1", STATUS_COMPLETED, result={"answer_excerpt": "confirmed later"}
+    )
+    assert candidate.is_terminal and not _registered(reg, "task_1").is_terminal
+    assert not reg.event("task_1").is_set()
+    reg.register(candidate)
+    assert reg.event("task_1").is_set()
+    assert _registered(reg, "task_1").result == {"answer_excerpt": "confirmed later"}
 
 
 def test_rebuild_and_parent_index() -> None:
     reg = AgentTaskRegistry()
 
-    class _Sess:
-        def __init__(self, t):
-            self.metadata = t.to_metadata()
-
     a = _task(task_id="task_a", parent_session_id="P", created_at="2026-07-17T00:00:01+00:00")
     b = _task(task_id="task_b", parent_session_id="P", created_at="2026-07-17T00:00:02+00:00")
     c = _task(task_id="task_c", parent_session_id="Q", created_at="2026-07-17T00:00:03+00:00")
-    n = reg.rebuild_from_sessions([_Sess(a), _Sess(b), _Sess(c), type("X", (), {"metadata": {}})()])
+    n = reg.rebuild_from_sessions(
+        [
+            _session(_legacy_metadata(a)),
+            _session(_legacy_metadata(b)),
+            _session(_legacy_metadata(c)),
+            _session({}),
+        ]
+    )
     assert n == 3
     p_ids = [t.task_id for t in reg.for_parent("P")]
     assert p_ids == ["task_b", "task_a"]  # newest-created first
@@ -250,7 +275,7 @@ def test_task_api_events_both_channels_and_cancel(tmp_path: Path) -> None:
         assert client.get("/v1/sessions/sess_nope/agent-tasks").status_code == 404
 
 
-def test_projection_rebuilt_from_sessions_json_across_restart(tmp_path: Path) -> None:
+def test_projection_rebuilt_from_core_history_across_restart(tmp_path: Path) -> None:
     path = tmp_path / "s.json"
     app1 = build_app(sessions_path=path, agent=_Agent())
     with TestClient(app1) as c1:
@@ -387,10 +412,19 @@ def test_agent_task_spawn_group_fields_default_absent_and_survive_metadata_round
         )
         assert task.spawn_group_id == "fanout_xyz789"
         assert task.group_size == 2
+        from clio_agent.gact.assignment_history import restore_assignment_history, task_for_session
+
         child = app.state.sessions.get(task.child_session_id)
-        # Simulate an OLD persisted record predating these fields (strip them from
-        # the durable metadata) — from_session must tolerate the gap via defaults.
-        stripped_block = dict(child.metadata["agent_task"])
+        assert child is not None
+        assert "spawn_group_id" not in child.metadata["agent_task"]
+        app.state.agent_task_registry = AgentTaskRegistry()
+        restore_assignment_history(app)
+        restored = task_for_session(app, child)
+        assert restored is not None
+        assert restored.spawn_group_id == "fanout_xyz789" and restored.group_size == 2
+        assert child is not None
+        # Explicitly test the shipped legacy reader with a pre-group full record.
+        stripped_block = dict(_legacy_metadata(task)["agent_task"])
         stripped_block.pop("spawn_group_id", None)
         stripped_block.pop("group_size", None)
         child.metadata["agent_task"] = stripped_block

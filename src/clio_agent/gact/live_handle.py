@@ -27,7 +27,7 @@ Design invariants (RULE 4 — NO new store):
   strand it forever. :func:`enqueue_steer_or_raise` refuses with a typed 409
   ``child_not_running`` (carrying the specific sub-cause) unless the child has a
   genuinely running turn; only then does it reuse
-  :func:`loop_inbox.enqueue_user_steer` against the child session.
+  :func:`loop_inbox.accept_session_input` against the child session.
 
 clio-relay parity is a SHAPE obligation only: :class:`LiveTaskHandle` mirrors the
 durable job-record vocabulary already on :class:`~clio_agent.gact.agent_tasks
@@ -42,8 +42,8 @@ from typing import TYPE_CHECKING, Any, Optional
 
 from fastapi import HTTPException
 
+from clio_agent.gact.agent_mailbox import accept_session_input
 from clio_agent.gact.agent_tasks import AgentTask
-from clio_agent.gact.loop_inbox import enqueue_user_steer
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
 
 if TYPE_CHECKING:
@@ -309,7 +309,7 @@ def enqueue_steer_or_raise(
     Refuses with a 409 ``child_not_running`` (carrying the specific sub-cause in
     ``details.reason``) when the child is terminal / gone / idle — a steer that could
     never be drained is a stranded message, never a silent buffer. Only a genuinely
-    running child reuses #1036's producer (:func:`enqueue_user_steer`) against the
+    running child reuses #1036's producer (:func:`accept_session_input`) against the
     CHILD session; the child's next tool boundary drains it into a ``### steer``
     grounding block.
     """
@@ -347,4 +347,4 @@ def enqueue_steer_or_raise(
                 )
             ).model_dump(exclude_none=True),
         )
-    enqueue_user_steer(app, task.child_session_id, text, metadata)
+    accept_session_input(app, task.child_session_id, text, metadata, source_kind="human")

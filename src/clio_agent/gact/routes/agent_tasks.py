@@ -20,6 +20,7 @@ the same paths silently shadowed its GET by registration order while splitting
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
@@ -229,8 +230,13 @@ def register_agent_task_routes(app: FastAPI, deps: "GactDeps") -> None:
         steer_metadata = _normalized_a2ui_steer_metadata(body.metadata)
         try:
             async with async_human_task_intervention(app, task, "steer", text=body.text) as outcome:
-                result = message_agent_task(
-                    app, task_id, body.text, steer_metadata, parent_agent_id="human"
+                result = await asyncio.to_thread(
+                    message_agent_task,
+                    app,
+                    task_id,
+                    body.text,
+                    steer_metadata,
+                    parent_agent_id="human",
                 )
                 outcome.update(result.to_wire())
         except MessageAgentError as exc:

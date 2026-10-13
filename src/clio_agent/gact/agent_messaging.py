@@ -13,18 +13,12 @@ from fastapi import HTTPException
 from clio_agent.errors import ToolError
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.agent_tasks import (
-    STATUS_COMPLETED,
     AgentTask,
 )
-from clio_agent.gact.agents.invoker import InvokerError, TaskHandle, TaskSpec
-from clio_agent.gact.agents.spawn_completion import resolve_verbatim_output
+from clio_agent.gact.agents.invoker import InvokerError, TaskHandle
 from clio_agent.gact.agents.spawn_placement import invoker_for_task, run_handle_fields
-from clio_agent.gact.events import Event
-from clio_agent.gact.runtime.globals import _active_semantic_turn_id
-from clio_agent.gact.spawn_context import bind_task_spec_to_parent
 from clio_agent.gact.tool_observer import _append_live_assistant_part
 from clio_agent.gact.turn_spawn import SpawnError
-from clio_agent.gact.turn_spawn_result import message_text
 from clio_agent.gact.types import Part
 
 
@@ -132,147 +126,6 @@ def _message_part(
     )
 
 
-def _supersede_part(
-    old: AgentTask,
-    new: TaskHandle,
-    *,
-    parent_agent_id: str,
-) -> Part:
-    child_id = old.agent_ref.get("expert_id", "")
-    fields = run_handle_fields(new, child_id)
-    return Part(
-        id=f"live_agent_supersede_{uuid.uuid4().hex[:12]}",
-        type="expert_handoff",
-        agent_id=parent_agent_id,
-        parent_agent=parent_agent_id,
-        child_agent=child_id,
-        stage="delegate.superseded",
-        handle_id=fields["handle_id"],
-        run_label=fields["run_label"],
-        live_state=fields["live_state"],
-        host=fields["host"],
-        placement=fields["placement"],
-        message_action="wake",
-        supersedes_handle_id=old.task_id,
-        superseded_by_handle_id=new.task_id,
-        status="superseded",
-        text=f"{parent_agent_id} -> {child_id}",
-        metadata={"message_action": "wake", "transport": "spawn"},
-    )
-
-
-def _successor_task_text(app: Any, task: AgentTask, message: str) -> str:
-    """Continue a completed child with its retained briefing and return.
-
-    The child session ledger already owns the original, evidence-augmented task
-    text. Reuse that authoritative record instead of adding another archive or
-    widening the AgentTask wire solely for successor construction.
-    """
-
-    original = ""
-    for row in app.state.messages.get(task.child_session_id, []) or []:
-        if getattr(row, "role", "") != "user":
-            continue
-        original = message_text(row)
-        if original:
-            break
-    previous_output, _markers = resolve_verbatim_output(app, task)
-    sections = [
-        "Continue the completed delegated task below. Preserve its original evidence and "
-        "apply the new parent constraint without treating this as an unrelated task."
-    ]
-    if original:
-        sections.extend(["## Original delegated task", original])
-    if previous_output:
-        sections.extend(["## Previous child return", previous_output])
-    sections.extend(["## New parent constraint", message])
-    return "\n\n".join(sections)
-
-
-def _wake_finished(
-    app: Any,
-    task: AgentTask,
-    message: str,
-    *,
-    parent_agent_id: str,
-) -> MessageAgentResult:
-    if task.status != STATUS_COMPLETED:
-        raise MessageAgentError(
-            f"terminal task {task.task_id!r} cannot be woken from status {task.status!r}",
-            reason="task_unwakeable",
-            details={"task_id": task.task_id, "status": task.status},
-            recoverable=False,
-        )
-    if app.state.sessions.get(task.parent_session_id) is None:
-        raise MessageAgentError(
-            f"parent session for task {task.task_id!r} is gone",
-            reason="parent_session_gone",
-            details={"task_id": task.task_id, "parent_session_id": task.parent_session_id},
-            recoverable=False,
-        )
-    if app.state.sessions.get(task.child_session_id) is None:
-        raise MessageAgentError(
-            f"child session for task {task.task_id!r} is gone",
-            reason="child_session_gone",
-            details={"task_id": task.task_id, "child_session_id": task.child_session_id},
-            recoverable=False,
-        )
-    try:
-        binding = invoker_for_task(app, task)
-        spec = bind_task_spec_to_parent(
-            app,
-            TaskSpec(
-                child_expert_id=task.agent_ref.get("expert_id", ""),
-                task_text=_successor_task_text(app, task, message),
-                parent_session_id=task.parent_session_id,
-                requesting_expert_id=(
-                    task.agent_ref.get("requesting_expert_id") or parent_agent_id
-                ),
-                parent_turn_id=_active_semantic_turn_id(),
-                depth=task.depth,
-                mode="async",
-                placement=binding.placement,
-            ),
-        )
-        spawned = binding.invoker.invoke(spec)
-    except (InvokerError, SpawnError, ToolError) as exc:
-        raise _typed_refusal(exc) from exc
-
-    payload = {
-        "task_id": task.task_id,
-        "supersedes_task_id": task.task_id,
-        "superseded_by_task_id": spawned.task_id,
-        "parent_session_id": task.parent_session_id,
-        "child_session_id": task.child_session_id,
-        "woken_child_session_id": spawned.child_session_id,
-        "agent_id": task.agent_ref.get("expert_id", ""),
-        "placement": spawned.placement,
-        "status": "superseded",
-    }
-    app.state.bus.publish(
-        Event(
-            type="agent.task.superseded",
-            session_id=task.parent_session_id,
-            payload=payload,
-        )
-    )
-    _append_live_assistant_part(
-        app,
-        task.parent_session_id,
-        _supersede_part(task, spawned, parent_agent_id=parent_agent_id),
-    )
-    fields = run_handle_fields(spawned, task.agent_ref.get("expert_id", ""))
-    return MessageAgentResult(
-        accepted=True,
-        action="wake",
-        transport="spawn",
-        task_id=spawned.task_id,
-        child_session_id=spawned.child_session_id,
-        supersedes_task_id=task.task_id,
-        **fields,
-    )
-
-
 def message_agent_task(
     app: Any,
     task_id: str,
@@ -283,9 +136,8 @@ def message_agent_task(
 ) -> MessageAgentResult:
     """Message a task without naming its transport.
 
-    Running local tasks queue into the existing step-boundary steer inbox; running
-    relay tasks answer the parked tasks/update round. A completed task creates a
-    placement-matched successor run and types the earlier return as superseded.
+    Local messages enter the stable session mailbox for shared admission. Relay
+    placement delegates to the original native identity and transport owner.
     """
 
     message = _require_message(text)
@@ -299,19 +151,17 @@ def message_agent_task(
             recoverable=False,
         )
     actor = parent_agent_id or task.agent_ref.get("requesting_expert_id") or "main"
-    if task.is_terminal:
-        if metadata:
-            raise MessageAgentError(
-                "wake messages do not carry mid-turn steer metadata",
-                reason="message_metadata_unsupported",
-                details={"task_id": task.task_id, "action": "wake"},
-            )
-        return _wake_finished(app, task, message, parent_agent_id=actor)
-
     try:
         binding = invoker_for_task(app, task)
         transport = "tasks/update" if binding.placement.startswith("relay:") else "step_boundary"
-        binding.invoker.message(TaskHandle.from_task(task), message, dict(metadata or {}))
+        if actor == "human" and transport == "step_boundary":
+            from clio_agent.gact.agent_mailbox import accept_session_input
+
+            accept_session_input(
+                app, task.child_session_id, message, dict(metadata or {}), source_kind="human"
+            )
+        else:
+            binding.invoker.message(TaskHandle.from_task(task), message, dict(metadata or {}))
     except HTTPException as exc:
         raise _http_refusal(exc) from exc
     except (InvokerError, SpawnError, ToolError) as exc:
@@ -390,8 +240,8 @@ def build_message_agent_tool(agent_def: Any) -> Any:
         target is the preferred address; task_id remains a compatibility alias.
         Busy recipients receive mail next iteration; idle recipients wake. Paused
         recipients retain mail unless their owner sets wake=True. Terminal local
-        recipients receive a linked successor. Peer messages require user_intent
-        and permitted workspace scope; they convey no human authority. Replies
+        recipients receive a linked assignment in their stable session. Peers require
+        human-recorded coordination rights; user_intent grants no authority. Replies
         address source_session_id and reply_to=message_id. Do not create reply loops.
         """
 

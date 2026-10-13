@@ -8,6 +8,7 @@ runtime wiring (``composer_runtime``).
 
 from __future__ import annotations
 
+import asyncio
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -16,16 +17,17 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.gact.agent_mailbox import pending_mail
 from clio_agent.gact.app import build_app
-from clio_agent.gact.loop_inbox import (
-    USER_STEER_MARKER,
-    drain_active_session_inbox,
-    inbox_for,
-)
+from clio_agent.gact.loop_inbox import drain_active_session_inbox
 from clio_agent.gact.protocol.v3.composer import queue_entity_id
 from clio_agent.gact.protocol.v3.event import event_to_v3
+from tests.test_gact import test_core_task_mailbox as core_fixtures
+from tests.test_gact.mailbox_helpers import commit_session_inputs
 from tests.test_gact.test_loop_inbox_1036 import _active_turn, _SlowAgent, _wait_busy, _wait_idle
 from tests.test_gact.test_post_messages import FakeClioAgent
+
+owner = core_fixtures.owner
 from tests.test_gact.test_resources import _upload, _workspace
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
@@ -105,12 +107,16 @@ def test_attachment_only_steer_reaches_the_model_and_settles(tmp_path: Path) -> 
         with _active_turn(app, sid):
             arrivals = drain_active_session_inbox(app)
 
-        assert [source for source, _ in arrivals] == ["steer"], (
+        assert [source for source, _ in arrivals] == ["agent_messages"], (
             "an attachment-only steer never reached the model"
         )
         block = arrivals[0][1]
-        assert USER_STEER_MARKER in block
+        assert '"source_kind": "human"' in block
         assert "evidence.md" in block, "the steer block does not reference the attached resource"
+
+        pending = {row["message_id"] for row in pending_mail(app, sid)}
+        assert steer_id in pending, "reading the mailbox must not acknowledge the input"
+        asyncio.run(commit_session_inputs(app, sid, "attachment-feedback-input"))
 
         settled = {row["id"]: row for row in _user_messages(client, sid)}[steer_id]
         assert settled["metadata"]["pending_steer"] is False
@@ -186,18 +192,17 @@ def test_a_cancelled_steer_is_never_surfaced_by_a_racing_drain(tmp_path: Path) -
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "cancel me"}]},
         ).json()["message_id"]
-        # A drain already holding the popped event races the cancel: re-enqueue
-        # the same identity after the cancel route cleared the inbox.
-        buffered = inbox_for(app, sid).drain()
+        # Staging retains the identity in Core; withdrawal must invalidate
+        # the next model input even when a reader already inspected the row.
+        buffered = pending_mail(app, sid)
+        assert [row["message_id"] for row in buffered] == [steer_id]
         assert client.delete(f"/v1/sessions/{sid}/pending-steers/{steer_id}").status_code == 200
-        for event in buffered:
-            inbox_for(app, sid).put(event)
 
         with _active_turn(app, sid):
             arrivals = drain_active_session_inbox(app)
 
         assert arrivals == [], "a cancelled steer was still surfaced to the model"
-        assert not inbox_for(app, sid).peek_nonempty()
+        assert not bool(pending_mail(app, sid))
         assert app.state.message_intents.get_pending(sid, steer_id).state == "cancelled"  # type: ignore[union-attr]
 
 
@@ -494,15 +499,13 @@ def test_v3_session_projection_carries_the_cancellation_envelope(tmp_path: Path)
 
 
 def test_a_recovered_pending_steer_is_delivered_after_a_restart(tmp_path: Path) -> None:
-    """Restoring the transcript row is only half of recovery.
+    """Legacy feedback migrates into Core and wakes without another human send."""
 
-    ``LoopInbox`` is in-memory, so a durable ``PendingSteer`` with no re-enqueued
-    inbox event is stranded: no drain and no idle re-drive ever looks at it, and
-    the user's accepted message is silently never delivered.
-    """
-
+    from clio_agent.gact.agent_mailbox import retained_mail
+    from clio_agent.gact.core_task_journal import core_task_journal
     from clio_agent.gact.message_intents import PendingSteer
     from clio_agent.gact.types import Part
+    from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
 
     sessions_path = tmp_path / "s.json"
     first = build_app(sessions_path=sessions_path, agent=FakeClioAgent(answer="unused"))
@@ -522,22 +525,29 @@ def test_a_recovered_pending_steer_is_delivered_after_a_restart(tmp_path: Path) 
 
     agent = FakeClioAgent(answer="after restart")
     restarted = build_app(sessions_path=sessions_path, agent=agent)
-    assert inbox_for(restarted, sid).peek_nonempty(), "recovery did not re-enqueue the steer"
 
     with TestClient(restarted) as client:
-        assert (
-            client.post(
-                f"/v1/sessions/{sid}/messages",
-                json={"parts": [{"type": "text", "text": "second"}]},
-            ).status_code
-            == 200
-        )
-        deadline = time.monotonic() + 6.0
-        while time.monotonic() < deadline and len(agent.calls) < 2:
+        rows = [row for row in retained_mail(restarted, sid) if row["message_id"] == steer_id]
+        assert len(rows) == 1 and rows[0]["text"] == "recovered steer"
+        deadline = time.monotonic() + TURN_SIGNAL_BACKSTOP_S
+        while core_task_journal(restarted).pending(sid, "mail:" + steer_id):
+            assert time.monotonic() < deadline, "recovered feedback never reached model input"
             time.sleep(0.05)
+        _wait_idle(restarted, sid)
+        assert client.get(f"/v1/sessions/{sid}").status_code == 200
+        from clio_agent.gact.agents.clio_react_record import StepRecorder
 
-    assert len(agent.calls) >= 2, "the recovered steer never reached the model"
-    assert "recovered steer" in agent.calls[1][0]
+        boundary = core_task_journal(restarted).input_boundaries[sid]
+        assert "mail:" + steer_id in boundary["notification_ids"]
+        recorder = StepRecorder(restarted.state.arc, sid, boundary["scope"], expert_id="main")
+        assert any(
+            "recovered steer" in str(part.text)
+            for message in recorder.read_steps()
+            for part in message.parts
+            if part.type == "text"
+        )
+
+    assert len(agent.calls) == 1
     assert restarted.state.message_intents.get_pending(sid, steer_id) is None or (
         restarted.state.message_intents.get_pending(sid, steer_id).state == "consumed"  # type: ignore[union-attr]
     )
@@ -833,7 +843,7 @@ def test_deleting_a_pending_steer_message_retires_its_intent(tmp_path: Path) -> 
 
         pending = app.state.message_intents.get_pending(sid, steer_id)
         assert pending is not None and pending.state == "cancelled"
-        assert not inbox_for(app, sid).peek_nonempty(), "the inbox still carries a deleted steer"
+        assert not bool(pending_mail(app, sid)), "the inbox still carries a deleted steer"
         assert client.get(f"/v1/sessions/{sid}/pending-steers").json()["pending_steers"] == []
 
         with _active_turn(app, sid):
@@ -865,7 +875,7 @@ def test_deleting_an_ordinary_message_leaves_the_intent_plane_alone(tmp_path: Pa
 
         pending = app.state.message_intents.get_pending(sid, steer_id)
         assert pending is not None and pending.state == "pending"
-        assert inbox_for(app, sid).peek_nonempty()
+        assert bool(pending_mail(app, sid))
         _wait_idle(app, sid)
 
 
@@ -1117,49 +1127,49 @@ def test_v3_message_page_carries_the_paging_cursor(tmp_path: Path) -> None:
         assert older.status_code == 200, older.text
 
 
-def test_the_loop_inbox_bound_is_configurable_and_protects_steers(tmp_path: Path) -> None:
-    """The bound is load-bearing for durable steers, so it must be tunable and
-    must evict the recoverable event first, saying so."""
+def test_mailbox_limit_counts_pending_inputs_and_retains_delivered_history(
+    owner: Any,
+) -> None:
+    """Positive limits apply to pending peers; acknowledged history stays in Core."""
+    import asyncio
 
-    from clio_agent.gact.loop_inbox import InboxEvent, LoopInbox, _inbox_maxlen
+    from clio_agent.gact.agent_mailbox import accept_agent_mail, retained_mail
+    from clio_agent.gact.agent_tasks import AgentTaskRegistry
+    from tests._config_layer import set_config
+    from tests.test_gact.mailbox_helpers import commit_session_inputs
+
+    app, sid = owner.app, owner.sid
+    app.state.agent_task_registry = AgentTaskRegistry()
+    for index in range(16):
+        accept_agent_mail(app, sid, f"peer-{index}", source_sid=owner.child, source_agent="worker")
+    assert len(pending_mail(app, sid)) == len(retained_mail(app, sid)) == 16
+    set_config("gact.mailbox.max_pending_messages", 1)
+    with pytest.raises(ValueError, match="pending_limit_retryable"):
+        accept_agent_mail(app, sid, "overflow", source_sid=owner.child, source_agent="worker")
+    asyncio.run(commit_session_inputs(app, sid, "first-batch"))
+    assert len(pending_mail(app, sid)) == 8 and len(retained_mail(app, sid)) == 16
+    asyncio.run(commit_session_inputs(app, sid, "second-batch"))
+    assert not pending_mail(app, sid) and len(retained_mail(app, sid)) == 16
+    accept_agent_mail(app, sid, "new input", source_sid=owner.child, source_agent="worker")
+    assert len(pending_mail(app, sid)) == 1 and len(retained_mail(app, sid)) == 17
+
+
+def test_positive_pending_mail_limit_cannot_drop_history_or_block_human_input(owner: Any) -> None:
+    """Backpressure is explicit and retryable, with no dropped wake or human control."""
+    from clio_agent.gact.agent_mailbox import accept_agent_mail, accept_session_input, retained_mail
     from tests._config_layer import set_config
 
-    assert _inbox_maxlen() == 64
-    set_config("gact.loop_inbox.max_events", 3)
-    assert _inbox_maxlen() == 3, "the inbox bound is not reachable through config"
-    assert LoopInbox()._events.maxlen == 3  # noqa: SLF001 - bound under test
+    app, sid = owner.app, owner.sid
+    from types import SimpleNamespace
 
-    dropped: list[InboxEvent] = []
-    inbox = LoopInbox(maxlen=2, on_overflow=dropped.append)
-    inbox.put(InboxEvent(kind="user_message", task_id="", steer_message_id="msg_steer"))
-    inbox.put(InboxEvent(kind="child_completed", task_id="task_a"))
-    inbox.put(InboxEvent(kind="child_completed", task_id="task_b"))
-
-    assert [event.task_id for event in dropped] == ["task_a"], (
-        "overflow evicted a durable steer while a recoverable child wake was buffered"
-    )
-    remaining = inbox.drain()
-    assert [event.steer_message_id or event.task_id for event in remaining] == [
-        "msg_steer",
-        "task_b",
-    ]
-
-
-def test_overflow_publishes_a_typed_reason(tmp_path: Path) -> None:
-    from clio_agent.gact.loop_inbox import InboxEvent, inbox_for
-
-    app = build_app(sessions_path=tmp_path / "s.json", agent=None)
-    with TestClient(app) as client:
-        sid = client.post("/v1/sessions", json={"title": "overflow"}).json()["id"]
-        inbox = inbox_for(app, sid)
-        for index in range(inbox._events.maxlen + 1):  # noqa: SLF001 - bound under test
-            inbox.put(InboxEvent(kind="child_completed", task_id=f"task_{index}"))
-
-        overflow = _projected(app, sid, "loop_inbox.overflow")
-        assert overflow, "a dropped wake published no typed reason"
-        assert overflow[0]["payload"]["reason"] == "inbox_full"
-        assert overflow[0]["payload"]["recoverable"] is True
-        assert overflow[0]["payload"]["dropped_task_id"] == "task_0"
+    app.state.turn_runner = SimpleNamespace(request_input_admission=lambda _sid: None)
+    set_config("gact.mailbox.max_pending_messages", 1)
+    accept_agent_mail(app, sid, "first peer", source_sid=owner.child, source_agent="worker")
+    with pytest.raises(ValueError, match="pending_limit_retryable"):
+        accept_agent_mail(app, sid, "second peer", source_sid=owner.child, source_agent="worker")
+    accept_session_input(app, sid, "human correction", source_kind="human")
+    assert len(pending_mail(app, sid)) == len(retained_mail(app, sid)) == 2
+    assert {row["text"] for row in pending_mail(app, sid)} == {"first peer", "human correction"}
 
 
 def test_delivery_steer_on_an_idle_session_is_refused_typed(tmp_path: Path) -> None:

@@ -191,16 +191,23 @@ def deliver_forwarded_answer(app: Any, deps: Any, forwarded: UserQuestion) -> No
         _terminate("forwarded_child_not_resumable")
         return
     app.state.sessions.update(child_sid, metadata_patch={"pending_user_question_id": ""})
-    deps.start_background_user_turn(
+    from clio_agent.gact.agent_mailbox import accept_session_input
+
+    accept_session_input(
+        app,
         child_sid,
-        child_sess,
         deps.ask_user_resume_text(answered),
-        metadata={
+        {
             "ask_user_question_id": answered.id,
             "ask_user_answer": answered.answer,
             "ask_user_selected_options": answered.selected_options,
             "ask_user_resume": True,
         },
-        prev_status=getattr(child_sess, "status", "waiting_user"),
+        steer_message_id="forwarded-answer_" + answered.id,
+        source_kind="human",
     )
+    app.state.sessions.update(
+        child_sid, status="idle", metadata_patch={"automatic_input_hold": None}
+    )
+    app.state.turn_runner.request_input_admission(child_sid)
     _settle_or_attach(task_id)  # attach _on_child_done to the resumed turn (never strand)

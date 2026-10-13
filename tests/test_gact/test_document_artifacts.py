@@ -7,12 +7,13 @@ import os
 import time
 import zipfile
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from clio_agent.gact.agent_mailbox import accept_session_input, pending_mail, retained_mail
 from clio_agent.gact.app import build_app
 from clio_agent.gact.documents import renditions
 from clio_agent.gact.documents.editor_callbacks import exact_http_origin
@@ -23,7 +24,10 @@ from clio_agent.gact.documents.native_comments import (
 )
 from clio_agent.gact.documents.profiles import document_format
 from clio_agent.gact.documents.store import get_document_store
-from clio_agent.gact.loop_inbox import InboxEvent, LoopInbox
+from clio_agent.gact.turn_runner import TurnRunner
+from tests.test_gact import test_core_task_mailbox as core_fixtures
+
+owner = core_fixtures.owner
 from tests.test_gact.test_post_messages import FakeClioAgent
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
@@ -430,28 +434,19 @@ def test_collabora_wopi_locks_guard_editor_saves(tmp_path: Path) -> None:
     assert released.status_code == 200
 
 
-def test_document_autosave_steers_coalesce_but_reviews_do_not() -> None:
-    inbox = LoopInbox()
-    inbox.put_coalesced_user_message(
-        InboxEvent(
-            kind="user_message",
-            task_id="",
-            text="version 2",
-            metadata={"coalesce_key": "document-save:one"},
-        )
-    )
-    inbox.put_coalesced_user_message(
-        InboxEvent(
-            kind="user_message",
-            task_id="",
-            text="version 3",
-            metadata={"coalesce_key": "document-save:one"},
-        )
-    )
-    inbox.put(InboxEvent(kind="user_message", task_id="", text="explicit review"))
-
-    events = inbox.drain()
-    assert [event.text for event in events] == ["version 3", "explicit review"]
+def test_document_autosave_steers_coalesce_but_reviews_do_not(owner: Any) -> None:
+    """Only uncommitted autosaves coalesce; complete history and explicit reviews remain."""
+    app, sid = owner.app, owner.sid
+    app.state.turn_runner = TurnRunner({})
+    for text in ("version 2", "version 3"):
+        accept_session_input(app, sid, text, {"coalesce_key": "document-save:one"})
+    accept_session_input(app, sid, "explicit review", source_kind="human")
+    assert [row["text"] for row in pending_mail(app, sid)] == ["version 3", "explicit review"]
+    assert [row["text"] for row in retained_mail(app, sid)] == [
+        "version 2",
+        "version 3",
+        "explicit review",
+    ]
 
 
 def test_markdown_rendition_prefers_local_typst_engine(

@@ -1,0 +1,1013 @@
+{
+  "qualification": "Focused development checks and explicitly scoped native V3 live evidence; full replacement acceptance incomplete",
+  "worker_count": 1,
+  "results": [
+    {
+      "case": "tests/test_gact/test_assignment_history_v3.py::test_unconfirmed_terminal_candidate_cannot_release_a_waiter",
+      "started_utc": "2026-10-13T02:27:26.4268893Z",
+      "ended_utc": "2026-10-13T02:27:46.3203138Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-09225342",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.05s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_history_v3.py::test_complete_assignment_survives_bounded_session_projection_and_restart",
+      "started_utc": "2026-10-13T02:27:46.3629505Z",
+      "ended_utc": "2026-10-13T02:28:06.1212193Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-108086b9",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.72s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_yield_stop_and_task_wake_retain_assignment_until_explicit_completion",
+      "started_utc": "2026-10-13T02:28:06.1243729Z",
+      "ended_utc": "2026-10-13T02:28:26.3089229Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-6103ebdf",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.26s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_runner_holds_busy_slot_and_waiter_until_core_confirms_terminal",
+      "started_utc": "2026-10-13T02:28:26.3109449Z",
+      "ended_utc": "2026-10-13T02:28:45.9653976Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-ad046fe8",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.01s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_failed_terminal_commit_retains_visible_hold_and_reconciles",
+      "started_utc": "2026-10-13T02:28:45.9675457Z",
+      "ended_utc": "2026-10-13T02:29:05.7513801Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-ad8cf23c",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.96s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_known_owner_pause_and_cancel_proceed_during_core_outage",
+      "started_utc": "2026-10-13T02:29:05.7540638Z",
+      "ended_utc": "2026-10-13T02:29:25.4264467Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-1309db5e",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.79s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_restart_reuses_session_and_core_checkpoint_without_copying_transcript",
+      "started_utc": "2026-10-13T02:29:25.4285594Z",
+      "ended_utc": "2026-10-13T02:29:44.9154484Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-f100ff20",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.43s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_core_lineage_repairs_stale_session_pointer_without_retargeting_old_handle",
+      "started_utc": "2026-10-13T02:29:44.9176862Z",
+      "ended_utc": "2026-10-13T02:30:04.7208203Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-4161b3fe",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.83s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_child_yield_result_wake_and_queued_admission_share_one_lifecycle",
+      "started_utc": "2026-10-13T02:30:04.7236563Z",
+      "ended_utc": "2026-10-13T02:30:25.3338852Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-23b81d87",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.19s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_submit_disposition_is_optional_orchestration_and_never_signature_output",
+      "started_utc": "2026-10-13T02:30:25.3356668Z",
+      "ended_utc": "2026-10-13T02:30:45.2358074Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-2fbe7426",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.86s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_recovery_folds_confirmed_result_without_replaying_model",
+      "started_utc": "2026-10-13T02:30:45.2380381Z",
+      "ended_utc": "2026-10-13T02:31:06.0277946Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-88a6968c",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.84s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_queued_child_rechecks_parent_permission_before_any_model_execution",
+      "started_utc": "2026-10-13T02:31:06.0302285Z",
+      "ended_utc": "2026-10-13T02:31:26.3537844Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-13cea504",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.69s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_turn_admission_v3.py::test_reservation_prevents_effects_and_releases_after_failed_staging",
+      "started_utc": "2026-10-13T02:31:26.3564679Z",
+      "ended_utc": "2026-10-13T02:31:46.2308791Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-50e41db2",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 1 warning in 11.66s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_turn_admission_v3.py::test_explicit_reservation_is_single_use_and_session_bound",
+      "started_utc": "2026-10-13T02:31:46.23424Z",
+      "ended_utc": "2026-10-13T02:32:05.6395606Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-c9dfee68",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 1 warning in 11.43s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_turn_admission_v3.py::test_mail_and_results_share_admission_and_recover_the_closing_race",
+      "started_utc": "2026-10-13T02:32:05.6414799Z",
+      "ended_utc": "2026-10-13T02:32:26.7267431Z",
+      "exit_code": 1,
+      "disposable_parent": "D:/Temp/v3ck-782abe50",
+      "parent_absent": true,
+      "summary": [
+        "E   AssertionError: assert 1 == ((2 * 0) + 2)",
+        "E    +  where 1 = len([{'message_role': 'system', 'metadata': {'agent_mail_wake': ['agent_msg_b510ebe660e64874bb0e399eb5f8fc14'], 'task_completion_wake': {'handles': ['outcome-0'], 'pending_count': 1}}, 'prev_status': 'idle'}])",
+        "FAILED tests/test_gact/test_turn_admission_v3.py::test_mail_and_results_share_admission_and_recover_the_closing_race",
+        "1 failed, 2 warnings in 12.60s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_lifecycle_tools_register_for_roots_and_children[False]",
+      "started_utc": "2026-10-13T02:42:33.6174054Z",
+      "ended_utc": "2026-10-13T02:42:53.2986898Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-554081d7",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 1 warning in 11.59s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_lifecycle_tools_register_for_roots_and_children[True]",
+      "started_utc": "2026-10-13T02:42:53.3238346Z",
+      "ended_utc": "2026-10-13T02:43:13.2740734Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-c20d4e7a",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 1 warning in 11.73s"
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_pause_persists_same_handle_without_cancelling_background_work[running]",
+      "started_utc": "2026-10-13T02:43:13.2774199Z",
+      "ended_utc": "2026-10-13T02:43:34.5470172Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-e560ae98",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.29s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_pause_persists_same_handle_without_cancelling_background_work[queued]",
+      "started_utc": "2026-10-13T02:43:34.5497465Z",
+      "ended_utc": "2026-10-13T02:43:56.8872902Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-2772573d",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.69s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_pause_requested_is_pending_until_worker_finishes",
+      "started_utc": "2026-10-13T02:43:56.8904629Z",
+      "ended_utc": "2026-10-13T02:44:19.4217154Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-2d408e7b",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.77s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_resume_same_handle_once_preserves_pending_results",
+      "started_utc": "2026-10-13T02:44:19.4244952Z",
+      "ended_utc": "2026-10-13T02:44:40.9339238Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-4f1acc9e",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.38s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_pause_is_restored_from_core_without_failing_held_run",
+      "started_utc": "2026-10-13T02:44:40.9364687Z",
+      "ended_utc": "2026-10-13T02:45:00.8594369Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-76a50ac6",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.84s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_background_completion_cannot_wake_paused_model",
+      "started_utc": "2026-10-13T02:45:00.8689746Z",
+      "ended_utc": "2026-10-13T02:45:21.6029639Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-b850414d",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.35s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_mail_retains_sender_until_input_commit_and_delivers_once",
+      "started_utc": "2026-10-13T02:45:21.6060935Z",
+      "ended_utc": "2026-10-13T02:45:42.2840739Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-73b12e3d",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.06s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_vetoed_input_and_overflow_remain_pending",
+      "started_utc": "2026-10-13T02:45:42.2871634Z",
+      "ended_utc": "2026-10-13T02:46:02.7005931Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-a61cc4ec",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.18s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_peer_read_scope_does_not_grant_lifecycle_or_message_authority",
+      "started_utc": "2026-10-13T02:46:02.7034144Z",
+      "ended_utc": "2026-10-13T02:46:25.6827746Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-b901a62c",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 13.03s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_discovery_address_and_legacy_handle_resolve_exactly",
+      "started_utc": "2026-10-13T02:46:25.6855251Z",
+      "ended_utc": "2026-10-13T02:46:48.9194369Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-32851716",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.97s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_reply_requires_known_pair_without_transferring_permissions",
+      "started_utc": "2026-10-13T02:46:48.9212553Z",
+      "ended_utc": "2026-10-13T02:47:08.7722704Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-77c1a1e8",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.73s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_relay_pause_refuses_without_publishing_false_hold",
+      "started_utc": "2026-10-13T02:47:08.7745582Z",
+      "ended_utc": "2026-10-13T02:47:29.4433745Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-fb58bcf9",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.12s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_large_mail_is_batched_without_dropping_or_truncating",
+      "started_utc": "2026-10-13T02:47:29.4469670Z",
+      "ended_utc": "2026-10-13T02:47:50.6180854Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-e9d5493e",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 12.69s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_busy_mail_waits_for_next_iteration_not_idle",
+      "started_utc": "2026-10-13T02:47:50.6221150Z",
+      "ended_utc": "2026-10-13T02:48:10.6404555Z",
+      "exit_code": 0,
+      "disposable_parent": "D:/Temp/v3ck-6493574b",
+      "parent_absent": true,
+      "summary": [
+        "1 passed, 2 warnings in 11.96s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    },
+    {
+      "case": "tests/test_gact/test_subagent_lifecycle.py::test_system_continuation_retains_explicit_recipient_model",
+      "started_utc": "2026-10-13T02:48:10.6428631Z",
+      "ended_utc": "2026-10-13T02:48:32.7663709Z",
+      "exit_code": 1,
+      "disposable_parent": "D:/Temp/v3ck-98c16626",
+      "parent_absent": true,
+      "summary": [
+        "E   AssertionError: assert {'effective_m...e': 'session'} == {'effective_m...e': 'session'}",
+        "E     ",
+        "E     Omitting 1 identical items, use -vv to show",
+        "E     Differing items:",
+        "E     {'effective_model': {'model_id': 'luna', 'provider_id': 'codex', 'variant': ''}} != {'effective_model': {'model_id': 'luna', 'provider_id': 'codex'}}",
+        "E     Use -v to get more diff",
+        "FAILED tests/test_gact/test_subagent_lifecycle.py::test_system_continuation_retains_explicit_recipient_model",
+        "1 failed, 2 warnings in 13.97s",
+        " - leaked function \"DeferErrorCount\""
+      ]
+    }
+  ],
+  "native_live_checks": [
+    {
+      "kind": "Shell",
+      "phase": "model-initiated native replacement acceptance",
+      "pass": false,
+      "reason": "Native acceptance dictionary was lost at the provider MCP projection; initial model observation contained empty content. Handle discovery through query_tasks does not satisfy immediate acceptance.",
+      "model": "gpt-6-luna",
+      "provider": "codex",
+      "head": "b6c1ae6e43850973e594777c09dd10a0ad91f1d4",
+      "diff_sha256": "7577f7d339b37e9079bfeddb4e0412c85c1c61743cc528f405c514c7ffb8129b",
+      "source_unchanged_during_run": true,
+      "session_id": "sess_b47c8b175d8e",
+      "elapsed_seconds": 86.46956570004113,
+      "accepted": [],
+      "overlap": [],
+      "independent_action_while_running": [],
+      "owner_outcomes": {
+        "terminal": [],
+        "pass": false,
+        "filesystem_output": "owned shell completed"
+      },
+      "transcript_sha256": "813bb7863cdad423881f9f9187bc22a20a801e28ab785e40022d9f71c55e75c3",
+      "settlement": {
+        "checked_at": 1791866479.9193738,
+        "owned_processes_remaining": [],
+        "owned_listeners_remaining": [],
+        "private_core_root_absent": true
+      },
+      "disposable_root": "D:\\Temp\\clio-v3-mailbox-live-9c4f0d62",
+      "scope_limits": [
+        "Single Shell acceptance cycle; not idle wake, all providers, final race repetition or full V3 qualification"
+      ],
+      "side_effects": [
+        "Discovery used an existing managed Web MCP cache and its existing clio-kit pruning path; subsequent qualification isolates both managed and uv caches."
+      ],
+      "disposable_cleanup": {
+        "action": "Guarded PowerShell recursive removal after process, listener and no-link checks",
+        "command_ran": false,
+        "reason": "Automatic approval review: blocked by policy",
+        "state": "human-manual-only; never retry or bypass",
+        "logical_bytes": 4358498
+      }
+    },
+    {
+      "kind": "Shell",
+      "phase": "model-initiated native replacement acceptance",
+      "pass": true,
+      "reason": null,
+      "model": "gpt-6-luna",
+      "provider": "codex",
+      "head": "b6c1ae6e43850973e594777c09dd10a0ad91f1d4",
+      "diff_sha256": "172ce8f9c66627640d4d96bff7f5fccd8061d6dc598a6f0631fdfdb299e1ed7c",
+      "source_unchanged_during_run": true,
+      "session_id": "sess_b5e843b64cdc",
+      "elapsed_seconds": 86.648541499977,
+      "accepted": [
+        {
+          "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+          "invocation_id": "call_df954004e103",
+          "observation": {
+            "accepted": true,
+            "acceptance": "accepted",
+            "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+            "kind": "Shell",
+            "description": "Run requested owned-shell.py in background.",
+            "activity": "queued",
+            "recording": "confirmed",
+            "retry_safe": false
+          }
+        }
+      ],
+      "overlap": [
+        {
+          "acceptance": {
+            "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+            "position": 6,
+            "invocation_id": "call_df954004e103",
+            "observation": {
+              "accepted": true,
+              "acceptance": "accepted",
+              "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+              "kind": "Shell",
+              "description": "Run requested owned-shell.py in background.",
+              "activity": "queued",
+              "recording": "confirmed",
+              "retry_safe": false
+            }
+          },
+          "later_model_observation": {
+            "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+            "position": 9,
+            "invocation_id": "call_7c4d1a43fd2f",
+            "snapshot": {
+              "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+              "kind": "mcp",
+              "tool": "bash",
+              "description": "Run requested owned-shell.py in background.",
+              "created_at": "2026-10-13T04:44:37.394493+00:00",
+              "acceptance": "accepted",
+              "effective_status": "running",
+              "raw_status": "working",
+              "activity": "running",
+              "cancel_requested": false,
+              "placement": "local",
+              "updated_at": "2026-10-13T04:44:43.678549+00:00",
+              "recording": "confirmed",
+              "connection_freshness": "current",
+              "progress": {
+                "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+                "invocation_id": "call_df954004e103",
+                "progress": 105,
+                "total": null,
+                "message": "{\"type\": \"clio.terminal.chunk\", \"stream\": \"stdout\", \"text\": \"progress 6\\n\"}"
+              },
+              "id": "task_f022a3b1298344d2b9facd06e5701fb6",
+              "task_kind": "Shell",
+              "label": "Run requested owned-shell.py in background.",
+              "title": "Run requested owned-shell.py in background.",
+              "description_missing": false,
+              "owner": {
+                "session_id": "sess_b5e843b64cdc",
+                "agent": "main"
+              },
+              "owner_session_id": "sess_b5e843b64cdc",
+              "root_session_id": "sess_b5e843b64cdc",
+              "supported_actions": [
+                "observe",
+                "wait",
+                "result",
+                "cancel"
+              ],
+              "result_reference": {
+                "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+                "tool": "get_task_result"
+              },
+              "access": "owner"
+            }
+          }
+        },
+        {
+          "acceptance": {
+            "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+            "position": 6,
+            "invocation_id": "call_df954004e103",
+            "observation": {
+              "accepted": true,
+              "acceptance": "accepted",
+              "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+              "kind": "Shell",
+              "description": "Run requested owned-shell.py in background.",
+              "activity": "queued",
+              "recording": "confirmed",
+              "retry_safe": false
+            }
+          },
+          "later_model_observation": {
+            "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+            "position": 13,
+            "invocation_id": "call_f94d01ed887e",
+            "snapshot": {
+              "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+              "kind": "mcp",
+              "tool": "bash",
+              "description": "Run requested owned-shell.py in background.",
+              "created_at": "2026-10-13T04:44:37.394493+00:00",
+              "acceptance": "accepted",
+              "effective_status": "running",
+              "raw_status": "working",
+              "activity": "running",
+              "cancel_requested": false,
+              "placement": "local",
+              "updated_at": "2026-10-13T04:44:46.769835+00:00",
+              "recording": "confirmed",
+              "connection_freshness": "current",
+              "progress": {
+                "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+                "invocation_id": "call_df954004e103",
+                "progress": 141,
+                "total": null,
+                "message": "{\"type\": \"clio.terminal.chunk\", \"stream\": \"stdout\", \"text\": \"progress 9\\n\"}"
+              },
+              "id": "task_f022a3b1298344d2b9facd06e5701fb6",
+              "task_kind": "Shell",
+              "label": "Run requested owned-shell.py in background.",
+              "title": "Run requested owned-shell.py in background.",
+              "description_missing": false,
+              "owner": {
+                "session_id": "sess_b5e843b64cdc",
+                "agent": "main"
+              },
+              "owner_session_id": "sess_b5e843b64cdc",
+              "root_session_id": "sess_b5e843b64cdc",
+              "supported_actions": [
+                "observe",
+                "wait",
+                "result",
+                "cancel"
+              ],
+              "result_reference": {
+                "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+                "tool": "get_task_result"
+              },
+              "access": "owner"
+            }
+          }
+        }
+      ],
+      "independent_action_while_running": [
+        {
+          "position": 7,
+          "invocation_id": "call_4443f25f5779",
+          "observation": {
+            "id": "live_call_4443f25f5779_result",
+            "type": "tool_result",
+            "metadata": {
+              "stream_source": "live",
+              "completed_at": "2026-10-13T04:44:42.818356+00:00",
+              "telemetry_source": "live_observer",
+              "result": {
+                "content": [],
+                "structuredContent": {
+                  "path": "D:\\Temp\\clio-v3-mailbox-live-c812a6f0\\proof\\workspace\\sentinel.txt",
+                  "size_bytes": 30,
+                  "content": "independent action completed\r\n",
+                  "truncated": false
+                }
+              }
+            },
+            "agent_id": "main",
+            "sequence": 7,
+            "call_id": "call_4443f25f5779",
+            "tool_name": "fs_read_file",
+            "content": [
+              {
+                "id": "live_call_4443f25f5779_result_final_text",
+                "type": "text",
+                "text": "{\"path\": \"D:\\\\Temp\\\\clio-v3-mailbox-live-c812a6f0\\\\proof\\\\workspace\\\\sentinel.txt\", \"size_bytes\": 30, \"content\": \"independent action completed\\r\\n\", \"truncated\": false}",
+                "agent_id": ""
+              }
+            ],
+            "duration_ms": 5484.612941741943,
+            "structured_content": {
+              "path": "D:\\Temp\\clio-v3-mailbox-live-c812a6f0\\proof\\workspace\\sentinel.txt",
+              "size_bytes": 30,
+              "content": "independent action completed\r\n",
+              "truncated": false
+            },
+            "presentation": {
+              "action": "Read",
+              "subject": "file-link",
+              "summary": "30 bytes",
+              "blocks": [
+                {
+                  "id": "file-link",
+                  "type": "link",
+                  "media_type": "",
+                  "text": "",
+                  "label": "sentinel.txt",
+                  "language": "",
+                  "workspace_id": "",
+                  "path": "",
+                  "sha256": "",
+                  "pages": [],
+                  "target": "file",
+                  "uri": "D:\\Temp\\clio-v3-mailbox-live-c812a6f0\\proof\\workspace\\sentinel.txt",
+                  "command": "",
+                  "timed_out": false,
+                  "status": "",
+                  "detail": "",
+                  "items": [],
+                  "action_label": ""
+                },
+                {
+                  "id": "file",
+                  "type": "text",
+                  "media_type": "",
+                  "text": "independent action completed\r\n",
+                  "label": "",
+                  "language": "",
+                  "workspace_id": "",
+                  "path": "",
+                  "sha256": "",
+                  "pages": [],
+                  "uri": "",
+                  "command": "",
+                  "timed_out": false,
+                  "status": "",
+                  "detail": "",
+                  "items": [],
+                  "action_label": ""
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "owner_outcomes": {
+        "terminal": [
+          {
+            "handle": "task_f022a3b1298344d2b9facd06e5701fb6",
+            "status": "completed"
+          }
+        ],
+        "pass": true,
+        "filesystem_output": "owned shell completed"
+      },
+      "transcript_sha256": "553874f4efa06c303c04a23661d35ce76dadd61e4d3cfe2837f9726dba8af2b2",
+      "settlement": {
+        "checked_at": 1791866772.22722,
+        "owned_processes_remaining": [],
+        "owned_listeners_remaining": [],
+        "private_core_root_absent": true
+      },
+      "disposable_root": "D:\\Temp\\clio-v3-mailbox-live-c812a6f0",
+      "scope_limits": [
+        "Single Shell acceptance cycle; not idle wake, all providers, final race repetition or full V3 qualification"
+      ],
+      "side_effects": [
+        "Managed MCP and uv caches isolated under owned proof root."
+      ],
+      "disposable_cleanup": {
+        "action": "Guarded PowerShell recursive removal after process, listener and no-link checks",
+        "command_ran": false,
+        "reason": "Automatic approval review: blocked by policy",
+        "state": "human-manual-only; never retry or bypass",
+        "logical_bytes": 282528291
+      }
+    }
+  ],
+  "cleanup_rejection": {
+    "path": "D:/Temp/clio-v3-mailbox-live-6d1b7e94",
+    "action": "Guarded recursive removal of owned failed startup qualification data",
+    "reason": "blocked by policy",
+    "command_ran": false,
+    "state": "human-manual-only; never retry or bypass",
+    "qualification": "Startup failed before model execution because Core isolation was missing; installed Core not changed or restarted."
+  },
+  "receipt_regression": {
+    "case": "tests/test_tools/test_native_task_host.py::test_native_shell_survives_product_bridge_close",
+    "before": {
+      "exit_code": 1,
+      "failure": "KeyError structuredContent in actual provider observer",
+      "owned_parent": "D:/Temp/v3-receipt-before-742cc7e1",
+      "parent_absent": true
+    },
+    "after": {
+      "exit_code": 0,
+      "summary": "1 passed, 2 warnings in 13.17s",
+      "owned_parent": "D:/Temp/v3-receipt-after-8aeb130c",
+      "parent_absent": true
+    },
+    "scoped_ruff": "passed",
+    "scoped_pyright": "0 errors, 0 warnings",
+    "binding_warnings": "Existing nanobind 17 instances, 3 types, 38 functions leak warnings remain unresolved."
+  },
+  "session_mailbox_checks": {
+    "checked_utc": "2026-10-13 06:06:10 UTC",
+    "source_head": "cd79ac9a",
+    "working_tree_development": true,
+    "worker_count": 1,
+    "acceptance": "Focused tests only; not actual model or complete V3 qualification",
+    "notes": [
+      "Core mailbox remains canonical; notification content references and acknowledgements are recipient scoped.",
+      "Obsolete inbox content ownership is removed; compatibility calls only delegate to Core.",
+      "Tests requiring application admission now enter the actual application lifespan.",
+      "Watcher activity has one confirmed writer; standing check segments retain their assignment.",
+      "Existing Core nanobind reference-counting leak warnings and missing search-indexer warning remain unresolved."
+    ],
+    "results": [
+      {
+        "case": "tests/test_gact/test_session_mailbox_v3.py::test_identical_message_ids_in_two_sessions_keep_their_own_context_references",
+        "root": "D:/Temp/v3-mail-recipient-scope-062375a1",
+        "exit_code": 0,
+        "summary": "1 passed in 12.46s; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_composer_fix_round.py::test_a_recovered_pending_steer_is_delivered_after_a_restart",
+        "root": "D:/Temp/v3-mail-startup-7be52c18",
+        "exit_code": 0,
+        "summary": "1 passed in 24.66s; asserted actual Core recipient context; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_durable_feedback_v3.py::test_parent_notice_recovers_against_the_original_assignment_after_ack_failure",
+        "root": "D:/Temp/v3-mail-parent-final-c83472f6",
+        "exit_code": 0,
+        "summary": "1 passed in 28.27s; original handle retained after successor; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_durable_feedback_v3.py::test_accepted_question_answer_recovers_without_revalidating_it_as_new_input",
+        "root": "D:/Temp/v3-mail-answer-final-7a8e5432",
+        "exit_code": 0,
+        "summary": "1 passed in 22.82s; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_tools/test_native_task_host.py::test_native_shell_survives_product_bridge_close",
+        "root": "D:/Temp/v3-native-envelope-final-8b2d3045",
+        "exit_code": 0,
+        "summary": "1 passed in 13.05s; real native Shell/SDK envelope; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_turn_admission_v3.py::test_recovery_mail_waits_for_native_host_readiness_without_consuming_it",
+        "root": "D:/Temp/v3-mail-ready-7e941035",
+        "exit_code": 0,
+        "summary": "1 passed in 11.61s; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions",
+        "root": "D:/Temp/v3-mail-burst-59df86e2",
+        "exit_code": 1,
+        "summary": "Watcher activity wrote twice and reused a stale revision; duplicate write removed; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions",
+        "root": "D:/Temp/v3-mail-burst-476b1e30",
+        "exit_code": 1,
+        "summary": "Standing check completion ended its assignment and caused parent wakes; check segments now yield; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions",
+        "root": "D:/Temp/v3-mail-burst-14e2b958",
+        "exit_code": 1,
+        "summary": "Two correct check calls reached fake; old question-string assertion missed actual injected Core input; assertion moved to confirmed recipient context; root absent",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_composer_af1_fix_round.py::test_answering_a_question_cancels_its_armed_expiry_timer",
+        "root": "D:/Temp/v3-mail-question-84105c23",
+        "started_utc": "2026-10-13 05:47:54 UTC",
+        "ended_utc": "2026-10-13 05:48:26 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-question-84105c23\r\n\r\n1 passed, 4 warnings in 22.76s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step",
+        "root": "D:/Temp/v3-mail-ask-yield-493d60b8",
+        "started_utc": "2026-10-13 05:48:26 UTC",
+        "ended_utc": "2026-10-13 05:48:49 UTC",
+        "exit_code": 1,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-ask-yield-493d60b8\r\nWarning: truncated output (original token count: 1800)\nTotal output lines: 119\n\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\r\nF                                                                        [100%]\r\n================================== FAILURES ===================================\r\n_______ test_ask_user_success_ends_react_turn_before_another_model_step _______\r\n.venv\\Lib\\site-packages\\starlette\\datastructures.py:683: in __getattr__\r\n    return self._state[key]\r\n           ^^^^^^^^^^^^^^^^\r\nE   KeyError: 'mcp_app_loop'\r\n\r\nDuring handling of the above exception, another exception occurred:\r\ntests\\test_gact\\test_interactions.py:225: in test_ask_user_success_ends_react_turn_before_another_model_step\r\n    prediction = react(question=\"Help me design a simulation study.\")\r\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\dspy\\utils\\callback.py:377: in sync_wrapper\r\n    return fn(instance, *args, **kwargs)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\dspy\\primitives\\module.py:110: in __call__\r\n    return self.forward(*args, **kwargs)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:208: in forward\r\n    return _Loop(self, input_args).run()\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:389: in run\r\n    done = self._one_step()\r\n           ^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:422: in _one_step\r\n    self.recorder.commit_input(self.step)\r\nsrc\\clio_agent\\gact\\agents\\clio_react_record.py:581: in commit_input\r\n    journal.commit_input_from_worker(self, step)\r\nsrc\\clio_agent\\gact\\core_task_journal.py:151: in commit_input_from_worker\r\n    self.commit_input(recorder, step), self.app.state.mcp_app_loop\r\n                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\starlette\\datastructures.py:686: in __getattr__\r\n    raise AttributeError(message.format(self.__class__.__name__, key))\r\nE   AttributeError: 'State' object has no attribute 'mcp_app_loop'\r\n----------------------------- Captured log setup ------------------------------\r\nWARNING  clio_agent.arc.clio_core_config:clio_core_config.py:628 reason=clio_core_search_indexer_absent config=D:\\Temp\\v3-mail-ask-yield-493d60b8\\run-64896-d59a69f0218d\\cte\\clio-agent-cte-64896-vs4cn3wv\\cte.yaml problem=no clio_cte_indexer chimod declared; ARCMemory.search_segment_scopes is unavailable until an indexer is configured (iowarp-core 2.3.1 ships the module) upstream=https://github.com/iowarp/clio-core/issues/905#issuecomment-5826003299\r\n------------------------------ Captured log call ------------------------------\r\nWARNING  clio_agent:trace.py:166 \\u2691 RESIDENT-LEDGER metrics seeded via streaming corpus walk (bounded memory, O(corpus) boot time); index-only rollup is owner-gated (design 1.13/\\xa73.1)\r\n============================== warnings summary ===============================\r\ntests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\ntests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\r\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\r\n\r\ntests/test_gact/test_\u2026100 tokens truncated\u2026s allocated.\r\n  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.\r\n\r\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\r\n=========================== short test summary info ===========================\r\nFAILED tests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\n1 failed, 3 warnings in 14.43s\r\nnanobind: leaked 17 instances!\r\n - leaked instance 000001E6E938D088 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D0D8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D128 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D038 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CCC8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDC8C8 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E1EDD288 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E938CEF8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D178 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDCF48 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E93AAB48 of type \"clio_cte_core_ext.Client\"\r\n - leaked instance 000001E6E1EDD008 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E938CFE8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CF48 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CE58 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CF98 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDC968 of type \"clio_cte_core_ext.UniqueId\"\r\nnanobind: leaked 3 types!\r\n - leaked type \"clio_cte_core_ext.Client\"\r\n - leaked type \"clio_cte_core_ext.UniqueId\"\r\n - leaked type \"clio_cte_core_ext.PoolQuery\"\r\nnanobind: leaked 38 functions!\r\n - leaked function \"GetNull\"\r\n - leaked function \"AsyncTemporalSearch\"\r\n - leaked function \"TagQuery\"\r\n - leaked function \"AsyncGetOrCreateTag\"\r\n - leaked function \"AsyncReorganizeBlob\"\r\n - leaked function \"__init__\"\r\n - leaked function \"AsyncPutBlobDefer\"\r\n - leaked function \"AsyncPutBlob\"\r\n - leaked function \"AsyncBlobQuery\"\r\n - leaked function \"AsyncPollTelemetryLog\"\r\n - leaked function \"Local\"\r\n - leaked function \"IsNull\"\r\n - leaked function \"ReorganizeBlob\"\r\n - leaked function \"AsyncDelBlob\"\r\n - leaked function \"Broadcast\"\r\n - leaked function \"__init__\"\r\n - leaked function \"\"\r\n - leaked function \"PollTelemetryLog\"\r\n - leaked function \"AsyncGetBlobSize\"\r\n - leaked function \"DeferErrorCount\"\r\n - leaked function \"TemporalSearch\"\r\n - leaked function \"\"\r\n - leaked function \"AwaitPutsUntilSpace\"\r\n - leaked function \"\"\r\n - leaked function \"\"\r\n - leaked function \"SemanticSearch\"\r\n - leaked function \"RegisterTarget\"\r\n - leaked function \"ToU64\"\r\n - leaked function \"DelBlob\"\r\n - leaked function \"AsyncRegisterTarget\"\r\n - leaked function \"Dynamic\"\r\n - leaked function \"AsyncTagQuery\"\r\n - leaked function \"AsyncGetContainedBlobs\"\r\n - leaked function \"AsyncSemanticSearch\"\r\n - leaked function \"BlobQuery\"\r\n - leaked function \"AsyncGetBlobDefer\"\r\n - leaked function \"__init__\"\r\n - leaked function \"AsyncGetBlob\"\r\nnanobind: this is likely caused by a reference counting issue in the binding code.\r\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step",
+        "root": "D:/Temp/v3-mail-ask-yield-cb625073",
+        "started_utc": "2026-10-13 05:49:31 UTC",
+        "ended_utc": "2026-10-13 05:50:05 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-ask-yield-cb625073\r\n\r\n1 passed, 4 warnings in 24.97s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_clearance.py::test_a_buffered_coalesced_wake_also_holds_clearance",
+        "root": "D:/Temp/v3-mail-clearance-d05732ab",
+        "started_utc": "2026-10-13 05:50:05 UTC",
+        "ended_utc": "2026-10-13 05:50:27 UTC",
+        "exit_code": 1,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-clearance-d05732ab\r\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\r\nF                                                                        [100%]\r\n================================== FAILURES ===================================\r\n_____________ test_a_buffered_coalesced_wake_also_holds_clearance _____________\r\ntests\\test_gact\\test_spotter_clearance.py:196: in test_a_buffered_coalesced_wake_also_holds_clearance\r\n    task = seed_agent_task(\r\nsrc\\clio_agent\\gact\\agent_tasks.py:669: in seed_agent_task\r\n    task = persist_agent_task(app, task)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agent_tasks.py:681: in persist_agent_task\r\n    return registry.register(task)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agent_tasks.py:327: in register\r\n    task = self._confirm(task)\r\n           ^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\assignment_history.py:25: in confirm\r\n    raise RuntimeError(\"Assignment history must be recovered before new admission\")\r\nE   RuntimeError: Assignment history must be recovered before new admission\r\n----------------------------- Captured log setup ------------------------------\r\nWARNING  clio_agent.arc.clio_core_config:clio_core_config.py:628 reason=clio_core_search_indexer_absent config=D:\\Temp\\v3-mail-clearance-d05732ab\\run-3940-767387054ac3\\cte\\clio-agent-cte-3940-3tkeghhv\\cte.yaml problem=no clio_cte_indexer chimod declared; ARCMemory.search_segment_scopes is unavailable until an indexer is configured (iowarp-core 2.3.1 ships the module) upstream=https://github.com/iowarp/clio-core/issues/905#issuecomment-5826003299\r\n------------------------------ Captured log call ------------------------------\r\nWARNING  clio_agent:trace.py:166 \\u2691 RESIDENT-LEDGER metrics seeded via streaming corpus walk (bounded memory, O(corpus) boot time); index-only rollup is owner-gated (design 1.13/\\xa73.1)\r\n============================== warnings summary ===============================\r\ntests/test_gact/test_spotter_clearance.py::test_a_buffered_coalesced_wake_also_holds_clearance\r\ntests/test_gact/test_spotter_clearance.py::test_a_buffered_coalesced_wake_also_holds_clearance\r\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\r\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\r\n\r\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\r\n=========================== short test summary info ===========================\r\nFAILED tests/test_gact/test_spotter_clearance.py::test_a_buffered_coalesced_wake_also_holds_clearance\r\n1 failed, 2 warnings in 12.91s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nnanobind: this is likely caused by a reference counting issue in the binding code.\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_clearance.py::test_a_buffered_coalesced_wake_also_holds_clearance",
+        "root": "D:/Temp/v3-mail-clearance-12f9c7b0",
+        "started_utc": "2026-10-13 05:51:11 UTC",
+        "ended_utc": "2026-10-13 05:51:43 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-clearance-12f9c7b0\r\n\r\n1 passed, 4 warnings in 22.65s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions",
+        "root": "D:/Temp/v3-mail-burst-19d42af0",
+        "started_utc": "2026-10-13 05:51:43 UTC",
+        "ended_utc": "2026-10-13 05:52:16 UTC",
+        "exit_code": 1,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-burst-19d42af0\r\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\r\nF                                                                        [100%]\r\n================================== FAILURES ===================================\r\n_______________ test_coalescing_under_burst_of_tool_completions _______________\r\ntests\\test_gact\\test_spotter_watcher.py:459: in test_coalescing_under_burst_of_tool_completions\r\n    task = app.state.agent_task_registry.for_parent(sid)[0]\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nE   IndexError: list index out of range\r\n----------------------------- Captured log setup ------------------------------\r\nWARNING  clio_agent.arc.clio_core_config:clio_core_config.py:628 reason=clio_core_search_indexer_absent config=D:\\Temp\\v3-mail-burst-19d42af0\\run-62588-723941c5d70d\\cte\\clio-agent-cte-62588-moonjg5r\\cte.yaml problem=no clio_cte_indexer chimod declared; ARCMemory.search_segment_scopes is unavailable until an indexer is configured (iowarp-core 2.3.1 ships the module) upstream=https://github.com/iowarp/clio-core/issues/905#issuecomment-5826003299\r\n------------------------------ Captured log call ------------------------------\r\nWARNING  clio_agent:trace.py:166 \\u2691 RESIDENT-LEDGER metrics seeded via streaming corpus walk (bounded memory, O(corpus) boot time); index-only rollup is owner-gated (design 1.13/\\xa73.1)\\nWARNING  clio_agent.runtime.process_census:process_census.py:306 process-tree census: 2 orphaned CLIO process(es) reason=orphaned_from_tree clio_run.exe(pid=40456), clio_run.exe(pid=42908)\\nWARNING  clio_agent:trace.py:166 \\u2691 MCP-CACHE mcp_cache_prune_skipped_live peers=6 (python.exe(pid=34012; clio-agent-gact), clio_run.exe(pid=40456; clio_run), clio_run.exe(pid=41620; clio_run), clio_run.exe(pid=42908; clio_run), python.exe(pid=52568; clio-agent-gact), clio-agent-gact.exe(pid=65656; clio-agent-gact)) \\u2014 boot prune deferred\\nWARNING  clio_agent.paths:paths.py:224 Legacy workspace configuration at D:\\\\Temp\\\\v3-mail-burst-19d42af0\\\\run-62588-723941c5d70d\\\\pytest\\\\test_coalescing_under_burst_of0\\\\workspace\\\\.clio\\\\agent-blueprints; migrate to .clio-agent/shared\\nWARNING  clio_agent.paths:paths.py:224 Legacy workspace configuration at D:\\\\Temp\\\\v3-mail-burst-19d42af0\\\\run-62588-723941c5d70d\\\\pytest\\\\test_coalescing_under_burst_of0\\\\workspace\\\\.clio\\\\agent-blueprints; migrate to .clio-agent/shared\\nWARNING  clio_agent:trace.py:166 \\u2691 SPOTTER spotter_watcher_arm_check_skip reason=watcher_blueprint_declares_no_servers blueprint=spotter-ai server= error=\\nWARNING  clio_agent.gact.spotter_watcher:spotter_watcher.py:349 spotter_watcher_arm_failed reason=spawn_unexpected_error session=sess_bc54b5c2694a err=RuntimeError('Use await spawn_child_turn_async on the application loop')\\nWARNING  clio_agent:trace.py:166 \\u2691 SPOTTER spotter_watcher_arm_failed reason=spawn_unexpected_error session=sess_bc54b5c2694a err=RuntimeError('Use await spawn_child_turn_async on the application loop')\r\n============================== warnings summary ===============================\r\ntests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions\r\ntests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions\r\ntests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions\r\ntests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions\r\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\r\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\r\n\r\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\r\n=========================== short test summary info ===========================\r\nFAILED tests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions\r\n1 failed, 4 warnings in 24.42s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nnanobind: this is likely caused by a reference counting issue in the binding code.\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions",
+        "root": "D:/Temp/v3-mail-burst-e4351af9",
+        "started_utc": "2026-10-13 06:00:05 UTC",
+        "ended_utc": "2026-10-13 06:00:39 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-burst-e4351af9\r\n\r\n1 passed, 4 warnings in 24.99s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_spotter_watcher.py::test_failed_watcher_turn_stays_armed_but_blocks_clearance",
+        "root": "D:/Temp/v3-mail-watcher-error-e58bc027",
+        "started_utc": "2026-10-13 06:00:39 UTC",
+        "ended_utc": "2026-10-13 06:01:13 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-watcher-error-e58bc027\r\n\r\n1 passed, 4 warnings in 24.54s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_document_artifacts.py::test_document_autosave_steers_coalesce_but_reviews_do_not",
+        "root": "D:/Temp/v3-mail-doc-save-617fa932",
+        "started_utc": "2026-10-13 06:01:13 UTC",
+        "ended_utc": "2026-10-13 06:01:34 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-doc-save-617fa932\r\n\r\n1 passed, 1 warning in 11.95s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_session_mailbox_v3.py::test_session_mailbox_unifies_messages_and_task_outcomes_without_an_inbox",
+        "root": "D:/Temp/v3-mail-final-e123b72e",
+        "started_utc": "2026-10-13 06:02:26 UTC",
+        "ended_utc": "2026-10-13 06:02:47 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-e123b72e\r\n\r\n1 passed, 2 warnings in 11.77s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_session_mailbox_v3.py::test_lost_wake_signal_cannot_lose_confirmed_session_mail",
+        "root": "D:/Temp/v3-mail-final-fe734376",
+        "started_utc": "2026-10-13 06:02:47 UTC",
+        "ended_utc": "2026-10-13 06:03:08 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-fe734376\r\n\r\n1 passed, 2 warnings in 11.94s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_session_mailbox_v3.py::test_coalescing_preserves_history_and_only_supersedes_uncommitted_input",
+        "root": "D:/Temp/v3-mail-final-92c0afdc",
+        "started_utc": "2026-10-13 06:03:08 UTC",
+        "ended_utc": "2026-10-13 06:03:29 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-92c0afdc\r\n\r\n1 passed, 2 warnings in 11.87s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_session_mailbox_v3.py::test_disabled_goal_and_loop_mail_stay_retained_without_blocking_human_feedback",
+        "root": "D:/Temp/v3-mail-final-3d83747f",
+        "started_utc": "2026-10-13 06:03:29 UTC",
+        "ended_utc": "2026-10-13 06:04:01 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-3d83747f\r\n\r\n1 passed, 2 warnings in 12.72s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_session_mailbox_v3.py::test_core_refusal_cannot_acknowledge_or_signal_new_mail",
+        "root": "D:/Temp/v3-mail-final-396b2f50",
+        "started_utc": "2026-10-13 06:04:01 UTC",
+        "ended_utc": "2026-10-13 06:04:21 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-396b2f50\r\n\r\n1 passed, 2 warnings in 11.67s\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_child_yield_result_wake_and_queued_admission_share_one_lifecycle",
+        "root": "D:/Temp/v3-mail-final-3b7d6afa",
+        "started_utc": "2026-10-13 06:04:21 UTC",
+        "ended_utc": "2026-10-13 06:04:42 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-3b7d6afa\r\n\r\n1 passed, 2 warnings in 12.18s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_turn_admission_v3.py::test_mail_and_results_share_admission_and_recover_the_closing_race",
+        "root": "D:/Temp/v3-mail-final-d9c92663",
+        "started_utc": "2026-10-13 06:04:42 UTC",
+        "ended_utc": "2026-10-13 06:05:02 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-d9c92663\r\n\r\n1 passed, 2 warnings in 11.98s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_subagent_lifecycle.py::test_system_continuation_retains_explicit_recipient_model",
+        "root": "D:/Temp/v3-mail-final-19371df4",
+        "started_utc": "2026-10-13 06:05:02 UTC",
+        "ended_utc": "2026-10-13 06:05:22 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-19371df4\r\n\r\n1 passed, 2 warnings in 11.59s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_core_task_mailbox.py::test_default_unlimited_mail_retains_more_than_one_thousand_messages",
+        "root": "D:/Temp/v3-mail-final-d1534dc7",
+        "started_utc": "2026-10-13 06:09:12 UTC",
+        "ended_utc": "2026-10-13 06:09:52 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-d1534dc7\r\n\r\n1 passed, 3 warnings in 31.87s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_core_task_mailbox.py::test_mail_survives_crashes_on_both_sides_of_recipient_input_commit",
+        "root": "D:/Temp/v3-mail-final-7c93f573",
+        "started_utc": "2026-10-13 06:09:52 UTC",
+        "ended_utc": "2026-10-13 06:10:12 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-7c93f573\r\n\r\n1 passed, 3 warnings in 11.85s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      },
+      {
+        "case": "tests/test_gact/test_core_task_mailbox.py::test_core_outage_does_not_block_control_and_reconciles_parent_notice",
+        "root": "D:/Temp/v3-mail-final-cebd4388",
+        "started_utc": "2026-10-13 06:10:12 UTC",
+        "ended_utc": "2026-10-13 06:10:32 UTC",
+        "exit_code": 0,
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-final-cebd4388\r\n\r\n1 passed, 3 warnings in 11.50s\r\nnanobind: leaked 17 instances!\r\nnanobind: leaked 3 types!\r\nnanobind: leaked 38 functions!\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "parent_absent": true
+      }
+    ],
+    "static_checks": {
+      "source_pyright": {
+        "files": 66,
+        "errors": 0,
+        "warnings": 0
+      },
+      "expanded_test_pyright": {
+        "files": 35,
+        "errors": 176,
+        "warnings": 0,
+        "diagnostics_on_new_or_edited_lines": 0,
+        "limitation": "This is a diff-line audit, not a complete before/after baseline or a passing whole-test type check."
+      },
+      "ruff": "All changed source/test files lint clean; test_context_references formatting corrected after the expanded check.",
+      "guards": "File-size and class-in-function guards pass; size budgets only ratcheted downward."
+    }
+  }
+}

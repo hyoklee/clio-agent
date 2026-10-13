@@ -99,7 +99,7 @@ _WATCHER_REQUESTING_EXPERT_ID = "main"
 
 #: The loop-inbox coalesce key every spotter wake shares, so a burst of parent
 #: tool completions during one running check turn collapses onto AT MOST ONE
-#: buffered wake (see ``loop_inbox.LoopInbox.put_coalesced_user_message``).
+#: buffered wake (see ``Core-backed mailbox coalescing``).
 _WAKE_COALESCE_KEY = "spotter_wake"
 
 #: Turn-final wake payload (#1218 e): the parent session's OWN turn just ended
@@ -262,47 +262,39 @@ def _live_watcher_tasks(app: "FastAPI", parent_session_id: str) -> list["AgentTa
 def _set_live_state(
     app: "FastAPI", task_id: str, live_state: str, *, error_reason: str = ""
 ) -> Optional["AgentTask"]:
-    """Flip a standing watcher task's ``live_state`` WITHOUT a status transition.
+    """Confirm a standing watcher's activity without completing its assignment.
 
-    ``AgentTaskRegistry.transition()`` always forces ``live_state == new_status``
-    (see its ``updates`` dict) — it cannot produce a RUNNING task with
-    ``live_state="waiting"``. This uses the registry's plain ``register()`` (a
-    pure index-replace, no legality checks) via ``dataclasses.replace`` instead,
-    which ``AgentTask.__post_init__`` allows to survive: the reset-to-status
-    branch only fires when ``status != STATUS_RUNNING`` or ``live_state`` is
-    falsy/itself a status name, neither of which applies to ``"waiting"``.
-
-    A no-op (returns ``None``, typed-logged) if the task is gone or (a safety
-    guard against a race with disarm) no longer ``STATUS_RUNNING`` — a
-    ``live_state`` adjustment only makes sense for an armed/running standing
-    record, never a queued/terminal one.
+    Read and commit under the existing lifecycle lock so disarm cannot race
+    this update. Missing or settled owners are a typed no-op. Core confirmation
+    precedes the registry projection; no independent second write is required.
     """
 
     from clio_agent.gact.agent_tasks import ERROR_REASONS, persist_agent_task  # noqa: PLC0415
 
     registry = app.state.agent_task_registry
-    current = registry.get(task_id)
-    if current is None or current.status != STATUS_RUNNING:
-        logger.info(
-            "spotter_watcher_live_state_skip reason=not_running task=%s live_state=%s",
-            task_id,
-            live_state,
+    with registry.lifecycle_lock:
+        current = registry.get(task_id)
+        if current is None or current.status != STATUS_RUNNING:
+            logger.info(
+                "spotter_watcher_live_state_skip reason=not_running task=%s live_state=%s",
+                task_id,
+                live_state,
+            )
+            return None
+        normalized_reason = error_reason if error_reason in ERROR_REASONS else ""
+        if live_state == "error" and not normalized_reason:
+            normalized_reason = "agent_error"
+        if current.live_state == live_state and current.error_reason == normalized_reason:
+            return current
+        return persist_agent_task(
+            app,
+            replace(
+                current,
+                live_state=live_state,
+                error_reason=normalized_reason,
+                updated_at=datetime.now(timezone.utc).isoformat(),
+            ),
         )
-        return None
-    normalized_reason = error_reason if error_reason in ERROR_REASONS else ""
-    if live_state == "error" and not normalized_reason:
-        normalized_reason = "agent_error"
-    if current.live_state == live_state and current.error_reason == normalized_reason:
-        return current  # already there -- idempotent, no redundant persist/publish
-    updated = replace(
-        current,
-        live_state=live_state,
-        error_reason=normalized_reason,
-        updated_at=datetime.now(timezone.utc).isoformat(),
-    )
-    registry.register(updated)
-    persist_agent_task(app, updated)
-    return updated
 
 
 def _arm_watcher(app: "FastAPI", session: "Session") -> Optional["AgentTask"]:
@@ -584,42 +576,6 @@ def wake_on_parent_activity(
     _push_wake(app, parent_session_id, task, wake_text)
 
 
-def _start_check_turn_on_app_loop(
-    app: "FastAPI", child_sid: str, child_session: "Session", wake_text: str
-) -> None:
-    """Start the watcher's check turn, marshaled onto the app's event loop
-    regardless of the calling thread (mirrors
-    :func:`clio_agent.gact.turn_spawn.spawn_child_turn_threadsafe`'s exact
-    pattern). ``TurnRunner.spawn`` (``_start_background_user_turn``'s tail)
-    calls ``loop.create_task(...)`` directly, which is only safe FROM the loop
-    thread itself — and this hook's callers (the tool-observer's
-    ``tool.call.completed`` seam in particular) are not guaranteed to already
-    be on it (a tool call can execute on a worker thread)."""
-
-    import asyncio  # noqa: PLC0415
-
-    from clio_agent.gact.turn import _start_background_user_turn  # noqa: PLC0415
-
-    def _run() -> None:
-        _start_background_user_turn(app, child_sid, child_session, wake_text, prev_status="idle")
-
-    loop = getattr(app.state, "mcp_app_loop", None)
-    if loop is None:
-        _run()
-        return
-    try:
-        running = asyncio.get_running_loop()
-    except RuntimeError:
-        running = None
-    if running is loop:
-        _run()
-        return
-
-    from clio_agent.gact.loop_handoff import call_on_loop  # noqa: PLC0415 - typed (#1577)
-
-    call_on_loop(loop, _run, op="spotter_check_turn")
-
-
 def _push_wake(app: "FastAPI", parent_session_id: str, task: "AgentTask", wake_text: str) -> None:
     """Push one wake into the watcher's session: start a check turn if idle,
     coalesce onto an already-pending one if busy — never more than one
@@ -630,74 +586,25 @@ def _push_wake(app: "FastAPI", parent_session_id: str, task: "AgentTask", wake_t
     (#1218 e): the SECOND-and-later push in a busy window overwrites the
     buffered wake with the generic multi-activity summary
     (:data:`_WAKE_COALESCED_TEXT`) via the coalesce key's replace semantics
-    (:meth:`clio_agent.gact.loop_inbox.LoopInbox.put_coalesced_user_message`)
+    (confirmed Core messages with supersession references)
     — still exactly one buffered wake, now honestly describing "several
     things happened" instead of stale single-event text.
     """
 
+    from clio_agent.gact.agent_mailbox import accept_session_input, pending_mail
+
     child_sid = task.child_session_id
-    runner = getattr(app.state, "turn_runner", None)
-    if runner is None:
-        return
-
-    if runner.busy(child_sid):
-        from clio_agent.gact.loop_inbox import (  # noqa: PLC0415
-            enqueue_user_steer,
-            inbox_for,
-        )
-
-        coalescing = inbox_for(app, child_sid).peek_nonempty()
-        text = _WAKE_COALESCED_TEXT if coalescing else wake_text
-        enqueue_user_steer(app, child_sid, text, {"coalesce_key": _WAKE_COALESCE_KEY})
-        if coalescing:
-            logger.info(
-                "spotter_wake_coalesced reason=already_pending session=%s watcher=%s",
-                parent_session_id,
-                child_sid,
-            )
-            trace.event(
-                "SPOTTER",
-                "spotter_wake_coalesced reason=already_pending session=%s watcher=%s",
-                parent_session_id,
-                child_sid,
-            )
-        else:
-            logger.info(
-                "spotter_wake_enqueued session=%s watcher=%s task=%s",
-                parent_session_id,
-                child_sid,
-                task.task_id,
-            )
-            trace.event(
-                "SPOTTER",
-                "spotter_wake_enqueued session=%s watcher=%s task=%s",
-                parent_session_id,
-                child_sid,
-                task.task_id,
-            )
-        signal_clearance(app, parent_session_id)
-        return
-
-    child_session = app.state.sessions.get(child_sid)
-    if child_session is None:
-        return
-
-    _start_check_turn_on_app_loop(app, child_sid, child_session, wake_text)
-    _set_live_state(app, task.task_id, "running")
+    coalescing = any(
+        row.get("metadata", {}).get("coalesce_key") == _WAKE_COALESCE_KEY
+        for row in pending_mail(app, child_sid)
+    )
+    accept_session_input(
+        app,
+        child_sid,
+        _WAKE_COALESCED_TEXT if coalescing else wake_text,
+        {"coalesce_key": _WAKE_COALESCE_KEY, "spotter_parent": parent_session_id},
+    )
     signal_clearance(app, parent_session_id)
-    logger.info(
-        "spotter_wake_started session=%s watcher=%s task=%s",
-        parent_session_id,
-        child_sid,
-        task.task_id,
-    )
-    trace.event(
-        "SPOTTER",
-        "spotter_wake_started session=%s watcher=%s task=%s",
-        parent_session_id,
-        child_sid,
-        task.task_id,
-    )
 
 
 def on_turn_finalized(app: "FastAPI", session_id: str) -> None:
@@ -742,12 +649,7 @@ def on_turn_finalized(app: "FastAPI", session_id: str) -> None:
     if task is None:
         return
     messages = app.state.messages.get(session_id, []) or []
-    user_messages = [message for message in messages if getattr(message, "role", "") == "user"]
-    latest_turn_id = (
-        str(getattr(user_messages[-1], "turn_id", "") or getattr(user_messages[-1], "id", "") or "")
-        if user_messages
-        else ""
-    )
+    latest_turn_id = task.child_turn_id
     finals = [
         message
         for message in messages

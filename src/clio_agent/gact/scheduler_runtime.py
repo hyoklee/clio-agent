@@ -6,13 +6,12 @@ helpers the boot-time ``_lifespan`` and the scheduler tests use:
 
 * :func:`_scheduler_tick` — the once-a-minute loop, boundary-aligned to avoid drift;
 * :func:`_scheduler_tick_once` — process one tick: retry deferred, then fire due;
-* :func:`_fire_schedule` — stage one due schedule as a background user turn;
+* :func:`_fire_schedule` — confirm one due occurrence in its Core session mailbox;
 * :func:`_seconds_until_next_minute` — the boundary-aligned inter-tick sleep.
 
-``app.py`` re-exports all four so ``from clio_agent.gact.app import _scheduler_tick``
-(and the ``monkeypatch.setattr(gact_app, "_turn_start_background_user_turn", ...)`` the
-tests use) keep working: the turn-staging call is resolved through the app module at
-fire time, not bound at import.
+``app.py`` re-exports all four for compatibility. Occurrences use the same
+Core mailbox and TurnRunner admission as feedback and task results, including
+next-iteration delivery when the session is busy.
 
 P4.3 additions over the original: an explicit per-schedule **overlap policy**
 (``queue`` = the existing deferred-not-dropped behaviour; ``skip`` = drop the occurrence
@@ -103,58 +102,34 @@ def _fire_schedule(app: "FastAPI", sch: Any) -> None:
             sch.session_id,
         )
         return
-    # #948 S1: the within-session busy gate applies to EVERY turn producer. A due
-    # schedule whose session already has a turn in flight must NOT double-stage a
-    # concurrent turn (which would orphan the running one).
-    if app.state.turn_runner.busy(sch.session_id) or sess.status in {
-        "waiting_user",
-        "waiting_permission",
-    }:
-        policy = str(getattr(sch, "overlap_policy", "queue") or "queue")
-        if policy == "skip":
-            # Drop THIS occurrence and advance to the next fire (mark_fired recomputes
-            # next_fire_at). The skip is typed, never silent.
-            app.state.deferred_schedules.discard(sch.id)
-            app.state.schedules.mark_fired(sch.id)
-            logger.info(
-                "scheduler tick skipped reason=schedule_overlap_skipped "
-                "schedule_id=%s session_id=%s",
-                sch.id,
-                sch.session_id,
-            )
-            return
-        # queue: DEFER (do not drop). Record the id; _scheduler_tick_once retries it
-        # every tick until the session frees. Left UNMARKED so the state stays truthful.
-        app.state.deferred_schedules.add(sch.id)
+    busy = app.state.turn_runner.busy(sch.session_id)
+    if busy and str(getattr(sch, "overlap_policy", "queue") or "queue") == "skip":
+        app.state.deferred_schedules.discard(sch.id)
+        app.state.schedules.mark_fired(sch.id)
         logger.info(
-            "scheduler tick deferred reason=schedule_session_busy schedule_id=%s session_id=%s",
-            sch.id,
-            sch.session_id,
+            "scheduler overlap skipped schedule_id=%s session_id=%s", sch.id, sch.session_id
         )
         return
-    app.state.deferred_schedules.discard(sch.id)
-    # Resolve the turn-staging engine through the app module at fire time so tests can
-    # monkeypatch ``clio_agent.gact.app._turn_start_background_user_turn``.
-    from clio_agent.gact import app as _app_mod  # noqa: PLC0415
+    from clio_agent.gact.agent_mailbox import accept_session_input
     from clio_agent.gact.autonomous_loop import _get_loop
 
     loop = _get_loop(app, sch.session_id)
     loop_id = loop.get("loop_id") if loop.get("pending_schedule_id") == sch.id else None
-    _app_mod._turn_start_background_user_turn(
+    accept_session_input(
         app,
         sch.session_id,
-        sess,
         sch.question,
         metadata={
             "scheduled": True,
             "schedule_id": sch.id,
             **({"loop_id": loop_id} if loop_id else {}),
         },
-        prev_status=str(getattr(sess, "status", "idle") or "idle"),
+        steer_message_id=f"schedule:{sch.id}:{sch.fire_count}",
     )
-    # Only count the occurrence once staging actually succeeded — see the docstring
-    # above for why this must run AFTER, not before, the staging call.
+    # Confirmation precedes occurrence advancement. A retry of a failed advancement
+    # uses the same Core message identity and never admits a duplicate occurrence.
     app.state.schedules.mark_fired(sch.id)
+    app.state.deferred_schedules.discard(sch.id)
 
 
 def _scheduler_tick_once(app: "FastAPI") -> None:
@@ -236,5 +211,5 @@ async def _scheduler_tick(app: "FastAPI") -> None:
         except (OSError, RuntimeError):
             logger.error("scheduler tick delayed reason=control_preparation_failed", exc_info=True)
         else:
-            _scheduler_tick_once(app)
+            await asyncio.to_thread(_scheduler_tick_once, app)
         await asyncio.sleep(_seconds_until_next_minute(datetime.now(timezone.utc)))

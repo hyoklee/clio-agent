@@ -18,15 +18,13 @@ from clio_agent.gact.a2ui_capabilities import (
     A2UICapabilitiesError,
     apply_client_metadata_guards,
 )
-from clio_agent.gact.claude_code_auth_reprobe import reprobe_for_message
 from clio_agent.gact.context_reference_delivery import (
     context_reference_deliveries,
     enrich_with_context_references,
 )
 from clio_agent.gact.context_references import authorize_context_reference_parts_sync
 from clio_agent.gact.events import Event
-from clio_agent.gact.human_task_intervention import relay_human_session_message
-from clio_agent.gact.loop_inbox import enqueue_user_steer
+from clio_agent.gact.message_admission import accept_message, accept_message_async
 from clio_agent.gact.message_intents import DuplicateIntentError, PendingSteer
 from clio_agent.gact.message_submission_errors import (
     a2ui_client_metadata_error as _a2ui_client_metadata_error,
@@ -57,7 +55,6 @@ from clio_agent.gact.providers.config import (
 )
 from clio_agent.gact.question_answer_message import (
     QuestionAnswerMessage,
-    settle_question_answer,
 )
 from clio_agent.gact.resource_delivery import (
     ResourceDeliveryRecord,
@@ -68,12 +65,9 @@ from clio_agent.gact.runtime.globals import (
     _iso_from_epoch,
     _new_message_id,
 )
-from clio_agent.gact.selected_model_refresh import refresh_for_selected_model
-from clio_agent.gact.session_host_agent import ensure_host_agent
 from clio_agent.gact.session_model_ref import remember_session_model
 from clio_agent.gact.thinking_level_guard import raise_if_selection_unusable
 from clio_agent.gact.transcript_projection import on_message_appended
-from clio_agent.gact.turn_runner import session_busy_error_payload
 from clio_agent.gact.types import (
     ErrorEnvelope,
     ErrorInfo,
@@ -486,109 +480,18 @@ def _model_text(app: FastAPI, sid: str, user_text: str, message: Message) -> str
         ) from exc
 
 
-async def accept_message_async(
-    app: FastAPI,
-    deps: "GactDeps",
-    sid: str,
+def accepted_message_metadata(
     req: PostMessageRequest,
+    session: Session,
+    effective_model: ModelRef,
+    parts: list[Part],
     *,
-    internal_model_text: str | None = None,
+    busy: bool,
     answer: QuestionAnswerMessage | None = None,
-) -> tuple[PostMessageResponse, int]:
-    """Accept an async-produced message, optionally with private model-only context.
-
-    ``answer`` makes the message the answer to a pending agent question (#1448).
-    """
-
-    # A session's selected model is enough to run its first turn (no global provider).
-    await ensure_host_agent(app, sid, req)
-    await reprobe_for_message(app, sid, req)  # #1455: see a terminal sign-in at turn start
-    await refresh_for_selected_model(app, sid, req)  # a pinned model's stale discovery
-    prepared = await prepare_references(app, sid, req)
-    ack = accept_message(
-        app,
-        deps,
-        sid,
-        req,
-        prepared=prepared,
-        internal_model_text=internal_model_text,
-        answer=answer,
-    )
-    if answer is not None:
-        settle_question_answer(app, sid, answer, ack[0].message_id)
-    return ack
-
-
-def accept_message(
-    app: FastAPI,
-    deps: "GactDeps",
-    sid: str,
-    req: PostMessageRequest,
-    *,
-    prepared: PreparedReferences | None = None,
-    internal_model_text: str | None = None,
-    answer: QuestionAnswerMessage | None = None,
-) -> tuple[PostMessageResponse, int]:
-    """Accept one message using explicit start-or-steer semantics.
-
-    Returns the wire response and HTTP status. A pending steer is durable and
-    visible in the transcript before this function returns.
-
-    ``prepared`` carries reference work an async caller already did off the event
-    loop (see :func:`accept_message_async`). Omitting it keeps the fully
-    synchronous behaviour, which the in-process idle-hook queue promoter
-    (``composer_runtime.promote_queue_head``) still uses: it runs from a
-    turn-task done-callback, so it has no ``await`` to hoist the work behind.
-    That promoter is bounded by the queue head (ONE row per idle transition),
-    unlike the request path this seam exists for.
-    """
-
-    key = _idempotency_key(req)
-    prior = app.state.message_intents.acceptance(sid, key)
-    if prior is not None:
-        return _acceptance_replay(prior), 202 if prior.state == "pending_steer" else 200
-
-    sess, effective_model, user_text, _images, resolved_parts = _validate_provider_and_payload(
-        app, deps, sid, req, prepared=prepared
-    )
-    message_id = req.client_message_id.strip() or _new_message_id("user")
-    resolved_parts, resource_deliveries = _plan_resource_parts(
-        app,
-        workspace_id=sess.workspace_id,
-        message_id=message_id,
-        parts=resolved_parts,
-        model=effective_model,
-    )
-    busy_payload = session_busy_error_payload(getattr(app.state, "turn_runner", None), sid)
-    busy = busy_payload is not None
-    if busy and req.delivery == "start":
-        raise HTTPException(status_code=409, detail=busy_payload)
-    if not busy and req.delivery == "steer":
-        # ``steer`` is HONOURED, not reinterpreted. It used to fall through to the
-        # busy check and silently start a turn on an idle session -- the caller
-        # asked to steer work in flight and got a brand-new turn instead. There is
-        # nothing to steer, so say so and let the caller decide (``auto`` is the
-        # value that means "start or steer, whichever fits").
-        raise HTTPException(
-            status_code=409,
-            detail=ErrorEnvelope(
-                error=ErrorInfo(
-                    error="no_active_turn_to_steer",
-                    message=(
-                        "delivery=steer requires a turn in flight on this session; "
-                        "use delivery=start or delivery=auto to begin one"
-                    ),
-                    details={
-                        "session_id": sid,
-                        "recovery_actions": ["retry_with_start", "retry_with_auto"],
-                    },
-                    recoverable=True,
-                )
-            ).model_dump(exclude_none=True),
-        )
+) -> dict[str, Any]:
+    """Build the single canonical metadata shape for Core and UI projections."""
 
     # An unset reasoning effort is absent, never stored as null.
-    behavior = req.behavior.model_dump(exclude_none=True)
     metadata = dict(req.metadata)
     # Already schema-validated in ``_apply_a2ui_client_metadata_guards`` above
     # (strict + extra="forbid"/"allow", so the raw value IS the canonical shape)
@@ -607,26 +510,66 @@ def accept_message(
         "per_message"
         if req.model is not None and not _model_ref_is_empty(req.model)
         else "session"
-        if not _model_ref_is_empty(sess.model)
+        if not _model_ref_is_empty(session.model)
         else "global_active"
     )
-    if model_selection_source == "per_message":
-        remember_session_model(app, sid, sess.model, effective_model)
     metadata.update(
         {
             "delivery": "steer" if busy else "start",
-            "behavior": behavior,
+            "behavior": req.behavior.model_dump(exclude_none=True),
             "client_message_id": req.client_message_id,
             "effective_model": effective_model.model_dump(),
         }
     )
-    reference_deliveries = context_reference_deliveries(resolved_parts)
+    reference_deliveries = context_reference_deliveries(parts)
     if reference_deliveries:
         metadata["context_reference_deliveries"] = reference_deliveries
     if model_selection_source != "global_active":
         metadata["model_selection_source"] = model_selection_source
     if answer is not None:  # server-owned: set after the reserved-key check, never client
         metadata.update(answer.metadata)
+    if busy:
+        metadata["pending_steer"] = True
+    return metadata
+
+
+def _stage_message(
+    app: FastAPI,
+    deps: "GactDeps",
+    sid: str,
+    req: PostMessageRequest,
+    *,
+    prepared: PreparedReferences | None = None,
+    internal_model_text: str | None = None,
+    answer: QuestionAnswerMessage | None = None,
+    validated: tuple[Session, ModelRef, str, list[Part], list[Part]],
+    admitted_busy: bool,
+    confirmed_handle: str,
+    resource_deliveries: list[ResourceDeliveryRecord],
+) -> tuple[PostMessageResponse, int]:
+    """Publish local projections after the app admission boundary confirms Core.
+
+    This function never performs Core IO and never makes an admission decision.
+    Only ``accept_message_async`` calls it, in the same loop segment that
+    releases its reservation. Busy feedback is already pending in Core.
+    """
+
+    key = _idempotency_key(req)
+    prior = app.state.message_intents.acceptance(sid, key)
+    if prior is not None:
+        return _acceptance_replay(prior), 202 if prior.state == "pending_steer" else 200
+
+    sess, effective_model, user_text, _images, resolved_parts = validated
+    message_id = req.client_message_id.strip() or _new_message_id("user")
+    busy = admitted_busy
+
+    behavior = req.behavior.model_dump(exclude_none=True)
+    metadata = accepted_message_metadata(
+        req, sess, effective_model, resolved_parts, busy=busy, answer=answer
+    )
+    if metadata.get("model_selection_source") == "per_message":
+        remember_session_model(app, sid, sess.model, effective_model)
+    if answer is not None:
         internal_model_text = answer.model_text_prefix + (
             internal_model_text or (prepared.model_text if prepared is not None else user_text)
         )
@@ -656,11 +599,6 @@ def accept_message(
             parts=parts,
             metadata=metadata,
         )
-        model_text = internal_model_text or (
-            prepared.model_text
-            if prepared is not None
-            else _model_text(app, sid, user_text, message)
-        )
         ack = PostMessageResponse(
             message_id=message_id,
             accepted_at=accepted_at,
@@ -668,6 +606,7 @@ def accept_message(
             state="pending_steer",
             effective_model=effective_model,
             behavior=req.behavior,
+            task_handle=confirmed_handle or None,
         )
         try:
             prior = app.state.message_intents.accept_pending(pending, key, ack)
@@ -678,16 +617,6 @@ def accept_message(
             deps.append_session_message(app, sid, message, atoms_minted=True)
             run_transcript_job(
                 app, sid, f"steer:{message.id}", lambda: on_message_appended(app, sid, message)
-            )
-            enqueue_user_steer(
-                app,
-                sid,
-                user_text,
-                metadata,
-                steer_message_id=message_id,
-                steer_created_at=accepted_at,
-                steer_parts=parts,
-                model_text=model_text,
             )
             app.state.bus.publish(
                 Event(
@@ -713,7 +642,6 @@ def accept_message(
                 [row for row in app.state.messages.get(sid, []) if row.id != message_id],
             )
             raise
-        relay_human_session_message(app, sid, ack.message_id, user_text)
         return ack, 202
 
     # Cancellation belongs to the turn that was active when /cancel was requested.
@@ -737,11 +665,6 @@ def accept_message(
     # feedback uses the inbox re-drive and must leave this pause intact.
     app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": False})
     _commit_resource_deliveries(app, sid, resource_deliveries)
-    from clio_agent.gact.mcp_task_store import app_task_store
-    from clio_agent.gact.session_run_tasks import SERVER_ID
-    from clio_agent.tools.mcp_task_records import TaskKey
-
-    run = app_task_store(app).get(TaskKey(SERVER_ID, sid, user_msg.turn_id or user_msg.id))
     ack = PostMessageResponse(
         message_id=user_msg.id,
         accepted_at=user_msg.created_at,
@@ -749,7 +672,7 @@ def accept_message(
         state="started",
         effective_model=effective_model,
         behavior=req.behavior,
-        task_handle=run.handle if run else None,
+        task_handle=confirmed_handle or None,
     )
     app.state.message_intents.record_acceptance(sid, key, ack)
     # Acceptance is UNIFORM across both branches. Publishing this only on the
@@ -769,7 +692,6 @@ def accept_message(
             },
         )
     )
-    relay_human_session_message(app, sid, ack.message_id, user_text)
     return ack, 200
 
 

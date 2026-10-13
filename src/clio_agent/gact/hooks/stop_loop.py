@@ -6,7 +6,7 @@ Stop hook that returns ``deny`` (``block``) means *"the turn is not actually don
 re-drive one more turn"* (the canonical use: a test-gate hook that blocks while the
 suite is red, or a todo-gate that blocks while items are open). The re-drive rides
 the EXISTING #1031 idle-hook re-drive seam — the finalize path enqueues a re-drive
-into the session's :class:`~clio_agent.gact.loop_inbox.LoopInbox` and the turn-runner
+into the Core-backed session mailbox and the turn-runner
 idle hook (``drain_inbox_to_new_turn``) starts exactly ONE new turn when the slot
 clears. No new store: the loop counters live on ``session.metadata`` (the #948
 ``AgentTask`` no-fifth-store projection pattern, RULE 4).
@@ -212,16 +212,9 @@ def _loop_limits() -> dict[str, int]:
 
 
 def _enqueue_redrive(app: "FastAPI", session_id: str, result: StopLoopResult) -> None:
-    """Enqueue ONE Stop-loop re-drive onto the session's loop-inbox (#1031 seam).
+    """Confirm an attributed hook continuation before hinting shared admission."""
 
-    The turn-runner idle hook drains it into exactly one new turn when the current
-    turn's slot clears. The re-drive is marked ``stop_loop_redrive`` in metadata so
-    it is identifiable on the trace (never a silent synthetic user turn), and its
-    text is the Stop hook's block reason — the "why you are not done" feedback the
-    completion gate is meant to carry back to the model.
-    """
-
-    from clio_agent.gact.loop_inbox import InboxEvent, inbox_for  # noqa: PLC0415
+    from clio_agent.gact.agent_mailbox import accept_session_input  # noqa: PLC0415
 
     text = (result.reason or "").strip()
     if result.additional_context.strip():
@@ -232,17 +225,15 @@ def _enqueue_redrive(app: "FastAPI", session_id: str, result: StopLoopResult) ->
         )
     if not text:
         text = "A Stop hook reported the task is not complete; continue working."
-    inbox_for(app, session_id).put(
-        InboxEvent(
-            kind="user_message",
-            task_id="",
-            text=text,
-            metadata={
-                "stop_loop_redrive": True,
-                "stop_loop_count": int(result.new_state.get("count", 0) or 0),
-                "stop_loop_blocking_hooks": list(result.blocking_hook_ids),
-            },
-        )
+    accept_session_input(
+        app,
+        session_id,
+        text,
+        metadata={
+            "stop_loop_redrive": True,
+            "stop_loop_count": int(result.new_state.get("count", 0) or 0),
+            "stop_loop_blocking_hooks": list(result.blocking_hook_ids),
+        },
     )
 
 

@@ -518,30 +518,21 @@ def _stage_resume_turn(
     Mirrors ``plan_mode._stage_plan_exit_resume`` — no held thread, no new store.
     """
 
-    from clio_agent.gact.loop_inbox import enqueue_user_steer  # noqa: PLC0415
+    from clio_agent.gact.agent_mailbox import accept_session_input  # noqa: PLC0415
 
-    if app.state.agent is None or session is None:
-        app.state.sessions.update(sid, status="idle")
-        return
-    if app.state.turn_runner.busy(sid):
-        enqueue_user_steer(app, sid, text, {**metadata, "question_id": question_id})
-        app.state.bus.publish(
-            Event(
-                type=event,
-                session_id=sid,
-                payload={"session_id": sid, "permission_id": question_id, "reason": "session_busy"},
-            )
-        )
-        return
-    from clio_agent.gact.turn import _start_background_user_turn  # noqa: PLC0415
-
-    resumed = _start_background_user_turn(
+    if session is None:
+        raise ValueError("deferred_input_recipient_missing")
+    message_id = accept_session_input(
         app,
         sid,
-        session,
         text,
-        metadata=metadata,
-        prev_status=str(getattr(session, "status", "waiting_user") or "waiting_user"),
+        {**metadata, "question_id": question_id},
+        steer_message_id="defer-answer_" + question_id,
+    )
+    app.state.sessions.update(
+        sid,
+        status="idle" if not app.state.turn_runner.busy(sid) else None,
+        metadata_patch={"automatic_input_hold": None},
     )
     app.state.bus.publish(
         Event(
@@ -550,7 +541,9 @@ def _stage_resume_turn(
             payload={
                 "session_id": sid,
                 "permission_id": question_id,
-                "queued_user_message_id": resumed.id,
+                "queued_message_id": message_id,
+                "reason": "pending_input_admission",
             },
         )
     )
+    app.state.turn_runner.request_input_admission(sid)

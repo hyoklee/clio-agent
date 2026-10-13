@@ -494,12 +494,9 @@ def stop_session_goal(app: Any, sid: str, *, reason: str = "goal_abandoned") -> 
 def _enqueue_goal_redrive(
     app: Any, sid: str, decision: GoalDecision, goal: Mapping[str, Any]
 ) -> None:
-    """Enqueue ONE goal re-drive onto the session's loop-inbox (the #1031 seam).
+    """Confirm goal continuation in Core and hint the common conversation admission."""
 
-    The SAME bounded seam the Stop-loop rides (``stop_loop._enqueue_redrive``): the idle hook
-    drains it into exactly one new turn. The text is the judge guidance + the goal condition."""
-
-    from clio_agent.gact.loop_inbox import InboxEvent, inbox_for  # noqa: PLC0415
+    from clio_agent.gact.agent_mailbox import accept_session_input  # noqa: PLC0415
 
     condition = str(goal.get("condition") or "")
     guidance = (decision.guidance or "").strip()
@@ -513,19 +510,17 @@ def _enqueue_goal_redrive(
         "If progress depends on accepted background tasks, use wait_for(task_handle) "
         "and finish this turn. Task completion resumes the goal. Do not poll or resubmit accepted work."
     )
-    inbox_for(app, sid).put_coalesced_user_message(
-        InboxEvent(
-            kind="user_message",
-            task_id="",
-            text=text,
-            metadata={
-                "goal_redrive": True,
-                "goal_id": str(goal.get("goal_id") or ""),
-                "goal_iters": int(decision.new_state.get("iters_elapsed", 0) or 0),
-                "goal_reason": decision.reason,
-                "coalesce_key": f"goal:{goal.get('goal_id', '')}",
-            },
-        )
+    accept_session_input(
+        app,
+        sid,
+        text,
+        metadata={
+            "goal_redrive": True,
+            "goal_id": str(goal.get("goal_id") or ""),
+            "goal_iters": int(decision.new_state.get("iters_elapsed", 0) or 0),
+            "goal_reason": decision.reason,
+            "coalesce_key": f"goal:{goal.get('goal_id', '')}",
+        },
     )
 
 

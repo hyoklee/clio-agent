@@ -167,7 +167,7 @@ def collect_result(
     if row["effective_status"] not in TERMINAL:
         return {"handle": row["handle"], "status": row["effective_status"], "pending": True}
     result = row.get("result")
-    if row["task_kind"] == "Subagent":
+    if row.get("kind") == "agent":
         from clio_agent.gact.agents.spawn_completion import completion_payload
 
         task = app.state.agent_task_registry.get(row["id"])
@@ -206,17 +206,7 @@ def get_task_result(
     Query, wait, observe and cancel retain their ordinary conversation scope.
     """
     app, sid = _scope()
-    try:
-        row = resolve_task(app, sid, handle, scope=scope, user_intent=user_intent)
-    except ValueError as exc:
-        if str(exc) != "unknown_or_unauthorized_task":
-            raise
-        from clio_agent.gact.subagent_history import retained_result_row
-
-        historical = retained_result_row(app, sid, handle)
-        if historical is None:
-            raise
-        return collect_result(app, sid, historical, consume_delivery=False)
+    row = resolve_task(app, sid, handle, scope=scope, user_intent=user_intent)
     return collect_result(app, sid, row)
 
 
@@ -376,7 +366,7 @@ def _observe_tasks(
         events = []
         for row in rows:
             session_ids = [row["owner"]["session_id"]]
-            if row["task_kind"] == "Subagent":
+            if row.get("kind") == "agent":
                 session_ids.append(row["child_session_id"])
             for owner in session_ids:
                 for event in app.state.bus.session_events_since(owner, cursor=start + 1):
