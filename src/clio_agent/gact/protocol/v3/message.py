@@ -486,6 +486,14 @@ def _project_tool(context: _TranscriptProjection, part: Mapping[str, Any], part_
     failed = bool(part.get("is_error"))
     part_type = str(part.get("type") or "")
     state = "failed" if failed else ("succeeded" if part_type == "tool_result" else "running")
+    interrupted = part_type == "tool_call" and context.wire.get("stop_reason") in {
+        "cancelled",
+        "interrupted",
+        "error",
+    }
+    if interrupted:
+        # This closes the invocation's presentation, not any accepted background task.
+        state = "cancelled" if context.wire.get("stop_reason") == "cancelled" else "failed"
     output = current.get("output")
     if part_type == "tool_result":
         for key in ("structured_content", "content_blocks", "content", "text"):
@@ -527,6 +535,11 @@ def _project_tool(context: _TranscriptProjection, part: Mapping[str, Any], part_
         ),
         **timing,
         **({"error": str(part.get("text") or "Tool failed")} if failed else {}),
+        **(
+            {"error": "Turn interrupted before a result was recorded; accepted tasks may continue."}
+            if interrupted
+            else {}
+        ),
     }
 
 

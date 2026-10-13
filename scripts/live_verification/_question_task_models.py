@@ -49,10 +49,13 @@ def question_mission(workspace: Path, mode: str) -> str:
     """Require another model action while the human answer remains unavailable."""
     beginning = (
         "Call ask_user(question='Which dataset should this qualification use?'). "
-        "Retain its Question handle. Immediately query_tasks(kind='Question'), then call "
+        "Wait for successful acceptance before making other calls. Omit optional arguments "
+        "rather than inventing null values. Retain its Question handle. "
+        "Immediately query_tasks(kind='Question'), then call "
         f"fs_read_file(filepath={(workspace / 'sentinel.txt').as_posix()!r}). "
         "Query_tasks(kind='Question') again to prove that the question is still pending "
-        "after your independent read. "
+        "after your independent read. If submission needed a retry, perform the independent "
+        "file read again after you receive the accepted handle. "
     )
     if mode == "idle":
         return beginning + (
