@@ -173,6 +173,28 @@ source-list navigation, document anchors, and light/dark/narrow layouts were
 reviewed with the labeled fixture. Captures and source receipts are retained at
 `D:/Libraries/Videos/clio_recordings/2026-10-13-source-citation-objects/`.
 
+## Child conversation follow-ups
+
+UI [PR 601](https://github.com/iowarp/gact-tui/pull/601) fixes the central
+child-conversation route, which still replaced the input with a read-only footer
+even though the side panel supported follow-ups. Both views now use the same
+follow-up form and existing `delivery=auto` message route, preserving the child's
+model selection, behavior, parent identity, draft and uncertain-send retry key.
+Running children receive a steer; an idle child can receive a new turn in its
+retained conversation. Parent navigation and pending structured interactions
+remain available. Long drafts scroll within the input.
+
+Local lint, type checks and web/offline builds passed. Updated footer regression
+cases cover running and completed children; test suites run in normal remote CI,
+not locally. Manual browser review exercised the production components and
+browser repository against intercepted HTTP fixture responses. It covered
+central/side-panel draft retention, identical retry after a lost acknowledgement,
+keyboard send/newline, parent navigation, light/dark and narrow long-draft layout.
+This is UI/transport evidence, not a live provider or Aurora run. Captures and
+request receipts are retained at
+`D:/Libraries/Videos/clio_recordings/2026-10-13-child-followups/`.
+The separate task-system rewrite remains excluded.
+
 ## Marketplace locking on shared filesystems
 
 See [the scoped lock audit](marketplace-locking-shared-filesystems-2026-10-12.md).
