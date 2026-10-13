@@ -59,7 +59,7 @@ Fresh data-only startup migration reads old formats without invoking old owners.
 
 ### Native MCP boundary
 
-Pin FastMCP/fastmcp-tasks 4.0.0b5, MCP 2.0.0 and Docket 0.25.0 initially. Their source-level feasibility has been reviewed; this is not runtime acceptance. If a required integration contract fails its focused checks, report a blocker, not an old-engine fallback.
+Pin FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0 and Docket 0.26.2. The initial reviewed beta tuple was superseded on 2026-10-13 after the human identified the stable 4.1.0 release. Stable Tasks requires Docket >=0.26; retain MCP 2.0.0 rather than silently expanding the dependency upgrade. Source inspection finds the relied-on ToolTask driver and supported transport-options hook unchanged; runtime contract tests and final qualification remain required. Account for 4.1.0's task argument validation, terminal-cancel preservation, task key retention and MultiAuth ownership-scope changes. This is not runtime acceptance. If a required integration contract fails its focused checks, report a blocker, not an old-engine fallback.
 
 Register built-ins through FastMCP, including short non-background control tools. Shell/storage use independent native runtime roots, lifespans/queue identities and configurable worker concurrency 10 each. memory:// is default; expose existing persistent-backend configuration without promising exactly-once recovery.
 

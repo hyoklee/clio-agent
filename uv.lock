@@ -2,9 +2,12 @@ version = 1
 revision = 5
 requires-python = ">=3.12"
 resolution-markers = [
-    "python_full_version >= '3.14' and sys_platform == 'win32'",
-    "python_full_version >= '3.14' and sys_platform == 'emscripten'",
-    "python_full_version >= '3.14' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'win32'",
     "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
     "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
@@ -14,7 +17,7 @@ resolution-markers = [
 ]
 
 [manifest]
-overrides = [{ name = "mcp", specifier = ">=2.0.0" }]
+overrides = [{ name = "mcp", specifier = "==2.0.0" }]
 
 [[package]]
 name = "adios2"
@@ -328,9 +331,34 @@ wheels = [
 name = "beartype"
 version = "0.22.5"
 source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version == '3.14.*' and sys_platform == 'win32'",
+    "python_full_version == '3.14.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.14.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'win32'",
+    "python_full_version == '3.13.*' and sys_platform == 'emscripten'",
+    "python_full_version == '3.13.*' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'win32'",
+    "python_full_version < '3.13' and sys_platform == 'emscripten'",
+    "python_full_version < '3.13' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
 sdist = { url = "https://files.pythonhosted.org/packages/a6/09/9003e5662691056e0e8b2e6f57c799e71875fac0be0e785d8cb11557cd2a/beartype-0.22.5.tar.gz", hash = "sha256:516a9096cc77103c96153474fa35c3ebcd9d36bd2ec8d0e3a43307ced0fa6341", size = 1586256, upload-time = "2025-11-01T05:49:20.771Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f7/f6/073d19f7b571c08327fbba3f8e011578da67ab62a11f98911274ff80653f/beartype-0.22.5-py3-none-any.whl", hash = "sha256:d9743dd7cd6d193696eaa1e025f8a70fb09761c154675679ff236e61952dfba0", size = 1321700, upload-time = "2025-11-01T05:49:18.436Z" },
+]
+
+[[package]]
+name = "beartype"
+version = "0.23.1"
+source = { registry = "https://pypi.org/simple" }
+resolution-markers = [
+    "python_full_version >= '3.15' and sys_platform == 'win32'",
+    "python_full_version >= '3.15' and sys_platform == 'emscripten'",
+    "python_full_version >= '3.15' and sys_platform != 'emscripten' and sys_platform != 'win32'",
+]
+sdist = { url = "https://files.pythonhosted.org/packages/79/34/c0cfdaee9c796c8381439fed0fcab62810753b8b0adb1ec88fa7f41eaa5d/beartype-0.23.1.tar.gz", hash = "sha256:8b805f246b32931c74f2b321ea0939fe5bb2ff43c12a3eff19cc4c854b832e1d", size = 1993714, upload-time = "2026-10-11T05:36:55.251Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1c/cb/2f6aa982e2860c1156830db3da7f823b71784ed7d533ca289ea9b6c6347a/beartype-0.23.1-py3-none-any.whl", hash = "sha256:4461b4dc57e3fdd6c8a8464b22cf118002eea107c33e9fef651c69068ab3cce3", size = 1582101, upload-time = "2026-10-11T05:36:52.431Z" },
 ]
 
 [[package]]
@@ -617,6 +645,7 @@ dependencies = [
     { name = "lru-dict" },
     { name = "markdown-it-py" },
     { name = "matplotlib" },
+    { name = "mcp" },
     { name = "msgspec" },
     { name = "numpy" },
     { name = "odfpy" },
@@ -630,6 +659,7 @@ dependencies = [
     { name = "psutil" },
     { name = "pyarrow" },
     { name = "pydantic" },
+    { name = "pydocket" },
     { name = "pypdf" },
     { name = "python-docx" },
     { name = "python-pptx" },
@@ -722,8 +752,8 @@ requires-dist = [
     { name = "ddgs", marker = "extra == 'desktop'", specifier = ">=6.0" },
     { name = "dspy", specifier = "==3.4.0" },
     { name = "fastapi", specifier = ">=0.140" },
-    { name = "fastmcp", specifier = "==4.0.0b5" },
-    { name = "fastmcp-tasks", specifier = "==4.0.0b5" },
+    { name = "fastmcp", specifier = "==4.1.0" },
+    { name = "fastmcp-tasks", specifier = "==4.1.0" },
     { name = "filelock", specifier = ">=3.12.0" },
     { name = "flowcept", extras = ["redis", "mongo"], marker = "extra == 'flowcept'", specifier = ">=1.0.3,<2" },
     { name = "fsspec", specifier = ">=2025.9.0" },
@@ -740,6 +770,7 @@ requires-dist = [
     { name = "lru-dict", specifier = ">=1.3.0" },
     { name = "markdown-it-py", specifier = ">=3.0,<5" },
     { name = "matplotlib", specifier = ">=3.8.0" },
+    { name = "mcp", specifier = "==2.0.0" },
     { name = "msgspec", specifier = ">=0.22.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "numpy", specifier = ">=1.24.0" },
@@ -758,6 +789,7 @@ requires-dist = [
     { name = "pyarrow", specifier = ">=14.0.0" },
     { name = "pydantic", specifier = ">=2.12,<2.14" },
     { name = "pydantic-settings", marker = "extra == 'desktop'", specifier = ">=2.6" },
+    { name = "pydocket", specifier = "==0.26.2" },
     { name = "pypdf", specifier = ">=5.1.0,<7" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
@@ -1262,19 +1294,19 @@ wheels = [
 
 [[package]]
 name = "fastmcp"
-version = "4.0.0b5"
+version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "fastmcp-slim", extra = ["client", "server"] },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d2/5c/e2d22d1f2b9f062cda7e99a3b485232078c4f183aecf865a0d3d2d323b46/fastmcp-4.0.0b5.tar.gz", hash = "sha256:39e970a556872e90eed7e34972477eeef24d1a0949be05e0ed57045d474a4608", size = 42188980, upload-time = "2026-08-28T02:58:17.743Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c3/c4/fe4e24af2cb03f4701f45634873d87557c2b5d283d287412345345ad0ede/fastmcp-4.1.0.tar.gz", hash = "sha256:7a8bf4e58cc6c2f3a8552b5a7a17ba1e4682b6fd4cafb7f461920a66dbd2499f", size = 42686511, upload-time = "2026-10-08T22:57:05.652Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8a/f4/e8e36c93f36eb2014d941882da984b398d5326f78da07394e6d7e74db2cb/fastmcp-4.0.0b5-py3-none-any.whl", hash = "sha256:b6771dae5b0c1502e287b94e473c0e43b186db001e4a5786464e9085e5bdff7b", size = 8089, upload-time = "2026-08-28T02:58:13.085Z" },
+    { url = "https://files.pythonhosted.org/packages/5c/81/77610de5d79187455ec4a4eafdc17942365f1bc4e5850633e50159e9afdc/fastmcp-4.1.0-py3-none-any.whl", hash = "sha256:cf19fd603315b48ef1829c8579431e77793feafdcbed51f0dc5607af10a24e9b", size = 8154, upload-time = "2026-10-08T22:57:02.531Z" },
 ]
 
 [[package]]
 name = "fastmcp-slim"
-version = "4.0.0b5"
+version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "mcp-types" },
@@ -1285,14 +1317,15 @@ dependencies = [
     { name = "rich" },
     { name = "typing-extensions" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/2f/0e/93a8e2e20071ae9c5b5dc0cdd59fffabb0a78c9c25412854459605de19c1/fastmcp_slim-4.0.0b5.tar.gz", hash = "sha256:548677ab0859a0e2dc6fe78602ac6d235d3dce2355d885933cdfd4268f9f429e", size = 682434, upload-time = "2026-08-28T02:57:49.134Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/88/85aafec43ec9940a360d75f2d8e9517eda01ac38b8b1610b0e9e125d61d3/fastmcp_slim-4.1.0.tar.gz", hash = "sha256:390b2b430195e0cdd0327aff80fe5dceb862b2421baf71de6d4eec92f80f99f8", size = 734647, upload-time = "2026-10-08T22:56:40.642Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2e/a7/a34e1ce3a6ae3b22bc8a9d1ea6b6cc9c0c6f4d2693b13cd4884c2fe83896/fastmcp_slim-4.0.0b5-py3-none-any.whl", hash = "sha256:4c47372fab61cbdcedc4c8f726e29229d37b03e60044a0288111aa19d0709690", size = 856273, upload-time = "2026-08-28T02:57:47.623Z" },
+    { url = "https://files.pythonhosted.org/packages/54/6a/d61e1541f4c65872146a576c1379f6f32013fd8c636bcaf0f8e70a04e533/fastmcp_slim-4.1.0-py3-none-any.whl", hash = "sha256:6edb48a78e508ef5ac691bf2a68f3e5000403773655d859eceea1068b894df4a", size = 911585, upload-time = "2026-10-08T22:56:39.136Z" },
 ]
 
 [package.optional-dependencies]
 client = [
     { name = "authlib" },
+    { name = "beartype", version = "0.23.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
     { name = "exceptiongroup" },
     { name = "httpx2" },
     { name = "mcp" },
@@ -1302,6 +1335,7 @@ client = [
 ]
 server = [
     { name = "authlib" },
+    { name = "beartype", version = "0.23.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
     { name = "cyclopts" },
     { name = "exceptiongroup" },
     { name = "griffelib" },
@@ -1326,16 +1360,16 @@ server = [
 
 [[package]]
 name = "fastmcp-tasks"
-version = "4.0.0b5"
+version = "4.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cryptography" },
     { name = "fastmcp-slim", extra = ["server"] },
     { name = "pydocket" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9f/df/92584aa96dc6a055ee144e6e20cdf3b6c867ce9bab58fb8096ba794af7cd/fastmcp_tasks-4.0.0b5.tar.gz", hash = "sha256:113176c39007d4099fea296358261e949220315a88dc702022917e701296d458", size = 54236, upload-time = "2026-08-28T02:58:06.525Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e5/5e/c78b037f7a4791704636c70e81f3a4a94db27f76c6d89c5be14bc1a28ad2/fastmcp_tasks-4.1.0.tar.gz", hash = "sha256:1afae80e4c01b40a9db26639e5ad457cf2b1cc544689d3c4a8b6ff076563dba9", size = 55476, upload-time = "2026-10-08T22:56:58.579Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/c9/6d/0126b0e11fc98847979492a802aed95b09e1b97e2fb0e78b09ca6161f63e/fastmcp_tasks-4.0.0b5-py3-none-any.whl", hash = "sha256:700bdab662d39373b7a1ebcc76d0b17f726516a840cf973852254ebe2b23b648", size = 65413, upload-time = "2026-08-28T02:58:05.502Z" },
+    { url = "https://files.pythonhosted.org/packages/82/03/87db1f52381569e1bf9f10960f1a2e395a89abac3e9fc38eaa5cfc7b1895/fastmcp_tasks-4.1.0-py3-none-any.whl", hash = "sha256:c30db83820b2600bd0c1969a0f9f3ef5110c05dd36fcc488ea6e066dda33d991", size = 66619, upload-time = "2026-10-08T22:56:57.501Z" },
 ]
 
 [[package]]
@@ -3593,7 +3627,8 @@ name = "py-key-value-aio"
 version = "0.4.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "beartype" },
+    { name = "beartype", version = "0.22.5", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.15'" },
+    { name = "beartype", version = "0.23.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.15'" },
     { name = "typing-extensions" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/04/3c/0397c072a38d4bc580994b42e0c90c5f44f679303489e4376289534735e5/py_key_value_aio-0.4.4.tar.gz", hash = "sha256:e3012e6243ed7cc09bb05457bd4d03b1ba5c2b1ca8700096b3927db79ffbbe55", size = 92300, upload-time = "2026-02-16T21:21:43.245Z" }
@@ -3806,7 +3841,7 @@ wheels = [
 
 [[package]]
 name = "pydocket"
-version = "0.25.0"
+version = "0.26.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "burner-redis" },
@@ -3823,9 +3858,9 @@ dependencies = [
     { name = "tzdata", marker = "sys_platform == 'win32'" },
     { name = "uncalled-for" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/31/04/aed51c2d53341d5651e17f7b853534b70021474109e595824c665681b148/pydocket-0.25.0.tar.gz", hash = "sha256:cf4b42cbb49276a0791470944b1518a342258f0d852c9e65c2e17e344b8418ed", size = 451276, upload-time = "2026-09-03T13:23:49.457Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/12/f4/314e0a129ac79e7fc02edbbee8d1f8554e09d03b8f65be502eda6fd20861/pydocket-0.26.2.tar.gz", hash = "sha256:7809eee323d413f23ec227a8eae2d0c7da802730e3c89a81c923aeae71212c26", size = 322825, upload-time = "2026-10-07T14:51:32.24Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/24/ab/9edb323331b0105a241fcd16d237402c674b7ac2b73a77d34e790910ad22/pydocket-0.25.0-py3-none-any.whl", hash = "sha256:8f77663d18762f2a54ffe8f837f779176ff3e5c9e17ca56c4ade5644e7177f07", size = 139705, upload-time = "2026-09-03T13:23:47.778Z" },
+    { url = "https://files.pythonhosted.org/packages/9c/1b/4fbd976f4d372940d008a9dd22ea6f4ad815ff6b9ca4e5017c2ce91d5562/pydocket-0.26.2-py3-none-any.whl", hash = "sha256:6242145cf7677eadf744c87f1f619a0986b1ad17a6af67ef9391133e43dfa888", size = 152700, upload-time = "2026-10-07T14:51:30.581Z" },
 ]
 
 [[package]]

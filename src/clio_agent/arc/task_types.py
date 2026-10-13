@@ -103,6 +103,8 @@ class SubmissionContext(TaskRecord):
     invocation_id: str
     tool: str
     argument_digest: str
+    tool_version: str | None = None
+    output_schema: dict[str, JsonValue] | None = None
     arguments: dict[str, JsonValue]
     workspace: str
     permissions: dict[str, JsonValue]
