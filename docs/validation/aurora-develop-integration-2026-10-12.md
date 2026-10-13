@@ -128,6 +128,51 @@ result opens and the unnecessary scroll control stays absent.
 The integration does not establish fresh GPU inference, live attention capture,
 SPOTTER findings, successful OPAL onboarding, or a treatment effect.
 
+## Evidence wording and source navigation follow-up
+
+Marketplace [PR 100](https://github.com/iowarp/clio-agent-marketplace/pull/100)
+and [PR 101](https://github.com/iowarp/clio-agent-marketplace/pull/101) remove
+mandatory bracketed claim tags from APPL-CORE's instructions, report guidance,
+optional card template and grader. Use natural wording and specific supporting
+citations near a claim. A manifest supports declared identity; a status command
+or pending audit does not support scientific findings. A clickable citation
+still needs to contain evidence relevant to the claim.
+
+UI [PR 600](https://github.com/iowarp/gact-tui/pull/600) routes explicit file,
+registered artifact and resource citations through the existing workbench.
+The shared Markdown renderer preserves the same navigation inside saved reports;
+references there open source tabs in the report's workspace.
+Ordinary web links retain their external-link behavior. The common expert
+workspace context supplies the actual citation syntax to all eligible experts;
+document skills defer to that shared guidance. The connected service retains its
+file policy. Read access outside a workspace does not automatically grant file
+panel access; use the source's registered resource reference when available.
+
+Manual browser review opened protocol and CSV source tabs using the production
+components with labeled fictional fixture files, including a measurement-table
+reference inside the opened protocol report. Light/dark desktop and 390px
+layout review found no document overflow. The development server reported
+ResizeObserver notices during resizing and HMR notices during fixture edits;
+these are retained with the review limits. Screenshots, exact source copies
+and validation metadata are retained under
+`D:/Libraries/Videos/clio_recordings/2026-10-12-source-citations/`.
+This is component interaction evidence, not live OPAL or Aurora qualification.
+CI also caught an inherited external-link target on an internal citation; the
+internal renderer now explicitly removes it while preserving external web links.
+
+The presentation follow-up uses the pinned AI Elements Inline Citation component
+for descriptive or numbered markers with hover/focus details, and Sources for
+explicit numbered bibliographies containing both internal and web references.
+Conversation/message links use CLIO routing; existing document anchors stay in
+the document. Source metadata and routing do not assert that its content proves
+the surrounding claim. The common prompt now provides these syntax examples,
+Markdown conventions and the renderer's double-dollar LaTeX delimiters.
+Browser review exposed missing KaTeX styles and a full-height source-group gap;
+both were corrected. Inline/display equations, pointer and keyboard file opening,
+source-list navigation, document anchors, and light/dark/narrow layouts were
+reviewed with the labeled fixture. Captures and source receipts are retained at
+`D:/Libraries/Videos/clio_recordings/2026-10-13-source-citation-objects/`.
+
 ## Marketplace locking on shared filesystems
 
 See [the scoped lock audit](marketplace-locking-shared-filesystems-2026-10-12.md).

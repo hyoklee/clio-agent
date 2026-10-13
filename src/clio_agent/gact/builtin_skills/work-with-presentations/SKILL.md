@@ -93,7 +93,8 @@ review limitation. Successful generation, shape-bound checks and text extraction
 do not establish visual quality. Designate the requested editable `.pptx` with
 `create_artifact(path=output_path, kind="report", pdf_preview=true)`.
 Name the published artifact in the final response; Clio shows its artifact card.
-Do not format local filesystem paths as Markdown links.
+Use the runtime's workspace-file or registered artifact/resource citation format
+for clickable references. Do not use browser-local `file://` links.
 This registers the editable deck with a version-bound PDF preview for Clio's
 viewer. Before claiming a preview is available, confirm a successful entry in
 the publication result's `pdf_previews`; correct a missing or failed binding.

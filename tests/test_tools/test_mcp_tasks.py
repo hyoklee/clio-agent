@@ -381,6 +381,48 @@ async def test_create_task_result_is_driven_to_the_real_result() -> None:
         set_task_record_store(None)
 
 
+async def test_cancelling_during_persistence_preserves_work_without_starting_polling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stop at the custody boundary, retaining the task without waiting for its result."""
+    store = _fresh_store()
+    session = ScriptedSession([])
+    extension = ClioTasksClientExtension(BackendIdentity(SERVER_A, {"transport": "test"}))
+    make_durable = extension._make_durable
+    persisted = asyncio.Event()
+    finish_persistence = asyncio.Event()
+
+    async def persist_then_pause(ctx: Any, key: TaskKey, result: Any, target: Any) -> None:
+        """Use real record persistence, then hold its acknowledgement for cancellation."""
+        await make_durable(ctx, key, result, target)
+        persisted.set()
+        await finish_persistence.wait()
+
+    monkeypatch.setattr(extension, "_make_durable", persist_then_pause)
+    set_task_record_store(store)
+    claim = asyncio.create_task(
+        extension._resolve_task(_create_result("task-stopped-at-custody"), _Ctx(session))
+    )
+    try:
+        await asyncio.wait_for(persisted.wait(), timeout=5)
+        claim.cancel()
+        finish_persistence.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(claim, timeout=5)
+        assert session.methods() == []
+        records = store.list()
+        assert len(records) == 1
+        assert records[0].status == "working"
+        assert not records[0].cancel_requested
+        assert records[0].lease_owner is None
+    finally:
+        finish_persistence.set()
+        if not claim.done():
+            claim.cancel()
+        await asyncio.gather(claim, return_exceptions=True)
+        set_task_record_store(None)
+
+
 async def test_cancelling_claim_preserves_accepted_work_and_releases_its_lease() -> None:
     """Stopping a waiter never sends a task cancellation or invents terminal evidence."""
 
