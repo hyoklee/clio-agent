@@ -91,6 +91,27 @@ def _is_dspy_module(agent: Any) -> bool:
     return isinstance(agent, dspy.Module)
 
 
+def _commit_test_model_input(agent_def: Any, question: str, session_id: str) -> None:
+    """Use the production Core input boundary before a stand-in model runs."""
+    from dspy.lm15 import Message, TextPart
+
+    from clio_agent.gact import context
+    from clio_agent.gact.agents.clio_react_record import StepRecorder, arc_scope
+
+    tokens = [context.set_react_scope(agent_def.id), context.set_react_session(session_id)]
+    try:
+        arc, session, scope = arc_scope()
+        if arc is not None:
+            recorder = StepRecorder(arc, session, scope, expert_id=agent_def.id)
+            recorder.user_message(Message(role="user", parts=(TextPart(text=question),)))
+            recorder.injections(context.turn_injections())
+            recorder.read_steps()
+            recorder.commit_input(0)
+    finally:
+        for token in reversed(tokens):
+            context.reset(token)
+
+
 class _HostAgentBlueprintModule:
     """A stand-in for the compiled blueprint DSPy module that delegates to the
     host agent's ``forward``.
@@ -130,7 +151,7 @@ class _HostAgentBlueprintModule:
         )
 
     def _delegate(self, question: str, session_id: str, kwargs: dict[str, Any]) -> Any:
-        self._commit_input(question, session_id)
+        _commit_test_model_input(self.agent_def, question, session_id)
         params, accepts_var_kw = _forward_parameters(_host_forward(self._base_agent))
         call_kwargs: dict[str, Any] = {"question": question, "session_id": session_id}
         defaults = {"session_mode": "chat", "session_edit_mode": "diff", "cancel_requested": None}
@@ -144,28 +165,6 @@ class _HostAgentBlueprintModule:
         if _is_dspy_module(self._base_agent):
             return self._base_agent(**call_kwargs)
         return self._base_agent.forward(**call_kwargs)
-
-    def _commit_input(self, question: str, session_id: str) -> None:
-        # This stand-in replaces the complete model module, including its input
-        # boundary. Use the production writer before invoking the fake model;
-        # otherwise accepted mailbox input would remain pending indefinitely.
-        from dspy.lm15 import Message, TextPart
-
-        from clio_agent.gact import context
-        from clio_agent.gact.agents.clio_react_record import StepRecorder, arc_scope
-
-        tokens = [context.set_react_scope(self.agent_def.id), context.set_react_session(session_id)]
-        try:
-            arc, session, scope = arc_scope()
-            if arc is not None:
-                recorder = StepRecorder(arc, session, scope, expert_id=self.agent_def.id)
-                recorder.user_message(Message(role="user", parts=(TextPart(text=question),)))
-                recorder.injections(context.turn_injections())
-                recorder.read_steps()
-                recorder.commit_input(0)
-        finally:
-            for token in reversed(tokens):
-                context.reset(token)
 
 
 class _NativeInputHostAgentBlueprintModule(_HostAgentBlueprintModule):
@@ -234,6 +233,7 @@ class _ScriptedModule:
     def __call__(self, question: str, session_id: str, **kwargs: Any) -> Any:
         """Run the script with the kwargs the turn passed."""
 
+        _commit_test_model_input(self.agent_def, question, session_id)
         return self._script(question=question, session_id=session_id, **kwargs)
 
 

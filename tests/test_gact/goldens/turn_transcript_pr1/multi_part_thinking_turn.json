@@ -8,7 +8,7 @@
             "confirmation_policy": "ask",
             "execution_mode": "execute"
           },
-          "client_message_id": "",
+          "client_message_id": "<msg#1>",
           "delivery": "start",
           "effective_model": {
             "model_id": "",
@@ -33,7 +33,39 @@
     },
     {
       "payload": {
-        "id": "<msg#4>",
+        "id": "<msg#1>",
+        "metadata": {
+          "behavior": {
+            "confirmation_policy": "ask",
+            "execution_mode": "execute"
+          },
+          "client_message_id": "<msg#1>",
+          "delivery": "start",
+          "effective_model": {
+            "model_id": "",
+            "provider_id": "",
+            "variant": ""
+          },
+          "recipient_input_reference": "<core#4>"
+        },
+        "parts": [
+          {
+            "agent_id": "",
+            "id": "<part#3>",
+            "text": "think then answer",
+            "type": "text"
+          }
+        ],
+        "role": "user",
+        "session_id": "<sess#2>",
+        "stop_reason": "",
+        "turn_id": "<msg#1>"
+      },
+      "type": "message.created"
+    },
+    {
+      "payload": {
+        "id": "<msg#5>",
         "metadata": {},
         "parts": [],
         "role": "assistant",
@@ -45,10 +77,10 @@
     },
     {
       "payload": {
-        "message_id": "<msg#4>",
+        "message_id": "<msg#5>",
         "part": {
           "agent_id": "main",
-          "id": "<part#5>",
+          "id": "<part#6>",
           "metadata": {
             "default_collapsed": true,
             "provider_source": "anthropic",
@@ -68,8 +100,8 @@
         "delta": {
           "text_append": "Weighing the options..."
         },
-        "message_id": "<msg#4>",
-        "part_id": "<part#5>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#6>",
         "signature_field_name": "provider_thinking:anthropic",
         "stream_source": "live",
         "turn_id": "<msg#1>"
@@ -79,8 +111,8 @@
     {
       "payload": {
         "final_text": "Weighing the options...",
-        "message_id": "<msg#4>",
-        "part_id": "<part#5>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#6>",
         "stream_source": "live",
         "turn_id": "<msg#1>"
       },
@@ -88,10 +120,10 @@
     },
     {
       "payload": {
-        "message_id": "<msg#4>",
+        "message_id": "<msg#5>",
         "part": {
           "agent_id": "main",
-          "id": "<part#6>",
+          "id": "<part#7>",
           "metadata": {
             "signature_field_name": "reasoning",
             "stream_source": "live"
@@ -108,8 +140,8 @@
         "delta": {
           "text_append": "I should answer directly. "
         },
-        "message_id": "<msg#4>",
-        "part_id": "<part#6>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#7>",
         "signature_field_name": "reasoning",
         "stream_source": "live",
         "turn_id": "<msg#1>"
@@ -121,8 +153,8 @@
         "delta": {
           "text_append": "Because it is simple."
         },
-        "message_id": "<msg#4>",
-        "part_id": "<part#6>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#7>",
         "signature_field_name": "reasoning",
         "stream_source": "live",
         "turn_id": "<msg#1>"
@@ -132,8 +164,8 @@
     {
       "payload": {
         "final_text": "I should answer directly. Because it is simple.",
-        "message_id": "<msg#4>",
-        "part_id": "<part#6>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#7>",
         "stream_source": "live",
         "turn_id": "<msg#1>"
       },
@@ -141,10 +173,10 @@
     },
     {
       "payload": {
-        "message_id": "<msg#4>",
+        "message_id": "<msg#5>",
         "part": {
           "agent_id": "main",
-          "id": "<part#7>",
+          "id": "<part#8>",
           "metadata": {
             "signature_field_name": "answer",
             "stream_source": "live"
@@ -161,8 +193,8 @@
         "delta": {
           "text_append": "The answer "
         },
-        "message_id": "<msg#4>",
-        "part_id": "<part#7>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#8>",
         "signature_field_name": "answer",
         "stream_source": "live",
         "turn_id": "<msg#1>"
@@ -174,8 +206,8 @@
         "delta": {
           "text_append": "is 42."
         },
-        "message_id": "<msg#4>",
-        "part_id": "<part#7>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#8>",
         "signature_field_name": "answer",
         "stream_source": "live",
         "turn_id": "<msg#1>"
@@ -185,8 +217,8 @@
     {
       "payload": {
         "final_text": "The answer is 42.",
-        "message_id": "<msg#4>",
-        "part_id": "<part#7>",
+        "message_id": "<msg#5>",
+        "part_id": "<part#8>",
         "stream_source": "live",
         "turn_id": "<msg#1>"
       },
@@ -194,7 +226,7 @@
     },
     {
       "payload": {
-        "message_id": "<msg#4>",
+        "message_id": "<msg#5>",
         "metadata": {
           "agent_runtime": {
             "agent_id": "main",
@@ -256,7 +288,7 @@
   "persisted_assistant_parts": [
     {
       "agent_id": "main",
-      "id": "<part#5>",
+      "id": "<part#6>",
       "metadata": {
         "default_collapsed": true,
         "provider_source": "anthropic",
@@ -270,7 +302,7 @@
     },
     {
       "agent_id": "main",
-      "id": "<part#6>",
+      "id": "<part#7>",
       "metadata": {
         "signature_field_name": "reasoning",
         "stream_source": "live"
@@ -281,7 +313,7 @@
     },
     {
       "agent_id": "main",
-      "id": "<part#7>",
+      "id": "<part#8>",
       "metadata": {
         "signature_field_name": "answer",
         "stream_source": "live"

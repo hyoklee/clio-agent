@@ -447,15 +447,12 @@ async def _run_turn_in_background(
                 _cancelled_error_info(state.sid, execution_cancellation="turn_boundary")
             )
 
-        # #948 S6 [1]/[4]: commit-to-run seam — past the last abort/veto seam, the
-        # turn will forward with the enriched input. Consume the staged observe-later
-        # notifications once AND emit each delegation terminal (shared once-gate with
-        # wait/check) into this turn's already-open transcript.
-        # Consuming records into clio-core (store writes): on the turn executor, never
-        # the event loop (a write there is refused and the turn failed).
-        from clio_agent.gact.task_delivery import commit_staged_completions
+        # Re-read the shared mailbox after the prologue's abort/veto checks. This
+        # stages content only; the Core recipient-input boundary acknowledges it
+        # immediately before each model call, including subsequent iterations.
+        from clio_agent.gact.agent_mailbox import refresh_session_inputs
 
-        await _run_turn_setup_off_loop(state, lambda: commit_staged_completions(state))
+        await _run_turn_setup_off_loop(state, lambda: refresh_session_inputs(state))
 
         # #767 Phase B Slice 5: agent resolve -> module build -> streamed/sync
         # forward -> expert-pack delegation settle lives in ``turn_forward.py``.
@@ -665,6 +662,7 @@ def _start_background_user_turn(
     user_created_at: str = "",
     replace_existing_user_message: bool = False,
     message_role: Literal["user", "system"] = "user",
+    retained_model: Optional[dict[str, Any]] = None,
 ) -> Message:
     """Stage a user or system-event turn and drive it off-thread.
 
@@ -704,7 +702,10 @@ def _start_background_user_turn(
         if message_role == "user" and sess.metadata.get("automatic_input_hold"):
             app.state.sessions.update(sid, metadata_patch={"automatic_input_hold": None})
         if message_role == "system":
-            user_metadata = {**retained_model_metadata(app, sid), **user_metadata}
+            model_metadata = (
+                retained_model if retained_model is not None else retained_model_metadata(app, sid)
+            )
+            user_metadata = {**model_metadata, **user_metadata}
         record_context_reference_deliveries(user_metadata, user_parts)
         image_count = sum(1 for part in user_parts if part.type == "image")
         if image_count:

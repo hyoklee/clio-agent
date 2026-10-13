@@ -160,6 +160,27 @@ def stage_session_inputs(app: Any, sid: str) -> list[tuple[str, str]]:
     ) + drain_task_completions(app, sid, rows=results, limit=max(0, 8 - len(mail)))
 
 
+def refresh_session_inputs(state: Any) -> None:
+    """Refresh staged mailbox input after veto checks without acknowledging delivery."""
+    from clio_agent.gact.subagent_lifecycle import require_execution_allowed
+    from clio_agent.gact.task_context_frame import refresh_task_context_frame
+
+    with CONTROL_LOCK:
+        require_execution_allowed(state.app, state.sid)
+        state.injections = [
+            (source, text)
+            for source, text in state.injections
+            if source not in {"task_results", "agent_messages"}
+        ]
+        initial = "mail:" + state.user_msg.id
+        state.injections.extend(
+            (source, text)
+            for source, text in stage_session_inputs(state.app, state.sid)
+            if initial not in getattr(text, "notification_ids", ())
+        )
+        refresh_task_context_frame(state)
+
+
 def withdraw_human_feedback(app: Any, sid: str, message_id: str) -> None:
     """Withdraw uncommitted human feedback without deleting its retained history."""
     journal = core_task_journal(app)
@@ -436,18 +457,6 @@ def collect_agent_mail(
             )
             for row in eligible
         ]
-
-
-def stage_agent_mail(state: Any) -> None:
-    """Stage IDs only; an aborted/vetoed prologue cannot consume mail."""
-    state.pending_agent_mail_ids = [
-        row["message_id"] for row in _mail_batch(eligible_mail(state.app, state.sid))
-    ]
-
-
-def commit_agent_mail(state: Any) -> None:
-    """Fold only the staged identities into the turn that committed to execution."""
-    state.injections.extend(collect_agent_mail(state.app, state.sid, state.pending_agent_mail_ids))
 
 
 def project_committed_inputs(app: Any, sid: str, boundary: dict[str, Any]) -> None:

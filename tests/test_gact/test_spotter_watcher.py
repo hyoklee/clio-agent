@@ -443,10 +443,26 @@ def test_parent_tool_completion_wakes_exactly_one_check_turn(tmp_path: Path) -> 
 
 
 @pytest.mark.usefixtures("host_agent_executor")
-def test_coalescing_under_burst_of_tool_completions(tmp_path: Path) -> None:
+def test_coalescing_under_burst_of_tool_completions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A burst of tool completions while a check turn is ALREADY running must
     collapse onto AT MOST ONE buffered wake -- not one per completion."""
 
+    import traceback
+
+    from clio_agent.arc import rpc_liveness
+
+    original_audit = rpc_liveness.audit_store_read_on_loop
+    loop_reads: list[str] = []
+
+    def record_read(op: str, *, name: str = "") -> bool:
+        hit = original_audit(op, name=name)
+        if hit and len(loop_reads) < 3:
+            loop_reads.append("".join(traceback.format_stack(limit=16)))
+        return hit
+
+    monkeypatch.setattr(rpc_liveness, "audit_store_read_on_loop", record_read)
     block = threading.Event()
     agent = _CapturingAgent(block_until=block)
     app, root_path = _build_app_with_watcher_blueprint(tmp_path, agent)
@@ -498,6 +514,7 @@ def test_coalescing_under_burst_of_tool_completions(tmp_path: Path) -> None:
             task.task_id
         ]
         assert app.state.agent_task_registry.get(task.task_id).status == STATUS_RUNNING
+    assert not loop_reads, "Core reads must leave the application loop:\n" + "\n".join(loop_reads)
 
 
 @pytest.mark.usefixtures("host_agent_executor")

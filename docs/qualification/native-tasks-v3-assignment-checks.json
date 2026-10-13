@@ -1,4 +1,498 @@
 {
+  "mailbox_boundary_followup": {
+    "base_head": "cc882720",
+    "scope": "Shared Core mailbox staging and off-loop turn admission; full V3 replacement and fresh model/session/workflow/question acceptance remain incomplete",
+    "latest_focused_cases": 30,
+    "latest_passed": 30,
+    "all_disposable_parents_absent": true,
+    "golden_review": [
+      {
+        "name": "streamed_text_turn",
+        "old_event_count": 8,
+        "new_event_count": 9,
+        "receipt_updates": 1,
+        "only_receipt_and_client_identity_and_token_renumbering": true,
+        "persisted_parts_unchanged": true
+      },
+      {
+        "name": "tool_call_turn",
+        "old_event_count": 9,
+        "new_event_count": 10,
+        "receipt_updates": 1,
+        "only_receipt_and_client_identity_and_token_renumbering": true,
+        "persisted_parts_unchanged": true
+      },
+      {
+        "name": "multi_part_thinking_turn",
+        "old_event_count": 14,
+        "new_event_count": 15,
+        "receipt_updates": 1,
+        "only_receipt_and_client_identity_and_token_renumbering": true,
+        "persisted_parts_unchanged": true
+      }
+    ],
+    "attempts": [
+      {
+        "case": "tests/test_gact/test_task_context_commit.py::test_context_frame_matches_completion_commit[collected]",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-input-c17b178c",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 13.64s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_task_context_commit.py::test_context_frame_matches_completion_commit[collected]",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-input-b4d44393",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 17.87s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_task_context_commit.py::test_context_frame_matches_completion_commit[delivered]",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-input-80d1e6fc",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.37s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_collection_between_staging_and_commit_cannot_duplicate_injection",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-input-3a753c99",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.38s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_backend_sessions_and_stale_callback_keep_custody_and_delivery_once",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-input-b3cd2b71",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.63s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_handle_and_result_survive_store_reconstruction",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-input-a55fc45b",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.61s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_composite_alias_collision_does_not_hide_or_collect_a_member",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-7009bca7",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.82s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_malformed_query_cursor_preserves_authorized_page_and_pending_completion",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-7755e8ab",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.49s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_authorization_precedes_filters_pagination_and_counts",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-94a17c5c",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 12.25s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_invalid_observation_pattern_is_typed_and_does_not_collect",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-3c367066",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.60s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_staged_handle_cannot_consume_an_unrelated_subagent_with_the_same_id",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-b1bc6651",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 19.68s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_query_pages_survive_new_insertion_without_duplicates",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-776a89c6",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.69s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_expired_mixed_wait_and_invalid_member_leave_work_running",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-669b2488",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.17s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_stop_interrupts_waiter_without_changing_accepted_task",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-c00fc39c",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.02s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_query_and_observe_do_not_consume_pending_completion",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-b9e3141c",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.96s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_staging_veto_overflow_and_concurrent_collection_share_guard",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-823cfa8c",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 13.04s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_observation_cursor_is_incremental_and_recovers_after_restart",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-1d8ca7a4",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 14.44s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_subagent_observation_excludes_global_and_foreign_matching_events",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-558a5020",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 12.20s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_pattern_match_is_in_returned_page_and_cursor_does_not_skip_output",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-1a2d55b1",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.51s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_subagent_large_result_spills_full_stored_output_in_callers_scope",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-b6e5a2ec",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 12.39s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_wait_reports_only_its_unbounded_commitment_to_turn_watchdog[False-wait]",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-f0efe993",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 12.35s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_wait_reports_only_its_unbounded_commitment_to_turn_watchdog[False-observe]",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-d081e61b",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.62s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_wait_reports_only_its_unbounded_commitment_to_turn_watchdog[True-wait]",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-1baa81e2",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 12.37s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_wait_reports_only_its_unbounded_commitment_to_turn_watchdog[True-observe]",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-control-caa9efa1",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.57s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_authorization_precedes_filters_pagination_and_counts",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-final-56809908",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 16.80s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_staged_handle_cannot_consume_an_unrelated_subagent_with_the_same_id",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-final-73d1aa4a",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 1 warning in 12.82s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_staged_handle_cannot_consume_an_unrelated_subagent_with_the_same_id",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-final-8654262d",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.92s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_subagent_observation_excludes_global_and_foreign_matching_events",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-final-88b49f06",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.64s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_subagent_large_result_spills_full_stored_output_in_callers_scope",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-final-985c0eb8",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 11.77s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_wait_reports_only_its_unbounded_commitment_to_turn_watchdog[False-wait]",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-final-b2c34685",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.57s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_shared_task_controls.py::test_shared_wait_reports_only_its_unbounded_commitment_to_turn_watchdog[True-wait]",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-final-9f14f7af",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 1 warning in 12.51s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_transcript_equivalence.py::test_streamed_text_turn_matches_develop_golden",
+        "exit_code": 0,
+        "capture_only": true,
+        "disposable_parent": "D:/Temp/v3-mail-final-84b79c42",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 5 warnings in 24.94s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_transcript_equivalence.py::test_tool_call_turn_matches_develop_golden",
+        "exit_code": 0,
+        "capture_only": true,
+        "disposable_parent": "D:/Temp/v3-mail-final-fa4e0e03",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 5 warnings in 25.11s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_transcript_equivalence.py::test_multi_part_thinking_turn_matches_develop_golden",
+        "exit_code": 0,
+        "capture_only": true,
+        "disposable_parent": "D:/Temp/v3-mail-final-63563e1d",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 5 warnings in 23.82s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_transcript_equivalence.py::test_streamed_text_turn_matches_develop_golden",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-bb50efc9",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 5 warnings in 23.78s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_transcript_equivalence.py::test_tool_call_turn_matches_develop_golden",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-39944e10",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 5 warnings in 24.80s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_transcript_equivalence.py::test_multi_part_thinking_turn_matches_develop_golden",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-8a58295a",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 5 warnings in 24.30s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_admission_v3.py::test_mail_and_results_share_admission_and_recover_the_closing_race",
+        "exit_code": 1,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-903266a7",
+        "parent_absent": true,
+        "summary": [
+          "1 failed, 2 warnings in 14.54s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_admission_v3.py::test_mail_and_results_share_admission_and_recover_the_closing_race",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-e393ee37",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 2 warnings in 12.04s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_assignment_lifecycle_v3.py::test_child_yield_result_wake_and_queued_admission_share_one_lifecycle",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-14fed5ce",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 2 warnings in 12.84s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_turn_admission_v3.py::test_recovery_mail_waits_for_native_host_readiness_without_consuming_it",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-a39b15ea",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 2 warnings in 11.51s"
+        ]
+      },
+      {
+        "case": "tests/test_gact/test_subagent_lifecycle.py::test_system_continuation_retains_explicit_recipient_model",
+        "exit_code": 0,
+        "capture_only": false,
+        "disposable_parent": "D:/Temp/v3-mail-admit-7dc7fd33",
+        "parent_absent": true,
+        "summary": [
+          "1 passed, 2 warnings in 11.86s"
+        ]
+      }
+    ],
+    "loop_read_regression": [
+      {
+        "case": "test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions",
+        "exit_code": 1,
+        "disposable_parent": "D:/Temp/v3-mail-loopread-0280d98b",
+        "parent_absent": true,
+        "cause": "retained_model_metadata hydrated the transcript from the application loop"
+      },
+      {
+        "case": "test_spotter_watcher.py::test_coalescing_under_burst_of_tool_completions",
+        "exit_code": 0,
+        "disposable_parent": "D:/Temp/v3-mail-loopread-68542178",
+        "parent_absent": true,
+        "summary": "1 passed, 4 warnings in 24.63s; guard asserts no Core store reads on the application loop"
+      }
+    ],
+    "earlier_golden_attempts": [
+      {
+        "root": "D:/Temp/v3-golden-stream-027a9f35",
+        "result": "Failed before scenario: old in-memory ARC fixture; removed by fixture teardown"
+      },
+      {
+        "root": "D:/Temp/v3-golden-stream-6f13807f",
+        "result": "Failed comparison: scripted model fixture omitted the Core input receipt, leaving input pending; removed by fixture teardown"
+      },
+      {
+        "root": "D:/Temp/v3-golden-stream-106f0a69",
+        "result": "Failed comparison: intended durable receipt update differed from old golden; one response and unchanged answer parts; removed by fixture teardown"
+      },
+      {
+        "root": "D:/Temp/v3-golden-capture-f205b641",
+        "result": "Capture only; not a golden comparison; removed by fixture teardown"
+      }
+    ],
+    "caveats": [
+      "Core binding shutdown still reports nanobind reference leaks; no full replacement acceptance claim",
+      "Expanded existing test-file type errors were not accepted as a passing whole-suite type check",
+      "No cleanup rejection or remaining owned process from this focused family"
+    ]
+  },
   "qualification": "Focused development checks and explicitly scoped native V3 live evidence; full replacement acceptance incomplete",
   "worker_count": 1,
   "results": [
@@ -827,7 +1321,7 @@
         "started_utc": "2026-10-13 05:48:26 UTC",
         "ended_utc": "2026-10-13 05:48:49 UTC",
         "exit_code": 1,
-        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-ask-yield-493d60b8\r\nWarning: truncated output (original token count: 1800)\nTotal output lines: 119\n\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\r\nF                                                                        [100%]\r\n================================== FAILURES ===================================\r\n_______ test_ask_user_success_ends_react_turn_before_another_model_step _______\r\n.venv\\Lib\\site-packages\\starlette\\datastructures.py:683: in __getattr__\r\n    return self._state[key]\r\n           ^^^^^^^^^^^^^^^^\r\nE   KeyError: 'mcp_app_loop'\r\n\r\nDuring handling of the above exception, another exception occurred:\r\ntests\\test_gact\\test_interactions.py:225: in test_ask_user_success_ends_react_turn_before_another_model_step\r\n    prediction = react(question=\"Help me design a simulation study.\")\r\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\dspy\\utils\\callback.py:377: in sync_wrapper\r\n    return fn(instance, *args, **kwargs)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\dspy\\primitives\\module.py:110: in __call__\r\n    return self.forward(*args, **kwargs)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:208: in forward\r\n    return _Loop(self, input_args).run()\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:389: in run\r\n    done = self._one_step()\r\n           ^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:422: in _one_step\r\n    self.recorder.commit_input(self.step)\r\nsrc\\clio_agent\\gact\\agents\\clio_react_record.py:581: in commit_input\r\n    journal.commit_input_from_worker(self, step)\r\nsrc\\clio_agent\\gact\\core_task_journal.py:151: in commit_input_from_worker\r\n    self.commit_input(recorder, step), self.app.state.mcp_app_loop\r\n                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\starlette\\datastructures.py:686: in __getattr__\r\n    raise AttributeError(message.format(self.__class__.__name__, key))\r\nE   AttributeError: 'State' object has no attribute 'mcp_app_loop'\r\n----------------------------- Captured log setup ------------------------------\r\nWARNING  clio_agent.arc.clio_core_config:clio_core_config.py:628 reason=clio_core_search_indexer_absent config=D:\\Temp\\v3-mail-ask-yield-493d60b8\\run-64896-d59a69f0218d\\cte\\clio-agent-cte-64896-vs4cn3wv\\cte.yaml problem=no clio_cte_indexer chimod declared; ARCMemory.search_segment_scopes is unavailable until an indexer is configured (iowarp-core 2.3.1 ships the module) upstream=https://github.com/iowarp/clio-core/issues/905#issuecomment-5826003299\r\n------------------------------ Captured log call ------------------------------\r\nWARNING  clio_agent:trace.py:166 \\u2691 RESIDENT-LEDGER metrics seeded via streaming corpus walk (bounded memory, O(corpus) boot time); index-only rollup is owner-gated (design 1.13/\\xa73.1)\r\n============================== warnings summary ===============================\r\ntests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\ntests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\r\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\r\n\r\ntests/test_gact/test_\u2026100 tokens truncated\u2026s allocated.\r\n  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.\r\n\r\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\r\n=========================== short test summary info ===========================\r\nFAILED tests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\n1 failed, 3 warnings in 14.43s\r\nnanobind: leaked 17 instances!\r\n - leaked instance 000001E6E938D088 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D0D8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D128 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D038 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CCC8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDC8C8 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E1EDD288 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E938CEF8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D178 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDCF48 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E93AAB48 of type \"clio_cte_core_ext.Client\"\r\n - leaked instance 000001E6E1EDD008 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E938CFE8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CF48 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CE58 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CF98 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDC968 of type \"clio_cte_core_ext.UniqueId\"\r\nnanobind: leaked 3 types!\r\n - leaked type \"clio_cte_core_ext.Client\"\r\n - leaked type \"clio_cte_core_ext.UniqueId\"\r\n - leaked type \"clio_cte_core_ext.PoolQuery\"\r\nnanobind: leaked 38 functions!\r\n - leaked function \"GetNull\"\r\n - leaked function \"AsyncTemporalSearch\"\r\n - leaked function \"TagQuery\"\r\n - leaked function \"AsyncGetOrCreateTag\"\r\n - leaked function \"AsyncReorganizeBlob\"\r\n - leaked function \"__init__\"\r\n - leaked function \"AsyncPutBlobDefer\"\r\n - leaked function \"AsyncPutBlob\"\r\n - leaked function \"AsyncBlobQuery\"\r\n - leaked function \"AsyncPollTelemetryLog\"\r\n - leaked function \"Local\"\r\n - leaked function \"IsNull\"\r\n - leaked function \"ReorganizeBlob\"\r\n - leaked function \"AsyncDelBlob\"\r\n - leaked function \"Broadcast\"\r\n - leaked function \"__init__\"\r\n - leaked function \"\"\r\n - leaked function \"PollTelemetryLog\"\r\n - leaked function \"AsyncGetBlobSize\"\r\n - leaked function \"DeferErrorCount\"\r\n - leaked function \"TemporalSearch\"\r\n - leaked function \"\"\r\n - leaked function \"AwaitPutsUntilSpace\"\r\n - leaked function \"\"\r\n - leaked function \"\"\r\n - leaked function \"SemanticSearch\"\r\n - leaked function \"RegisterTarget\"\r\n - leaked function \"ToU64\"\r\n - leaked function \"DelBlob\"\r\n - leaked function \"AsyncRegisterTarget\"\r\n - leaked function \"Dynamic\"\r\n - leaked function \"AsyncTagQuery\"\r\n - leaked function \"AsyncGetContainedBlobs\"\r\n - leaked function \"AsyncSemanticSearch\"\r\n - leaked function \"BlobQuery\"\r\n - leaked function \"AsyncGetBlobDefer\"\r\n - leaked function \"__init__\"\r\n - leaked function \"AsyncGetBlob\"\r\nnanobind: this is likely caused by a reference counting issue in the binding code.\r\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
+        "output": "OWNED_TEST_ROOT=D:/Temp/v3-mail-ask-yield-493d60b8\r\nWarning: truncated output (original token count: 1800)\nTotal output lines: 119\n\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\r\nF                                                                        [100%]\r\n================================== FAILURES ===================================\r\n_______ test_ask_user_success_ends_react_turn_before_another_model_step _______\r\n.venv\\Lib\\site-packages\\starlette\\datastructures.py:683: in __getattr__\r\n    return self._state[key]\r\n           ^^^^^^^^^^^^^^^^\r\nE   KeyError: 'mcp_app_loop'\r\n\r\nDuring handling of the above exception, another exception occurred:\r\ntests\\test_gact\\test_interactions.py:225: in test_ask_user_success_ends_react_turn_before_another_model_step\r\n    prediction = react(question=\"Help me design a simulation study.\")\r\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\dspy\\utils\\callback.py:377: in sync_wrapper\r\n    return fn(instance, *args, **kwargs)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\dspy\\primitives\\module.py:110: in __call__\r\n    return self.forward(*args, **kwargs)\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:208: in forward\r\n    return _Loop(self, input_args).run()\r\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:389: in run\r\n    done = self._one_step()\r\n           ^^^^^^^^^^^^^^^^\r\nsrc\\clio_agent\\gact\\agents\\clio_react.py:422: in _one_step\r\n    self.recorder.commit_input(self.step)\r\nsrc\\clio_agent\\gact\\agents\\clio_react_record.py:581: in commit_input\r\n    journal.commit_input_from_worker(self, step)\r\nsrc\\clio_agent\\gact\\core_task_journal.py:151: in commit_input_from_worker\r\n    self.commit_input(recorder, step), self.app.state.mcp_app_loop\r\n                                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^\r\n.venv\\Lib\\site-packages\\starlette\\datastructures.py:686: in __getattr__\r\n    raise AttributeError(message.format(self.__class__.__name__, key))\r\nE   AttributeError: 'State' object has no attribute 'mcp_app_loop'\r\n----------------------------- Captured log setup ------------------------------\r\nWARNING  clio_agent.arc.clio_core_config:clio_core_config.py:628 reason=clio_core_search_indexer_absent config=D:\\Temp\\v3-mail-ask-yield-493d60b8\\run-64896-d59a69f0218d\\cte\\clio-agent-cte-64896-vs4cn3wv\\cte.yaml problem=no clio_cte_indexer chimod declared; ARCMemory.search_segment_scopes is unavailable until an indexer is configured (iowarp-core 2.3.1 ships the module) upstream=https://github.com/iowarp/clio-core/issues/905#issuecomment-5826003299\r\n------------------------------ Captured log call ------------------------------\r\nWARNING  clio_agent:trace.py:166 \\u2691 RESIDENT-LEDGER metrics seeded via streaming corpus walk (bounded memory, O(corpus) boot time); index-only rollup is owner-gated (design 1.13/\\xa73.1)\r\n============================== warnings summary ===============================\r\ntests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\ntests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\r\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\r\n\r\ntests/test_gact/test_…100 tokens truncated…s allocated.\r\n  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.\r\n\r\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\r\n=========================== short test summary info ===========================\r\nFAILED tests/test_gact/test_interactions.py::test_ask_user_success_ends_react_turn_before_another_model_step\r\n1 failed, 3 warnings in 14.43s\r\nnanobind: leaked 17 instances!\r\n - leaked instance 000001E6E938D088 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D0D8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D128 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D038 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CCC8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDC8C8 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E1EDD288 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E938CEF8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938D178 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDCF48 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E93AAB48 of type \"clio_cte_core_ext.Client\"\r\n - leaked instance 000001E6E1EDD008 of type \"clio_cte_core_ext.UniqueId\"\r\n - leaked instance 000001E6E938CFE8 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CF48 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CE58 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E938CF98 of type \"clio_cte_core_ext.PoolQuery\"\r\n - leaked instance 000001E6E1EDC968 of type \"clio_cte_core_ext.UniqueId\"\r\nnanobind: leaked 3 types!\r\n - leaked type \"clio_cte_core_ext.Client\"\r\n - leaked type \"clio_cte_core_ext.UniqueId\"\r\n - leaked type \"clio_cte_core_ext.PoolQuery\"\r\nnanobind: leaked 38 functions!\r\n - leaked function \"GetNull\"\r\n - leaked function \"AsyncTemporalSearch\"\r\n - leaked function \"TagQuery\"\r\n - leaked function \"AsyncGetOrCreateTag\"\r\n - leaked function \"AsyncReorganizeBlob\"\r\n - leaked function \"__init__\"\r\n - leaked function \"AsyncPutBlobDefer\"\r\n - leaked function \"AsyncPutBlob\"\r\n - leaked function \"AsyncBlobQuery\"\r\n - leaked function \"AsyncPollTelemetryLog\"\r\n - leaked function \"Local\"\r\n - leaked function \"IsNull\"\r\n - leaked function \"ReorganizeBlob\"\r\n - leaked function \"AsyncDelBlob\"\r\n - leaked function \"Broadcast\"\r\n - leaked function \"__init__\"\r\n - leaked function \"\"\r\n - leaked function \"PollTelemetryLog\"\r\n - leaked function \"AsyncGetBlobSize\"\r\n - leaked function \"DeferErrorCount\"\r\n - leaked function \"TemporalSearch\"\r\n - leaked function \"\"\r\n - leaked function \"AwaitPutsUntilSpace\"\r\n - leaked function \"\"\r\n - leaked function \"\"\r\n - leaked function \"SemanticSearch\"\r\n - leaked function \"RegisterTarget\"\r\n - leaked function \"ToU64\"\r\n - leaked function \"DelBlob\"\r\n - leaked function \"AsyncRegisterTarget\"\r\n - leaked function \"Dynamic\"\r\n - leaked function \"AsyncTagQuery\"\r\n - leaked function \"AsyncGetContainedBlobs\"\r\n - leaked function \"AsyncSemanticSearch\"\r\n - leaked function \"BlobQuery\"\r\n - leaked function \"AsyncGetBlobDefer\"\r\n - leaked function \"__init__\"\r\n - leaked function \"AsyncGetBlob\"\r\nnanobind: this is likely caused by a reference counting issue in the binding code.\r\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html\r\nOWNED_TEST_ROOT_EXISTS=False\r\n",
         "parent_absent": true
       },
       {

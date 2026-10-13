@@ -107,6 +107,12 @@ creating separate inboxes. Authorization and recipient-specific input commits
 apply equally to local and remote producers. Transient TurnRunner signals only
 request a Core mailbox check; they carry no message, task result or delivery
 state. Lost signals recover from the Core recipient index on startup/readiness.
+Restarted assignments keep that stable mailbox address. Human cancellation acts
+through the verified execution owner immediately, with its attributed parent
+notice entering the same mailbox; it cannot depend on the model reading mail.
+Distributed agent hosting additionally needs cross-host turn reservation and
+wake transport. The shared mailbox establishes their addressing and durable
+input boundary; this local implementation does not qualify distributed hosting.
 
 Retain workload algorithms, process cleanup, native capability/backend identity routing and shipped compatibility aliases. Aliases only delegate. Preserve released completed-child messaging through stable session aliases and linked assignments; historical task results remain unchanged. Migrate records idempotently, including missing descriptions. Drain/settle old owners before cutover. No permanent old-engine fallback. When Core is unavailable, reject new durable background admission explicitly rather than introducing another store or silently calling it durable.
 

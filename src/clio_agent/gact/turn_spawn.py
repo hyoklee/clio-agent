@@ -492,6 +492,10 @@ def _launch(app: "FastAPI", task: AgentTask, spec: TaskSpec) -> AgentTask:
     )
     publish_agent_task_event(app, running, AGENT_TASK_EVENTS[STATUS_RUNNING])
 
+    model_metadata = (
+        retained_model_metadata(app, task.child_session_id) if spec.continuation_task_id else {}
+    )
+
     def start() -> Any:
         return _start_background_user_turn(
             app,
@@ -499,14 +503,11 @@ def _launch(app: "FastAPI", task: AgentTask, spec: TaskSpec) -> AgentTask:
             child,
             text,
             metadata={
-                **(
-                    retained_model_metadata(app, task.child_session_id)
-                    if spec.continuation_task_id
-                    else {}
-                ),
+                **model_metadata,
                 "agent_task_id": task.task_id,
                 "spawned_by": spec.requesting_expert_id,
             },
+            retained_model=model_metadata,
             prev_status="idle",
             turn_agent_id=spec.child_expert_id,
         )

@@ -1,4 +1,4 @@
-"""Keep the existing context truth frame aligned with committed task delivery."""
+"""Keep the existing context truth frame aligned with staged mailbox input."""
 
 from __future__ import annotations
 
@@ -8,8 +8,8 @@ from typing import Any
 from clio_agent.gact.runtime.retention import ledger_guard
 
 
-def commit_task_context_frame(state: Any) -> None:
-    """Replace staged task text with the exact injections surviving collection/veto."""
+def refresh_task_context_frame(state: Any) -> None:
+    """Replace staged text with current input without claiming recipient commitment."""
     from clio_agent.gact.enrichment import _estimate_context_tokens
 
     frame = getattr(state, "context_frame", None)
@@ -50,5 +50,5 @@ def commit_task_context_frame(state: Any) -> None:
             - removed_tokens
             + sum(item["tokens_estimated"] for item in committed),
         )
-        frame["metadata"]["task_delivery_phase"] = "committed"
+        frame["metadata"]["task_delivery_phase"] = "staged"
         frame["updated_at"] = datetime.now(timezone.utc).isoformat()

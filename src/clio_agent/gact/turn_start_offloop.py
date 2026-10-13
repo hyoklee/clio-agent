@@ -42,11 +42,11 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING, Any, Callable, Optional
 
+from clio_agent.gact.agent_mailbox import stage_session_inputs
 from clio_agent.gact.enrichment import (
     _context_file_turn_provenance,
     _record_context_frame,
     enrich_turn_context,
-    pending_task_notifications,
 )
 from clio_agent.gact.events import _publish_transcript_event
 from clio_agent.gact.off_loop import schedule_off_loop
@@ -209,15 +209,6 @@ def _prepare_turn_off_loop_steps(
         state.enriched_text, memory_hits, state.memory_search_metadata = enrich_turn_context(
             state.app, state.sid, state.user_text, state.user_msg
         )
-        # #948 S6 [1]/[4]: surface prior-turn background task results (observe-later).
-        # STAGE the ids only; consumption + terminal emission defer to the commit-to-
-        # run seam, so a turn aborted after enrichment leaves them pending.
-        task_results, state.pending_notification_task_ids = pending_task_notifications(
-            state.app, state.sid
-        )
-        from clio_agent.gact.agent_mailbox import stage_agent_mail
-
-        stage_agent_mail(state)
         # P1.2 #1064: surface plan mode to the model each turn (survives compaction; no-op otherwise).
         reminder = plan_mode_reminder(state.app, state.sid, state.sess)
         todos = todo_recitation(state.app, state.sid, state.sess)
@@ -229,13 +220,13 @@ def _prepare_turn_off_loop_steps(
             (source, block)
             for source, block in (
                 ("memory_search", memory_hits),
-                ("task_results", task_results),
                 ("plan_mode", reminder),
                 ("todos", todos),
                 ("replan", replan),
             )
             if block
         ]
+        state.injections.extend(stage_session_inputs(state.app, state.sid))
     except _ContextFileAccessError as exc:
         state.enriched_text = state.user_text
         state.context_file_error = exc.error_info

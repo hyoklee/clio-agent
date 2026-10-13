@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import threading
@@ -15,29 +16,29 @@ import pytest
 
 from clio_agent.gact import context
 from clio_agent.gact.agent_tasks import AgentTaskRegistry, seed_agent_task
-from clio_agent.gact.events import Event, EventBus
+from clio_agent.gact.core_task_journal import CoreTaskJournal, core_task_journal
+from clio_agent.gact.events import Event
 from clio_agent.gact.mcp_task_store import SessionMetadataTaskStore
-from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_controls import observe_tasks, query_snapshot, wait_tasks
 from clio_agent.gact.task_delivery import consume_task, pending_completions
 from clio_agent.gact.task_projection import resolve_task
 from clio_agent.tools.mcp_task_records import TaskKey, TaskRecord
+from tests.test_gact import test_core_task_mailbox as core_fixtures
+from tests.test_gact.mailbox_helpers import commit_collected_result
+
+owner = core_fixtures.owner
 
 
 @pytest.fixture
-def scoped_app(tmp_path: Path) -> Iterator[tuple[Any, str, SessionMetadataTaskStore]]:
-    sessions = SessionStore(path=tmp_path / "sessions.json")
-    sid = sessions.create(workspace_id="ws", title="parent").id
-    store = SessionMetadataTaskStore(sessions)
-    app = SimpleNamespace(
-        state=SimpleNamespace(
-            sessions=sessions,
-            agent_task_registry=AgentTaskRegistry(),
-            mcp_task_store=store,
-            bus=EventBus(),
-            cancel_flags=set(),
-        )
-    )
+def scoped_app(owner: Any) -> Iterator[tuple[Any, str, SessionMetadataTaskStore]]:
+    """Bind task observations to the real confirmed Core owner."""
+    app, sid = owner.app, owner.sid
+    store = SessionMetadataTaskStore(app.state.sessions).bind(app)
+    app.state.agent_task_registry = AgentTaskRegistry()
+    app.state.mcp_task_store = store
+    app.state.cancel_flags = set()
+    app.state.permission_policies = []
+    asyncio.run(core_task_journal(app).restore())
     app_token, sid_token = context.set_app(app), context.set_session_id(sid)
     try:
         yield app, sid, store
@@ -121,9 +122,12 @@ def test_backend_sessions_and_stale_callback_keep_custody_and_delivery_once(
     assert first.key.row_key != second.key.row_key
     assert query_snapshot(app, sid)["total"] == 2
     assert consume_task(app, sid, "one")
+    result = wait_tasks("one", timeout_s=0)
+    assert pending_completions(app, sid)[1] == ["one", "two"]
+    asyncio.run(commit_collected_result(app, sid, result))
     store.put(replace(first, notify_pending=True, cancel_requested=True))
-    assert store.get(first.key).consumed_at
-    assert not store.get(first.key).notify_pending
+    assert not core_task_journal(app).pending(sid, "task-result:one")
+    assert store.get(first.key).result == first.result
     assert not consume_task(app, sid, "one")
     assert pending_completions(app, sid)[1] == ["two"]
 
@@ -131,20 +135,22 @@ def test_backend_sessions_and_stale_callback_keep_custody_and_delivery_once(
 def test_collection_between_staging_and_commit_cannot_duplicate_injection(
     scoped_app: tuple[Any, str, SessionMetadataTaskStore],
 ) -> None:
-    from clio_agent.gact.task_delivery import commit_staged_completions
+    from clio_agent.gact.agent_mailbox import refresh_session_inputs
 
     app, sid, store = scoped_app
     record(store, sid, "staged", status="completed")
-    block, handles = pending_completions(app, sid)
+    block, _handles = pending_completions(app, sid)
     state = SimpleNamespace(
         app=app,
         sid=sid,
-        pending_notification_task_ids=handles,
-        pending_agent_mail_ids=[],
+        user_msg=SimpleNamespace(id="initial"),
         injections=[("todos", "keep"), ("task_results", block)],
     )
-    assert wait_tasks("staged", timeout_s=0)["results"]
-    commit_staged_completions(state)
+    result = wait_tasks("staged", timeout_s=0)
+    assert result["results"]
+    assert pending_completions(app, sid)[1] == ["staged"]
+    asyncio.run(commit_collected_result(app, sid, result))
+    refresh_session_inputs(state)
     assert state.injections == [("todos", "keep")]
 
 
@@ -202,7 +208,10 @@ def test_staged_handle_cannot_consume_an_unrelated_subagent_with_the_same_id(
     own = record(store, sid, foreign.task_id, task_id="backend-own", status="completed")
     blocks = consume_pending_agent_task_notifications(app, sid, [own.handle])
     assert len(blocks) == 1 and "real stored result" in blocks[0]
-    assert store.get(own.key).consumed_at
+    assert pending_completions(app, sid)[1] == [own.handle]
+    result = wait_tasks(own.handle, timeout_s=0)
+    asyncio.run(commit_collected_result(app, sid, result))
+    assert not core_task_journal(app).pending(sid, "task-result:" + own.handle)
     assert app.state.agent_task_registry.get(foreign.task_id) == snapshot
     assert consume_pending_agent_task_notifications(app, sid, [foreign.child_session_id]) == []
     assert app.state.agent_task_registry.get(foreign.task_id) == snapshot
@@ -277,7 +286,9 @@ def test_shared_wait_reports_only_its_unbounded_commitment_to_turn_watchdog(
     if control == "wait":
         outcome = wait_tasks("committed", timeout_s=timeout_s)
         assert outcome["results"][0]["result"] == {"text": "settled"}
-        assert not store.get(active.key).notify_pending
+        assert pending_completions(app, sid)[1] == ["committed"]
+        asyncio.run(commit_collected_result(app, sid, outcome))
+        assert not pending_completions(app, sid)[1]
     else:
         outcome = observe_tasks("committed", pattern="settled", timeout_s=timeout_s)
         assert outcome["tasks"][0]["status"] == "completed"
@@ -295,8 +306,11 @@ def test_query_and_observe_do_not_consume_pending_completion(
     observed = observe_tasks("done")
     assert observed["tasks"][0]["handle"] == "done"
     assert store.get(row.key).notify_pending
-    wait_tasks("done", timeout_s=0)
-    assert not store.get(row.key).notify_pending
+    result = wait_tasks("done", timeout_s=0)
+    assert pending_completions(app, sid)[1] == ["done"]
+    asyncio.run(commit_collected_result(app, sid, result))
+    assert not pending_completions(app, sid)[1]
+    assert not core_task_journal(app).pending(sid, "task-result:done")
     assert (
         wait_tasks("done", timeout_s=0)["results"][0]["result"]["content"] == "real stored result"
     )
@@ -309,7 +323,8 @@ def test_staging_veto_overflow_and_concurrent_collection_share_guard(
     for i in range(10):
         record(store, sid, f"h{i}", task_id=f"t{i}", status="completed")
     block, staged = pending_completions(app, sid)
-    assert len(staged) == 8 and "2 additional" in block
+    assert len(staged) == 8 and all(handle in block for handle in staged)
+    assert query_snapshot(app, sid)["total"] == 10
     assert pending_completions(app, sid)[1] == staged  # veto does not consume
     claims: list[bool] = []
     threads = [
@@ -320,10 +335,13 @@ def test_staging_veto_overflow_and_concurrent_collection_share_guard(
         thread.start()
     for thread in threads:
         thread.join()
-    assert claims.count(True) == 1
-    for handle in staged[1:]:
-        consume_task(app, sid, handle)
+    assert claims == [True] * 5  # Read-only staging cannot acknowledge delivery.
+    assert pending_completions(app, sid)[1] == staged
+    collected = wait_tasks(staged, timeout_s=0)
+    assert len(collected["results"]) == 8
+    asyncio.run(commit_collected_result(app, sid, collected))
     assert len(pending_completions(app, sid)[1]) == 2
+    assert query_snapshot(app, sid)["total"] == 10  # Receipt cannot delete history.
 
 
 def test_handle_and_result_survive_store_reconstruction(
@@ -331,7 +349,9 @@ def test_handle_and_result_survive_store_reconstruction(
 ) -> None:
     app, sid, store = scoped_app
     row = record(store, sid, "durable", status="completed")
-    rebuilt = SessionMetadataTaskStore(SessionStore(path=app.state.sessions._path))
+    app.state.core_task_journal = CoreTaskJournal(app)
+    asyncio.run(app.state.core_task_journal.restore())
+    rebuilt = SessionMetadataTaskStore(app.state.sessions).bind(app)
     restored = rebuilt.get(row.key)
     assert restored.handle == "durable"
     assert restored.description == row.description and restored.result == row.result
@@ -432,10 +452,16 @@ def test_shared_subagent_large_result_spills_full_stored_output_in_callers_scope
     app.state.sessions.get(sid).workspace_id = workspace.id
     full_output = "actual full stored output\n" * 2000
     task = seed_agent_task(
-        app, parent_session_id=sid, agent_ref={"expert_id": "child"}, status="completed"
+        app, parent_session_id=sid, agent_ref={"expert_id": "child"}, status="running"
     )
     app.state.agent_task_registry.register(
-        replace(task, result={"answer_excerpt": full_output}, notify_pending=True)
+        replace(
+            task,
+            status="completed",
+            live_state="completed",
+            result={"answer_excerpt": full_output},
+            notify_pending=True,
+        )
     )
     monkeypatch.setattr(
         "clio_agent.gact.agents.spawn_runtime._emit_delegation_terminal", lambda *args: None

@@ -44,7 +44,7 @@ import time
 from collections.abc import Awaitable, Callable, Coroutine, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.turn_revision_gate import TurnRevisionGate
 
@@ -496,7 +496,10 @@ def install_turn_runner(app: "FastAPI") -> TurnRunner:
         if task is not None and task.cancel_requested and not task.is_terminal:
             await asyncio.to_thread(complete_assignment_segment, app, sid, task.child_turn_id)
         if not runner.busy(sid):
-            _admit_pending_inputs(app, sid)
+            from clio_agent.gact.subagent_lifecycle import retained_model_metadata
+
+            model_metadata = await asyncio.to_thread(retained_model_metadata, app, sid)
+            _admit_pending_inputs(app, sid, model_metadata=model_metadata)
 
     runner.set_input_admitter(admit_inputs)
 
@@ -527,7 +530,7 @@ def install_turn_runner(app: "FastAPI") -> TurnRunner:
     return runner
 
 
-def _admit_pending_inputs(app: "FastAPI", sid: str) -> None:
+def _admit_pending_inputs(app: "FastAPI", sid: str, *, model_metadata: dict[str, Any]) -> None:
     """Apply one policy to task results and mail before reserving a model turn.
 
     This is a projection check, not a delivery claim. A policy veto records a
@@ -586,6 +589,7 @@ def _admit_pending_inputs(app: "FastAPI", sid: str) -> None:
             "agent_mail_wake": message_ids,
         },
         prev_status=session.status,
+        retained_model=model_metadata,
     )
     app.state.bus.publish(
         Event(

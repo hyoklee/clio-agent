@@ -70,28 +70,6 @@ def pending_completions(app: Any, sid: str, *, limit: int = 8) -> tuple[str, lis
     )
 
 
-def commit_staged_completions(state: Any) -> None:
-    """Refresh staged hints; acknowledgement occurs in the model input writer later."""
-    from clio_agent.gact.agent_mailbox import stage_session_inputs
-    from clio_agent.gact.subagent_lifecycle import CONTROL_LOCK, require_execution_allowed
-    from clio_agent.gact.task_context_frame import commit_task_context_frame
-
-    with CONTROL_LOCK:
-        require_execution_allowed(state.app, state.sid)
-        state.injections = [
-            (source, text)
-            for source, text in state.injections
-            if source not in {"task_results", "agent_messages"}
-        ]
-        initial = "mail:" + state.user_msg.id
-        state.injections.extend(
-            (source, text)
-            for source, text in stage_session_inputs(state.app, state.sid)
-            if initial not in getattr(text, "notification_ids", ())
-        )
-        commit_task_context_frame(state)
-
-
 def completion_block(row: dict[str, Any]) -> str:
     """Render bounded results with the original handle available for explicit readback."""
     text = json.dumps(row.get("result"), ensure_ascii=False, default=str)

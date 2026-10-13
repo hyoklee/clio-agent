@@ -58,6 +58,7 @@ async def configure(owner: Any) -> tuple[Any, Any]:
     app.state.cancel_flags, app.state.cancel_events = set(), {}
     app.state.permission_policies, app.state.user_questions = [], {}
     app.state.agent = object()
+    app.state.messages = {}
     app.state.mcp_task_store = CoreTaskRecordStore(app.state.sessions).bind(app)
     await core_task_journal(app).restore()
     runner = install_turn_runner(app)

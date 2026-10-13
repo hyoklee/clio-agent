@@ -61,6 +61,7 @@ _EVENT_TYPES_UNDER_TEST = (
 # and "_" is a word character, so boundaries would skip exactly those.
 _ID_PATTERN = re.compile(
     r"(?:msg_(?:user|asst|tool)|part|call|sess|turn|ques|att|trace|cancel)_[0-9a-f]{8,}"
+    r"|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
 )
 _VOLATILE_KEY_TOKENS = (
     "duration",
@@ -95,7 +96,9 @@ class _Normalizer:
 
     def _token(self, raw: str) -> str:
         if raw not in self._map:
-            prefix = raw.split("_")[0] if not raw.startswith("msg_") else "msg"
+            prefix = "core" if "-" in raw else raw.split("_")[0]
+            if raw.startswith("msg_"):
+                prefix = "msg"
             self._map[raw] = f"<{prefix}#{len(self._map) + 1}>"
         return self._map[raw]
 
@@ -124,6 +127,16 @@ def _normalized_trace(app: Any, client: TestClient, sid: str) -> dict[str, Any]:
     ]
     messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
     assistants = [m for m in messages if m["role"] == "assistant"]
+    assert len(assistants) == 1, "accepted input must not wake a duplicate model segment"
+    human = next(message for message in messages if message["role"] == "user")
+    from clio_agent.gact.core_task_journal import core_task_journal
+
+    journal = core_task_journal(app)
+    assert not journal.pending(sid, "human-input:" + human["id"])
+    assert (
+        human["metadata"]["recipient_input_reference"]
+        == journal.input_boundaries[sid]["input_reference"]
+    )
     parts = [normalizer.normalize(part) for m in assistants for part in m["parts"]]
     return {"events": events, "persisted_assistant_parts": parts}
 
@@ -206,11 +219,13 @@ class _PlainAgent:
 class _ToolCallingAgent(_PlainAgent):
     def forward(self, question: str, session_id: str) -> Any:
         from clio_agent.tools.execution import current_tool_runtime
+        from clio_agent.tools.tool_observation import notify_tool_observer
 
         observer = current_tool_runtime().tool_observer
         assert observer is not None, "tool hooks not installed"
-        observer("fs_read_file", {"path": "README.md"}, "started", None)
-        observer(
+        notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "started", None)
+        notify_tool_observer(
+            observer,
             "fs_read_file",
             {"path": "README.md"},
             "completed",
@@ -227,10 +242,11 @@ class _ToolCallingAgent(_PlainAgent):
 
 
 def _fresh_test_arc(tmp_path: Path, name: str) -> Any:
-    from clio_agent.arc.live import _MemoryStore
     from clio_agent.arc.memory import ARCMemory
 
-    return ARCMemory(data_dir=str(tmp_path / name), store=_MemoryStore())
+    # Acceptance and recipient-input receipts require the real confirmed Core writer.
+    # The test namespace fixture isolates and clears this ordinary ARC instance.
+    return ARCMemory(data_dir=str(tmp_path / name))
 
 
 def _build(tmp_path: Path, name: str, agent: Any) -> Any:
@@ -469,6 +485,7 @@ def test_activated_blueprint_catalog_agent_id_executes_declared_root(tmp_path: P
     )
     assert assistant["stop_reason"] != "error", assistant.get("error_info")
     runtime = (assistant.get("metadata") or {}).get("agent_runtime")
+    assert isinstance(runtime, dict)
     assert runtime["agent_id"] == "main"
     assert runtime["agent_blueprint"]["id"] == DEFAULT_AGENT_BLUEPRINT_ID
 

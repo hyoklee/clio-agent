@@ -24,6 +24,7 @@ async def test_recovery_mail_waits_for_native_host_readiness_without_consuming_i
 
     app, sid = owner.app, owner.sid
     app.state.in_flight_turns = {}
+    app.state.messages = {}
     app.state.task_hosts_ready = False
     runner = install_turn_runner(app)
     runner.bind_loop(asyncio.get_running_loop())
@@ -33,7 +34,8 @@ async def test_recovery_mail_waits_for_native_host_readiness_without_consuming_i
     async def queued(app: Any) -> None:
         calls.append("delegated admission")
 
-    def model_admission(app: Any, recipient: str) -> None:
+    def model_admission(app: Any, recipient: str, *, model_metadata: dict[str, Any]) -> None:
+        assert model_metadata == {}
         calls.append(recipient)
         entered.set()
 
@@ -112,6 +114,7 @@ async def test_mail_and_results_share_admission_and_recover_the_closing_race(
     app, sid = owner.app, owner.sid
     app.state.mcp_app_loop = asyncio.get_running_loop()
     app.state.agent = object()
+    app.state.messages = {}
     app.state.in_flight_turns = {}
     app.state.cancel_flags, app.state.cancel_events = set(), {}
     app.state.agent_task_registry = AgentTaskRegistry()
