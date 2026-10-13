@@ -12,6 +12,7 @@ import waitResult from '../../../assets/captures/docs-wait-all-result.png';
 import currentTodos from '../../../assets/captures/docs-todos-current.png';
 import completedTodos from '../../../assets/captures/docs-todos-completed.png';
 import childFollowup from '../../../assets/captures/docs-child-followup.png';
+import childTab from '../../../assets/captures/docs-child-tab.png';
 
 Expand the activity collection under a CLIO response to follow its operations.
 You can read a command, inspect a result, and open the details of delegated work.
@@ -80,6 +81,16 @@ does not establish that data passed validation or that every requested file was
 created.
 
 ## Send a follow-up to a child agent
+
+Click a child agent to open its conversation in a **workspace tab**, keeping the
+parent visible. **Shift-click** opens the child in the center. Keyboard activation
+works the same way: **Enter** opens a tab; **Shift+Enter** opens the center. The
+child tab also has a **Make central** button.
+
+<Capture client:visible image={await captureImage(childTab)}
+  alt="A child-agent conversation open in a workspace tab beside its parent, with Make central and its own follow-up box"
+  caption="The parent stays visible when you open a child. This browser capture uses the test-only workspace fixture; no agent or model was run."
+/>
 
 Open the child from **Child agents**, then type in its follow-up box and select
 **Send**. This works in the side panel and when the child's conversation is
