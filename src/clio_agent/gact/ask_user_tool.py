@@ -1,7 +1,8 @@
-"""Declaration-scoped native questions with explicit blocking or async delivery."""
+"""Declaration-scoped questions that immediately return durable task handles."""
 
 from __future__ import annotations
 
+import json
 import re
 import threading
 from collections.abc import Mapping
@@ -138,13 +139,15 @@ def build_ask_user_tool(agent_def: Any) -> Any:
         expiresInSeconds: int = 0,  # noqa: N803 - public tool schema is camelCase
         surface_id: str = "",
         answer_action: str = "question.submit",
-        response_mode: str = "blocking",
     ) -> str:
         """Ask the user for intent, an explanation, or a choice.
 
-        response_mode="blocking" (default) ends this turn when the answer is needed
-        to continue. response_mode="async" leaves a question open while you keep
-        working; its answer arrives as a normal queued message. Supply options for
+        Always return a durable Question handle immediately and continue independent
+        work. Use wait_tasks(handle) explicitly when you need the answer; its default
+        wait is unbounded. Stop leaves the question open. Answers enter your next
+        eligible model iteration or wake you while idle; explicit collection uses
+        the same delivery boundary.
+        Supply options for
         choices, or use freeform for a text answer. Pass surface_id to present an
         existing A2UI surface with images, text, charts, or bound form controls.
         For a visual question, create that surface first using the active catalog,
@@ -164,8 +167,6 @@ def build_ask_user_tool(agent_def: Any) -> Any:
         session = app.state.sessions.get(session_id)
         if session is None:
             raise AskUserError("ask_user could not resolve the active session.")
-        if response_mode not in {"blocking", "async"}:
-            raise AskUserError("response_mode must be blocking or async.")
         answer_action = answer_action.strip() or "question.submit"
         if surface_id:
             surface = app.state.a2ui_store.get(session_id, surface_id)
@@ -215,18 +216,20 @@ def build_ask_user_tool(agent_def: Any) -> Any:
             "a2ui_surface_id": str(surface_id or "").strip(),
             "a2ui_answer_action": answer_action.strip(),
         }
-        if response_mode == "async":
-            from clio_agent.gact.async_user_question import publish_async_question
+        from clio_agent.gact.async_user_question import publish_async_question
 
-            row = publish_async_question(app, pending, _ctx.active_turn_id())
-            return (
-                f"Async question {row.id} submitted. You can continue working. "
-                "The user's answer will arrive through the message queue."
-            )
-        app.state.sessions.update(owner, metadata_patch={PENDING_ASK_USER_META: pending})
-        return (
-            "Question submitted to the user. END YOUR TURN now; the exact owning "
-            "session will resume when the user responds."
+        row = publish_async_question(app, pending, _ctx.active_turn_id())
+        return json.dumps(
+            {
+                "accepted": True,
+                "handle": row.task_handle,
+                "kind": "Question",
+                "status": "input_required",
+                "question_id": row.id,
+                "description": row.prompt,
+                "owner_session_id": owner,
+            },
+            ensure_ascii=False,
         )
 
     return native_tool(
@@ -237,11 +240,6 @@ def build_ask_user_tool(agent_def: Any) -> Any:
         desc=ask_user.__doc__,
         title="Ask User",
         args={
-            "response_mode": {
-                "type": "string",
-                "enum": ["blocking", "async"],
-                "description": "blocking: pause for the answer (default); async: ask and keep working.",
-            },
             "question": {"type": "string", "description": "The user-facing question."},
             "kind": {
                 "type": "string",
@@ -483,13 +481,14 @@ def arm_ask_user_deadline(app: Any, question: Any) -> None:
                         payload=expired_mirror.model_dump(exclude_none=True),
                     )
                 )
-        app.state.bus.publish(
-            Event(
-                type="user_question.expired",
-                session_id=updated.session_id,
-                payload=updated.model_dump(exclude_none=True),
+        if not updated.task_handle:
+            app.state.bus.publish(
+                Event(
+                    type="user_question.expired",
+                    session_id=updated.session_id,
+                    payload=updated.model_dump(exclude_none=True),
+                )
             )
-        )
         if next_status == "idle":
             app.state.redrive_message_queue(updated.session_id)
 

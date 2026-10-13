@@ -245,6 +245,7 @@ def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingIntera
             key: value
             for key, value in {
                 "response_mode": question.response_mode,
+                **({"task_handle": question.task_handle} if question.task_handle else {}),
                 "question_id": question.id,
                 "question_kind": question.kind,
                 "metadata": dict(question.metadata),  # e.g. a drafts question's ``variant``

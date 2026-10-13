@@ -8,7 +8,7 @@ from clio_agent.gact.mcp_task_store import app_task_store
 from clio_agent.gact.routes.async_processes import project_session_async_processes
 
 TERMINAL = frozenset({"completed", "failed", "cancelled", "interrupted"})
-KINDS = frozenset({"Subagent", "MCP", "Download", "Indexing", "Shell", "Session"})
+KINDS = frozenset({"Subagent", "MCP", "Download", "Indexing", "Shell", "Session", "Question"})
 
 
 def public_task(row: dict[str, Any]) -> dict[str, Any]:
@@ -49,6 +49,7 @@ def public_task(row: dict[str, Any]) -> dict[str, Any]:
         "activity",
         "recording",
         "acceptance",
+        "question_id",
     }
     return {name: value for name, value in row.items() if name in fields}
 
@@ -232,11 +233,15 @@ def task_views(
                     and journal.pending(native["session_id"], notification_id),
                 }
             )
+    from clio_agent.gact.question_tasks import question_task_views
+
+    projected.extend(question_task_views(app, sid, owners, tree))
     permissions = {
         right: authorized_sessions(app, sid, right)
         for right in ("read", "observe", "message", "control")
     }
     for row in projected:
+        row.setdefault("live_state", row["effective_status"])
         if row.get("access") != "peer":
             continue
         owner = row["owner"]["session_id"]

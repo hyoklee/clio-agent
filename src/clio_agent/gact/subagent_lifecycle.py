@@ -64,15 +64,28 @@ def retained_model_metadata(app: Any, sid: str) -> dict[str, Any]:
     model: Any = getattr(session, "model", None)
     if hasattr(model, "model_dump"):
         model = model.model_dump()
-    if isinstance(model, dict) and model.get("provider_id") and model.get("model_id"):
-        return {"effective_model": dict(model), "model_selection_source": "session"}
+    retained = (
+        {"effective_model": dict(model), "model_selection_source": "session"}
+        if isinstance(model, dict) and model.get("provider_id") and model.get("model_id")
+        else {}
+    )
     for message in reversed(app.state.messages.get(sid, [])):
         metadata = message.metadata
+        if message.role != "user":
+            continue
+        if isinstance(metadata.get("behavior"), dict):
+            retained["behavior"] = dict(metadata["behavior"])
+        if retained.get("effective_model"):
+            return retained
         if metadata.get("model_selection_source", "global_active") != "global_active":
             model = metadata.get("effective_model")
             if isinstance(model, dict) and model.get("provider_id") and model.get("model_id"):
-                return {key: metadata[key] for key in ("effective_model", "model_selection_source")}
-    return {}
+                return retained | {
+                    key: metadata[key] for key in ("effective_model", "model_selection_source")
+                }
+        if "behavior" in retained:
+            return retained
+    return retained
 
 
 def _publish(

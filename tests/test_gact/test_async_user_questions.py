@@ -1,7 +1,8 @@
-"""Explicit blocking/async questions, rich surfaces, and ordinary queued answers."""
+"""Task-backed native questions, rich surfaces, and legacy gated inputs."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,7 @@ from fastapi.testclient import TestClient
 from clio_agent.gact import context as ctx
 from clio_agent.gact.app import build_app
 from clio_agent.gact.ask_user_tool import AskUserError, build_ask_user_tool
+from clio_agent.gact.task_delivery import completion_rows
 from clio_agent.gact.types import AgentDef, Message, Part
 from clio_agent.gact.user_question_ledger import restore_user_questions
 
@@ -19,6 +21,7 @@ from clio_agent.gact.user_question_ledger import restore_user_questions
 @pytest.fixture
 def client(tmp_path: Path) -> Iterator[TestClient]:
     with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as result:
+        result.app.state.agent = None
         yield result
 
 
@@ -43,8 +46,8 @@ def test_async_tool_keeps_work_running_and_multiple_questions_survive_recovery(
     sid = client.post("/v1/sessions", json={"title": "Questions"}).json()["id"]
     app.state.sessions.update(sid, status="running")
     for question in ["Which view?", "What does X mean?"]:
-        result = _ask_tool(client, sid, question=question, response_mode="async")
-        assert "continue working" in result
+        result = _ask_tool(client, sid, question=question)
+        assert json.loads(result)["kind"] == "Question"
     assert app.state.sessions.get(sid).status == "running"
     assert not app.state.sessions.get(sid).metadata.get("pending_ask_user")
     rows = list(app.state.user_questions.values())
@@ -56,28 +59,28 @@ def test_async_tool_keeps_work_running_and_multiple_questions_survive_recovery(
     assert all(row.status == "pending" for row in app.state.user_questions.values())
 
 
-def test_default_tool_still_yields_blocking_question(client: TestClient) -> None:
+def test_default_tool_returns_a_question_handle_without_parking(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
     result = _ask_tool(client, sid, question="Which dataset?")
-    assert "END YOUR TURN" in result
-    assert client.app.state.sessions.get(sid).metadata["pending_ask_user"]["surfaced"] is False
-    assert not client.app.state.user_questions
+    assert json.loads(result)["handle"]
+    assert not client.app.state.sessions.get(sid).metadata.get("pending_ask_user")
+    assert len(client.app.state.user_questions) == 1
 
 
 @pytest.mark.parametrize("mode", ["later", "ASYNC", ""])
-def test_unknown_modes_are_rejected(client: TestClient, mode: str) -> None:
+def test_mode_switch_is_no_longer_an_agent_argument(client: TestClient, mode: str) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
-    with pytest.raises(AskUserError, match="response_mode"):
+    with pytest.raises(TypeError, match="response_mode"):
         _ask_tool(client, sid, question="Explain X?", response_mode=mode)
 
 
 def test_question_surface_must_exist_in_owning_session(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
     with pytest.raises(AskUserError, match="existing surface"):
-        _ask_tool(client, sid, question="This image?", surface_id="missing", response_mode="async")
+        _ask_tool(client, sid, question="This image?", surface_id="missing")
 
 
-def test_async_answer_joins_fifo_and_does_not_interrupt_running_work(
+def test_task_answer_bypasses_fifo_and_does_not_interrupt_running_work(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
@@ -87,31 +90,29 @@ def test_async_answer_joins_fifo_and_does_not_interrupt_running_work(
     first = client.post(
         f"/v1/sessions/{sid}/queued-messages", json={"text": "Existing message"}
     ).json()
-    _ask_tool(client, sid, question="What does X mean?", response_mode="async")
+    _ask_tool(client, sid, question="What does X mean?")
     question = next(iter(app.state.user_questions.values()))
     response = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer", json={"answer": "X means stiffness."}
     )
     assert response.status_code == 200, response.text
     rows = client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"]
-    assert [row["id"] for row in rows] == [
-        first["id"],
-        response.json()["answer_metadata"]["queued_message_id"],
-    ]
-    assert rows[1]["parts"][0]["text"].endswith("Answer: X means stiffness.")
-    assert rows[1]["metadata"]["ask_user_question_id"] == question.id
+    assert [row["id"] for row in rows] == [first["id"]]
+    completion = completion_rows(app, sid)
+    assert len(completion) == 1 and completion[0]["handle"] == question.task_handle
+    assert completion[0]["result"]["answer"] == "X means stiffness."
     assert app.state.sessions.get(sid).status == "running"
     duplicate = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer", json={"answer": "Duplicate"}
     )
     assert duplicate.status_code == 409
-    assert len(app.state.message_intents.list_queued(sid)) == 2
+    assert len(app.state.message_intents.list_queued(sid)) == 1
 
 
 def test_cancelling_async_question_never_stops_running_work(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
     client.app.state.sessions.update(sid, status="running")
-    _ask_tool(client, sid, question="Explain X?", response_mode="async")
+    _ask_tool(client, sid, question="Explain X?")
     question = next(iter(client.app.state.user_questions.values()))
     assert client.post(f"/v1/sessions/{sid}/questions/{question.id}/cancel").status_code == 200
     assert client.app.state.sessions.get(sid).status == "running"
@@ -147,15 +148,14 @@ def test_surface_action_answers_async_question_while_running(
         client,
         sid,
         question="What does X mean?",
-        response_mode="async",
         surface_id="surface_1",
         answer_action=answer_action,
     )
     question = next(iter(app.state.user_questions.values()))
     assert question.metadata["a2ui_answer_action"] == "question.submit"
-    _ask_tool(client, sid, question="Another question", response_mode="async")
+    _ask_tool(client, sid, question="Another question")
     with pytest.raises(AskUserError, match="already belongs"):
-        _ask_tool(client, sid, question="Duplicate", response_mode="async", surface_id="surface_1")
+        _ask_tool(client, sid, question="Duplicate", surface_id="surface_1")
     interaction = next(
         row
         for row in client.get(f"/v1/sessions/{sid}/interactions").json()["interactions"]
@@ -197,8 +197,11 @@ def test_surface_action_answers_async_question_while_running(
     assert answered.status_code == 200, answered.text
     row = app.state.user_questions[question.id]
     assert row.status == "answered"
-    queued = app.state.message_intents.list_queued(sid)
-    assert queued[0].metadata["a2ui_action_context"] == {"explanation": "X is stiffness"}
+    assert not app.state.message_intents.list_queued(sid)
+    assert row.answer_metadata["a2ui_action_context"] == {"explanation": "X is stiffness"}
+    assert completion_rows(app, sid)[0]["result"]["answer_metadata"]["a2ui_action_context"] == {
+        "explanation": "X is stiffness"
+    }
     assert app.state.sessions.get(sid).status == "running"
     assert len([q for q in app.state.user_questions.values() if q.status == "pending"]) == 1
     replay = client.post(
@@ -215,7 +218,7 @@ def test_surface_action_answers_async_question_while_running(
     )
     assert replay.status_code == 409, replay.text
     assert "user question is already resolved" in replay.text
-    assert len(app.state.message_intents.list_queued(sid)) == 1
+    assert not app.state.message_intents.list_queued(sid)
 
 
 def test_blocking_answer_cannot_be_queued(client: TestClient) -> None:
@@ -233,7 +236,7 @@ def test_blocking_answer_cannot_be_queued(client: TestClient) -> None:
 def test_queued_answer_must_belong_to_owning_conversation(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
     other = client.post("/v1/sessions", json={}).json()["id"]
-    _ask_tool(client, other, question="Explain X?", response_mode="async")
+    _ask_tool(client, other, question="Explain X?")
     question = next(iter(client.app.state.user_questions.values()))
     response = client.post(
         f"/v1/sessions/{sid}/queued-messages",
@@ -244,12 +247,12 @@ def test_queued_answer_must_belong_to_owning_conversation(client: TestClient) ->
     assert not client.app.state.message_intents.list_queued(sid)
 
 
-def test_client_delivery_metadata_cannot_skip_async_answer_queue(
+def test_client_delivery_metadata_cannot_acknowledge_task_answer(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
     monkeypatch.setattr(client.app.state.turn_runner, "busy", lambda _sid: True)
-    _ask_tool(client, sid, question="Explain X?", response_mode="async")
+    _ask_tool(client, sid, question="Explain X?")
     question = next(iter(client.app.state.user_questions.values()))
     response = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer",
@@ -259,10 +262,10 @@ def test_client_delivery_metadata_cannot_skip_async_answer_queue(
         },
     )
     assert response.status_code == 200, response.text
-    queued = client.app.state.message_intents.list_queued(sid)
-    assert len(queued) == 1
-    assert response.json()["answer_metadata"]["queued_message_id"] == queued[0].id
+    assert not client.app.state.message_intents.list_queued(sid)
+    assert "queued_message_id" not in response.json()["answer_metadata"]
     assert "answer_message_id" not in response.json()["answer_metadata"]
+    assert completion_rows(client.app, sid)[0]["handle"] == question.task_handle
 
 
 def test_async_answer_preserves_planning_and_confirmation_settings(
@@ -272,20 +275,21 @@ def test_async_answer_preserves_planning_and_confirmation_settings(
         "id"
     ]
     monkeypatch.setattr(client.app.state.turn_runner, "busy", lambda _sid: True)
-    _ask_tool(client, sid, question="Explain X?", response_mode="async")
+    _ask_tool(client, sid, question="Explain X?")
     question = next(iter(client.app.state.user_questions.values()))
     result = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer", json={"answer": "Stiffness"}
     )
     assert result.status_code == 200, result.text
-    queued = client.app.state.message_intents.list_queued(sid)
-    assert queued[0].behavior.execution_mode == "plan"
-    assert queued[0].behavior.confirmation_policy == "auto-edits"
+    session = client.app.state.sessions.get(sid)
+    assert session.mode == "plan" and session.approval_mode == "auto-edits"
+    assert not client.app.state.message_intents.list_queued(sid)
+    assert completion_rows(client.app, sid)[0]["result"]["answer"] == "Stiffness"
 
 
 def test_reserved_metadata_refusal_keeps_async_question_open(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
-    _ask_tool(client, sid, question="Explain X?", response_mode="async")
+    _ask_tool(client, sid, question="Explain X?")
     question = next(iter(client.app.state.user_questions.values()))
     response = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer",
@@ -311,6 +315,7 @@ def test_async_answer_preserves_source_model_and_per_message_behavior(
             parts=[Part(type="text", text="Plan this analysis.")],
             metadata={
                 "effective_model": {"provider_id": "codex", "model_id": "gpt-6-luna"},
+                "model_selection_source": "request",
                 "behavior": {
                     "execution_mode": "plan",
                     "confirmation_policy": "auto-edits",
@@ -320,20 +325,23 @@ def test_async_answer_preserves_source_model_and_per_message_behavior(
         )
     ]
     monkeypatch.setattr(client.app.state.turn_runner, "busy", lambda _sid: True)
-    _ask_tool(client, sid, question="Explain X?", response_mode="async")
+    _ask_tool(client, sid, question="Explain X?")
     question = next(iter(client.app.state.user_questions.values()))
     result = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer", json={"answer": "Stiffness"}
     )
     assert result.status_code == 200, result.text
-    queued = client.app.state.message_intents.list_queued(sid)[0]
-    assert queued.model.provider_id == "codex"
-    assert queued.model.model_id == "gpt-6-luna"
-    assert queued.behavior.execution_mode == "plan"
-    assert queued.behavior.reasoning_effort == "off"
+    from clio_agent.gact.subagent_lifecycle import retained_model_metadata
+
+    resumed = retained_model_metadata(client.app, sid)
+    assert resumed["effective_model"] == {"provider_id": "codex", "model_id": "gpt-6-luna"}
+    assert resumed["behavior"]["execution_mode"] == "plan"
+    assert resumed["behavior"]["reasoning_effort"] == "off"
+    assert not client.app.state.message_intents.list_queued(sid)
+    assert completion_rows(client.app, sid)[0]["result"]["answer"] == "Stiffness"
 
 
-def test_full_queue_refuses_answer_without_settling_question(
+def test_full_composer_queue_cannot_block_a_question_task_answer(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from clio_agent.gact.message_intents import IntentRetention, MessageIntentStore
@@ -345,21 +353,19 @@ def test_full_queue_refuses_answer_without_settling_question(
     sid = client.post("/v1/sessions", json={}).json()["id"]
     monkeypatch.setattr(app.state.turn_runner, "busy", lambda _sid: True)
     client.post(f"/v1/sessions/{sid}/queued-messages", json={"text": "Earlier message"})
-    _ask_tool(client, sid, question="Explain X?", response_mode="async")
+    _ask_tool(client, sid, question="Explain X?")
     question = next(iter(app.state.user_questions.values()))
     result = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer", json={"answer": "Stiffness"}
     )
-    assert result.status_code == 429, result.text
-    assert "queue_capacity_exceeded" in result.text
-    assert app.state.user_questions[question.id].status == "pending"
+    assert result.status_code == 200, result.text
+    assert app.state.user_questions[question.id].status == "answered"
+    assert completion_rows(app, sid)[0]["result"]["answer"] == "Stiffness"
     assert len(app.state.message_intents.list_queued(sid)) == 1
-    first = app.state.message_intents.list_queued(sid)[0]
-    app.state.message_intents.delete_queued(sid, first.id, first.revision)
     retry = client.post(
         f"/v1/sessions/{sid}/questions/{question.id}/answer", json={"answer": "Stiffness"}
     )
-    assert retry.status_code == 200, retry.text
+    assert retry.status_code == 409, retry.text
     assert len(app.state.message_intents.list_queued(sid)) == 1
 
 
@@ -367,7 +373,7 @@ def test_cancelling_last_blocking_question_leaves_async_open_without_pausing(
     client: TestClient,
 ) -> None:
     sid = client.post("/v1/sessions", json={}).json()["id"]
-    _ask_tool(client, sid, question="Explain X?", response_mode="async")
+    _ask_tool(client, sid, question="Explain X?")
     blocking = client.post(f"/v1/sessions/{sid}/questions", json={"prompt": "Units?"}).json()
     assert client.app.state.sessions.get(sid).status == "waiting_user"
     result = client.post(f"/v1/sessions/{sid}/questions/{blocking['id']}/cancel")
@@ -412,7 +418,7 @@ def test_async_expiry_preserves_blocking_anchor(
         return Mock()
 
     monkeypatch.setattr(ask_user_tool.threading, "Timer", timer)
-    _ask_tool(client, sid, question="Explain X?", response_mode="async", expiresInSeconds=1)
+    _ask_tool(client, sid, question="Explain X?", expiresInSeconds=1)
     callbacks[0]()
     session = client.app.state.sessions.get(sid)
     assert session.status == "waiting_user"

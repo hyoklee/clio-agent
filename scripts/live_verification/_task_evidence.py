@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
@@ -27,6 +28,11 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
         if part.get("type") != "tool_result":
             continue
         result = part.get("structured_content") or part.get("metadata", {}).get("result") or {}
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except ValueError:
+                continue
         if not isinstance(result, dict):
             continue
         data = result.get("structuredContent", result)

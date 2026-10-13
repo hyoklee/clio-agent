@@ -6,6 +6,8 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, model_validator
 
+from clio_agent.gact.parts import Part
+
 
 class UserQuestionOption(BaseModel):
     """One selectable answer to a user question."""
@@ -22,6 +24,7 @@ class UserQuestion(BaseModel):
     session_id: str
     owner_session_id: str = ""
     attended_session_id: str = ""
+    task_handle: str | None = None
     prompt: str
     response_mode: Literal["blocking", "async"] = "blocking"
     status: Literal["pending", "answered", "cancelled", "expired"] = "pending"
@@ -105,6 +108,7 @@ class AnswerUserQuestionRequest(BaseModel):
     answer: str = ""
     selected_options: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
+    parts: list[Part] = Field(default_factory=list)
 
 
 class PendingInteractionSource(BaseModel):

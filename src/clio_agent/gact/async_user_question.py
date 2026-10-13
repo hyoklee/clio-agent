@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any
+from uuid import uuid4
 
 from fastapi import HTTPException
 
@@ -92,6 +93,7 @@ def publish_async_question(app: Any, pending: dict[str, Any], turn_id: str) -> U
     now = datetime.now(timezone.utc).isoformat()
     row = UserQuestion(
         id=_new_question_id(),
+        task_handle="task_" + uuid4().hex,
         session_id=pending["owner_session_id"],
         owner_session_id=pending["owner_session_id"],
         attended_session_id=pending["attended_session_id"],

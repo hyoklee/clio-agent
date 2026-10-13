@@ -384,6 +384,7 @@ def _observe_tasks(
                         _session_run_event(app, row, event)
                         or owner == row.get("child_session_id")
                         or event.payload.get("handle") == row["handle"]
+                        or event.payload.get("task_handle") == row["handle"]
                         or (
                             key == row.get("key")
                             if key
@@ -470,6 +471,12 @@ def _observation(event: Any) -> dict[str, Any]:
             "message",
             "stream",
             "progress",
+            "task_handle",
+            "question_id",
+            "prompt",
+            "answer",
+            "selected_options",
+            "answered_by",
         }
     }
     if curated is None:
@@ -506,16 +513,9 @@ def cancel_selected(
                     "cancellation_requested": requested,
                     "status": row["effective_status"],
                 }
-                if row.get("key"):
-                    from clio_agent.gact.mcp_task_store import app_task_store
-                    from clio_agent.tools.mcp_task_records import TaskKey
-
-                    current = app_task_store(app).get(TaskKey.from_wire(row["key"]))
-                    result["recording"] = (
-                        "unconfirmed" if current is None or current.holding_reason else "confirmed"
-                    )
-                else:
-                    result["recording"] = row.get("recording", "confirmed")
+                current = resolve_task(app, sid, row["handle"], scope="authorized", right="control")
+                result["recording"] = current.get("recording", "confirmed")
+                result["status"] = current["effective_status"]
                 outcome.update(result)
                 results.append(result)
         except (ValueError, RuntimeError) as exc:

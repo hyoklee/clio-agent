@@ -9,6 +9,34 @@ from typing import Any
 _UNSUCCESSFUL = {"failed", "error", "cancelled", "interrupted", "denied"}
 
 
+def wait_start_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
+    """Describe an active wait using authorized task kinds, before a result exists."""
+    from clio_agent.gact.context import active_app, active_session_id
+    from clio_agent.gact.task_projection import resolve_task
+
+    if args.get("timeout_s") == 0:
+        return {"summary": "Checking task status", "blocks": []}
+    handles = args.get("tasks", [])
+    if isinstance(handles, str):
+        handles = [handles]
+    app, sid = active_app(), active_session_id()
+    if app is None or not sid or not isinstance(handles, list):
+        return {"summary": "Waiting for tasks", "blocks": []}
+    kinds = []
+    for handle in handles:
+        try:
+            row = resolve_task(app, sid, handle, scope=str(args.get("scope") or "authorized"))
+        except ValueError:
+            return {"summary": "Waiting for tasks", "blocks": []}
+        kinds.append(row["task_kind"])
+    return {
+        "summary": "Waiting for your answer"
+        if kinds and set(kinds) == {"Question"}
+        else "Waiting for tasks",
+        "blocks": [],
+    }
+
+
 def _result_text(value: Any) -> str:
     """Use returned text when available; retain structured results otherwise."""
     if isinstance(value, str):

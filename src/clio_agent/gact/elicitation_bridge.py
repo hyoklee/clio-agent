@@ -32,12 +32,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from clio_agent.gact.ask_user_tool import cancel_ask_user_deadline
 from clio_agent.gact.elicitation_correlation import invocation_with_request_correlation
 from clio_agent.gact.elicitation_schema import (
     ELICITATION_QUESTION_SOURCE,
@@ -59,7 +58,15 @@ from clio_agent.gact.task_input_questions import (
     recover_input_question,
 )
 from clio_agent.gact.types import UserQuestion, UserQuestionOption
-from clio_agent.gact.user_question_ledger import record_user_question
+from clio_agent.gact.user_question_ledger import (
+    claim_question_transition as claim_question_transition,
+)
+from clio_agent.gact.user_question_ledger import (
+    record_user_question,
+)
+from clio_agent.gact.user_question_ledger import (
+    stamp_question_routing_fields as stamp_question_routing_fields,
+)
 from clio_agent.tools.mcp_handlers import MCPClientCapabilities, MCPInvocationContext
 
 logger = logging.getLogger(__name__)
@@ -174,114 +181,6 @@ def _safe_set(future: "asyncio.Future[ElicitResolution]", resolution: ElicitReso
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
-
-
-#: Serializes the ONE atomic status transition of any user question (answer / cancel /
-#: timeout / forwarded expiry): first out of ``pending`` wins, closing the race where an
-#: answer and a timeout both "won" (HTTP 200 while the tool got cancel) — #1113 finding 6.
-_QUESTIONS_LOCK = threading.Lock()
-
-
-def claim_question_transition(
-    app: Any,
-    question_id: str,
-    new_status: str,
-    *,
-    answer: str = "",
-    selected_options: Sequence[str] | None = None,
-    answer_metadata: Mapping[str, Any] | None = None,
-    answered_by: str = "",
-    metadata_patch: Mapping[str, Any] | None = None,
-    answer_already_delivered: bool = False,
-    before_publish: Callable[[UserQuestion], None] | None = None,
-) -> UserQuestion | None:
-    """Atomically transition a PENDING question to ``new_status`` (first-wins).
-
-    ``metadata_patch`` is merged into the question's ``metadata`` in the same
-    transition (why it ended, e.g. a drafts question a new turn superseded).
-
-    The single serialization point for every terminalization. Returns the updated row
-    when THIS caller made the ``pending`` -> ``new_status`` transition; ``None`` when
-    the question is absent or already non-pending (the loser). Answer fields apply
-    inside the same lock, so a timeout cannot overwrite an accepted answer (or v.v.).
-
-    ``answer_already_delivered`` is server-only: composer acceptance has already
-    saved the answer's message or queue entry. Client metadata never bypasses delivery.
-
-    ``before_publish`` is server-only owner persistence under the same arbitration
-    lock. It completes before the terminal row becomes observable; a failure
-    leaves the question pending. It must not recursively claim a question.
-
-    ``answered_by`` (#1309, C1-S7) defaults to the unchanged ``None`` wire absence.
-    Agent elicitation stamps ``"agent"`` in the same atomic transition, so the row
-    cannot appear answered before attribution is set.
-    """
-
-    with _QUESTIONS_LOCK:
-        questions = getattr(app.state, "user_questions", None)
-        if questions is None:
-            return None
-        row = questions.get(question_id)
-        if row is None or row.status != "pending":
-            return None
-        update: dict[str, Any] = {"status": new_status, "updated_at": _now_iso()}
-        if new_status == "answered":
-            update["answer"] = answer
-            update["selected_options"] = list(selected_options or [])
-            update["answer_metadata"] = dict(answer_metadata or {})
-            if answered_by:
-                update["answered_by"] = answered_by
-        if metadata_patch:
-            update["metadata"] = {**row.metadata, **metadata_patch}
-        updated = row.model_copy(update=update)
-        if (
-            new_status == "answered"
-            and row.response_mode == "async"
-            and not answer_already_delivered
-        ):
-            from clio_agent.gact.async_user_question import queue_async_answer
-
-            answer_metadata = dict(updated.answer_metadata)
-            answer_metadata.pop("answer_message_id", None)
-            answer_metadata.pop("queued_message_id", None)
-            updated = updated.model_copy(update={"answer_metadata": answer_metadata})
-            queued_id = queue_async_answer(app, updated)
-            updated = updated.model_copy(
-                update={
-                    "answer_metadata": {**updated.answer_metadata, "queued_message_id": queued_id}
-                }
-            )
-        if before_publish is not None:
-            before_publish(updated)
-        record_user_question(app, updated)
-    # The ONE serialization point is also the one place the armed expiry timer is
-    # released, so no settled question leaves a live timer behind (outside the lock).
-    cancel_ask_user_deadline(app, question_id)
-    return updated
-
-
-def stamp_question_routing_fields(app: Any, question_id: str, **fields: Any) -> UserQuestion | None:
-    """Best-effort stamp of DESCRIPTIVE (non-state) fields onto a still-PENDING question.
-
-    Used by :mod:`clio_agent.gact.agent_elicitation` to record the routing decision
-    (``agent_elicitation_routing`` / ``agent_elicitation_fallback_detail``) without
-    participating in the answer/cancel/timeout state race: reuses
-    :data:`_QUESTIONS_LOCK` so it never interleaves with :func:`claim_question_transition`,
-    and silently no-ops (never clobbers) when the row already left ``pending`` --
-    a concurrent human answer/cancel/timeout always wins the STATE, this only ever
-    adds attribution to a row that is still waiting.
-    """
-
-    with _QUESTIONS_LOCK:
-        questions = getattr(app.state, "user_questions", None)
-        if questions is None:
-            return None
-        row = questions.get(question_id)
-        if row is None or row.status != "pending":
-            return None
-        updated = row.model_copy(update=dict(fields))
-        record_user_question(app, updated)
-    return updated
 
 
 async def _await_answer(

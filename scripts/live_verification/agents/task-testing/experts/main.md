@@ -16,6 +16,7 @@ signature:
       description: Observed task handles, actual statuses and outcomes, including failures.
       type: string
 tools:
+  - ask_user
   - shell_bash
   - fs_read_file
 ---

@@ -1,0 +1,239 @@
+{
+  "verified_at": "2026-10-13T09:09:58.483Z",
+  "scope": "Question adapter focused qualification; actual-model and real-service UI acceptance pending",
+  "cases": [
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_question_returns_handle_before_answer_without_parking_the_session",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-01-346d9f9e",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.92s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_core_refusal_does_not_publish_or_accept_a_question",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-02-346e2c30",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.65s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_answer_uses_the_shared_delivery_boundary_without_entering_composer_fifo",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-03-346eb306",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.62s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_stop_interrupts_only_the_question_waiter",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-04-346f3c4d",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.34s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_mixed_question_wait_returns_independent_outcomes_and_preserves_pending_input",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-05-346fc2a9",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.77s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_question_result_recovers_from_core_after_the_ui_projection_is_lost",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-06-34704ea8",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.28s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_question_cancellation_during_core_outage_is_provisional_then_reconciles",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-07-3470d2ca",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.18s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_question_expiry_is_a_shared_failure_not_a_successful_answer",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-08-347157cb",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.62s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_question_task_answer_authorizes_attachments_before_settlement",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-09-3471dc94",
+      "root_absent": true,
+      "summary": "1 passed, 5 warnings in 27.03s"
+    },
+    {
+      "node": "tests/test_gact/test_question_tasks.py::test_question_owner_arbitrates_answer_cancel_races_and_rejects_history_rewrites",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-10-3476b220",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.35s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_async_tool_keeps_work_running_and_multiple_questions_survive_recovery",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-11-34773a04",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.83s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_default_tool_returns_a_question_handle_without_parking",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-12-3477c0fc",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.15s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_mode_switch_is_no_longer_an_agent_argument[later]",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-13-34784817",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.90s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_mode_switch_is_no_longer_an_agent_argument[ASYNC]",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-14-3478cf60",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.77s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_mode_switch_is_no_longer_an_agent_argument[]",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-15-34795728",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.14s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_question_surface_must_exist_in_owning_session",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-16-3479dfaf",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.26s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_task_answer_bypasses_fifo_and_does_not_interrupt_running_work",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-17-347a68ba",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 27.07s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_cancelling_async_question_never_stops_running_work",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-18-347afb2a",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 28.02s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_async_question_route_and_projection_do_not_pause_session",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-19-347b919e",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 26.96s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_surface_action_answers_async_question_while_running[question.submit]",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-20-347c266a",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 26.39s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_surface_action_answers_async_question_while_running[]",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-21-347cc699",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.66s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_surface_action_answers_async_question_while_running[   ]",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-22-347d4df5",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.89s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_blocking_answer_cannot_be_queued",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-23-347ddacd",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 28.04s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_queued_answer_must_belong_to_owning_conversation",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-24-347e7213",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.41s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_client_delivery_metadata_cannot_acknowledge_task_answer",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-25-347efacf",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.90s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_async_answer_preserves_planning_and_confirmation_settings",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-26-347f80a4",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.75s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_reserved_metadata_refusal_keeps_async_question_open",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-27-34800c14",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.24s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_async_answer_preserves_source_model_and_per_message_behavior",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-28-34809686",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 29.10s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_full_composer_queue_cannot_block_a_question_task_answer",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-29-34812d49",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.23s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_cancelling_last_blocking_question_leaves_async_open_without_pausing",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-30-3481b5f7",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.41s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_cancelled_question_moves_anchor_to_remaining_blocking_question",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-31-34823a5c",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 25.96s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_async_expiry_preserves_blocking_anchor",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-32-3482c7ce",
+      "root_absent": true,
+      "summary": "1 passed, 4 warnings in 24.01s"
+    },
+    {
+      "node": "tests/test_gact/test_async_user_questions.py::test_choice_tool_schema_describes_required_option_fields",
+      "exit_code": 0,
+      "root": "D:/Temp/v3-q-final-33-34834c10",
+      "root_absent": true,
+      "summary": "1 passed, 1 warning in 11.85s"
+    }
+  ],
+  "passed": true,
+  "warnings": "Existing Core nanobind reference-leak and legacy-home warnings remain; these are not addressed by the Question adapter."
+}

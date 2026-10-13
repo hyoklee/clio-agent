@@ -13,7 +13,7 @@ from clio_agent.gact.task_controls import (
     query_tasks,
     wait_tasks,
 )
-from clio_agent.gact.task_wait_presentation import wait_presentation
+from clio_agent.gact.task_wait_presentation import wait_presentation, wait_start_presentation
 
 
 def task_presentation(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
@@ -97,6 +97,7 @@ def build_task_tools() -> list[Any]:
             desc=fn.__doc__,
             args=args,
             presentation=task_presentation,
+            presentation_start=wait_start_presentation if fn is wait_tasks else None,
             domain="agents",
             title=fn.__name__.replace("_", " ").title(),
             read_only=readonly,

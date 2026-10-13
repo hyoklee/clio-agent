@@ -60,6 +60,10 @@ class TaskSupervisor:
 
     def request_cancel(self, row: dict[str, Any]) -> bool:
         """Request cancellation on the owning loop, with idempotent persisted intent."""
+        if row["task_kind"] == "Question":
+            from clio_agent.gact.question_tasks import cancel_question_task
+
+            return cancel_question_task(self.app, row)
         if row.get("native"):
             root = row["native_root"]
             host = getattr(self.app.state, "native_task_hosts", {}).get(root[0])

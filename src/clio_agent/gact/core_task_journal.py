@@ -122,6 +122,10 @@ class CoreTaskJournal:
         elif event_type == "task.assignment":
             task = row["task"]
             self.result_references[task.get("handle_id") or task["task_id"]] = row["observation_id"]
+        elif event_type == "task.question.observation":
+            question = row["question"]
+            if handle := question.get("task_handle"):
+                self.result_references[handle] = row["observation_id"]
         elif event_type == "task.subscription":
             self.notification_references[(sid, row["notification_id"])] = {
                 "relationship": row["observation_id"],
@@ -205,6 +209,8 @@ class CoreTaskJournal:
                         recipients.add(row["record"].get("session_id") or sid)
                     elif kind == "task.assignment":
                         recipients.add(row["task"].get("parent_session_id") or sid)
+                    elif kind == "task.question.observation":
+                        recipients.add(row["question"].get("owner_session_id") or sid)
             for group in self.task_relationships.values():
                 recipients.update(group)
             return recipients - {""}
@@ -549,6 +555,9 @@ class CoreTaskJournal:
 
             if self.unconfirmed_assignments:
                 await asyncio.to_thread(reconcile_assignment_controls, self.app)
+            from clio_agent.gact.user_question_ledger import reconcile_task_questions
+
+            await asyncio.to_thread(reconcile_task_questions, self.app)
             store = getattr(self.app.state.sessions, "task_store", None)
             if store is not None:
                 await asyncio.to_thread(store.reconcile_controls)

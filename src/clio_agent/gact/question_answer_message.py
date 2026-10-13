@@ -18,6 +18,7 @@ the answer: a ``POST /messages`` whose client metadata names the question
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,6 +39,41 @@ __all__ = [
 
 #: Client metadata key on ``POST /messages``: the question this message answers.
 ANSWERS_QUESTION_KEY = "answers_question_id"
+
+
+def validate_task_answer_metadata(sid: str, metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Reject forged control metadata and remove obsolete client delivery claims."""
+    from clio_agent.gact.messaging import raise_on_reserved_metadata
+
+    raise_on_reserved_metadata(sid, dict(metadata or {}))
+    return {
+        key: value
+        for key, value in (metadata or {}).items()
+        if key not in {"answer_message_id", "queued_message_id"}
+    }
+
+
+async def authorize_task_answer_parts(app: Any, session: Any, parts: list[Part]) -> list[Part]:
+    """Reuse existing reference custody for files supplied with a task answer."""
+    from clio_agent.gact.context_references import authorize_context_reference_parts
+
+    return await authorize_context_reference_parts(
+        app,
+        session,
+        [
+            part.model_copy(
+                update={
+                    "type": "context_ref",
+                    "ref_kind": "resource",
+                    "ref_id": part.resource_id,
+                    "revision": part.resource_revision,
+                }
+            )
+            if part.type == "resource_ref"
+            else part
+            for part in parts
+        ],
+    )
 
 
 @dataclass(frozen=True)
@@ -88,6 +124,15 @@ def prepare_question_answer(
             session_id=sid,
             question_id=question_id,
             status=question.status,
+        )
+    if question.task_handle:
+        raise _refuse(
+            422,
+            "task_question_needs_answer",
+            "Answer this question directly, including its files and references. Task answers do not enter the future-message queue.",
+            session_id=sid,
+            question_id=question.id,
+            answer_path=f"/v1/sessions/{sid}/questions/{question.id}/answer",
         )
     if question.response_mode == "async" and not queued:
         raise _refuse(

@@ -79,6 +79,9 @@ async def start_task_hosts(app: FastAPI) -> None:
 
     app.state.task_hosts_ready = False
     await core_task_journal(app).restore()
+    from clio_agent.gact.user_question_ledger import restore_user_questions
+
+    await asyncio.to_thread(restore_user_questions, app)
     from clio_agent.gact.assignment_history import restore_assignment_history
 
     await asyncio.to_thread(restore_assignment_history, app)

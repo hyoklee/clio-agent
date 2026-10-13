@@ -31,16 +31,28 @@ def dispatch_answered_question(
     from clio_agent.gact.elicitation_bridge import resolve_answered_question
     from clio_agent.gact.routes.session_question_helpers import pending_user_questions
 
-    if resolve_answered_question(app, deps, sid, question):
+    if question.task_handle:
+        from clio_agent.gact.task_completion_wake import request_completion_wake
+
+        owner = question.owner_session_id
+        app.state.sessions.update(
+            owner, metadata_patch=settled_question_metadata(app, owner, question)
+        )
+        request_completion_wake(app, owner, question.task_handle)
         return
-    resume_answered_question(
-        app,
-        deps,
-        sid,
-        question,
-        has_pending=any(q.response_mode == "blocking" for q in pending_user_questions(app, sid)),
-        set_session_status=set_session_status,
-    )
+    else:
+        if resolve_answered_question(app, deps, sid, question):
+            return
+        resume_answered_question(
+            app,
+            deps,
+            sid,
+            question,
+            has_pending=any(
+                q.response_mode == "blocking" for q in pending_user_questions(app, sid)
+            ),
+            set_session_status=set_session_status,
+        )
     app.state.bus.publish(
         Event(
             type="user_question.answered",
@@ -182,6 +194,8 @@ async def finish_cancelled_question(
 
     metadata_patch = settled_question_metadata(app, sid, question)
     app.state.sessions.update(sid, metadata_patch=metadata_patch)
+    if question.task_handle:
+        return  # The question owner published its confirmed terminal observation.
     # Forwarded elicitation resolves down; async cancellation never pauses work.
     if (
         not await resolve_cancelled_question(app, question)
