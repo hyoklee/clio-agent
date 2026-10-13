@@ -55,14 +55,27 @@ receipts and images remain. Rejected old captures are not website acceptance.
 
 ## Remaining gates
 
-Final integrated-source repetitions remain pending after the admission-reservation,
-assignment-description and observation-scope corrections. The Stop mission now
-tests Stop separately from expired-wait/observe behavior within the unchanged
-model budget; failed sessions are captured before disposable Core cleanup.
-The distinct Claude baseline and real desktop/phone UI review above passed.
-This extension's evidence does not
-complete the broader V3 workload, recovery, session/workflow and CI matrix. Old
-task-engine evidence is not acceptance of its replacement.
+The corrected root Question runtime passed twenty repetitions on frozen core
+`c5bcf10f18684644f7d43ecc9e589cc1bc9f3742` and GACT
+`5809961b6de3e46b29518adecc9520bd66eed699`: five idle and five Stop cycles each
+through actual Codex `gpt-6-luna` and Claude `haiku`. Both separate Stop baselines
+also passed. Answers woke exactly once; a later ordinary human request did not
+redeliver them. Wakes retained the original assignment; subsequent human
+assignments had their own descriptions. Both families kept identical runtime
+hashes throughout and removed all seven disposable children and their private
+Core runtimes after settlement. Full identities, handles, receipts and failed
+setup custody are in [`native-tasks-v3-question-live.json`](native-tasks-v3-question-live.json).
+
+One launch used the invalid display alias `luna`, failing before any tool call.
+It accepted no tasks and is retained as a setup failure, not a passing model run.
+The Stop mission separates Stop from the already demonstrated expired-wait and
+observe path within the unchanged eight-iteration budget. No validation, worker,
+timeout or assertion budget was relaxed.
+
+These are root Question acceptance results. They do not complete the broader V3
+workload, child-route, recovery, session/workflow and CI matrix. Current broad CI
+still has failures outside these accepted cases. Old task-engine evidence is
+not acceptance of its replacement.
 
 ## Cleanup boundary
 
@@ -70,3 +83,10 @@ The prior single-file removal of `D:/Temp/clio-v3-pr1704-62b77512.md` was reject
 by automatic review as `blocked by policy`; it did not run. That exact small
 temporary PR-body file is manual-only and is not retried or bypassed. This does
 not change cleanup ownership for freshly created qualification state.
+
+Automatic review separately rejected removal of this turn's generated site
+`node_modules`, `dist`, `.astro` and `public/widgets` with `blocked by policy`.
+The command did not execute. These exact residuals are manual-only; no helper,
+parent deletion, move or alternative shell retries them. The ownership and
+rejection receipts are `D:/Temp/v3-site-build-sideeffects-752.json` and
+`D:/Temp/v3-site-cleanup-rejection-753.json`.

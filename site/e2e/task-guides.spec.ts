@@ -28,9 +28,13 @@ for (const theme of ['light', 'dark']) {
 				await expect(page).toHaveURL(new RegExp(`/docs/tasks/${guide.slug}$`));
 				await expect(page.getByRole('heading', { level: 1, name: guide.title, exact: true })).toBeVisible();
 				await expect(nav.locator('[aria-current="page"]')).toHaveText(guide.nav);
-				const note = page.locator('.sl-markdown-content .starlight-aside');
-				await expect(note).toContainText(guide.slug === 'session-coordination/'
-					? 'Development build; qualification has limits' : 'Development preview');
+				const title = guide.slug === 'session-coordination/'
+					? 'Development build; qualification has limits' : 'Development preview';
+				const note = page.locator('.sl-markdown-content .starlight-aside').filter({
+					has: page.locator('.starlight-aside__title', { hasText: title }),
+				});
+				await expect(note).toHaveCount(1);
+				await expect(note).toContainText(title);
 				await page.evaluate(async () => {
 					await document.fonts.ready;
 					for (const image of document.querySelectorAll<HTMLImageElement>('.guide-screenshot img')) {
