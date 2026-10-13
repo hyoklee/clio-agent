@@ -235,7 +235,8 @@ async def search_connected_service(
         "query": query,
         "scope": "connected_service",
         "workspaces": [
-            {"id": workspace.id, "title": workspace.display_name} for workspace in workspaces
+            {"id": workspace.id, "title": workspace.to_wire()["display_name"]}
+            for workspace in workspaces
         ],
         "hits": page,
         "next_offset": offset + limit if offset + limit < len(hits) else None,

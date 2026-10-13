@@ -10,6 +10,7 @@ import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
+from clio_agent import conf
 from clio_agent.gact import context
 from clio_agent.gact.agent_blueprint_sources import (
     refresh_agent_blueprint_source,
@@ -19,7 +20,13 @@ from clio_agent.gact.agent_blueprint_sources import (
 from clio_agent.gact.app import build_app
 from clio_agent.gact.routes.workspace_file_read import readable_workspace_file
 from clio_agent.gact.runtime.memory_search import _memory_search_excerpt, _memory_search_response
-from clio_agent.gact.search_assistant import _active, read_search_source, search_connected_service
+from clio_agent.gact.search_assistant import (
+    _active,
+    build_clio_search_read_tool,
+    build_clio_search_tool,
+    read_search_source,
+    search_connected_service,
+)
 from clio_agent.gact.side_sessions import READ_ONLY_SIDE_PROFILE, is_read_only_side_session
 from clio_agent.gact.types import Message, Part
 
@@ -155,6 +162,7 @@ def test_search_tools_require_server_owned_read_only_profile(tmp_path: Path) -> 
 
 def test_explicit_search_blueprint_activation_inherits_model_without_copying_parent(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "blueprint"
     original = (
@@ -187,5 +195,47 @@ def test_explicit_search_blueprint_activation_inherits_model_without_copying_par
         assert app.state.messages[parent.id][0].parts[0].text == "This stays in the parent"
         assert client.delete(f"/v1/sessions/{opened.id}").status_code in {200, 204}
         assert app.state.sessions.get(parent.id) is not None
+        monkeypatch.setenv("CLIO_FLEET_SEARCH", '{"provider_id":"codex","model_id":"gpt-5.6-luna"}')
+        conf.reload()
+        second = client.post(
+            "/v1/search/sessions",
+            json={"workspace_id": "ws_default", "parent_session_id": parent.id},
+        )
+        selected = app.state.sessions.get(second.json()["id"])
+        assert selected is not None and selected.model == {
+            "provider_id": "codex",
+            "model_id": "gpt-5.6-luna",
+        }
         bad = client.post("/v1/search/sessions", json={"workspace_id": "ws_missing"})
         assert bad.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_native_tools_read_real_sources_and_global_search_omits_ephemeral_chats(
+    tmp_path: Path,
+) -> None:
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=None)
+    workspace, session = _source(app, tmp_path / "data")
+    (tmp_path / "data" / "notes.txt").write_text("Evidence from the file", encoding="utf-8")
+    side = app.state.sessions.create(
+        workspace_id=workspace.id,
+        metadata={"search_session": {"ephemeral": True}, "side_session": {"ephemeral": True}},
+        approval_profile=READ_ONLY_SIDE_PROFILE,
+    )
+    app.state.messages[side.id] = [_message(side.id, "Share a plant with the reviewer.")]
+    app.state.sessions.create(workspace_id=workspace.id, metadata={"side_session": "legacy marker"})
+    hits = _memory_search_response(app, query="share a plant", include_cross_session=True)
+    assert side.id not in {hit.session_id for hit in hits.hits}
+    app_token, session_token = context.set_app(app), context.set_session_id(side.id)
+    try:
+        found = await build_clio_search_tool().acall(
+            query="Evidence", kind="sessions", workspace_id=workspace.id
+        )
+        assert found["hits"][0]["session_id"] == session.id
+        read = await build_clio_search_read_tool().acall(
+            workspace_id=workspace.id, path="notes.txt"
+        )
+        assert read["text"] == "Evidence from the file"
+    finally:
+        context.reset(session_token)
+        context.reset(app_token)

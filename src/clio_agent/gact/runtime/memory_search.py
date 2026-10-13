@@ -179,7 +179,10 @@ def _memory_search_response(
         sessions = [
             session
             for session in sessions
-            if not session.metadata.get("side_session", {}).get("ephemeral")
+            if not (
+                isinstance(side := session.metadata.get("side_session"), dict)
+                and side.get("ephemeral") is True
+            )
         ]
     if session_id:
         sess = app.state.sessions.get(session_id)
