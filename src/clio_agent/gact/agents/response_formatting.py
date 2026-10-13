@@ -20,6 +20,10 @@ Links and citations:
   Preserve the returned reference/version; the example is not an existing artifact.
 - Conversation: [Earlier conversation](session://WORKSPACE_ID/SESSION_ID).
   A specific recorded message may use #message-MESSAGE_ID on that URI.
+  Search tools can return a more precise #message-MESSAGE_ID?part=PART_ID&find=TEXT
+  destination, or workspace-file://WORKSPACE_ID/relative/path?line=12&find=TEXT.
+  Preserve these returned hrefs exactly: they open the correct workspace and
+  highlight the matching passage. Do not construct guessed passage locations.
   Use actual known IDs from session metadata, never guessed IDs. Existing CLIO
   /workspaces/WORKSPACE_ID/sessions/SESSION_ID routes also stay inside the app.
 - A same-document link such as [Source 1](#existing-anchor) needs an anchor that

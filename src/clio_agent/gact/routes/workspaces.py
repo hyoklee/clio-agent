@@ -35,10 +35,9 @@ from clio_agent.gact.routes._body import json_body
 from clio_agent.gact.routes.workspace_directory_listing import collect_workspace_directory
 from clio_agent.gact.routes.workspace_file_listing import (
     collect_workspace_file_entries,
-    resolve_managed_input,
     workspace_file_media_type,
 )
-from clio_agent.gact.routes.workspace_file_policy import workspace_read_redaction_reason
+from clio_agent.gact.routes.workspace_file_read import readable_workspace_file
 from clio_agent.gact.routes.workspace_grant_delete import register_workspace_grant_delete_route
 from clio_agent.gact.routes.workspace_root_materialization import materialize_workspace_root
 from clio_agent.gact.routes.workspace_warmup import register_workspace_warmup_route
@@ -664,102 +663,7 @@ def register_workspaces_routes(app: FastAPI, deps: "GactDeps") -> None:
         file policy's max_file_size_bytes.
         """
 
-        ws = app.state.workspaces.get(wid)
-        if ws is None:
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="not_found",
-                        message=f"workspace not found: {wid}",
-                        recoverable=False,
-                    )
-                ).model_dump(exclude_none=True),
-            )
-        root = Path(ws.root_path or os.getcwd()).expanduser().resolve()
-        try:
-            managed = await asyncio.to_thread(resolve_managed_input, app, wid, root, path)
-            target = managed or (root / path).resolve()
-        except Exception:  # noqa: BLE001 - path resolution failure surfaced as HTTP 400
-            raise HTTPException(
-                status_code=400,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="invalid_path",
-                        message=f"could not resolve path: {path}",
-                        recoverable=False,
-                    )
-                ).model_dump(exclude_none=True),
-            ) from None
-        # Refuse path-traversal: target must be at-or-below root.
-        try:
-            relative_target = Path(path) if managed else target.relative_to(root)
-        except ValueError:
-            raise HTTPException(
-                status_code=403,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="path_outside_workspace",
-                        message=f"path escapes workspace: {path}",
-                        recoverable=False,
-                    )
-                ).model_dump(exclude_none=True),
-            ) from None
-        # Security review (S3 follow-up): the LISTING shows .clio in full (owner
-        # ruling — no reason to hide a workspace's own state from itself), but the
-        # raw-byte SERVE is a narrower boundary. Refuse a sandboxed child's
-        # redirected cache and anything credential-shaped by NAME, never by
-        # sniffing content that a renamed file could trivially evade.
-        redaction_reason = workspace_read_redaction_reason(relative_target)
-        if redaction_reason is not None:
-            raise HTTPException(
-                status_code=403,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="redacted",
-                        message=f"refusing to serve raw bytes for {path}: {redaction_reason}",
-                        recoverable=False,
-                        details={"reason": redaction_reason},
-                    )
-                ).model_dump(exclude_none=True),
-            )
-        if not target.is_file():
-            raise HTTPException(
-                status_code=404,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="not_found",
-                        message=f"file not found: {path}",
-                        recoverable=False,
-                    )
-                ).model_dump(exclude_none=True),
-            )
-        # Enforce file-policy size cap so a 50 GB log doesn't OOM.
-        try:
-            from clio_agent.tools.file_policy import FileAccessPolicy  # noqa: PLC0415
-
-            policy = FileAccessPolicy.from_mapping(os.environ)
-            max_bytes = policy.max_file_size_bytes
-        except Exception as exc:  # noqa: BLE001 - failure recorded via trace.event
-            trace.event(
-                "WORKSPACE",
-                "file policy unavailable reading %s (%s); using 1 GiB size cap",
-                path,
-                exc,
-            )
-            max_bytes = 1024 * 1024 * 1024  # 1 GiB fallback
-        size = target.stat().st_size
-        if size > max_bytes:
-            raise HTTPException(
-                status_code=413,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="file_too_large",
-                        message=f"file exceeds policy cap ({size} > {max_bytes} bytes)",
-                        recoverable=False,
-                    )
-                ).model_dump(exclude_none=True),
-            )
+        target = await asyncio.to_thread(readable_workspace_file, app, wid, path)
         try:
             media_type = await asyncio.to_thread(workspace_file_media_type, target)
         except OSError as exc:

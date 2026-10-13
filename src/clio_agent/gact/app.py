@@ -2054,6 +2054,9 @@ def build_app(
     # index and resume text travel on ``deps``.
     register_sessions_routes(app, deps)
     register_session_defaults_routes(app)
+    from clio_agent.gact.routes.search_assistant import register_search_assistant_routes
+
+    register_search_assistant_routes(app)
 
     # ---- /v1/sessions/{sid}/messages + /v1/messages (BBB9/BBB10/BBB27) ---
     # The session message ledger -- the turn-entry POST, the list/get reads,
