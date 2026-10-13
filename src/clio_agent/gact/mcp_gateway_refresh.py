@@ -38,7 +38,7 @@ def refresh_declared_mcp_servers(agent: Any) -> Any:
             client_factory=correlated_execution_client_factory(),
         )
         replaced = agent.tool_executor
-        agent._relay_federation_epoch = getattr(agent, "_relay_federation_epoch", 0) + 1
+        agent._mcp_configuration_revision = getattr(agent, "_mcp_configuration_revision", 0) + 1
         agent._tool_gateway = gateway
         agent.tool_executor = executor
         return replaced

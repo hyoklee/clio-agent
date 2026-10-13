@@ -344,3 +344,25 @@ The partial-removal inventory includes the following old definitions. Their unre
 The static guard runs independently of product imports. A passing guard proves its retired import/symbol/state/config denylist only. It does not prove every remaining policy/caller is removed: the independent removal reviews must inspect actual code and diffs before rebuilding. Product compilation/collection and old public bindings are deliberately not repaired in this commit. No replacement authority, stub or fallback is installed.
 
 Independent algorithm tests retained include `test_shell_server`, `test_shell_output_spill`, `test_shell_workspace_state`, `test_connected_storage_boundary`, `test_connected_storage_adapters`, `test_source_transfer_async_lifecycle`, `test_transfer_progress_persistence` and all sandbox/confinement suites. Old coupled fixtures may require fresh public-contract setup after rebuilding; this is not permission to discard their underlying behaviors.
+
+## Removal-review corrections
+
+The first review's source remains69b19afd; the following are removal corrections, not replacement runtime implementation.
+
+- Deleted the JSON-backed MessageIntentStore and its steer claim/consumption paths. Future-message payload contracts remain data-only; queue behavior must be rebuilt over Core (M07), rather than preserved as another canonical store.
+- Deleted the mutable Question map installation, old blocking/async fields, alternate queue answers, forwarded mirrors and dictionary-driven input/admission helpers. Permission/external-input validation and payload types remain; their required arbitration/routing behavior is explicit in P02/P03. The data-only mcp_task_input interaction marker is retained because it describes an external request, not another execution lifecycle.
+- Deleted default-executor queue/lock wait calls in the Codex and Claude bridges, without replacing them before this review gate. Their production provider implementations remain; async bridging is required under A05/Q8.
+- Restored StepRecorder.carry_over verbatim from5475042f. It is independent general context restoration; its existing recovery tests remain. It does not copy successor transcripts.
+- Removed old TurnRunner policy, settlement callback scaffolding and cutoff; retained admission error/value contracts for the fresh conversation owner. Removed residual task-store installation/deletion callbacks and obsolete client claims/accepted-handle maps.
+- Preserved actual provider polling inside execute_transfer. This is the actual Globus transfer algorithm executed by a native worker, not a generic Task poller. Deleted blanket SourceStore.recover and its call, native_request admission holds and generic task mirror fields.
+- Preserved ordinary MCP configuration cache invalidation, now named mcp_configuration_revision. Its source refresh path also serves ordinary configured MCP updates. Removed special relay factories/capability projection and federation-only diagnostics.
+- Expanded the guard to retired module paths, definitions, relative imports, old store/Question/admission bindings, provider default-pool waits and obsolete configuration expectations. No source alias/fallback exemption was added.
+- Deleted additional dedicated relay/invoker/spawn/wait suites and generated fixtures. Retained independent digest/artifact/security tests; coupled setup is not a license to drop their behavior.
+
+Native configuration contract: gact.tasks.{shell,storage}.{url,queue,concurrency} maps to CLIO_TASKS_{SHELL,STORAGE}_{URL,QUEUE,CONCURRENCY}. Default concurrency10 each; memory URLmemory://. Default memory queue clio-<root>-<incarnation>; persistent queue clio-<root>. Explicit queue overrides remain unchanged. No queue identity is reconstructed from a PID.
+
+Removal guard regression cases were added. The first normal pytest invocation failed in the global Core setup because its long Windows IPC path would not bind. The fixture's existing CLIO_TEST_RUNTIME_ROOT=C:/ct-r2 setting let Core start on the next invocation; that case then failed before its test body on the intentionally removed watch_step binding. Neither attempt is a guard-test pass or Tasks acceptance. Both owned run directories were removed by fixture teardown; the old failed daemon and pytest PIDs are absent. No fixture/timeout/guard was disabled.
+
+Standalone removal guard passes. Scoped Ruff check/format pass. Source remains intentionally broken and local; both reviewers must check this corrected removal before rebuilding. The c1 review cache remains manual-only after automatic-review rejection; no retry or absence claim.
+
+The corrected removal also deletes the obsolete loop-inbox buffer, Question-retention and JSON future-message-cap settings and generated descriptions. The new Core pending-only mailbox contract remains unlimited by default. Configuration-note dictionary syntax is checked independently; no broken metadata is required for the deliberate runtime break.

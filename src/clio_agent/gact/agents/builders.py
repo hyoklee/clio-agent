@@ -514,13 +514,10 @@ def _dynamic_agent_tools(
     if missing_tools and not resolved_tools:  # nothing to degrade to -- brick TYPED (#1228 D3)
         logger.warning(
             "custom_agent_tools_unavailable diagnostics agent=%s available=%s "
-            "executor=%s federation=%s mount_failures=%s",
+            "executor=%s mount_failures=%s",
             agent_def.id,
             sorted(available_tools)[:30],
             type(tool_executor).__name__ if tool_executor is not None else None,
-            "present"
-            if getattr(base_agent, "_remote_mcp_federation", None) is not None
-            else "ABSENT",
             mount_failures,
         )
         raise _UnsupportedSessionAgent(

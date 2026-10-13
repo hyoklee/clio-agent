@@ -209,7 +209,6 @@ async def await_connect_slot(
     next_surface_at = 0.0  # surface immediately on the first queued attempt
     surface_gap = _SURFACE_INITIAL_S
     while True:
-        acquired = await loop.run_in_executor(None, slots.acquire, True, poll_interval_s)
         if abandon is not None and abandon.is_set():
             if acquired:
                 slots.release()  # phantom acquire: hand it right back, unused

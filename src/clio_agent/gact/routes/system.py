@@ -438,7 +438,6 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
     @app.get("/v1/capabilities", response_model=Capabilities)
     async def capabilities(request: Request) -> Capabilities | JSONResponse:
         bearer_enabled = bool(getattr(app.state, "bearer_token", None))
-        task_store_durable = task_record_store_is_durable(app)
         response = Capabilities(
             contract_version=CONTRACT_VERSION,
             versions=build_version_info(),
@@ -576,10 +575,6 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
             auth=AuthInfo(
                 schemes=["trust_socket", "bearer"] if bearer_enabled else ["trust_socket"],
                 current="bearer" if bearer_enabled else "trust_socket",
-            ),
-            relay=relay_capabilities(
-                getattr(app.state, "relay_tool_status", None)
-                or getattr(app.state, "relay_runtime_status", None)
             ),
         )
         # Catalog discovery may initialize installed blueprint snapshots. Keep all

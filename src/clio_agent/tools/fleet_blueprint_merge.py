@@ -157,7 +157,7 @@ def stamp_fresh_fleet(
     executor: Any,
     *,
     blueprint_id: str,
-    federation_epoch: Any,
+    mcp_configuration_revision: Any,
     declared_specs: dict[str, Any],
 ) -> None:
     """Stamp a freshly-rebuilt fleet's bookkeeping (agent.py's rebuild path).
@@ -182,7 +182,7 @@ def stamp_fresh_fleet(
 
     _stamp(executor, "_clio_mounted_blueprint_id", blueprint_id)
     _stamp(executor, "_clio_mounted_blueprint_ids", {blueprint_id} if blueprint_id else set())
-    _stamp(executor, "_clio_federation_epoch", federation_epoch)
+    _stamp(executor, "_clio_mcp_configuration_revision", mcp_configuration_revision)
     _stamp(executor, "_clio_namespace_specs", declared_specs)
     inner = getattr(executor, "_async_executor", None)
     if inner is not None:

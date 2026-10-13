@@ -12,7 +12,6 @@ from clio_agent.gact.mcp_user_configuration import (
     McpUserConfigurationError,
     configured_web_remote_url,
 )
-from clio_agent.gact.message_intents import MessageIntentStore
 from clio_agent.gact.resource_custody import ResourceStore
 from clio_agent.gact.resource_delivery import ResourceDeliveryStore
 from clio_agent.gact.resource_processing import (
@@ -34,7 +33,6 @@ def initialize_composer_state(app: Any, session_store_path: Path) -> None:
     """
 
     state_root = session_store_path.parent
-    app.state.message_intents = MessageIntentStore(path=state_root / "message_intents.json")
     max_resource_bytes = conf.resolve(
         "resources.max_bytes",
         env="CLIO_RESOURCE_MAX_BYTES",
@@ -150,128 +148,6 @@ def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
     app.state.turn_runner.request_input_admission(session_id)
 
 
-async def promote_queue_head_async(app: Any, deps: Any, session_id: str) -> None:
-    """Attempt one auto-promotion of ``session_id``'s queue head.
-
-    Re-driven from every point where the queue can become promotable: a turn
-    going idle and any queued-message mutation. Never starts work on a busy or
-    autostart-suspended session.
-    """
-
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-    from clio_agent.gact.message_intents import RevisionConflictError  # noqa: PLC0415
-    from clio_agent.gact.message_submission import accept_message_async  # noqa: PLC0415
-    from clio_agent.gact.types import PostMessageRequest  # noqa: PLC0415
-
-    session = app.state.sessions.get(session_id)
-    if (
-        session is None
-        or execution_held(app, session_id)
-        or session.metadata.get("automatic_input_hold")
-        or app.state.turn_runner.busy(session_id)
-    ):
-        return
-    if any(
-        row.session_id == session_id and row.status == "pending" and row.response_mode == "blocking"
-        for row in app.state.user_questions.values()
-    ):
-        return
-    if session_autostart_suspended(app, session_id):
-        # Typed, not silent: the queue is intact and the user's next explicit
-        # send lifts the suspension.
-        queued = app.state.message_intents.list_queued(session_id)
-        if queued:
-            logger.info(
-                "queued-message auto-promotion suspended session=%s reason=session_cancelled "
-                "retained=%d",
-                session_id,
-                len(queued),
-            )
-        return
-
-    async def _accept(row: Any) -> Any:
-        return await accept_message_async(
-            app,
-            deps,
-            session_id,
-            PostMessageRequest(
-                parts=row.parts,
-                model=row.model,
-                metadata=row.metadata,
-                client_message_id=row.client_message_id,
-                idempotency_key=row.idempotency_key or row.id,
-                delivery="start",
-                behavior=row.behavior,
-            ),
-        )
-
-    # A racing edit/reorder bumps the head's revision between the read and the
-    # promote. That is a stale READ, not a failure of intent: re-read the head
-    # and retry ONCE rather than freezing the queue until an unrelated turn ends.
-    for attempt in range(2):
-        queued = app.state.message_intents.list_queued(session_id)
-        if not queued:
-            _clear_blocked_head(app, session_id)
-            return
-        head = queued[0]
-        if _head_is_blocked(app, session_id, head):
-            # Already reported terminal at this exact revision. Re-attempting it on
-            # every idle transition and every queue mutation would fail identically
-            # forever, re-emitting the same failure; the row is durable and the
-            # client has been told which one to edit.
-            return
-        try:
-            promoted = await app.state.message_intents.promote_queued_async(
-                session_id, head.id, head.revision, _accept
-            )
-        except RevisionConflictError:
-            if attempt == 0:
-                continue
-            logger.warning(
-                "queued-message auto-promotion lost the revision race twice session=%s message=%s",
-                session_id,
-                head.id,
-            )
-            _publish_promotion_failure(
-                app, session_id, head.id, "queue_revision_conflict", cause={}, terminal=False
-            )
-            return
-        except Exception as exc:  # noqa: BLE001 - retain the durable row and emit typed failure
-            logger.exception(
-                "queued-message auto-promotion failed session=%s message=%s",
-                session_id,
-                head.id,
-            )
-            cause = _typed_cause(exc)
-            terminal = _is_terminal_cause(cause)
-            _publish_promotion_failure(
-                app,
-                session_id,
-                head.id,
-                "queue_auto_promotion_failed",
-                cause=cause,
-                terminal=terminal,
-            )
-            if terminal:
-                _mark_head_blocked(app, session_id, head, cause)
-            return
-        if promoted is None:
-            return
-        _clear_blocked_head(app, session_id)
-        _deleted, (ack, status_code) = promoted
-        app.state.bus.publish(
-            Event(
-                type="queued_message.promoted",
-                session_id=session_id,
-                payload={
-                    "queued_message_id": head.id,
-                    "acceptance": ack.model_dump(),
-                    "status_code": status_code,
-                    "automatic": True,
-                },
-            )
-        )
-        return
 
 
 def _blocked_heads(app: Any) -> dict[str, dict[str, Any]]:

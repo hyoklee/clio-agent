@@ -24,35 +24,6 @@ class TaskResultValidationError(ValueError):
     """A settled backend result violated the original declared output contract."""
 
 
-class TaskAwareClient(Client):
-    """Parse local acceptance separately while preserving backend result validation."""
-
-    async def _resolve_claimed_result(
-        self, name: str, result: mcp_types.Result, read_timeout_seconds: float | None
-    ) -> mcp_types.CallToolResult:
-        claim = self._claim_by_model[type(result)]
-        final = await claim.resolve(
-            result,
-            ClaimContext(
-                session=self.session, tool_name=name, read_timeout_seconds=read_timeout_seconds
-            ),
-        )
-        if not isinstance(final, AcceptedTaskResult) and not final.is_error:
-            await self.session.validate_tool_result(name, final)
-        return final
-
-    async def _parse_call_tool_result(
-        self, name: str, result: mcp_types.CallToolResult, raise_on_error: bool = False
-    ) -> CallToolResult:
-        if isinstance(result, AcceptedTaskResult):
-            return CallToolResult(
-                content=result.content,
-                structured_content=result.structured_content,
-                meta=result.meta,
-                data=result.structured_content,
-                is_error=False,
-            )
-        return await super()._parse_call_tool_result(name, result, raise_on_error)
 
 
 def accepted_result(receipt: dict[str, Any]) -> AcceptedTaskResult:

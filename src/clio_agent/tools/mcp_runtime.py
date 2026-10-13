@@ -476,10 +476,7 @@ def make_mcp_client(
 
     if isinstance(target, Mapping):
         target = _normalize_mapping_target(target)
-    if client_cls is None:
-        from clio_agent.tools.task_receipt import TaskAwareClient  # noqa: PLC0415
 
-        client_cls = TaskAwareClient
 
     # Resolve once for SDK clients. Custom client adapters retain responsibility
     # for their own target interpretation. Extensions must hold the same transport

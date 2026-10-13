@@ -1,0 +1,36 @@
+{
+  "review_cache_c1": {
+    "root": "D:/Temp/clio-task-plan-review-5475042f-c1",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "review_process": {
+      "pid": 59888,
+      "birth": 1791915882.8518937,
+      "controller_exit_code": 0,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
+  },
+  "guard_test_setup": [
+    {
+      "pid": 37108,
+      "runtime_root": "C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/.clio-agent.pytest-runtime/run-37108-a830bf4acb0a",
+      "test_body_executed": false,
+      "outcome": "private Core setup could not bind long Windows IPC path",
+      "core_pid": 9312,
+      "core_exit": "0x1",
+      "root_absence_verified": true,
+      "processes_absent": true
+    },
+    {
+      "pid": 40356,
+      "runtime_root": "C:/ct-r2/run-40356-5a707d0e4b3a",
+      "test_body_executed": false,
+      "outcome": "Core started; product setup failed on intentionally removed watch_step binding",
+      "fixture_parent_absent": true,
+      "processes_ended": true
+    }
+  ]
+}

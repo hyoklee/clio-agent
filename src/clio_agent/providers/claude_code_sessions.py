@@ -557,7 +557,6 @@ class _StreamClientEntry:
         kind: Any = None
         try:
             while True:
-                kind, val = await caller_loop.run_in_executor(None, chunks.get)
                 if kind is _STREAM_END:
                     break
                 if kind == "exc":

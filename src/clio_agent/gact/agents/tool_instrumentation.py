@@ -141,28 +141,8 @@ def tool_call_metadata_resolver(
     return TOOL_CALL_METADATA_RESOLVERS.get(str(name or ""))
 
 
-def _wait_agent_tasks_call_metadata(app: Any, args: Mapping[str, Any]) -> dict[str, Any]:
-    """Resolve ``wait_agent_tasks``'s STARTED-phase ``waited_tasks`` display rows.
-
-    Clean-wire rule (P5): resolved from the agent-task registry AT CALL TIME
-    (static spawn-time facts) so the UI never renders a raw task-id array.
-    ``task_ids`` is model-authored: a bare STRING used to reach
-    ``list(args.get("task_ids") or [])``, which iterates its CHARACTERS —
-    fabricating one bogus row per character. Anything that isn't absent or a
-    genuine list of string ids gets a typed marker instead of invented rows;
-    the tool's own argument validation surfaces the real error.
-    """
 
 
-    task_ids = args.get("task_ids")
-    if task_ids is None:
-        task_ids = []
-    if isinstance(task_ids, list) and all(isinstance(item, str) for item in task_ids):
-        return {"waited_tasks": resolve_waited_task_rows(app, task_ids)}
-    return {"waited_tasks": [{"invalid": "task_ids_not_a_list"}]}
-
-
-register_tool_call_metadata_resolver("wait_agent_tasks", _wait_agent_tasks_call_metadata)
 
 # create_artifact's own ``content`` (+ batch ``artifacts[].content``) is a
 # model-authored DELIVERABLE, not call evidence — the minted artifact file +

@@ -252,7 +252,6 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         # Route namespaced calls lazily to one backend; keep the composite fallback.
         self._namespace_servers = dict(namespace_servers) if namespace_servers else {}
         self._namespace_clients: dict[str, Any] = {}
-        self._accepted_task_handles: set[str] = set()
         self._close_requested = False
         self._namespace_ctxs: dict[str, Any] = {}
         # Seed direct factories from the gateway; namespace merging extends this registry.
@@ -274,7 +273,6 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         self._timeout = timeout
         self._tool_timeouts = cleaned_tool_timeouts
         self._uncertain_mutating_timeouts: dict[str, float] = {}
-        self._pending_task_submissions: set[asyncio.Future[Any]] = set()
         self._uncertain_mutating_timeouts_lock = threading.Lock()
         self._client_factory = cast(ClientFactory, client_factory or make_mcp_client)
         self._client_ctx: MCPClientProtocol | None = None
@@ -573,8 +571,6 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         if self._closed:
             return
         self._close_requested = True
-        if (self._accepted_task_handles or self._pending_task_submissions) and not force:
-            return
         self._closed = True
 
         for namespace, ctx in list(self._namespace_ctxs.items()):

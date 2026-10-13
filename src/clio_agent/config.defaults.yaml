@@ -390,8 +390,12 @@ agent_tasks.max_concurrent: 3
 # guarantee exactly-once effects. Queue identity defaults are generated per root.
 gact.tasks.shell.url: "memory://"
 gact.tasks.shell.concurrency: 10
+# gact.tasks.shell.queue:  # default clio-shell-<incarnation> for memory, clio-shell otherwise
 gact.tasks.storage.url: "memory://"
 gact.tasks.storage.concurrency: 10
+# gact.tasks.storage.queue:  # default clio-storage-<incarnation> for memory, clio-storage otherwise
+# Environment: CLIO_TASKS_SHELL_URL / QUEUE / CONCURRENCY and
+# CLIO_TASKS_STORAGE_URL / QUEUE / CONCURRENCY override the corresponding keys.
 
 # 0/unset is unlimited. Positive capacity counts undelivered peer messages,
 # including staged inputs; human input/controls and accepted results are exempt.
@@ -664,49 +668,15 @@ gact.ledger_retention.turn_attempts.hard: 4000
 # protecting still-pending turn attempts.
 gact.ledger_retention.turn_attempts.max: 2000
 
-# CLIO_LEDGER_USER_QUESTIONS_HARD  (int)  <- src/clio_agent/gact/runtime/retention.py
-# Absolute ceiling on the in-memory ask-user question ledger; past this even
-# a still-pending question is force-evicted oldest-first.
-gact.ledger_retention.user_questions.hard: 4000
-
-# CLIO_LEDGER_USER_QUESTIONS_MAX  (int)  <- src/clio_agent/gact/runtime/retention.py
-# Soft cap on the ask-user question ledger where terminal
-# (answered/cancelled/expired) rows evict first, protecting questions
-# somebody is still waiting on.
-gact.ledger_retention.user_questions.max: 2000
-
 # CLIO_LIVE_EDGE_STREAMING  (bool)  <- src/clio_agent/gact/live_edge.py
 # Experimental flag enabling live-edge SSE atom sealing (default off); only
 # meaningful with the S5 atoms regime, leave off normally.
 gact.live_edge_streaming: false
 
-# CLIO_GACT_LOOP_INBOX_MAX_EVENTS  (int)  <- src/clio_agent/gact/loop_inbox.py
-# Per-session bound on buffered mid-turn wakes (child completions and user
-# steers) before the oldest recoverable one is evicted; raise for very fan-
-# out-heavy turns.
-gact.loop_inbox.max_events: 64
-
 # CLIO_GACT_MEDIA_CACHE_BYTES  (int)  <- src/clio_agent/gact/agents/media_cache.py
 # Bytes of rehydrated tool media (viewed images, PDFs) kept for reuse across
 # context reads, least recently used first out; lower to bound memory.
 gact.media_cache_bytes: 67108864
-
-# CLIO_GACT_MAX_ACCEPTANCES_PER_SESSION  (int)  <- src/clio_agent/gact/message_intents.py
-# Per-session cap on retained message-acceptance records used for idempotent
-# POST replay; raise for clients that retry over long windows, lower to
-# shrink the intent store.
-gact.message_intents.max_acceptances_per_session: 200
-
-# CLIO_GACT_MAX_QUEUED_MESSAGES_PER_SESSION  (int)  <- src/clio_agent/gact/message_intents.py
-# Per-session cap on durable queued (future) messages; a create past it is
-# REFUSED with a typed 429, never evicted. Raise for heavy queue use.
-gact.message_intents.max_queued_per_session: 100
-
-# CLIO_GACT_MAX_SETTLED_STEERS_PER_SESSION  (int)  <- src/clio_agent/gact/message_intents.py
-# Per-session cap on retained SETTLED (consumed/cancelled) pending-steer
-# rows; undelivered steers are never evicted. Lower to shrink the intent
-# store.
-gact.message_intents.max_settled_steers_per_session: 100
 
 # CLIO_RESIDENT_LEDGERS_TTL_S  (float)  <- src/clio_agent/gact/resident_ledgers.py
 # Seconds an idle session's in-memory transcript ledger may sit resident

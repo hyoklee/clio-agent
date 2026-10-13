@@ -172,17 +172,13 @@ class TransferOperation(StorageModel):
     bytes_done: int = 0
     bytes_total: int = 0
     native_job_id: str | None = None
-    native_request: dict[str, object] | None = None
     selected_paths: list[str] | None = None
     cancel_requested: bool = False
     error: str | None = None
     applied_paths: list[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=now)
     updated_at: str = Field(default_factory=now)
-    task_handle: str = ""
-    owner_session_id: str = ""
     description: str = ""
-    invocation_id: str = ""
     entries_done: int = 0
     manifest_id: str | None = None
     index_signature: str = ""

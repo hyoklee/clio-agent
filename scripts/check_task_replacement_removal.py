@@ -109,34 +109,82 @@ REMOVED_MODULES = frozenset(
 )
 REMOVED_NAMES = frozenset(
     {
+        "refresh_session_inputs",
+        "release_claim",
         "AgentTaskRegistry",
-        "CoreTaskRecordStore",
-        "InMemoryTaskRecordStore",
-        "NativeTaskHost",
-        "CoreTaskJournal",
+        "_MAX_DRAIN_PASSES",
+        "register_async_process_routes",
+        "discard_pending",
         "TaskSupervisor",
-        "TaskLease",
-        "drive_task_to_terminal",
-        "_poll_until_terminal",
-        "drive_with_lease",
-        "consume_notification",
-        "install_agent_task_registry",
+        "accept_pending",
         "persist_agent_task",
+        "configure_relay_expert_invokers",
+        "waiting_presentation",
+        "task_record_store_is_durable",
+        "_poll_until_terminal",
+        "CoreTaskJournal",
+        "_build_tasks",
+        "CoreTaskRecordStore",
+        "agent_task_executor_for_depth",
+        "TaskLease",
         "seed_agent_task",
         "install_agent_task_executor",
-        "shutdown_agent_task_executors",
-        "agent_task_executor_for_depth",
         "install_mcp_task_event_publisher",
+        "mark_input_committed",
+        "restore_user_questions",
+        "app_task_store",
+        "MessageIntentStore",
+        "set_assignment_disposition",
+        "InMemoryTaskRecordStore",
+        "drive_with_lease",
+        "build_wait_tool",
+        "claim_pending",
+        "mark_consumed",
+        "relay_capabilities",
+        "consume_notification",
+        "shutdown_agent_task_executors",
         "register_relay_routes",
-        "register_async_process_routes",
-        "configure_relay_expert_invokers",
+        "drive_task_to_terminal",
+        "install_session_task_store",
+        "restore_pending_ask_user_questions",
+        "stage_session_inputs",
+        "_wait_agent_tasks_call_metadata",
         "refresh_relay_tool_surfaces_if_stale",
+        "construct_agent_with_relay",
+        "accept_session_run",
+        "NativeTaskHost",
+        "install_agent_task_registry",
     }
 )
 REMOVED_STATE = frozenset(
-    {"agent_task_registry", "core_task_journal", "task_supervisor", "agent_task_executors"}
+    {
+        "_pending_task_submissions",
+        "_remote_mcp_federation",
+        "_accepted_task_handles",
+        "_clio_federation_epoch",
+        "task_store",
+        "_relay_federation_epoch",
+        "user_questions",
+        "agent_task_registry",
+        "task_supervisor",
+        "agent_task_executors",
+        "core_task_journal",
+        "automatic_input_hold",
+        "pending_loop_inbox_drain",
+    }
 )
-REMOVED_CONFIG = frozenset({"agents.child_forward_deadline_s", "CLIO_CHILD_FORWARD_DEADLINE_S"})
+REMOVED_CONFIG = frozenset(
+    {
+        "agents.child_forward_deadline_s",
+        "CLIO_CHILD_FORWARD_DEADLINE_S",
+        "gact.ledger_retention.user_questions.",
+        "CLIO_LEDGER_USER_QUESTIONS_",
+        "gact.loop_inbox.max_events",
+        "CLIO_GACT_LOOP_INBOX_MAX_EVENTS",
+        "gact.message_intents.max_queued_per_session",
+        "CLIO_GACT_MAX_QUEUED_MESSAGES_PER_SESSION",
+    }
+)
 # No unfinished branch interface has a compatibility exemption.
 COMPATIBILITY_ALIASES: frozenset[str] = frozenset()
 
@@ -147,6 +195,9 @@ def violations(root: Path = ROOT) -> list[str]:
     for path in sorted((root / "src" / "clio_agent").rglob("*.py")):
         source = path.read_text(encoding="utf-8-sig")
         relative = path.relative_to(root).as_posix()
+        module_name = ".".join(path.relative_to(root / "src").with_suffix("").parts)
+        if module_name in REMOVED_MODULES:
+            findings.append(f"{relative}: retired module path restored")
         try:
             tree = ast.parse(source)
         except SyntaxError as error:
@@ -154,7 +205,13 @@ def violations(root: Path = ROOT) -> list[str]:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom):
-                candidates = {node.module, *(f"{node.module}.{alias.name}" for alias in node.names)}
+                imported = node.module or ""
+                if node.level:
+                    package = module_name.split(".")[:-1]
+                    imported = ".".join(
+                        package[: len(package) + 1 - node.level] + ([imported] if imported else [])
+                    )
+                candidates = {imported, *(f"{imported}.{alias.name}" for alias in node.names)}
                 for module in candidates & REMOVED_MODULES:
                     findings.append(f"{relative}:{node.lineno}: removed import {module}")
             elif isinstance(node, ast.Import):
@@ -163,15 +220,43 @@ def violations(root: Path = ROOT) -> list[str]:
                         findings.append(f"{relative}:{node.lineno}: removed import {alias.name}")
             if isinstance(node, ast.Name) and node.id in REMOVED_NAMES:
                 findings.append(f"{relative}:{node.lineno}: retired symbol {node.id}")
+            elif (
+                isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef))
+                and node.name in REMOVED_NAMES
+            ):
+                findings.append(f"{relative}:{node.lineno}: retired definition {node.name}")
             elif isinstance(node, ast.Attribute) and node.attr in REMOVED_NAMES | REMOVED_STATE:
                 findings.append(f"{relative}:{node.lineno}: retired attribute {node.attr}")
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
                 if node.value in REMOVED_STATE | REMOVED_CONFIG | REMOVED_MODULES:
                     findings.append(f"{relative}:{node.lineno}: retired binding {node.value}")
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+                blocked_call = None
+                if node.func.attr == "run_in_executor" and len(node.args) > 1:
+                    if isinstance(node.args[0], ast.Constant) and node.args[0].value is None:
+                        blocked_call = node.args[1]
+                elif node.func.attr == "to_thread" and node.args:
+                    blocked_call = node.args[0]
+                if relative.startswith("src/clio_agent/providers/") and isinstance(
+                    blocked_call, ast.Attribute
+                ):
+                    if blocked_call.attr in {"get", "acquire"}:
+                        findings.append(
+                            f"{relative}:{node.lineno}: provider queue/lock wait on default executor"
+                        )
     defaults = root / "src" / "clio_agent" / "config.defaults.yaml"
     for number, line in enumerate(defaults.read_text(encoding="utf-8").splitlines(), 1):
         if line.startswith("relay.") or any(key in line for key in REMOVED_CONFIG):
             findings.append(f"{defaults.relative_to(root)}:{number}: removed driver/relay config")
+    for relative in ("docs/ENVIRONMENT.md", "scripts/config_key_notes.py"):
+        path = root / relative
+        if not path.exists():
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if "CLIO_RELAY_" in line or any(key in line for key in REMOVED_CONFIG):
+                findings.append(
+                    f"{relative}:{number}: obsolete driver/relay configuration expectation"
+                )
     return sorted(set(findings))
 
 

@@ -97,10 +97,6 @@ KEY_NOTES: dict[str, str] = {
         "Max child agent-task threads run concurrently at one spawn depth; raise to widen fan-out "
         "on a big host, lower to cap CPU use."
     ),
-    "agents.child_forward_deadline_s": (
-        "Seconds before an unattended parent's forwarded HITL question auto-fails the waiting "
-        "child task; defaults to the elicitation window."
-    ),
     "agents.default_blueprint_id": (
         "Installed marketplace Agent Blueprint a fresh deployment bootstraps and binds as its "
         "default (base-agent: one react root over CLIO's native workspace tools); set it to ship a "
@@ -440,14 +436,6 @@ KEY_NOTES: dict[str, str] = {
         "Maximum rows one pending-interaction projection returns, newest first; the projection is "
         "a full scan of four ledgers, so raise it only when a deep spawn tree genuinely needs more."
     ),
-    "gact.ledger_retention.user_questions.hard": (
-        "Absolute ceiling on the in-memory ask-user question ledger; past this even a still-pending "
-        "question is force-evicted oldest-first."
-    ),
-    "gact.ledger_retention.user_questions.max": (
-        "Soft cap on the ask-user question ledger where terminal (answered/cancelled/expired) rows "
-        "evict first, protecting questions somebody is still waiting on."
-    ),
     "gact.ledger_retention.native_delivery_notes.max": (
         "Unsettled native-attachment decline notes buffered before the oldest are dropped; each "
         "is normally consumed by the turn that planned it, so raise only if a deployment leaves "
@@ -509,25 +497,9 @@ KEY_NOTES: dict[str, str] = {
         "Experimental flag enabling live-edge SSE atom sealing (default off); only meaningful with "
         "the S5 atoms regime, leave off normally."
     ),
-    "gact.loop_inbox.max_events": (
-        "Per-session bound on buffered mid-turn wakes (child completions and user steers) before "
-        "the oldest recoverable one is evicted; raise for very fan-out-heavy turns."
-    ),
     "gact.media_cache_bytes": (
         "Bytes of rehydrated tool media (viewed images, PDFs) kept for reuse across context "
         "reads, least recently used first out; lower to bound memory."
-    ),
-    "gact.message_intents.max_acceptances_per_session": (
-        "Per-session cap on retained message-acceptance records used for idempotent POST replay; "
-        "raise for clients that retry over long windows, lower to shrink the intent store."
-    ),
-    "gact.message_intents.max_queued_per_session": (
-        "Per-session cap on durable queued (future) messages; a create past it is REFUSED with a "
-        "typed 429, never evicted. Raise for heavy queue use."
-    ),
-    "gact.message_intents.max_settled_steers_per_session": (
-        "Per-session cap on retained SETTLED (consumed/cancelled) pending-steer rows; undelivered "
-        "steers are never evicted. Lower to shrink the intent store."
     ),
     "gact.resident_ledgers.idle_ttl_s": (
         "Seconds an idle session's in-memory transcript ledger may sit resident before release "
@@ -1027,102 +999,6 @@ KEY_NOTES: dict[str, str] = {
     "resources.upload_chunk_bytes": (
         "Largest single resumable-upload chunk the server accepts, enforced while the body "
         "streams; raise for fewer round-trips on fast links, lower to bound per-request memory."
-    ),
-    "relay.cluster": (
-        "This deployment's registered relay cluster identity; set it to route jarvis/remote-MCP "
-        "tool calls to a specific cluster."
-    ),
-    "relay.console.enabled": (
-        "Whether the live job console tail folds into the task record; disable to stop the "
-        "periodic console pull entirely."
-    ),
-    "relay.console.pull_limit_bytes": (
-        "Bytes requested per poll of a relay job's console log (clamped to relay's 1 MiB cap); "
-        "raise to refill a window faster after a gap."
-    ),
-    "relay.console.stream": (
-        'Which relay log stream ("console", "stdout", "stderr") the console fold pulls from; '
-        "switch to stdout/stderr only for diagnostics."
-    ),
-    "relay.console.tail_cap_bytes": (
-        "Byte cap on the rolling console tail kept on the task record for UI display; raise for "
-        "more scrollback, lower to shrink records."
-    ),
-    "relay.fetch_max_bytes": (
-        "Max artifact size in bytes this deployment transfers inline via relay_fetch_artifact; "
-        "raise for larger downloads, lower to block big ones."
-    ),
-    "relay.http_url": (
-        "Relay job/artifact HTTP endpoint URL; set together with relay.mcp_url to enable the relay "
-        "transport."
-    ),
-    "relay.install_surface.attention_idle_seconds": (
-        'Seconds of no subprocess output before a relay CLI job is relabeled "needs operator '
-        'attention" (e.g. SSH/2FA); tune for slow networks.'
-    ),
-    "relay.install_surface.bounded_timeout_seconds": (
-        "Timeout in seconds for a fast, non-SSH-dialing clio-relay CLI sub-probe "
-        "(register/doctor/status); raise if calls time out on a slow host."
-    ),
-    "relay.install_surface.cli_path": (
-        "Explicit path to the deployed clio-relay executable, overriding PATH discovery; set when "
-        "it's installed somewhere non-standard."
-    ),
-    "relay.install_surface.job_retention_hard_cap": (
-        "Hard ceiling on tracked relay CLI jobs before even a running one is force-evicted; raise "
-        "on a box driving many concurrent relay ops."
-    ),
-    "relay.install_surface.job_retention_max": (
-        "Soft cap on tracked relay CLI jobs; past this the oldest terminal job is evicted first to "
-        "bound memory."
-    ),
-    "relay.install_surface.long_operation_timeout_seconds": (
-        "Runaway timeout (seconds) for SSH-dialing relay CLI ops (bootstrap, session "
-        "start/attach/teardown); raise for slow SSH targets."
-    ),
-    "relay.install_surface.output_tail_bytes": (
-        "Byte cap on the retained stdout/stderr tail from a relay CLI subprocess call; raise for "
-        "more diagnostic context on failures."
-    ),
-    "relay.install_surface.parsed_document_max_bytes": (
-        "Byte buffer size for parsing a whole clio-relay CLI JSON document; raise if a large "
-        "session document is failing to parse."
-    ),
-    "relay.jarvis_door_namespace": (
-        'The relay-registered JARVIS tool-name namespace prefix; set to "" to use relay\'s older '
-        "compact-name door instead."
-    ),
-    "relay.mcp_url": (
-        "Relay MCP control endpoint URL; set together with relay.http_url to enable relay tool "
-        "discovery."
-    ),
-    "relay.owner_session_generation_id": (
-        "Generation id paired with relay.owner_session_id identifying this deployment's owned "
-        "relay session; set both together or neither."
-    ),
-    "relay.owner_session_id": (
-        "This deployment's owned relay HTTP-API session id, required with "
-        "owner_session_generation_id when the relay door is session-bound."
-    ),
-    "relay.remote_agent.mcp_config_path": (
-        "Path to the MCP config file used by a remote relay-placed agent invocation; set to give "
-        "spawned agents a specific tool config."
-    ),
-    "relay.remote_agent.model": (
-        "Model identifier used for agents spawned onto a relay cluster; override to run remote "
-        "relay agents on a non-default model."
-    ),
-    "relay.remote_agent.prompt_path": (
-        "Path to the prompt file for a relay-cluster-placed remote agent; required (with the "
-        "cluster) for relay agent spawning to work."
-    ),
-    "relay.remote_agent.workdir": (
-        "Working directory used for a relay-placed remote agent invocation; set to point remote "
-        "execution at a specific cluster directory."
-    ),
-    "relay.tool_surfaces_ttl_seconds": (
-        "Seconds a discovered relay tool catalog is trusted before re-discovery; lower for faster "
-        "pickup of new tools, raise to cut overhead."
     ),
     "runtime.api_base": (
         "Base URL of a running gact API used by the doctor/status live health probe; empty "

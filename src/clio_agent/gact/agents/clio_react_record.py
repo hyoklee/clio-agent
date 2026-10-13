@@ -437,6 +437,84 @@ class StepRecorder:
         self.head_id = self._write("user", content, 0, "")
 
 
+    def carry_over(self, ledger: Sequence[Any]) -> None:
+        """Restore an absent scope from its recorded operations, once.
+
+        Transcript reconstruction is used only when no scope operations exist;
+        it preserves recorded tool parts and declares any missing information.
+        """
+        if self.arc is None or self.arc.has_segments(self.session, self.scope):
+            return
+        if "#epoch:" in self.scope:
+            # Fresh context is another scope in the existing Core hierarchy.
+            # Its first input must not reconstruct the predecessor's transcript.
+            return
+        from clio_agent.gact.conversation_projection import (  # noqa: PLC0415
+            model_context_messages,
+        )
+
+        rows = list(model_context_messages(list(ledger)))
+        # The loop records this forward's question itself. Earlier unanswered
+        # questions (e.g. a branch/rewind at a user message) remain model context.
+        if self.turn_id:
+            rows = [row for row in rows if _field(row, "id") != self.turn_id]
+        elif rows and _field(rows[-1], "role") == "user":
+            rows.pop()  # standalone callers supply the current question at the tail
+        from clio_agent.gact.agents.context_recovery import (
+            context_identity,
+            recorded_context,
+            recovery_details,
+            transcript_context,
+        )
+
+        restored = recorded_context(self.session, self.scope, ledger)
+        if restored:
+            fold_steps([s for s in restored if s.status == "live"])
+            identity = context_identity(self.arc, self.session, self.scope)
+            if self.arc.restore_empty_context(self.session, self.scope, restored):
+                note = f"Restored {len(restored)} recorded context segments for {self.scope} from the durable trace, including tool inputs and results."
+                self._write(
+                    "user", {"text": note, "source": "earlier_turns", "actor": "algorithm"}, 0, ""
+                )
+                emit_injection(
+                    "earlier_turns", recovery_details(note, restored), agent_id=self.expert_id
+                )
+                from clio_agent.gact import context
+                from clio_agent.gact.runtime.globals import _emit_semantic_event
+
+                app = context.active_app()
+                if app is not None:
+                    _emit_semantic_event(
+                        app,
+                        self.session,
+                        "context.recovered",
+                        turn_id=self.turn_id,
+                        status="completed",
+                        payload={
+                            **identity,
+                            "source": "durable_trace",
+                            "restored_segments": len(restored),
+                        },
+                    )
+            return
+        restored = transcript_context(self.session, self.scope, rows)
+        carried = len(restored)
+        if carried:
+            fold_steps(restored)
+            if not self.arc.restore_empty_context(self.session, self.scope, restored):
+                return
+            note = (
+                f"Reconstructed {carried} earlier context records from the saved transcript, "
+                "including recorded tool inputs and results. Provider continuation state is unavailable."
+            )
+            self._write(
+                "user", {"text": note, "source": "earlier_turns", "actor": "algorithm"}, 0, ""
+            )
+            emit_injection(
+                "earlier_turns", recovery_details(note, restored), agent_id=self.expert_id
+            )
+
+
     def injections(self, injections: Sequence[tuple[str, str]]) -> None:
         """Record CLIO's additions for this turn, each once.
 

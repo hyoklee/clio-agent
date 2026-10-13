@@ -167,7 +167,6 @@ def _prepare_turn_off_loop_steps(
         job()
 
 
-    accept_session_run(state.app, state.sid, state.user_msg)
 
     _check_not_cancelled(state)
     _emit_semantic_event(
@@ -224,7 +223,6 @@ def _prepare_turn_off_loop_steps(
             )
             if block
         ]
-        state.injections.extend(stage_session_inputs(state.app, state.sid))
     except _ContextFileAccessError as exc:
         state.enriched_text = state.user_text
         state.context_file_error = exc.error_info
@@ -292,32 +290,9 @@ def prepare_turn_off_loop(state: "TurnState", *, update_retry_attempt: Callable[
     except BaseException as exc:  # noqa: BLE001 - carry the REAL cause to the guard
         state.prologue_error = exc
         state.prologue_phase = PROLOGUE_FAILED
-        if state.user_msg.metadata.get("task_completion_wake") or state.user_msg.metadata.get(
-            "agent_mail_wake"
-        ):
-            state.app.state.sessions.update(
-                state.sid,
-                metadata_patch={
-                    "automatic_input_hold": {
-                        "reason": "input_prepare_failed",
-                        "turn_id": state.turn_id,
-                        "detail": str(exc),
-                    }
-                },
-            )
         raise
     else:
         state.prologue_phase = PROLOGUE_COMPLETED
-        if outcome != "proceed":
-            state.app.state.sessions.update(
-                state.sid,
-                metadata_patch={
-                    "automatic_input_hold": {
-                        "reason": f"input_policy_{outcome}",
-                        "turn_id": state.turn_id,
-                    }
-                },
-            )
         return outcome
 
 

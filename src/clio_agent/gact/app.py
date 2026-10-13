@@ -1174,7 +1174,6 @@ def build_app(
     # iowarp/clio-agent#333: structured ask-user protocol. The
     # orchestrator/backend can publish pending questions; clients
     # answer or cancel them through explicit endpoints.
-    app.state.user_questions = {}
     # iowarp/clio-agent#333: retry attempts preserve provenance for
     # retry-with-notes/model flows without mutating the original turn.
     app.state.turn_attempts = {}
@@ -2158,8 +2157,6 @@ def build_app(
     register_permission_and_interaction_routes(app, deps)
     # Restore durable question history before legacy/native pending snapshots;
     # Recovery mutates live state, so it belongs in app assembly.
-    restore_user_questions(app)
-    restore_pending_ask_user_questions(app)
 
     # ---- DELETE /v1/sessions/{sid}/messages/{id} + /v1/messages/{id} -
     # Both message-delete routes (session-scoped + the global, optionally

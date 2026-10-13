@@ -76,7 +76,6 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_BLUEPRINT_SOURCE_CLONE_TIMEOUT_S` | `gact.blueprint_source.clone_timeout_s` | float | `30.0` | `src/clio_agent/gact/agent_blueprint_sources.py` |
 | `CLIO_BLUEPRINT_SOURCE_LS_REMOTE_TIMEOUT_S` | `gact.blueprint_source.ls_remote_timeout_s` | float | `10.0` | `src/clio_agent/gact/blueprint_update_check.py` |
 | `CLIO_CAPTURE_REASONING` | `runtime.capture_reasoning` | bool | `true` | `src/clio_agent/gact/usage.py` |
-| `CLIO_CHILD_FORWARD_DEADLINE_S` | `agents.child_forward_deadline_s` | float | `DEFAULT_ELICITATION_TIMEOUT_S` _(computed)_ | `src/clio_agent/gact/child_forward.py` |
 | `CLIO_CLAUDE_CODE_AUTH_STATUS_TIMEOUT_S` | `providers.claude_code.auth_status_timeout_s` | float | `20.0` | `src/clio_agent/providers/model_discovery/claude_code.py` |
 | `CLIO_CLAUDE_CODE_MAX_CONCURRENT_PROCESSES` | `providers.claude_code.max_concurrent_processes` | float | `4.0` | `src/clio_agent/providers/claude_code_stream_bounds.py` |
 | `CLIO_CLAUDE_CODE_MAX_PRECEDE_CONNECTS` | `providers.claude_code.max_precede_connects` | float | `2.0` | `src/clio_agent/providers/claude_code_stream_bounds.py` |
@@ -128,10 +127,6 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_GACT_BEARER_TOKEN` | `gact.auth.bearer_token` | str | _(unset)_ | `src/clio_agent/gact/auth.py` |
 | `CLIO_GACT_CANCELLATION_GRACE_S` | `gact.cancellation_grace_s` | float | `0.1` | `src/clio_agent/gact/routes/session_cancellation.py` |
 | `CLIO_GACT_CORS_ORIGINS` | `gact.cors.origins` | str | _(unset)_ | `src/clio_agent/gact/cors.py` |
-| `CLIO_GACT_LOOP_INBOX_MAX_EVENTS` | `gact.loop_inbox.max_events` | int | `64` | `src/clio_agent/gact/loop_inbox.py` |
-| `CLIO_GACT_MAX_ACCEPTANCES_PER_SESSION` | `gact.message_intents.max_acceptances_per_session` | int | `200` | `src/clio_agent/gact/message_intents.py` |
-| `CLIO_GACT_MAX_QUEUED_MESSAGES_PER_SESSION` | `gact.message_intents.max_queued_per_session` | int | `100` | `src/clio_agent/gact/message_intents.py` |
-| `CLIO_GACT_MAX_SETTLED_STEERS_PER_SESSION` | `gact.message_intents.max_settled_steers_per_session` | int | `100` | `src/clio_agent/gact/message_intents.py` |
 | `CLIO_GACT_MEDIA_CACHE_BYTES` | `gact.media_cache_bytes` | int | `67108864` | `src/clio_agent/gact/agents/media_cache.py` |
 | `CLIO_GACT_TURN_TIMEOUT_S` | `limits.turn_timeout_s` | float | `900.0` | `src/clio_agent/gact/_params.py` |
 | `CLIO_GOAL_JUDGE_MODEL` | `goal.judge_model` | str | _(unset)_ | `src/clio_agent/gact/goal.py` |
@@ -156,8 +151,6 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_LEDGER_STREAM_FALLBACK_NOTES_MAX` | `gact.ledger_retention.stream_fallback_notes.max` | int | `32` | `src/clio_agent/gact/stream_fallbacks.py` |
 | `CLIO_LEDGER_TURN_ATTEMPTS_HARD` | `gact.ledger_retention.turn_attempts.hard` | int | `4000` | `src/clio_agent/gact/runtime/retention.py` |
 | `CLIO_LEDGER_TURN_ATTEMPTS_MAX` | `gact.ledger_retention.turn_attempts.max` | int | `2000` | `src/clio_agent/gact/runtime/retention.py` |
-| `CLIO_LEDGER_USER_QUESTIONS_HARD` | `gact.ledger_retention.user_questions.hard` | int | `4000` | `src/clio_agent/gact/runtime/retention.py` |
-| `CLIO_LEDGER_USER_QUESTIONS_MAX` | `gact.ledger_retention.user_questions.max` | int | `2000` | `src/clio_agent/gact/runtime/retention.py` |
 | `CLIO_LIVE_EDGE_STREAMING` | `gact.live_edge_streaming` | bool | `false` | `src/clio_agent/gact/live_edge.py` |
 | `CLIO_LMSTUDIO_FLASH_ATTENTION` | `lm.lmstudio_flash_attention` | bool | `true` | `src/clio_agent/gact/routes/providers.py` |
 | `CLIO_LM_API_BASE` | `lm.api_base` | str | _(unset)_ | `src/clio_agent/config.py` |
@@ -230,30 +223,6 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_PROVIDER_NATIVE_IMAGE_URL_ALLOWLIST` | `providers.native_image_url_allowlist` | str | _(unset)_ | `src/clio_agent/providers/claude_code_multimodal.py` |
 | `CLIO_REACT_EXTRACT_AFTER_STEPS` | `agents.react_extract.after_steps` | int | `3` | `src/clio_agent/gact/agents/clio_react_extract.py` |
 | `CLIO_REACT_EXTRACT_ENABLED` | `agents.react_extract.enabled` | bool | `true` | `src/clio_agent/gact/agents/clio_react_extract.py` |
-| `CLIO_RELAY_CLI_PATH` | `relay.install_surface.cli_path` | str | _(unset)_ | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_CLUSTER` | `relay.cluster` | str | _(unset)_ | `src/clio_agent/tools/relay_factory.py` |
-| `CLIO_RELAY_CONSOLE_ENABLED` | `relay.console.enabled` | bool | `true` | `src/clio_agent/tools/relay_console.py` |
-| `CLIO_RELAY_CONSOLE_PULL_LIMIT_BYTES` | `relay.console.pull_limit_bytes` | int | `65536` | `src/clio_agent/tools/relay_console.py` |
-| `CLIO_RELAY_CONSOLE_STREAM` | `relay.console.stream` | str | `console` | `src/clio_agent/tools/relay_console.py` |
-| `CLIO_RELAY_CONSOLE_TAIL_CAP_BYTES` | `relay.console.tail_cap_bytes` | int | `8192` | `src/clio_agent/tools/relay_console.py` |
-| `CLIO_RELAY_FETCH_MAX_BYTES` | `relay.fetch_max_bytes` | int | `104857600` | `src/clio_agent/tools/relay_artifact_fetch.py` |
-| `CLIO_RELAY_HTTP_URL` | `relay.http_url` | str | _(unset)_ | `src/clio_agent/tools/relay_factory.py` |
-| `CLIO_RELAY_INSTALL_ATTENTION_IDLE_S` | `relay.install_surface.attention_idle_seconds` | float | `45.0` | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_INSTALL_BOUNDED_TIMEOUT_S` | `relay.install_surface.bounded_timeout_seconds` | float | `60.0` | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_INSTALL_JOB_RETENTION_HARD_CAP` | `relay.install_surface.job_retention_hard_cap` | int | `400` | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_INSTALL_JOB_RETENTION_MAX` | `relay.install_surface.job_retention_max` | int | `200` | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_INSTALL_LONG_OP_TIMEOUT_S` | `relay.install_surface.long_operation_timeout_seconds` | float | `900.0` | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_INSTALL_OUTPUT_TAIL_BYTES` | `relay.install_surface.output_tail_bytes` | int | `4096` | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_INSTALL_PARSED_DOCUMENT_MAX_BYTES` | `relay.install_surface.parsed_document_max_bytes` | int | `262144` | `src/clio_agent/tools/relay_cli_runner.py` |
-| `CLIO_RELAY_JARVIS_DOOR_NAMESPACE` | `relay.jarvis_door_namespace` | str | `remote_jarvis` | `src/clio_agent/tools/relay_factory.py` |
-| `CLIO_RELAY_MCP_URL` | `relay.mcp_url` | str | _(unset)_ | `src/clio_agent/tools/relay_factory.py` |
-| `CLIO_RELAY_OWNER_SESSION_ID` | `relay.owner_session_id` | str | _(unset)_ | `src/clio_agent/tools/relay_factory.py` |
-| `CLIO_RELAY_REMOTE_AGENT_MCP_CONFIG_PATH` | `relay.remote_agent.mcp_config_path` | str | _(unset)_ | `src/clio_agent/gact/relay_wiring.py` |
-| `CLIO_RELAY_REMOTE_AGENT_MODEL` | `relay.remote_agent.model` | str | _(unset)_ | `src/clio_agent/gact/relay_wiring.py` |
-| `CLIO_RELAY_REMOTE_AGENT_PROMPT_PATH` | `relay.remote_agent.prompt_path` | str | _(unset)_ | `src/clio_agent/gact/relay_wiring.py` |
-| `CLIO_RELAY_REMOTE_AGENT_WORKDIR` | `relay.remote_agent.workdir` | str | _(unset)_ | `src/clio_agent/gact/relay_wiring.py` |
-| `CLIO_RELAY_SESSION_GENERATION_ID` | `relay.owner_session_generation_id` | str | _(unset)_ | `src/clio_agent/tools/relay_factory.py` |
-| `CLIO_RELAY_TOOL_SURFACES_TTL_SECONDS` | `relay.tool_surfaces_ttl_seconds` | int | `300` | `src/clio_agent/gact/relay_wiring.py` |
 | `CLIO_RELEASE_MANIFEST_URL` | `system.release_manifest_url` | str | `https://github.com/iowarp/clio-agent/releases/latest/download/latest-lite.json` | `src/clio_agent/gact/routes/latest_release.py` |
 | `CLIO_RESIDENT_LEDGERS_MAX` | `gact.resident_ledgers.max_sessions` | int | `512` | `src/clio_agent/gact/resident_ledgers.py` |
 | `CLIO_RESIDENT_LEDGERS_MAX_BYTES` | `gact.resident_ledgers.max_bytes` | int | `536870912` | `src/clio_agent/gact/resident_ledgers.py` |
@@ -360,7 +329,6 @@ These deliberately bypass the config store (a shared file must not be able to re
 | `CLIO_OBSIDIAN_HEADLESS_CLI` | unmigrated | `src/clio_agent/gact/storage/obsidian_sync.py` |
 | `CLIO_ONLYOFFICE_JWT_SECRET` | unmigrated | `src/clio_agent/gact/documents/editors.py` |
 | `CLIO_ONLYOFFICE_URL` | unmigrated | `src/clio_agent/gact/documents/editors.py` |
-| `CLIO_RELAY_API_TOKEN` | secret | `src/clio_agent/tools/relay_factory.py`, `src/clio_agent/tools/relay_transport.py` |
 | `CLIO_RUNTIME_STATE_DIR` | unmigrated | `src/clio_agent/arc/clio_core_config.py`, `src/clio_agent/arc/clio_core_effective_runtime.py` |
 | `CLIO_SECRET_VARIABLES` | unmigrated | `src/clio_agent/gact/infrastructure/node_service.py` |
 | `CLIO_SEMANTIC_TRACE_BACKEND` | unmigrated | `src/clio_agent/provenance_config.py` |

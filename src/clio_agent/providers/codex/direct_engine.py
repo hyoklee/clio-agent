@@ -281,7 +281,6 @@ class AsyncCodexDirectEngine:
         outcome = CallOutcome(_RETRY_LOG, request, listened=listened)
         try:
             while True:
-                item = await loop.run_in_executor(None, events.get)
                 if item is _END:
                     outcome.ended()
                     break

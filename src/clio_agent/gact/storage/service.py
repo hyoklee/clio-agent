@@ -75,7 +75,6 @@ class StorageService:
         # client-supplied username. Future multi-user auth supplies distinct subjects.
         self.principal = "os-owner:" + getpass.getuser()
         self.target_source: Callable[[SourceRecord], SshTargetSource | SftpSource] | None = None
-        self.store.recover()
 
     def set_link_access(
         self, record: SourceRecord, access: Literal["read_only", "publish_later", "write_through"]
@@ -226,8 +225,6 @@ class StorageService:
             operation.source_id == record.source.id
             and (
                 operation.state in {"queued", "running"}
-                or bool(operation.native_request)
-                and operation.state == "interrupted"
             )
             for operation in self.store.list("operation", TransferOperation)
         ):

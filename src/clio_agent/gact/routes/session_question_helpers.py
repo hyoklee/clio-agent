@@ -64,23 +64,8 @@ def question_already_resolved(sid: str, question_id: str) -> HTTPException:
     )
 
 
-def pending_user_questions(app: "FastAPI", sid: str) -> list[UserQuestion]:
-    """Every still-pending question owned by one session."""
-
-    return [
-        row
-        for row in app.state.user_questions.values()
-        if row.session_id == sid and row.status == "pending"
-    ]
 
 
-def question_surface_ids(app: "FastAPI", sid: str) -> set[str]:
-    """Surfaces whose presentation and response lifecycle belong to questions."""
-    return {
-        str(row.metadata["a2ui_surface_id"])
-        for row in app.state.user_questions.values()
-        if row.session_id == sid and row.metadata.get("a2ui_surface_id")
-    }
 
 
 def normalize_question_options(req: CreateUserQuestionRequest) -> list[UserQuestionOption]:

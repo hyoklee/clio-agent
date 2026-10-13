@@ -116,14 +116,6 @@ def register_message_intent_routes(app: FastAPI, deps: "GactDeps") -> None:
 
         promote_queue_head(app, deps, sid)
 
-    @app.get("/v1/sessions/{sid}/pending-steers")
-    async def list_pending_steers(sid: str) -> dict[str, Any]:
-        require_session(sid)
-        return {
-            "pending_steers": [
-                row.model_dump() for row in app.state.message_intents.list_pending(sid)
-            ]
-        }
 
     @app.get("/v1/sessions/{sid}/message-state")
     async def get_message_state(sid: str) -> dict[str, Any]:
@@ -156,38 +148,6 @@ def register_message_intent_routes(app: FastAPI, deps: "GactDeps") -> None:
             "dropped_events": app.state.bus.dropped_total(sid),
         }
 
-    @app.delete("/v1/sessions/{sid}/pending-steers/{message_id}")
-    async def cancel_pending_steer(sid: str, message_id: str) -> dict[str, Any]:
-        """Cancel one accepted-but-undelivered steer.
-
-        Cancels a ``pending`` steer AND one a consumer merely ``claimed`` — a
-        claim is a delivery reservation that can outlive its consumer, so it must
-        never make a steer permanently uncancellable. Only a steer already
-        ``consumed`` (the model has seen it) or already ``cancelled`` refuses,
-        with the settled state named in the 409.
-        """
-
-        require_session(sid)
-
-        try:
-            await run_off_loop(withdraw_human_feedback, app, sid, message_id)
-        except ValueError as exc:
-            raise HTTPException(status_code=409, detail={"error": str(exc)}) from exc
-        cancelled = app.state.message_intents.cancel_pending(sid, message_id)
-        if cancelled is None:
-            current = app.state.message_intents.get_pending(sid, message_id)
-            if current is None:
-                raise HTTPException(status_code=404, detail="pending steer not found")
-            raise HTTPException(
-                status_code=409,
-                detail={"error": "steer_already_settled", "state": current.state},
-            )
-        messages = [row for row in app.state.messages.get(sid, []) if row.id != message_id]
-        await run_off_loop(deps.replace_session_messages, app, sid, messages)  # #1334
-        payload = {"message_id": message_id, "session_id": sid}
-        publish("message.cancelled", sid, payload)
-        publish("pending_steer.cancelled", sid, payload)
-        return payload
 
     @app.get("/v1/sessions/{sid}/queued-messages")
     async def list_queued_messages(sid: str) -> dict[str, Any]:

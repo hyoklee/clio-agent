@@ -451,7 +451,6 @@ async def _run_turn_in_background(
         # stages content only; the Core recipient-input boundary acknowledges it
         # immediately before each model call, including subsequent iterations.
 
-        await _run_turn_setup_off_loop(state, lambda: refresh_session_inputs(state))
 
         # #767 Phase B Slice 5: agent resolve -> module build -> streamed/sync
         # forward -> expert-pack delegation settle lives in ``turn_forward.py``.
@@ -694,8 +693,6 @@ def _start_background_user_turn(
         )
         if automatic_injection is not None:
             message_role = "system"
-        if message_role == "user" and sess.metadata.get("automatic_input_hold"):
-            app.state.sessions.update(sid, metadata_patch={"automatic_input_hold": None})
         if message_role == "system":
             model_metadata = (
                 retained_model if retained_model is not None else retained_model_metadata(app, sid)

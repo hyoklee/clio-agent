@@ -272,7 +272,6 @@ class SessionStore:
         # (:meth:`settle_interaction_times`); until then the field reads "" (unknown).
         self._interaction_unknown: set[str] = set()
         self._lifecycle_observer: Callable[[str, Session], None] | None = None
-        self.task_store: Any | None = None
         if path is not None:
             self._load()
             # #1115: a PERSISTENT session registry is the durable home for in-flight
@@ -284,7 +283,6 @@ class SessionStore:
             # Retained so ``build_app`` can publish an APP-SCOPED handle: the
             # process-global the install also sets is overwritten by the next
             # registry constructed in this process.
-            self.task_store = install_session_task_store(self)
 
     # ---- lifecycle ----------------------------------------------------
 
@@ -436,21 +434,10 @@ class SessionStore:
         with self._lock:
             existing = self._sessions.get(sid)
             existed = existing is not None
-            # #1115: a deleted session may still own LIVE remote SEP-2663 tasks. The
-            # deletion is never blocked or delayed by them, but the rows are captured
-            # here so they can be cancelled best-effort and migrated to the task
-            # store's holding path instead of vanishing with the session.
-            task_rows: dict[str, Any] = (
-                dict((existing.metadata or {}).get("mcp_tasks") or {})
-                if existing is not None
-                else {}
-            )
             self._sessions.pop(sid, None)
             if existed:
                 self._flush()
         if existed:
-            if self.task_store is not None:
-                self.task_store.on_session_deleted(sid, task_rows)
             # P2.3 SessionEnd lifecycle hook (observation): fires exactly once, only
             # when a session actually existed and was removed.
             from clio_agent.gact.hooks import dispatch_session_end  # noqa: PLC0415

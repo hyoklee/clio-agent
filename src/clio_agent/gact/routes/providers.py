@@ -589,15 +589,6 @@ def register_providers_routes(app: FastAPI, deps: "GactDeps") -> None:
                 # copy is cheap (no expert re-wiring), preserving the hot-swap latency
                 # win over a from-scratch rebuild.
                 agent = _copy.copy(existing)
-            else:
-                # Build the first agent directly with the selected, handshake-applied provider
-                # (never a throwaway ambient-default LM Studio agent first); the ARC is awaited
-                # off-loop, sharing any in-flight boot construction (server_boot).
-                agent = await construct_agent_with_relay(
-                    app,
-                    arc=await process_arc_off_loop(app),
-                    provider_config=cfg,
-                )
             agent.rebind_lms(cfg)  # both paths need this cfg bound; done once, unconditionally
         except HTTPException:
             # Argonne auth path raises a structured 401 above; keep its

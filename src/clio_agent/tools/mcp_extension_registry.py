@@ -205,7 +205,6 @@ def _build_agent_elicitation(client_cls: Any, target: Any) -> MCPExtensionDeclar
 #: memoized) since a builder may depend on per-construction state
 #: (``tasks_declaration``'s ``client_cls``/``target``-derived backend identity).
 _ACTIVE_ENTRIES: tuple[Callable[[Any, Any], MCPExtensionDeclaration], ...] = (
-    _build_tasks,
     _build_ui,
     _build_agent_elicitation,
 )

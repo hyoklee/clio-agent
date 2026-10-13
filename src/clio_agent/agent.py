@@ -481,23 +481,23 @@ class ClioAgent(dspy.Module):
             # DEFAULT executor while the workspace's resident one kept serving
             # a toolless (or partial) snapshot, so the ACL bricked with
             # federation=present.
-            current_epoch = getattr(self, "_relay_federation_epoch", 0)
+            current_epoch = getattr(self, "_mcp_configuration_revision", 0)
             executor_epoch = (
-                getattr(executor, "_clio_federation_epoch", current_epoch)
+                getattr(executor, "_clio_mcp_configuration_revision", current_epoch)
                 if executor is not None
                 else current_epoch
             )
-            federation_switched = (
+            configuration_switched = (
                 executor is not None and not stale and executor_epoch != current_epoch
             )
             reaper = getattr(self, "_workspace_reaper", None)
             if (
-                federation_switched
+                configuration_switched
                 and reaper is not None
                 and reaper.defer_restart_if_active(root, executor, leases)
             ):
                 # #1244: never close under a live turn; reaper drains at idle.
-                federation_switched = False
+                configuration_switched = False
             # Additive blueprint semantics (#1244): an unmounted blueprint
             # merges in below; ``blueprint_id == ""`` reuses the fleet as-is.
             from clio_agent.tools.fleet_blueprint_merge import (  # noqa: PLC0415
@@ -509,12 +509,12 @@ class ClioAgent(dspy.Module):
             blueprint_missing = (
                 executor is not None
                 and not stale
-                and not federation_switched
+                and not configuration_switched
                 and bool(blueprint_id)
                 and blueprint_id not in _mounted_blueprint_ids(executor)
             )
-            if executor is None or stale or federation_switched:
-                if federation_switched:
+            if executor is None or stale or configuration_switched:
+                if configuration_switched:
                     assert executor is not None
                     from clio_agent.runtime import trace  # noqa: PLC0415
 
@@ -529,7 +529,7 @@ class ClioAgent(dspy.Module):
                         )
                     trace.event(
                         "TOOLS",
-                        "workspace_fleet_federation_epoch_evict root=%s from_epoch=%s to_epoch=%s",
+                        "workspace_fleet_mcp_configuration_revision_evict root=%s from_epoch=%s to_epoch=%s",
                         root,
                         executor_epoch,
                         current_epoch,
@@ -586,7 +586,7 @@ class ClioAgent(dspy.Module):
                 stamp_fresh_fleet(
                     executor,
                     blueprint_id=blueprint_id,
-                    federation_epoch=current_epoch,
+                    mcp_configuration_revision=current_epoch,
                     declared_specs=declared_specs,
                 )
                 executors[root] = executor

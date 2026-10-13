@@ -33,38 +33,8 @@ from clio_agent.gact.agents.native_presenters_memory import (  # noqa: F401
 Presenter = Callable[[Mapping[str, Any], Any, Any], dict[str, Any]]
 
 
-def build_wait_tool(callback: Callable[..., Any]) -> Any:
-    """Declare the committed collector's model interface and observer result view."""
-    from clio_agent.gact.agents.tool_instrumentation import native_tool
-
-    return native_tool(
-        callback,
-        name="wait_agent_tasks",
-        presentation="wait",
-        domain="agents",
-        presentation_start=waiting_presentation,
-        desc=callback.__doc__,
-        title="Wait",
-        args={"task_ids": {"type": "array", "description": "Task ids returned by spawn."}},
-    )
 
 
-def waiting_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
-    """Identify the requested children while the single committed wait is open."""
-    from clio_agent.gact import context
-
-    task_ids = args.get("task_ids", [])
-    if not isinstance(task_ids, list) or not all(isinstance(tid, str) for tid in task_ids):
-        return {"summary": "Waiting for tasks", "blocks": []}
-    app = context.active_app()
-    rows = resolve_waited_task_rows(app, task_ids) if app is not None else []
-    names = [str(row.get("name") or row.get("task_id") or "Task") for row in rows]
-    return {
-        "summary": "Waiting for " + ", ".join(names or task_ids)
-        if task_ids
-        else "No tasks requested",
-        "blocks": [],
-    }
 
 
 def _record(value: Any) -> dict[str, Any]:

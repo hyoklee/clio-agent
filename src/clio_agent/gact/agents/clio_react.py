@@ -472,18 +472,6 @@ class _Loop:
         _raise_if_cancelled()
         return None
 
-    def _arrivals(self) -> bool:
-        """Take in what arrived since the last step (user steers, finished children)."""
-        from clio_agent.gact import context as _ctx  # noqa: PLC0415
-
-        state = getattr(_ctx.active_app(), "state", None)
-        drain = getattr(state, "pending_loop_inbox_drain", None)
-        if drain is None:
-            return False
-        arrived = drain()
-        if arrived:
-            self.recorder.arrivals(arrived, max(self.step, 0))
-        return bool(arrived)
 
     def _context(self) -> list[Message]:
         return self.recorder.read_steps()

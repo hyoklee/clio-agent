@@ -68,14 +68,6 @@ _REASONS = {
 _LOCK = threading.Lock()
 
 
-def latest_question(app: Any, variants_id: str) -> Any:
-    """The newest question asked for run ``variants_id`` (``None``: none surfaced)."""
-    rows = [
-        q
-        for q in getattr(app.state, "user_questions", {}).values()
-        if (q.metadata or {}).get("variants_id") == variants_id
-    ]
-    return max(rows, key=lambda q: str(q.created_at or "")) if rows else None
 
 
 def _pointer(app: Any, sid: str) -> Mapping[str, Any] | None:
@@ -143,18 +135,6 @@ def _release(
     if isinstance(pointer, Mapping) and pointer.get("variants_id") == variants_id:
         patch[PENDING_META] = {}
     asked = metadata.get(PENDING_ASK_USER_META)
-    if (
-        question_id
-        and isinstance(asked, Mapping)
-        and asked.get("question_id") == question_id
-        and not asked.get("resolved_status")
-    ):
-        question = app.state.user_questions.get(question_id)
-        patch[PENDING_ASK_USER_META] = {
-            **asked,
-            "resolved_status": str(getattr(question, "status", "") or "cancelled"),
-            "resolved_at": _now(),
-        }
     if closed is not None:
         patch[NOTICE_META] = {
             "variants_id": closed.variants_id,
@@ -206,44 +186,9 @@ def _supersede(app: Any, sid: str, variants_id: str, message_id: str) -> None:
             _release(app, sid, variants_id, "", None)  # closed elsewhere: a stale pointer
         return
     question = latest_question(app, variants_id)
-    if question is not None and question.status == "pending":
-        claimed = claim_question_transition(
-            app,
-            question.id,
-            "cancelled",
-            metadata_patch={
-                "variant_resolution": SUPERSEDED,
-                "superseded_by_message_id": message_id,
-            },
-        )
-        if claimed is not None:
-            still = sorted(
-                (
-                    q
-                    for q in app.state.user_questions.values()
-                    if q.session_id == claimed.session_id
-                    and q.status == "pending"
-                    and q.response_mode == "blocking"
-                ),
-                key=lambda q: str(q.created_at or ""),
-            )
-            app.state.sessions.update(
-                claimed.session_id,
-                metadata_patch={"pending_user_question_id": still[0].id if still else ""},
-            )
-            app.state.bus.publish(
-                Event(
-                    type="user_question.cancelled",
-                    session_id=claimed.session_id,
-                    payload=claimed.model_dump(exclude_none=True),
-                )
-            )
-        question = app.state.user_questions.get(question.id)
     if question is None:
         # The drafting turn ended before its question surfaced: nothing can pick now.
         close_run(app, sid, variants_id, SUPERSEDED, superseded_by=message_id)
-    elif question.status in {"cancelled", "expired"}:
-        close_for_question(app, question)
     # answered: the answer resumes the run at the agent's forward.
 
 

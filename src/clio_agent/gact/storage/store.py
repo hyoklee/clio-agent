@@ -112,18 +112,3 @@ class SourceStore:
                 (operation.id, operation.model_dump_json()),
             )
         return operation
-
-    def recover(self) -> None:
-        """Mark interrupted local transfers; native jobs remain queryable by their job IDs."""
-        for operation in self.list("operation", TransferOperation):
-            if operation.state in {"queued", "running"}:
-                self.update_operation(
-                    operation.id, state="interrupted", error="CLIO restarted; resume the transfer."
-                )
-                if operation.kind == "indexing":
-                    continue  # Its previously published manifest remains intact.
-                source = self.get("source", operation.source_id, SourceRecord)
-                source.source = source.source.model_copy(
-                    update={"materialization": "stale" if source.manifest_id else "failed"}
-                )
-                self.put("source", source.source.id, source)

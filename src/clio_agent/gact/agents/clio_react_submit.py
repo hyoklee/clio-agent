@@ -107,14 +107,6 @@ def submit_tool(signature: Any) -> dspy.Tool:
         if missing:
             raise ValueError(f"Missing required final output field(s): {', '.join(missing)}")
         disposition = kwargs.pop("assignment_disposition", None)
-        if disposition is not None:
-            from clio_agent.gact.context import active_app, active_session_id, active_turn_id
-
-            app = active_app()
-            if app is not None:
-                set_assignment_disposition(app, active_session_id(), active_turn_id(), disposition)
-            elif disposition not in {"yield", "complete"}:
-                raise ValueError("assignment_disposition must be yield or complete")
         return {n: kwargs[n] if n in kwargs else defaults[n] for n in names}
 
     return ClioNativeTool(
