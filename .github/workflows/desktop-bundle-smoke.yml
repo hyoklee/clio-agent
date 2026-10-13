@@ -81,7 +81,8 @@ jobs:
           const uiRevision = revision(ui);
           const projectVersion = fs.readFileSync(path.join(root, 'pyproject.toml'), 'utf8').match(/^version\s*=\s*"(\d+\.\d+\.\d+)/m)?.[1];
           if (!projectVersion) throw new Error('Missing agent version for development Desktop');
-          const version = `${projectVersion}-dev.${agentRevision.slice(0, 8)}`;
+          // Prefix the revision so an all-digit hash with a leading zero is valid SemVer.
+          const version = `${projectVersion}-dev.g${agentRevision.slice(0, 8)}`;
           fs.writeFileSync(path.join(ui, 'brand.config.local.json'), JSON.stringify({profile: 'clio', brandingRoot: path.join(root, 'branding')}));
           fs.cpSync(path.join(root, 'branding/clio/icons'), path.join(ui, 'desktop/src-tauri/icons'), {recursive: true});
           fs.cpSync(path.join(root, 'branding/clio/installer'), path.join(ui, 'desktop/src-tauri/installer'), {recursive: true});
