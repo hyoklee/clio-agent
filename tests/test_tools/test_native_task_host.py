@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -216,6 +217,7 @@ async def test_native_reference_cannot_run_another_task(native_app: Any) -> None
         with tool_workspace_context(native_app.workspace):
             receipt = await host.submit("_definition", {"value": 3})
         await host.settle(receipt["handle"])
+        assert host.client is not None
         replay = await call_tool_task(
             host.client,
             "_definition",
@@ -298,11 +300,25 @@ async def test_native_shell_survives_product_bridge_close(
     host = native_app.state.native_task_hosts["shell"]
     command, path = _shell_process_command(native_app.workspace)
     tokens = [context.set_app(native_app), context.set_session_id(native_app.session.id)]
+    observations: list[dict[str, Any]] = []
+
+    def observe(
+        name: str,
+        arguments: Mapping[str, Any],
+        phase: str | None,
+        error: str | None = None,
+        result: Any = None,
+    ) -> None:
+        if phase == "completed" and error is None:
+            observations.append(result)
+
     bridge = None
     handle = ""
     try:
         with tool_workspace_context(native_app.workspace):
-            bridge = await asyncio.to_thread(SyncMCPToolExecutor, get_gateway(), timeout=1.0)
+            bridge = await asyncio.to_thread(
+                SyncMCPToolExecutor, get_gateway(), timeout=1.0, tool_observer=observe
+            )
             receipt = json.loads(
                 await asyncio.to_thread(
                     bridge.call_tool, "shell_bash", {"command": command, "background": True}
@@ -312,6 +328,9 @@ async def test_native_shell_survives_product_bridge_close(
         identities = await asyncio.wait_for(_process_identities(path), 8)
         assert receipt["accepted"] and _same_process_alive(identities)
         assert not host.observers[handle].done()
+        # Provider adapters use this public MCP projection for the model's
+        # observation. A valid legacy string alone cannot prove delivery.
+        assert observations[-1]["structuredContent"] == receipt
         await asyncio.to_thread(bridge.close)
         assert native_app.state.mcp_app_loop.is_running()
         assert host.client is not None and _same_process_alive(identities)

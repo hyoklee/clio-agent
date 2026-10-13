@@ -119,6 +119,8 @@ def main() -> int:
             "PYTHONPATH": str(CORE / "src"),
             "PYTHONDONTWRITEBYTECODE": "1",
             "CLIO_AGENT_HOME": str(proof / "clio-home"),
+            "CLIO_KIT_CACHE_DIR": str(proof / "clio-kit-cache"),
+            "UV_CACHE_DIR": str(proof / "uv-cache"),
             "CODEX_HOME": str(proof / "private-codex"),
             "WEB_STATE_DIR": str(proof / "web-state"),
             "CLIO_ALLOWED_ROOTS": str(workspace),
