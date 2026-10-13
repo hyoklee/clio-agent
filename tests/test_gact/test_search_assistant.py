@@ -126,6 +126,7 @@ async def test_policy_denial_and_partial_content_are_reported(
         "secret-token\n" + "A" * (2 * 1024 * 1024), encoding="utf-8"
     )
     (tmp_path / "data" / "large.txt").write_text("A" * (512 * 1024 + 20), encoding="utf-8")
+    (tmp_path / "data" / "image.bin").write_bytes(b"binary\x00payload")
     outside = tmp_path / "outside.txt"
     outside.write_text("outside", encoding="utf-8")
     with pytest.raises(HTTPException) as denied:
@@ -140,6 +141,13 @@ async def test_policy_denial_and_partial_content_are_reported(
     assert not result["hits"]
     assert any(item.get("unreadable_or_policy_denied_files", 0) for item in result["limitations"])
     assert any(item.get("prefix_only_files", 0) for item in result["limitations"])
+    assert any(
+        item.get("binary_or_unsupported_encoding_files", 0) for item in result["limitations"]
+    )
+    binary = await search_connected_service(
+        app, query="image.bin", workspace_id=workspace.id, kind="files"
+    )
+    assert binary["hits"][0]["href"] == f"workspace-file://{workspace.id}/image.bin"
     read = await read_search_source(app, workspace_id=workspace.id, path="large.txt")
     assert read["truncated"] is True
 

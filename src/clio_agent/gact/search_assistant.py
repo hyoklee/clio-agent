@@ -55,12 +55,15 @@ def session_href(
     return href
 
 
-def file_href(workspace_id: str, path: str, *, line: int = 1, find: str = "") -> str:
+def file_href(workspace_id: str, path: str, *, line: int | None = None, find: str = "") -> str:
     """Return a workspace-scoped file link with an optional exact text destination."""
-    return (
-        f"workspace-file://{quote(workspace_id, safe='')}/{quote(path.replace(chr(92), '/'), safe='/')}?"
-        + urlencode({"line": line, "find": find}, quote_via=quote)
-    )
+    href = f"workspace-file://{quote(workspace_id, safe='')}/{quote(path.replace(chr(92), '/'), safe='/')}"
+    params = {
+        key: value
+        for key, value in {"line": str(line) if line is not None else "", "find": find}.items()
+        if value
+    }
+    return href + ("?" + urlencode(params, quote_via=quote) if params else "")
 
 
 def _read_prefix(app: FastAPI, workspace_id: str, path: str) -> tuple[str | None, bool, int]:
@@ -179,6 +182,7 @@ async def search_connected_service(
                 )
             prefix_count = 0
             denied_count = 0
+            unsupported_count = 0
             for entry in walk.entries:
                 if entry.get("type") != "file":
                     continue
@@ -192,13 +196,14 @@ async def search_connected_service(
                         )
                         budget -= consumed
                         prefix_count += int(truncated)
+                        unsupported_count += int(value is None)
                         text = value or ""
                     except (HTTPException, OSError):
                         denied_count += 1
                 if not name_match and needle not in text.casefold():
                     continue
                 position = text.casefold().find(needle)
-                line = text[:position].count("\n") + 1 if position >= 0 else 1
+                line = text[:position].count("\n") + 1 if position >= 0 else None
                 hits.append(
                     {
                         "kind": "file",
@@ -215,12 +220,13 @@ async def search_connected_service(
                         ),
                     }
                 )
-            if prefix_count or denied_count:
+            if prefix_count or denied_count or unsupported_count:
                 limitations.append(
                     {
                         "workspace_id": workspace.id,
                         "prefix_only_files": prefix_count,
                         "unreadable_or_policy_denied_files": denied_count,
+                        "binary_or_unsupported_encoding_files": unsupported_count,
                     }
                 )
         if content and budget <= 0:
