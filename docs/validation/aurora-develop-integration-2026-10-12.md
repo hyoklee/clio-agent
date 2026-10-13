@@ -31,7 +31,7 @@ The older task infrastructure already present in develop is retained.
 | Model parsing | Derive Granite 4.2 parser defaults from its actual chat template. | `infrastructure/server_parameter_defaults.py` |
 | Attention | Improve reasoning/content attribution, including a prompt that already opens thinking and separators stripped from the rendered transcript. Expose direct selection actions for later use and combined attention sets. | `gact/attention/selection.py`, `service.py`; UI `attention-lookup-panel.tsx` |
 | SPOTTER | Arming a reviewer after activity has occurred requests review of that existing conversation. After a restart, initialize the host agent from the watched session before waking the reviewer. Show a compact review entry. | `spotter_arm_review.py`, `spotter_watcher.py`; UI `subagent-card.tsx` |
-| Transcript | Keep reminders and results inside activity, preserve operation continuity across question exchanges, and omit completion footers for empty boundaries and ongoing updates. | UI conversation grouping, injection and footer components |
+| Transcript | Keep reminders and results inside activity, preserve operation continuity across question exchanges, and omit completion footers for empty boundaries and ongoing updates. Keep adjacent text paragraphs 8 pixels apart, separate text from activity groups by 20 pixels, and expanded reasoning from tools by 12 pixels. | UI conversation grouping, injection and footer components |
 | Work | Distinguish todos from asynchronous tasks, emphasize current todos, remember disclosure choices, and link delegated work to its details. Wait receipts identify any/all, selected tasks and pending outcomes. | UI Work/evidence components; `task_wait_presentation.py` |
 | APPL-CORE | Complete and verify a generated loader and views before reporting onboarding as ready. An ended child turn is insufficient evidence of successful onboarding. | Marketplace onboarding and audit skills |
 
@@ -89,6 +89,20 @@ updated to open the intended disclosures while preserving checks for exact
 content, causal order, navigation and duplicate avoidance. Real gaps found in
 that review were repaired: accessible disclosure names, automatic/requested
 summary provenance, and completion footers on ongoing updates.
+
+Rendered spacing review used the real transcript components with a labeled
+simulated fixture, in light and dark desktop views and narrow phone layouts.
+Captures and their manifest are retained under
+`D:/Libraries/Videos/clio_recordings/2026-10-12-transcript-spacing/`.
+That review also reproduced an evidence-placement defect: the toolbar could
+measure before the transcript ref was attached and never subscribe to layout
+changes. Measuring after mount fixes initial docking; manual review confirmed
+that a collapsed Work panel returns with its disclosure state after closing a
+side tab. These are browser interaction checks, not scientific model evidence.
+The browser click trace also exposed a floating scroll control appearing over a
+disclosure press in a transcript that already fit the viewport. The control now
+requires actual overflow. Manual pointer-down/up review confirmed the tool
+result opens and the unnecessary scroll control stays absent.
 
 The integration does not establish fresh GPU inference, live attention capture,
 SPOTTER findings, successful OPAL onboarding, or a treatment effect.
