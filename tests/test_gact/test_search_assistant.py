@@ -29,6 +29,7 @@ from clio_agent.gact.search_assistant import (
 )
 from clio_agent.gact.side_sessions import READ_ONLY_SIDE_PROFILE, is_read_only_side_session
 from clio_agent.gact.types import Message, Part
+from tests._marketplace import MARKETPLACE_ROOT
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -160,14 +161,13 @@ def test_search_tools_require_server_owned_read_only_profile(tmp_path: Path) -> 
         context.reset(app_token)
 
 
+@pytest.mark.marketplace
 def test_explicit_search_blueprint_activation_inherits_model_without_copying_parent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "blueprint"
-    original = (
-        Path(__file__).resolve().parents[2] / "external" / "clio-agent-marketplace" / "clio-search"
-    )
+    original = MARKETPLACE_ROOT / "clio-search"
     shutil.copytree(original, source)
     source_id = source_registry_id(str(source))
     row = refresh_agent_blueprint_source({"id": source_id, "source": str(source), "name": "Search"})
@@ -208,6 +208,20 @@ def test_explicit_search_blueprint_activation_inherits_model_without_copying_par
         }
         bad = client.post("/v1/search/sessions", json={"workspace_id": "ws_missing"})
         assert bad.status_code == 404
+        workspace, _ = _source(app, tmp_path / "passages")
+        (tmp_path / "passages" / "notes.txt").write_text(
+            "Intro\nA matching source line.\n", encoding="utf-8"
+        )
+        passage = client.get(
+            f"/v1/workspaces/{workspace.id}/files/passage", params={"path": "notes.txt", "line": 2}
+        )
+        assert passage.status_code == 200, passage.text
+        assert passage.json()["start_line"] == 1
+        assert "A matching source line." in passage.json()["text"]
+        denied = client.get(
+            f"/v1/workspaces/{workspace.id}/files/passage", params={"path": "../outside.txt"}
+        )
+        assert denied.status_code == 403
 
 
 @pytest.mark.asyncio
