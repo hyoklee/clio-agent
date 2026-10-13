@@ -161,6 +161,7 @@ def main() -> int:
     if not common.port_is_free(args.port):
         raise RuntimeError("Owned live-proof port is already occupied")
     server_code = (
+        "import faulthandler; faulthandler.dump_traceback_later(45, repeat=True); "
         "from clio_agent.gact.app import build_app; import uvicorn; "
         "a=build_app(); uvicorn.run(a,host='127.0.0.1',port=" + str(args.port) + ")"
     )

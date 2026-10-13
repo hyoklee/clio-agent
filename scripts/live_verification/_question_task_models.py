@@ -104,7 +104,7 @@ def answer_question_after_independent_work(
     )
     if mode in {"idle", "stop"}:
         if mode == "stop":
-            checkpoint["stop"] = call("POST", f"/v1/sessions/{sid}/cancel", {})
+            checkpoint["stop"] = call("POST", f"/v1/sessions/{sid}/cancel", {}, ok=(204,))
         checkpoint["before_answer_turn_status"] = common.wait_turn(
             call, wid, sid, max_elapsed=max_elapsed
         )
