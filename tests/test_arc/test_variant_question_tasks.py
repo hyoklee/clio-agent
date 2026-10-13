@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import QuestionDefinition, QuestionReply, TaskOwner, TaskSnapshot
 from clio_agent.gact import context
-from clio_agent.gact.agents.variant_drafts import _pause
+from clio_agent.gact.agents.variant_drafts import DraftAlternativesError, _pause
 from clio_agent.gact.agents.variant_records import TryRecord, VariantRun, load_run
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.sessions import SessionStore
@@ -81,6 +81,12 @@ def test_draft_choice_posts_and_answers_one_common_question(
     reply = QuestionReply.model_validate(history.read_content(answered.result))
     assert reply.selected_options == ("main#run0",)
     assert reply.answer == "Useful draft"
+    cancelled = assignment.model_copy(update={"cancellation_requested_at": stamp})
+    history.record_snapshot(cancelled, observation_id="cancel-admission")
+    with pytest.raises(DraftAlternativesError, match="confirmed current assignment"):
+        _pause(app, run)
+    # Closing descendant admission cannot create another open choice.
+    assert history.task_snapshot(run.question_id) == answered
 
 
 def test_assignment_context_does_not_cross_session_boundaries() -> None:

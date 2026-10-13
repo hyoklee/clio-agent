@@ -417,61 +417,68 @@ def _pause(app: Any, run: VariantRun) -> None:
     )
     sid = _ctx.active_session_id()
     history = app.state.task_history
-    assignment = history.task_snapshot(_ctx.active_assignment_handle())
-    if assignment is None or assignment.owner.session_id != sid:
-        raise DraftAlternativesError(
-            "Posting a draft choice requires the confirmed current assignment"
-        )
-    stamp = datetime.now(timezone.utc)
-    handle = "task_" + uuid.uuid4().hex
-    accepted = TaskSnapshot(
-        handle=handle,
-        kind="Question",
-        owner=TaskOwner(
-            human_id=assignment.owner.human_id,
-            session_id=sid,
-            assignment_id=assignment.handle,
-            parent_handle=assignment.handle,
-        ),
-        label="Choose a draft",
-        description=prompt,
-        description_missing=False,
-        invocation_id=observer_call_id() or f"{run.variants_id}:{len(run.tries)}",
-        tool=DRAFT_TOOL,
-        created_at=stamp.isoformat(),
-        updated_at=stamp.isoformat(),
-    )
-    history.record_snapshot(accepted, observation_id=uuid.uuid4().hex)
-    definition = QuestionDefinition(
-        prompt=prompt,
-        kind="choice",
-        allow_freeform=False,
-        source=DRAFT_TOOL,
-        options=tuple(
-            QuestionOption(
-                label=f"Draft {item.try_index + 1}", value=item.scope, description=item.text
+    with history._lock:
+        assignment = history.task_snapshot(_ctx.active_assignment_handle())
+        if (
+            assignment is None
+            or assignment.kind not in {"Session", "Subagent"}
+            or assignment.owner.session_id != sid
+            or assignment.cancellation_requested_at is not None
+            or assignment.terminal_at is not None
+        ):
+            raise DraftAlternativesError(
+                "Posting a draft choice requires the confirmed current assignment"
             )
-            for item in candidates
-        ),
-        expires_at=(stamp + timedelta(seconds=run.pick_expires_in_s)).isoformat()
-        if run.pick_expires_in_s > 0
-        else None,
-        metadata={
-            "variants_id": run.variants_id,
-            "variant": {
-                "strategy": run.strategy,
-                "judge": run.judge,
-                "n": run.n,
-                "rubric": run.rubric,
-                "refinable": refinable,
-                "candidates": [
-                    {"id": item.scope, "try_index": item.try_index, "text": item.text}
-                    for item in candidates
-                ],
+        stamp = datetime.now(timezone.utc)
+        handle = "task_" + uuid.uuid4().hex
+        accepted = TaskSnapshot(
+            handle=handle,
+            kind="Question",
+            owner=TaskOwner(
+                human_id=assignment.owner.human_id,
+                session_id=sid,
+                assignment_id=assignment.handle,
+                parent_handle=assignment.handle,
+            ),
+            label="Choose a draft",
+            description=prompt,
+            description_missing=False,
+            invocation_id=observer_call_id() or f"{run.variants_id}:{len(run.tries)}",
+            tool=DRAFT_TOOL,
+            created_at=stamp.isoformat(),
+            updated_at=stamp.isoformat(),
+        )
+        history.record_snapshot(accepted, observation_id=uuid.uuid4().hex)
+        definition = QuestionDefinition(
+            prompt=prompt,
+            kind="choice",
+            allow_freeform=False,
+            source=DRAFT_TOOL,
+            options=tuple(
+                QuestionOption(
+                    label=f"Draft {item.try_index + 1}", value=item.scope, description=item.text
+                )
+                for item in candidates
+            ),
+            expires_at=(stamp + timedelta(seconds=run.pick_expires_in_s)).isoformat()
+            if run.pick_expires_in_s > 0
+            else None,
+            metadata={
+                "variants_id": run.variants_id,
+                "variant": {
+                    "strategy": run.strategy,
+                    "judge": run.judge,
+                    "n": run.n,
+                    "rubric": run.rubric,
+                    "refinable": refinable,
+                    "candidates": [
+                        {"id": item.scope, "try_index": item.try_index, "text": item.text}
+                        for item in candidates
+                    ],
+                },
             },
-        },
-    )
-    posted = QuestionCommands(history).post(accepted, definition)
+        )
+        posted = QuestionCommands(history).post(accepted, definition)
     run.question_id = posted.handle
     run.status = "awaiting_pick"
     save_run(app, run)

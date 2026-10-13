@@ -34,13 +34,34 @@
       "runtime_residue": [],
       "body_executed": true,
       "output": "1 passed, 1 warning in 10.03s"
+    },
+    {
+      "node": "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[draft_alternatives]",
+      "status": "passed",
+      "pid": 30576,
+      "birth": 1791930873.8886333,
+      "exit_code": 0,
+      "elapsed_s": 17.5,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.89s\nnanobind: leaked 18 instances!\nnanobind: leaked 3 types!\nnanobind: leaked 38 functions!\nnanobind: this is likely caused by a reference counting issue in the binding code."
+    },
+    {
+      "node": "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[module_variant]",
+      "status": "passed",
+      "pid": 59012,
+      "birth": 1791930891.387125,
+      "exit_code": 0,
+      "elapsed_s": 18.1,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.89s\nnanobind: leaked 18 instances!\nnanobind: leaked 3 types!\nnanobind: leaked 38 functions!\nnanobind: this is likely caused by a reference counting issue in the binding code."
     }
   ],
   "product_model_acceptance": false,
   "registered_sequential_cases": [
     "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[draft_alternatives]",
-    "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[module_variant]",
-    "tests/test_task_replacement_guard.py::test_catches_old_question_inbox_writer"
+    "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[module_variant]"
   ],
   "binding_diagnostics": []
 }
