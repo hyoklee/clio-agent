@@ -34,7 +34,7 @@ export default function Capture({ image, alt, caption, sizes = '(min-width: 64re
 	const interactive = useSyncExternalStore(subscribe, ready, serverReady);
 	return (
 		<Dialog>
-			<figure className="m-0 min-w-0">
+			<figure className="m-0 min-w-0" style={{ maxWidth: image.width }}>
 				<Frame spacing="xs" className="[--frame-radius:var(--radius-xl)]">
 					<FramePanel className="overflow-hidden p-0">
 						<DialogTrigger
