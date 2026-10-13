@@ -45,7 +45,7 @@ def ensure_runtime_access(*, progress: Callable[[str], None] | None = None) -> l
 
     This receipt covers read/execute access only. The separate sandbox gate must
     still establish account presence and verified write confinement. Every setup
-    entry point uses this path; unchanged roots never need another recursive walk.
+    entry point uses this path; unchanged roots never need another grant operation.
     """
     receipt = paths.user_config_dir() / "sandbox" / "desktop-runtime-access.json"
     receipt.parent.mkdir(parents=True, exist_ok=True)

@@ -12,7 +12,10 @@ exit code zero, with the real Windows fence active. No model inference was run.
   its shared `codex_desktop_access.py:ensure_runtime_access` default. Previously,
   startup supplied the cached grant function while button/CLI calls selected
   unconditional per-user recursive grants. Now unchanged directory/ACL receipts
-  are reused; changed roots are repaired once for both sandbox users. Allowing
+  are reused; changed roots receive one inherited RX grant for both sandbox users.
+  The redundant `/T` previously wrote explicit grants at every descendant while
+  Windows also propagated inherited root permissions. Root inheritance now leaves
+  protected child ACLs intact. Allowing
   elevation no longer forces a fresh native MXC probe. Failed runtime grants are
   unsuccessful for every caller. Actual first-repair and repeat-call timings are
   retained in the local receipt directory's `shared-setup-timings.json`.
@@ -44,3 +47,17 @@ acceptance and manual browser interaction at desktop and phone widths. Automated
 suites are reserved for hosted CI. Merge and local-install receipts are retained
 under `D:/CLIO-Develop/protected-execution-questions-20261013/`, with screenshot
 originals under `D:/Libraries/Videos/clio_recordings/2026-10-13-compact-questions/`.
+
+## Measured setup cost
+
+The old recursive real-machine probe spent 91 seconds on UV tools and 47 seconds
+on UV Python, then timed out after another 120 seconds on the tool cache. It was
+not a successful setup. Inherited root access repaired the remaining tool cache
+in 20.7 seconds; a subsequent Temp repair took about 20 seconds. These measurements
+used an existing account/enforcement receipt, not a fresh installation.
+
+With all root receipts current, the same machine measured startup at 0.377 seconds,
+the Infrastructure button owner at 0.566 seconds and CLI setup at 0.388 seconds.
+All ten grant records were reused. A real Windows filesystem check confirmed
+inherited RX on existing and newly created children and unchanged protected child
+ACLs, consistent with [Windows inheritance semantics](https://learn.microsoft.com/en-us/windows/win32/secauthz/automatic-propagation-of-inheritable-aces).

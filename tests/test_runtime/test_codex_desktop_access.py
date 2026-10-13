@@ -136,7 +136,6 @@ def test_combined_grant_visits_once_and_never_certifies_partial_success(
             "/grant",
             f"offline:{permission}",
             f"online:{permission}",
-            *(["/T"] if inherit else []),
             "/Q",
         ]
     ]

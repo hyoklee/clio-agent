@@ -200,8 +200,8 @@ class FleetGrant:
         label: A machine-stable name for the path (e.g. ``uv_tool_bin``) — carried into the reason.
         path: The filesystem path the restricted users need read+exec on.
         users: The codex restricted users to grant (both offline + online).
-        inherit: ``True`` → ``(OI)(CI)(RX)`` container/object inheritance + ``/T`` recursion for a
-            whole dir tree; ``False`` → a bare ``(RX)`` traverse grant on the dir itself (Temp).
+        inherit: ``True`` → ``(OI)(CI)(RX)`` container/object inheritance for the runtime tree;
+            ``False`` → a bare ``(RX)`` traverse grant on the dir itself (Temp).
         exists: Whether the path currently exists (a missing path is a typed skip, never a failure).
     """
 
@@ -212,18 +212,18 @@ class FleetGrant:
     exists: bool
 
     def icacls_argv(self, *, combine_users: bool = False) -> list[list[str]]:
-        """Build grants, optionally applying all users in one quiet traversal.
+        """Build root grants, optionally applying all users in one quiet operation.
 
-        Recursive-inherit grants emit ``icacls <path> /grant "<User>:(OI)(CI)(RX)" /T``; a
-        traverse-only grant emits ``icacls <path> /grant "<User>:(RX)"`` (no inheritance, no ``/T``).
+        Windows propagates inheritable root ACEs to existing and future children.
+        Adding ``/T`` also rewrites an explicit ACE at every descendant, repeatedly
+        propagating through nested trees. Keep inheritance barriers intact instead.
+        A traverse-only grant has neither inheritance flag.
         """
         perm = "(OI)(CI)(RX)" if self.inherit else "(RX)"
         if combine_users:
             if not self.users:
                 return []
             argv = ["icacls", self.path, "/grant", *(f"{user}:{perm}" for user in self.users)]
-            if self.inherit:
-                argv.append("/T")
             # Suppress success lines for every dependency file, retaining errors
             # and the summary. Permissions are identical to the per-user form.
             argv.append("/Q")
@@ -231,8 +231,6 @@ class FleetGrant:
         cmds: list[list[str]] = []
         for user in self.users:
             argv = ["icacls", self.path, "/grant", f"{user}:{perm}"]
-            if self.inherit:
-                argv.append("/T")
             cmds.append(argv)
         return cmds
 
@@ -260,8 +258,8 @@ def _resolve_fleet_runtime_paths() -> list[tuple[str, str, bool]]:
 
     Bundled Desktop uses its runtime and managed tool cache. Other installations use
     the uv tool bin dir (the clio-kit launcher), uv tools/Python trees and clio-kit's cache.
-    These get ``(OI)(CI)(RX)`` ``/T``;
-    a bare ``(RX)`` traverse (no ``/T``) on per-user Temp (the confined workspace lives under
+    These get ``(OI)(CI)(RX)`` inherited from each root;
+    a bare ``(RX)`` traverse on per-user Temp (the confined workspace lives under
     it). Grant only the runtime tree, never the adjacent private Desktop data/config. Paths resolve
     via env vars / ``Path.home``
     robustly; a path that does not currently exist is STILL returned (the executor skips it with a
@@ -354,10 +352,9 @@ def grant_fleet_runtime_access(
     fleet execs (the per-user profile tree denies them by default). This runs ``icacls`` per path
     per user (:meth:`FleetGrant.icacls_argv`), emitting a STRUCTURED reason record per grant
     (``granted`` / ``skipped_missing`` / ``failed`` / ``skipped_not_windows``) — never a silent
-    step, never fails setup. A missing path is a typed skip; a non-zero ``icacls`` is a typed
-    failure that is logged and stepped past (the paths that DID grant still help; a residual
-    denial surfaces loudly at spawn, never swallowed here). ``runner`` / ``plan`` are injected by
-    tests so no real ``icacls`` runs. ``combine_users`` grants all users during one traversal;
+    step. A missing path is a typed skip; a non-zero ``icacls`` is a typed failure that is
+    logged and returned for setup to reject. ``runner`` / ``plan`` are injected by
+    tests so no real ``icacls`` runs. ``combine_users`` grants all users in one operation;
     any failure marks every user unsuccessful so a partial operation cannot be cached.
     Returns the per-grant reason records (for the caller/trace).
     """
