@@ -411,6 +411,21 @@ def _runtime_active_workspace_context(app: "FastAPI", *, session_id: str = "") -
             "active workspace root using absolute paths so they stay with the "
             "session. Read inputs from wherever the user points you."
         ),
+        (
+            "Cite evidence in natural language with a supporting link near the claim. "
+            "For an inspected file inside this workspace, use a Markdown link such as "
+            "[README.md](workspace-file:/absolute/workspace/README.md), replacing the "
+            "example with its actual service-host path. URL-encode spaces, parentheses, "
+            "# and ? in the target; use forward slashes for Windows paths. CLIO opens "
+            "workspace-file: links in its file panel through the connected service, "
+            "not the browser's local filesystem. For registered artifacts or uploaded/"
+            "connected resources, use their actual returned artifact: or resource: URI. "
+            "A read-allowed path outside this workspace is not automatically viewable "
+            "as a workspace file; use an available registered resource reference instead. "
+            "Do not invent a file/reference, link to an uninspected source, or present "
+            "bare backticked filenames as clickable citations. Explain what a source "
+            "actually supports; status commands and pending tasks are not scientific evidence."
+        ),
     ]
     if allowed_roots:
         lines.append("Writes are only permitted under: " + ", ".join(allowed_roots) + ".")

@@ -128,6 +128,31 @@ result opens and the unnecessary scroll control stays absent.
 The integration does not establish fresh GPU inference, live attention capture,
 SPOTTER findings, successful OPAL onboarding, or a treatment effect.
 
+## Evidence wording and source navigation follow-up
+
+Marketplace [PR 100](https://github.com/iowarp/clio-agent-marketplace/pull/100)
+and [PR 101](https://github.com/iowarp/clio-agent-marketplace/pull/101) remove
+mandatory bracketed claim tags from APPL-CORE's instructions, report guidance,
+optional card template and grader. Use natural wording and specific supporting
+citations near a claim. A manifest supports declared identity; a status command
+or pending audit does not support scientific findings. A clickable citation
+still needs to contain evidence relevant to the claim.
+
+UI [PR 600](https://github.com/iowarp/gact-tui/pull/600) routes explicit file,
+registered artifact and resource citations through the existing workbench.
+Ordinary web links retain their external-link behavior. The common expert
+workspace context supplies the actual citation syntax to all eligible experts;
+document skills defer to that shared guidance. The connected service retains its
+file policy. Read access outside a workspace does not automatically grant file
+panel access; use the source's registered resource reference when available.
+
+Manual browser review opened protocol and CSV source tabs using the production
+components with labeled fictional fixture files. Light/dark desktop and 390px
+layout review found no page errors or document overflow. Screenshots, exact
+source copies and validation metadata are retained under
+`D:/Libraries/Videos/clio_recordings/2026-10-12-source-citations/`.
+This is component interaction evidence, not live OPAL or Aurora qualification.
+
 ## Marketplace locking on shared filesystems
 
 See [the scoped lock audit](marketplace-locking-shared-filesystems-2026-10-12.md).

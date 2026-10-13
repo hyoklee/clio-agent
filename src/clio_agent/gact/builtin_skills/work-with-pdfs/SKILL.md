@@ -69,7 +69,8 @@ output to check page count and requested content, then render and visually inspe
 material pages. Designate the requested final file with `create_artifact`. Do not
 claim form, signature or accessibility preservation from a successful rewrite.
 Name the published artifact in the final response; Clio shows its artifact card.
-Do not format local filesystem paths as Markdown links.
+Use the runtime's workspace-file or registered artifact/resource citation format
+for clickable references. Do not use browser-local `file://` links.
 
 When Docling's richer structural conversion is needed and the attachment has no
 usable structured derivative, the following existing helper remains available.
