@@ -2,26 +2,28 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Literal
 
 import pytest
 
 from clio_agent.gact import context
-from clio_agent.gact.agent_mailbox import collect_agent_mail, pending_mail, stage_agent_mail
+from clio_agent.gact.agent_mailbox import accept_human_feedback, pending_mail, stage_session_inputs
 from clio_agent.gact.agent_targets import resolve_agent_target
-from clio_agent.gact.agent_tasks import AgentTaskRegistry
-from clio_agent.gact.events import Event, EventBus
-from clio_agent.gact.mcp_task_store import SessionMetadataTaskStore
+from clio_agent.gact.core_task_journal import CoreTaskJournal
+from clio_agent.gact.events import Event
+from clio_agent.gact.mcp_task_store import app_task_store
 from clio_agent.gact.session_run_tasks import (
     accept_session_run,
+    complete_assignment_segment,
     recover_session_runs,
+    set_assignment_disposition,
     settle_session_run,
 )
-from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_controls import get_task_result, observe_tasks, query_snapshot, wait_tasks
+from clio_agent.gact.task_permissions import grant_coordination
 from clio_agent.gact.task_projection import resolve_task
 from clio_agent.gact.task_subscriptions import deliver_subscriptions, subscribe_result
 from clio_agent.gact.types import Message, Part
@@ -29,20 +31,38 @@ from clio_agent.tools.mcp_task_records import TaskKey, TaskRecord
 
 
 @pytest.fixture
-def peer_app(tmp_path: Path) -> Any:
-    sessions = SessionStore(path=tmp_path / "sessions.json")
-    a = sessions.create(workspace_id="ws", title="Workflow A")
-    b = sessions.create(workspace_id="ws", title="Workflow B")
-    app = SimpleNamespace(
-        state=SimpleNamespace(
-            sessions=sessions,
-            agent_task_registry=AgentTaskRegistry(),
-            mcp_task_store=SessionMetadataTaskStore(sessions),
-            bus=EventBus(),
-            cancel_flags=set(),
-        )
+def peer_app(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Use production Core owners; these projection tests do not execute a model."""
+    from fastapi.testclient import TestClient
+
+    from clio_agent.gact.app import build_app
+    from tests.test_gact.test_post_messages import FakeClioAgent
+
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent())
+    with TestClient(app) as client:
+        app_task_store(app)
+        a = client.post("/v1/sessions", json={"title": "Workflow A"}).json()["id"]
+        b = client.post("/v1/sessions", json={"title": "Workflow B"}).json()["id"]
+        monkeypatch.setattr(app.state.turn_runner, "request_input_admission", lambda _sid: None)
+        yield app, a, b
+
+
+def grant(app: Any, recipient: str, target: str) -> None:
+    """Only the trusted test human grants coordination, never model-authored intent."""
+    grant_coordination(
+        app,
+        human="test-human",
+        recipient=recipient,
+        target=target,
+        rights=["read", "observe", "message"],
     )
-    return app, a.id, b.id
+
+
+def finish(app: Any, sid: str, turn: str) -> None:
+    """Confirm both the transcript result and the assignment's explicit completion."""
+    set_assignment_disposition(app, sid, turn, "complete")
+    settle_session_run(app, sid, message(sid, "assistant-" + turn, role="assistant", turn=turn))
+    complete_assignment_segment(app, sid, turn)
 
 
 def message(
@@ -72,13 +92,39 @@ def test_root_handle_is_durable_idempotent_and_distinct_per_execution(peer_app: 
     app, a, _ = peer_app
     handle = accept_session_run(app, a, message(a, "first"))
     assert accept_session_run(app, a, message(a, "first")) == handle
-    assert accept_session_run(app, a, message(a, "second")) != handle
-    restored = SessionMetadataTaskStore(SessionStore(path=app.state.sessions._path))
-    restored_record = restored.get(TaskKey("clio:session-run", a, "first"))
-    assert restored_record is not None and restored_record.handle == handle
+    assert accept_session_run(app, a, message(a, "second")) == handle
+    finish(app, a, "second")
+    successor = accept_session_run(app, a, message(a, "third"))
+    assert successor != handle
+    restored = CoreTaskJournal(app)
+    asyncio.run(restored.restore())
+    assert restored.get_record(a, "task.assignment", handle)["task"]["handle_id"] == handle
     row = resolve_task(app, a, handle)
-    assert row["owner"]["kind"] == "human" and row["effective_status"] == "running"
-    assert "cancel" not in row["supported_actions"]
+    assert row["owner"]["kind"] == "human" and row["effective_status"] == "completed"
+    assert app.state.agent_task_registry.get(successor).supersedes_task_id == handle
+
+
+def test_new_human_assignment_gets_its_own_description_without_relabeling_history(
+    peer_app: Any,
+) -> None:
+    app, sid, _ = peer_app
+    first = message(sid, "first-assignment")
+    first.parts = [Part(type="text", text="Analyze the October data")]
+    accept_human_feedback(app, sid, first, first.parts[0].text)
+    original = accept_session_run(app, sid, first)
+    finish(app, sid, first.turn_id)
+    next_input = message(sid, "new-assignment")
+    next_input.parts = [Part(type="text", text="Summarize the September data")]
+    accept_human_feedback(app, sid, next_input, next_input.parts[0].text)
+    successor = accept_session_run(app, sid, next_input)
+    assert successor != original
+    assert resolve_task(app, sid, successor)["description"] == "Summarize the September data"
+    assert resolve_task(app, sid, original)["description"] == "Analyze the October data"
+    finish(app, sid, next_input.turn_id)
+    restart = message(sid, "restart", role="system")
+    restart.parts = [Part(type="text", text="Resume after checking uncertain effects")]
+    restarted = accept_session_run(app, sid, restart)
+    assert resolve_task(app, sid, restarted)["description"] == "Summarize the September data"
 
 
 def test_peer_scope_authorizes_before_counts_and_cursor_reuse(peer_app: Any) -> None:
@@ -87,13 +133,15 @@ def test_peer_scope_authorizes_before_counts_and_cursor_reuse(peer_app: Any) -> 
     hidden = app.state.sessions.create(workspace_id="private", title="Hidden")
     accept_session_run(app, hidden.id, message(hidden.id, "secret"))
     assert query_snapshot(app, a)["total"] == 0
-    with pytest.raises(ValueError, match="requires_user_intent"):
-        query_snapshot(app, a, scope="workspace")
+    assert (
+        query_snapshot(app, a, scope="workspace", user_intent="Coordinate workflows")["total"] == 0
+    )
+    grant(app, a, b)
     page = query_snapshot(app, a, scope="workspace", user_intent="Coordinate workflows")
     assert page["total"] == 1 and page["tasks"][0]["handle"] == handle
     assert page["tasks"][0]["access"] == "peer"
     with pytest.raises(ValueError, match="unauthorized"):
-        resolve_task(app, a, handle)
+        resolve_task(app, a, handle, scope="tree")
     row = resolve_task(app, a, handle, scope="workspace", user_intent="Coordinate workflows")
     assert row["supported_actions"] == ["observe", "wait", "result", "message"]
 
@@ -101,7 +149,7 @@ def test_peer_scope_authorizes_before_counts_and_cursor_reuse(peer_app: Any) -> 
 def test_legacy_owned_handle_does_not_become_peer_on_projection(peer_app: Any) -> None:
     app, a, _ = peer_app
     record = TaskRecord(key=TaskKey("old", a, "legacy"), status="working")
-    app.state.mcp_task_store.put(record)
+    app_task_store(app).put(record)
     row = query_snapshot(app, a)["tasks"][0]
     assert row["handle"].startswith("task_") and row["access"] == "owner"
 
@@ -112,14 +160,15 @@ def test_root_stop_settles_only_run_and_keeps_accepted_work(peer_app: Any) -> No
     background = TaskRecord(
         key=TaskKey("shell", a, "background"), handle="shell", kind="Shell", status="working"
     )
-    app.state.mcp_task_store.put(background)
+    app_task_store(app).put(background)
     final = message(a, "assistant", role="assistant", turn="run").model_copy(
         update={"stop_reason": "cancelled"}
     )
     settle_session_run(app, a, final)
+    complete_assignment_segment(app, a, "run")
     row = resolve_task(app, a, handle)
-    assert row["effective_status"] == "interrupted" and not row["notify_pending"]
-    assert app.state.mcp_task_store.get(background.key).status == "working"
+    assert row["effective_status"] == "yielded" and not row["notify_pending"]
+    assert app_task_store(app).get(background.key).status == "working"
 
 
 def test_recovery_interrupts_root_without_replay_or_self_wake(peer_app: Any) -> None:
@@ -127,29 +176,60 @@ def test_recovery_interrupts_root_without_replay_or_self_wake(peer_app: Any) -> 
     handle = accept_session_run(app, a, message(a, "run"))
     recover_session_runs(app)
     row = resolve_task(app, a, handle)
-    assert row["effective_status"] == "interrupted" and not row["notify_pending"]
-    assert row["result"]["operation_replayed"] is False
+    assert row["effective_status"] == "recovery_required" and not row["notify_pending"]
+    notice = pending_mail(app, a)[0]
+    assert "No accepted operation has been resubmitted" in notice["text"]
+    assert notice["metadata"]["assignment_recovery"]["handle"] == handle
 
 
 def test_session_observe_excludes_other_runs_and_global_events(peer_app: Any) -> None:
     app, a, b = peer_app
-    app.state.bus.publish(Event(type="message.delta", session_id=b, payload={"text": "before"}))
+    grant(app, a, b)
+    before = Event(
+        type="message.part.delta", session_id=b, payload={"turn_id": "before", "text": "before"}
+    )
+    app.state.bus.publish(before)
     handle = accept_session_run(app, b, message(b, "run"))
-    event = Event(type="message.delta", session_id=b, payload={"text": "during"})
+    event = Event(
+        type="message.part.delta", session_id=b, payload={"turn_id": "run", "text": "during"}
+    )
     app.state.bus.publish(event)
-    settle_session_run(app, b, message(b, "assistant", role="assistant", turn="run"))
-    app.state.bus.publish(Event(type="message.delta", session_id=b, payload={"text": "after"}))
-    app.state.bus.publish(Event(type="message.delta", session_id="", payload={"text": "global"}))
+    assert accept_session_run(app, b, message(b, "continuation")) == handle
+    continued = Event(
+        type="message.part.delta",
+        session_id=b,
+        payload={"turn_id": "continuation", "text": "continued"},
+    )
+    app.state.bus.publish(continued)
+    finish(app, b, "continuation")
+    successor = accept_session_run(app, b, message(b, "after"))
+    assert successor != handle
+    after = Event(
+        type="message.part.delta", session_id=b, payload={"turn_id": "after", "text": "after"}
+    )
+    global_event = Event(
+        type="message.part.delta", session_id="", payload={"turn_id": "run", "text": "global"}
+    )
+    unassigned = Event(type="task.output", session_id=b, payload={"text": "no identity"})
+    for excluded in (after, global_event, unassigned):
+        app.state.bus.publish(excluded)
     tokens = bind(app, a)
     try:
         observed = observe_tasks(handle, scope="workspace", user_intent="Coordinate workflows")
-        assert [row["id"] for row in observed["events"]] == [event.id]
+        progress = [row for row in observed["events"] if row["type"] == "message.part.delta"]
+        assert [row["id"] for row in progress] == [event.id, continued.id]
+        assert not {before.id, after.id, global_event.id, unassigned.id}.intersection(
+            row["id"] for row in observed["events"]
+        )
+        lifecycle = [row for row in observed["events"] if row["type"].startswith("agent.task.")]
+        assert lifecycle and all(row["payload"]["task_id"] == handle for row in lifecycle)
     finally:
         unbind(tokens)
 
 
 def test_peer_wait_and_result_do_not_consume_owner_notification(peer_app: Any) -> None:
     app, a, b = peer_app
+    grant(app, a, b)
     record = TaskRecord(
         key=TaskKey("server", b, "done"),
         handle="done",
@@ -157,7 +237,7 @@ def test_peer_wait_and_result_do_not_consume_owner_notification(peer_app: Any) -
         result={"error": "Real retained failure"},
         notify_pending=True,
     )
-    app.state.mcp_task_store.put(record)
+    app_task_store(app).put(record)
     tokens = bind(app, a)
     try:
         outcome = wait_tasks(
@@ -168,48 +248,63 @@ def test_peer_wait_and_result_do_not_consume_owner_notification(peer_app: Any) -
             get_task_result("done", scope="workspace", user_intent="Coordinate workflows")["result"]
             == record.result
         )
-        retained = app.state.mcp_task_store.get(record.key)
+        retained = app_task_store(app).get(record.key)
         assert retained is not None and retained.notify_pending and not retained.consumed_at
     finally:
         unbind(tokens)
 
 
 def test_subscription_failure_mail_is_once_and_wait_wins_staged_race(peer_app: Any) -> None:
+    from clio_agent.gact.task_delivery import drain_task_completions
+    from tests.test_gact.mailbox_helpers import commit_collected_result
+
     app, a, b = peer_app
+    grant(app, a, b)
     record = TaskRecord(key=TaskKey("server", b, "job"), handle="job", status="working")
-    app.state.mcp_task_store.put(record)
+    app_task_store(app).put(record)
     row = resolve_task(app, a, "job", scope="workspace", user_intent="Coordinate workflows")
     subscribe_result(app, a, row, scope="workspace", user_intent="Coordinate workflows")
     assert not pending_mail(app, a)
-    app.state.mcp_task_store.put(
+    app_task_store(app).put(
         replace(record, status="failed", result={"error": "job failed"}, notify_pending=True)
     )
     deliver_subscriptions(app, "job")
     deliver_subscriptions(app, "job")
-    assert len(pending_mail(app, a)) == 1 and "job failed" in pending_mail(app, a)[0]["text"]
-    state = SimpleNamespace(app=app, sid=a)
-    stage_agent_mail(state)
-    assert state.pending_agent_mail_ids and pending_mail(app, a)  # veto/staging consumes nothing
+    staged = drain_task_completions(app, a)
+    assert len(staged) == 1 and "job failed" in staged[0][1]
+    assert not pending_mail(app, a)  # Subscription references stay in their owner lane.
+    staged = stage_session_inputs(app, a)
+    assert staged == stage_session_inputs(app, a)  # veto/staging consumes nothing
     tokens = bind(app, a)
     try:
-        wait_tasks("job", timeout_s=0, scope="workspace", user_intent="Coordinate workflows")
-        assert collect_agent_mail(app, a, state.pending_agent_mail_ids) == []
-        assert app.state.mcp_task_store.get(record.key).notify_pending
+        result = wait_tasks(
+            "job", timeout_s=0, scope="workspace", user_intent="Coordinate workflows"
+        )
+        assert drain_task_completions(app, a) == staged
+        asyncio.run(commit_collected_result(app, a, result))
+        assert not drain_task_completions(app, a)
+        assert app_task_store(app).get(record.key).notify_pending
     finally:
         unbind(tokens)
 
 
 def test_subscribed_root_completion_delivers_without_owner_self_wake(peer_app: Any) -> None:
+    from clio_agent.gact.task_delivery import drain_task_completions
+    from tests.test_gact.mailbox_helpers import commit_session_inputs
+
     app, a, b = peer_app
+    grant(app, a, b)
     handle = accept_session_run(app, b, message(b, "run"))
     tokens = bind(app, a)
     try:
         observe_tasks(handle, notify=True, scope="workspace", user_intent="Coordinate workflows")
-        settle_session_run(app, b, message(b, "assistant", role="assistant", turn="run"))
+        finish(app, b, "run")
         deliver_subscriptions(app)
-        mail = collect_agent_mail(app, a)
+        mail = drain_task_completions(app, a)
         assert len(mail) == 1 and handle in mail[0][1]
-        assert collect_agent_mail(app, a) == [] and not pending_mail(app, b)
+        assert drain_task_completions(app, a) == mail
+        asyncio.run(commit_session_inputs(app, a, "subscribed-root"))
+        assert drain_task_completions(app, a) == [] and not pending_mail(app, b)
         assert not resolve_task(app, b, handle)["notify_pending"]
     finally:
         unbind(tokens)
@@ -234,11 +329,12 @@ def test_session_run_handle_messages_stable_mailbox_without_control(peer_app: An
 
     app, a, b = peer_app
     handle = accept_session_run(app, b, message(b, "run"))
-    settle_session_run(app, b, message(b, "assistant", role="assistant", turn="run"))
-    with pytest.raises(ValueError, match="requires_user_intent"):
+    finish(app, b, "run")
+    with pytest.raises(ValueError, match="unauthorized"):
         resolve_agent_target(app, a, handle)
     with pytest.raises(ValueError, match="unauthorized"):
         resolve_agent_target(app, a, handle, control=True)
+    grant(app, a, b)
     ack = message_agent_address(
         app,
         handle,
@@ -251,33 +347,39 @@ def test_session_run_handle_messages_stable_mailbox_without_control(peer_app: An
     assert ack["target_session_id"] == b and ack["source_session_id"] == a
     assert len(pending_mail(app, b)) == 1
     assert resolve_task(app, b, handle)["effective_status"] == "completed"
-    assert len(app.state.mcp_task_store.list()) == 1
+    assert len(app_task_store(app).list()) == 0  # Conversation assignments have one owner.
 
 
 def test_session_run_handle_does_not_bypass_workspace_or_owner_checks(peer_app: Any) -> None:
     app, a, b = peer_app
     handle = accept_session_run(app, b, message(b, "run"))
     session, task = resolve_agent_target(app, b, handle)
-    assert session.id == b and task is None
+    assert session.id == b and task.handle_id == handle
     hidden = app.state.sessions.create(workspace_id="private", title="Private workflow")
     private_handle = accept_session_run(app, hidden.id, message(hidden.id, "private-run"))
-    with pytest.raises(ValueError, match="scope_denied"):
+    with pytest.raises(ValueError, match="unauthorized"):
         resolve_agent_target(
             app, a, private_handle, scope="global", user_intent="Coordinate workflows"
         )
     for control in (False, True):
-        with pytest.raises(ValueError, match="unauthorized" if control else "requires_user_intent"):
+        with pytest.raises(ValueError, match="unauthorized"):
             resolve_agent_target(app, a, handle, control=control)
 
 
 def test_session_run_handle_collision_and_deleted_recipient_are_rejected(peer_app: Any) -> None:
     app, a, b = peer_app
     handle = accept_session_run(app, b, message(b, "run"))
-    record = app.state.mcp_task_store.get(TaskKey("clio:session-run", b, "run"))
-    assert record is not None
-    app.state.mcp_task_store.put(replace(record, key=TaskKey("clio:session-run", a, "other")))
+    app_task_store(app).put(
+        TaskRecord(
+            key=TaskKey("clio:session-run", a, "other"),
+            kind="Session",
+            handle=handle,
+            status="working",
+        )
+    )
     with pytest.raises(ValueError, match="ambiguous_agent_target"):
         resolve_agent_target(app, a, handle, scope="workspace", user_intent="Coordinate workflows")
+    finish(app, b, "run")
     single = accept_session_run(app, b, message(b, "deleted"))
     app.state.sessions.delete(b)
     with pytest.raises(

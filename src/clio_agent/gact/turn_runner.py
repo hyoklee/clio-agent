@@ -545,6 +545,7 @@ def _admit_pending_inputs(app: "FastAPI", sid: str, *, model_metadata: dict[str,
     session = app.state.sessions.get(sid)
     if (
         session is None
+        or app.state.turn_runner.busy(sid)
         or getattr(app.state, "agent", None) is None
         or getattr(getattr(app.state, "task_supervisor", None), "closing", False)
         or execution_held(app, sid)

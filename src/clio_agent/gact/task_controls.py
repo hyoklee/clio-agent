@@ -381,8 +381,7 @@ def _observe_tasks(
                         continue
                     key = event.payload.get("key")
                     selected = (
-                        _session_run_event(app, row, event)
-                        or owner == row.get("child_session_id")
+                        _assignment_event(app, row, event)
                         or event.payload.get("handle") == row["handle"]
                         or event.payload.get("task_handle") == row["handle"]
                         or (
@@ -426,15 +425,20 @@ def _observe_tasks(
         _wait_change(app, sid, version, deadline)
 
 
-def _session_run_event(app: Any, row: dict[str, Any], event: Any) -> bool:
-    """Bound session progress to the accepted execution and original event epoch."""
-    backend = row.get("backend", {})
-    return bool(
-        row["task_kind"] == "Session"
-        and backend.get("event_epoch") == app.state.bus.task_cursor_epoch
-        and backend.get("start_event_id", event.id)
-        < event.id
-        <= backend.get("end_event_id", app.state.bus.highest_event_id)
+def _assignment_event(app: Any, row: dict[str, Any], event: Any) -> bool:
+    """Resolve progress through confirmed assignment segments, never a whole session."""
+    from clio_agent.gact.core_task_journal import core_task_journal
+
+    turn_id = event.payload.get("turn_id")
+    if row.get("kind") != "agent" or event.session_id != row["child_session_id"] or not turn_id:
+        return False
+    segment = core_task_journal(app).get_record(
+        event.session_id, "task.assignment.segment", turn_id
+    )
+    return (
+        segment["handle"] == row["handle"]
+        if segment is not None
+        else turn_id == row.get("child_turn_id")
     )
 
 

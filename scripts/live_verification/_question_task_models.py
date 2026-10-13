@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import time
 from pathlib import Path
 from typing import Any
 
 import _common as common
+import requests
 
 ANSWER = "Use the October owned dataset."
 
@@ -45,6 +47,23 @@ def cleanup_question_state(proof: Path) -> dict[str, bool]:
     return result
 
 
+def capture_question_failure(proof: Path, sid: str) -> dict[str, Any]:
+    """Retain the failed model's actual public state before disposable Core cleanup."""
+    snapshot: dict[str, Any] = {"session_id": sid}
+    ready = proof / "service-ready.json"
+    if ready.is_file():
+        base = json.loads(ready.read_text(encoding="utf-8"))["url"]
+        for suffix in ("", "/messages", "/questions", "/async-processes"):
+            try:
+                response = requests.get(base + f"/v1/sessions/{sid}" + suffix, timeout=(3, 8))
+                response.raise_for_status()
+                snapshot[suffix or "session"] = response.json()
+            except (requests.RequestException, ValueError) as exc:
+                snapshot[suffix or "session"] = {"error": f"{type(exc).__name__}: {exc}"}
+    common.dump_json(proof / f"failed-question-{sid}.json", snapshot)
+    return snapshot
+
+
 def question_mission(workspace: Path, mode: str) -> str:
     """Require another model action while the human answer remains unavailable."""
     beginning = (
@@ -62,6 +81,13 @@ def question_mission(workspace: Path, mode: str) -> str:
             "Finish this segment using assignment_disposition='yield'; report that the answer "
             "is pending. Do not wait or cancel. When its answer later wakes you, call "
             "get_task_result on that original handle and report the actual answer, then complete."
+        )
+    if mode == "stop":
+        return beginning + (
+            "Call wait_tasks on that handle with timeout_s=null; do not add polling waits. "
+            "The operator will stop your turn during this unbounded wait. Leave the question "
+            "open. Its later answer wakes you; call get_task_result on the original handle, "
+            "report the actual answer and complete."
         )
     return beginning + (
         "Call wait_tasks on that handle with timeout_s=0.1. After it expires, call observe_tasks "
@@ -97,14 +123,48 @@ def answer_question_after_independent_work(
         pending = [
             row for row in questions if row.get("task_handle") and row["status"] == "pending"
         ]
-        if reads and pending and (mode == "idle" or len(waits) >= 2):
+        returned = {part.get("call_id") for part in parts if part.get("type") == "tool_result"}
+        live_unbounded = []
+        for wait in waits:
+            arguments = wait.get("input") or {}
+            if not isinstance(arguments, dict):
+                continue
+            arguments = arguments.get("kwargs", arguments)
+            if not isinstance(arguments, dict):
+                continue
+            selected = arguments.get("tasks", [])
+            selected = (
+                [selected]
+                if isinstance(selected, str)
+                else selected
+                if isinstance(selected, list)
+                else []
+            )
+            if (
+                arguments.get("timeout_s") is None
+                and wait.get("call_id") not in returned
+                and pending
+                and pending[0]["task_handle"] in selected
+            ):
+                live_unbounded.append(wait)
+        waiting = bool(live_unbounded) and (mode == "stop" or len(waits) >= 2)
+        if reads and pending and (mode == "idle" or waiting):
             checkpoint.update(question=pending[0], independent_read=reads[-1], wait_calls=waits)
             return True
+        if reads and pending and mode != "idle":
+            status = call("GET", f"/v1/sessions/{sid}")["status"]
+            if status in {"idle", "completed", "error"}:
+                raise RuntimeError(
+                    f"Model ended before the required live unbounded {mode} wait; "
+                    f"status={status}, recorded_waits={len(waits)}"
+                )
         return False
 
     common.expanding_wait(
         ready, what="Question handle and independent model action", max_elapsed=max_elapsed
     )
+    if "question" not in checkpoint:
+        raise RuntimeError(f"Model did not reach the Question/{mode} checkpoint within its gate")
     if mode in {"idle", "stop"}:
         if mode == "stop":
             checkpoint["stop"] = call("POST", f"/v1/sessions/{sid}/cancel", {}, ok=(204,))

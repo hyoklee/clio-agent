@@ -14,6 +14,42 @@ from tests.test_gact import test_core_task_mailbox as core_fixtures
 owner = core_fixtures.owner
 
 
+async def test_slot_acquired_during_metadata_read_keeps_pending_input_untouched(
+    owner: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Recheck the slot after asynchronous preparation, before flags or input effects."""
+    from clio_agent.gact.agent_mailbox import accept_session_input, pending_mail
+    from clio_agent.gact.agent_tasks import AgentTaskRegistry
+    from clio_agent.gact.turn_runner import _admit_pending_inputs
+
+    app, sid = owner.app, owner.sid
+    runner = app.state.turn_runner = TurnRunner({})
+    app.state.agent_task_registry = AgentTaskRegistry()
+    runner.bind_loop(asyncio.get_running_loop())
+    app.state.agent = object()
+    app.state.cancel_flags = {sid}
+    signal = asyncio.Event()
+    app.state.cancel_events = {sid: signal}
+    identity = await asyncio.to_thread(accept_session_input, app, sid, "Retained human feedback")
+    started: list[str] = []
+
+    def start(_app: Any, target: str, *_args: Any, **_kwargs: Any) -> Any:
+        with runner.reservation(target):
+            started.append(target)
+        return SimpleNamespace(id="admitted", turn_id="admitted")
+
+    monkeypatch.setattr("clio_agent.gact.turn._start_background_user_turn", start)
+    with runner.reservation(sid, "human-prepare"):
+        _admit_pending_inputs(app, sid, model_metadata={})
+        assert started == []
+        assert sid in app.state.cancel_flags and app.state.cancel_events[sid] is signal
+        assert [row["message_id"] for row in pending_mail(app, sid)] == [identity]
+    _admit_pending_inputs(app, sid, model_metadata={})
+    assert started == [sid]
+    assert sid not in app.state.cancel_flags and sid not in app.state.cancel_events
+    assert [row["message_id"] for row in pending_mail(app, sid)] == [identity]
+
+
 async def test_recovery_mail_waits_for_native_host_readiness_without_consuming_it(
     owner: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:

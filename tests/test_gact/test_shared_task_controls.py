@@ -401,7 +401,7 @@ def test_subagent_observation_excludes_global_and_foreign_matching_events(
     actual = Event(
         type="task.output",
         session_id=task.child_session_id,
-        payload={"text": "progress 0 bytes 1024"},
+        payload={"handle": task.handle_id, "text": "progress 0 bytes 1024"},
     )
     app.state.bus.publish(actual)
     observed = observe_tasks(task.handle_id, pattern=r"progress \d+ bytes \d+", timeout_s=0)

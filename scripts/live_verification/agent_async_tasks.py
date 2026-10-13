@@ -22,6 +22,7 @@ from _async_payload import PayloadServer
 from _lifecycle_auth import frozen_claude_auth
 from _question_task_models import (
     answer_question_after_independent_work,
+    capture_question_failure,
     cleanup_question_state,
     disposable_question_paths,
     question_mission,
@@ -316,6 +317,8 @@ def main() -> int:
         except Exception as exc:
             verdict.update(pass_=False, error=f"{type(exc).__name__}: {exc}")
             verdict["pass"] = False
+            if args.kind == "Question" and verdict.get("session_id"):
+                verdict["failure_snapshot"] = capture_question_failure(proof, verdict["session_id"])
         finally:
             if args.hold_until is not None:
                 common.dump_json(proof / "verdict-before-ui.json", verdict)

@@ -63,6 +63,7 @@ def accept_session_run(app: Any, sid: str, message: Any, *, fresh_context: bool 
             return updated.handle_id or updated.task_id
         now = datetime.now(timezone.utc).isoformat()
         text = "\n".join(part.text for part in message.parts if part.type == "text" and part.text)
+        source = journal.get_record(sid, "task.mail.accepted", message.id) or {}
         identity = "task_" + uuid4().hex
         task = AgentTask(
             task_id=identity,
@@ -71,7 +72,11 @@ def accept_session_run(app: Any, sid: str, message: Any, *, fresh_context: bool 
             parent_session_id=previous.parent_session_id if previous else "",
             child_turn_id=message.turn_id,
             assignment_kind=previous.assignment_kind if previous else "Session",
-            description=previous.description if previous else text or "Human-started assignment",
+            description=(text or "Human-started assignment")
+            if previous is None
+            or previous.assignment_kind == "Session"
+            and source.get("source_kind") == "human"
+            else previous.description,
             agent_ref=previous.agent_ref
             if previous
             else {"expert_id": (session.agent or {}).get("id", "main")},
