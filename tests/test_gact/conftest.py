@@ -10,10 +10,49 @@ flow for tests that just want "POST + return the assistant".
 from __future__ import annotations
 
 import time
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack
+from functools import wraps
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture
+def native_builtin_lifespan(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Open production MCP hosts for explicitly opted-in domain-tool tests.
+
+    Older domain tests construct real apps without entering their lifespan.
+    Keep their normal DSPy tool validation and actual native SDK dispatch; the
+    fixture only owns and closes those apps' production lifespans.
+    """
+    from fastapi import FastAPI
+
+    from clio_agent.gact import context
+    from clio_agent.tools import builtin_control_host
+
+    original = builtin_control_host.builtin_control_bridge
+    with ExitStack() as stack:
+
+        def build(*args: Any, **kwargs: Any) -> Callable[..., Any]:
+            bridge = original(*args, **kwargs)
+
+            @wraps(bridge)
+            def invoke(*positional: Any, **keywords: Any) -> Any:
+                app = context.active_app()
+                if (
+                    isinstance(app, FastAPI)
+                    and context.active_session_id()
+                    and not getattr(app.state, "native_task_hosts", None)
+                ):
+                    stack.enter_context(TestClient(app))
+                return bridge(*positional, **keywords)
+
+            return invoke
+
+        monkeypatch.setattr(builtin_control_host, "builtin_control_bridge", build)
+        yield
 
 
 @pytest.fixture(autouse=True)
