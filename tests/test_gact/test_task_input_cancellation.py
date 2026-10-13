@@ -10,7 +10,10 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.storage import make_arc_store
 from clio_agent.gact.events import EventBus
+from clio_agent.gact.mcp_task_store import app_task_store
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_supervisor import task_supervisor
 from clio_agent.gact.user_question_ledger import record_user_question
@@ -30,11 +33,18 @@ def owner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
     app.state.user_questions = {}
     app.state.bus = EventBus()
+    app.state.arc = ARCMemory(store=make_arc_store(backend="cte"))
     session = app.state.sessions.create(workspace_id="ws", title="input cancellation")
     key = TaskKey("server-a", session.id, "backend-task", "backend-session-a")
     assert app.state.sessions.task_store is not None
-    app.state.sessions.task_store.put(
-        TaskRecord(key, tool="guarded", invocation_id="inv-original", status="input_required")
+    app_task_store(app).put(
+        TaskRecord(
+            key,
+            handle="task-original",
+            tool="guarded",
+            invocation_id="inv-original",
+            status="input_required",
+        )
     )
     yield app, key
     set_task_record_store(None)
@@ -44,8 +54,7 @@ async def test_shared_cancel_wakes_pending_input_before_backend_settlement(owner
     """A real supervisor request wakes its form; an ack alone never settles the task."""
     app, key = owner
     store = app.state.sessions.task_store
-    original = store.get(key)
-    store.put(replace(original, handle="task-original"))
+    assert store.get(key).handle == "task-original"
     question = question_for(key, status="pending")
     record_user_question(app, question)
     app.state.mcp_app_loop = asyncio.get_running_loop()
@@ -84,7 +93,8 @@ async def test_shared_cancel_wakes_pending_input_before_backend_settlement(owner
         assert current.status == "input_required" and current.cancel_requested
         assert current.cancel_acknowledged
         assert await asyncio.to_thread(supervisor.request_cancel, row)
-        assert calls == ["backend-cancel"]
+        assert calls == ["backend-cancel", "backend-cancel"]
+        assert not driver.done() and store.get(key).status == "input_required"
         released.set()
         await driver
     finally:
@@ -96,7 +106,7 @@ async def test_cancel_before_input_publication_does_not_park_a_new_question(owne
     """Persisted intent wins even when no input question existed at cancellation time."""
     app, key = owner
     store = app.state.sessions.task_store
-    store.put(replace(store.get(key), cancel_requested=True))
+    await asyncio.to_thread(store.put, replace(store.get(key), cancel_requested=True))
     result = await asyncio.wait_for(call_input(app, invocation_for(key), timeout=10), timeout=1)
     assert result.action == "cancel"
     questions = list(app.state.user_questions.values())
@@ -116,7 +126,7 @@ async def test_explicit_cancel_never_closes_another_task_input(owner: Any, colli
     second = question_for(other, status="pending").model_copy(update={"id": "other-question"})
     record_user_question(app, first)
     record_user_question(app, second)
-    store.put(replace(store.get(key), cancel_requested=True))
+    await asyncio.to_thread(store.put, replace(store.get(key), cancel_requested=True))
     assert cancel_task_inputs(app, key) == 1
     assert app.state.user_questions[first.id].status == "cancelled"
     assert app.state.user_questions[second.id].status == "pending"
@@ -131,7 +141,7 @@ async def test_task_cancel_keeps_an_already_committed_human_answer(owner: Any) -
     store = app.state.sessions.task_store
     question = question_for(key)
     record_user_question(app, question)
-    store.put(replace(store.get(key), cancel_requested=True))
+    await asyncio.to_thread(store.put, replace(store.get(key), cancel_requested=True))
     assert cancel_task_inputs(app, key) == 0
     assert app.state.user_questions[question.id] == question
 
@@ -145,7 +155,9 @@ async def test_cancel_recovers_durable_input_missing_from_hot_projection(owner: 
     question = question_for(key, status="pending")
     record_user_question(app, question)
     app.state.user_questions.clear()
-    store.put(replace(store.get(key), cancel_requested=True, cancel_acknowledged=True))
+    await asyncio.to_thread(
+        store.put, replace(store.get(key), cancel_requested=True, cancel_acknowledged=True)
+    )
     assert cancel_task_inputs(app, key) == 1
     assert app.state.user_questions[question.id].status == "cancelled"
     stored = app.state.sessions.get(key.session_id).metadata["user_questions"][question.id]
@@ -164,7 +176,9 @@ async def test_cancel_leaves_ambiguous_legacy_input_for_ownership_reconciliation
     del question.metadata["elicitation"]["task_key"]
     record_user_question(app, question)
     row = store.get(key)
-    store.put(replace(row, cancel_requested=True))
-    store.put(replace(row, key=replace(key, backend_session_id="colliding-backend")))
+    await asyncio.to_thread(store.put, replace(row, cancel_requested=True))
+    await asyncio.to_thread(
+        store.put, replace(row, key=replace(key, backend_session_id="colliding-backend"))
+    )
     assert cancel_task_inputs(app, key) == 0
     assert app.state.user_questions[question.id].status == "pending"

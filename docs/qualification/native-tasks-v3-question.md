@@ -77,6 +77,14 @@ workload, child-route, recovery, session/workflow and CI matrix. Current broad C
 still has failures outside these accepted cases. Old task-engine evidence is
 not acceptance of its replacement.
 
+The next integration pass migrated legacy test setups to real application-owned
+MCP roots and confirmed Core writers. Fifty-four unique focused cases passed
+individually and sequentially; every private runtime root was absent afterward.
+The migrated model-loop assertion now requires a successful Question handle in
+the next model request while the question is still unanswered. The detailed
+receipt is [`native-tasks-v3-ci-migration.json`](native-tasks-v3-ci-migration.json).
+This does not represent a passing full suite or new actual-model acceptance.
+
 ## Cleanup boundary
 
 The prior single-file removal of `D:/Temp/clio-v3-pr1704-62b77512.md` was rejected
@@ -90,3 +98,13 @@ The command did not execute. These exact residuals are manual-only; no helper,
 parent deletion, move or alternative shell retries them. The ownership and
 rejection receipts are `D:/Temp/v3-site-build-sideeffects-752.json` and
 `D:/Temp/v3-site-cleanup-rejection-753.json`.
+
+A packaging-label reproduction unexpectedly entered Rust compilation after
+accepting the corrected SemVer. All fifteen owned processes settled, and scoped
+Cargo cleanup removed the newly created 1.0 GiB target. Automatic review rejected
+removal of its newly generated, untracked
+`external/gact-tui/desktop/src-tauri/Cargo.lock` as `blocked by policy`; the command
+did not run. That exact 152 KB file is also manual-only and must not be retried
+through another shell, helper, parent removal or worktree retirement. Receipts:
+`D:/Temp/v3-smoke-cli-cleanup-1097.json` and
+`D:/Temp/v3-smoke-cli-lock-rejection-1097.json`.

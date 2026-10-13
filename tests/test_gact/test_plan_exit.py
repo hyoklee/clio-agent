@@ -31,6 +31,8 @@ from clio_agent.gact.plan_mode import (
 from clio_agent.gact.transcript import EventBusTranscriptPublisher, TurnTranscript
 from clio_agent.gact.types import UserQuestion
 
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
 CLIO_A2UI_CATALOG_ID = workspace_catalog_id()
 
 

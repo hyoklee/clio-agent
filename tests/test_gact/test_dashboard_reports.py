@@ -30,6 +30,8 @@ from clio_agent.gact.dashboard_reports import (
 )
 from clio_agent.gact.types import AgentDef
 
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
 
 @pytest.fixture
 def dashboard(tmp_path: Path, monkeypatch: Any) -> tuple[Any, str, Path]:

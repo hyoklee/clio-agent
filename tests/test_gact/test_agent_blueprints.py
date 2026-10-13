@@ -3817,13 +3817,8 @@ def test_enabled_agent_blueprint_mcp_descriptor_probes_and_calls_tool(
                 isError=False,
             )
 
-    import fastmcp.client.transports as transports
-
     monkeypatch.setattr("fastmcp.Client", FakeClient)
     monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", FakeClient)
-    monkeypatch.setattr(
-        transports, "StdioTransport", lambda command, args, env=None: (command, args)
-    )
 
     workspace = tmp_path / "workspace"
     root = workspace / ".clio" / "agent-blueprints" / "earth"

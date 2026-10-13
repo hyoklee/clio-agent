@@ -33,6 +33,8 @@ from clio_agent.gact.artifacts.records import (
     Mechanism,
 )
 
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
 #: A file name carrying every character a naive query string mangles.
 AWKWARD_NAME = "plot #1 & more+50%.png"
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64

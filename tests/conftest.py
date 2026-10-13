@@ -77,7 +77,9 @@ except Exception:  # noqa: BLE001 - a warm-up failure must not block the suite
 
 import contextlib  # noqa: E402
 import tempfile  # noqa: E402
+from collections.abc import Iterator  # noqa: E402
 from pathlib import Path  # noqa: E402
+from typing import Any  # noqa: E402
 
 import pytest  # noqa: E402
 import yaml  # noqa: E402
@@ -821,31 +823,32 @@ def clio_core_namespace(request, allow_pytest_tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def clio_core_plane():
-    """What a real turn gives the agent loop: an app holding a real ARC (this test's
-    clio-core namespace), a react scope and a session. The loop has no other context
-    store; a test running ``ClioReAct`` bare opts in with
-    ``pytestmark = pytest.mark.usefixtures("clio_core_plane")``.
-    """
-    import types  # noqa: PLC0415
+def clio_core_plane(tmp_path: Path) -> Iterator[Any]:
+    """Give bare model tests the production Core writer, MCP roots and a real session."""
+    from fastapi.testclient import TestClient  # noqa: PLC0415
 
     from clio_agent.arc.memory import ARCMemory  # noqa: PLC0415
     from clio_agent.arc.storage import make_arc_store  # noqa: PLC0415
     from clio_agent.gact import context as gact_context  # noqa: PLC0415
-    from clio_agent.gact.events import EventBus  # noqa: PLC0415
+    from clio_agent.gact.app import build_app  # noqa: PLC0415
+    from tests.test_gact.test_post_messages import FakeClioAgent  # noqa: PLC0415
 
     arc = ARCMemory(store=make_arc_store(backend="cte"))
-    app = types.SimpleNamespace(state=types.SimpleNamespace(arc=arc, bus=EventBus()))
-    tokens = [
-        gact_context.set_app(app),
-        gact_context.set_react_scope("agent"),
-        gact_context.set_react_session("sess-plane"),
-    ]
-    try:
-        yield app
-    finally:
-        for token in reversed(tokens):
-            gact_context.reset(token)
+    app = build_app(sessions_path=tmp_path / "plane-sessions.json", arc=arc, agent=FakeClioAgent())
+    with TestClient(app):
+        app.state.workspaces.update("ws_default", root_path=str(tmp_path))
+        session = app.state.sessions.create(workspace_id="ws_default", title="Model test context")
+        tokens = [
+            gact_context.set_app(app),
+            gact_context.set_session_id(session.id),
+            gact_context.set_react_scope("agent"),
+            gact_context.set_react_session(session.id),
+        ]
+        try:
+            yield app
+        finally:
+            for token in reversed(tokens):
+                gact_context.reset(token)
 
 
 def _path_under(path: Path, base: Path) -> bool:

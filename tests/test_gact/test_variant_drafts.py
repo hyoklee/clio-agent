@@ -30,12 +30,14 @@ import asyncio
 import threading
 import types
 from collections.abc import Iterator
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 
 import dspy
 import pytest
+from fastapi.testclient import TestClient
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.storage import make_arc_store
@@ -73,9 +75,10 @@ class World:
     sid: str
     events: list[Any]
     sessions_path: Path
+    lifespans: ExitStack
 
 
-def _app(sessions_path: Path) -> tuple[Any, ARCMemory, list[Any]]:
+def _app(sessions_path: Path, *, lifespans: ExitStack) -> tuple[Any, ARCMemory, list[Any]]:
     arc = ARCMemory(store=make_arc_store(backend="cte"))
     app = build_app(sessions_path=sessions_path, arc=arc)
     events: list[Any] = []
@@ -86,14 +89,16 @@ def _app(sessions_path: Path) -> tuple[Any, ARCMemory, list[Any]]:
         return real_emit(event)
 
     app.state.semantic_event_sink.emit = emit
+    lifespans.enter_context(TestClient(app))
     return app, arc, events
 
 
 @pytest.fixture
 def world(tmp_path: Path) -> Iterator[World]:
-    app, arc, events = _app(tmp_path / "sessions.json")
-    sid = app.state.sessions.create(workspace_id="ws_default", title="drafts").id
-    yield World(app, arc, sid, events, tmp_path / "sessions.json")
+    with ExitStack() as lifespans:
+        app, arc, events = _app(tmp_path / "sessions.json", lifespans=lifespans)
+        sid = app.state.sessions.create(workspace_id="ws_default", title="drafts").id
+        yield World(app, arc, sid, events, tmp_path / "sessions.json", lifespans)
 
 
 def _bind(app: Any, sid: str, turn: str) -> list[Any]:
@@ -284,7 +289,7 @@ def test_a_user_pick_resumes_with_the_picks_line_even_after_a_restart(
     assert load_run(world.app, world.sid, variants_id).status == "awaiting_pick"
 
     # a restart: a new process on the same session registry and the same clio-core
-    app2, arc2, _events = _app(world.sessions_path)
+    app2, arc2, _events = _app(world.sessions_path, lifespans=world.lifespans)
     restored = app2.state.user_questions[question.id]
     _answer(app2, restored, RUN1)
     resumed = _forward(app2, world.sid, routed_lm({})[0], "[Answer] Draft 2", "turn_2")

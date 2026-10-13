@@ -31,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Callable, Iterator
+from contextlib import ExitStack
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -72,9 +73,10 @@ SUMMARY = "The shipment is three days late."
 @pytest.fixture
 def world(tmp_path: Path) -> Iterator[World]:
     """One app on real clio-core with a session (as in ``test_variant_drafts``)."""
-    app, arc, events = _app(tmp_path / "sessions.json")
-    sid = app.state.sessions.create(workspace_id="ws_default", title="picks").id
-    yield World(app, arc, sid, events, tmp_path / "sessions.json")
+    with ExitStack() as lifespans:
+        app, arc, events = _app(tmp_path / "sessions.json", lifespans=lifespans)
+        sid = app.state.sessions.create(workspace_id="ws_default", title="picks").id
+        yield World(app, arc, sid, events, tmp_path / "sessions.json", lifespans)
 
 
 def _turn(app: Any, sid: str, lm: Any, text: str, turn: str) -> dspy.Prediction:
@@ -410,7 +412,7 @@ def test_a_restart_between_the_pause_and_the_new_message(
     _lm, _engine, question = _paused(world, monkeypatch)
     variants_id = question.metadata["variants_id"]
 
-    app2, _arc2, events2 = _app(world.sessions_path)  # a new process, same clio-core
+    app2, _arc2, events2 = _app(world.sessions_path, lifespans=world.lifespans)
     lm2, engine2 = routed_lm({SCOPE: [Reply(text=SUMMARY)]})
     _turn(app2, world.sid, lm2, NEXT, "turn_2")
 
@@ -420,7 +422,7 @@ def test_a_restart_between_the_pause_and_the_new_message(
     ]
     assert "were never picked: the user sent a new message instead" in _notice(engine2)[0]
 
-    app3, _arc3, _events3 = _app(world.sessions_path)  # and once more: all of it durable
+    app3, _arc3, _events3 = _app(world.sessions_path, lifespans=world.lifespans)
     assert app3.state.user_questions[question.id].status == "cancelled"
     assert _answer_route(app3, world.sid, question.id, RUN0).status_code == 409
     [served] = _runs(app3, world.sid)
@@ -437,7 +439,7 @@ def test_a_close_cut_short_by_a_restart_is_finished_at_the_next_turn(
     variants_id = question.metadata["variants_id"]
     assert load_run(world.app, world.sid, variants_id).status == "awaiting_pick"
 
-    app2, _arc2, _events2 = _app(world.sessions_path)
+    app2, _arc2, _events2 = _app(world.sessions_path, lifespans=world.lifespans)
     lm2, engine2 = routed_lm({SCOPE: [Reply(text=SUMMARY)]})
     _turn(app2, world.sid, lm2, NEXT, "turn_2")
 

@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -47,6 +48,7 @@ from clio_agent.gact.a2ui_capabilities import remember_client_capabilities, sele
 from clio_agent.gact.a2ui_catalogs.builtin import basic_catalog_id, workspace_catalog_id
 from clio_agent.gact.a2ui_producer import build_create_a2ui_surface_tool
 from clio_agent.gact.agent_blueprints import install_agent_blueprint
+from clio_agent.gact.agent_mailbox import pending_mail, stage_session_inputs
 from clio_agent.gact.agents.skill_runtime import build_load_skill_tool, skill_runtime_for_agent
 from clio_agent.gact.app import build_app
 from clio_agent.gact.interaction_types import UserQuestion
@@ -55,7 +57,7 @@ from tests._marketplace import MARKETPLACE_ROOT
 
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
 
-pytestmark = pytest.mark.marketplace
+pytestmark = [pytest.mark.marketplace, pytest.mark.usefixtures("native_builtin_lifespan")]
 
 PACK_ROOT = MARKETPLACE_ROOT / "earthscope-single-agent"
 PACK_BLUEPRINT_ID = "earthscope-single-agent"
@@ -162,12 +164,18 @@ def _advertise_pack_first(app: Any, session_id: str) -> None:
 
 def _stub_spawn(app: Any, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     """Prevent a real turn from executing; return the list of spawned coros."""
+    from tests.test_gact.test_post_messages import FakeClioAgent
 
     spawned: list[Any] = []
+    started = threading.Event()
+    # Admission requires an available model owner; only its execution is stubbed.
+    monkeypatch.setattr(app.state, "agent", FakeClioAgent())
+    monkeypatch.setattr(app.state, "test_spawn_started", started, raising=False)
 
     def _spawn(coro: Any, **_kwargs: Any) -> None:
         spawned.append(coro)
         coro.close()
+        started.set()
 
     monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
     return spawned
@@ -384,7 +392,7 @@ def test_idle_action_delivers_and_starts_a_turn_with_context_verbatim(
     client, app, sid = _activated_session(tmp_path, monkeypatch)
     _advertise_pack_first(app, sid)
     _create_example_surface(app, sid, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    spawned = _stub_spawn(app, monkeypatch)
     action = _selected_action(
         {"searchId": "earthscope-la-20260917", "stationIds": ["P123", "P456"]},
         "2026-09-17T00:00:00Z",
@@ -398,15 +406,26 @@ def test_idle_action_delivers_and_starts_a_turn_with_context_verbatim(
     body = response.json()
     assert body["state"] == "delivered"
     assert body["delivery"] == "start"
+    assert app.state.test_spawn_started.wait(5), "Queued action was not admitted"
     surface = app.state.a2ui_store.get(sid, "earthscope-stations")
     assert surface is not None
     assert len(surface.actions) == 1
     assert surface.actions[0]["state"] == "delivered"
-    user_messages = [m for m in app.state.messages[sid] if m.role == "user"]
-    assert user_messages[-1].metadata["a2ui_action_context"] == {
+    mail = pending_mail(app, sid)
+    assert len(mail) == 1 and mail[0]["source_kind"] == "human"
+    expected_context = {
         "searchId": "earthscope-la-20260917",
         "stationIds": ["P123", "P456"],
     }
+    assert mail[0]["metadata"]["a2ui_action_context"] == expected_context
+    wakes = [m for m in app.state.messages[sid] if m.role == "system"]
+    assert len(spawned) == 1 and len(wakes) == 1
+    assert wakes[0].metadata["agent_mail_wake"] == [mail[0]["message_id"]]
+    staged = stage_session_inputs(app, sid)
+    assert len(staged) == 1
+    payload = json.loads(staged[0][1].split("\n")[-1])
+    assert payload["metadata"]["a2ui_action_context"] == expected_context
+    assert pending_mail(app, sid) == mail  # Staging is not recipient input commit.
 
 
 def test_duplicate_submission_is_one_record_and_one_turn(
@@ -429,6 +448,7 @@ def test_duplicate_submission_is_one_record_and_one_turn(
 
     assert first.status_code == 200, first.text
     assert second.status_code == 200, second.text
+    assert app.state.test_spawn_started.wait(5), "Queued action was not admitted"
     assert first.json()["action_id"] == second.json()["action_id"]
     assert len(spawned) == 1
     surface = app.state.a2ui_store.get(sid, "earthscope-stations")

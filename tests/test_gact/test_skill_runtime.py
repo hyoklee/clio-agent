@@ -30,6 +30,8 @@ from clio_agent.gact.types import AgentDef
 
 from .a2ui_catalog_binding import bind_builtin_catalogs
 
+pytestmark = pytest.mark.usefixtures("clio_core_plane")
+
 BODY = "STEP ONE: inspect. STEP TWO: judge. SECRET_PROCEDURE_MARKER."
 
 
@@ -71,7 +73,6 @@ def test_load_records_exact_procedure_and_bundled_body_at_load_time(
 ) -> None:
     import hashlib
 
-    from clio_agent.gact import context
     from clio_agent.gact.runtime import globals as runtime_globals
 
     recorded: list[dict[str, Any]] = []
@@ -79,8 +80,6 @@ def test_load_records_exact_procedure_and_bundled_body_at_load_time(
     def capture(*args: Any, **kwargs: Any) -> None:
         recorded.append(kwargs["payload"])
 
-    monkeypatch.setattr(context, "active_app", lambda: object())
-    monkeypatch.setattr(context, "active_session_id", lambda: "session")
     monkeypatch.setattr(runtime_globals, "_emit_semantic_event", capture)
     tool = build_load_skill_tool(_agent(pack), _runtime(pack))
     tool.func(skill_id="quality-rubric")

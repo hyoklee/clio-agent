@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -41,6 +42,8 @@ from clio_agent.tools.mcp_task_records import TaskKey, TaskRecord, resolve_store
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
 CLIO_A2UI_CATALOG_ID = workspace_catalog_id()
 from tests._scripted_engine import calls, scripted_lm
+
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
 
 
 def test_damaged_surface_ledger_degrades_interactions_and_snapshot(tmp_path, monkeypatch) -> None:
@@ -178,18 +181,22 @@ def test_ask_user_runtime_tool_injects_owner_task_and_attended_correlation(
         allowFreeform=True,
     )
 
-    pending = app.state.sessions.get(child).metadata["pending_ask_user"]
-    assert "END YOUR TURN" in result
-    assert pending["owner_session_id"] == child
-    assert pending["attended_session_id"] == root
-    assert pending["task_id"] == "task_child"
-    assert pending["tool_name"] == "ask_user"
-    assert pending["invocation_id"] == "call_native_ask"
-    assert pending["allow_freeform"] is True
+    receipt = json.loads(result)
+    question = app.state.user_questions[receipt["question_id"]]
+    assert receipt["accepted"] and receipt["kind"] == "Question"
+    assert question.task_handle == receipt["handle"]
+    assert question.owner_session_id == child
+    assert question.attended_session_id == root
+    assert question.metadata["task_id"] == "task_child"
+    assert question.metadata["tool_name"] == "ask_user"
+    assert question.metadata["invocation_id"] == "call_native_ask"
+    assert question.allow_freeform is True
+    assert question.status == "pending" and question.response_mode == "async"
+    assert not app.state.sessions.get(child).metadata.get("pending_ask_user")
 
 
-def test_ask_user_success_ends_react_turn_before_another_model_step(tmp_path) -> None:
-    """A native question is a runtime yield, not advice the model may ignore."""
+def test_ask_user_success_returns_a_handle_to_the_next_model_step(tmp_path) -> None:
+    """Posting a question lets the model continue before the human answers."""
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
     session = app.state.sessions.create(workspace_id="ws_default", title="ask")
@@ -212,7 +219,10 @@ def test_ask_user_success_ends_react_turn_before_another_model_step(tmp_path) ->
                 ),
                 text="The requested study lacks a defined objective.",
             ),
-            calls(("submit", {"answer": "wrong"}), text="This second model step must never run."),
+            calls(
+                ("submit", {"answer": "I can prepare independent work while you decide."}),
+                text="The question is open; independent work can continue.",
+            ),
         ]
     )
     app_token = gact_context.set_app(app)
@@ -230,12 +240,22 @@ def test_ask_user_success_ends_react_turn_before_another_model_step(tmp_path) ->
         gact_context.reset(session_token)
         gact_context.reset(app_token)
 
-    assert prediction.termination_reason == "ask_user_yield"
-    assert not getattr(prediction, "answer", "")
-    assert len(engine.requests) == 1
-    pending = app.state.sessions.get(session.id).metadata["pending_ask_user"]
-    assert pending["question"] == "What outcome should the simulation estimate?"
-    assert pending["surfaced"] is False
+    assert prediction.termination_reason == "submit"
+    assert prediction.answer == "I can prepare independent work while you decide."
+    assert len(engine.requests) == 2
+    question = next(iter(app.state.user_questions.values()))
+    assert question.prompt == "What outcome should the simulation estimate?"
+    assert question.status == "pending" and question.response_mode == "async"
+    from tests._scripted_engine import wire
+
+    observations = [
+        part for _role, parts in wire(engine.requests[1]) for part in parts if part[0] == "result"
+    ]
+    assert len(observations) == 1 and observations[0][3] is False
+    receipt = json.loads(observations[0][2])
+    assert receipt["accepted"] and receipt["handle"] == question.task_handle
+    assert receipt["status"] == "input_required"
+    assert not app.state.sessions.get(session.id).metadata.get("pending_ask_user")
 
 
 def test_interactions_aggregate_children_and_route_question_and_permission(

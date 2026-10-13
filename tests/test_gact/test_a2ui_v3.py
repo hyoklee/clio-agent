@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi.testclient import TestClient
-from pytest import MonkeyPatch, raises
+from pytest import MonkeyPatch, mark, raises
 
 from clio_agent.gact import a2ui as a2ui_module
 from clio_agent.gact import a2ui_store as a2ui_store_module
@@ -29,6 +29,8 @@ from clio_agent.gact.parts import Part
 from clio_agent.gact.protocol.constants import A2UI_V091
 from clio_agent.gact.protocol.v3.message import transcript_entities
 from clio_agent.gact.types import Message
+
+pytestmark = mark.usefixtures("native_builtin_lifespan")
 
 HEADERS = {
     "X-GACT-Version": "0.3",

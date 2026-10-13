@@ -18,6 +18,8 @@ from clio_agent.gact.catalog import _builtin_main_agent
 from clio_agent.gact.skills import SkillCatalog
 from clio_agent.gact.types import AgentDef
 
+pytestmark = pytest.mark.usefixtures("clio_core_plane")
+
 SKILL_ID = "review-visual-presentation"
 
 

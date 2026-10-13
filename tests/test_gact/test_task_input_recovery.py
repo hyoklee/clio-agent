@@ -12,10 +12,13 @@ from typing import Any, Literal
 import pytest
 from fastapi import FastAPI
 
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.storage import make_arc_store
 from clio_agent.gact import elicitation_bridge as bridge
 from clio_agent.gact.elicitation_bridge import handle_elicitation
 from clio_agent.gact.elicitation_correlation import invocation_with_request_correlation
 from clio_agent.gact.events import EventBus
+from clio_agent.gact.mcp_task_store import app_task_store
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.types import UserQuestion
 from clio_agent.gact.user_question_ledger import record_user_question, restore_user_questions
@@ -36,10 +39,11 @@ def owner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Any:
     app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
     app.state.user_questions = {}
     app.state.bus = EventBus()
+    app.state.arc = ARCMemory(store=make_arc_store(backend="cte"))
     session = app.state.sessions.create(workspace_id="ws", title="input recovery")
     key = TaskKey("server-a", session.id, "backend-task", "backend-session-a")
     assert app.state.sessions.task_store is not None
-    app.state.sessions.task_store.put(
+    app_task_store(app).put(
         TaskRecord(key, tool="guarded", invocation_id="inv-original", status="input_required")
     )
     yield app, key
@@ -147,8 +151,9 @@ async def test_full_identity_never_uses_colliding_backend_answer(owner: Any, fie
     )
     record_user_question(app, colliding)
     record_user_question(app, original)
-    app.state.sessions.task_store.put(
-        TaskRecord(other, tool="guarded", invocation_id="inv-original", status="input_required")
+    await asyncio.to_thread(
+        app.state.sessions.task_store.put,
+        TaskRecord(other, tool="guarded", invocation_id="inv-original", status="input_required"),
     )
     result = await call_input(app, replace(invocation_for(key), task_key=key))
     assert result.action == "accept"
@@ -163,8 +168,9 @@ async def test_ambiguous_legacy_input_declines_without_creating_question(owner: 
     del question.metadata["elicitation"]["task_key"]
     record_user_question(app, question)
     other = replace(key, backend_session_id="other-backend-session")
-    app.state.sessions.task_store.put(
-        TaskRecord(other, tool="guarded", invocation_id="inv-original", status="input_required")
+    await asyncio.to_thread(
+        app.state.sessions.task_store.put,
+        TaskRecord(other, tool="guarded", invocation_id="inv-original", status="input_required"),
     )
     result = await call_input(app, replace(invocation_for(key), task_key=key))
     assert result.action == "decline"
@@ -219,7 +225,9 @@ async def test_recoverable_driver_shutdown_preserves_pending_question(owner: Any
     """Losing an HTTP observer neither cancels the input nor resets its deadline."""
     app, key = owner
     row = app.state.sessions.task_store.get(key)
-    app.state.sessions.task_store.put(replace(row, backend={"transport": "http"}))
+    await asyncio.to_thread(
+        app.state.sessions.task_store.put, replace(row, backend={"transport": "http"})
+    )
     task = asyncio.create_task(call_input(app, replace(invocation_for(key), task_key=key), 10))
     await asyncio.sleep(0)
     question = next(iter(app.state.user_questions.values()))
@@ -258,8 +266,9 @@ async def test_explicit_or_nonrecoverable_cancellation_settles_input(
     """Recoverability does not turn explicit cancellation into a pending human ask."""
     app, key = owner
     row = app.state.sessions.task_store.get(key)
-    app.state.sessions.task_store.put(
-        replace(row, backend={"transport": transport}, cancel_requested=cancel_requested)
+    await asyncio.to_thread(
+        app.state.sessions.task_store.put,
+        replace(row, backend={"transport": transport}, cancel_requested=cancel_requested),
     )
     task = asyncio.create_task(call_input(app, replace(invocation_for(key), task_key=key), 10))
     await asyncio.sleep(0)
@@ -333,7 +342,8 @@ async def test_answer_retained_until_backend_receipt_despite_resolved_history_bo
     app.state.user_questions.clear()
     assert (await call_input(app, invocation_for(key))).content == {"value": "chosen-live-value"}
     row = app.state.sessions.task_store.get(key)
-    app.state.sessions.task_store.put(
+    await asyncio.to_thread(
+        app.state.sessions.task_store.put,
         replace(
             row,
             input_answers=(
@@ -343,7 +353,7 @@ async def test_answer_retained_until_backend_receipt_despite_resolved_history_bo
                     delivered=True,
                 ),
             ),
-        )
+        ),
     )
     record_user_question(
         app,
@@ -367,8 +377,9 @@ async def test_owner_session_cannot_reuse_another_conversations_answer(owner: An
     record_user_question(app, question_for(key))
     other_session = app.state.sessions.create(workspace_id="ws", title="other")
     other = replace(key, session_id=other_session.id)
-    app.state.sessions.task_store.put(
-        TaskRecord(other, tool="guarded", invocation_id="inv-original", status="input_required")
+    await asyncio.to_thread(
+        app.state.sessions.task_store.put,
+        TaskRecord(other, tool="guarded", invocation_id="inv-original", status="input_required"),
     )
     result = await call_input(app, replace(invocation_for(other), task_key=other), timeout=0)
     assert result.action == "cancel"

@@ -33,7 +33,7 @@ from clio_agent.gact.goal import _get_goal
 from clio_agent.gact.skills import SkillCatalog
 from clio_agent.gact.types import AgentDef
 
-pytestmark = pytest.mark.usefixtures("host_agent_executor")
+pytestmark = pytest.mark.usefixtures("host_agent_executor", "native_builtin_lifespan")
 
 
 class _Agent:
