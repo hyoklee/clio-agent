@@ -24,6 +24,11 @@ exit code zero, with the real Windows fence active. No model inference was run.
   installer hook. Shared startup callers await one operation. Routine startup
   does not request elevation; first-time legacy account creation still needs real
   Windows administrator approval.
+- Prefer the active Windows wheel over ambient PATH when no Desktop manifest is
+  present. This machine had CLIO's 0.162.1 runtime installed but selected ambient
+  0.157.1, forcing legacy workspace ACL preparation. Native MXC passed the real
+  filesystem, descendant and network denial checks in 1.40 seconds. This is a
+  runtime-selection fix; no dependency or CLIO Core change is required.
 - Publish current setup step, start time, elapsed time and retained outcome through
   `/v1/system/sandbox`. Navigating away leaves the service worker running. The
   workspace notification follows it and reports the outcome or required restart.
@@ -61,3 +66,13 @@ the Infrastructure button owner at 0.566 seconds and CLI setup at 0.388 seconds.
 All ten grant records were reused. A real Windows filesystem check confirmed
 inherited RX on existing and newly created children and unchanged protected child
 ACLs, consistent with [Windows inheritance semantics](https://learn.microsoft.com/en-us/windows/win32/secauthz/automatic-propagation-of-inheritable-aces).
+
+The separate shell-call report was real: `Write-Output 'protected execution check'`
+took 81.65 seconds at 17:54. Windows logs account for 35.22 seconds granting the
+OPAL workspace while an MCP launcher was preparing it concurrently. Remaining
+time is not broken down in the old telemetry. The startup grant measurements above
+do not establish per-command latency; native execution is qualified separately.
+The same no-op through the real built-in shell and verified native MXC measured
+3.59, 2.54 and 2.13 seconds in the owned scratch workspace. The OPAL analysis was
+not rerun. Native qualification and timing receipts are retained beside the
+earlier setup measurements.

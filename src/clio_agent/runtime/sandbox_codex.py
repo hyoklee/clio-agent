@@ -229,9 +229,10 @@ def detect_codex(
     defaults to :func:`_bundled_codex_root`); when this process runs from that bundled runtime
     AND the bundled binary exists on disk, it is preferred FIRST (:data:`CODEX_SOURCE_BUNDLED`) —
     a desktop install must not depend on the user separately installing codex on PATH. Otherwise
-    falls back to the ``which``-based PATH lookup (:data:`CODEX_SOURCE_PATH`). If PATH has
-    no Windows client, the active Python wheel is checked (:data:`CODEX_SOURCE_BUNDLED`),
-    including source/venv installs without a Desktop runtime manifest. On win32 the
+    checks the active Python wheel on Windows (:data:`CODEX_SOURCE_BUNDLED`), including
+    source/venv installs without a Desktop runtime manifest. Only installations without
+    their own runtime use PATH (:data:`CODEX_SOURCE_PATH`); an older ambient client must
+    not mask CLIO's qualified native backend. On win32 the
     launchable ``codex.cmd``/``codex.exe`` are preferred over the extensionless ``codex`` (a
     POSIX shim ``which`` returns first cannot be exec'd by CreateProcess — the #1025 srt.cmd
     lesson). The returned :attr:`CodexDetection.reason` is the typed ladder reason the
@@ -257,13 +258,13 @@ def detect_codex(
             if platform.startswith("win")
             else (CODEX_BINARY_NAME,)
         )
-        binary = next((p for p in (which(n) for n in names) if p), "")
-        source = CODEX_SOURCE_PATH
-        if not binary and platform.startswith("win"):
-            wheel = wheel_binary()
-            if wheel is not None:
-                binary = str(wheel)
-                source = CODEX_SOURCE_BUNDLED
+        wheel = wheel_binary() if platform.startswith("win") else None
+        if wheel is not None:
+            binary = str(wheel)
+            source = CODEX_SOURCE_BUNDLED
+        else:
+            binary = next((p for p in (which(n) for n in names) if p), "")
+            source = CODEX_SOURCE_PATH
 
     if not binary:
         return CodexDetection(
