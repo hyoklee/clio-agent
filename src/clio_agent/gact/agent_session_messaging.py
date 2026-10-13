@@ -7,7 +7,7 @@ from typing import Any
 from clio_agent.gact.agent_mailbox import accept_agent_mail, validate_agent_message
 from clio_agent.gact.agent_targets import resolve_agent_target
 from clio_agent.gact.human_task_intervention import human_task_intervention
-from clio_agent.gact.subagent_lifecycle import execution_held, on_app_loop, resume_subagent
+from clio_agent.gact.subagent_lifecycle import execution_held, resume_subagent
 
 
 def message_agent_address(
@@ -101,4 +101,6 @@ def message_agent_address(
             "supersedes_task_id": supersedes_id,
         }
 
-    return on_app_loop(app, accept)
+    # The HTTP bridge and model tool already execute this short operation off-loop.
+    # Only actual model lifecycle operations cross back to their application owner.
+    return accept()

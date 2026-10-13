@@ -458,11 +458,11 @@ async def _deliver_run(
 
     if operation == "cancel":
         from clio_agent.gact.routes.session_cancellation import (
-            cancel_session_state,  # noqa: PLC0415
+            cancel_session_state_async,  # noqa: PLC0415
         )
 
         try:
-            cancel_session_state(app, deps, sid)
+            await cancel_session_state_async(app, deps, sid)
         except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
             fail_and_publish(app, sid, record, exc)
             raise

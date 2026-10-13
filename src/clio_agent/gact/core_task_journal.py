@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -54,11 +55,94 @@ class CoreTaskJournal:
     def __init__(self, app: Any) -> None:
         self.app = app
         self.lock = asyncio.Lock()
+        self.writer_lock = threading.RLock()
+        self.projections: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
+        self.recipient_index: dict[str, dict[tuple[str, str, str], dict[str, Any]]] = {}
+        self.task_relationships: dict[str, dict[str, dict[str, Any]]] = {}
+        self.provisional_controls: deque[tuple[str, str, str, dict[str, Any]]] = deque()
         self.rows: dict[str, dict[str, Any]] = {}
         self.unconfirmed: dict[str, dict[str, Any]] = {}
         self.input_commits: dict[str, set[str]] = {}
         self.unconfirmed_progress: deque[_TaskObservation] = deque()
         self.restored = False
+
+    def _append(self, arc: Any, event: _TaskObservation) -> None:
+        with self.writer_lock:
+            arc._append_event_segment(event, event.event_type, event.session_id)
+
+    def record(
+        self, sid: str, event_type: str, identity: str, payload: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Confirm an owner's immutable observation before updating its rebuildable view."""
+        from clio_agent.arc.storage import ClioCoreStore
+        from clio_agent.gact.server_boot import process_arc
+
+        with self.writer_lock:
+            arc = process_arc(self.app)
+            if arc is None or not isinstance(arc._store, ClioCoreStore):
+                raise RuntimeError("Durable task history requires confirmed Core storage")
+            stamped = {
+                **payload,
+                "identity": identity,
+                "observation_id": "taskobs_" + uuid4().hex,
+                "recorded_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._append(
+                arc,
+                _TaskObservation(
+                    session_id=sid,
+                    event_type=event_type,
+                    payload=stamped,
+                    occurred_at=stamped["recorded_at"],
+                ),
+            )
+            self.projections.setdefault((sid, event_type), {})[identity] = stamped
+            if recipient := stamped.get("recipient_session_id"):
+                self.recipient_index.setdefault(recipient, {})[(sid, event_type, identity)] = (
+                    stamped
+                )
+            if event_type == "task.subscription":
+                self.task_relationships.setdefault(stamped["handle"], {})[sid] = stamped
+            return dict(stamped)
+
+    def subscriptions(self, handle: str = "") -> list[dict[str, Any]]:
+        """Read the rebuildable task relationship index, without scanning sessions."""
+        with self.writer_lock:
+            groups = (
+                [self.task_relationships.get(handle, {})]
+                if handle
+                else self.task_relationships.values()
+            )
+            return [dict(row) for group in groups for row in group.values()]
+
+    def records(self, sid: str, event_type: str) -> list[dict[str, Any]]:
+        """Read a view rebuilt from confirmed Core observations, retaining historical content."""
+        with self.writer_lock:
+            return [dict(row) for row in self.projections.get((sid, event_type), {}).values()]
+
+    def for_recipient(self, sid: str, event_type: str) -> list[dict[str, Any]]:
+        """Read indexed notification relationships without scanning other sessions."""
+        with self.writer_lock:
+            return [
+                dict(row)
+                for key, row in self.recipient_index.get(sid, {}).items()
+                if key[1] == event_type
+            ]
+
+    def record_control(self, sid: str, identity: str, payload: dict[str, Any]) -> dict[str, Any]:
+        """Retain trusted control evidence provisionally if Core cannot confirm it."""
+        try:
+            return {
+                **self.record(sid, "task.intervention", identity, payload),
+                "recording": "confirmed",
+            }
+        except Exception as exc:
+            logger.exception(
+                "Human control proceeds reason=core_write_unconfirmed action=%s",
+                payload.get("action"),
+            )
+            self.provisional_controls.append((sid, "task.intervention", identity, payload))
+            return {**payload, "recording": "unconfirmed", "recording_error": str(exc)}
 
     async def _arc(self) -> Any:
         from clio_agent.arc.storage import ClioCoreStore
@@ -113,9 +197,7 @@ class CoreTaskJournal:
             occurred_at=stamped["updated_at"],
             turn_id=stamped.get("turn_id", ""),
         )
-        await asyncio.to_thread(
-            arc._append_event_segment, event, event.event_type, event.session_id
-        )
+        await asyncio.to_thread(self._append, arc, event)
         self.rows[stamped["handle"]] = stamped
         self.unconfirmed.pop(stamped["handle"], None)
         return dict(stamped)
@@ -198,13 +280,12 @@ class CoreTaskJournal:
 
     async def _write_progress(self, event: _TaskObservation) -> None:
         arc = await self._arc()
-        await asyncio.to_thread(
-            arc._append_event_segment, event, event.event_type, event.session_id
-        )
+        await asyncio.to_thread(self._append, arc, event)
 
     def pending(self, sid: str, notification_id: str) -> bool:
         """Only a confirmed recipient-input commit acknowledges a notification."""
-        return notification_id not in self.input_commits.get(sid, set())
+        with self.writer_lock:
+            return notification_id not in self.input_commits.get(sid, set())
 
     async def commit_input(self, recorder: Any, step: int) -> str:
         """Confirm the fixed recipient context and its included notifications before the model."""
@@ -243,13 +324,40 @@ class CoreTaskJournal:
                     },
                     "scope": recorder.scope,
                 }
+                for (_, event_type), rows in self.projections.items():
+                    if event_type not in {
+                        "task.mail.accepted",
+                        "task.intervention",
+                        "task.subscription",
+                    }:
+                        continue
+                    for row in rows.values():
+                        notice = row.get("notification_id") or "mail:" + (
+                            row.get("message_id") or row["identity"]
+                        )
+                        if notice in included:
+                            record["notification_references"][notice] = (
+                                {
+                                    "relationship": row["observation_id"],
+                                    "result": self.rows.get(row["handle"], {}).get(
+                                        "observation_id"
+                                    ),
+                                }
+                                if event_type == "task.subscription"
+                                else row["observation_id"]
+                            )
                 identity = recorder._write("recipient_input", record, step, "")
                 if not identity:
                     raise RuntimeError("Recipient input was not confirmed in Core")
                 return identity, included
 
-            identity, included = await asyncio.to_thread(write)
-            self.input_commits.setdefault(recorder.session, set()).update(included)
+            def serialized_write() -> tuple[str, list[str]]:
+                with self.writer_lock:
+                    return write()
+
+            identity, included = await asyncio.to_thread(serialized_write)
+            with self.writer_lock:
+                self.input_commits.setdefault(recorder.session, set()).update(included)
             return identity
 
     def collected_ids(self, sid: str, value: Any) -> list[str]:
@@ -263,19 +371,19 @@ class CoreTaskJournal:
             return [identity for item in value for identity in self.collected_ids(sid, item)]
         if not isinstance(value, dict):
             return []
-        handle = value.get("handle")
-        row = (
-            (self.unconfirmed.get(handle) or self.rows.get(handle))
-            if isinstance(handle, str)
-            else None
-        )
         found = []
-        if (
-            row
-            and row["session_id"] == sid
-            and row.get("notification_id") == value.get("notification_id")
-        ):
-            found.append(row["notification_id"])
+        if isinstance(handle := value.get("handle"), str):
+            from clio_agent.gact.task_delivery import result_notification_id
+            from clio_agent.gact.task_projection import TERMINAL, resolve_task
+
+            try:
+                row = resolve_task(self.app, sid, handle)
+            except ValueError:
+                row = None
+            if row and row["effective_status"] in TERMINAL:
+                notice = result_notification_id(self.app, sid, row)
+                if notice and notice == value.get("notification_id"):
+                    found.append(notice)
         return found + [
             identity
             for item in value.values()
@@ -287,14 +395,22 @@ class CoreTaskJournal:
         """Rebuild the projection from Core, without replaying a submission."""
         arc = await self._arc()
 
-        def read() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]]]:
+        def read() -> tuple[dict[str, dict[str, Any]], dict[str, set[str]], dict[Any, Any]]:
             from clio_agent.arc.lane_chunking import lane_segments
 
             records: dict[str, dict[str, Any]] = {}
             commits: dict[str, set[str]] = {}
+            projections: dict[Any, Any] = {}
             for session in self.app.state.sessions.list():
                 for segment in lane_segments(arc._segments, session.id, "_events"):
                     content = segment.content
+                    payload = content.get("payload", {})
+                    if content.get("event_type", "").startswith("task.") and payload.get(
+                        "identity"
+                    ):
+                        projections.setdefault((session.id, content["event_type"]), {})[
+                            payload["identity"]
+                        ] = dict(payload)
                     if content.get("event_type") == "task.native.observation":
                         row = content["payload"]
                         records[row["handle"]] = dict(row)
@@ -312,17 +428,43 @@ class CoreTaskJournal:
                             commits.setdefault(session.id, set()).update(
                                 segment.content["notification_ids"]
                             )
-            return records, commits
+            return records, commits, projections
 
         async with self.lock:
-            self.rows, self.input_commits = await asyncio.to_thread(read)
+            self.rows, self.input_commits, self.projections = await asyncio.to_thread(read)
+            self.recipient_index = {}
+            self.task_relationships = {}
+            for (sid, event_type), rows in self.projections.items():
+                for identity, row in rows.items():
+                    if recipient := row.get("recipient_session_id"):
+                        self.recipient_index.setdefault(recipient, {})[
+                            (sid, event_type, identity)
+                        ] = row
+                    if event_type == "task.subscription":
+                        self.task_relationships.setdefault(row["handle"], {})[sid] = row
             self.restored = True
 
     async def reconcile(self) -> None:
         """Retry provisional records in application memory when Core returns."""
         async with self.lock:
+            while self.provisional_controls:
+                sid, event_type, identity, payload = self.provisional_controls[0]
+                await asyncio.to_thread(self.record, sid, event_type, identity, payload)
+                self.provisional_controls.popleft()
+                from clio_agent.gact.agent_mailbox import request_mail_wake
+
+                request_mail_wake(self.app, payload["recipient_session_id"])
             while self.unconfirmed_progress:
                 await self._write_progress(self.unconfirmed_progress[0])
                 self.unconfirmed_progress.popleft()
             for row in list(self.unconfirmed.values()):
                 await self._commit(row)
+
+
+def core_task_journal(app: Any) -> CoreTaskJournal:
+    """Return the application's confirmed hierarchy writer and rebuildable projections."""
+    journal = getattr(app.state, "core_task_journal", None)
+    if journal is None:
+        journal = CoreTaskJournal(app)
+        app.state.core_task_journal = journal
+    return journal

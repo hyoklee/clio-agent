@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from clio_agent.gact.agent_tasks import AgentTask
-from clio_agent.gact.task_projection import resolve_task
+from clio_agent.gact.task_permissions import require_coordination
 
 
 def resolve_agent_target(
@@ -50,31 +50,11 @@ def resolve_agent_target(
             session = app.state.sessions.get(runs[0].session_id)
     if session is None:
         raise ValueError("recipient_session_gone")
-    owned = False
-    if task is not None and caller_sid:
-        try:
-            resolve_task(app, caller_sid, task.handle_id or task.task_id)
-            owned = True
-        except ValueError:
-            pass
     if control:
-        if task is None or (caller_sid and not owned):
+        if task is None:
             raise ValueError("unknown_or_unauthorized_task")
-    elif caller_sid and not owned and caller_sid != session.id:
-        from clio_agent.gact.routes.memory import _memory_tool_policy
-
-        # Execution authority is narrower than discovery: explicit intent is
-        # required even when a caller supplies a broad scope label.
-        if not user_intent.strip():
-            raise ValueError("peer_message_requires_user_intent")
-        policy = _memory_tool_policy(
-            app,
-            session_id=caller_sid,
-            target_session_id=session.id,
-            body={"scope": scope, "user_intent": user_intent},
-        )
-        if not policy["allowed"]:
-            raise ValueError("peer_message_scope_denied")
+    if caller_sid:
+        require_coordination(app, caller_sid, session.id, "control" if control else "message")
     return session, task
 
 

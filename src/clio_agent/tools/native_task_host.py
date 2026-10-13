@@ -446,6 +446,9 @@ class NativeTaskHost:
                 Event(type="task.completed", session_id=observed["session_id"], payload=observed)
             )
             request_completion_wake(self.app, observed["session_id"], handle)
+            from clio_agent.gact.task_subscriptions import deliver_subscriptions
+
+            deliver_subscriptions(self.app, handle)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -529,11 +532,11 @@ class NativeTaskHost:
 
 async def start_native_hosts(app: Any) -> None:
     """Create independent Shell and connected-storage roots owned by GACT's lifespan."""
+    from clio_agent.gact.core_task_journal import core_task_journal
     from clio_agent.tools.servers.shell_server import bash
     from clio_agent.tools.servers.storage_server import register_storage
 
-    journal = CoreTaskJournal(app)
-    app.state.core_task_journal = journal
+    journal = core_task_journal(app)
     shell = NativeTaskHost(app, journal, "shell")
 
     async def shell_workload(arguments: dict[str, Any], ctx: Any) -> dict[str, Any]:

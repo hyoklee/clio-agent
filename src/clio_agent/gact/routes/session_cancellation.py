@@ -50,6 +50,17 @@ def cancel_session_state(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, 
         return payload
 
 
+async def cancel_session_state_async(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, Any]:
+    """Record human Stop off-loop, applying the turn control on its application owner."""
+    from clio_agent.gact.human_task_intervention import async_human_task_intervention
+
+    task = AgentTask.from_session(app.state.sessions.get(sid))
+    async with async_human_task_intervention(app, task, "stop", actor_sid=sid) as outcome:
+        payload = _cancel_session_state(app, deps, sid)
+        outcome.update(turn_stop_requested=True, accepted_tasks_continue=True, **payload)
+        return payload
+
+
 def _cancel_session_state(app: FastAPI, deps: "GactDeps", sid: str) -> dict[str, Any]:
     """Apply the canonical best-effort cancellation transition for a session."""
 

@@ -526,17 +526,23 @@ class StepRecorder:
         if self.arc is None or not injections:
             return
         latest: dict[str, str] = {}
+        included_ids: set[str] = set()
         for seg in self.arc.render_working_set(self.session, self.scope):
             content = getattr(seg, "content", None) or {}
+            included_ids.update(content.get("notification_ids", []))
             if getattr(seg, "kind", "") == "user" and content.get("actor") == "algorithm":
                 latest[str(content.get("source"))] = str(content.get("text"))
         for source, text in injections:
+            identities = getattr(text, "notification_ids", ())
+            if identities and all(identity in included_ids for identity in identities):
+                continue
             if text and latest.get(source) != text:
                 record: dict[str, Any] = {"text": str(text), "source": source, "actor": "algorithm"}
                 identities = getattr(text, "notification_ids", ())
                 if identities:
                     record["notification_ids"] = list(identities)
                 self._write("user", record, 0, "")
+                included_ids.update(identities)
                 emit_injection(source, str(text), agent_id=self.expert_id)
                 latest[source] = text
 

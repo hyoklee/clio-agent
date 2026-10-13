@@ -72,3 +72,15 @@ The two remaining hard-timeout residues were independently audited: `D:/Temp/cli
 The first focused native/Core case failed in session setup: private Core 2.3.1 exited 1 before port 22973 bound. No task body ran. The existing fixture removed its private root and reaped the failed daemon. Improve its failure report to retain the actual log tail in test output, then retry under an explicitly short, owned scratch parent.
 
 Current focused runs print their fresh unique scratch parent before launch. Isolated Core ports are selected from the existing 20000–32000 test window. No installed service port is used. The test fixture's session-end daemon release and no-follow child cleanup remain mandatory.
+
+### Core mailbox, input receipts and coordination slice
+
+Mail bodies and human intervention observations now use the existing confirmed Core hierarchy. Staging never acknowledges delivery: the fixed recipient-input record confirms notification identities and content references before model execution. The default mailbox capacity is unlimited; a positive capacity counts undelivered peer messages, including staged messages. Human controls record intent in the controlled owner and proceed provisionally during a Core outage; new undurable peer messages are rejected. Session metadata is no longer mailbox authority.
+
+Explicit human-recorded coordination relationships independently grant read, observe, message and control rights. Authorization precedes query filtering/counting/pagination. Model-supplied intent and compatibility scope names grant nothing. Subscriptions are exact-handle Core relationships, indexed by task; no per-subscription workers or copied result mail remain. Owner and subscriber input receipts are independent. `notify=None` preserves interest, `True` subscribes and `False` unsubscribes.
+
+Focused real-Core cases passed individually and sequentially: crashes before/after input commit; pending-only capacity and human controls; Core-outage control/reconciliation; retention and reconstruction of 1,001 messages; explicit rights/revocation over separate workflow sessions; actual native SDK result subscription/unsubscription, independent owner delivery, explicit collection and crash recovery. Scoped Ruff/format/Pyright and file-size/silent-fallback/noqa guards passed during construction. These checks are not live-model or final replacement acceptance. Core's native binding still emits exit-time reference-leak diagnostics.
+
+The legacy completion-consumption functions and inbox completion branches now delegate to staging. Remaining work includes canonical MCP/assignment lifecycle replacement and migration, consolidation of admission/wake policies, the synchronous composer/human-feedback producer seam, native built-in registration, prompt/UI/site updates, and the full fresh live matrix. Existing model evidence is not acceptance of this replacement.
+
+Fresh scratch parents printed by each finished invocation were checked absent after normal teardown; no cleanup retried any rejected residual. No installed service, authentication, default, released pin or primary checkout was changed.

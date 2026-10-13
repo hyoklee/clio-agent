@@ -598,63 +598,9 @@ def drain_active_session_inbox(app: "FastAPI") -> list[tuple[str, str]]:
                 continue
             task_events.append(event)
 
+        # Completion events are lossy wake hints only. The shared Core-backed
+        # drain below stages results even when a hint was evicted or consumed.
         task_section = ""
-        if task_events:
-            from clio_agent.gact.agent_tasks import consume_notification  # noqa: PLC0415
-            from clio_agent.gact.agents.resolution import (  # noqa: PLC0415
-                _runtime_active_agent_blueprint_id,
-            )
-            from clio_agent.gact.agents.spawn_runtime import (  # noqa: PLC0415
-                _emit_delegation_terminal,
-            )
-            from clio_agent.gact.enrichment import (  # noqa: PLC0415
-                PENDING_TASK_NOTIFICATION_MARKER,
-                _notify_block,
-            )
-            from clio_agent.gact.types import AgentDef  # noqa: PLC0415
-
-            reg = app.state.agent_task_registry
-            blueprint_id = _runtime_active_agent_blueprint_id(app, sid) or ""
-            task_blocks: list[str] = []
-            for event in task_events:
-                task = reg.get(event.task_id)
-                if task is None:
-                    logger.warning(
-                        "loop_inbox drain skip reason=unknown_task task=%s", event.task_id
-                    )
-                    continue
-                # Claim the observe-later notification atomically. If a concurrent
-                # wait/check (or an earlier drain) already consumed it, mark_consumed
-                # returns None and we skip surfacing it — no double-surface.
-                claimed = consume_notification(app, event.task_id)
-                if claimed is None:
-                    continue
-                from clio_agent.gact.background_exit import (  # noqa: PLC0415
-                    emit_background_exit_part,
-                )
-
-                emit_background_exit_part(app, sid, claimed)
-                task_blocks.append(_notify_block(claimed, app=app))
-                # Pair the consume with the delegation TERMINAL — the SAME choreography the
-                # next-turn commit (consume_pending_agent_task_notifications) and wait/check
-                # emit: blueprint.delegation.completed|failed + the return expert_handoff Part
-                # + parent_resumed. Separately once-gated via delegation_reported, so a later
-                # wait / next-turn inject reaching this task never double-emits. WITHOUT this a
-                # mid-turn-drained fire-and-forget child would dangle (started, no terminal) and
-                # render perpetually in-progress — the exact regression the observe-later commit
-                # path exists to prevent. (A post-drain turn abort keeps the wire correct via
-                # this terminal + the durable agent.task.completed; the parent re-observes via
-                # the registry, so the completion is never lost — only the mid-turn auto-inject.)
-                parent_id = task.agent_ref.get("requesting_expert_id", "") or "main"
-                parent_def = AgentDef(
-                    id=parent_id,
-                    title=parent_id,
-                    metadata={"agent_blueprint_id": blueprint_id},
-                )
-                _emit_delegation_terminal(app, sid, parent_def, task)
-            if task_blocks:
-                task_section = PENDING_TASK_NOTIFICATION_MARKER + "\n\n" + "\n\n".join(task_blocks)
-
         # Watchdog liveness: publish on the PARENT session even if every event was
         # already consumed elsewhere (the drain still did work this turn).
         surfaced = len(steer_blocks) + (1 if task_section else 0)

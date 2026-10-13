@@ -45,7 +45,7 @@ def query_snapshot(
     active_only: bool = False,
     cursor: str | None = None,
     limit: int = 50,
-    scope: str = "session",
+    scope: str = "tree",
     user_intent: str = "",
 ) -> dict[str, Any]:
     """Return an authorized, filtered keyset page from the existing projection."""
@@ -110,7 +110,7 @@ def query_tasks(
     active_only: bool = False,
     cursor: str | None = None,
     limit: int = 50,
-    scope: str = "session",
+    scope: str = "tree",
     user_intent: str = "",
 ) -> dict[str, Any]:
     """List task handles, assignments and status; kind='Session' lists finite root runs.
@@ -136,12 +136,20 @@ def query_tasks(
 
 
 def _selected(
-    app: Any, sid: str, tasks: str | list[str], *, scope: str = "session", user_intent: str = ""
+    app: Any,
+    sid: str,
+    tasks: str | list[str],
+    *,
+    scope: str = "authorized",
+    user_intent: str = "",
+    right: str = "read",
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     rows, errors = [], []
     for handle in handles(tasks):
         try:
-            rows.append(resolve_task(app, sid, handle, scope=scope, user_intent=user_intent))
+            rows.append(
+                resolve_task(app, sid, handle, scope=scope, user_intent=user_intent, right=right)
+            )
         except ValueError as exc:
             errors.append({"handle": handle, "error": str(exc)})
     return rows, errors
@@ -150,17 +158,14 @@ def _selected(
 def collect_result(
     app: Any, sid: str, row: dict[str, Any], *, consume_delivery: bool = True
 ) -> dict[str, Any]:
-    """Read a stored result and atomically share the notification delivery guard."""
-    from clio_agent.gact.task_delivery import consume_task
+    """Read stored output; the recipient input commit acknowledges this observation."""
+    from clio_agent.gact.task_delivery import result_notification_id
+    from clio_agent.gact.task_permissions import require_coordination
+
+    require_coordination(app, sid, row["owner"]["session_id"], "read")
 
     if row["effective_status"] not in TERMINAL:
         return {"handle": row["handle"], "status": row["effective_status"], "pending": True}
-    if consume_delivery:
-        from clio_agent.gact.task_subscriptions import collect_subscription
-
-        collect_subscription(app, sid, row["handle"])
-    if consume_delivery and row["owner"]["session_id"] == sid:
-        consume_task(app, sid, row["handle"])
     result = row.get("result")
     if row["task_kind"] == "Subagent":
         from clio_agent.gact.agents.spawn_completion import completion_payload
@@ -187,11 +192,13 @@ def collect_result(
         "status": row["effective_status"],
         "result": result,
         "result_reference": row["result_reference"],
-        **({"notification_id": row["notification_id"]} if row.get("native") else {}),
+        **({"notification_id": result_notification_id(app, sid, row)} if consume_delivery else {}),
     }
 
 
-def get_task_result(handle: str, scope: str = "session", user_intent: str = "") -> dict[str, Any]:
+def get_task_result(
+    handle: str, scope: str = "authorized", user_intent: str = ""
+) -> dict[str, Any]:
     """Read a terminal result again, including a retained predecessor's known handle.
 
     Historical access is read-only and does not consume the prior run's mailbox.
@@ -233,7 +240,7 @@ def wait_tasks(
     tasks: str | list[str],
     return_when: str = "all",
     timeout_s: float | None = None,
-    scope: str = "session",
+    scope: str = "authorized",
     user_intent: str = "",
 ) -> dict[str, Any]:
     """Wait for any/all mixed tasks. Default is unbounded; expiry or Stop ends only the wait."""
@@ -247,7 +254,7 @@ def _wait_tasks(
     tasks: str | list[str],
     return_when: str,
     timeout_s: float | None,
-    scope: str = "session",
+    scope: str = "authorized",
     user_intent: str = "",
 ) -> dict[str, Any]:
     if return_when not in {"any", "all"}:
@@ -256,7 +263,18 @@ def _wait_tasks(
     deadline = _deadline(timeout_s)
     while True:
         version = app.state.bus.highest_event_id
-        rows, errors = _selected(app, sid, tasks, scope=scope, user_intent=user_intent)
+        rows, errors = _selected(
+            app, sid, tasks, scope=scope, user_intent=user_intent, right="observe"
+        )
+        from clio_agent.gact.task_permissions import authorized_sessions
+
+        readable = authorized_sessions(app, sid, "read")
+        errors.extend(
+            {"handle": row["handle"], "error": "unknown_or_unauthorized_task"}
+            for row in rows
+            if row["owner"]["session_id"] not in readable
+        )
+        rows = [row for row in rows if row["owner"]["session_id"] in readable]
         if timeout_s != 0:
             current = [
                 r
@@ -298,13 +316,13 @@ def observe_tasks(
     cursor: str | int | None = None,
     pattern: str | None = None,
     timeout_s: float | None = None,
-    scope: str = "session",
+    scope: str = "authorized",
     user_intent: str = "",
-    notify: bool = False,
+    notify: bool | None = None,
 ) -> dict[str, Any]:
     """Observe without collecting; a pattern waits for output or settlement.
 
-    notify=True subscribes to a peer/descendant result via your own mailbox;
+    notify=True subscribes to an exact result; False unsubscribes and omission preserves it;
     completion wakes an idle recipient, or arrives before its next model call.
     Drain earlier bounded pages with the returned cursor while ``has_more`` is true.
     ``matched`` always refers to evidence in this returned page.
@@ -320,9 +338,9 @@ def _observe_tasks(
     cursor: str | int | None,
     pattern: str | None,
     timeout_s: float | None,
-    scope: str = "session",
+    scope: str = "authorized",
     user_intent: str = "",
-    notify: bool = False,
+    notify: bool | None = None,
 ) -> dict[str, Any]:
     app, sid = _scope()
     deadline = _deadline(timeout_s)
@@ -343,12 +361,17 @@ def _observe_tasks(
         start = 0
     while True:
         version = app.state.bus.highest_event_id
-        rows, errors = _selected(app, sid, tasks, scope=scope, user_intent=user_intent)
-        if notify:
-            from clio_agent.gact.task_subscriptions import subscribe_result
+        rows, errors = _selected(
+            app, sid, tasks, scope=scope, user_intent=user_intent, right="observe"
+        )
+        if notify is not None:
+            from clio_agent.gact.task_subscriptions import subscribe_result, unsubscribe_result
 
             for row in rows:
-                subscribe_result(app, sid, row, scope=scope, user_intent=user_intent)
+                if notify:
+                    subscribe_result(app, sid, row, scope=scope, user_intent=user_intent)
+                else:
+                    unsubscribe_result(app, sid, row["handle"])
         events = []
         for row in rows:
             session_ids = [row["owner"]["session_id"]]
@@ -474,7 +497,7 @@ def cancel_selected(
     from clio_agent.gact.human_task_intervention import human_task_intervention
     from clio_agent.gact.task_supervisor import task_supervisor
 
-    rows, errors = _selected(app, sid, tasks)
+    rows, errors = _selected(app, sid, tasks, right="control")
     results = []
     for row in rows:
         try:

@@ -39,7 +39,7 @@ from clio_agent.gact.protocol_v3 import project_for_request, session_to_v3
 from clio_agent.gact.routes._body import NonObjectBodyError, json_body
 from clio_agent.gact.routes.dashboard_reports import register_dashboard_report_routes
 from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui, split_preserved_a2ui
-from clio_agent.gact.routes.session_cancellation import cancel_session_state
+from clio_agent.gact.routes.session_cancellation import cancel_session_state_async
 from clio_agent.gact.routes.session_creation import register_session_creation_route
 from clio_agent.gact.routes.session_export import register_session_export_routes
 from clio_agent.gact.routes.session_fork import register_session_fork_route
@@ -1024,5 +1024,5 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         thread — the status event marks this best-effort. Returns 204 whether or not a turn
         was running (the TUI fires this speculatively on Esc/Ctrl+C).
         """
-        cancel_session_state(app, deps, sid)
+        await cancel_session_state_async(app, deps, sid)
         return Response(status_code=204)

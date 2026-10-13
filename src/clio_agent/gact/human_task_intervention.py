@@ -2,16 +2,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
-import json
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from clio_agent.gact.agent_mailbox import MAIL_KEY, accept_agent_mail
+from clio_agent.gact.agent_mailbox import request_mail_wake
 from clio_agent.gact.agent_tasks import AgentTask
+from clio_agent.gact.core_task_journal import core_task_journal
 from clio_agent.gact.events import Event
 from clio_agent.gact.subagent_lifecycle import CONTROL_LOCK
 
@@ -38,48 +39,15 @@ def _identity(task: AgentTask | dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _text(notice: dict[str, Any]) -> str:
-    return "Human intervention on owned work:\n" + json.dumps(notice, ensure_ascii=False)
-
-
-def _finish(app: Any, sid: str, message_id: str, notice: dict[str, Any]) -> None:
-    """Update uncollected intent, or queue an outcome if the model already saw the request."""
-    with CONTROL_LOCK:
-        session = app.state.sessions.get(sid)
-        if session is None:
-            raise ValueError("intervention_owner_session_gone")
-        rows = list(session.metadata.get(MAIL_KEY, []))
-        prior = next(row for row in rows if row["message_id"] == message_id)
-        if not prior["delivered_at"]:
-            app.state.sessions.update(
-                sid,
-                metadata_patch={
-                    MAIL_KEY: [
-                        {**row, "text": _text(notice), "human_intervention": notice}
-                        if row["message_id"] == message_id
-                        else row
-                        for row in rows
-                    ]
-                },
-            )
-            app.state.bus.publish(
-                Event(
-                    type="agent.message.updated",
-                    session_id=sid,
-                    payload={"message_id": message_id, "human_intervention": notice},
-                )
-            )
-        else:
-            accept_agent_mail(
-                app,
-                sid,
-                _text(notice),
-                source_sid=prior["source_session_id"],
-                source_agent="human",
-                correlation_id=notice["intervention_id"],
-                human_intervention=notice,
-                message_id=message_id + "_outcome",
-            )
+def _record(app: Any, notice: dict[str, Any]) -> dict[str, Any]:
+    """Record at the controlled owner; parent notices derive from that confirmed intent."""
+    owner = notice["target_session_id"] or notice["owner_session_id"]
+    identity = notice["intervention_id"] + ":" + notice["phase"]
+    recorded = core_task_journal(app).record_control(owner, identity, notice)
+    app.state.bus.publish(Event(type="task.human_intervention", session_id=owner, payload=recorded))
+    if recorded["recording"] == "confirmed":
+        request_mail_wake(app, notice["recipient_session_id"])
+    return recorded
 
 
 @contextmanager
@@ -120,42 +88,28 @@ def human_task_intervention(
         "text": text[:16000],
         "text_truncated": len(text) > 16000,
         "source_message_id": message_id,
+        "recipient_session_id": identity["owner_session_id"],
         "includes_descendants": action in {"cancel", "restart"} and identity["kind"] == "Subagent",
     }
-    sid = identity["owner_session_id"]
-    ack = accept_agent_mail(
-        app,
-        sid,
-        _text(notice),
-        source_sid=actor_sid,
-        source_agent="human",
-        correlation_id=notice["intervention_id"],
-        human_intervention=notice,
-        message_id=(
+    if message_id:
+        notice["intervention_id"] = (
             "human_message_"
             + hashlib.sha256(f"{identity['handle']}:{message_id}".encode()).hexdigest()
-            if message_id
-            else ""
-        ),
-    )
-    # Acceptance replay is not another intervention or outcome notification.
-    if ack.get("human_intervention", {}).get("intervention_id") != notice["intervention_id"]:
-        yield outcome
-        return
+        )
+    with CONTROL_LOCK:
+        recorded = _record(app, notice)
+    outcome["recording"] = recorded["recording"]
     try:
         yield outcome
     except BaseException as exc:
-        _finish(
+        _record(
             app,
-            sid,
-            ack["message_id"],
             {**notice, "phase": "error", "error": f"{type(exc).__name__}: {exc}"[:4000]},
         )
         raise
     else:
-        _finish(
-            app, sid, ack["message_id"], {**notice, "phase": "acknowledged", "outcome": outcome}
-        )
+        recorded = _record(app, {**notice, "phase": "acknowledged", "outcome": dict(outcome)})
+        outcome["recording"] = recorded["recording"]
 
 
 def relay_human_session_message(app: Any, sid: str, message_id: str, text: str) -> None:
@@ -165,3 +119,19 @@ def relay_human_session_message(app: Any, sid: str, message_id: str, text: str) 
         app, task, "steer", actor_sid=sid, text=text, message_id=message_id
     ) as outcome:
         outcome.update(accepted=True, target_session_id=sid, message_id=message_id)
+
+
+@asynccontextmanager
+async def async_human_task_intervention(
+    app: Any, task: AgentTask | dict[str, Any] | None, action: str, **kwargs: Any
+) -> AsyncIterator[dict[str, Any]]:
+    """Keep confirmed Core writes off the serving loop while controls run on their owner."""
+    manager = human_task_intervention(app, task, action, **kwargs)
+    outcome = await asyncio.to_thread(manager.__enter__)
+    try:
+        yield outcome
+    except BaseException as exc:
+        await asyncio.shield(asyncio.to_thread(manager.__exit__, type(exc), exc, exc.__traceback__))
+        raise
+    else:
+        await asyncio.shield(asyncio.to_thread(manager.__exit__, None, None, None))

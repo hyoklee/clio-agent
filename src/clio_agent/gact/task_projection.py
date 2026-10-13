@@ -60,36 +60,27 @@ def task_views(
     sid: str,
     *,
     include_children: bool = True,
-    scope: str = "session",
+    scope: str = "tree",
     user_intent: str = "",
+    right: str = "read",
 ) -> list[dict[str, Any]]:
     """Authorize task owners before projecting, filtering or counting their work.
 
-    The default remains the caller and descendants. Explicit workspace/global
-    reads reuse session-discovery policy and confer no peer lifecycle authority.
+    The default remains the caller and descendants. Authorized peer reads require
+    human-recorded grants; compatibility scope names confer no additional rights.
     """
-    from clio_agent.gact.routes.memory import _memory_tool_policy
+    from clio_agent.gact.task_permissions import authorized_sessions, session_tree
 
-    if scope not in {"session", "workspace", "current_workspace", "global"}:
+    if scope not in {"tree", "authorized", "session", "workspace", "current_workspace", "global"}:
         raise ValueError("invalid_task_scope")
-    rows = project_session_async_processes(app, sid, include_children=include_children)
-    owned_rows = {id(row) for row in rows}
-    if scope != "session":
-        if not user_intent.strip():
-            raise ValueError("peer_task_read_requires_user_intent")
-        for session in app.state.sessions.list():
-            if session.id == sid:
-                continue
-            policy = _memory_tool_policy(
-                app,
-                session_id=sid,
-                target_session_id=session.id,
-                body={"scope": scope, "user_intent": user_intent},
-            )
-            if policy.get("allowed"):
-                rows.extend(
-                    project_session_async_processes(app, session.id, include_children=False)
-                )
+    tree = session_tree(app, sid) if include_children else {sid}
+    owners = authorized_sessions(app, sid, right) if scope not in {"tree", "session"} else tree
+    rows, owned_rows = [], set()
+    for owner_sid in sorted(owners):
+        selected = project_session_async_processes(app, owner_sid, include_children=False)
+        rows.extend(selected)
+        if owner_sid in tree:
+            owned_rows.update(id(row) for row in selected)
     store = app_task_store(app)
     records = {row.key: row for row in store.list()}
     from clio_agent.tools.mcp_task_records import TaskKey
@@ -172,10 +163,9 @@ def task_views(
             row["supported_actions"] = ["observe", "wait", "result", "message"]
         if id(row) not in owned_rows:
             row["access"] = "peer"
-            row["supported_actions"] = ["observe", "wait", "result"] + (
-                ["message"] if kind in {"Session", "Subagent"} else []
-            )
-        if subagent and row["access"] != "peer" and not placement.startswith("relay:"):
+            if kind in {"Session", "Subagent"}:
+                row["supported_actions"].append("message")
+        if subagent and not placement.startswith("relay:"):
             task = app.state.agent_task_registry.get(row["id"])
             if task is not None:
                 row["supported_actions"].append("message")
@@ -201,16 +191,6 @@ def task_views(
     if journal is not None:
         # Delegation confers tree access; a model-supplied scope or intent
         # cannot confer rights over a native peer execution.
-        owners = {sid}
-        registry = getattr(app.state, "agent_task_registry", None)
-        frontier = [sid] if include_children and registry is not None else []
-        while frontier:
-            assert registry is not None
-            parent = frontier.pop()
-            for task in registry.for_parent(parent):
-                if task.child_session_id and task.child_session_id not in owners:
-                    owners.add(task.child_session_id)
-                    frontier.append(task.child_session_id)
         for native in [*journal.rows.values(), *journal.unconfirmed.values()]:
             if native["session_id"] not in owners:
                 continue
@@ -238,23 +218,55 @@ def task_views(
                     "supported_actions": ["observe", "wait", "result"]
                     + (
                         ["cancel"]
-                        if controllable and native["effective_status"] not in TERMINAL
+                        if controllable
+                        and native["effective_status"] not in TERMINAL
+                        and native["session_id"] in authorized_sessions(app, sid, "control")
                         else []
                     ),
                     "result_reference": {"handle": handle, "tool": "get_task_result"},
-                    "access": "owner" if native["session_id"] == sid else "descendant",
+                    "access": "owner"
+                    if native["session_id"] == sid
+                    else "descendant"
+                    if native["session_id"] in tree
+                    else "peer",
                     "notify_pending": bool(notification_id)
                     and journal.pending(native["session_id"], notification_id),
                 }
             )
+    permissions = {
+        right: authorized_sessions(app, sid, right)
+        for right in ("read", "observe", "message", "control")
+    }
+    for row in projected:
+        if row.get("access") != "peer":
+            continue
+        owner = row["owner"]["session_id"]
+        row["supported_actions"] = [
+            action
+            for action in row["supported_actions"]
+            if (action == "result" and owner in permissions["read"])
+            or (action == "observe" and owner in permissions["observe"])
+            or (action == "wait" and owner in permissions["read"] & permissions["observe"])
+            or (action == "message" and owner in permissions["message"])
+            or (
+                action in {"cancel", "pause", "resume", "restart"}
+                and owner in permissions["control"]
+            )
+        ]
     return projected
 
 
 def resolve_task(
-    app: Any, sid: str, handle: str, *, scope: str = "session", user_intent: str = ""
+    app: Any,
+    sid: str,
+    handle: str,
+    *,
+    scope: str = "authorized",
+    user_intent: str = "",
+    right: str = "read",
 ) -> dict[str, Any]:
     """Resolve an authorized public handle or an unambiguous legacy alias."""
-    rows = task_views(app, sid, scope=scope, user_intent=user_intent)
+    rows = task_views(app, sid, scope=scope, user_intent=user_intent, right=right)
     exact = [row for row in rows if row["handle"] == handle]
     matches = exact or [row for row in rows if handle in (row["id"], row.get("legacy_task_id"))]
     if len(matches) != 1:

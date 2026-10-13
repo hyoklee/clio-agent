@@ -668,58 +668,29 @@ def pending_notifications(app: "FastAPI", parent_session_id: str) -> list[AgentT
     """
 
     reg = app.state.agent_task_registry
-    pending = [t for t in reg.for_parent(parent_session_id) if t.is_terminal and t.notify_pending]
+    from clio_agent.gact.core_task_journal import core_task_journal
+
+    journal = core_task_journal(app)
+    pending = [
+        task
+        for task in reg.for_parent(parent_session_id)
+        if task.is_terminal
+        and task.notify_pending
+        and not task.consumed_at
+        and journal.pending(parent_session_id, "task-result:" + (task.handle_id or task.task_id))
+    ]
     return sorted(pending, key=lambda t: t.updated_at)
 
 
 def consume_notification(app: "FastAPI", task_id: str) -> Optional[AgentTask]:
-    """Mark ONE async task's result consumed — exactly once (#948 S6).
+    """Legacy staging alias; recipient input persistence owns acknowledgement."""
+    from clio_agent.gact.core_task_journal import core_task_journal
 
-    Shared by the two live consumers (``wait_agent_tasks`` / next-turn injection).
-    The claim is ATOMIC: :meth:`AgentTaskRegistry.mark_consumed`
-    does the ``notify_pending`` check-and-set under the registry lock (like
-    ``mark_delegation_reported``), so exactly one caller flips ``notify_pending``
-    off + stamps ``consumed_at`` and returns the record; a concurrent/later caller
-    gets ``None`` and this function no-ops (no duplicate ``agent.task.consumed`` and
-    no restamped ``consumed_at``). The claimant persists the record (durable across
-    a boot rebuild, like ``delegation_reported``) and publishes the event. Returns
-    the consumed record, or ``None`` when the task is unknown, non-terminal, or
-    already consumed.
-
-    Persistence is best-effort (never crashes the turn): a gone child session
-    (``AgentTaskError``) or a transient store IO fault (``OSError`` from the disk
-    flush) is logged with a typed reason and swallowed. Redelivery semantics are
-    honest at-least-once ACROSS A CRASH: if the durable consumed-marker write is
-    lost to a fault and the process then restarts, the boot-rebuilt registry
-    re-derives ``notify_pending=True`` from the child metadata and the parent's next
-    turn re-injects the SAME notification once more — the model sees a repeat and
-    decides. Never silent loss."""
-
-    reg = app.state.agent_task_registry
-    task = reg.get(task_id)
-    if task is None or not task.is_terminal:
+    task = app.state.agent_task_registry.get(task_id)
+    if task is None or not task.is_terminal or task.consumed_at:
         return None
-    updated = reg.mark_consumed(task_id, datetime.now(timezone.utc).isoformat())
-    if updated is None:
-        # Already consumed by a concurrent/earlier caller (the atomic once-guard).
-        return None
-    # Durable so a boot-rebuilt registry does not re-inject an already-consumed
-    # task (mirrors _persist_delegation_reported). Catch the FULL surface
-    # persist_agent_task can raise — AgentTaskError (child gone) AND the OSError
-    # family from the authoritative store's disk flush — with a structured reason,
-    # never crash the turn (no-silent-fallback: the degrade is logged, and the
-    # cross-crash at-least-once redelivery documented above is the honest recovery).
-    try:
-        persist_agent_task(app, updated)
-    except (AgentTaskError, OSError) as exc:
-        logger.warning(
-            "agent_task consumed not persisted reason=%s task=%s err=%r",
-            getattr(exc, "reason", type(exc).__name__),
-            task_id,
-            exc,
-        )
-    publish_agent_task_event(app, updated, AGENT_TASK_CONSUMED_EVENT)
-    return updated
+    notice = "task-result:" + (task.handle_id or task.task_id)
+    return task if core_task_journal(app).pending(task.parent_session_id, notice) else None
 
 
 def publish_agent_task_event(app: "FastAPI", task: AgentTask, event_type: str) -> None:

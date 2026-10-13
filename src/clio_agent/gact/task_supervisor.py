@@ -145,9 +145,6 @@ class TaskSupervisor:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        workers = list(getattr(self.app.state, "task_subscription_workers", ()))
-        if workers:
-            await asyncio.gather(*workers, return_exceptions=True)
         for executor in list(self.retained_executors):
             await executor.aclose(force=True)
         self.retained_executors.clear()

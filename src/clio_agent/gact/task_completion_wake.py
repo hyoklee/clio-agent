@@ -6,7 +6,6 @@ import logging
 from typing import Any
 
 from clio_agent.gact.events import Event
-from clio_agent.gact.task_projection import TERMINAL, task_views
 
 logger = logging.getLogger(__name__)
 
@@ -44,16 +43,9 @@ def _schedule_idle_wake(app: Any, sid: str) -> None:
 
 def _pending_handles(app: Any, sid: str) -> tuple[str, ...]:
     """Select only this conversation's settled, uncollected authoritative records."""
-    return tuple(
-        sorted(
-            row["handle"]
-            for row in task_views(app, sid, include_children=False)
-            if row["owner"]["session_id"] == sid
-            and row["effective_status"] in TERMINAL
-            and row.get("notify_pending")
-            and not row.get("consumed_at")
-        )
-    )
+    from clio_agent.gact.task_delivery import completion_rows
+
+    return tuple(sorted(row["handle"] for row in completion_rows(app, sid)))
 
 
 def _wake_idle_session(app: Any, sid: str) -> None:
