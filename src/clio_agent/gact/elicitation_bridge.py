@@ -1,30 +1,7 @@
-"""MCP elicitation bridged into the CLIO HITL / questions pipeline (#1113, P1.3).
+"""Legacy MCP elicitation schema, trusted URL and transport helpers.
 
-Server-initiated ``elicitation/create`` (form + url) is a **handshake-era** MCP
-capability (the 2026-07-28 era removed the server->client back-channel, SEP-2577,
-so ``ctx.elicit`` is only reachable on a legacy connection). This module owns the
-whole bridge:
-
-* **Schema translation** (in ``elicitation_schema``) — a flat restricted form schema
-  becomes a :class:`~clio_agent.gact.types.UserQuestion`; a non-object / non-flat /
-  unsupported schema yields a TYPED degrade (never a crash) and the client declines.
-* **Async-safe pause point** — the in-flight tool call parks on a ``shield``-ed
-  ``asyncio.Future`` (NOT a ``threading.Event``: the handler fires on the receive
-  loop; blocking it would deadlock the answer route). It is resolved cross-loop-safely,
-  and a single atomic status transition (:func:`claim_question_transition`) arbitrates
-  answer-vs-timeout so exactly one wins.
-* **Correlation by protocol identity** — the per-call client binds its invocation at
-  construction; shared/cloned clients (gateway/executor) resolve at the receive loop
-  via ``elicitation_correlation`` (never a client-keyed registry / ambient state).
-* **One surface** — the question lands on the SAME ``app.state.user_questions`` +
-  ``pending_user_question_id`` anchor + answer route as native asks (RULE 4, no
-  parallel store). A child's question is forwarded to the root attended session.
-* **URL trust** — url-mode is NEVER pre-fetched; the full URL is shown for explicit
-  consent, an untrusted origin is REJECTED (typed reason), url is advertised only
-  where a trust allow-list is configured, and the consenting client MUST render it
-  in a non-inspectable isolated container (``metadata.elicitation.container``).
-
-Every degrade emits a typed reason (``stream_fallback`` style) — never silent.
+The retired Question mirrors and answer/resume policy are removed. Production
+Question commands will bind this protocol translation to the common Core record.
 """
 
 from __future__ import annotations
@@ -59,23 +36,17 @@ logger = logging.getLogger(__name__)
 __all__ = [
     "ELICITATION_QUESTION_SOURCE",
     "ELICITATION_REASONS",
-    "FORWARDED_QUESTION_SOURCE",
     "FormTranslation",
     "check_elicitation_answer",
     "check_url_trust",
-    "claim_question_transition",
     "make_elicitation_client",
     "make_elicitation_hook",
-    "resolve_answered_question",
     "resolve_elicitation",
     "stamp_question_routing_fields",
     "translate_form_schema",
     "validate_elicitation_answer",
 ]
 
-#: ``UserQuestion.source`` for a paused child's question mirrored to the parent's
-#: HITL surface (the parent-forward replacing the child_requires_user_input fail).
-FORWARDED_QUESTION_SOURCE = "child_forwarded"
 
 #: Park timeout (permission-gate-style human window); expiry -> typed ``cancel``.
 DEFAULT_ELICITATION_TIMEOUT_S = 600.0
@@ -92,9 +63,6 @@ ELICITATION_REASONS: dict[str, str] = {
     "elicitation_wait_timeout": "no answer within the elicitation window; cancelled",
     "elicitation_unknown_mode": "elicitation mode is neither form nor url; declined",
     "elicitation_task_identity_invalid": "task input owner or stored question is ambiguous; declined",
-    "child_waiting_without_question": "child paused for input but has no pending question to forward",
-    "forwarded_child_question_gone": "forwarded parent answer arrived but the child question is gone",
-    "forwarded_child_not_resumable": "forwarded child question is not resumable; task terminated",
 }
 
 
@@ -168,34 +136,6 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-
-
-def _terminalize_question(app: Any, question_id: str, status: str, event_type: str) -> bool:
-    """Atomically move a still-pending question to a terminal state; publish + clear.
-
-    Returns ``True`` when THIS caller won the transition (emitted the typed event +
-    cleared the anchor), ``False`` when it lost to a concurrent answer/cancel — so a
-    late answer hits the route's 409 guard (finding 6).
-    """
-
-    updated = claim_question_transition(app, question_id, status)
-    if updated is None:
-        return False
-    _clear_pending_anchor(app, updated.session_id, only_if=question_id)
-    bus = getattr(app.state, "bus", None)
-    if bus is not None:
-        from clio_agent.gact.events import Event  # noqa: PLC0415
-
-        bus.publish(
-            Event(
-                type=event_type,
-                session_id=updated.session_id,
-                payload=updated.model_dump(exclude_none=True),
-            )
-        )
-    return True
-
-
 def resolve_elicitation(app: Any, question: UserQuestion) -> bool:
     """Resolve a parked elicitation from the shared answer/cancel route.
 
@@ -218,48 +158,7 @@ def resolve_elicitation(app: Any, question: UserQuestion) -> bool:
             exc,
         )
         return False
-    _clear_pending_anchor(app, question.session_id, only_if=question.id)
     return True
-
-
-def resolve_answered_question(app: Any, deps: Any, sid: str, question: UserQuestion) -> bool:
-    """Dispatch an answered question that skips the default resume/idle path.
-
-    Owns the two answer-route branches whose resolution is neither a turn resume
-    nor an idle transition: a plan-exit approval (mode transition + constraint
-    lift + resume, delegated to ``plan_mode``) and an in-flight MCP elicitation
-    (wake the parked tool call). Consolidating them here keeps ``routes/sessions``
-    off further accretion. Returns ``True`` when it handled the question and
-    published ``user_question.answered`` (the route then just returns the row);
-    ``False`` leaves the route to run its normal ask-user resolution.
-    """
-
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-
-    handled = False
-    if question.metadata.get("plan_exit_approval"):
-        from clio_agent.gact.plan_mode import resolve_plan_exit_answer  # noqa: PLC0415
-
-        resolve_plan_exit_answer(app, deps, sid, question)
-        handled = True
-    elif resolve_elicitation(app, question):
-        handled = True
-    elif question.metadata.get("forwarded_from_question"):
-        from clio_agent.gact.elicitation_forwarding import (  # noqa: PLC0415 - owner module
-            deliver_forwarded_answer,
-        )
-
-        deliver_forwarded_answer(app, deps, question)
-        handled = True
-    if handled:
-        app.state.bus.publish(
-            Event(
-                type="user_question.answered",
-                session_id=sid,
-                payload=question.model_dump(exclude_none=True),
-            )
-        )
-    return handled
 
 
 def _resolution_from_question(question: UserQuestion) -> ElicitResolution:
@@ -285,55 +184,6 @@ def _resolution_from_question(question: UserQuestion) -> ElicitResolution:
 
 
 # --- The handler + client construction ---
-
-
-def _clear_pending_anchor(app: Any, session_id: str, *, only_if: str = "") -> None:
-    """Clear the durable ``pending_user_question_id`` anchor for ``session_id``.
-
-    ``only_if`` guards against clobbering a newer pending question: the anchor is
-    cleared only when it still points at ``only_if`` (when given).
-    """
-
-    sessions = getattr(app.state, "sessions", None)
-    if sessions is None or not session_id:
-        return
-    if only_if:
-        sess = sessions.get(session_id)
-        anchor = str((getattr(sess, "metadata", {}) or {}).get("pending_user_question_id") or "")
-        if anchor != only_if:
-            return
-    try:
-        sessions.update(session_id, metadata_patch={"pending_user_question_id": ""})
-    except Exception as exc:  # noqa: BLE001 - anchor bookkeeping must never fail a resolve
-        logger.debug("pending anchor clear skipped session_id=%s error=%r", session_id, exc)
-
-
-def _publish_question_created(app: Any, question: UserQuestion) -> None:
-    """Set the pending anchor + publish ``user_question.created`` (one surface)."""
-
-    record_user_question(app, question)
-    sessions = getattr(app.state, "sessions", None)
-    if sessions is not None:
-        try:
-            sessions.update(
-                question.session_id,
-                metadata_patch={"pending_user_question_id": question.id},
-            )
-        except Exception as exc:  # noqa: BLE001 - anchor bookkeeping is best-effort
-            logger.debug(
-                "pending anchor set skipped session_id=%s error=%r", question.session_id, exc
-            )
-    bus = getattr(app.state, "bus", None)
-    if bus is not None:
-        from clio_agent.gact.events import Event  # noqa: PLC0415
-
-        bus.publish(
-            Event(
-                type="user_question.created",
-                session_id=question.session_id,
-                payload=question.model_dump(exclude_none=True),
-            )
-        )
 
 
 def _new_question(
@@ -374,14 +224,10 @@ def _new_question(
     )
 
 
-
-
 def _build_elicit_result(resolution: ElicitResolution) -> Any:
     from fastmcp.client.elicitation import ElicitResult  # noqa: PLC0415
 
     return ElicitResult(action=resolution.action, content=resolution.content)
-
-
 
 
 def make_elicitation_hook(

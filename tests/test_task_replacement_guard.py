@@ -45,6 +45,12 @@ def test_catches_retired_definition(guard_root: Path) -> None:
     assert any("retired definition AgentTaskRegistry" in item for item in AUDIT(guard_root))
 
 
+def test_catches_retired_export(guard_root: Path) -> None:
+    """An obsolete public export cannot advertise a removed authority."""
+    write_source(guard_root, "innocent.py", '__all__ = ["MessageIntentStore"]\n')
+    assert any("retired binding MessageIntentStore" in item for item in AUDIT(guard_root))
+
+
 def test_catches_restored_module_path(guard_root: Path) -> None:
     """Restoring an empty old module is rejected too."""
     write_source(guard_root, "gact/agent_tasks.py", '"""No implementation."""\n')
@@ -65,6 +71,16 @@ def test_catches_provider_default_executor_wait(guard_root: Path) -> None:
         "async def read(loop, chunks):\n    return await loop.run_in_executor(None, chunks.get)\n",
     )
     assert any("provider queue/lock wait" in item for item in AUDIT(guard_root))
+
+
+def test_catches_provider_default_executor_lambda(guard_root: Path) -> None:
+    """Wrapping an unbounded queue wait in a lambda does not make it finite I/O."""
+    write_source(
+        guard_root,
+        "providers/example.py",
+        "async def read(loop, chunks):\n    return await loop.run_in_executor(None, lambda: chunks.get())\n",
+    )
+    assert any("provider queue/lock lambda" in item for item in AUDIT(guard_root))
 
 
 def test_catches_obsolete_configuration_expectation(guard_root: Path) -> None:

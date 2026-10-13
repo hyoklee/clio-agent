@@ -177,3 +177,29 @@ These are legitimate missing bindings, to be rebuilt, not retained authority:
 Cleanup of the exact c1 review cache above was rejected by automatic approval review as blocked by policy. The guarded removal command did not run. That root is now manual-only: no retry, parent removal, move or alternative helper. Its absence is unverified. The CLI review controller ended with exit0 and confirmed original authentication unchanged. This is recorded in task-replacement-cleanup-receipts.json and is not a completion receipt.
 
 Correct the surviving owners/callers and guard; restore the independent general context-recovery algorithm. Explicitly retain the non-task behavior lessons in the ledger. Typed external-input payload markers are not themselves execution authorities. Provider polling inside the real native-owned transfer body is a retained workload algorithm, not a second generic task scheduler. Remove blanket storage recovery and native-row mirrors. The next reviews must check these distinctions against source. A passing denylist does not authorize rebuilding or release.
+
+
+## Second removal review — Astra at adfde88a
+
+**`adfde88a` is substantially improved, but I’m not approving the removal yet. Three scoped corrections remain.**
+
+1. **[P1] Restore the provider-specific Globus submission receipt.**
+   Removing `native_request` from [TransferOperation](/C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/storage/models.py:174) deletes useful workload data. [GlobusSource.submit](/C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/storage/globus.py:173) persists the transfer payload—including its submission ID—before sending it, then reuses that receipt after a lost response. This is distinct from the removed generic task mirrors. Preserve the field and explicitly retain the lost-response scenario in N12/W01; the [independent adapter test](/C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/tests/test_gact/test_connected_storage_adapters.py:113) already documents it. This finding concerns preservation, not the expected broken bindings.
+
+2. **[P2] Remove the remaining JSON-steer cancellation policy.**
+   [Message deletion](/C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/routes/messages.py:99) still checks the old intent store, withdraws feedback, calls `intents.cancel_pending`, and publishes its cancellation. The helper remains called by deletion. Remove this retired store-dependent decision path and preserve its behavior—deleting an undelivered message must withdraw its pending input—in the ledger for the Core implementation.
+
+3. **[P2] Remove storage’s old dual cancellation routing.**
+   [The storage cancellation endpoint](/C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/routes/connected_storage.py:711) still chooses between mirrored `task_handle`/`owner_session_id` cancellation and directly setting `cancel_requested` in the operation store. Those mirror fields were deleted, but their policy remains. Remove this caller-side branch; retain the provider’s physical cancellation algorithm for the eventual common command path.
+
+The previous major findings are resolved: the JSON store and mutable Question map are gone, old TurnRunner policy and default-executor queue/lock calls are removed, `carry_over` is restored, native configuration mappings are documented, and the guard now checks definitions, module paths and relative imports.
+
+I accept **Globus polling inside the transfer workload** and **ordinary MCP configuration cache invalidation** as retained behavior. They do not constitute another generic task scheduler.
+
+Later rebuild obligations remain: asynchronous provider bridging, ownership until worker exit, Core-backed queue/Question/input commitment, migration, and the expanded acceptance ledger. Missing bindings and setup failures are expected here; they should not be repaired by restoring old owners.
+
+Reviewed committed source and diffs read-only. I ran no tests, guard, builds or services and changed nothing. GACT remains `32044a38`; protected human files remain untouched.
+
+
+
+Actual Claude Code's independent second report is retained in task-replacement-removal-review-claude-2.json. Both withheld approval pending scoped corrections; no replacement acceptance is claimed.

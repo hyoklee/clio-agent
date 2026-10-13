@@ -462,8 +462,6 @@ class _Loop:
                 return self._prediction({}, "draft_alternatives_yield")
             self.recorder.completed({"answer": answer}, self.step + 1)
             return self._prediction({"answer": answer}, "variant_selected")
-        if yield_name := pending_turn_yield(calls):
-            return self._prediction({}, f"{yield_name}_yield")
         if final is not None:
             if (self.max_iters <= 0 or self.step + 1 < self.max_iters) and self._arrivals():
                 return None
@@ -471,7 +469,6 @@ class _Loop:
             return self._prediction(final, "submit")
         _raise_if_cancelled()
         return None
-
 
     def _context(self) -> list[Message]:
         return self.recorder.read_steps()

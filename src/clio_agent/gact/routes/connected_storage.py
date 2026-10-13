@@ -700,33 +700,6 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         rows = await run(lambda: source_operation_views(app, source_id))
         return {"operations": [row.model_dump(exclude={"native_request"}) for row in rows]}
 
-    @app.post("/v1/workspaces/{wid}/sources/{source_id}/operations/{operation_id}/cancel")
-    async def cancel(wid: str, source_id: str, operation_id: str) -> dict[str, Any]:
-        """Request cancellation; completion/cleanup waits for the transfer owner's confirmation."""
-        record_for(wid, source_id, connected=False)
-        rows = await run(lambda: source_operation_views(app, source_id))
-        operation = next((row for row in rows if row.id == operation_id), None)
-        if operation is None:
-            raise HTTPException(404, "Transfer not found for this source")
-        if operation.task_handle and operation.owner_session_id:
-
-            outcome = await asyncio.to_thread(
-                cancel_selected,
-                app,
-                operation.owner_session_id,
-                operation.task_handle,
-                human_origin=True,
-            )
-            if outcome["errors"]:
-                raise HTTPException(409, outcome["errors"])
-            updated = await run(lambda: source_operation_views(app, source_id))
-            return next(row for row in updated if row.id == operation_id).model_dump(
-                exclude={"native_request"}
-            )
-        return (
-            await run(lambda: service.store.update_operation(operation_id, cancel_requested=True))
-        ).model_dump(exclude={"native_request"})
-
     @app.post("/v1/workspaces/{wid}/sources/{source_id}/review")
     async def review(wid: str, source_id: str) -> dict[str, Any]:
         """Inspect local changes and upstream conflicts without applying anything."""

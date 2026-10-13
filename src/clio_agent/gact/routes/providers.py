@@ -589,6 +589,13 @@ def register_providers_routes(app: FastAPI, deps: "GactDeps") -> None:
                 # copy is cheap (no expert re-wiring), preserving the hot-swap latency
                 # win over a from-scratch rebuild.
                 agent = _copy.copy(existing)
+            else:
+                from clio_agent.agent import ClioAgent  # noqa: PLC0415
+
+                arc = await process_arc_off_loop(app)
+                agent = await asyncio.to_thread(
+                    ClioAgent, verbose=False, arc=arc, provider_config=cfg
+                )
             agent.rebind_lms(cfg)  # both paths need this cfg bound; done once, unconditionally
         except HTTPException:
             # Argonne auth path raises a structured 401 above; keep its

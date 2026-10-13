@@ -137,7 +137,6 @@ from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.agent_elicitation_answer_inline import _run_agent_answer_inline
-from clio_agent.gact.agent_elicitation_dispatch import _dispatch_agent_answer
 from clio_agent.gact.agent_elicitation_policy import (
     _default_unhinted,
     _denied_servers,
@@ -185,7 +184,6 @@ __all__ = [
     "ROUTED_UNHINTED_REASON",
     "AgentElicitationDecision",
     "_answer_field_text",
-    "_dispatch_agent_answer",
     "_parse_agent_reply",
     "_run_agent_answer_inline",
     "_run_agent_answer_turn",
@@ -348,30 +346,3 @@ def _track_task(app: Any, task: "asyncio.Task[None]") -> None:
         app.state.agent_elicitation_tasks = tasks
     tasks.add(task)
     task.add_done_callback(tasks.discard)
-
-
-def on_question_published(
-    app: Any,
-    question: "UserQuestion",
-    invocation: "MCPInvocationContext",
-    translation: "FormTranslation | None",
-    decision: AgentElicitationDecision,
-) -> None:
-    """Fire the routing event and, when routed, schedule the bounded agent answer.
-
-    Called from :func:`clio_agent.gact.elicitation_bridge._await_answer`'s
-    ``on_published`` hook -- AFTER the question is in the store and its waiter
-    is registered (never before: a dispatch that raced the publish could read/
-    resolve a row that does not exist yet, or wake a waiter that was never
-    registered). A no-route decision (including the regression-locked no-hint
-    case) makes this a pure no-op beyond the (skipped, since ``reason==""``)
-    event publish.
-    """
-
-    _publish_routing_event(app, question, decision)
-    if not decision.route:
-        return
-    task = asyncio.create_task(
-        _dispatch_agent_answer(app, question, invocation, translation, decision)
-    )
-    _track_task(app, task)

@@ -32,5 +32,20 @@
       "fixture_parent_absent": true,
       "processes_ended": true
     }
-  ]
+  ],
+  "review_cache_c2": {
+    "root": "D:/Temp/clio-task-removal-review-adfde88a-c2",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "review_process": {
+      "pid": 51776,
+      "birth": 1791920908.97308,
+      "controller_exit_code": 0,
+      "tool_calls": 41,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
+  }
 }

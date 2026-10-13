@@ -651,12 +651,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             return original_text
         return f"{original_text}\n\n[Retry notes]\n{notes}"
 
-    from clio_agent.gact.routes.session_questions import register_session_question_routes
-
-    register_session_question_routes(
-        app, deps, _set_session_status=_set_session_status, _session_not_found=_session_not_found
-    )
-
     @app.get("/v1/sessions/{sid}/attempts")
     async def list_turn_attempts(sid: str) -> dict[str, Any]:
         if app.state.sessions.get(sid) is None:

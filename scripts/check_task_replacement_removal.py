@@ -105,6 +105,10 @@ REMOVED_MODULES = frozenset(
         "clio_agent.tools.remote_mcp",
         "clio_agent.gact.routes.agent_lifecycle",
         "clio_agent.tools.servers.storage_server",
+        "clio_agent.gact.elicitation_forwarding",
+        "clio_agent.gact.routes.session_questions",
+        "clio_agent.gact.routes.message_intents",
+        "clio_agent.gact.agent_elicitation_dispatch",
     ]
 )
 REMOVED_NAMES = frozenset(
@@ -153,6 +157,10 @@ REMOVED_NAMES = frozenset(
         "construct_agent_with_relay",
         "accept_session_run",
         "NativeTaskHost",
+        "_retire_pending_steer_intent",
+        "pending_turn_yield",
+        "FORWARDED_QUESTION_SOURCE",
+        "claim_question_transition",
         "install_agent_task_registry",
     }
 )
@@ -228,7 +236,7 @@ def violations(root: Path = ROOT) -> list[str]:
             elif isinstance(node, ast.Attribute) and node.attr in REMOVED_NAMES | REMOVED_STATE:
                 findings.append(f"{relative}:{node.lineno}: retired attribute {node.attr}")
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if node.value in REMOVED_STATE | REMOVED_CONFIG | REMOVED_MODULES:
+                if node.value in REMOVED_NAMES | REMOVED_STATE | REMOVED_CONFIG | REMOVED_MODULES:
                     findings.append(f"{relative}:{node.lineno}: retired binding {node.value}")
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 blocked_call = None
@@ -243,6 +251,18 @@ def violations(root: Path = ROOT) -> list[str]:
                     if blocked_call.attr in {"get", "acquire"}:
                         findings.append(
                             f"{relative}:{node.lineno}: provider queue/lock wait on default executor"
+                        )
+                elif relative.startswith("src/clio_agent/providers/") and isinstance(
+                    blocked_call, ast.Lambda
+                ):
+                    if any(
+                        isinstance(child, ast.Call)
+                        and isinstance(child.func, ast.Attribute)
+                        and child.func.attr in {"get", "acquire"}
+                        for child in ast.walk(blocked_call)
+                    ):
+                        findings.append(
+                            f"{relative}:{node.lineno}: provider queue/lock lambda on default executor"
                         )
     defaults = root / "src" / "clio_agent" / "config.defaults.yaml"
     for number, line in enumerate(defaults.read_text(encoding="utf-8").splitlines(), 1):

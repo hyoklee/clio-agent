@@ -11,37 +11,6 @@ from dspy.lm15 import ToolCallPart
 
 from clio_agent.gact.agents.dspy_native_tool import ClioNativeTool
 
-TURN_YIELD_METADATA = {"ask_user": "pending_ask_user", "plan_exit": "pending_plan_exit"}
-
-
-def pending_turn_yield(calls: Sequence[ToolCallPart]) -> str:
-    """Yield only after the interaction owner accepted a question or plan exit.
-
-    A rejected call remains an ordinary tool error. The unsurfaced metadata
-    proves acceptance; the post-forward boundary creates the visible interaction.
-    """
-    from clio_agent.gact import context
-
-    names = {call.name for call in calls}
-    if not names.intersection(TURN_YIELD_METADATA):
-        return ""
-    sessions = getattr(getattr(context.active_app(), "state", None), "sessions", None)
-    sid = context.active_session_id()
-    session = sessions.get(sid) if sessions is not None and sid else None
-    metadata = getattr(session, "metadata", None)
-    if not isinstance(metadata, Mapping):
-        return ""
-    for tool_name, key in TURN_YIELD_METADATA.items():
-        pending = metadata.get(key)
-        if (
-            tool_name in names
-            and isinstance(pending, Mapping)
-            and pending
-            and not pending.get("surfaced")
-        ):
-            return tool_name
-    return ""
-
 
 def tool_names(tools: Iterable[Any]) -> list[str]:
     """Return stable names from DSPy tool-like objects."""
@@ -80,63 +49,6 @@ def record_submit_audit(
         duplicate_reason=reason,
         head=text[:120],
         full_text=text[:12000],
-    )
-
-
-def submit_tool(signature: Any) -> dspy.Tool:
-    """The reserved ``submit`` tool: its args are the signature's outputs.
-
-    An output field declared with a Pydantic default may be omitted (the default is
-    filled -- the author declared it droppable); every other field is required.
-    """
-    output_fields = signature.output_fields
-    if "assignment_disposition" in output_fields:
-        raise ValueError(
-            "assignment_disposition is reserved for orchestration, not signature output"
-        )
-    names = list(output_fields)
-    defaults = {
-        name: default
-        for name, field in output_fields.items()
-        for has_default, default in [_declared_default(field)]
-        if has_default
-    }
-
-    def submit(**kwargs: Any) -> dict[str, Any]:
-        missing = [n for n in names if n not in kwargs and n not in defaults]
-        if missing:
-            raise ValueError(f"Missing required final output field(s): {', '.join(missing)}")
-        disposition = kwargs.pop("assignment_disposition", None)
-        return {n: kwargs[n] if n in kwargs else defaults[n] for n in names}
-
-    return ClioNativeTool(
-        submit,
-        name="submit",
-        desc=(
-            "Submit the final outputs for the task. Use it only when these structured "
-            "outputs are required; otherwise reply without calling a tool. "
-            "assignment_disposition controls orchestration: yield preserves this assignment; "
-            "complete finishes it even with accepted background work. Omission yields while "
-            "work or input is pending, otherwise completes. Task results can wake you later."
-        ),
-        args={
-            **{
-                name: {
-                    **_json_schema(field.annotation),
-                    **({"default": defaults[name]} if name in defaults else {}),
-                }
-                for name, field in output_fields.items()
-            },
-            "assignment_disposition": {
-                "type": ["string", "null"],
-                "enum": ["yield", "complete", None],
-                "default": None,
-            },
-        },
-        arg_types={
-            **{name: field.annotation for name, field in output_fields.items()},
-            "assignment_disposition": str | None,
-        },
     )
 
 

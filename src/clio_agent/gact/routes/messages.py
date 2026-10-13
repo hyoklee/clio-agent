@@ -96,50 +96,6 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             ).model_dump(exclude_none=True),
         )
 
-    def _retire_pending_steer_intent(sid: str, message_id: str) -> None:
-        """Retire the delivery intent behind a deleted transcript message.
-
-        A pending steer lives on TWO planes: the transcript row the client sees
-        and the durable intent + inbox event that will deliver it. Deleting only
-        the row left the intent alive, so a later drain claimed it and steered
-        the model with a message the user had deleted. This mirrors the
-        ``DELETE /pending-steers/{id}`` cleanup; a message with no intent behind
-        it (an ordinary user or assistant row) is untouched.
-        """
-
-        intents = getattr(app.state, "message_intents", None)
-        if intents is None or not any(
-            row.message_id == message_id for row in intents.list_pending(sid)
-        ):
-            return
-
-        try:
-            withdraw_human_feedback(app, sid, message_id)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="feedback_already_committed",
-                        message="The feedback has entered model context and cannot be withdrawn.",
-                        details={"session_id": sid, "message_id": message_id},
-                        recoverable=False,
-                    )
-                ).model_dump(exclude_none=True),
-            ) from exc
-        intents.cancel_pending(sid, message_id)
-        app.state.bus.publish(
-            Event(
-                type="pending_steer.cancelled",
-                session_id=sid,
-                payload={
-                    "message_id": message_id,
-                    "session_id": sid,
-                    "reason": "message_deleted",
-                },
-            )
-        )
-
     async def _delete_message_from_session(sid: str, message_id: str) -> bool:
         msgs = app.state.messages.get(sid, [])
         for i, message in enumerate(msgs):
@@ -159,7 +115,6 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             # carries their parts would delete a live surface as a side effect
             # of a prose edit, with no lifecycle event. Preserve them the way
             # compaction and rollback do (routes/session_a2ui_preservation.py).
-            await run_off_loop(_retire_pending_steer_intent, sid, message_id)
             removed = msgs.pop(i)
             retained = preserve_a2ui(sid, msgs, [removed], "message_delete")
             await run_off_loop(deps.replace_session_messages, app, sid, retained)  # #1334

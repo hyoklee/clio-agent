@@ -29,10 +29,6 @@ DRAIN_REASON_SERVER_SHUTDOWN = "server_shutdown"
 # session + ARC).
 BUSY_ERROR_CODE = "session_busy"
 
-# Bounded number of drain re-snapshot passes (defense against a producer that
-# keeps spawning turns during shutdown; producers are quiesced first, so one pass
-# is the norm).
-
 
 @dataclass(frozen=True)
 class TurnHandle:
@@ -51,11 +47,6 @@ class TurnAdmissionError(RuntimeError):
         super().__init__(f"{BUSY_ERROR_CODE}: conversation {sid!r} already has an owner")
         self.session_id = sid
         self.reason = BUSY_ERROR_CODE
-
-
-
-
-
 
 
 def session_busy_error_payload(runner: "TurnRunner | None", sid: str) -> dict | None:

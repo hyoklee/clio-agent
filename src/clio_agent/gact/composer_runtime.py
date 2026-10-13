@@ -69,26 +69,20 @@ def initialize_composer_state(app: Any, session_store_path: Path) -> None:
 
 
 def register_composer_routes(app: Any, deps: Any) -> None:
-    """Register the message-intent, resource, and provider-catalog routes.
+    """Register retained resource and provider-catalog routes.
 
     The A2UI routes are NOT registered here: ``build_app`` already owns that
     registration (and ``runtime.rework_state.initialize_a2ui_store`` owns the
     store), so re-registering them would duplicate the surface.
     """
 
-    from clio_agent.gact.routes.message_intents import (  # noqa: PLC0415
-        register_message_intent_routes,
-    )
     from clio_agent.gact.routes.provider_catalog import (  # noqa: PLC0415
         register_normalized_provider_catalog_routes,
     )
     from clio_agent.gact.routes.resources import register_resource_routes  # noqa: PLC0415
 
-    register_message_intent_routes(app, deps)
     register_resource_routes(app, deps)
     register_normalized_provider_catalog_routes(app, deps)
-    app.state.redrive_message_queue = lambda sid: promote_queue_head(app, deps, sid)
-    _install_composer_idle_hook(app, deps)
 
 
 def session_autostart_suspended(app: Any, session_id: str) -> bool:
@@ -105,59 +99,6 @@ def session_autostart_suspended(app: Any, session_id: str) -> bool:
     return bool(
         metadata.get("composer_queue_paused", getattr(session, "status", "") == "cancelled")
     )
-
-
-def stop_session_composer_autostart(app: Any, session_id: str) -> dict[str, Any]:
-    """Pause future queued messages without suspending already submitted feedback.
-
-    Stop cancels the current turn. Pending steers are separate human messages
-    already accepted into the transcript, so they run after that turn releases
-    its slot. Neither plane is deleted, and the future queue stays paused even
-    after those feedback turns finish.
-    """
-
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-
-    intents = getattr(app.state, "message_intents", None)
-    if intents is None:
-        return {"reason": "composer_state_unavailable", "suspended": False}
-    app.state.sessions.update(session_id, metadata_patch={"composer_queue_paused": True})
-    summary = {
-        "reason": "session_cancelled",
-        "suspended": True,
-        "queued_messages_paused": True,
-        "pending_steers_suspended": False,
-        "retained_pending_steers": len(intents.list_pending(session_id)),
-        "retained_queued_messages": len(intents.list_queued(session_id)),
-    }
-    if summary["retained_pending_steers"] or summary["retained_queued_messages"]:
-        app.state.bus.publish(
-            Event(
-                type="composer.autostart_suspended",
-                session_id=session_id,
-                payload={"session_id": session_id, **summary},
-            )
-        )
-    return summary
-
-
-
-
-def promote_queue_head(app: Any, deps: Any, session_id: str) -> None:
-    """Compatibility hint; only TurnRunner admits queued conversation inputs."""
-    app.state.turn_runner.request_input_admission(session_id)
-
-
-
-
-def _blocked_heads(app: Any) -> dict[str, dict[str, Any]]:
-    """Per-session record of a queue head that failed terminally, keyed by revision."""
-
-    rows = getattr(app.state, "queue_blocked_heads", None)
-    if not isinstance(rows, dict):
-        rows = {}
-        app.state.queue_blocked_heads = rows
-    return rows
 
 
 def _head_is_blocked(app: Any, session_id: str, head: Any) -> bool:

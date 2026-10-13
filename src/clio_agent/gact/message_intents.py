@@ -1,8 +1,7 @@
-"""Durable pending-steer, queued-message, and idempotency state.
+"""Historical message-intent decoding and retained queue payload contracts.
 
-The transcript, a pending steer, and a queued future message are deliberately
-different entities. This store persists the two pre-transcript lifecycle planes
-and the acceptance idempotency index without making the React client authoritative.
+These types do not persist, claim, consume or deliver inputs. Startup migration
+may read legacy claimed/consumed states without inventing Core acknowledgements.
 """
 
 from __future__ import annotations
@@ -24,19 +23,13 @@ from clio_agent.platform_paths import atomic_write_text
 logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
-_SETTLED_STEER_STATES = frozenset({"consumed", "cancelled"})
-
-
-
-
-
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
 class PendingSteer(BaseModel):
-    """A persisted user message accepted for the next safe model boundary."""
+    """Data-only legacy steer row for idempotent startup migration."""
 
     message_id: str
     session_id: str
@@ -93,13 +86,9 @@ class QueueCapacityError(ValueError):
         self.limit = limit
 
 
-
-
 __all__ = [
     "DuplicateIntentError",
-    "IntentRetention",
     "IntentStoreReadError",
-    "MessageIntentStore",
     "PendingSteer",
     "QueueCapacityError",
     "QueuedMessage",
