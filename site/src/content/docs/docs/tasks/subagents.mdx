@@ -52,10 +52,14 @@ is published after the required owner settlement and cleanup.
 
 ## Restart with a new handle
 
-A restart creates a linked successor run with a new handle. A retained-context
-restart carries the previous context and accepted-operation identities. A fresh
-restart resets copied conversation history while retaining explicit custody of
-previously accepted work. Neither mode is permission to replay an old command.
+A restart creates a linked assignment with a new handle in the same session.
+It references a fixed point in Core's retained history and the accepted-operation
+observations; it does not copy a transcript. Active work must settle before the
+successor starts. Uncertain effects must be inspected before an operation is retried.
+
+The successor can inspect and control inherited work under the session's current
+permissions. Cancelling it includes active inherited work and descendants;
+already-terminal outcomes remain unchanged.
 
 The old task and outcome remain inspectable. A message to a terminal child can
 create a linked successor; it does not change the old task back to running.

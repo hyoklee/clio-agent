@@ -38,6 +38,9 @@ original authentication and the installed application were not changed.
 | Luna idle answer | `f4a83885` | `clio-v3-question-idle-0660cf74/proof` | Passed: yielded execution, later answer, automatic wake and collection. |
 | Luna Stop | `45faf34b` | `clio-v3-question-stopfinal-d411995a/proof` | Passed: cancelled segment settled, question remained pending, answer woke model and was collected. |
 | Claude explicit wait | `45faf34b` | `clio-v3-question-claude-c13a91c2/proof` | Failed overlap gate: independent read preceded successful acceptance. The question subsequently answered/collected successfully. Retained as a failed qualification run. |
+| Luna explicit wait, UI and repetitions | `737dfc4f`, GACT `0501a04d` | `clio-v3-question-live-737dfc4f-c1/proof` | Passed baseline, real desktop/phone answer UI, five idle and five Stop cycles; each answer woke once and a later human follow-up did not redeliver it. |
+| Claude explicit wait | `737dfc4f`, GACT `0501a04d` | `clio-v3-question-live-737dfc4f-c2/proof` | Baseline passed. UI setup and repetitions failed when installed-blueprint selection drained another session's question wait. Zero repetition cycles accepted. |
+| Claude explicit wait and UI cancellation | `db6e2b1a`, GACT `e436740a` | `clio-v3-question-live-737dfc4f-c3/proof` | Baseline and real desktop/phone answer UI passed. Keep running preserved the question; confirmed cancellation settled it and reached the model. Two attributed human-intervention notices committed in the parent input. Seven repetition cycles passed, then the unchanged eight-iteration budget was exhausted before the required Stop wait. The family repetition gate failed. |
 
 Two earlier Stop drivers failed to recognize the endpoint's successful 204 or
 its cancelled segment state. A third old run eventually collected the answer but
@@ -52,8 +55,12 @@ receipts and images remain. Rejected old captures are not website acceptance.
 
 ## Remaining gates
 
-Current integrated-source repetitions, the distinct Claude bridge and real
-desktop/phone UI review are still pending. This extension's evidence does not
+Final integrated-source repetitions remain pending after the admission-reservation,
+assignment-description and observation-scope corrections. The Stop mission now
+tests Stop separately from expired-wait/observe behavior within the unchanged
+model budget; failed sessions are captured before disposable Core cleanup.
+The distinct Claude baseline and real desktop/phone UI review above passed.
+This extension's evidence does not
 complete the broader V3 workload, recovery, session/workflow and CI matrix. Old
 task-engine evidence is not acceptance of its replacement.
 

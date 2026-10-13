@@ -14,10 +14,9 @@ required outcome, exchange feedback and continue without a human copying message
 between them.
 
 <Aside type="note" title="Development build; qualification has limits">
-  Root session runs now have task handles. Authorized peer queries, observation,
-  waits, result subscriptions and messaging are implemented. Five Codex/Luna cycles
-  exercised independent sessions using two distinct blueprints. This does not
-  qualify every provider, platform, distributed workflow engine or scheduler adapter.
+  This guide describes the native-task replacement on the integrated feature
+  branch. Its fresh model, workflow and UI qualification is still pending.
+  Earlier development results do not qualify the replacement.
 </Aside>
 
 ## One human owner, several cooperating sessions
@@ -38,6 +37,11 @@ such as busy, idle or paused separate from work outcomes such as completed,
 failed or cancelled. A wait needs a defined run or completion event; it must not
 silently switch to a later run when another message arrives.
 
+Yielding, receiving a task result and resuming after a pause continue the same
+assignment. Explicit completion fixes its outcome. A later eligible message or
+result can start a linked assignment in the same session, with a new handle.
+The earlier handle continues to identify its original outcome.
+
 ## Reuse the shared controls
 
 Root runs appear as `Session` tasks through the existing task system, allowing
@@ -53,16 +57,15 @@ Human interventions continue to notify the actual owning agent.
 <details>
 <summary>Find a run and subscribe to its result</summary>
 
-These are agent tool calls. Broader reads require explicit user intent and the
-existing session-discovery permission. Authorization is applied before filtering
+These are agent tool calls. Broader reads require a coordination grant created
+by an authenticated human or trusted configuration. A model's description of
+user intent creates no permissions. Authorization is applied before filtering
 and pagination; knowing a handle does not bypass it.
 
 ```python
-query_tasks("Session", scope="workspace", user_intent="Coordinate the requested analysis")
-observe_tasks(run_handle, scope="workspace",
-              user_intent="Coordinate the requested analysis", notify=True)
-wait_tasks(run_handle, timeout_s=0, scope="workspace",
-           user_intent="Coordinate the requested analysis")
+query_tasks("Session", scope="authorized")
+observe_tasks(run_handle, notify=True)
+wait_tasks(run_handle, timeout_s=0)
 ```
 
 Use a returned run handle for a particular outcome. Use the stable session

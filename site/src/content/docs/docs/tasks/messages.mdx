@@ -70,7 +70,8 @@ point, not proof that every earlier decision is represented.
 ## Scope and ownership
 
 Knowing a session ID does not grant access to it. Peer messaging checks the
-recipient scope and explicit user intent. Reading another session does not grant
+recipient's human-recorded coordination rights. Model-supplied intent grants no
+access. Reading another session does not grant
 permission to pause, restart or cancel it. Recipient execution retains its own
 permissions; a peer message is not new human authority.
 
@@ -79,16 +80,18 @@ authorized broader reads can discover finite `Session` run handles, observe or
 wait on them, and subscribe independently to their results. A stable session
 address is a mailbox; a run handle identifies one execution and its outcome.
 
-## What has been demonstrated
+## Retention and backpressure
 
-Real Codex and Claude runs each passed five busy/idle peer-message cycles between
-independent root sessions in one workspace. The model performed search, summary
-reading, exact addressing and attributed replies. Busy recipients collected mail
-at the next iteration; idle recipients and senders woke automatically.
+Core retains message bodies, assignment history and delivery records in the
+existing session hierarchy. Delivered messages do not count against pending
+message capacity and are not deleted to make room for new messages.
 
-Those runs shared a blueprint. Fresh Codex/Luna qualification also completed five
-cycles between independent root sessions using two distinct blueprints, including
-peer observations, waits and independent result subscriptions. These checks do
-not qualify a distributed workflow graph, scheduler integration or remote relay
-execution. See [Session coordination](/docs/tasks/session-coordination/) for the
-implemented contract and its current qualification limits.
+`gact.mailbox.max_pending_messages=0`, or leaving it unset, allows an unlimited
+pending mailbox. A positive value limits undelivered peer messages, including
+messages staged for an iteration whose input has not committed. A full mailbox
+returns retryable backpressure for new peer messages. Accepted task results,
+human feedback and human controls continue to be admitted.
+
+Fresh native-replacement model and cross-workflow qualification is pending.
+Earlier development cycles are historical evidence, not acceptance of this
+replacement. See [Session coordination](/docs/tasks/session-coordination/).

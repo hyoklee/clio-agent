@@ -78,6 +78,9 @@ These are tool arguments, not terminal commands. Replace example handles with
 the actual handles returned by accepted work.
 
 ```python
+question = ask_user(question="Which dataset should I analyze?")
+# Do independent work, then explicitly wait when the answer is needed.
+wait_tasks(question["handle"])
 query_tasks(active_only=True)
 query_tasks("Subagent")
 observe_tasks([download_handle, worker_handle], cursor=previous_cursor)
@@ -91,7 +94,7 @@ cancel_tasks(download_handle)
 pagination. `observe_tasks` accepts an optional output pattern and timeout.
 Its returned cursor supports subsequent incremental reads. Reads default to the
 caller's conversation and descendants. Authorized peer reads use an explicit
-broader scope and user intent; `observe_tasks(..., notify=True)` creates an
+`scope="authorized"` and human-recorded grants; `observe_tasks(..., notify=True)` creates an
 independent result subscription. Peer reads and messaging do not grant permission
 to cancel, pause or restart that peer. See [Session coordination](/docs/tasks/session-coordination/).
 

@@ -3,19 +3,25 @@ title: Answering CLIO's questions
 description: Answer in text, choose an option, or respond through a visual form while keeping track of open questions.
 ---
 
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
-import Capture from '../../../components/overview/Capture';
-import { captureImage } from '../../../lib/captures';
-import confirmation from '../../../assets/captures/docs-question-confirmation.png';
-import textResponse from '../../../assets/captures/docs-question-text.png';
-import visualQuestion from '../../../assets/captures/docs-visual-question.png';
-import openQuestions from '../../../assets/captures/docs-open-questions.png';
+import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
+import Capture from "../../../components/overview/Capture";
+import { captureImage } from "../../../lib/captures";
+import confirmation from "../../../assets/captures/docs-question-confirmation.png";
+import textResponse from "../../../assets/captures/docs-question-text.png";
+import visualQuestion from "../../../assets/captures/docs-visual-question.png";
+import openQuestions from "../../../assets/captures/docs-open-questions.png";
+import taskWait from "../../../assets/captures/tasks/question-wait-desktop.png";
+import taskAnswer from "../../../assets/captures/tasks/question-answer-phone.png";
+import taskCancel from "../../../assets/captures/tasks/question-cancel-confirmation-desktop.png";
 
 When CLIO needs your judgment, it can ask a question in the conversation. Open the
 question, read its context, and answer using the offered controls. Your answer
 stays associated with that question, including when a delegated agent asked it.
 
-<Capture client:visible priority image={await captureImage(confirmation)}
+<Capture
+  client:visible
+  priority
+  image={await captureImage(confirmation)}
   alt="CLIO asks whether to keep a capacity-check table, with Yes, No and Send response controls"
   caption="A confirmation asks for one decision. Choose Yes or No, then Send response. Answer when ready means the question can stay open while independent work continues."
 />
@@ -26,15 +32,15 @@ CLIO's real tools; no new model analysis was run.
 
 ## Ways to answer
 
-| What you see | How to respond | Example |
-| --- | --- | --- |
-| A text question | Type in **Your response**, or choose **Answer in message box** to use the composer. | “What timezone should I use?” |
-| A list of choices | Choose the option that fits. An **Other** answer is available when the question allows it. | “Compare by station or by day?” |
-| A confirmation | Choose the offered response. | “Keep this version of the report?” |
-| Checkboxes or a multiple-selection list | Select the requested items, then submit. | “Which measurements should the export include?” |
-| A form from a connected tool | Fill in the named fields and choose **Send response**. Required fields and invalid values are identified in the form. | A location, date range, and output format. |
-| A request to open a link | Read the destination, then choose **Open link** or **Decline**. | A connected service asks you to finish a browser step. |
-| A visual question | Inspect the accompanying image, chart, table, or form, then use its answer control. | “Which of these plots should go in the report?” |
+| What you see                            | How to respond                                                                                                        | Example                                                |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| A text question                         | Type in **Your response**, or choose **Answer in message box** to use the composer.                                   | “What timezone should I use?”                          |
+| A list of choices                       | Choose the option that fits. An **Other** answer is available when the question allows it.                            | “Compare by station or by day?”                        |
+| A confirmation                          | Choose the offered response.                                                                                          | “Keep this version of the report?”                     |
+| Checkboxes or a multiple-selection list | Select the requested items, then submit.                                                                              | “Which measurements should the export include?”        |
+| A form from a connected tool            | Fill in the named fields and choose **Send response**. Required fields and invalid values are identified in the form. | A location, date range, and output format.             |
+| A request to open a link                | Read the destination, then choose **Open link** or **Decline**.                                                       | A connected service asks you to finish a browser step. |
+| A visual question                       | Inspect the accompanying image, chart, table, or form, then use its answer control.                                   | “Which of these plots should go in the report?”        |
 
 The agent's ordinary questions support text, a single choice, and confirmations.
 Connected tools can also request structured forms and multiple selections. A
@@ -51,7 +57,9 @@ For a text question, open it and type in **Your response**. Read the question
 above the field before sending, especially when several decisions are open.
 **Answer in message box** moves the response into the conversation's composer.
 
-<Capture client:visible image={await captureImage(textResponse)}
+<Capture
+  client:visible
+  image={await captureImage(textResponse)}
   alt="A timezone question with a written America/Chicago response ready to send"
   caption="The question and your draft stay together. This example is ready to send; the screenshot does not show a submitted answer."
 />
@@ -78,7 +86,9 @@ The question asks which station group the report should focus on. Select
 **Hill stations** or **Downtown stations**, add an optional comment, and use
 **Send response** when the decision is ready.
 
-<Capture client:visible image={await captureImage(visualQuestion)}
+<Capture
+  client:visible
+  image={await captureImage(visualQuestion)}
   alt="An unanswered visual question containing a bike-station bar chart, Hill and Downtown choices, an optional comment and Send response"
   caption="One complete visual question: evidence, a choice and an explanation in the same view. Hill stations is selected and a comment is drafted; no answer has been submitted."
 />
@@ -94,12 +104,30 @@ finished view back to CLIO, see [Human-agent interaction](/docs/widgets/interact
 
 ## Does CLIO wait for me?
 
-There are two behaviors, independent of whether the question contains text or visuals:
+<Aside type="note" title="Task development preview">
+  The task-based question flow below is on the development branch. Its
+  screenshots show actual Codex/Luna and Claude/Haiku sessions with an isolated
+  CLIO service. They do not establish completion of the wider Tasks
+  qualification.
+</Aside>
 
-| Question status | What happens |
-| --- | --- |
-| **Answer needed to continue** | The agent that asked is waiting for your answer before continuing. |
-| **Answer when ready** | The question stays open while the agent can continue independent work. Your answer is queued for that conversation. |
+Asking a question leaves it open while CLIO can do independent work. When the
+agent needs the answer, it explicitly waits on the question's task handle. An
+answer already submitted is available immediately.
+
+<Capture
+  client:visible
+  image={await captureImage(taskWait)}
+  alt="A real Codex/Luna conversation remains active with Waiting for your answer inside its collapsed operations and one open question"
+  caption="Waiting stays inside the active operations. The conversation has not finished, and the question remains available above the composer."
+/>
+
+These labels distinguish ordinary questions from permission and connected-tool gates:
+
+| Question status               | What happens                                                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Answer needed to continue** | The agent that asked is waiting for your answer before continuing.                                                                       |
+| **Answer when ready**         | The question stays open while independent work continues. Your answer reaches the next eligible model iteration, or wakes an idle agent. |
 
 An answer from CLIO does not necessarily close an **Answer when ready** question.
 Check the open question count when you return to a conversation. A waiting child
@@ -112,8 +140,29 @@ Ask me which region to analyze. While I decide, check the column names and missi
 ```
 
 If the work depends on your answer, say so: “Wait for my choice before running the
-analysis.” Dismissing a question cancels that question; it is different from
-answering “No” or stopping every background task.
+analysis.” Stopping its wait leaves the question open. Closing the answer dialog
+also leaves it open. To cancel a question, use its cancellation control in
+**Work** and confirm the question you intend to close. Cancellation is different
+from answering “No” or stopping the current turn.
+
+<Capture
+  client:visible
+  image={await captureImage(taskAnswer)}
+  alt="The unanswered dataset question in a phone-width dialog, with a response field, Send response, and Close"
+  caption="Answer the specific question when ready. Closing this dialog leaves the question open."
+/>
+
+<details>
+<summary>Cancel an open question</summary>
+
+<Capture
+  client:visible
+  image={await captureImage(taskCancel)}
+  alt="A real task cancellation dialog identifies the dataset question and offers Keep running and Cancel task"
+  caption="Work identifies the question before cancellation. Keep running leaves it open."
+/>
+
+</details>
 
 ## Find an unanswered question
 
@@ -122,7 +171,9 @@ Each entry has a short preview, a control to show the full question, and actions
 to answer or go to its location in the conversation. The list also appears in
 the full **Work** view, so opening the right-hand panel keeps questions accessible.
 
-<Capture client:visible image={await captureImage(openQuestions)}
+<Capture
+  client:visible
+  image={await captureImage(openQuestions)}
   alt="Open questions list with three previews and the third question expanded to show its full prompt and Read and answer button"
   caption="Three independent decisions remain open. The arrow expands a clipped preview; Read and answer opens that question's response controls."
 />
@@ -136,7 +187,19 @@ their own controls. A normal confirmation question does not replace approval
 for a protected action.
 
 <CardGrid>
-  <LinkCard title="Follow tools and tasks" href="/docs/following-work/" description="Tell a running operation from a checklist item or a completed result." />
-  <LinkCard title="Permissions" href="/docs/permissions/" description="Review an action before allowing it to run." />
-  <LinkCard title="Compare generated drafts" href="/docs/best-of-n/" description="Inspect alternatives and choose the draft to keep." />
+  <LinkCard
+    title="Follow tools and tasks"
+    href="/docs/following-work/"
+    description="Tell a running operation from a checklist item or a completed result."
+  />
+  <LinkCard
+    title="Permissions"
+    href="/docs/permissions/"
+    description="Review an action before allowing it to run."
+  />
+  <LinkCard
+    title="Compare generated drafts"
+    href="/docs/best-of-n/"
+    description="Inspect alternatives and choose the draft to keep."
+  />
 </CardGrid>

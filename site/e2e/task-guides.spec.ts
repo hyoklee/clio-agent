@@ -100,13 +100,13 @@ test('task guides distinguish Stop, peer read permissions and qualification at e
 	await expect(actions.getByRole('row').filter({ hasText: 'Cancel task' })).toContainText('cancels its descendants');
 	await page.goto('/docs/tasks/messages/');
 	await expect(page.locator('.sl-markdown-content')).toContainText('Task observation and waits default to the caller');
-	await expect(page.locator('.sl-markdown-content')).toContainText('do not qualify a distributed workflow graph');
+	await expect(page.locator('.sl-markdown-content')).toContainText('Fresh native-replacement model and cross-workflow qualification is pending.');
 	await page.locator('.sl-markdown-content p').getByRole('link', { name: 'Session coordination', exact: true }).click();
-	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('Authorized peer queries, observation, waits, result subscriptions and messaging are implemented.');
+	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('Its fresh model, workflow and UI qualification is still pending.');
 	const subscription = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Find a run and subscribe to its result' }) });
 	await expect(subscription).not.toHaveAttribute('open');
 	await subscription.locator('summary').click();
-	await expect(subscription).toContainText('scope="workspace"');
+	await expect(subscription).toContainText('scope="authorized"');
 	await expect(subscription).toContainText('notify=True');
 	await expect(subscription).toContainText('knowing a handle does not bypass it');
 	await expect(page.locator('.sl-markdown-content')).toContainText('does not grant lifecycle control');
@@ -114,4 +114,40 @@ test('task guides distinguish Stop, peer read permissions and qualification at e
 		await page.goto(route);
 		await expect(page.locator('.sl-markdown-content a[href^="/docs/tasks/"]').first()).toBeAttached();
 	}
+});
+
+test("Question guide separates asking from waiting with real service captures", async ({
+	page,
+}) => {
+	await page.goto("/docs/questions/");
+	const article = page.locator(".sl-markdown-content");
+	await expect(article).toContainText("it explicitly waits on the question");
+	await expect(article).toContainText(
+		"Stopping its wait leaves the question open",
+	);
+	await expect(article).toContainText(
+		"Closing the answer dialog also leaves it open",
+	);
+	await expect(
+		article.getByRole("img", {
+			name: /A real Codex\/Luna conversation remains active/,
+		}),
+	).toBeAttached();
+	await expect(
+		article.getByRole("img", {
+			name: /The unanswered dataset question in a phone-width dialog/,
+		}),
+	).toBeAttached();
+	const cancellation = article
+		.locator("details")
+		.filter({
+			has: page.locator("summary", { hasText: "Cancel an open question" }),
+		});
+	await expect(cancellation).not.toHaveAttribute("open");
+	await cancellation.locator("summary").click();
+	await expect(
+		cancellation.getByRole("img", {
+			name: /A real task cancellation dialog identifies/,
+		}),
+	).toBeVisible();
 });

@@ -59,6 +59,11 @@ does not make every file in a remote account available to the agent.
 Ask the agent to use `shell_bash` with `background=true` for work that should
 continue independently. Omitting that argument keeps foreground execution.
 
+Both modes use the same native FastMCP workload. **Stop** ends a background
+command's caller and waiter while the command continues. For a foreground
+command, Stop requests cancellation and waits for the owned process tree to settle.
+Use **Cancel task** to stop accepted background work.
+
 ```text
 Run the existing conversion script in the background. Keep its handle, inspect
 its new output periodically, and review the README while it runs. If it fails,
@@ -69,8 +74,18 @@ This example does not invoke a command. The command still follows the workspace'
 confinement, confirmation and output limits. `timeout_s` is the command's explicit
 execution limit; it is separate from the timeout on `wait_tasks`.
 
-On service shutdown, CLIO stops its owned process trees and records interruption.
+On service shutdown, CLIO stops admission, cancels or withdraws owned local work,
+and waits for physical settlement. Pending settlement remains visible; a human
+force-close records uncertainty.
 It does not reattach to a process using only a PID or automatically replay the command.
+
+## Recovering uncertain work
+
+Losing a submission reply does not prove that the operation was rejected. Keep
+the returned handle, inspect its status and check actual output or filesystem
+effects before deciding whether to retry. Native worker redelivery after failure
+can repeat or overlap effects. CLIO records observed attempts and reports uncertainty.
+An explicit retry creates a new linked handle; it does not rewrite the old outcome.
 
 ## Combining kinds
 
