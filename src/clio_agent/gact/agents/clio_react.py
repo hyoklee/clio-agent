@@ -30,8 +30,8 @@ Per step:
    drafts to the user; ``max_iters`` (``<= 0`` unlimited) or ``context_window_exceeded``:
    stop. Nothing calls the model after the loop (``react-loop-completion-2026-09.md``).
 
-A forward first takes up a human-judged variant run the user has answered
-(:func:`~clio_agent.gact.agents.variant_drafts.resume_pending`).
+Human-judged module variants collect their own common Core Question results.
+Ordinary agent Questions remain inputs to the current conversation.
 """
 
 from __future__ import annotations
@@ -78,7 +78,6 @@ from clio_agent.gact.agents import clio_react_record as record
 from clio_agent.gact.agents import clio_react_stream as stream
 from clio_agent.gact.agents.clio_react_submit import (
     active_react_scope_safe,
-    pending_turn_yield,
     record_submit_audit,
 )
 from clio_agent.gact.agents.clio_react_submit import (
@@ -175,6 +174,7 @@ class ClioReAct(dspy.Module):
         # The module's own LM, as on a DSPy predictor: ``dspy.BestOfN`` / ``dspy.Refine``
         # read it and set a per-rollout copy; unset, the context's LM is used.
         self.lm: Any = None
+        self._clio_expert_id: str = ""
         user_tools = [t if isinstance(t, dspy.Tool) else dspy.Tool(t) for t in tools]
         self.tools: dict[str, dspy.Tool] = {}
         for tool in user_tools:
@@ -195,12 +195,8 @@ class ClioReAct(dspy.Module):
 
     def forward(self, **input_args: Any) -> dspy.Prediction:
         """Run the loop for one expert turn (see the module docstring)."""
-        from clio_agent.gact.agents.variant_drafts import resume_pending  # noqa: PLC0415
         from clio_agent.providers.stateful_common import stateful_scope  # noqa: PLC0415
 
-        resumed = resume_pending(self, input_args)
-        if resumed is not None:
-            return resumed
         # A fresh stateful scope per forward: the stateful engines key their kept
         # conversations on it (Codex direct its WebSocket, Claude Code its session), and
         # the scope routes ARC-op resets to the conversations this forward drove.

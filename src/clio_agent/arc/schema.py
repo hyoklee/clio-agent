@@ -67,6 +67,7 @@ SegmentKind = Literal[
     "observation",
     "summary",
     "recipient_input",  # confirmed iteration input boundary and notification references; not prompt text
+    "task_content",  # referenced task/mail content; neither semantic events nor prompt text
     # Richer ARC-as-source kinds. They are NOT part of the agent's context
     # (fold_steps ignores any kind it doesn't model).
     "answer",  # an expert/turn final message

@@ -18,7 +18,6 @@ from dspy.lm15 import Message, Request, TextPart
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import context as ctx
-from clio_agent.gact.agents.clio_react import ClioReAct, _call_lm
 from clio_agent.gact.agents.clio_react_record import fold_steps, read_steps
 
 
@@ -71,6 +70,7 @@ def live_plane_context(
 
 def make_react_agent(tools: list[Any] | None = None) -> Any:
     """Build a real ``ClioReAct`` instance over a trivial signature."""
+    from clio_agent.gact.agents.clio_react import ClioReAct
 
     def search(q: str) -> str:
         """A search tool."""
@@ -99,6 +99,8 @@ def probe_live_context(
     by ``fold_steps`` (``read_steps`` for the current view; ``as_of`` folds the
     store's as-of-T render instead), followed by the question as a user message.
     """
+    from clio_agent.gact.agents.clio_react import _call_lm
+
     with live_plane_context(arc_memory, session=session, scope=scope):
         if as_of is None:
             steps = read_steps(arc_memory, session, scope)

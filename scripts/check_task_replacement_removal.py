@@ -113,6 +113,8 @@ REMOVED_MODULES = frozenset(
 )
 REMOVED_NAMES = frozenset(
     {
+        "watch_step",
+        "PENDING_ASK_USER_META",
         "refresh_session_inputs",
         "release_claim",
         "AgentTaskRegistry",
@@ -222,6 +224,11 @@ def violations(root: Path = ROOT) -> list[str]:
                 candidates = {imported, *(f"{imported}.{alias.name}" for alias in node.names)}
                 for module in candidates & REMOVED_MODULES:
                     findings.append(f"{relative}:{node.lineno}: removed import {module}")
+                for alias in node.names:
+                    if alias.name in REMOVED_NAMES:
+                        findings.append(
+                            f"{relative}:{node.lineno}: retired imported symbol {alias.name}"
+                        )
             elif isinstance(node, ast.Import):
                 for alias in node.names:
                     if alias.name in REMOVED_MODULES:

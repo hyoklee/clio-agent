@@ -12,7 +12,7 @@ import hashlib
 import json
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from clio_agent.arc.memory import ARCMemory
 
 INDEX_KIND = "task_index"
-CONTENT_SCOPE = "_events/task-content/"
+CONTENT_SCOPE = "_task_content/"
 
 
 class MailboxFull(ValueError):
@@ -59,7 +59,9 @@ class TaskHistory:
         self._tasks: dict[str, TaskSnapshot] = {}
         self._mail: dict[str, dict[str, MailItem]] = {}
         self._pending: dict[str, dict[str, MailItem]] = {}
-        self._inputs: dict[str, RecipientInput] = {}
+        self._inputs: dict[tuple[str, str], RecipientInput] = {}
+        self._iterations: dict[tuple[str, str, str], str] = {}
+        self._input_locations: dict[tuple[str, str], dict[str, Any]] = {}
         self._acknowledged: dict[str, set[str]] = {}
         self._withdrawn: dict[str, set[str]] = {}
         self._grants: dict[str, CoordinationGrant] = {}
@@ -79,11 +81,13 @@ class TaskHistory:
             sha256=digest,
         )
         with self._writing():
-            self.arc.append_segment(
-                session_id,
-                reference.scope,
-                "semantic_event",
-                {"content_id": content_id, "sha256": digest, "value": value},
+            self._confirm(
+                lambda: self.arc.append_segment(
+                    session_id,
+                    reference.scope,
+                    "task_content",
+                    {"content_id": content_id, "sha256": digest, "value": value},
+                )
             )
         return reference
 
@@ -113,8 +117,20 @@ class TaskHistory:
                 or previous.invocation_id != snapshot.invocation_id
                 or previous.tool != snapshot.tool
                 or previous.created_at != snapshot.created_at
+                or previous.description != snapshot.description
+                or previous.description_missing != snapshot.description_missing
             ):
                 raise ValueError("Task identity cannot change under an existing handle")
+            if previous is not None and previous.backend is not None:
+                if previous.backend != snapshot.backend:
+                    raise ValueError("An accepted backend identity cannot be rebound")
+            if previous is not None and previous.terminal_at is not None:
+                if (
+                    snapshot.terminal_at != previous.terminal_at
+                    or snapshot.status != previous.status
+                    or snapshot.result != previous.result
+                ):
+                    raise ValueError("A historical terminal outcome cannot be reopened or replaced")
             if snapshot.result is not None:
                 self.read_content(snapshot.result)
             self._record(
@@ -163,9 +179,9 @@ class TaskHistory:
     def record_input(self, record: RecipientInput) -> RecipientInput:
         """Confirm the sole delivery acknowledgement in the recipient's context lane.
 
-        A locator is saved first. If the process dies after the context write but
-        before index confirmation, startup reads that exact scope and recovers the
-        committed input. A locator by itself never acknowledges a notification.
+        A canonical preparation event names the context address before its write.
+        Startup can rediscover the confirmed input even after all passive indexes
+        are deleted. Preparation alone never acknowledges a notification.
         """
         assert_store_write_off_loop("task.input")
         if record.boundary.session_id != record.session_id:
@@ -175,11 +191,13 @@ class TaskHistory:
         if len(record.notification_ids) != len(record.content):
             raise ValueError("Each notification must name its exact content reference")
         with self._writing():
-            previous = self._inputs.get(record.id)
+            key = (record.session_id, record.id)
+            previous = self._inputs.get(key)
             if previous is not None:
                 if previous != record:
                     raise ValueError("Recipient input identity was reused")
                 return previous
+            self._validate_input_eligibility(record)
             for notification_id, reference in zip(
                 record.notification_ids, record.content, strict=True
             ):
@@ -196,9 +214,9 @@ class TaskHistory:
                 "scope": record.boundary.scope,
                 "id": record.id,
             }
-            existing_locator = self.arc._store.get(INDEX_KIND, locator_name)
+            existing_locator = self._input_locations.get(key)
             if existing_locator is not None:
-                if json.loads(existing_locator) != locator:
+                if existing_locator != locator:
                     raise ValueError("Input locator identity was reused")
                 recovered = self._find_input(record.session_id, record.boundary.scope, record.id)
                 if recovered is not None:
@@ -207,13 +225,17 @@ class TaskHistory:
                     self._accept_input(recovered)
                     return recovered
             else:
+                self._record("session.input.prepared", record.session_id, record.id, locator)
                 self._put_index(locator_name, locator)
-            self.arc.append_segment(
-                record.session_id,
-                record.boundary.scope,
-                "recipient_input",
-                payload,
-                turn_id=record.iteration_id,
+                self._project("session.input.prepared", locator)
+            self._confirm(
+                lambda: self.arc.append_segment(
+                    record.session_id,
+                    record.boundary.scope,
+                    "recipient_input",
+                    payload,
+                    turn_id=record.iteration_id,
+                )
             )
             self._accept_input(record)
             return record
@@ -228,6 +250,8 @@ class TaskHistory:
                 and previous.model_copy(update={"revoked_at": grant.revoked_at}) != grant
             ):
                 raise ValueError("A grant cannot silently change its recipient, scope or rights")
+            if previous is not None and previous.revoked_at is not None and previous != grant:
+                raise ValueError("A revoked grant is historical; issue a new authenticated grant")
             payload = grant.model_dump(mode="json")
             self._record(
                 "session.coordination.grant", grant.recipient_session, observation_id, payload
@@ -255,15 +279,16 @@ class TaskHistory:
             tasks, mail, inputs = self._tasks, self._mail, self._inputs
             pending, previous_revision = self._pending, self.revision
             acknowledgements, withdrawn, grants = self._acknowledged, self._withdrawn, self._grants
+            iterations, locations = self._iterations, self._input_locations
             self._tasks, self._mail, self._inputs = {}, {}, {}
             self._pending, self.revision = {}, 0
             self._acknowledged, self._withdrawn, self._grants = {}, {}, {}
+            self._iterations, self._input_locations = {}, {}
             try:
                 for content in self.arc._live.iter_event_contents():
                     self._project(str(content.get("event_type", "")), content.get("payload") or {})
                 scopes: dict[tuple[str, str], dict[str, RecipientInput]] = {}
-                for _, data in self.arc._store.scan(INDEX_KIND, "input/"):
-                    locator = json.loads(data)
+                for locator in self._input_locations.values():
                     key = (locator["session_id"], locator["scope"])
                     if key not in scopes:
                         scopes[key] = self._scope_inputs(*key)
@@ -280,6 +305,7 @@ class TaskHistory:
                     withdrawn,
                     grants,
                 )
+                self._iterations, self._input_locations = iterations, locations
                 raise
             self.replay_seconds = time.monotonic() - started
             self.requires_recovery = False
@@ -309,6 +335,10 @@ class TaskHistory:
             payload = row.model_dump(mode="json")
             if self.arc._store.get(INDEX_KIND, key) != _encoded(payload):
                 self._put_index(key, payload)
+        for (session_id, identity), locator in self._input_locations.items():
+            key = "input/" + session_id + "/" + identity
+            if self.arc._store.get(INDEX_KIND, key) != _encoded(locator):
+                self._put_index(key, locator)
 
     def _record(
         self, event_type: str, session_id: str, identity: str, payload: dict[str, Any]
@@ -317,21 +347,36 @@ class TaskHistory:
         from clio_agent.gact.semantic_events import SemanticEvent
 
         assert_store_write_off_loop("task.observation")
-        self.arc.record_semantic_event(
-            SemanticEvent(
-                event_type=event_type,
-                session_id=session_id,
-                trace_id="",
-                span_id=identity,
-                payload=payload,
+        self._confirm(
+            lambda: self.arc.record_semantic_event(
+                SemanticEvent(
+                    event_type=event_type,
+                    session_id=session_id,
+                    trace_id="",
+                    span_id=identity,
+                    payload={"schema_version": 1, "observation_id": identity, "record": payload},
+                )
             )
         )
 
     def _put_index(self, name: str, payload: dict[str, Any]) -> None:
         assert_store_write_off_loop("task.index")
-        self.arc._store.put(INDEX_KIND, name, _encoded(payload))
+        self._confirm(lambda: self.arc._store.put(INDEX_KIND, name, _encoded(payload)))
+
+    def _confirm(self, operation: Callable[[], Any]) -> Any:
+        try:
+            return operation()
+        except Exception:
+            # This boundary covers actual persistence/derivation, not ordinary
+            # validation. A sink can fail after the Core append succeeded.
+            self.requires_recovery = True
+            raise
 
     def _project(self, event_type: str, payload: dict[str, Any]) -> None:
+        if "observation_id" in payload and "record" in payload:
+            if payload.get("schema_version") != 1:
+                raise ValueError("Unsupported task observation version; migration required")
+            payload = payload["record"]
         if event_type == "task.observed":
             snapshot = TaskSnapshot.model_validate(payload)
             self._tasks[snapshot.handle] = snapshot
@@ -349,25 +394,55 @@ class TaskHistory:
         elif event_type == "session.coordination.grant":
             grant = CoordinationGrant.model_validate(payload)
             self._grants[grant.id] = grant
+        elif event_type == "session.input.prepared":
+            key = (payload["session_id"], payload["id"])
+            previous = self._input_locations.get(key)
+            if previous is not None and previous != payload:
+                raise ValueError("Canonical input location identity was reused")
+            self._input_locations[key] = payload
         else:
             return
         self.revision += 1
 
     def _scope_inputs(self, session_id: str, scope: str) -> dict[str, RecipientInput]:
-        return {
-            segment.content["id"]: RecipientInput.model_validate(segment.content)
-            for segment in self.arc.list_segments(session_id, scope, include_tombstoned=True)
-            if segment.kind == "recipient_input"
-        }
+        records: dict[str, RecipientInput] = {}
+        for segment in self.arc.list_segments(session_id, scope, include_tombstoned=True):
+            if segment.kind != "recipient_input":
+                continue
+            record = RecipientInput.model_validate(segment.content)
+            if record.session_id != session_id or record.boundary.scope != scope:
+                raise ValueError("Recipient input is stored under a different context")
+            previous = records.get(record.id)
+            if previous is not None and previous != record:
+                raise ValueError("Conflicting canonical recipient inputs")
+            records[record.id] = record
+        return records
 
     def _find_input(self, session_id: str, scope: str, identity: str) -> RecipientInput | None:
         return self._scope_inputs(session_id, scope).get(identity)
 
     def _accept_input(self, record: RecipientInput) -> None:
-        if record.id in self._inputs:
+        key = (record.session_id, record.id)
+        previous = self._inputs.get(key)
+        if previous is not None:
+            if previous != record:
+                raise ValueError("Recipient input identity was reused")
             return
-        self._inputs[record.id] = record
+        self._validate_input_eligibility(record)
+        self._inputs[key] = record
+        self._iterations[(record.session_id, record.assignment_id, record.iteration_id)] = record.id
         self._acknowledged.setdefault(record.session_id, set()).update(record.notification_ids)
         for notification_id in record.notification_ids:
             self._pending.get(record.session_id, {}).pop(notification_id, None)
         self.revision += 1
+
+    def _validate_input_eligibility(self, record: RecipientInput) -> None:
+        iteration = (record.session_id, record.assignment_id, record.iteration_id)
+        if iteration in self._iterations:
+            raise ValueError("The model iteration already has a committed input")
+        withdrawn = self._withdrawn.get(record.session_id, set())
+        acknowledged = self._acknowledged.get(record.session_id, set())
+        if any(identity in withdrawn for identity in record.notification_ids):
+            raise ValueError("Input includes withdrawn mail; restage the model input")
+        if any(identity in acknowledged for identity in record.notification_ids):
+            raise ValueError("Input includes already committed mail; restage the model input")

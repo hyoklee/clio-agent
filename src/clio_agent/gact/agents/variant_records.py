@@ -212,10 +212,11 @@ class PreferenceRecord:
 
 def _plane(app: Any) -> Any:
     from clio_agent.arc.history_plane import plane_for  # noqa: PLC0415
-    from clio_agent.gact.agents.clio_react import NoContextStoreError  # noqa: PLC0415
 
     plane = plane_for(app) if app is not None else None
     if plane is None:
+        from clio_agent.gact.agents.clio_react import NoContextStoreError  # noqa: PLC0415
+
         raise NoContextStoreError()
     return plane
 

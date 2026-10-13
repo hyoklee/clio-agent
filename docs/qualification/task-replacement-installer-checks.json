@@ -1,0 +1,95 @@
+{
+  "family": "stable-task-sdk-source-install-policy",
+  "test_runtime_parent": "C:/ct-r2",
+  "product_installation": "not performed",
+  "gact": "2924500f29f827c617d513929c96ccf59977ac5f",
+  "tests": [
+    {
+      "node": "tests/test_scripts/test_release_install_policy.py::test_release_installers_explicitly_root_intentional_prereleases",
+      "status": "passed",
+      "pid": 58760,
+      "birth": 1791928522.1607983,
+      "exit_code": 0,
+      "elapsed_s": 16.95,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.88s"
+    },
+    {
+      "node": "tests/test_scripts/test_release_install_policy.py::test_project_pins_intentional_prereleases_and_stable_litellm",
+      "status": "passed",
+      "pid": 7028,
+      "birth": 1791928539.1138945,
+      "exit_code": 0,
+      "elapsed_s": 17.53,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.82s"
+    },
+    {
+      "node": "tests/test_scripts/test_release_install_policy.py::test_desktop_update_sdk_roots_match_the_core_package_contract",
+      "status": "passed",
+      "pid": 63356,
+      "birth": 1791928556.6399837,
+      "exit_code": 0,
+      "elapsed_s": 17.16,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.76s"
+    },
+    {
+      "node": "tests/test_scripts/test_release_install_policy.py::test_release_workflow_smokes_the_built_wheel_with_pinned_prereleases",
+      "status": "passed",
+      "pid": 52004,
+      "birth": 1791928573.8022368,
+      "exit_code": 0,
+      "elapsed_s": 18.04,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.93s"
+    },
+    {
+      "node": "tests/test_scripts/test_release_install_policy.py::test_release_workflow_smokes_the_published_registry_tool",
+      "status": "passed",
+      "pid": 34552,
+      "birth": 1791928591.8473155,
+      "exit_code": 0,
+      "elapsed_s": 17.99,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.92s"
+    },
+    {
+      "node": "tests/test_scripts/test_release_install_policy.py::test_documented_persistent_uv_tool_install_has_the_same_policy",
+      "status": "passed",
+      "pid": 38144,
+      "birth": 1791928609.8415973,
+      "exit_code": 0,
+      "elapsed_s": 19.85,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 10.82s"
+    },
+    {
+      "node": "tests/test_scripts/test_check_bundle_matches_lock.py::test_real_lock_export_covers_the_bundle_packages",
+      "status": "passed",
+      "pid": 49680,
+      "birth": 1791928629.6971211,
+      "exit_code": 0,
+      "elapsed_s": 20.64,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 10.24s"
+    }
+  ],
+  "registered_sequential_cases": [
+    "tests/test_scripts/test_release_install_policy.py::test_release_installers_explicitly_root_intentional_prereleases",
+    "tests/test_scripts/test_release_install_policy.py::test_project_pins_intentional_prereleases_and_stable_litellm",
+    "tests/test_scripts/test_release_install_policy.py::test_desktop_update_sdk_roots_match_the_core_package_contract",
+    "tests/test_scripts/test_release_install_policy.py::test_release_workflow_smokes_the_built_wheel_with_pinned_prereleases",
+    "tests/test_scripts/test_release_install_policy.py::test_release_workflow_smokes_the_published_registry_tool",
+    "tests/test_scripts/test_release_install_policy.py::test_documented_persistent_uv_tool_install_has_the_same_policy",
+    "tests/test_scripts/test_check_bundle_matches_lock.py::test_real_lock_export_covers_the_bundle_packages"
+  ],
+  "binding_diagnostics": []
+}

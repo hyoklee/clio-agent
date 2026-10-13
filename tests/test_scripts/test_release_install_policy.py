@@ -23,9 +23,9 @@ EXPECTED_VERSION = "0.9.5b5.post2"
 #: package version only; users opt into it explicitly.
 DOCUMENTED_VERSION = "0.9.4.24"
 EXPECTED_DSPY = "dspy==3.4.0"
-EXPECTED_FASTMCP = "fastmcp==4.0.0b5"
-EXPECTED_FASTMCP_SLIM = "fastmcp-slim==4.0.0b5"
-EXPECTED_FASTMCP_TASKS = "fastmcp-tasks==4.0.0b5"
+EXPECTED_FASTMCP = "fastmcp==4.1.0"
+EXPECTED_FASTMCP_SLIM = "fastmcp-slim==4.1.0"
+EXPECTED_FASTMCP_TASKS = "fastmcp-tasks==4.1.0"
 EXPECTED_LITELLM = "litellm==1.102.1"
 
 
@@ -41,13 +41,13 @@ def test_release_installers_explicitly_root_intentional_prereleases() -> None:
     expected_commands = {
         "install/install.sh": (
             "uv sync --python 3.14 --extra argonne",
-            '"dspy==3.4.0" "fastmcp==4.0.0b5" "fastmcp-slim==4.0.0b5"',
+            '"dspy==3.4.0" "fastmcp==4.1.0" "fastmcp-slim==4.1.0"',
         ),
         "install/install.ps1": (
             "RunNative uv @('sync', '--python', '3.14')",
-            "'fastmcp-slim==4.0.0b5', 'fastmcp-tasks==4.0.0b5'",
+            "'fastmcp-slim==4.1.0', 'fastmcp-tasks==4.1.0'",
         ),
-        "install/clio": ('"dspy==3.4.0" "fastmcp==4.0.0b5" "fastmcp-slim==4.0.0b5"',),
+        "install/clio": ('"dspy==3.4.0" "fastmcp==4.1.0" "fastmcp-slim==4.1.0"',),
     }
     # The bundled-runtime builders root nothing themselves: they install
     # clio-agent[BUNDLE_EXTRAS] against the lock export, whose exact prerelease
@@ -107,6 +107,23 @@ def test_project_pins_intentional_prereleases_and_stable_litellm() -> None:
     assert EXPECTED_FASTMCP_SLIM not in dependencies
     assert EXPECTED_FASTMCP_TASKS in dependencies
     assert EXPECTED_LITELLM in dependencies
+
+
+def test_desktop_update_sdk_roots_match_the_core_package_contract() -> None:
+    """A Desktop update must not force SDK versions conflicting with its Core package."""
+    from packaging.requirements import Requirement
+
+    project = tomllib.loads(_text("pyproject.toml"))["project"]
+    dependencies = {
+        requirement.name: requirement
+        for value in project["dependencies"]
+        if (requirement := Requirement(value)).name in {"dspy", "fastmcp", "fastmcp-tasks"}
+    }
+    desktop = _text("external/gact-tui/desktop/src-tauri/src/supervisor_installer.rs")
+    expected = [str(requirement) for requirement in dependencies.values()]
+    expected.append("fastmcp-slim" + str(dependencies["fastmcp"].specifier))
+    for requirement in expected:
+        assert f'"{requirement}".to_string()' in desktop, requirement
 
 
 def test_release_workflow_smokes_the_built_wheel_before_publish() -> None:
@@ -238,20 +255,20 @@ def test_release_workflow_smokes_the_published_registry_tool() -> None:
 
     assert publish < registry_job < registry_install
     assert "needs: pypi" in workflow[registry_job:registry_install]
-    assert "--with fastmcp==4.0.0b5" in workflow[registry_install:]
-    assert "--with fastmcp-slim==4.0.0b5" in workflow[registry_install:]
-    assert "--with fastmcp-tasks==4.0.0b5" in workflow[registry_install:]
+    assert "--with fastmcp==4.1.0" in workflow[registry_install:]
+    assert "--with fastmcp-slim==4.1.0" in workflow[registry_install:]
+    assert "--with fastmcp-tasks==4.1.0" in workflow[registry_install:]
     assert "assert dspy.__version__ == '3.4.0'" in workflow
     assert "assert hasattr(dspy, 'lm15')" in workflow
 
 
 def test_documented_persistent_uv_tool_install_has_the_same_policy() -> None:
-    """User-facing registry installs enable the package's pinned prereleases."""
+    """Historical released-version examples retain that release's exact dependency roots."""
 
     command = (
-        f"uv tool install --python 3.13 --with {EXPECTED_DSPY} --with {EXPECTED_FASTMCP} "
-        f"--with {EXPECTED_FASTMCP_SLIM} "
-        f"--with {EXPECTED_FASTMCP_TASKS} clio-agent=={DOCUMENTED_VERSION}"
+        f"uv tool install --python 3.13 --with {EXPECTED_DSPY} --with fastmcp==4.0.0b5 "
+        f"--with fastmcp-slim==4.0.0b5 "
+        f"--with fastmcp-tasks==4.0.0b5 clio-agent=={DOCUMENTED_VERSION}"
     )
     for relative_path in ("docs/INSTALL.md", "install/README.md"):
         contents = _text(relative_path)

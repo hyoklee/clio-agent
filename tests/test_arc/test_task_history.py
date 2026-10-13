@@ -10,9 +10,11 @@ import pytest
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import (
     ContextBoundary,
+    CoordinationGrant,
     MailItem,
     MailKind,
     QuestionDefinition,
+    QuestionOption,
     QuestionReply,
     RecipientInput,
     TaskOwner,
@@ -265,3 +267,158 @@ def test_question_answer_and_cancel_share_one_core_record(arc: ARCMemory) -> Non
         assert isinstance(answer_outcome, ValueError)
         assert settled.result is None
     assert commands.cancel(accepted.handle) == settled
+
+
+def test_content_bodies_do_not_enter_the_semantic_event_fold(arc: ARCMemory) -> None:
+    """Large output and private answers remain referenced content rather than event rows."""
+    history = TaskHistory(arc)
+    item = history.record_mail(mail(history, "private-body"))
+    events = list(arc._live.iter_event_contents())
+    assert len(events) == 1
+    assert events[0]["event_type"] == "session.mail.accepted"
+    assert history.read_content(item.content) == {"text": "private-body"}
+    assert all(
+        segment.kind == "task_content" for segment in arc.list_segments("owner", item.content.scope)
+    )
+
+
+def test_staged_mail_cannot_commit_after_successful_withdrawal(arc: ARCMemory) -> None:
+    """Human deletion wins against a batch staged before its commit boundary."""
+    history = TaskHistory(arc)
+    item = history.record_mail(mail(history, "withdraw-before-commit"))
+    staged = input_record(item)
+    history.withdraw_mail("owner", item.id)
+    with pytest.raises(ValueError, match="withdrawn"):
+        history.record_input(staged)
+    assert not history.requires_recovery
+    assert not any(
+        segment.kind == "recipient_input" for segment in arc.list_segments("owner", "main")
+    )
+
+
+def test_collection_racing_automatic_input_cannot_deliver_twice(arc: ARCMemory) -> None:
+    """Distinct staged inputs cannot acknowledge the same recipient notification twice."""
+    history = TaskHistory(arc)
+    item = history.record_mail(mail(history, "racing-result", kind="task_result"))
+    automatic = input_record(item)
+    collected = input_record(item, identity="collection").model_copy(
+        update={"iteration_id": "later"}
+    )
+    history.record_input(collected)
+    with pytest.raises(ValueError, match="already committed"):
+        history.record_input(automatic)
+    assert history.record_input(collected) == collected
+    assert history.pending_mail("owner") == ()
+
+
+def test_input_ids_are_session_scoped_and_iterations_have_one_input(arc: ARCMemory) -> None:
+    """A peer's identical input ID is independent, but a model iteration is immutable."""
+    history = TaskHistory(arc)
+    owner = history.record_mail(mail(history, "same", recipient="owner"))
+    peer = history.record_mail(mail(history, "same", recipient="peer"))
+    history.record_input(input_record(owner))
+    history.record_input(input_record(peer))
+    extra = history.record_mail(mail(history, "next", recipient="owner"))
+    with pytest.raises(ValueError, match="iteration already"):
+        history.record_input(input_record(extra, identity="other-input"))
+    assert history.pending_mail("owner") == (extra,)
+
+
+def test_all_passive_indexes_can_be_rebuilt_without_losing_input_commit(arc: ARCMemory) -> None:
+    """Canonical preparation plus context commitment survive complete cache-index deletion."""
+    history = TaskHistory(arc)
+    item = history.record_mail(mail(history, "durable-result", kind="task_result"))
+    committed = input_record(item)
+    history.record_input(committed)
+    for key, _ in tuple(arc._store.scan("task_index")):
+        arc._store.delete("task_index", key)
+    recovered = TaskHistory(arc)
+    recovered.restore()
+    assert recovered.pending_mail("owner") == ()
+    assert recovered.record_input(committed) == committed
+    assert arc._store.get("task_index", "input/owner/input") is not None
+    recovered.restore()
+    assert recovered.pending_mail("owner") == ()
+
+
+def test_post_commit_highway_failure_holds_admission_until_recovery(
+    arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An arbitrary derivation failure after Core persistence cannot expose stale custody."""
+    history = TaskHistory(arc)
+
+    def fail_sink(event: Any) -> Any:
+        raise RuntimeError("injected highway failure after persistence")
+
+    monkeypatch.setattr(arc, "_highway_sink", fail_sink)
+    with pytest.raises(RuntimeError, match="after persistence"):
+        history.record_snapshot(snapshot(), observation_id="confirmed-before-sink-error")
+    assert history.requires_recovery
+    assert history.task_snapshot("task_test") is None
+    history.restore()
+    assert history.task_snapshot("task_test") == snapshot()
+    assert not history.requires_recovery
+
+
+def test_revoked_grant_cannot_be_reactivated_under_its_historical_id(arc: ARCMemory) -> None:
+    """Regranting requires a new authenticated relationship rather than overwriting revocation."""
+    history = TaskHistory(arc)
+    grant = CoordinationGrant(
+        id="grant",
+        granting_human="human",
+        recipient_session="peer",
+        target_session="owner",
+        rights=("read", "observe"),
+        created_at=STAMP,
+    )
+    history.record_grant(grant, observation_id="grant-new")
+    revoked = grant.model_copy(update={"revoked_at": STAMP})
+    history.record_grant(revoked, observation_id="grant-revoked")
+    with pytest.raises(ValueError, match="revoked grant"):
+        history.record_grant(grant, observation_id="invalid-reactivation")
+    assert not history.requires_recovery
+
+
+def test_terminal_outcome_cannot_be_reopened_by_a_late_owner_reply(arc: ARCMemory) -> None:
+    """The writer preserves historical facts without deciding execution transitions."""
+    history = TaskHistory(arc)
+    running = snapshot()
+    history.record_snapshot(running, observation_id="accepted")
+    terminal = running.model_copy(update={"status": "completed", "terminal_at": STAMP})
+    history.record_snapshot(terminal, observation_id="completed")
+    with pytest.raises(ValueError, match="terminal outcome"):
+        history.record_snapshot(running, observation_id="late-working-reply")
+    assert history.task_snapshot(running.handle) == terminal
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        QuestionReply(metadata={"ignored": True}),
+        QuestionReply(parts=({"type": "text", "text": "attachment"},)),
+    ],
+    ids=["metadata-only", "attachment-only"],
+)
+def test_option_only_question_cannot_complete_without_an_option(
+    arc: ARCMemory, reply: QuestionReply
+) -> None:
+    """An unrelated payload cannot stand in for the requested user decision."""
+    history = TaskHistory(arc)
+    accepted = snapshot().model_copy(update={"kind": "Question", "tool": "ask_user"})
+    history.record_snapshot(accepted, observation_id="question-accepted")
+    commands = QuestionCommands(history)
+    posted = commands.post(
+        accepted,
+        QuestionDefinition(
+            prompt="Pick one",
+            kind="choice",
+            allow_freeform=False,
+            options=(QuestionOption(label="First", value="first"),),
+        ),
+    )
+    with pytest.raises(ValueError, match="offered option"):
+        commands.answer(accepted.handle, reply)
+    assert history.task_snapshot(accepted.handle) == posted
+    answered = commands.answer(accepted.handle, QuestionReply(selected_options=("first",)))
+    assert answered.status == "completed"
+    assert answered.result is not None

@@ -1,54 +1,19 @@
-"""Declared deterministic workflows (#948 S5, work item 4).
+"""Declared workflow parsing, validation and deterministic state predicates.
 
-A tier-1 orchestrator blueprint may declare a ``workflow:`` block — a list of
-``steps`` describing an a->b->c child pathway gated on typed ``workflow_state``
-predicates. This REVIVES the retired continuation-contract schema shape wildfire
-already authored (``when_state.<field>.exists`` / ``when_child_completed`` ->
-next child), now as a first-class declaration executed by a real runner.
-
-Two surfaces live here, in this owner module (never accreted onto ``builders.py``
-or ``spawn_runtime.py``):
-
-* **Declaration + typed validation** (:func:`parse_workflow`,
-  :func:`workflow_validation_errors`). The loader validates the block against the
-  expert's declared children — unknown child, dependency cycle, and malformed
-  predicate become typed row errors that compose with the S4
-  react-children-only hierarchy rules.
-
-* **The runner** (:func:`run_declared_workflow`). Executes the declared steps
-  DETERMINISTICALLY — declared infra determinism: the model is NOT in the loop
-  for the declared steps (the DECLARATION is the decision; the pack author
-  decided, clio executes what was declared and never infers). Each step is a real
-  ``spawn_child_turn`` + wait with its own :class:`AgentTask` record (the S1-S3
-  substrate), evaluating its gate over the ACCUMULATED typed ``workflow_state``.
-  A gate that cannot be satisfied (missing field, a prior child that never
-  completed) OR a spawned child that FAILS is a **typed stall**: the runner stops
-  and returns the stall reason (step, predicate, observed state) — never a guess,
-  never silent continuation.
-
-The runner respects the per-depth concurrency caps of the spawn substrate; steps
-run sequentially in declaration order (only one child in flight at a time), so a
-declared workflow never contends for slots with itself. The MODEL decides what to
-do with a stall — the runner surfaces it, it never re-routes or fabricates (⚑ #1
-applies at the tool boundary where ``run_workflow`` returns to the react main).
+Execution uses shared assignment controls. The deleted registry-based runner is
+not retained as an alternate owner or imported during blueprint validation.
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from clio_agent import conf
-from clio_agent.gact.workflow_step_watch import resolve_step_inactivity_s, watch_step
 
 if TYPE_CHECKING:
-    from fastapi import FastAPI
-
     from clio_agent.gact.types import AgentDef
-
-logger = logging.getLogger(__name__)
 
 # Typed stall reasons (no free-form strings on the wire).
 STALL_PREDICATE_UNSATISFIED = "workflow_predicate_unsatisfied"
@@ -64,10 +29,6 @@ STALL_STEP_STALLED = "workflow_step_stalled"
 # watch is progress-based (STALL_STEP_STALLED), never a wall-clock bound on legitimate work
 # (the owner's liveness principle, #992). A child that FAILED is STALL_CHILD_FAILED.
 STALL_STEP_TIMEOUT = "workflow_step_timeout"
-
-# Progress-based step liveness lives in the owner module ``workflow_step_watch`` (#992);
-# ``run_declared_workflow`` calls ``watch_step`` and maps its verdict to the typed stalls
-# above. ``resolve_step_inactivity_s`` supplies the config-first default window.
 
 
 # ===========================================================================
@@ -493,217 +454,3 @@ def _render_task(step: WorkflowStep, request: str) -> str:
     if request.strip():
         return f"{task}\n\n[request]\n{request.strip()}"
     return task
-
-
-def run_declared_workflow(
-    app: "FastAPI",
-    agent_def: "AgentDef",
-    parent_session_id: str,
-    *,
-    requesting_expert_id: str = "",
-    request: str = "",
-    inactivity_window_s: Optional[float] = None,
-) -> dict[str, Any]:
-    """Execute ``agent_def``'s declared workflow deterministically over the substrate.
-
-    Steps run sequentially in declaration order. Before each step the runner
-    evaluates its gate over the ACCUMULATED typed ``workflow_state``; an unmet gate
-    is a typed :data:`STALL_PREDICATE_UNSATISFIED`. A satisfied step is spawned as a
-    real child turn (its own :class:`AgentTask` record) and WATCHED for PROGRESS: a step
-    is stalled (:data:`STALL_STEP_STALLED`) only when its child shows no observable
-    activity for ``inactivity_window_s`` (the owner's liveness principle — a
-    legitimately-heavy step that keeps progressing is never wall-clock-bounded, #992). A
-    step that DECLARES an absolute budget (``step.timeout_s``) is additionally hard-bounded
-    (:data:`STALL_STEP_TIMEOUT`) even while active. A child that terminates non-completed is
-    :data:`STALL_CHILD_FAILED`. A completed child's typed ``workflow_state`` is merged into
-    the accumulator (later step wins a collision) and its id joins the completed set. On any
-    non-completing outcome the orphaned child is cancelled (the S7 cancel path). Returns::
-
-        {"status": "completed" | "stalled",
-         "steps": [{step_id, child, task_id, run_index, child_status, workflow_state}...],
-         "workflow_state": <accumulated>,
-         "stall": {reason, step, predicate, observed} | None}
-
-    ``inactivity_window_s`` defaults to the configured window
-    (:func:`_resolve_step_inactivity_s`, file → env → 120s). The MODEL decides what to do
-    with a stall — the runner never guesses.
-    """
-
-    window = inactivity_window_s if inactivity_window_s is not None else resolve_step_inactivity_s()
-
-    from clio_agent.gact.runtime.globals import (  # noqa: PLC0415
-        _active_semantic_turn_id,
-    )
-    from clio_agent.gact.spawn_context import bind_task_spec_to_parent  # noqa: PLC0415
-
-    # #953 [2]/[8]: stamp each step's spawn with the active parent turn id so run_index
-    # resets per turn (else it accumulates across the whole session).
-    active_turn_id = _active_semantic_turn_id()
-
-    workflow = parse_workflow(agent_def)
-    requesting = requesting_expert_id or agent_def.id
-    step_records: list[dict[str, Any]] = []
-    accumulated: dict[str, Any] = {}
-    completed: set[str] = set()
-
-    if workflow is None:
-        # Gate ensures this is unreachable from a valid expert; surface typed, never
-        # a silent empty success.
-        logger.warning("run_workflow invoked with no declared workflow agent=%s", agent_def.id)
-        return {
-            "status": "stalled",
-            "steps": step_records,
-            "workflow_state": accumulated,
-            "stall": {
-                "reason": "no_workflow_declared",
-                "step": "",
-                "predicate": None,
-                "observed": {"agent_id": agent_def.id},
-            },
-        }
-
-    depth = _current_session_depth(app, parent_session_id) + 1
-
-    for step in workflow.steps:
-        gate = evaluate_step_gate(step, accumulated, completed)
-        if not gate.satisfied:
-            logger.warning(
-                "workflow stall reason=%s step=%s predicate=%s agent=%s",
-                STALL_PREDICATE_UNSATISFIED,
-                step.id,
-                gate.predicate,
-                agent_def.id,
-            )
-            return {
-                "status": "stalled",
-                "steps": step_records,
-                "workflow_state": accumulated,
-                "stall": {
-                    "reason": STALL_PREDICATE_UNSATISFIED,
-                    "step": step.id,
-                    "predicate": gate.predicate,
-                    "observed": gate.observed,
-                },
-            }
-
-        task_text = _render_task(step, request)
-        try:
-            spawned = app.state.expert_invoker.invoke(
-                bind_task_spec_to_parent(
-                    app,
-                    TaskSpec(
-                        child_expert_id=step.child,
-                        task_text=task_text,
-                        parent_session_id=parent_session_id,
-                        requesting_expert_id=requesting,
-                        parent_turn_id=active_turn_id,
-                        depth=depth,
-                        mode="sync",
-                        workflow_state=dict(accumulated) or None,
-                    ),
-                ),
-            )
-        except SpawnError as exc:
-            logger.warning(
-                "workflow stall reason=%s step=%s spawn_reason=%s agent=%s",
-                STALL_SPAWN_REFUSED,
-                step.id,
-                exc.reason,
-                agent_def.id,
-            )
-            return {
-                "status": "stalled",
-                "steps": step_records,
-                "workflow_state": accumulated,
-                "stall": {
-                    "reason": STALL_SPAWN_REFUSED,
-                    "step": step.id,
-                    "predicate": {"child": step.child},
-                    "observed": {"spawn_reason": exc.reason},
-                },
-            }
-
-        emit_workflow_step_start(app, parent_session_id, agent_def, step.child, task_text, spawned)
-        task, outcome, observed_inactivity_s = watch_step(
-            app,
-            spawned.task_id,
-            spawned.child_session_id,
-            inactivity_window_s=window,
-            absolute_budget_s=step.timeout_s,
-        )
-        child_status = task.status if task is not None else "unknown"
-        child_state = (task.result or {}).get("workflow_state", {}) if task is not None else {}
-        if not isinstance(child_state, dict):
-            child_state = {}
-        step_records.append(
-            {
-                "step_id": step.id,
-                "child": step.child,
-                "task_id": spawned.task_id,
-                "run_index": spawned.run_index,
-                "child_status": child_status,
-                "workflow_state": child_state,
-            }
-        )
-        if task is not None:
-            emit_workflow_step_return(app, parent_session_id, agent_def, task)
-
-        if outcome != "terminal" or task is None or task.status != STATUS_COMPLETED:
-            # A non-completing step. Three distinct typed reasons, never conflated (#992):
-            #   * "stalled": the child went INACTIVE for the inactivity window while still
-            #     RUNNING (progress-based liveness) — NOT a failure, and NOT a wall-clock
-            #     bound on legitimate work.
-            #   * "timeout": the child exceeded a pack-DECLARED absolute budget while still
-            #     RUNNING (#953 [7], opt-in only).
-            #   * STALL_CHILD_FAILED: the child terminated non-completed (failed/cancelled)
-            #     or was never on the registry.
-            # A still-RUNNING orphan (stalled/timeout) is cancelled transitively (the S7
-            # cancel path) so it stops holding a per-depth pool slot AND stops producing.
-            non_terminal = outcome in ("stalled", "timeout")
-            if outcome == "stalled":
-                reason = STALL_STEP_STALLED
-            elif outcome == "timeout":
-                reason = STALL_STEP_TIMEOUT
-            else:
-                reason = STALL_CHILD_FAILED
-            if non_terminal:
-                app.state.expert_invoker.cancel(spawned)
-            logger.warning(
-                "workflow stall reason=%s step=%s child=%s child_status=%s agent=%s",
-                reason,
-                step.id,
-                step.child,
-                child_status,
-                agent_def.id,
-            )
-            observed: dict[str, Any] = {
-                "task_id": spawned.task_id,
-                "child_status": child_status,
-                "error_reason": getattr(task, "error_reason", "") if task else "",
-            }
-            if outcome == "stalled":
-                observed["inactivity_s"] = window
-                observed["observed_inactivity_s"] = round(observed_inactivity_s, 3)
-            elif outcome == "timeout":
-                observed["timeout_s"] = step.timeout_s
-            return {
-                "status": "stalled",
-                "steps": step_records,
-                "workflow_state": accumulated,
-                "stall": {
-                    "reason": reason,
-                    "step": step.id,
-                    "predicate": {"child": step.child},
-                    "observed": observed,
-                },
-            }
-
-        _merge_step_state(accumulated, child_state)
-        completed.add(step.child)
-
-    return {
-        "status": "completed",
-        "steps": step_records,
-        "workflow_state": accumulated,
-        "stall": None,
-    }

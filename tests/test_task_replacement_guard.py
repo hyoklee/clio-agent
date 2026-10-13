@@ -63,6 +63,22 @@ def test_catches_relative_import(guard_root: Path) -> None:
     assert any("removed import clio_agent.gact.agent_tasks" in item for item in AUDIT(guard_root))
 
 
+def test_catches_aliased_retired_symbol_import(guard_root: Path) -> None:
+    """Aliasing a removed authority must not bypass the production denylist."""
+    write_source(guard_root, "innocent.py", "from elsewhere import AgentTaskRegistry as renamed\n")
+    assert any("retired imported symbol AgentTaskRegistry" in item for item in AUDIT(guard_root))
+
+
+def test_catches_old_question_inbox_writer(guard_root: Path) -> None:
+    """A private pending-ask projection cannot become Question delivery authority again."""
+    write_source(
+        guard_root,
+        "innocent.py",
+        "def post(app, question):\n    app.state.sessions.update('session', metadata_patch={PENDING_ASK_USER_META: question})\n",
+    )
+    assert any("retired symbol PENDING_ASK_USER_META" in item for item in AUDIT(guard_root))
+
+
 def test_catches_provider_default_executor_wait(guard_root: Path) -> None:
     """Provider streams may not park a shared pool worker on their queue."""
     write_source(

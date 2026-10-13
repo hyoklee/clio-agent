@@ -8,7 +8,8 @@ from typing import Any
 import mcp_types
 from fastmcp_tasks.client import _inlined_call_tool_result
 from fastmcp_tasks.client_models import ClientGetTaskResult
-from jsonschema import Draft202012Validator, FormatChecker, SchemaError, ValidationError
+from jsonschema import Draft202012Validator, SchemaError, ValidationError
+from jsonschema.validators import validator_for
 from pydantic import ValidationError as ModelValidationError
 from referencing import Registry
 from referencing.exceptions import Unresolvable
@@ -53,10 +54,18 @@ def validate_terminal(schema: dict[str, Any] | None, current: ClientGetTaskResul
             raise TaskResultValidationError("Backend omitted its declared structured result")
         # Backend schemas can use local definitions, but validation must never
         # fetch arbitrary external references using the application's credentials.
-        Draft202012Validator.check_schema(schema)
-        Draft202012Validator(schema, registry=Registry(), format_checker=FormatChecker()).validate(
-            result.structured_content
-        )
+        declared = schema.get("$schema")
+        if "$schema" in schema and not isinstance(declared, str):
+            raise TaskResultValidationError("Captured backend schema has an invalid dialect URI")
+        validator = validator_for(schema, default=Draft202012Validator)
+        if isinstance(declared, str):
+            canonical = validator.META_SCHEMA.get("$id", validator.META_SCHEMA.get("id", ""))
+            if declared.removesuffix("#") != str(canonical).removesuffix("#"):
+                raise TaskResultValidationError(
+                    "Captured backend schema declares an unsupported dialect"
+                )
+        validator.check_schema(schema)
+        validator(schema, registry=Registry()).validate(result.structured_content)
     except ValidationError as exc:
         raise TaskResultValidationError(
             f"Backend result violates its declared schema: {exc.message}"

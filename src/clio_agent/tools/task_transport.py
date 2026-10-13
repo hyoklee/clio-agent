@@ -8,6 +8,7 @@ from dataclasses import replace
 from typing import Any, ClassVar, TypeVar
 
 from fastmcp.client.transports.base import ClientTransport, TransportOptions
+from fastmcp.client.transports.config import MCPConfigTransport
 from fastmcp_tasks.client_models import (
     CancelTaskRequest,
     ClientGetTaskResult,
@@ -81,7 +82,12 @@ class ObservedTaskSession(ClientSession):
 
 
 class TaskObservationTransport(ClientTransport):
-    """Retain the original transport's identity, auth, options and lifecycle."""
+    """Wrap one fully configured server transport, retaining identity and lifecycle.
+
+    Configure transport-specific TLS, authentication and server selection before
+    wrapping. Multi-server configuration belongs to separate per-server clients;
+    this wrapper cannot stand in for their transport-specific dispatch.
+    """
 
     def __init__(
         self,
@@ -91,6 +97,8 @@ class TaskObservationTransport(ClientTransport):
     ) -> None:
         if isinstance(original, TaskObservationTransport):
             raise ValueError("Task observation transport cannot be nested")
+        if isinstance(original, MCPConfigTransport):
+            raise ValueError("Tasks require one native client per server, not a multi-server proxy")
         self.original = original
         self.observer = observer
         self.update_guard = update_guard
@@ -124,3 +132,14 @@ class TaskObservationTransport(ClientTransport):
     async def close(self) -> None:
         """Close the original transport once its application owner has settled work."""
         await self.original.close()
+
+    def get_session_id(self) -> str | None:
+        """Expose the original verified transport session, including legacy routes."""
+        return self.original.get_session_id()
+
+    def _set_auth(self, auth: Any) -> None:
+        """Delegate SDK authentication configuration without changing its scope."""
+        self.original._set_auth(auth)
+
+    def __repr__(self) -> str:
+        return f"TaskObservationTransport({self.original!r})"

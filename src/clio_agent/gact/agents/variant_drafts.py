@@ -27,8 +27,8 @@ final texts); the run's state is in clio-core and the session row points at it, 
 answer -- even after a restart -- resumes it at the agent's next forward
 (:func:`resume_pending`). The selected try's line then continues the conversation:
 this turn's own steps on the base scope are retired and the try's line is appended.
-A run that ends without a pick -- a new turn first, a dismissed or expired question --
-is closed as such (:mod:`variant_close`).
+A dismissed or explicitly expired Question closes its run (:mod:`variant_close`).
+Ordinary user feedback does not dismiss an open Question.
 """
 
 from __future__ import annotations
@@ -39,17 +39,26 @@ import threading
 import uuid
 from collections.abc import Callable, Mapping
 from contextvars import Context, copy_context
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import dspy
 
 from clio_agent import conf
+from clio_agent.arc.task_types import (
+    QuestionDefinition,
+    QuestionOption,
+    QuestionReply,
+    TaskOwner,
+    TaskSnapshot,
+)
 from clio_agent.errors import ClioError, MCPProtocolError
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.agents import variant_lines
-from clio_agent.gact.agents.variant_close import PENDING_META, close_for_question, latest_question
+from clio_agent.gact.agents.variant_close import PENDING_META, close_for_question
 from clio_agent.gact.agents.variant_events import emit_selected, emit_try, try_context
 from clio_agent.gact.agents.variant_records import TryRecord, VariantRun, load_run, save_run
+from clio_agent.gact.questions import QuestionCommands
 
 __all__ = [
     "DRAFT_TOOL",
@@ -392,9 +401,8 @@ def _drafting_note(run: VariantRun) -> str:
 
 
 def _pause(app: Any, run: VariantRun) -> None:
-    """Yield the drafts to the user as a ``choice`` question (surfaced after the turn)."""
+    """Post one common Core Question immediately; the assignment yields while it is open."""
     from clio_agent.gact.artifacts.observer_bridge import observer_call_id  # noqa: PLC0415
-    from clio_agent.gact.permission_delivery import attended_session_id  # noqa: PLC0415
 
     candidates = [t for t in run.tries if t.status == "completed"]
     if not candidates:
@@ -408,27 +416,47 @@ def _pause(app: Any, run: VariantRun) -> None:
         else ""
     )
     sid = _ctx.active_session_id()
-    run.status = "awaiting_pick"
-    save_run(app, run)
-    pending = {
-        "action": "ask_user",
-        "question": prompt,
-        "kind": "choice",
-        "choices": [
-            {"label": f"Draft {t.try_index + 1}", "value": t.scope, "description": t.text}
-            for t in candidates
-        ],
-        "allow_freeform": True,
-        "reason": f"Pick the draft that best meets: {run.rubric}",
-        # No default lifetime (as ask_user): only the window the agent asked for.
-        "expires_at": ask_user_expires_at(run.pick_expires_in_s),
-        "owner_session_id": sid,
-        "attended_session_id": attended_session_id(app, sid),
-        "tool_name": DRAFT_TOOL,
-        "invocation_id": observer_call_id() or f"{run.variants_id}:{len(run.tries)}",
-        "caller": {"agent_id": run.agent_id},
-        "surfaced": False,
-        "metadata": {
+    history = app.state.task_history
+    assignment = history.task_snapshot(_ctx.active_assignment_handle())
+    if assignment is None or assignment.owner.session_id != sid:
+        raise DraftAlternativesError(
+            "Posting a draft choice requires the confirmed current assignment"
+        )
+    stamp = datetime.now(timezone.utc)
+    handle = "task_" + uuid.uuid4().hex
+    accepted = TaskSnapshot(
+        handle=handle,
+        kind="Question",
+        owner=TaskOwner(
+            human_id=assignment.owner.human_id,
+            session_id=sid,
+            assignment_id=assignment.handle,
+            parent_handle=assignment.handle,
+        ),
+        label="Choose a draft",
+        description=prompt,
+        description_missing=False,
+        invocation_id=observer_call_id() or f"{run.variants_id}:{len(run.tries)}",
+        tool=DRAFT_TOOL,
+        created_at=stamp.isoformat(),
+        updated_at=stamp.isoformat(),
+    )
+    history.record_snapshot(accepted, observation_id=uuid.uuid4().hex)
+    definition = QuestionDefinition(
+        prompt=prompt,
+        kind="choice",
+        allow_freeform=False,
+        source=DRAFT_TOOL,
+        options=tuple(
+            QuestionOption(
+                label=f"Draft {item.try_index + 1}", value=item.scope, description=item.text
+            )
+            for item in candidates
+        ),
+        expires_at=(stamp + timedelta(seconds=run.pick_expires_in_s)).isoformat()
+        if run.pick_expires_in_s > 0
+        else None,
+        metadata={
             "variants_id": run.variants_id,
             "variant": {
                 "strategy": run.strategy,
@@ -437,18 +465,23 @@ def _pause(app: Any, run: VariantRun) -> None:
                 "rubric": run.rubric,
                 "refinable": refinable,
                 "candidates": [
-                    {"id": t.scope, "try_index": t.try_index, "text": t.text} for t in candidates
+                    {"id": item.scope, "try_index": item.try_index, "text": item.text}
+                    for item in candidates
                 ],
             },
         },
-    }
-    app.state.sessions.update(
-        sid,
-        metadata_patch={
-            PENDING_ASK_USER_META: pending,
-            PENDING_META: {"variants_id": run.variants_id, "agent_id": run.agent_id},
-        },
     )
+    posted = QuestionCommands(history).post(accepted, definition)
+    run.question_id = posted.handle
+    run.status = "awaiting_pick"
+    save_run(app, run)
+    if run.origin == "module_variant":
+        app.state.sessions.update(
+            sid,
+            metadata_patch={
+                PENDING_META: {"variants_id": run.variants_id, "agent_id": run.agent_id}
+            },
+        )
 
 
 def _commit(app: Any, run: VariantRun, index: int) -> TryRecord:
@@ -561,14 +594,15 @@ def _draft(n: int, rubric: str, strategy: str, judge: str, expires_in_s: int = 0
             loop.variant_outcome = _Settle(app, run)
             return _selected_result(run)
         _pause(app, run)
-        loop.variant_outcome = _Settle(app, None)
+        loop.variant_claim.release()
     except BaseException:
         loop.variant_claim.release()  # a refused or failed draft leaves the turn free
         raise
     ready = sum(1 for t in run.tries if t.status == "completed")
     return (
-        f"{ready} draft(s) are shown to the user, who picks one. END YOUR TURN now: the "
-        "conversation continues from the user's pick."
+        f"{ready} draft(s) are shown to the user. Question handle: {run.question_id}. "
+        "Continue independent work, or use wait_tasks to collect the choice. "
+        "The answer uses the normal queued notification path."
     )
 
 
@@ -605,7 +639,7 @@ def build_draft_alternatives_tool() -> Any:
         feedback, up to ``n`` drafts. ``judge``: ``user`` shows the drafts to the user,
         who picks one (and may comment to refine it); ``lm`` scores them against
         ``rubric``. The selected draft is your answer and the turn ends. If the user
-        sends a new message instead of picking, the drafts are dropped.
+        sends another message, the Question remains open until answered or cancelled.
         """
         return _draft(
             int(n),
@@ -643,7 +677,7 @@ def build_draft_alternatives_tool() -> Any:
                 "type": "integer",
                 "description": (
                     "judge user only: optional window in seconds for the pick. Omit or 0: "
-                    "the drafts wait until the user picks, dismisses them or moves on."
+                    "the drafts wait until the user picks or dismisses them."
                 ),
             },
         },
@@ -731,6 +765,8 @@ def resume_pending(agent: Any, inputs: Mapping[str, Any]) -> dspy.Prediction | N
     if _ctx.active_react_run() >= 0:
         return None  # a try never resumes anything
     app, sid = _ctx.active_app(), _ctx.active_session_id()
+    if app is None:
+        return None
     sessions = getattr(getattr(app, "state", None), "sessions", None)
     row = sessions.get(sid) if sessions is not None and sid else None
     pending = (getattr(row, "metadata", None) or {}).get(PENDING_META)
@@ -739,15 +775,24 @@ def resume_pending(agent: Any, inputs: Mapping[str, Any]) -> dspy.Prediction | N
     if pending.get("agent_id") != _ctx.active_react_scope():
         return None
     run = load_run(app, _ctx.active_react_session() or sid, str(pending["variants_id"]))
-    question = latest_question(app, run.variants_id)
-    if question is None or question.status == "pending":
+    question = app.state.task_history.task_snapshot(run.question_id)
+    if question is None:
+        raise DraftAlternativesError(
+            "Retained draft Question identity is unavailable; recovery required"
+        )
+    if question.kind != "Question" or question.owner.session_id != sid:
+        raise DraftAlternativesError("Retained draft Question belongs to another owner")
+    if question.raw_status == "pending":
         return None
-    if question.status != "answered":  # cancelled or expired: closed without a pick
+    if question.raw_status != "answered":  # cancelled or expired: closed without a pick
         close_for_question(app, question)
         return None
-    pick = _pick(run, question)
-    comment = str(question.answer or "").strip()
-    run.pick, run.comment, run.question_id, run.status = pick, comment, question.id, "answered"
+    if question.result is None:
+        raise DraftAlternativesError("Answered draft Question has no confirmed result")
+    reply = QuestionReply.model_validate(app.state.task_history.read_content(question.result))
+    pick = _pick(run, reply)
+    comment = reply.answer.strip()
+    run.pick, run.comment, run.question_id, run.status = pick, comment, question.handle, "answered"
     lm = agent.get_lm() or dspy.settings.lm
     drafts = _Drafts(
         run,

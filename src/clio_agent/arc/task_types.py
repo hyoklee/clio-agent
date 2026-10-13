@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -15,6 +17,15 @@ class TaskRecord(BaseModel):
     """Immutable validated data written through Core's confirmed writer."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal[1] = 1
+
+
+def argument_digest(arguments: dict[str, JsonValue]) -> str:
+    """Bind confirmed custody to the exact JSON arguments sent to the backend."""
+    encoded = json.dumps(
+        arguments, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+    ).encode()
+    return hashlib.sha256(encoded).hexdigest()
 
 
 class CoreReference(TaskRecord):
@@ -201,3 +212,5 @@ class QuestionReply(TaskRecord):
     selected_options: tuple[str, ...] = ()
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
     parts: tuple[dict[str, JsonValue], ...] = ()
+    responder_human: str | None = None
+    responder_session: str | None = None

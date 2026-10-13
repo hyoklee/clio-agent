@@ -38,6 +38,7 @@ class TurnContext:
     turn_id: str = ""  # _ACTIVE_GACT_TURN_ID
     trace_id: str = ""  # _ACTIVE_GACT_TRACE_ID
     context_epoch: str = ""  # Captured from the confirmed assignment at turn admission.
+    assignment_handle: str = ""  # Confirmed finite assignment; never inherited across sessions.
     tool_session_id: str = ""  # _ACTIVE_TOOL_SESSION_ID
     # Optional Agent Blueprint selected by this message's execution mode.  This
     # is deliberately turn-scoped: Deep Research layers its coordinator over
@@ -126,6 +127,11 @@ def active_app() -> Any | None:
 def active_session_id() -> str:
     """``_ACTIVE_GACT_SESSION_ID.get()``."""
     return _RUNTIME.get().turn.session_id
+
+
+def active_assignment_handle() -> str:
+    """Return the finite assignment explicitly installed by conversation admission."""
+    return _RUNTIME.get().turn.assignment_handle
 
 
 def active_turn_id() -> str:
@@ -290,6 +296,7 @@ def set_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
                 cur.turn,
                 session_id=sid,
                 context_epoch=cur.turn.context_epoch if sid == cur.turn.session_id else "",
+                assignment_handle=cur.turn.assignment_handle if sid == cur.turn.session_id else "",
             ),
         )
     )
@@ -309,6 +316,7 @@ def set_turn_identity(
     trace_id: str,
     execution_blueprint_id: str = "",
     context_epoch: str = "",
+    assignment_handle: str = "",
 ) -> None:
     """Establish the whole turn layer at once. BARE set, NO token.
 
@@ -330,6 +338,7 @@ def set_turn_identity(
                 tool_session_id=cur.turn.tool_session_id,
                 execution_blueprint_id=execution_blueprint_id,
                 context_epoch=context_epoch,
+                assignment_handle=assignment_handle,
             ),
         )
     )

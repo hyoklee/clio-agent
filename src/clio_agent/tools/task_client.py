@@ -18,7 +18,7 @@ from fastmcp.client.client import CallToolResult
 from fastmcp_tasks.client import ToolTask
 from fastmcp_tasks.client_models import ClientCreateTaskResult
 
-from clio_agent.arc.task_types import CoreReference
+from clio_agent.arc.task_types import CoreReference, argument_digest
 from clio_agent.tools.task_receipt import AcceptedTaskResult
 
 
@@ -31,6 +31,7 @@ class TaskSubmission:
     context: CoreReference
     tool_version: str | None
     output_schema: dict[str, Any] | None
+    argument_digest: str
 
     def __post_init__(self) -> None:
         # Catalog refresh must not alter an accepted call's output contract.
@@ -52,7 +53,7 @@ TaskAcceptor = Callable[[AcceptedNativeCall], Awaitable[AcceptedTaskResult]]
 class TaskAdoptionError(RuntimeError):
     """The backend accepted work; this exception must never mean safe to resubmit."""
 
-    def __init__(self, accepted: AcceptedNativeCall, cause: Exception) -> None:
+    def __init__(self, accepted: AcceptedNativeCall, cause: BaseException) -> None:
         super().__init__(
             f"Backend accepted {accepted.task.task_id}; adoption is unconfirmed: {cause}"
         )
@@ -74,7 +75,8 @@ class TaskAwareClient(Client):
         self._submission: ContextVar[TaskSubmission | None] = ContextVar(
             "clio_sdk_submission", default=None
         )
-        self._adoptions: set[asyncio.Future[AcceptedTaskResult]] = set()
+        self._adoptions: dict[asyncio.Future[AcceptedTaskResult], AcceptedNativeCall] = {}
+        self._unconfirmed_adoptions: dict[str, TaskAdoptionError] = {}
 
     @contextmanager
     def submission(self, context: TaskSubmission) -> Iterator[None]:
@@ -99,6 +101,9 @@ class TaskAwareClient(Client):
         context = self._submission.get()
         if context is None or context.tool_name != name:
             raise ValueError("Confirm and bind task submission context before tools/call")
+        submitted_arguments = copy.deepcopy(arguments)
+        if argument_digest(submitted_arguments) != context.argument_digest:
+            raise ValueError("Arguments differ from confirmed submission custody")
         request_meta = copy.deepcopy(meta or {})
         tool_meta = request_meta.get("fastmcp", {})
         if not isinstance(tool_meta, dict):
@@ -109,7 +114,7 @@ class TaskAwareClient(Client):
         if context.tool_version is not None:
             request_meta["fastmcp"] = {**tool_meta, "version": context.tool_version}
         return await super().call_tool_mcp(
-            name, arguments, progress_handler, timeout, request_meta or None
+            name, submitted_arguments, progress_handler, timeout, request_meta or None
         )
 
     async def _resolve_claimed_result(
@@ -128,27 +133,63 @@ class TaskAwareClient(Client):
         accepted = AcceptedNativeCall(
             context, ToolTask(self, name, result, raise_on_error=False), result
         )
-        adoption = asyncio.ensure_future(self._accept_task(accepted))
-        self._adoptions.add(adoption)
+        adoption = self._begin_adoption(accepted)
         try:
+            return await asyncio.shield(adoption)
+        except asyncio.CancelledError as cancellation:
+            # Repeated caller cancellation may leave this wait. The application
+            # client retains custody, including a later recording failure.
             try:
-                receipt = await asyncio.shield(adoption)
+                await asyncio.shield(adoption)
+            except TaskAdoptionError as error:
+                cancellation.add_note(str(error))
+            raise
+
+    def _begin_adoption(self, accepted: AcceptedNativeCall) -> asyncio.Future[AcceptedTaskResult]:
+        async def adopt() -> AcceptedTaskResult:
+            try:
+                receipt = await self._accept_task(accepted)
                 if not isinstance(receipt, AcceptedTaskResult):
                     raise TypeError("Task acceptor must return an application-authored receipt")
-            except asyncio.CancelledError:
-                # Confirmed acceptance survives cancellation of its caller. The
-                # client lifespan also retains this adoption if cancellation repeats.
-                try:
-                    await asyncio.shield(adoption)
-                except Exception as error:
-                    raise TaskAdoptionError(accepted, error) from error
-                raise
+                return receipt
             except Exception as error:
                 raise TaskAdoptionError(accepted, error) from error
-            return receipt
-        finally:
-            if adoption.done():
-                self._adoptions.discard(adoption)
+
+        adoption = asyncio.ensure_future(adopt())
+        self._adoptions[adoption] = accepted
+        adoption.add_done_callback(self._adoption_finished)
+        return adoption
+
+    def _adoption_finished(self, adoption: asyncio.Future[AcceptedTaskResult]) -> None:
+        accepted = self._adoptions.pop(adoption)
+        error = (
+            TaskAdoptionError(accepted, asyncio.CancelledError())
+            if adoption.cancelled()
+            else adoption.exception()
+        )
+        if error is not None:
+            if not isinstance(error, TaskAdoptionError):
+                error = TaskAdoptionError(accepted, error)
+            self._unconfirmed_adoptions[accepted.submission.handle] = error
+        else:
+            previous = self._unconfirmed_adoptions.get(accepted.submission.handle)
+            if previous is not None and previous.accepted is accepted:
+                self._unconfirmed_adoptions.pop(accepted.submission.handle)
+
+    @property
+    def unconfirmed_adoptions(self) -> tuple[TaskAdoptionError, ...]:
+        """Retain actual accepted identities until owner-local recording is reconciled."""
+        return tuple(self._unconfirmed_adoptions.values())
+
+    async def retry_adoption(self, handle: str) -> AcceptedTaskResult:
+        """Retry identity recording only; never repeat tools/call or task execution."""
+        failure = self._unconfirmed_adoptions[handle]
+        accepted = failure.accepted
+        if any(call.submission.handle == handle for call in self._adoptions.values()):
+            raise ValueError("Acceptance recording is already pending")
+        receipt = await asyncio.shield(self._begin_adoption(accepted))
+        self._unconfirmed_adoptions.pop(handle, None)
+        return receipt
 
     async def _parse_call_tool_result(
         self,
@@ -184,8 +225,9 @@ class TaskAwareClient(Client):
     async def _finish_adoptions(self) -> None:
         while self._adoptions:
             pending = tuple(self._adoptions)
-            await asyncio.gather(*pending, return_exceptions=True)
-            self._adoptions.difference_update(pending)
+            await asyncio.shield(asyncio.gather(*pending, return_exceptions=True))
+        if self._unconfirmed_adoptions:
+            raise next(iter(self._unconfirmed_adoptions.values()))
 
     def new(self) -> TaskAwareClient:
         """Preserve SDK configuration while giving a clone independent call custody."""
@@ -193,5 +235,6 @@ class TaskAwareClient(Client):
         if not isinstance(clone, TaskAwareClient):
             raise TypeError("Pinned SDK Client.new no longer preserves the subclass")
         clone._submission = ContextVar("clio_sdk_submission", default=None)
-        clone._adoptions = set()
+        clone._adoptions = {}
+        clone._unconfirmed_adoptions = {}
         return clone

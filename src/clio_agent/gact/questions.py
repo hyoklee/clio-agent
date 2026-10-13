@@ -35,6 +35,10 @@ class QuestionCommands:
                 raise ValueError("Question was already posted or its acceptance changed")
             if definition.requested_schema is not None:
                 Draft202012Validator.check_schema(definition.requested_schema)
+            if definition.kind != "freeform" and not definition.options:
+                raise ValueError("Choice and confirmation Questions require offered options")
+            if len({option.value for option in definition.options}) != len(definition.options):
+                raise ValueError("Question option values must be unique")
             if definition.expires_at is not None:
                 self._deadline(definition)
             details = self.history.write_content(
@@ -71,7 +75,7 @@ class QuestionCommands:
                 raise ValueError("Answer names an option that was not offered")
             if definition.kind != "multi_choice" and len(reply.selected_options) > 1:
                 raise ValueError("Question accepts only one selected option")
-            if not definition.allow_freeform and reply.answer and not reply.selected_options:
+            if not definition.allow_freeform and not reply.selected_options:
                 raise ValueError("Question requires an offered option")
             if (
                 not reply.answer

@@ -1,0 +1,34 @@
+{
+  "family": "variant-common-question-owner",
+  "test_runtime_parent": "C:/ct-r2",
+  "tests": [
+    {
+      "node": "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question",
+      "status": "passed",
+      "pid": 50880,
+      "birth": 1791929774.578286,
+      "exit_code": 0,
+      "elapsed_s": 19.72,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 10.21s\nnanobind: leaked 18 instances!\nnanobind: leaked 3 types!\nnanobind: leaked 38 functions!\nnanobind: this is likely caused by a reference counting issue in the binding code."
+    },
+    {
+      "node": "tests/test_arc/test_variant_question_tasks.py::test_assignment_context_does_not_cross_session_boundaries",
+      "status": "passed",
+      "pid": 20340,
+      "birth": 1791929794.2997935,
+      "exit_code": 0,
+      "elapsed_s": 17.27,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.29s"
+    }
+  ],
+  "product_model_acceptance": false,
+  "registered_sequential_cases": [
+    "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question",
+    "tests/test_arc/test_variant_question_tasks.py::test_assignment_context_does_not_cross_session_boundaries"
+  ],
+  "binding_diagnostics": []
+}

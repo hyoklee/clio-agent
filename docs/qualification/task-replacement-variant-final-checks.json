@@ -1,0 +1,46 @@
+{
+  "family": "variant-question-origins-and-removal-guard",
+  "test_runtime_parent": "C:/ct-r2",
+  "tests": [
+    {
+      "node": "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[draft_alternatives]",
+      "status": "passed",
+      "pid": 37140,
+      "birth": 1791930143.326391,
+      "exit_code": 0,
+      "elapsed_s": 18.54,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 10.02s\nnanobind: leaked 18 instances!\nnanobind: leaked 3 types!\nnanobind: leaked 38 functions!\nnanobind: this is likely caused by a reference counting issue in the binding code."
+    },
+    {
+      "node": "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[module_variant]",
+      "status": "passed",
+      "pid": 52948,
+      "birth": 1791930161.8720462,
+      "exit_code": 0,
+      "elapsed_s": 18.89,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 9.95s\nnanobind: leaked 18 instances!\nnanobind: leaked 3 types!\nnanobind: leaked 38 functions!\nnanobind: this is likely caused by a reference counting issue in the binding code."
+    },
+    {
+      "node": "tests/test_task_replacement_guard.py::test_catches_old_question_inbox_writer",
+      "status": "passed",
+      "pid": 18192,
+      "birth": 1791930180.7674077,
+      "exit_code": 0,
+      "elapsed_s": 18.12,
+      "runtime_residue": [],
+      "body_executed": true,
+      "output": "1 passed, 1 warning in 10.03s"
+    }
+  ],
+  "product_model_acceptance": false,
+  "registered_sequential_cases": [
+    "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[draft_alternatives]",
+    "tests/test_arc/test_variant_question_tasks.py::test_draft_choice_posts_and_answers_one_common_question[module_variant]",
+    "tests/test_task_replacement_guard.py::test_catches_old_question_inbox_writer"
+  ],
+  "binding_diagnostics": []
+}
