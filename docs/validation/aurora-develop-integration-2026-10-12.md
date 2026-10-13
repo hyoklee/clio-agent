@@ -197,6 +197,10 @@ The full workspace child-follow-up regression passed in CI. CI also exposed
 pointer hover leaking into the existing summarization screenshot after scrolling;
 that test now moves the pointer away before capture, retaining the exact baseline
 and threshold.
+An agent CI shard also exposed mismatched clock origins in the existing SPOTTER
+heartbeat test. The heartbeat and assertion now share one deadline, and the
+assertion measures the barrier's actual return before thread cleanup. The strict
+wait requirement and production SPOTTER behavior are unchanged.
 The separate task-system rewrite remains excluded.
 
 ## Marketplace locking on shared filesystems
