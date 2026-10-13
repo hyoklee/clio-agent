@@ -51,6 +51,7 @@ from clio_agent.gact.off_loop import emit_semantic_event_async, run_off_loop
 from clio_agent.gact.providers.auth import _refresh_argonne_lm_token
 from clio_agent.gact.runtime import bringup_timing
 from clio_agent.gact.runtime.globals import (
+    _async_tool_session_context,
     _BlueprintRootDisabled,
     _llm_provider_payload,
     _NoResolvableAgent,
@@ -188,7 +189,7 @@ async def forward_turn(state: "TurnState") -> Any:
         # Pin that fleet across initial construction, every delegated child, parent
         # resumes, and the gaps between them; otherwise the idle reaper can close a
         # still-referenced executor during a long multi-expert turn.
-        with _tool_session_context(state.sid):
+        async with _async_tool_session_context(state.sid):
             return await _forward_turn_leased(state)
 
 
@@ -455,7 +456,7 @@ async def _forward_turn_leased(state: "TurnState") -> Any:
                 "native_file_count": len(state.native_files),
             },
         )
-        with _cancellation_checker(cancel_cb), _tool_session_context(state.sid):
+        with _cancellation_checker(cancel_cb), _tool_session_context(state.sid, lease_fleet=False):
             state.pred = await await_turn_work(state, _run_module(state, module, cancel_cb))
         await emit_semantic_event_async(
             state.app,

@@ -44,6 +44,12 @@ from typing import TYPE_CHECKING, Any, Iterator, Optional
 from clio_agent.arc import history_mode
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.events import Event
+from clio_agent.gact.runtime.tool_session import (
+    _async_tool_session_context as _async_tool_session_context,
+)
+from clio_agent.gact.runtime.tool_session import (
+    _tool_session_context as _tool_session_context,
+)
 from clio_agent.gact.semantic_events import DEFAULT_DETAIL_LEVEL, SemanticEvent
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
 from clio_agent.runtime import trace
@@ -112,74 +118,6 @@ _ACTIVE_BLUEPRINT_TOOL_ROWS = _CompatVar(
 # never leak its value into a sibling app's (first/last-writer-wins), and an
 # app-less consume yields a structured empty (deterministic finish) rather than a
 # stale cross-app value.
-
-
-@contextmanager
-def _tool_session_context(sid: str) -> Iterator[None]:
-    """Bind the tool session id + workspace root + active blueprint for the turn.
-
-    The four tool-runtime hooks are resolved per tool call by the installed
-    ``ToolRuntimeHooks`` resolver (``resolve_tool_runtime`` dispatching on the
-    keystone-bound ``_ctx.active_app()``), so this no longer binds them. It binds
-    the tool session id (read by the permission gate to attribute the call to
-    the live turn's session), the workspace root — resolved off the live app so
-    the tool executor grounds output artifacts into the bound workspace (#735) —
-    and the session's EXPLICITLY-activated Agent Blueprint id (#1232 pt 1), so
-    ``ClioAgent._active_tool_executor`` mounts exactly that blueprint's declared
-    ``mcp_servers`` (if any) into the per-workspace gateway, never every
-    installed blueprint's servers and never at boot.
-    """
-    from clio_agent.gact.agents.resolution import (  # noqa: PLC0415
-        _runtime_effective_agent_blueprint_id,
-        _runtime_effective_agent_blueprint_path,
-    )
-    from clio_agent.tools.execution import (  # noqa: PLC0415
-        tool_blueprint_context,
-        tool_workspace_context,
-    )
-
-    workspace_root = ""
-    app = _ctx.active_app()
-    app_state = getattr(app, "state", None) if app is not None else None
-    if app_state is not None:
-        sessions = getattr(app_state, "sessions", None)
-        workspaces = getattr(app_state, "workspaces", None)
-        sess = sessions.get(sid) if sessions is not None else None
-        workspace_id = str(getattr(sess, "workspace_id", "") or "") if sess is not None else ""
-        ws = workspaces.get(workspace_id) if workspaces is not None and workspace_id else None
-        workspace_root = str(getattr(ws, "root_path", "") or "")
-    blueprint_id = _runtime_effective_agent_blueprint_id(app, sid) if app is not None else ""
-    blueprint_path = _runtime_effective_agent_blueprint_path(app, sid) if app is not None else None
-    token = _ctx.set_tool_session_id(sid)
-    # #933: pin the workspace fleet for the WHOLE turn — between-call idleness
-    # inside a live turn must not count toward the reaper's TTL.
-    agent = getattr(app_state, "agent", None) if app_state is not None else None
-    lease = getattr(agent, "lease_workspace_fleet", None)
-    try:
-        if workspace_root and callable(lease):
-            with (
-                lease(workspace_root),
-                tool_workspace_context(workspace_root),
-                tool_blueprint_context(blueprint_id, blueprint_path),
-            ):
-                yield
-        else:
-            if workspace_root:
-                # A rooted turn without a leasable agent runs UNPROTECTED from
-                # the #933 reaper — degraded path, so the reason is typed.
-                trace.event(
-                    "TOOLS",
-                    "workspace_lease_unavailable session=%s root=%s reason=agent_has_no_lease_hook",
-                    sid,
-                    workspace_root,
-                )
-            with (
-                tool_workspace_context(workspace_root),
-                tool_blueprint_context(blueprint_id, blueprint_path),
-            ):
-                yield
-    finally:
-        _ctx.reset(token)
 
 
 @contextmanager

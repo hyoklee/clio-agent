@@ -66,7 +66,7 @@ from clio_agent.gact.routes.mcp_rows import (
 )
 from clio_agent.gact.routes.mcp_server_specs import stdio_server_spec
 from clio_agent.gact.routes.mcp_specs import declared_mcp_specs, session_mcp_inventory
-from clio_agent.gact.runtime.globals import _tool_session_context
+from clio_agent.gact.runtime.tool_session import _async_tool_session_context as tool_session_context
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
 from clio_agent.tools.execution import notify_tool_observer
 from clio_agent.tools.mcp_config import MCPTransportError, transport_from_spec
@@ -425,9 +425,9 @@ def register_mcp_routes(app: FastAPI, deps: "GactDeps") -> None:
 
         observer_name = f"{info.get('name', 'ext')}.{tool_name}"
         tool_session = (
-            _tool_session_context(requested_session_id) if requested_session_id else nullcontext()
+            tool_session_context(requested_session_id) if requested_session_id else nullcontext()
         )
-        with tool_session:
+        async with tool_session:
             gate = (
                 getattr(app.state, "pending_permission_gate", None)
                 or app.state.make_permission_gate()
