@@ -166,6 +166,8 @@ async def observe_service(
         if record.variant_id == "native-windows-cpu"
         else "cuda"
         if record.variant_id.startswith("native-cuda")
+        else "xpu"
+        if record.variant_id.startswith("native-xpu")
         else record.variant_id
     )
     return await observe_effective(

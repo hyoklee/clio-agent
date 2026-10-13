@@ -273,7 +273,7 @@ def build_driver_plan(
         raise ValueError(f"Unknown managed service {service_id!r}")
     engine = engine_of(service_id)
     if action == "delete_data" and not (
-        (engine == "vllm" and variant_id.startswith("native-cuda"))
+        (engine == "vllm" and variant_id.startswith(("native-cuda", "native-xpu")))
         or service_id in MONITORING_SERVICES
         or service_id in {"web_search", SEARXNG_SERVICE}
         or service_id == ROUTER_SERVICE

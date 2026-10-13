@@ -34,12 +34,20 @@ Use `query_tasks` to rediscover handles, assignments and statuses; filter by kin
 such as `Subagent`, status or handle as needed. `observe_tasks` reads incremental
 progress without collecting completion; pass its returned cursor on later
 observations. A pattern can wait for relevant output or settlement. `wait_tasks`
-accepts one handle or a mixed list, with `return_when="any"` or `"all"`. Omitting
-`timeout_s` is an explicit unbounded wait. Zero returns immediately; a positive
+accepts one handle or a mixed list. Defaults are `return_when="all"` and
+`timeout_s=null` (no deadline). Omitting `timeout_s`, or passing `null`, is an
+unbounded wait. Zero returns immediately; a positive
 timeout ends only that wait and leaves pending tasks running. `get_task_result`
 reads a stored terminal result. Wait/result collection shares the automatic
 delivery guard; explicit later reads remain possible without another automatic
 completion notification. Read actual outcomes and surface failures honestly.
+
+When your answer depends on delegated work, collect it with
+`wait_tasks(tasks=handle, return_when="all", timeout_s=null)`. Do not use zero to
+wait for completion: zero is a single status check even with `return_when="all"`.
+If a wait returns pending handles and no results, the child has not returned an
+answer. Continue waiting when its result is required, or clearly label any
+independent update as interim and say which work is still running.
 
 Conversation Stop ends the turn and its waiter, leaving accepted tasks running.
 Their later results can wake you again, including after Stop.
