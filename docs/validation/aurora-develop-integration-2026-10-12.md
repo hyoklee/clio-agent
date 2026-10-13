@@ -160,6 +160,19 @@ This is component interaction evidence, not live OPAL or Aurora qualification.
 CI also caught an inherited external-link target on an internal citation; the
 internal renderer now explicitly removes it while preserving external web links.
 
+The presentation follow-up uses the pinned AI Elements Inline Citation component
+for descriptive or numbered markers with hover/focus details, and Sources for
+explicit numbered bibliographies containing both internal and web references.
+Conversation/message links use CLIO routing; existing document anchors stay in
+the document. Source metadata and routing do not assert that its content proves
+the surrounding claim. The common prompt now provides these syntax examples,
+Markdown conventions and the renderer's double-dollar LaTeX delimiters.
+Browser review exposed missing KaTeX styles and a full-height source-group gap;
+both were corrected. Inline/display equations, pointer and keyboard file opening,
+source-list navigation, document anchors, and light/dark/narrow layouts were
+reviewed with the labeled fixture. Captures and source receipts are retained at
+`D:/Libraries/Videos/clio_recordings/2026-10-13-source-citation-objects/`.
+
 ## Marketplace locking on shared filesystems
 
 See [the scoped lock audit](marketplace-locking-shared-filesystems-2026-10-12.md).
