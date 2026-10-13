@@ -24,6 +24,11 @@ If `view_pdf` is absent, the active model has no evidenced native PDF
 capability. Use the conversion + rendered-page + `view_image` workflow
 described in the rest of this skill instead.
 
+If a provider refuses a native PDF attachment, its successful preparation does
+not mean the model read it. Follow the recovery note, keep the source path and
+requested page range, and use bounded extraction and rendered-page inspection
+below. Do not repeat the same native attachment or abandon unrelated work.
+
 ## Resolve evidence, not accessibility
 
 Every PDF supplied to the turn has a usable path on the connected agent:
