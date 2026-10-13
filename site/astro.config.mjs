@@ -7,9 +7,8 @@ import starlightLinksValidator from 'starlight-links-validator';
 
 // Public site for CLIO, served by GitHub Pages at clio.iowarp.ai.
 // The overview (/) is a Starlight splash page so the header, search, and
-// theme switch are the same on every page. Docs live under /docs/ and
-// tutorials under /tutorials/; a tutorial marked `draft: true` is built by
-// `pnpm dev` and never published.
+// theme switch are the same on every page. Guides and examples live under
+// /docs/. Older tutorial URLs redirect there; drafts appear only in `pnpm dev`.
 export default defineConfig({
 	site: 'https://clio.iowarp.ai',
 	trailingSlash: 'ignore',
@@ -18,6 +17,9 @@ export default defineConfig({
 		'/docs.html': '/docs/',
 		'/uninstall.html': '/docs/uninstall/',
 		'/contributing.html': '/docs/contributing/',
+		'/tutorials': '/docs/examples/',
+		'/tutorials/guides/first-analysis': '/docs/examples/ground-motion/',
+		'/tutorials/guides/install-a-blueprint': '/docs/marketplaces/#choose-a-blueprint-for-a-conversation',
 	},
 	integrations: [
 		starlight({
@@ -40,95 +42,106 @@ export default defineConfig({
 			plugins: [starlightLinksValidator({ errorOnLocalLinks: false })],
 			sidebar: [
 				{
-					label: 'Start here',
+					label: 'Get started',
+					collapsed: false,
 					items: [
-						{ label: 'What CLIO is', slug: 'docs' },
-						{ label: 'Install', slug: 'docs/install' },
-						{ label: 'Connect a model', slug: 'docs/connect-a-model' },
+						{ label: 'Start here', slug: 'docs' },
+						{ label: 'Install and open CLIO', slug: 'docs/install' },
+						{ label: 'Choose a model', slug: 'docs/connect-a-model' },
+						{ label: 'Your first analysis', slug: 'docs/examples/check-a-dataset' },
+						{ label: 'Your workspace', slug: 'docs/workspace-panels' },
+						{ label: 'Features and versions', slug: 'docs/versions' },
 					],
 				},
 				{
-					label: 'Use CLIO',
+					label: 'Bring your data',
+					collapsed: true,
 					items: [
-						{ label: 'Sessions and modes', slug: 'docs/sessions' },
-						{ label: 'Answering questions', slug: 'docs/questions' },
-						{ label: 'Following tools and tasks', slug: 'docs/following-work' },
-						{ label: 'Understanding injections', slug: 'docs/injections' },
-						{ label: 'Right-hand panels', slug: 'docs/workspace-panels' },
-						{ label: 'Branch and rewind', slug: 'docs/branch-and-rewind' },
-						{ label: 'Goals and long-running work', slug: 'docs/long-running-work' },
-						{ label: 'Working with files', slug: 'docs/working-with-files' },
-						{ label: 'Dashboards', slug: 'docs/dashboards' },
-						{ label: 'Exports and downloads', slug: 'docs/exports' },
-						{ label: 'Evidence and lineage', slug: 'docs/evidence' },
-						{ label: 'Search your work', slug: 'docs/search' },
-						{ label: 'Memory and recall', slug: 'docs/memory' },
-						{
-							label: 'Worked examples', collapsed: true,
-							items: [{ label: 'Report and presentation', slug: 'docs/examples/reports-and-slides' }],
-						},
-						{
-							label: 'Files and sources', collapsed: true,
-							items: [
-								{ label: 'Overview', slug: 'docs/files' },
-								{ label: 'Attach files and folders', slug: 'docs/files/attach' },
-								{ label: '@ references', slug: 'docs/files/references' },
-								{ label: 'Connect sources', slug: 'docs/files/connect' },
-								{ label: 'Knowledge source', slug: 'docs/files/knowledge' },
-								{ label: 'Download or link', slug: 'docs/files/download-or-link' },
-								{ label: 'Manage sources', slug: 'docs/files/manage' },
-							],
-						},
+						{ label: 'Choose how to add data', slug: 'docs/files' },
+						{ label: 'Attach files and folders', slug: 'docs/files/attach' },
+						{ label: 'Refer to a file with @', slug: 'docs/files/references' },
+						{ label: 'Connect a data source', slug: 'docs/files/connect' },
+						{ label: 'Copies and original files', slug: 'docs/files/download-or-link' },
+						{ label: 'Explore research notes', slug: 'docs/files/knowledge' },
+						{ label: 'Manage your sources', slug: 'docs/files/manage' },
 					],
 				},
 				{
-					label: 'Go further',
+					label: 'Work with CLIO',
+					collapsed: true,
 					items: [
-						{ label: 'Compare and refine answers', slug: 'docs/best-of-n' },
-						{
-							label: 'Widget gallery',
-							collapsed: true,
-							items: [
-								{ label: 'Introduction', slug: 'docs/widgets' },
-								{ label: 'Linked data', slug: 'docs/widgets/linked-data' },
-								{ label: 'Human-agent interaction', slug: 'docs/widgets/interaction' },
-								{ label: 'Component catalog', slug: 'docs/widgets/components' },
-							],
-						},
-						{
-							label: 'Marketplaces', collapsed: true,
-							items: [
-								{ label: 'Find and inspect blueprints', slug: 'docs/marketplaces' },
-								{ label: 'Add, reload, and remove', slug: 'docs/marketplaces/manage' },
-								{ label: 'Write a blueprint', slug: 'docs/blueprints' },
-							],
-						},
-						{ label: 'Tools and MCP servers', slug: 'docs/mcp-servers' },
-						{ label: 'Permissions and sandbox', slug: 'docs/permissions' },
-						{ label: 'Hooks', slug: 'docs/hooks' },
+						{ label: 'Start and steer a conversation', slug: 'docs/sessions' },
+						{ label: 'Answer a question', slug: 'docs/questions' },
+						{ label: 'Follow work in progress', slug: 'docs/following-work' },
+						{ label: 'Updates during a conversation', slug: 'docs/injections' },
+						{ label: 'Continue work over time', slug: 'docs/long-running-work' },
+						{ label: 'Choose what CLIO may do', slug: 'docs/permissions' },
 					],
 				},
 				{
-					label: 'Reference',
+					label: 'Review and share results',
+					collapsed: true,
 					items: [
-						{ label: 'Command line', slug: 'docs/cli' },
-						{ label: 'Configuration', slug: 'docs/configuration' },
-						{ label: 'Data and network', slug: 'docs/privacy' },
+						{ label: 'Check answers and sources', slug: 'docs/evidence' },
+						{ label: 'Open and edit documents', slug: 'docs/working-with-files' },
+						{ label: 'Explore charts and dashboards', slug: 'docs/dashboards' },
+						{ label: 'Compare alternative answers', slug: 'docs/best-of-n' },
+						{ label: 'Save and share your work', slug: 'docs/exports' },
 					],
 				},
 				{
-					label: 'Help',
+					label: 'Find and revisit work',
+					collapsed: true,
 					items: [
-						{ label: 'Troubleshooting', slug: 'docs/troubleshooting' },
-						{ label: 'Uninstall', slug: 'docs/uninstall' },
-						{ label: 'Contributing', slug: 'docs/contributing' },
+						{ label: 'Search files and conversations', slug: 'docs/search' },
+						{ label: 'What CLIO remembers', slug: 'docs/memory' },
+						{ label: 'Try another approach', slug: 'docs/branch-and-rewind' },
+					],
+				},
+				{
+					label: 'Worked examples',
+					collapsed: true,
+					items: [
+						{ label: 'Choose an example', slug: 'docs/examples' },
+						{ label: 'Explore ground motion', slug: 'docs/examples/ground-motion' },
+						{ label: 'Find a decision in research notes', slug: 'docs/examples/research-notes' },
+						{ label: 'Create a report and slides', slug: 'docs/examples/reports-and-slides' },
+					],
+				},
+				{
+					label: 'Customize CLIO',
+					collapsed: true,
+					items: [
+						{ label: 'Choose a specialist agent', slug: 'docs/marketplaces' },
+						{ label: 'Install and update blueprints', slug: 'docs/marketplaces/manage' },
+						{ label: 'Connect tools and services', slug: 'docs/mcp-servers' },
+						{ label: 'Interactive views and controls', slug: 'docs/widgets' },
+					],
+				},
+				{
+					label: 'Help and privacy',
+					collapsed: true,
+					items: [
+						{ label: 'When something goes wrong', slug: 'docs/troubleshooting' },
+						{ label: 'Where your data goes', slug: 'docs/privacy' },
+						{ label: 'Remove CLIO', slug: 'docs/uninstall' },
 						{ label: 'Privacy Policy', slug: 'privacy' },
 						{ label: 'Terms of Service', slug: 'terms' },
 					],
 				},
 				{
-					label: 'Tutorials',
-					items: [{ label: 'All tutorials', slug: 'tutorials' }, { autogenerate: { directory: 'tutorials/guides' } }],
+					label: 'Technical reference',
+					collapsed: true,
+					items: [
+						{ label: 'Server and terminal setup', slug: 'docs/server-setup' },
+						{ label: 'Command line', slug: 'docs/cli' },
+						{ label: 'Configuration', slug: 'docs/configuration' },
+						{ label: 'Write an agent blueprint', slug: 'docs/blueprints' },
+						{ label: 'Hooks and automation', slug: 'docs/hooks' },
+						{ label: 'Background work and limits', slug: 'docs/background-work-reference' },
+						{ label: 'Interactive component catalog', slug: 'docs/widgets/components' },
+						{ label: 'Contribute to CLIO', slug: 'docs/contributing' },
+					],
 				},
 			],
 		}),

@@ -5,7 +5,23 @@ description: Check your install, read the logs, and fix the problems people hit 
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
 
-Start with these four commands. They tell you most of what you need.
+Start with the message in the app and the step you were trying to perform.
+You do not need to open a terminal for every problem.
+
+| What you see | First check |
+| --- | --- |
+| A control in a guide is missing | [Features and versions](/docs/versions/), then your Desktop and connected Agent versions. |
+| No model is selected or the model will not connect | [Choose a model](/docs/connect-a-model/): provider, sign-in, server address and model. |
+| A file is missing | The selected workspace, connected service and attachment chip. A lab service uses its host's files. |
+| CLIO is waiting | The pending question, permission request or **Work** view. Answer the specific request when ready. |
+| A tool failed | Expand its result to read the error. Ask CLIO to explain the failure and propose a different approach. |
+| The result looks wrong | Ask for the source values, units and assumptions, then [check the evidence](/docs/evidence/). |
+| Desktop cannot connect to its service | Use the connection/startup message and **Open logs** when offered; confirm whether you intended a local or lab service. |
+
+## Terminal and server diagnostics
+
+If you installed the command-line tools, these commands help you or your
+administrator inspect the installation:
 
 ```sh
 clio doctor          # is the install complete?
@@ -30,7 +46,7 @@ CLIO is not installed, or the `clio` command is looking in the wrong folder. Run
 
 ## The Docker web UI says host_not_allowed
 
-You opened the UI with a name other than `localhost`. Set `CLIO_GACT_ALLOWED_HOSTS` to that host name (names only, no port, comma-separated) and restart the container. See [Install](/docs/install/#docker).
+You opened the UI with a name other than `localhost`. Set `CLIO_GACT_ALLOWED_HOSTS` to that host name (names only, no port, comma-separated) and restart the container. See [Install](/docs/server-setup/#docker).
 
 ## clio-kit is missing
 
@@ -49,7 +65,10 @@ A tool tried to use a file outside the folders CLIO allows. Move the file into y
 
 ## The desktop app and the command line clash
 
-The desktop app and the `clio` command both use port 17800 and the same configuration folder. Run one at a time. If you started both, close one, run `clio stop`, and start again.
+Check which service address each interface uses. A managed Desktop service can
+use a different port from a service started in a terminal. To see the same work,
+connect both interfaces to the intended existing service. Do not stop an unrelated
+service that may have active work. See [Server and terminal setup](/docs/server-setup/).
 
 ## The sandbox is not active
 

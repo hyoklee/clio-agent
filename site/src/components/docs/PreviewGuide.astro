@@ -1,0 +1,9 @@
+---
+import { Aside } from '@astrojs/starlight/components';
+interface Props { features?: string; }
+const { features = 'Some controls pictured here' } = Astro.props;
+---
+<Aside type="note" title="Newer than the published beta">
+  {features} require a development build and are not in beta 5.2.
+  If your app looks different, <a href="/docs/versions/">check features and versions</a>.
+</Aside>

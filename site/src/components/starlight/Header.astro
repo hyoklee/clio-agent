@@ -14,6 +14,8 @@ import MobileDocsIndex from './MobileDocsIndex.astro';
 import { primaryNav, isActiveNav } from '../../lib/nav';
 
 const path = Astro.url.pathname;
+const docsPage = path.startsWith('/docs');
+const navItems = docsPage ? primaryNav.map((item) => item.href === '/tutorials/' ? { label: 'Examples', href: '/docs/examples/', match: '/docs/examples' } : item) : primaryNav;
 ---
 
 <div class="header">
@@ -21,11 +23,11 @@ const path = Astro.url.pathname;
 		<SiteTitle />
 		<nav class="primary-nav sl-flex" aria-label="Primary">
 			{
-				primaryNav.map((item) => (
+				navItems.map((item) => (
 					<a
 						href={item.href}
 						class:list={{ 'home-link': item.href === '/' }}
-						aria-current={isActiveNav(item, path) ? 'page' : undefined}
+						aria-current={isActiveNav(item, path) && !(docsPage && item.href === '/docs/' && path.startsWith('/docs/examples')) ? 'page' : undefined}
 					>
 						{item.label}
 					</a>

@@ -3,12 +3,15 @@ title: Search your work
 description: Find matching conversation passages and files, or ask the read-only CLIO Search assistant.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
 import results from '../../../assets/captures/docs-search-results.png';
 import phrase from '../../../assets/captures/docs-search-phrase.png';
 import destination from '../../../assets/captures/docs-search-destination.png';
 import assistant from '../../../assets/captures/docs-search-assistant.png';
+
+<PreviewGuide features="Matching-passage navigation and the CLIO Search assistant" />
 
 Open **Search** in the sidebar or press **Ctrl+K** (**⌘K** on macOS).
 Type a name or paste a sentence from a conversation. Matching text appears in
@@ -70,4 +73,4 @@ unreadable sources, shortened excerpts and incomplete scans when they affect an
 answer. A source that was not found in a limited scan is not proof that it does
 not exist. For a complete file view, choose that file in the source panel.
 
-For session-scoped recall and context summaries, see [Memory and recall](/docs/memory/).
+For session-scoped recall and context summaries, see [What CLIO remembers](/docs/memory/).

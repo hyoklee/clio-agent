@@ -1,8 +1,9 @@
 ---
-title: Branch and rewind conversations
-description: Try an alternative without losing your original conversation, or remove later messages and continue from an earlier point.
+title: "Try another approach"
+description: Keep the original conversation while exploring another direction, or rewind with care.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { Aside, Steps } from "@astrojs/starlight/components";
 import Capture from "../../../components/overview/Capture";
 import { captureImage } from "../../../lib/captures";
@@ -15,6 +16,9 @@ import forkCheckpoint from "../../../assets/captures/docs-fork-checkpoint.png";
 import familyGantt from "../../../assets/captures/docs-conversation-family-gantt.png";
 import relationships from "../../../assets/captures/docs-conversation-relationships.png";
 import outputLineage from "../../../assets/captures/docs-conversation-output-lineage.png";
+
+
+<PreviewGuide features="The conversation-family and rewind controls pictured here" />
 
 **Branch** when you want to compare approaches and keep both conversations.
 **Rewind** when you want to remove later messages from the current conversation
@@ -198,6 +202,9 @@ If you may need the later discussion, **branch or [export it](/docs/exports/)
 before rewinding**. There is no restore-later-messages action. Make separate file
 copies or use version control when comparing changes to the data itself.
 
+<details>
+<summary>About the recorded examples and verification</summary>
+
 ## What we checked live
 
 The development acceptance used real model continuations to distinguish methods:
@@ -212,3 +219,5 @@ Additional service checks covered copied file references, shared file contents,
 rejection during an active response, and unknown or foreign message targets.
 These checks cover regular conversations. Separate asynchronous work is outside
 this guide's acceptance scope.
+
+</details>
