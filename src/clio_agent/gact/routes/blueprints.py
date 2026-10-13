@@ -68,7 +68,7 @@ from clio_agent.gact.permission_gate import _normalize_mcp_tool_annotations
 from clio_agent.gact.routes.blueprint_catalog import register_blueprint_catalog_route
 from clio_agent.gact.routes.blueprint_file_read import register_blueprint_file_read_routes
 from clio_agent.gact.routes.blueprint_file_write import register_blueprint_file_write_route
-from clio_agent.gact.routes.blueprint_selection import selection_errors
+from clio_agent.gact.routes.blueprint_selection import select_session_blueprint
 from clio_agent.gact.routes.blueprint_session_activation import activate_session_blueprint
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
 from clio_agent.tools.task_descriptions import mcp_task_description
@@ -773,14 +773,13 @@ def register_blueprints_routes(app: FastAPI, deps: "GactDeps") -> None:
     async def set_session_agent_blueprint(sid: str, req: dict[str, Any]) -> dict[str, Any]:
         from clio_agent.gact.session_warmup import start_session_warmup
 
-        result = await apply_blueprint_change(
+        result = await select_session_blueprint(
             app,
-            lambda: selection_errors(
-                lambda: activate_session_blueprint(
-                    app, deps, sid, req, not_found=_not_found, warmup=False
-                )
+            sid,
+            req,
+            lambda: activate_session_blueprint(
+                app, deps, sid, req, not_found=_not_found, warmup=False
             ),
-            label="Select blueprint",
         )
         start_session_warmup(app, sid, trigger="blueprint_activated")
         return result

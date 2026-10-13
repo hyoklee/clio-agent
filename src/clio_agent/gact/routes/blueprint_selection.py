@@ -20,6 +20,8 @@ from clio_agent.gact.blueprint_catalog import materialize_blueprint, resolve_blu
 from clio_agent.gact.blueprint_identity import AmbiguousBlueprintError, identity_fields
 from clio_agent.gact.blueprint_reload import apply_blueprint_change
 from clio_agent.gact.off_loop import run_off_loop
+from clio_agent.gact.session_warmup import release_session_fleet
+from clio_agent.gact.turn_runner import session_busy_error_payload
 
 
 def selection_errors(change: Callable[[], dict[str, Any]]) -> dict[str, Any]:
@@ -41,6 +43,45 @@ def selection_errors(change: Callable[[], dict[str, Any]]) -> dict[str, Any]:
                 }
             },
         ) from exc
+
+
+async def select_session_blueprint(
+    app: Any, sid: str, request: dict[str, Any], selection: Callable[[], dict[str, Any]]
+) -> dict[str, Any]:
+    """Select an installed snapshot without draining unrelated conversations.
+
+    Selection owns its session slot and a revision reader. Materializing new
+    runtime files still uses the existing exclusive application revision gate.
+    """
+    runner = app.state.turn_runner
+    if busy := session_busy_error_payload(runner, sid):
+        raise HTTPException(status_code=409, detail=busy)
+    identifier = str(request.get("blueprint_id") or request.get("agent_blueprint_id") or "")
+
+    def reuse() -> dict[str, Any]:
+        if not identifier or request.get("path") or request.get("blueprint_path"):
+            return {}
+        session = app.state.sessions.get(sid)
+        if session is None:
+            return selection_errors(selection)
+        row = resolve_blueprint_choice(
+            identifier,
+            cwd=_runtime_workspace_catalog_cwd(app, session_id=sid),
+            workspace_id=session.workspace_id,
+        )
+        return selection_errors(selection) if row["materialized"] else {}
+
+    try:
+        with runner.reservation(sid):
+            result = await runner.revision_gate.run(run_off_loop(lambda: selection_errors(reuse)))
+            if not result:
+                result = await apply_blueprint_change(
+                    app, lambda: selection_errors(selection), label="Select blueprint"
+                )
+            await run_off_loop(release_session_fleet, sid)
+            return result
+    finally:
+        runner.request_input_admission(sid)
 
 
 async def prepare_session_blueprint(app: Any, workspace_id: str, metadata: dict[str, Any]) -> None:
