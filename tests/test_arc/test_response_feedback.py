@@ -38,7 +38,10 @@ def test_history_survives_a_new_ledger_and_arc_release(tmp_path: Path, backend: 
         _MemoryStore() if backend == "memory" else make_arc_store(namespace=f"feedback-{uuid4()}")
     )
     arc = ARCMemory(data_dir=str(tmp_path / "arc"), store=store)
-    first = arc.response_feedback.record(_feedback(), expected_feedback_id=None)
+    first = arc.response_feedback.record(
+        _feedback().model_copy(update={"comment": "Clear units and sources."}),
+        expected_feedback_id=None,
+    )
     bad = arc.response_feedback.record(
         _feedback(rating="bad"), expected_feedback_id=first.feedback_id
     )
@@ -49,6 +52,7 @@ def test_history_survives_a_new_ledger_and_arc_release(tmp_path: Path, backend: 
     # No hot cache or UI state: a fresh ledger must read clio-core's records.
     reader = ResponseFeedbackLedger(store)
     assert reader.current("s1", "answer") == removed
+    assert removed.comment == "Clear units and sources."
     assert [row.rating for row in reader.history("s1")] == ["good", "bad", None]
     assert [row.previous_feedback_id for row in reader.history("s1")] == [
         None,

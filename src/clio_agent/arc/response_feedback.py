@@ -1,7 +1,8 @@
 """Response ratings stored in ARC/clio-core, separate from model context.
 
-Each change is an immutable record. A cleared rating is a tombstone, so later
-evaluation can distinguish an unrated answer from feedback the user withdrew.
+Each change is an immutable record. A cleared rating remains in the history,
+so evaluation can distinguish an unrated answer from a withdrawn thumb. An
+attached comment can remain when the thumb is cleared.
 """
 
 from __future__ import annotations
