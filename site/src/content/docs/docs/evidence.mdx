@@ -72,26 +72,6 @@ Recovery uses the complete saved context records when available, including recor
 
 The receipt distinguishes a restored context from a reconstructed transcript.
 
-### Inspect model attention
-
-For a response with recorded attention capture, select a passage and choose
-**Understand attention** to inspect the source tokens associated with its
-generation. The development interface also provides two selection actions:
-
-- **Trace later use** follows a selected passage into later captured generation.
-- **Add to attention set** combines passages for inspection. Overlapping captured
-  tokens count once; the set accepts up to 32 selections.
-
-Selections can refer to generated answer text and captured thinking. The
-interface maps each selection to its recorded content revision and token range.
-If the service cannot map a selection or has no capture for it, inspect the
-reported reason rather than treating missing heat as zero attention.
-
-Attention is a recorded model measurement. It does not establish that a claim
-is correct, that the model intended something, or that a passage caused an
-error. Check the underlying files, operations, and returned evidence alongside
-the attention view.
-
 ## Changed files and diffs
 
 An agent proposes a file change as a diff. Nothing is written until you approve it. Review the diff, then choose **Apply change** or **Reject change**. A confirmation asks "Apply this file change?" before the write happens, and you can choose **Keep reviewing** instead.

@@ -35,17 +35,18 @@ The older task infrastructure already present in develop is retained.
 | Work | Distinguish todos from asynchronous tasks, emphasize current todos, remember disclosure choices, and link delegated work to its details. Wait receipts identify any/all, selected tasks and pending outcomes. | UI Work/evidence components; `task_wait_presentation.py` |
 | APPL-CORE | Complete and verify a generated loader and views before reporting onboarding as ready. An ended child turn is insufficient evidence of successful onboarding. | Marketplace onboarding and audit skills |
 
-End-user coverage is in the website guides for
-[connecting models](../../site/src/content/docs/docs/connect-a-model.mdx),
+End-user coverage of the transcript and Work changes is in the website guides for
 [following work](../../site/src/content/docs/docs/following-work.mdx),
-[evidence](../../site/src/content/docs/docs/evidence.mdx),
 [questions](../../site/src/content/docs/docs/questions.mdx),
 [injections](../../site/src/content/docs/docs/injections.mdx), and
 [workspace panels](../../site/src/content/docs/docs/workspace-panels.mdx).
 
-Those guides include retained interface captures and examples. Fresh Aurora
-attention and SPOTTER captures remain evidence for the owning environment to
-produce; no screenshot in these guides substitutes for that qualification.
+Those guides include retained interface captures and examples. Aurora's changes
+are described in this integration record. The unillustrated additions to the
+model, evidence and work guides were withdrawn after the user clarified that
+the documentation request meant a direct explanation of the integration.
+Fresh Aurora attention and SPOTTER captures remain evidence for the owning
+environment to produce.
 
 ## OPAL 1 requests and qualification boundary
 

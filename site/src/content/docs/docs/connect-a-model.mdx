@@ -78,30 +78,6 @@ Check that `claude --version` works in a terminal, then sign in once: CLIO offer
 
 Choose Codex and sign in with your account when prompted. CLIO calls Codex directly. You do not need the Codex command-line tool.
 
-### vLLM on Intel GPUs
-
-On a Linux execution host with an Intel Data Center GPU, the development
-Infrastructure interface offers **Native Intel XPU** and **Native Intel XPU +
-attention**. These use the host's existing XPU build of vLLM and PyTorch.
-
-Choose the execution host first. In **Host environment setup**, enter the setup
-required by that site, such as its module-loading command. Use the command
-provided by your facility; a module name from another machine may not apply.
-The attention variant also requires **Flowcept settings on this host**, pointing
-to a settings file accessible to the service on that host.
-
-CLIO offers these variants when the selected host reports compatible Linux,
-Intel GPU, and `uv` capabilities. A successful connection from your laptop does
-not verify the GPU runtime or attention capture. Verify those on the execution
-host before relying on a scientific run. See
-[attention evidence](/docs/evidence/#inspect-model-attention) for what the
-interface can show from a captured response.
-
-<Aside type="note" title="Development support">
-These Intel XPU variants are development features. Their availability depends
-on the selected host and its installed vLLM environment.
-</Aside>
-
 ### ALCF Sophia and Metis
 
 CLIO signs in through Globus. Authenticate once per machine. The install script includes the support this needs. From a terminal, run the following using the Python in CLIO's environment:
