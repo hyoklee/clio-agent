@@ -140,6 +140,8 @@ still needs to contain evidence relevant to the claim.
 
 UI [PR 600](https://github.com/iowarp/gact-tui/pull/600) routes explicit file,
 registered artifact and resource citations through the existing workbench.
+The shared Markdown renderer preserves the same navigation inside saved reports;
+references there open source tabs in the report's workspace.
 Ordinary web links retain their external-link behavior. The common expert
 workspace context supplies the actual citation syntax to all eligible experts;
 document skills defer to that shared guidance. The connected service retains its
@@ -147,13 +149,16 @@ file policy. Read access outside a workspace does not automatically grant file
 panel access; use the source's registered resource reference when available.
 
 Manual browser review opened protocol and CSV source tabs using the production
-components with labeled fictional fixture files. Light/dark desktop and 390px
+components with labeled fictional fixture files, including a measurement-table
+reference inside the opened protocol report. Light/dark desktop and 390px
 layout review found no document overflow. The development server reported
 ResizeObserver notices during resizing and HMR notices during fixture edits;
 these are retained with the review limits. Screenshots, exact source copies
 and validation metadata are retained under
 `D:/Libraries/Videos/clio_recordings/2026-10-12-source-citations/`.
 This is component interaction evidence, not live OPAL or Aurora qualification.
+CI also caught an inherited external-link target on an internal citation; the
+internal renderer now explicitly removes it while preserving external web links.
 
 ## Marketplace locking on shared filesystems
 
