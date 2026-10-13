@@ -72,7 +72,15 @@ service that may have active work. See [Server and terminal setup](/docs/server-
 
 ## The sandbox is not active
 
-Run `clio sandbox status` and follow the `next_action` it shows. On Windows, run `clio sandbox setup` once. See [Permissions and sandbox](/docs/permissions/).
+Open **Infrastructure → CLIO hosts → Protected execution** on the connected
+computer. Setup shows its current step and elapsed time; it continues if you
+leave the page. Wait for the result, approve a Windows prompt if one appears,
+and restart CLIO if requested. For a command-line installation, use
+`clio sandbox setup`, then `clio sandbox status`.
+
+**Bypass checks** only skips action approvals. It does not disable the protection
+needed to keep connected-source credentials and restricted files out of tool
+processes. See [Choose what CLIO may do](/docs/permissions/#windows-setup-and-progress).
 
 ## The Claude Code provider fails
 

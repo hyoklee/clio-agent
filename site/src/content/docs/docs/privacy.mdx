@@ -49,7 +49,7 @@ The desktop app checks GitHub releases for its own updates. That check is separa
 
 The agent's file tools can only use certain folders. By default these are the workspace folder, the folder CLIO was started in, and your system's temp folder. A path outside them fails with `outside_allowed_roots`. Symbolic links are not followed unless you turn that on, and there is a maximum file size.
 
-Change these with `CLIO_ALLOWED_ROOTS`, `CLIO_ALLOW_SYMLINKS`, and `CLIO_MAX_FILE_SIZE_BYTES`. See [Configuration](/docs/configuration/). For what the agent may write or run, and the optional OS-level write fence, see [Permissions and sandbox](/docs/permissions/).
+Change these with `CLIO_ALLOWED_ROOTS`, `CLIO_ALLOW_SYMLINKS`, and `CLIO_MAX_FILE_SIZE_BYTES`. See [Configuration](/docs/configuration/). For what the agent may write or run, and protected execution and source-access restrictions, see [Permissions and sandbox](/docs/permissions/).
 
 ## Browsers and other origins
 

@@ -11,6 +11,7 @@ import confirmation from '../../../assets/captures/docs-question-confirmation.pn
 import textResponse from '../../../assets/captures/docs-question-text.png';
 import visualQuestion from '../../../assets/captures/docs-visual-question.png';
 import openQuestions from '../../../assets/captures/docs-open-questions.png';
+import compactQuestion from '../../../assets/captures/docs-compact-question.png';
 
 <PreviewGuide features="The pending-question list and its Work integration" />
 
@@ -23,16 +24,30 @@ stays associated with that question, including when a delegated agent asked it.
   caption="A confirmation asks for one decision. Choose Yes or No, then Send response. Answer when ready means the question can stay open while independent work continues."
 />
 
-These screenshots use the development interface and a fictional bike-station
-example. Click an image to enlarge it. The questions were authored through
-CLIO's real tools; no new model analysis was run.
+The bike-station screenshots use the development interface and questions
+authored through CLIO's tools. The compact-question example below uses a seeded
+interface fixture. Click an image to enlarge it. No new model analysis was run.
+
+## Read and answer compact questions
+
+Questions support the same Markdown as CLIO's responses, including emphasis,
+code, links and equations. Long prompts scroll within the question heading.
+Choose an answer and use **Send response**. If you want to explain a selected
+choice, choose **+ Add comment**; the extra text field stays closed until needed.
+**Something else** opens a short text field when the question allows a different
+answer. Switching choices preserves comments you have already drafted.
+
+<Capture client:visible image={await captureImage(compactQuestion)}
+  alt="A compact question with rendered emphasis, code and an equation, Treatment groups selected and Add comment available"
+  caption="Current question controls, shown with a seeded interface example. Choose an option, add context if needed, then Send response. No model analysis was run."
+/>
 
 ## Ways to answer
 
 | What you see | How to respond | Example |
 | --- | --- | --- |
 | A text question | Type in **Your response**, or choose **Answer in message box** to use the composer. | “What timezone should I use?” |
-| A list of choices | Choose the option that fits. An **Other** answer is available when the question allows it. | “Compare by station or by day?” |
+| A list of choices | Choose the option that fits. **Something else** or **Other answer** is available when the question allows it. | “Compare by station or by day?” |
 | A confirmation | Choose the offered response. | “Keep this version of the report?” |
 | Checkboxes or a multiple-selection list | Select the requested items, then submit. | “Which measurements should the export include?” |
 | A form from a connected tool | Fill in the named fields and choose **Send response**. Required fields and invalid values are identified in the form. | A location, date range, and output format. |

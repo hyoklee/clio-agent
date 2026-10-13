@@ -124,6 +124,7 @@ def test_provision_fresh_success_elevates_verifies_and_marks() -> None:
     assert progress == [
         "Creating protected execution sandbox - Windows approval required...",
         "Sandbox accounts created. Preparing runtime access...",
+        "Preparing protected access to CLIO's runtime packages...",
         "Verifying protected execution...",
     ]
 
@@ -175,7 +176,7 @@ def test_provision_enforcement_unverified_is_honest_degrade() -> None:
 
 
 def test_fleet_grant_plan_builds_rx_argv_for_both_users() -> None:
-    """The plan emits ``(OI)(CI)(RX)`` ``/T`` per dir and a bare ``(RX)`` traverse for Temp."""
+    """The plan emits inherited RX per root and a bare RX traverse for Temp."""
     plan = scli.build_fleet_runtime_grant_plan(
         paths_override=[
             ("uv_tool_bin", "C:\\u\\bin", True),
@@ -185,11 +186,11 @@ def test_fleet_grant_plan_builds_rx_argv_for_both_users() -> None:
     assert [g.label for g in plan] == ["uv_tool_bin", "user_temp"]
     # Both codex restricted users are covered on every path.
     assert plan[0].users == scli.CODEX_SANDBOX_USERS
-    # A recursive-inherit dir grant → one icacls per user with (OI)(CI)(RX) + /T.
+    # Root inheritance reaches descendants without repeated explicit /T grants.
     argv = plan[0].icacls_argv()
     assert argv == [
-        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOffline:(OI)(CI)(RX)", "/T"],
-        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOnline:(OI)(CI)(RX)", "/T"],
+        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOffline:(OI)(CI)(RX)"],
+        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOnline:(OI)(CI)(RX)"],
     ]
     # Temp is a bare (RX) traverse — no inheritance flags, no /T.
     temp_argv = plan[1].icacls_argv()

@@ -261,6 +261,6 @@ def test_doctor_codex_enforcement_unverified_is_degraded_with_reverify_action() 
     row = sandbox.probe_sandbox(state=state)
     assert row.state == IntegrationState.DEGRADED
     assert "no successful verification receipt" in row.next_action
-    assert "Infrastructure > Agent > Protected execution" in row.next_action
+    assert "Infrastructure > CLIO hosts > Protected execution" in row.next_action
     assert "Set up protected execution" in row.next_action
     assert "clio sandbox setup" in row.next_action

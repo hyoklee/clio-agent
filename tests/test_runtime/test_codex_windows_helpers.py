@@ -221,7 +221,7 @@ def test_installer_recovers_existing_fence_only_after_proof(
         *, allow_elevation: bool, progress: Any = None, grantor: Any = None
     ) -> sandbox_cli.CodexProvisionResult:
         assert allow_elevation is False
-        assert callable(grantor)
+        assert grantor is None  # Installer uses the engine's shared optimized default.
         return sandbox_cli.CodexProvisionResult(
             ok=enforced,
             status="test",

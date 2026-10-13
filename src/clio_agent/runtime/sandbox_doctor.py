@@ -137,7 +137,7 @@ def probe_sandbox(*, state: sb.SandboxResult | None = None) -> IntegrationStatus
         # Codex win32 backend: accounts exist but the write fence could not be verified (#1026).
         next_action = (
             "The Windows sandbox accounts exist, but this CLIO installation has no successful "
-            "verification receipt. Open Infrastructure > Agent > Protected execution and select "
+            "verification receipt. Open Infrastructure > CLIO hosts > Protected execution and select "
             "Set up protected execution, or run `clio sandbox setup`, to verify it."
         )
     elif resolved.reason == sb.REASON_DISABLED:

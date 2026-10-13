@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from clio_agent.runtime import codex_desktop_access, codex_desktop_setup, sandbox_cli
+from clio_agent.runtime import codex_desktop_setup, sandbox_cli
 from clio_agent.runtime.document_runtime import DocumentRuntimeError
 
 
@@ -21,11 +21,9 @@ def test_desktop_setup_keeps_the_existing_enforcement_gate(
     grants = [{"status": "failed" if state == "failed_grant" else "granted"}]
     calls: list[object] = []
 
-    def access(**kwargs: object) -> list[dict[str, str]]:
-        calls.append(kwargs)
-        return grants
-
     def provision(**kwargs: Any) -> sandbox_cli.CodexProvisionResult:
+        calls.append(kwargs)
+        assert "grantor" not in kwargs  # Startup must use the engine's shared default.
         assert kwargs["allow_elevation"] is allow_elevation
         return sandbox_cli.CodexProvisionResult(
             ok=state not in {"setup_required", "unverified"},
@@ -33,10 +31,9 @@ def test_desktop_setup_keeps_the_existing_enforcement_gate(
             reason="codex_windows_unprovisioned" if state == "setup_required" else "checked",
             detail="not verified",
             next_action="Set up protected execution",
-            extra={"fleet_runtime_grants": kwargs["grantor"]()},
+            extra={"fleet_runtime_grants": grants},
         )
 
-    monkeypatch.setattr(codex_desktop_access, "ensure_desktop_runtime_access", access)
     monkeypatch.setattr(sandbox_cli, "provision_codex_windows", provision)
     if state in {"failed_grant", "unverified"}:
         with pytest.raises(DocumentRuntimeError, match="Protected execution verification failed"):
