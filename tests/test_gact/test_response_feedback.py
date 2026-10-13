@@ -128,3 +128,34 @@ def test_no_arc_feedback_support_is_unavailable(client: TestClient) -> None:
     _, url = seed(client)
     client.app.state.arc.response_feedback = None
     assert client.put(url, json=change("good")).status_code == 503
+
+
+def test_comment_is_durable_and_can_be_edited_without_a_rating(client: TestClient) -> None:
+    sid, url = seed(client)
+    response = client.put(
+        url, json={**change("bad"), "comment": "  Missing units.\nPlease explain.  "}
+    )
+    assert response.status_code == 200, response.text
+    first = response.json()["feedback"]
+    assert first["comment"] == "Missing units.\nPlease explain."
+    removed = client.put(url, json=change(None, first["feedback_id"])).json()["feedback"]
+    assert removed["comment"] == first["comment"]
+    arc = client.app.state.arc
+    arc.response_feedback = ResponseFeedbackLedger(arc._store)
+    assert client.get(url).json()["feedback"] == removed
+    edited = client.put(
+        url, json={**change(None, removed["feedback_id"]), "comment": "Useful sources."}
+    ).json()["feedback"]
+    assert edited["rating"] is None and edited["comment"] == "Useful sources."
+    cleared = client.put(url, json={**change(None, edited["feedback_id"]), "comment": ""}).json()[
+        "feedback"
+    ]
+    assert cleared["comment"] == ""
+    assert client.get(f"/v1/sessions/{sid}/response-feedback").json()["items"][-1] == cleared
+    assert len(client.app.state.messages[sid]) == 2
+
+
+def test_comment_size_validation_does_not_write_feedback(client: TestClient) -> None:
+    _, url = seed(client)
+    assert client.put(url, json={**change(None), "comment": "x" * 4001}).status_code == 422
+    assert client.get(url).json() == {"feedback": None}

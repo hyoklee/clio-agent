@@ -86,3 +86,40 @@ def test_concurrent_ratings_cannot_silently_replace_each_other() -> None:
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert sorted(pool.map(rate, range(2))) == ["conflict", "saved"]
     assert len(ledger.history("s1")) == 1
+
+
+def test_comments_survive_rating_changes_restart_and_legacy_retries() -> None:
+    store = _MemoryStore()
+    ledger = ResponseFeedbackLedger(store)
+    initial = _feedback()
+    first = ledger.record(initial, expected_feedback_id=None)
+    commented = ledger.record(
+        _feedback().model_copy(update={"comment": "Clear explanation and units."}),
+        expected_feedback_id=first.feedback_id,
+    )
+    assert ledger.record(initial, expected_feedback_id=None) == commented
+    removed = ledger.record(_feedback(rating=None), expected_feedback_id=commented.feedback_id)
+    assert removed.comment == commented.comment
+    assert ResponseFeedbackLedger(store).current("s1", "answer") == removed
+    cleared = ledger.record(
+        _feedback(rating=None).model_copy(update={"comment": ""}),
+        expected_feedback_id=removed.feedback_id,
+    )
+    assert cleared.comment == ""
+    assert [row.comment for row in ledger.history("s1")] == [
+        "",
+        "Clear explanation and units.",
+        "Clear explanation and units.",
+        "",
+    ]
+
+
+def test_reusing_a_feedback_id_cannot_replace_its_comment() -> None:
+    ledger = ResponseFeedbackLedger(_MemoryStore())
+    request = _feedback().model_copy(update={"comment": "Useful sources."})
+    ledger.record(request, expected_feedback_id=None)
+    with pytest.raises(FeedbackConflict, match="different comment"):
+        ledger.record(
+            request.model_copy(update={"comment": "Different feedback."}), expected_feedback_id=None
+        )
+    assert ledger.current("s1", "answer").comment == "Useful sources."
