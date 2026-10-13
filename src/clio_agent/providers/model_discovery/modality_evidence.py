@@ -27,11 +27,10 @@ MODALITY_SOURCES: dict[str, str] = {
         "``ModelInfo.input_modalities``)"
     ),
     "codex_direct_input_file": (
-        "the Codex Direct transport's Responses ``input_file`` delivery: the backend "
-        "accepts a base64 PDF ``input_file`` part and the model reads it (verified live "
-        "2026-09-26 against gpt-6-sol and gpt-5.5 with a canary PDF; a control turn "
-        "without the file could not answer). The live model list reports no PDF "
-        "modality, so this transport fact is added beside what the list reports"
+        "historical native PDF canaries on 2026-09-26 against gpt-6-sol and gpt-5.5; "
+        "retained to explain older discovery records. This does not establish native "
+        "PDF preparation for other models or the current Codex backend, and is no "
+        "longer added to newly discovered capabilities"
     ),
 }
 

@@ -10,7 +10,7 @@ from typing import Any, cast
 
 import dspy
 import pytest
-from dspy.lm15 import DocumentPart, ToolResultPart
+from dspy.lm15 import DocumentPart, TextPart, ToolResultPart
 from pypdf import PdfReader, PdfWriter
 
 from clio_agent.gact.agents.clio_react import ClioReAct
@@ -57,8 +57,11 @@ def _hydrated(result: dict[str, Any]) -> DocumentPart:
     """The loop's own hydration seam: the tool result as a native document part."""
     from clio_agent.gact.agents.clio_react_record import result_part
 
-    [document] = result_part("call_0_0", "view_pdf", result, False).content
+    document, provenance = result_part("call_0_0", "view_pdf", result, False).content
     assert isinstance(document, DocumentPart)
+    assert isinstance(provenance, TextPart)
+    assert result["path"] in provenance.text
+    assert "snapshot" not in provenance.text
     return document
 
 
@@ -292,7 +295,9 @@ def test_the_loop_sends_a_real_document_part_for_the_tool_result(tmp_path: Path)
         if isinstance(part, ToolResultPart)
     ]
     [result] = results
-    [media] = result.content
+    media, provenance = result.content
+    assert isinstance(provenance, TextPart)
+    assert "doc.pdf" in provenance.text
     assert isinstance(media, DocumentPart)
     assert media.media_type == "application/pdf"
     assert PdfReader(io.BytesIO(base64.b64decode(media.data))).get_num_pages() == 1
