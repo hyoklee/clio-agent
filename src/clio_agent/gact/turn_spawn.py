@@ -378,10 +378,10 @@ def spawn_child_turn(app: "FastAPI", spec: TaskSpec) -> AgentTask:
         # straight to its RUNNING/"waiting" standing state. A later, independent
         # wake (gact/spotter_watcher.py) drives real turns on this same child
         # session without ever re-entering spawn_child_turn.
-        running = reg.transition(task.task_id, STATUS_RUNNING, updated_at=_now())
-        running = persist_agent_task(app, running)
-        publish_agent_task_event(app, running, AGENT_TASK_EVENTS[STATUS_RUNNING])
-        return running
+        standing = reg.transition(task.task_id, STATUS_RUNNING, updated_at=_now())
+        standing = persist_agent_task(app, standing)
+        publish_agent_task_event(app, standing, AGENT_TASK_EVENTS[STATUS_RUNNING])
+        return standing
     if at_cap:
         # FIFO admission happens when a running task frees a slot (completion hook).
         # Return the queued record; the model decides whether to wait.

@@ -40,6 +40,38 @@ def owner(tmp_path: Path) -> Any:
 
 
 @pytest.mark.asyncio
+async def test_child_intervention_commits_references_in_its_parent_mailbox(owner: Any) -> None:
+    """The controlled child's address is distinct from its parent's delivery address."""
+    from clio_agent.gact.agent_tasks import AgentTask
+
+    app, parent = owner.app, owner.sid
+    task = AgentTask(
+        task_id="child-assignment",
+        parent_session_id=parent,
+        child_session_id=owner.child,
+        description="Inspect the selected data",
+    )
+    async with async_human_task_intervention(app, task, "pause", actor_sid=parent) as outcome:
+        outcome.update(status="paused")
+    journal = core_task_journal(app)
+    notices = pending_mail(app, parent)
+    assert [row["human_intervention"]["phase"] for row in notices] == ["requested", "acknowledged"]
+    assert not pending_mail(app, owner.child)
+    for row in notices:
+        reference = journal.notification_references[(parent, "mail:" + row["message_id"])]
+        assert reference["content"] == row["observation_id"]
+    staged = collect_agent_mail(app, parent)
+    recorder = StepRecorder(app.state.arc, parent, "human-control", expert_id="parent")
+    await asyncio.to_thread(recorder.injections, staged)
+    await asyncio.to_thread(recorder.read_steps)
+    await journal.commit_input(recorder, 0)
+    assert not pending_mail(app, parent) and not collect_agent_mail(app, parent)
+    restored = app.state.core_task_journal = CoreTaskJournal(app)
+    await restored.restore()
+    assert not pending_mail(app, parent) and len(retained_mail(app, parent)) == 2
+
+
+@pytest.mark.asyncio
 async def test_mail_survives_crashes_on_both_sides_of_recipient_input_commit(
     owner: Any,
     monkeypatch: pytest.MonkeyPatch,

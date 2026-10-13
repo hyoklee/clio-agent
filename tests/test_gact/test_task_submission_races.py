@@ -63,8 +63,12 @@ def test_subtree_cancel_joins_late_actual_acceptance(
     async def exercise(sid: str) -> None:
         reached, release, finish = asyncio.Event(), asyncio.Event(), asyncio.Event()
         calls: list[str] = []
-        child = seed_agent_task(
-            app, parent_session_id=sid, agent_ref={"expert_id": "main"}, status="queued"
+        child = await asyncio.to_thread(
+            seed_agent_task,
+            app,
+            parent_session_id=sid,
+            agent_ref={"expert_id": "main"},
+            status="queued",
         )
         child_sid = child.child_session_id
         executor: AsyncMCPToolExecutor | None = None

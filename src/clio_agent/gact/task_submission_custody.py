@@ -57,7 +57,7 @@ def cancel_accepted_if_closed(app: Any, sid: str, handle: str) -> None:
     """Join late acceptance to explicit subtree cancellation after durable owner installation."""
     from clio_agent.gact.loop_handoff import call_on_loop
     from clio_agent.gact.task_projection import resolve_task
-    from clio_agent.gact.task_subagent_owner import _cancel_owned
+    from clio_agent.gact.task_supervisor import task_supervisor
     from clio_agent.tools.task_call_context import require_admission
 
     def reconcile() -> None:
@@ -66,7 +66,13 @@ def cancel_accepted_if_closed(app: Any, sid: str, handle: str) -> None:
         except RuntimeError:
             # This schedules the same owning cancellation operation as the public
             # control. The accepted record is discoverable even if its waiter stopped.
-            asyncio.create_task(_cancel_owned(app, resolve_task(app, sid, handle)))
+            supervisor = task_supervisor(app)
+            cancellation = "cancel:" + handle
+            if cancellation not in supervisor.drivers:
+                supervisor.supervise(
+                    cancellation,
+                    asyncio.to_thread(supervisor.request_cancel, resolve_task(app, sid, handle)),
+                )
 
     try:
         current = asyncio.get_running_loop()

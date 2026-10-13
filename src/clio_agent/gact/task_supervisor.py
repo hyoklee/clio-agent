@@ -69,10 +69,10 @@ class TaskSupervisor:
             host = getattr(self.app.state, "native_task_hosts", {}).get(root[0])
             if host is None or host.instance != root[1]:
                 raise RuntimeError("The original native task owner is unavailable")
-            future = asyncio.run_coroutine_threadsafe(
+            native_cancel = asyncio.run_coroutine_threadsafe(
                 host.cancel(row["handle"]), self.app.state.mcp_app_loop
             )
-            return bool(future.result()["cancel_requested"])
+            return bool(native_cancel.result()["cancel_requested"])
         if row.get("kind") == "agent":
             task = self.app.state.agent_task_registry.get(row["id"])
             if task.placement.startswith("relay:"):

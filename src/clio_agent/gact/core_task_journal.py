@@ -137,7 +137,7 @@ class CoreTaskJournal:
             }
         elif event_type in {"task.mail.accepted", "task.intervention"}:
             notice = "mail:" + (row.get("message_id") or row["identity"])
-            recipient = row.get("target_session_id") or row.get("recipient_session_id") or sid
+            recipient = row.get("recipient_session_id") or row.get("target_session_id") or sid
             self.notification_references[(recipient, notice)] = {"content": row["observation_id"]}
 
     def initial_input_notifications(self, sid: str, message_id: str) -> list[str]:

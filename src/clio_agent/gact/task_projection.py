@@ -74,7 +74,8 @@ def task_views(
         raise ValueError("invalid_task_scope")
     tree = session_tree(app, sid) if include_children else {sid}
     owners = authorized_sessions(app, sid, right) if scope not in {"tree", "session"} else tree
-    rows, owned_rows = [], set()
+    rows: list[dict[str, Any]] = []
+    owned_rows: set[int] = set()
     for owner_sid in sorted(owners):
         selected = project_session_async_processes(app, owner_sid, include_children=False)
         rows.extend(selected)
@@ -241,6 +242,7 @@ def task_views(
         for right in ("read", "observe", "message", "control")
     }
     for row in projected:
+        row["supported_actions"] = list(dict.fromkeys(row["supported_actions"]))
         row.setdefault("live_state", row["effective_status"])
         if row.get("access") != "peer":
             continue

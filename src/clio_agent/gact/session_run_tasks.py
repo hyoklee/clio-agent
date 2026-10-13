@@ -108,7 +108,8 @@ def reopen_assignment_admission(app: Any, task: AgentTask, *, resume: bool = Fal
         task.task_id,
         {"handle": task.handle_id, "supersedes": previous.task_id, "task_admission_closed": False},
     )
-    getattr(app.state, "task_admission_closed", set()).discard(sid)
+    closed: set[str] = getattr(app.state, "task_admission_closed", set())
+    closed.discard(sid)
     patch: dict[str, Any] = {"task_admission_closed": False}
     if resume:
         from clio_agent.gact.subagent_lifecycle import HOLD_KEY
@@ -191,7 +192,7 @@ def _complete_assignment_segment(app: Any, sid: str, turn_id: str) -> AgentTaskF
     session = app.state.sessions.get(sid)
     task = task_for_session(app, session)
     if task is None or task.is_terminal or task.child_turn_id != turn_id:
-        return
+        return None
     journal = core_task_journal(app)
     observed = journal.get_record(sid, TURN_RESULT, turn_id)
     active = pending_submissions(app, sid) or any(
@@ -201,7 +202,7 @@ def _complete_assignment_segment(app: Any, sid: str, turn_id: str) -> AgentTaskF
     )
     if observed is None and not task.cancel_requested:
         persist_agent_task(app, replace(task, live_state="recovery_required"))
-        return
+        return None
     if observed is None:
         observed = {"result": {"model_segment_result_missing": True, "cancelled": True}}
     disposition = journal.get_record(sid, "task.assignment.disposition", turn_id)
@@ -210,23 +211,23 @@ def _complete_assignment_segment(app: Any, sid: str, turn_id: str) -> AgentTaskF
     if task.cancel_requested:
         if active:
             persist_agent_task(app, replace(task, live_state="cancellation_requested"))
-            return
+            return None
         status = "cancelled"
     elif execution_held(app, sid) or waiting or observed.get("stop_reason") == "cancelled":
         activity = (
             "paused" if execution_held(app, sid) else "input_required" if waiting else "yielded"
         )
         persist_agent_task(app, replace(task, live_state=activity))
-        return
+        return None
     elif task.launch_context.get("start_turn") is False:
         # Standing assignments settle their check segments, not the assignment.
         # Their owner has confirmed waiting/error activity; explicit disarm cancels them.
-        return
+        return None
     elif observed.get("error") or observed.get("stop_reason") == "error":
         status = "failed"
     elif explicit == "yield" or explicit is None and (active or completion_rows(app, sid)):
         persist_agent_task(app, replace(task, live_state="yielded"))
-        return
+        return None
     else:
         status = "completed"
     from clio_agent.gact.turn_spawn_failures import child_task_error_reason

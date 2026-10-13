@@ -258,11 +258,20 @@ class _LiveObservedWaitAgentTasksAgent:
 
         assert current_tool_runtime().tool_observer is not None
         registry = self.app.state.agent_task_registry
+        parent = self.app.state.sessions.get(session_id)
+        children = {
+            name: existing.child_session_id
+            if (existing := registry.get(name)) is not None
+            else self.app.state.sessions.create(
+                workspace_id=parent.workspace_id, parent_session_id=session_id, title=name
+            ).id
+            for name in ("task_a", "task_b")
+        }
         registry.register(
             AgentTask(
                 task_id="task_a",
                 parent_session_id=session_id,
-                child_session_id="child_a",
+                child_session_id=children["task_a"],
                 agent_ref={"expert_id": "geospatial", "requesting_expert_id": "main"},
                 run_index=0,
                 run_label="LA dense scan",
@@ -272,7 +281,7 @@ class _LiveObservedWaitAgentTasksAgent:
             AgentTask(
                 task_id="task_b",
                 parent_session_id=session_id,
-                child_session_id="child_b",
+                child_session_id=children["task_b"],
                 agent_ref={"expert_id": "ndp", "requesting_expert_id": "main"},
                 run_index=0,
             )
@@ -735,7 +744,7 @@ def test_wait_agent_tasks_tool_call_stamps_waited_tasks_display_rows(tmp_path: P
             "agent_id": "geospatial",
             "run_index": 0,
             "run_label": "LA dense scan",
-            "child_session_id": "child_a",
+            "child_session_id": app.state.agent_task_registry.get("task_a").child_session_id,
             "name": "LA dense scan",
         },
         {
@@ -743,7 +752,7 @@ def test_wait_agent_tasks_tool_call_stamps_waited_tasks_display_rows(tmp_path: P
             "agent_id": "ndp",
             "run_index": 0,
             "run_label": "",
-            "child_session_id": "child_b",
+            "child_session_id": app.state.agent_task_registry.get("task_b").child_session_id,
             "name": "ndp #1",
         },
         {

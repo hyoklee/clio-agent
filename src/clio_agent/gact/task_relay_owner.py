@@ -7,7 +7,6 @@ import logging
 from dataclasses import replace
 from typing import Any
 
-from clio_agent.gact.agent_tasks import persist_agent_task, publish_agent_task_event
 from clio_agent.gact.agents.invoker import TaskHandle
 from clio_agent.gact.agents.spawn_placement import invoker_for_task
 from clio_agent.gact.task_projection import TERMINAL, task_views
@@ -80,26 +79,27 @@ def _connection(app: Any, task: Any, freshness: str) -> bool:
 
 def request_relay_cancel(app: Any, task: Any) -> bool:
     """Acknowledge the actual remote owner and close admission before subtree cancellation."""
-    from clio_agent.gact.loop_handoff import call_on_loop
-    from clio_agent.gact.task_subagent_owner import _cancel_owned, close_subtree_admission
+    from clio_agent.gact.task_subagent_owner import prepare_subagent_cancellation
 
     if task.is_terminal:
         return False
 
-    def begin() -> Any:
-        close_subtree_admission(app, task.child_session_id)
-        current = app.state.agent_task_registry.get(task.task_id)
-        if not current.cancel_requested:
-            current = replace(current, cancel_requested=True)
-            persist_agent_task(app, current)
-            publish_agent_task_event(app, current, "agent.task.updated")
-            for row in task_views(app, task.child_session_id):
-                if row["effective_status"] not in TERMINAL:
-                    asyncio.create_task(_cancel_owned(app, row))
-        return current
-
-    current = call_on_loop(app.state.mcp_app_loop, begin, op="close relay task admission")
+    current, subtree = prepare_subagent_cancellation(app, task)
+    if not subtree:
+        return False
     supervisor = task_supervisor(app)
+    for row in task_views(app, current.child_session_id):
+        if (
+            row["handle"] == (current.handle_id or current.task_id)
+            or row["effective_status"] in TERMINAL
+        ):
+            continue
+        try:
+            supervisor.request_cancel(row)
+        except (RuntimeError, ValueError):
+            logger.exception(
+                "Relay descendant cancellation unacknowledged handle=%s", row["handle"]
+            )
 
     async def request() -> bool:
         return await asyncio.to_thread(_cancel_owner, app, current)

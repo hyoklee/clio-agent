@@ -6,6 +6,7 @@ import logging
 from dataclasses import replace
 from typing import Any
 
+from clio_agent.gact.agent_tasks import AgentTask, publish_agent_task_event
 from clio_agent.gact.assignment_history import persist_assignment_control
 from clio_agent.gact.task_projection import TERMINAL, task_views
 
@@ -26,21 +27,13 @@ def close_subtree_admission(app: Any, child_sid: str) -> list[str]:
     return subtree
 
 
-def request_subagent_cancel(app: Any, task: Any) -> Any:
-    """Request descendant and model cancellation without claiming physical settlement.
-
-    Call off the application loop. Repeated requests retry remaining native owners;
-    no polling worker, copied continuation, or successor callback owns completion.
-    """
-    from clio_agent.gact.agent_tasks import publish_agent_task_event
-    from clio_agent.gact.task_supervisor import task_supervisor
-    from clio_agent.providers.claude_code_cancel import abort_session_streams
-
+def prepare_subagent_cancellation(app: Any, task: AgentTask) -> tuple[AgentTask, list[str]]:
+    """Commit cancellation intent and close admission before local or relay controls."""
     registry = app.state.agent_task_registry
     with registry.lifecycle_lock:
         task = registry.get(task.task_id) or task
         if task.is_terminal:
-            return task
+            return task, []
         subtree = close_subtree_admission(app, task.child_session_id)
         updated = persist_assignment_control(
             app, replace(task, cancel_requested=True, live_state="cancellation_requested")
@@ -50,6 +43,18 @@ def request_subagent_cancel(app: Any, task: Any) -> Any:
                 if app.state.sessions.get(sid) is not None:
                     app.state.sessions.update(sid, metadata_patch={"task_admission_closed": True})
     publish_agent_task_event(app, updated, "agent.task.updated")
+    return updated, subtree
+
+
+def request_subagent_cancel(app: Any, task: Any) -> Any:
+    """Request descendants and model cancellation off-loop without claiming settlement."""
+    from clio_agent.gact.task_supervisor import task_supervisor
+    from clio_agent.providers.claude_code_cancel import abort_session_streams
+
+    task, subtree = prepare_subagent_cancellation(app, task)
+    if not subtree:
+        return task
+    registry = app.state.agent_task_registry
     sid = task.child_session_id
     app.state.cancel_flags.add(sid)
     event = app.state.cancel_events.get(sid)
@@ -66,4 +71,4 @@ def request_subagent_cancel(app: Any, task: Any) -> Any:
     # Settlement hints return through ordinary admission. A never-started assignment
     # can settle without entering a worker or depending on its finally block.
     app.state.turn_runner.request_input_admission(sid)
-    return registry.get(task.task_id) or updated
+    return registry.get(task.task_id) or task

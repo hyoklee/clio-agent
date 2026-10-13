@@ -172,7 +172,7 @@ class NativeWorkloadTool(Tool):
             for token in tokens:
                 stack.callback(context.reset, token)
             stack.enter_context(tool_workspace_context(row["workspace"]))
-            token = TASK_CALL.set(
+            task_call_token = TASK_CALL.set(
                 TaskCall(
                     description=row["description"],
                     invocation_id=row["invocation_id"],
@@ -180,7 +180,7 @@ class NativeWorkloadTool(Tool):
                     session_id=row["session_id"],
                 )
             )
-            stack.callback(TASK_CALL.reset, token)
+            stack.callback(TASK_CALL.reset, task_call_token)
             try:
                 # The body returns only after required cleanup. Exceptions and
                 # cancellation also leave through its physical cleanup boundary.
