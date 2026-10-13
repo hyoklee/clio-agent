@@ -112,3 +112,8 @@ Rejected edge crops and redundant frames remain in that archive; only the
 manifest's selected images are installed in the site. The complete visual
 question replaces the thin Choice Picker strip in the guide. A submitted
 structured-answer-and-resumption video is still outside this capture's evidence.
+
+## Child tab navigation (2026-10-13)
+
+docs-child-tab.png is an untouched full WorkspacePage browser capture against the test-only HTTP fixture. Ordinary activation opens the child in the workspace tab system; Shift-click and Shift+Enter select the central conversation. No live agent/model run is represented. Source captures, geometry receipts and authoring evidence: D:/Libraries/Videos/clio_recordings/2026-10-13-child-tab-navigation/.
+

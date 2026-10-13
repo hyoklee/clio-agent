@@ -16,7 +16,8 @@ material it uses in an answer.
 
 <Aside type="note" title="Next release preview">
   This guide shows the development build for the next release. All screenshots
-  use a fictional **Field study** notebook created for this walkthrough. No
+  use a fictional **Field notebook** created for this walkthrough, including a
+  smaller **Field study** folder. No
   personal vault content is shown.
 </Aside>
 
@@ -25,7 +26,7 @@ material it uses in an answer.
 1. In a workspace, open **+ → Attach → Obsidian vault**.
 2. Name the source and choose **Vault on this host**.
 3. Choose the vault folder, or a folder inside it. New sources start **Read only**.
-4. Select **Connect vault**. A Knowledge tab opens in the workspace canvas.
+4. Select **Connect vault**. A tab named after your source opens in the workspace canvas.
 
 The path is on the machine running the connected CLIO service. Connecting a local
 vault needs no Obsidian cloud login or plugin. CLIO recognizes the enclosing vault
@@ -39,23 +40,37 @@ outside it does not grant access to that note; connect another source if you wan
 to use more of the vault. Hidden folders, symlinks, and junctions are excluded.
 
 To try the same workflow, [download the example vault](/examples/field-notebook.zip),
-extract it, and select its **Field study** folder. The ZIP includes the minimal
-`.obsidian` directory needed to recognize the example as a vault.
+extract it, and select **Field notebook** for the 62-note overview, or its
+**Field study** folder for the six-note example. The ZIP includes the minimal
+`.obsidian` directory needed to recognize it as a vault. Every note is fictional.
 
 ## Explore the graph and read a note
 
-Select a node to open its note in the reader. Pan or zoom the graph to inspect
-connections, then choose **Explore links** to focus on that note's outgoing links
-and backlinks. **Show vault** returns to the selected source's full view.
+The graph is a map of the notes' connections. Larger dots have more linked notes;
+quiet lines keep the overview readable. A small set of hub labels helps identify
+the main groups. Hover over a dot to highlight its immediate connections and show
+nearby titles. Drag the background to pan, scroll or use **+ / −** to zoom, and
+choose **Fit** to frame the map again.
 
-<GuideScreenshot name="knowledge-graph" alt="Knowledge graph for the fictional Field study notebook with Calibration selected and its note open in the reader" caption="The graph and reader share one selection. These edges come from links written in the notes; they are not inferred similarities." />
+<GuideScreenshot name="knowledge-overview" alt="A 62-note fictional notebook shown as connected groups around methods, water, climate, laboratory and field-study notes" caption="The whole-notebook overview makes connected groups and their bridges visible. The dots around the outside are unlinked notes; turn off Isolated notes to focus on connected material." />
+
+Select a dot to open its note beside the graph. Its immediate connections become
+prominent while unrelated links fade. Opening the reader keeps the same layout;
+**Close note** restores the full canvas. Choose **Explore links** to narrow the
+map to that note's outgoing links and backlinks. **All notes** returns to the
+selected source's full view.
+
+<GuideScreenshot name="knowledge-graph" alt="The Field study source tab shows Calibration highlighted, its connected notes emphasized, and the calibration decision open beside the graph" caption="Select a note to trace its connections and read it. The six-note folder is a smaller source within the example vault. Every line represents an authored link; distance does not establish semantic similarity." />
 
 The reader shows note properties, tags, links, and backlinks. Follow a resolved
 link to read its target. Missing or ambiguous links stay labeled so you can see
 when a target cannot be chosen reliably.
 
-Large sources use bounded pages. Search for a topic or explore a note's links
-when the complete vault cannot fit in one view.
+The graph spans the selected source independently of the file list's pages.
+**Isolated notes** controls unlinked notes; **Attachments** adds linked images
+and other files. Overviews are bounded to 5,000 notes and 20,000 connections, with
+a visible notice when a limit is reached. Search, connect a smaller folder, or
+explore a note's links to narrow a large source.
 
 ## Switch to files, search, and attach
 
@@ -119,7 +134,7 @@ connecting it in CLIO. The client is currently in open beta and requires an
 Obsidian Sync subscription. Follow Obsidian's setup guidance to use one sync
 method per device.
 
-The Knowledge tab offers **Start sync** and **Stop sync** for the configured copy,
+The source tab offers **Start sync** and **Stop sync** for the configured copy,
 and shows sync state separately from the knowledge index. Pull-only is the
 default. Choose **Refresh** after synchronized changes arrive.
 
