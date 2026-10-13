@@ -7,6 +7,7 @@ import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
 import results from '../../../assets/captures/docs-search-results.png';
 import phrase from '../../../assets/captures/docs-search-phrase.png';
+import destination from '../../../assets/captures/docs-search-destination.png';
 import assistant from '../../../assets/captures/docs-search-assistant.png';
 
 Open **Search** in the sidebar or press **Ctrl+K** (**⌘K** on macOS).
@@ -31,6 +32,10 @@ CLIO reveals the containing segment when it was collapsed.
 <Capture client:visible image={await captureImage(phrase)}
   alt="A pasted sentence appears highlighted inside a message excerpt with an Open matching passage destination"
   caption="The excerpt is centered on the pasted phrase, including when the stored answer uses Markdown emphasis. Opening it carries the message, part and search text to the conversation." />
+
+<Capture client:visible image={await captureImage(destination)}
+  alt="The matching sentence Share a plant with the reviewer highlighted in blue inside the original conversation, above its composer"
+  caption="After opening the result, the conversation scrolls to the matching sentence. The blue highlight stays on the source text so you can read the surrounding answer." />
 
 Ordinary search looks through retained messages and session names on the
 connected CLIO service. **Workspace files** matches paths in the workspace you
