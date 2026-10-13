@@ -113,10 +113,18 @@ async def test_search_crosses_registered_workspaces_and_returns_navigable_source
 
 
 @pytest.mark.asyncio
-async def test_policy_denial_and_partial_content_are_reported(tmp_path: Path) -> None:
+async def test_policy_denial_and_partial_content_are_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=None)
     workspace, _ = _source(app, tmp_path / "data")
-    (tmp_path / "data" / ".env").write_text("secret-token", encoding="utf-8")
+    config = tmp_path / "data" / ".clio" / "config.yaml"
+    config.parent.mkdir(exist_ok=True)
+    config.write_text("private_key: secret-token\n", encoding="utf-8")
+    monkeypatch.setenv("CLIO_MAX_FILE_SIZE_BYTES", str(1024 * 1024))
+    (tmp_path / "data" / "denied.txt").write_text(
+        "secret-token\n" + "A" * (2 * 1024 * 1024), encoding="utf-8"
+    )
     (tmp_path / "data" / "large.txt").write_text("A" * (512 * 1024 + 20), encoding="utf-8")
     outside = tmp_path / "outside.txt"
     outside.write_text("outside", encoding="utf-8")
@@ -124,7 +132,7 @@ async def test_policy_denial_and_partial_content_are_reported(tmp_path: Path) ->
         readable_workspace_file(app, workspace.id, "../outside.txt")
     assert denied.value.status_code == 403
     with pytest.raises(HTTPException) as credentials:
-        readable_workspace_file(app, workspace.id, ".env")
+        readable_workspace_file(app, workspace.id, ".clio/config.yaml")
     assert credentials.value.status_code == 403
     result = await search_connected_service(
         app, query="secret-token", workspace_id=workspace.id, kind="files", content=True
