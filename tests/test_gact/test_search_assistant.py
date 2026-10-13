@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,41 @@ from clio_agent.gact.types import Message, Part
 from tests._marketplace import MARKETPLACE_ROOT
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
+
+
+def test_literal_search_reads_the_corpus_off_the_request_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from clio_agent.gact.routes import memory
+
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=None)
+    workspace, _ = _source(app, tmp_path / "data")
+    original = memory._memory_search_response
+    reader_threads: list[int] = []
+
+    def observed_search(*args: Any, **kwargs: Any) -> Any:
+        reader_threads.append(threading.get_ident())
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(memory, "_memory_search_response", observed_search)
+
+    @app.get("/__test/thread")
+    async def loop_thread() -> dict[str, int]:
+        return {"thread": threading.get_ident()}
+
+    with TestClient(app) as client:
+        loop = client.get("/__test/thread").json()["thread"]
+        result = client.get(
+            "/v1/memory/search",
+            params={
+                "query": "share a plant",
+                "workspace_id": workspace.id,
+                "include_cross_session": True,
+            },
+        )
+        assert result.status_code == 200, result.text
+        assert result.json()["hits"]
+        assert reader_threads and all(thread != loop for thread in reader_threads)
 
 
 def _message(session_id: str, text: str, *, message_id: str = "msg_match") -> Message:
