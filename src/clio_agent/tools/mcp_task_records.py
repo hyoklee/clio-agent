@@ -4,15 +4,13 @@ Split from :mod:`clio_agent.tools.mcp_tasks` on purpose. That module imports
 ``fastmcp_tasks``, which pulls ``docket``/``redis`` (~1.7s cold) and registers an
 internal client-extension factory with fastmcp core process-wide; it must stay
 lazily imported from the one execution-path client factory. THIS module carries no
-protocol dependency at all, so the durable home — :mod:`clio_agent.gact.mcp_task_store`,
-published when a gact session registry is constructed — can be wired at server boot
-without paying either cost.
+protocol dependency. The application's Core-backed projection is bound at startup.
 
 Three invariants live here, each the answer to a way crash recovery breaks:
 
 **Identity is composite.** A ``taskId`` is minted by the SERVER, so two independent
 backends can legitimately (or maliciously) mint the same one. A record is therefore
-keyed by :class:`TaskKey` — ``(server_id, session_id, task_id)`` — and carries the
+keyed by :class:`TaskKey` — including backend session identity — and carries the
 reconnectable ``backend`` locator. Every ``get`` / ``drop`` / resume takes the full
 key, so one backend's task can neither overwrite nor delete another's.
 
@@ -326,14 +324,14 @@ class InMemoryTaskRecordStore:
     """
 
     def __init__(self) -> None:
-        self._records: dict[tuple[str, str | None, str], TaskRecord] = {}
+        self._records: dict[tuple[str, str | None, str, str | None], TaskRecord] = {}
         self._lock = threading.Lock()
 
     @staticmethod
-    def _index(key: TaskKey) -> tuple[str, str | None, str]:
+    def _index(key: TaskKey) -> tuple[str, str | None, str, str | None]:
         """The dict index for one composite key."""
 
-        return (key.server_id, key.session_id, key.task_id)
+        return (key.server_id, key.session_id, key.task_id, key.backend_session_id)
 
     def put(self, record: TaskRecord) -> None:
         """Persist (or update) one task record."""
@@ -387,6 +385,12 @@ def task_record_store() -> TaskRecordStore:
     ``mcp_task_record_store_absent`` rather than taken silently.
     """
 
+    from clio_agent.gact import context
+
+    if app := context.active_app():
+        from clio_agent.gact.mcp_task_store import app_task_store
+
+        return app_task_store(app)
     global _STORE
     with _STORE_LOCK:
         if _STORE is not None:
@@ -400,9 +404,12 @@ def task_record_store() -> TaskRecordStore:
         return _STORE
 
 
-def task_record_store_is_durable() -> bool:
+def task_record_store_is_durable(app: Any = None) -> bool:
     """Whether the installed store survives the process."""
 
+    if app is not None:
+        journal = getattr(app.state, "core_task_journal", None)
+        return bool(journal is not None and journal.restored)
     with _STORE_LOCK:
         return _STORE_IS_DURABLE
 

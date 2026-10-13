@@ -52,13 +52,13 @@ async def _drive(app: Any, task: Any) -> None:
         try:
             await asyncio.to_thread(_wait_owner, app, current)
         except asyncio.CancelledError:
-            _connection(app, current, "disconnected")
+            await asyncio.to_thread(_connection, app, current, "disconnected")
             raise
         except Exception:
-            if _connection(app, current, "disconnected"):
+            if await asyncio.to_thread(_connection, app, current, "disconnected"):
                 logger.exception("Relay observation disconnected task=%s", task.task_id)
         else:
-            _connection(app, current, "connected")
+            await asyncio.to_thread(_connection, app, current, "connected")
         await asyncio.sleep(1.0)
 
 

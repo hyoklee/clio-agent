@@ -362,14 +362,14 @@ async def _answer_round(
         ledger.capture(input_key, payload)
         # DURABLE BEFORE TRANSMITTED: a crash here still leaves an answer that a
         # resume replays verbatim instead of re-asking the human.
-        persist_ledger(store, key, ledger)
+        await asyncio.to_thread(persist_ledger, store, key, ledger)
         newly_elicited.append(input_key)
 
     responses = ledger.payloads_for(outstanding)
     if responses and not _cancel_requested(store, key):
         await send_task_update(session, key.task_id, responses, remaining())
         ledger.mark_delivered(list(responses))
-        persist_ledger(store, key, ledger)
+        await asyncio.to_thread(persist_ledger, store, key, ledger)
     return newly_elicited
 
 
@@ -428,7 +428,7 @@ async def drive_task_to_terminal(
     owned_lease = lease is None
     active = lease if lease is not None else TaskLease(record_store, key)
     if owned_lease:
-        active.acquire()
+        await asyncio.to_thread(active.acquire)
     try:
         from clio_agent.tools.task_driver_lease import drive_with_lease
 
@@ -447,7 +447,7 @@ async def drive_task_to_terminal(
         return await drive_with_lease(operation, active)
     finally:
         if owned_lease:
-            active.release()
+            await asyncio.to_thread(active.release)
 
 
 async def _poll_until_terminal(
@@ -489,7 +489,7 @@ async def _poll_until_terminal(
         current = await send_task_get(session, key.task_id, budget)
         if current.status in TERMINAL_TASK_STATES and final_validator is not None:
             final_validator(current)
-        _record_status(store, ledger, key, current)
+        await asyncio.to_thread(_record_status, store, ledger, key, current)
         if on_poll is not None:
             await on_poll(current, key, store)
         if current.status in TERMINAL_TASK_STATES:
@@ -509,7 +509,7 @@ async def _poll_until_terminal(
                 elicitation_callback,
                 remaining(),
             )
-            _record_status(store, ledger, key, current)
+            await asyncio.to_thread(_record_status, store, ledger, key, current)
             if _cancel_requested(store, key):
                 # The input waiter was released by explicit cancellation. Poll
                 # the backend until cleanup settles; do not answer or re-ask it.
@@ -676,12 +676,13 @@ async def cancel_task(
     resolved = resolve_store(store)
     existing = resolved.get(key)
     if existing is not None:
-        resolved.put(
+        await asyncio.to_thread(
+            getattr(resolved, "put_control", resolved.put),
             replace(
                 existing,
                 cancel_requested=True,
                 cancel_acknowledged=True,
-            )
+            ),
         )
     return ack
 

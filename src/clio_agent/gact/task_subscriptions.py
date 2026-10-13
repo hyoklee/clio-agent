@@ -80,7 +80,11 @@ def pending_subscription_results(app: Any, sid: str) -> list[dict[str, Any]]:
             continue
         if row["owner"]["session_id"] != entry["owner_session_id"]:
             continue
-        if row["effective_status"] in TERMINAL:
+        if (
+            row["effective_status"] in TERMINAL
+            and not row.get("holding_reason")
+            and row.get("recording") != "unconfirmed"
+        ):
             rows.append({**row, "notification_id": entry["notification_id"]})
     return rows
 

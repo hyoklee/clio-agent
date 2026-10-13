@@ -84,18 +84,33 @@ class BackendIdentity:
 def _locator_for(target: Any) -> dict[str, Any]:
     """Describe ``target`` in the terms needed to reconnect to it later."""
 
+    if isinstance(target, str):
+        if not target.startswith(("http://", "https://")) and not target.endswith((".py", ".js")):
+            return {"transport": "unresolved", "target": target}
+        from fastmcp.client.transports import infer_transport
+
+        return _locator_for(infer_transport(target))
+
     url = getattr(target, "url", None)
     if isinstance(url, str) and url:
         return {"transport": "http", "url": url}
     command = getattr(target, "command", None)
     if isinstance(command, str) and command:
         args = getattr(target, "args", None)
+        environment = getattr(target, "env", None) or {}
         return {
             "transport": "stdio",
             "command": command,
             "args": [str(a) for a in args] if isinstance(args, Sequence) else [],
+            "cwd": str(getattr(target, "cwd", "") or ""),
+            "environment_digest": hashlib.sha256(
+                json.dumps(environment, sort_keys=True).encode()
+            ).hexdigest(),
         }
     name = getattr(target, "name", None)
+    if server := getattr(target, "server", None):
+        instance = vars(server).setdefault("_clio_task_instance", uuid.uuid4().hex)
+        return {"transport": "in_process", "name": str(server.name), "instance": instance}
     return {
         "transport": "in_process",
         "type": type(target).__name__,
@@ -158,12 +173,35 @@ async def persist_created_task(
 
     record = replace(
         record,
+        handle=call.submission_handle or record.handle,
         description=call.description,
         invocation_id=call.invocation_id,
         owner_agent=call.owner_agent,
     )
     try:
-        record_store.put(record)
+        if call.submission_handle:
+            intent = next(
+                (item for item in record_store.list() if item.handle == call.submission_handle),
+                None,
+            )
+            if (
+                intent is None
+                or intent.session_id != key.session_id
+                or intent.key.server_id != key.server_id
+                or intent.tool != tool_name
+            ):
+                raise RuntimeError("MCP acceptance does not match its confirmed submission intent")
+            record = replace(
+                record,
+                created_at=intent.created_at,
+                backend={
+                    **record.backend,
+                    "acceptance": "accepted",
+                    "native_created_at": record.created_at,
+                    "submission": intent.backend["submission"],
+                },
+            )
+        await asyncio.to_thread(record_store.put, record)
         persisted = record_store.get(key)
         if persisted is None or persisted.holding_reason or persisted.handle != record.handle:
             raise RuntimeError("Accepted MCP task lacks durable session ownership")
@@ -182,6 +220,8 @@ async def persist_created_task(
             "persisted; it cannot be resumed after a restart",
             details={
                 "reason": MCP_TASK_RECORD_NOT_DURABLE,
+                "handle": record.handle,
+                "acceptance": "accepted_recording_failed",
                 **key.to_wire(),
                 "backend": dict(identity.locator),
                 "cancel_attempted": cancelled,
@@ -244,12 +284,18 @@ class ClioTasksClientExtension(TasksClientExtension):
 
         from clio_agent.tools.task_call_context import TASK_CALL
 
+        backend_session = getattr(self._clio_transport, "get_session_id", lambda: None)()
+        if not backend_session and self._clio_identity.locator.get("transport") == "stdio":
+            backend_session = vars(self._clio_transport).setdefault(
+                "_clio_backend_session", uuid.uuid4().hex
+            )
+
         key = TaskKey(
             server_id=self._clio_identity.server_id,
             session_id=TASK_CALL.get().session_id
             or resolve_task_session_id(getattr(ctx, "session", None)),
             task_id=create_result.task_id,
-            backend_session_id=(getattr(self._clio_transport, "get_session_id", lambda: None)()),
+            backend_session_id=backend_session,
         )
         store = task_record_store()
         # FIRST thing after the server minted the task: make the id durable. The
@@ -358,9 +404,8 @@ def tasks_declaration(client_cls: Any, target: Any = None) -> TasksDeclaration:
     backend task on the front connection's behalf. CLIO honors that instead of
     overriding it, and records the typed reason
     ``mcp_tasks_declaration_suppressed`` rather than returning nothing quietly.
-    That suppression is also what keeps tasks OFF for CLIO's own servers (#1119):
-    the built-in ``fs``/``shell`` servers install no tasks extension server-side,
-    and every declared server is reached through the proxy backend.
+    CLIO's ordinary native workload roots are reached directly. Discovery through
+    a proxy does not make it a task-capable execution route.
 
     ``target`` is the client's transport; its :func:`backend_identity` is bound onto
     the extension so every task minted through this client is recorded under the

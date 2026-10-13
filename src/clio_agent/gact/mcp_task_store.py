@@ -1,53 +1,4 @@
-"""The durable home for in-flight SEP-2663 task ids (#1115).
-
-WHY HERE, AND WHY THIS STORE. Reconnect-by-task-id needs the id to outlive the
-client that created it — and, for crash recovery, the process. RULE 4 forbids a
-fifth materialization, so the id goes into an EXISTING durable store rather than a
-new one. The gact **session registry** (``gact/sessions.py``,
-``<workspace>/.clio/agent/sessions.json``) is the honest home:
-
-* It is already per-session, and a task IS per-session work — the record needs a
-  session to be attributed to, resumed for, and cleaned up with.
-* It is already durable with the write semantics this needs: every mutation
-  write+fsyncs to a temp file and atomically renames, so a crash mid-write cannot
-  leave a half-written task id behind.
-* Its ``Session.metadata`` is the registry's declared extension point (pin /
-  fork-lineage / autorename state already live there), reached through the existing
-  ``SessionStore.update(metadata_patch=...)`` seam. No schema migration, no new file,
-  no new lifecycle.
-
-Rejected alternatives: ``run.extra.workflow_state`` is the blueprint-declared,
-schema-validated vocabulary the MODEL authors — infra task ids are not model state
-and would pollute a typed surface; ARC is the semantic event log, not a mutable
-key-value registry of live handles; a dedicated ``tasks.json`` would be exactly the
-fifth store RULE 4 rules out.
-
-IDENTITY. Rows are keyed by the composite
-:class:`~clio_agent.tools.mcp_task_records.TaskKey` — the session row scopes
-``session_id``, and within it each row is keyed by ``server_id|task_id``. A
-``task_id`` is minted by the SERVER, so keying on it alone would let one backend's
-task overwrite another's record and let a ``drop`` delete an unrelated live task.
-
-NOTHING IS EVER SILENTLY LOST. Two things can take a session row away underneath a
-live task: a delete racing a write, and a delete of a session that still owns tasks.
-Neither blocks the user, and neither discards the record:
-
-* ``SessionStore.update`` returning ``None`` means the row is gone. That is a TYPED
-  degraded write (``mcp_task_record_held_locally``), not an ignored return: the
-  record moves to the process-local HOLDING PATH, where it stays resumable,
-  cancellable and visible in diagnostics — just not across a restart.
-* Deleting a session that owns live tasks (:meth:`SessionMetadataTaskStore.on_session_deleted`)
-  never blocks the deletion. Each live task gets a bounded, best-effort
-  ``tasks/cancel`` through the installed canceller hook, then migrates to the holding
-  path stamped ``mcp_task_session_deleted`` with ``cancel_requested`` recorded. When
-  no canceller is installed, that is reported — the store never pretends the remote
-  task was stopped.
-
-ATTRIBUTION. A record's session is resolved at claim time from the same receive-loop
-correlation registry #1113 uses
-(:func:`.elicitation_correlation.correlated_session_id`). A task that cannot be
-attributed is held on the holding path with the same typed reason.
-"""
+"""MCP identity and observation history on the application's confirmed Core writer."""
 
 from __future__ import annotations
 
@@ -56,8 +7,10 @@ import threading
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from clio_agent.errors import MCP_TASK_RECORD_HELD_LOCALLY, MCP_TASK_SESSION_DELETED
+from clio_agent.gact.core_task_journal import core_task_journal
 from clio_agent.tools.mcp_task_records import (
     InMemoryTaskRecordStore,
     TaskKey,
@@ -68,339 +21,294 @@ from clio_agent.tools.mcp_task_records import (
     task_change_listener,
 )
 
-if TYPE_CHECKING:  # pragma: no cover - typing only
+if TYPE_CHECKING:
     from clio_agent.gact.sessions import SessionStore
 
 logger = logging.getLogger(__name__)
-
-__all__ = [
-    "SESSION_TASKS_METADATA_KEY",
-    "SessionMetadataTaskStore",
-    "app_task_store",
-    "install_session_task_store",
-    "notify_session_deleted",
-]
-
-#: The ``Session.metadata`` key the task rows live under.
-SESSION_TASKS_METADATA_KEY = "mcp_tasks"
+SESSION_TASKS_METADATA_KEY = "mcp_tasks"  # Idempotent legacy migration only.
+MCP_RECORD_EVENT = "task.mcp.observation"
 
 
-def _utcnow_iso() -> str:
-    """ISO-8601 UTC timestamp, matching ``gact/events.py``'s own helper."""
+class CoreTaskRecordStore:
+    """A protocol-store adapter, with no execution or delivery policy of its own."""
 
-    return datetime.now(timezone.utc).isoformat()
-
-
-class SessionMetadataTaskStore:
-    """A :class:`~clio_agent.tools.mcp_task_records.TaskRecordStore` over session metadata.
-
-    Rows are stored as ``session.metadata["mcp_tasks"][server_id|task_id] =
-    record.to_wire()`` and written through ``SessionStore.update(metadata_patch=...)``,
-    so each write inherits the registry's atomic write+fsync+rename. Reads scan the
-    registry, which is an in-memory dict on the hot path (the registry loads the JSON
-    once at construction), so a cold-start reconnect sweep needs no extra I/O.
-    """
-
-    def __init__(self, sessions: "SessionStore") -> None:
+    def __init__(self, sessions: SessionStore) -> None:
         self._sessions = sessions
-        # The HOLDING PATH: records whose session row is gone or unresolved. They stay
-        # usable here and are reported; they are never dropped on the floor.
+        self._app: Any = None
         self._held = InMemoryTaskRecordStore()
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
-    # ---- TaskRecordStore ---------------------------------------------------
+    def bind(self, app: Any) -> CoreTaskRecordStore:
+        """Bind to the owning application before accepting durable observations."""
+        if self._sessions is not app.state.sessions:
+            raise RuntimeError("MCP task store belongs to a different application")
+        if self._app is not None and self._app is not app:
+            raise RuntimeError("MCP task store cannot be rebound")
+        self._app = app
+        return self
+
+    def _journal(self) -> Any:
+        if self._app is None:
+            raise RuntimeError("MCP task store requires its application Core writer")
+        return core_task_journal(self._app)
 
     def put(self, record: TaskRecord) -> None:
-        """Persist (or update) one task record on its session row.
-
-        A missing session, or an ``update`` that reports the row is gone (the delete
-        vs. put race), degrades to the holding path with a typed reason instead of
-        losing the record. Every call stamps ``updated_at`` (this is the ONE write
-        funnel, so it is the one place that can honestly claim "just written") and
-        notifies the installed change listener (#1205's SSE bridge), regardless of
-        which of the three outcomes below the write took.
-
-        #1205 review D2: the three hold-path branches notify with ``_hold``'s
-        RETURN VALUE (the held record, ``holding_reason`` set), never the pre-hold
-        ``stamped`` record — publishing ``stamped`` verbatim would silently strip
-        the one field that makes a holding-path degrade non-silent to a live SSE
-        subscriber.
-        """
-
-        stamped = replace(record, updated_at=_utcnow_iso())
-        session_id = stamped.key.session_id
-        if not session_id:
-            self._notify(self._hold(stamped, "no CLIO session resolved"))
-            return
+        """Confirm a full-identity observation before projection, listeners or waiters."""
         with self._lock:
-            session = self._sessions.get(session_id)
-            if session is None:
-                self._notify(self._hold(stamped, "session row absent"))
+            stamped = replace(record, updated_at=datetime.now(timezone.utc).isoformat())
+            if not record.session_id or self._sessions.get(record.session_id) is None:
+                self._hold(stamped, "Owning session absent")
                 return
-            rows = dict(self._rows_of(session))
-            previous = rows.get(stamped.key.row_key)
-            if isinstance(previous, dict):
-                prior = TaskRecord.from_wire(previous)
-                # Transport callbacks can hold an older snapshot while a model
-                # collects its result. Delivery and cancellation intent never
-                # roll back when that callback subsequently persists progress.
-                stamped = replace(
-                    stamped,
-                    handle=prior.handle or stamped.handle,
-                    consumed_at=prior.consumed_at or stamped.consumed_at,
-                    notify_pending=stamped.notify_pending and not prior.consumed_at,
-                    cancel_requested=prior.cancel_requested or stamped.cancel_requested,
-                    cancel_acknowledged=prior.cancel_acknowledged or stamped.cancel_acknowledged,
-                    dismissed=prior.dismissed or stamped.dismissed,
-                )
-            rows[stamped.key.row_key] = stamped.to_wire()
-            updated = self._sessions.update(
-                session_id, metadata_patch={SESSION_TASKS_METADATA_KEY: rows}
-            )
-            if updated is None:
-                # The session was deleted between the existence check and the write.
-                # The Optional return is the ONLY signal the registry gives; ignoring
-                # it would silently drop a live remote task's only local handle.
-                self._notify(self._hold(stamped, "session deleted mid-write"))
-                return
-            self._held.drop(stamped.key)
-        self._notify(stamped)
-
-    def get(self, key: TaskKey) -> TaskRecord | None:
-        """Return the record for the FULL composite key, if any."""
-
-        held = self._held.get(key)
-        if held is not None:
-            return held
-        if not key.session_id:
-            return None
-        row = self._rows_of(self._sessions.get(key.session_id)).get(key.row_key)
-        return TaskRecord.from_wire(row) if isinstance(row, dict) else None
-
-    def list(self) -> list[TaskRecord]:
-        """Return every persisted record across every session, plus held ones."""
-
-        records = list(self._held.list())
-        for session in self._sessions.list():
-            records.extend(
-                TaskRecord.from_wire(row)
-                for row in self._rows_of(session).values()
-                if isinstance(row, dict)
-            )
-        return records
-
-    def drop(self, key: TaskKey) -> None:
-        """Forget exactly one task — never every row sharing its ``task_id``.
-
-        #1205 review D1 (BLOCKING): a terminal task is almost always REMOVED
-        via ``drop`` (the driver persists the terminal status, then drops the
-        now-settled row) rather than left sitting in the store — so ``drop``
-        is the ONE place a terminal ``mcp_task.completed`` / ``.failed`` /
-        ``.cancelled`` event is guaranteed to fire. Reads the record's current
-        state and publishes it BEFORE the row is removed from either the
-        holding path or the session row, so a live SSE subscriber never sees
-        the row simply vanish with no explanation. A caller that already
-        persisted the same terminal status via ``put`` immediately before
-        calling this gets one extra, harmless, idempotent copy of the SAME
-        event (this codebase's SSE consumers apply the full record verbatim,
-        see ``McpTaskPeekView`` — never a delta), which is the accepted
-        trade-off against a caller that drops WITHOUT ever persisting the
-        terminal status first (e.g. an ack-only cancel) getting no event at
-        all under the old code.
-        """
-
-        record = self.get(key)
-        if record is not None:
-            self._notify(record)
-        self._held.drop(key)
-        if not key.session_id:
-            return
-        with self._lock:
-            session = self._sessions.get(key.session_id)
-            if session is None:
-                return
-            rows = dict(self._rows_of(session))
-            if rows.pop(key.row_key, None) is None:
-                return
-            self._sessions.update(key.session_id, metadata_patch={SESSION_TASKS_METADATA_KEY: rows})
-
-    # ---- session lifecycle -------------------------------------------------
-
-    def on_session_deleted(self, session_id: str, rows: dict[str, Any]) -> tuple[TaskRecord, ...]:
-        """Migrate a deleted session's live tasks to the holding path.
-
-        The user's deletion is NEVER blocked and the records are NEVER discarded.
-        Each live task is offered to the installed canceller (bounded, best-effort),
-        then held locally stamped ``mcp_task_session_deleted`` with whether a cancel
-        was actually attempted — so a remote task that is still running keeps a local
-        handle that can resume or cancel it, and shows up in diagnostics.
-        """
-
-        migrated: list[TaskRecord] = []
-        canceller = task_canceller()
-        for row in rows.values():
-            if not isinstance(row, dict):
-                continue
-            record = TaskRecord.from_wire(row)
-            attempted = self._attempt_cancel(canceller, record)
-            held = replace(
-                record, cancel_requested=attempted, holding_reason=MCP_TASK_SESSION_DELETED
-            )
-            self._held.put(held)
-            migrated.append(held)
-            logger.warning(
-                "mcp task %s migrated to the holding path reason=%s session=%s server=%s "
-                "cancel_attempted=%s (still resumable in this process, not across a restart)",
-                record.key.task_id,
-                MCP_TASK_SESSION_DELETED,
-                session_id,
-                record.key.server_id,
-                attempted,
-            )
-        return tuple(migrated)
-
-    @staticmethod
-    def _attempt_cancel(canceller: Any, record: TaskRecord) -> bool:
-        """Best-effort remote cancel; ``False`` when none was (or could be) attempted."""
-
-        if canceller is None:
-            logger.warning(
-                "no remote canceller installed: task %s was NOT cancelled on its server",
-                record.key.task_id,
-            )
-            return False
-        try:
-            return bool(canceller(record))
-        except Exception as exc:  # noqa: BLE001 - best-effort cancel; reason logged, record kept
-            logger.warning(
-                "best-effort tasks/cancel for task %s failed during session delete: %s",
-                record.key.task_id,
-                exc,
-            )
-            return False
-
-    # ---- internals ---------------------------------------------------------
-
-    @staticmethod
-    def _notify(record: TaskRecord) -> None:
-        """Call the installed change listener (#1205 SSE wiring), if any.
-
-        Runs after every ``put`` outcome — durable write, or a degrade to the
-        holding path — so a subscriber learns of a status change, a lease change,
-        or an input-answer capture the same way it learns of a durable write, with
-        no separate polling path. No listener installed (no durable gact session
-        registry booted, e.g. a bare unit test) is a quiet no-op: there is no live
-        SSE surface to have silently failed.
-        """
-
+            journal = self._journal()
+            with journal.writer_lock:
+                prior = self._confirmed(record.key)
+                if prior is not None:
+                    stamped = replace(
+                        stamped,
+                        handle=prior.handle or stamped.handle,
+                        cancel_requested=prior.cancel_requested or stamped.cancel_requested,
+                        cancel_acknowledged=prior.cancel_acknowledged
+                        or stamped.cancel_acknowledged,
+                        dismissed=prior.dismissed or stamped.dismissed,
+                        # Imported receipts remain historical. New delivery is
+                        # acknowledged exclusively by recipient-input commits.
+                        consumed_at=prior.consumed_at or stamped.consumed_at,
+                    )
+                if not stamped.handle:
+                    stamped = replace(stamped, handle="task_" + uuid4().hex)
+                try:
+                    journal.record(
+                        record.session_id,
+                        MCP_RECORD_EVENT,
+                        record.key.row_key,
+                        {"record": stamped.to_wire()},
+                    )
+                except Exception:
+                    self._hold(stamped, "Core write unconfirmed")
+                    raise
+                self._held.drop(record.key)
+                if self._sessions.get(record.session_id) is None:
+                    self._hold(stamped, "session deleted mid-write")
+                    return
         listener = task_change_listener()
         if listener is not None:
-            listener(record)
+            listener(stamped)
+
+    def _confirmed(self, key: TaskKey) -> TaskRecord | None:
+        if self._app is None or not key.session_id:
+            return None
+        journal = self._journal()
+        with journal.writer_lock:
+            row = journal.projections.get((key.session_id, MCP_RECORD_EVENT), {}).get(key.row_key)
+            return TaskRecord.from_wire(row["record"]) if row else None
+
+    def get(self, key: TaskKey) -> TaskRecord | None:
+        """Read one exact server, backend-session and task identity."""
+        return self._held.get(key) or self._confirmed(key)
+
+    def list(self) -> list[TaskRecord]:
+        """Read the Core projection and provisional orphan records, without session scans."""
+        rows = {}
+        if self._app is not None:
+            journal = self._journal()
+            with journal.writer_lock:
+                for (_, event_type), records in journal.projections.items():
+                    if event_type == MCP_RECORD_EVENT:
+                        for row in records.values():
+                            record = TaskRecord.from_wire(row["record"])
+                            rows[record.key] = record
+        rows.update((record.key, record) for record in self._held.list())
+        # Acceptance replaces the pre-submission projection, never its history.
+        # A late lost-reply observation cannot hide an already bound identity.
+        by_handle: dict[str, TaskRecord] = {}
+        for record in rows.values():
+            identity = record.handle or record.key.row_key
+            prior = by_handle.get(identity)
+            if (
+                prior is None
+                or (
+                    prior.backend.get("acceptance") != "accepted"
+                    and record.updated_at >= prior.updated_at
+                )
+                or record.backend.get("acceptance") == "accepted"
+            ):
+                by_handle[identity] = record
+        return list(by_handle.values())
+
+    def reserve_submission(
+        self, sid: str, tool: str, backend: dict[str, Any], envelope: dict[str, Any]
+    ) -> TaskRecord:
+        """Confirm trusted intent and its public identity before sending tools/call."""
+        handle = "task_" + uuid4().hex
+        row = TaskRecord(
+            key=TaskKey(str(backend["server_id"]), sid, handle),
+            handle=handle,
+            tool=tool,
+            backend={**backend, "acceptance": "submitting", "submission": envelope},
+            status="unknown",
+            effective_status="submitting",
+            created_at=datetime.now(timezone.utc).isoformat(),
+            description=envelope["description"],
+            invocation_id=envelope["invocation_id"],
+            owner_agent=envelope["owner_agent"],
+        )
+        self.put(row)
+        confirmed = self.get(row.key)
+        if confirmed is None or confirmed.holding_reason:
+            raise RuntimeError("Submission intent was not durably accepted")
+        return confirmed
+
+    def submission_outcome(
+        self, row: TaskRecord, *, result: dict[str, Any] | None = None, error: str = ""
+    ) -> TaskRecord:
+        """Record an inline outcome or uncertainty without overwriting backend acceptance."""
+        with self._lock:
+            current = next((item for item in self.list() if item.handle == row.handle), row)
+            if current.backend.get("acceptance") == "accepted":
+                return current
+            if result is None:
+                updated = replace(
+                    row,
+                    backend={**row.backend, "acceptance": "uncertain", "submission_error": error},
+                    effective_status="settlement_unknown",
+                    connection_freshness="unknown",
+                )
+            else:
+                failed = bool(result.get("isError", result.get("is_error", False)))
+                updated = replace(
+                    row,
+                    backend={**row.backend, "acceptance": "inline"},
+                    status="completed",
+                    effective_status="failed" if failed else "completed",
+                    result=result,
+                )
+            self.put(updated)
+            return updated
+
+    def drop(self, key: TaskKey) -> None:
+        """Dismiss a settled projection while retaining its original Core outcome."""
+        row = self.get(key)
+        if row is not None:
+            self.put(replace(row, dismissed=True))
+
+    def put_control(self, record: TaskRecord) -> bool:
+        """Do not block a verified owner's cancellation on a Core outage."""
+        try:
+            self.put(record)
+        except Exception:
+            logger.exception(
+                "reason=control_recording_unconfirmed handle=%s; verified control proceeds",
+                record.handle,
+            )
+            self._hold(
+                replace(record, backend={**record.backend, "control_recording": "unconfirmed"}),
+                "Trusted owner control recording unconfirmed",
+            )
+            return False
+        return True
+
+    def reconcile_controls(self) -> None:
+        """Confirm provisional control observations; never replay their operations."""
+        for row in self._held.list():
+            if row.backend.get("control_recording") == "unconfirmed":
+                backend = {
+                    key: value for key, value in row.backend.items() if key != "control_recording"
+                }
+                self.put(replace(row, backend=backend, holding_reason=None))
+
+    def migrate(self, app: Any) -> None:
+        """Import legacy records idempotently before clearing their metadata projection."""
+        self.bind(app)
+        for session in self._sessions.list():
+            legacy = session.metadata.get(SESSION_TASKS_METADATA_KEY)
+            if not isinstance(legacy, dict) or not legacy:
+                continue
+            for payload in legacy.values():
+                if isinstance(payload, dict):
+                    record = TaskRecord.from_wire(payload)
+                    if self._confirmed(record.key) is None:
+                        self.put(record)
+            if (
+                self._sessions.update(session.id, metadata_patch={SESSION_TASKS_METADATA_KEY: {}})
+                is None
+            ):
+                raise RuntimeError("MCP migration lost its session projection")
+        set_task_record_store(self, durable=self._journal().restored)
 
     def _hold(self, record: TaskRecord, detail: str) -> TaskRecord:
-        """Move one record to the holding path with a typed reason.
-
-        Returns the HELD record (``holding_reason`` set) — #1205 review D2: a
-        caller must publish THIS returned record, never the pre-hold one it
-        passed in, or the published payload silently drops the one field that
-        makes the degrade non-silent to a live SSE subscriber.
-
-        PRESERVES an existing, more specific ``holding_reason`` (#1205 review,
-        2nd round) rather than clobbering it with the generic
-        ``MCP_TASK_RECORD_HELD_LOCALLY``: a record already held for a specific
-        cause — e.g. ``MCP_TASK_SESSION_DELETED`` from :meth:`on_session_deleted`
-        — that gets ``put`` again (e.g. :func:`~clio_agent.tools.mcp_tasks.cancel_task`
-        stamping a final status onto an already-orphaned record) must not lose
-        that more specific diagnosis to the generic one just because it landed
-        on this same fallback path a second time.
-        """
-
-        reason = record.holding_reason or MCP_TASK_RECORD_HELD_LOCALLY
-        held = replace(record, holding_reason=reason)
+        held = replace(record, holding_reason=record.holding_reason or MCP_TASK_RECORD_HELD_LOCALLY)
         self._held.put(held)
-        logger.warning(
-            "mcp task %s held process-locally reason=%s (%s); it stays resumable here "
-            "but will not survive a restart",
-            record.key.task_id,
-            reason,
+        logger.error(
+            "MCP identity recording unconfirmed key=%s reason=%s detail=%s",
+            record.key.to_wire(),
+            held.holding_reason,
             detail,
         )
         return held
 
-    @staticmethod
-    def _rows_of(session: Any) -> dict[str, Any]:
-        """The task-row mapping on a session, or an empty mapping."""
+    def on_session_deleted(self, session_id: str, rows: dict[str, Any]) -> tuple[TaskRecord, ...]:
+        """Keep orphan identities and request cancellation without claiming settlement."""
+        records = {record.key: record for record in self.list() if record.session_id == session_id}
+        for payload in rows.values():
+            if isinstance(payload, dict):
+                record = TaskRecord.from_wire(payload)
+                records.setdefault(record.key, record)
+        outcomes = []
+        for record in records.values():
+            attempted = False
+            if record.display_status not in {"completed", "cancelled", "failed", "interrupted"}:
+                canceller = task_canceller()
+                if canceller is None:
+                    logger.warning(
+                        "MCP task %s was NOT cancelled on its server: no owner available",
+                        record.task_id,
+                    )
+                else:
+                    try:
+                        attempted = bool(canceller(record))
+                    except Exception:
+                        logger.exception(
+                            "Orphan MCP cancellation unconfirmed key=%s", record.key.to_wire()
+                        )
+            outcomes.append(
+                self._hold(
+                    replace(
+                        record,
+                        cancel_requested=record.cancel_requested or attempted,
+                        holding_reason=MCP_TASK_SESSION_DELETED,
+                    ),
+                    "Owning session deleted",
+                )
+            )
+        return tuple(outcomes)
 
-        rows = (getattr(session, "metadata", None) or {}).get(SESSION_TASKS_METADATA_KEY)
-        return rows if isinstance(rows, dict) else {}
+
+# Shipped import alias: delegates to the same Core implementation.
+SessionMetadataTaskStore = CoreTaskRecordStore
 
 
-def app_task_store(app: Any) -> Any:
-    """Return THIS app's task-record store.
-
-    ``resolve_store(None)`` reads a module-global that the newest
-    :class:`~clio_agent.gact.sessions.SessionStore` construction overwrites, so in
-    a process holding two apps (a test suite, a second server) one app's routes
-    projected the OTHER app's tasks. Every read side therefore goes through the
-    handle THIS app's own session registry retained when it installed the store. An
-    app whose registry is non-durable (in-memory, which deliberately publishes no
-    store) falls back to the process store, and that fallback is announced rather
-    than taken silently.
-    """
-
-    store = getattr(getattr(app.state, "sessions", None), "task_store", None)
-    if store is not None:
-        return store
-    from clio_agent.tools.mcp_task_records import resolve_store  # noqa: PLC0415
-
-    logger.warning(
-        "mcp task store not app-scoped reason=app_task_store_absent "
-        "(reading the process-global store; a non-durable session registry "
-        "publishes no store of its own)"
-    )
-    return resolve_store(None)
+def app_task_store(app: Any) -> CoreTaskRecordStore:
+    """Return this application's Core-backed store, never another app's global store."""
+    store = getattr(app.state.sessions, "task_store", None)
+    if store is None:
+        store = app.state.sessions.task_store = install_session_task_store(app.state.sessions)
+    return store.bind(app)
 
 
-def install_session_task_store(sessions: "SessionStore") -> SessionMetadataTaskStore:
-    """Publish ``sessions`` as the process's durable task-record home.
+def install_session_task_store(sessions: SessionStore) -> CoreTaskRecordStore:
+    """Install a deferred adapter; application startup binds and migrates it."""
+    from clio_agent.gact.elicitation_correlation import correlated_session_id
 
-    Called from :class:`~clio_agent.gact.sessions.SessionStore` construction for a
-    PERSISTENT registry only (an in-memory test registry is not a durable home and
-    must not claim to be one). Also installs the receive-loop session resolver so a
-    task minted mid-call is attributed to the CLIO session that made the call.
-    """
-
-    store = SessionMetadataTaskStore(sessions)
-    set_task_record_store(store)
-    from clio_agent.gact.elicitation_correlation import (  # noqa: PLC0415 - keep leaf
-        correlated_session_id,
-    )
-
+    store = CoreTaskRecordStore(sessions)
+    set_task_record_store(store, durable=False)
     set_task_session_resolver(correlated_session_id)
     return store
 
 
 def notify_session_deleted(session_id: str, rows: dict[str, Any]) -> None:
-    """Tell the installed task store that a session holding task rows was deleted.
+    """Compatibility entry point; product deletion uses its app-scoped store."""
+    from clio_agent.tools.mcp_task_records import task_record_store
 
-    Called from ``SessionStore.delete`` AFTER the row is gone, so deletion is never
-    delayed, blocked, or made to fail by task cleanup. A store that is not the
-    gact-backed one (a unit-test in-memory store) has nothing to migrate, which is
-    reported rather than assumed.
-    """
-
-    if not rows:
-        return
-    from clio_agent.tools.mcp_task_records import task_record_store  # noqa: PLC0415 - keep leaf
-
-    migrate = getattr(task_record_store(), "on_session_deleted", None)
-    if migrate is None:
-        logger.warning(
-            "session %s was deleted with %d live task record(s) but the installed task "
-            "store cannot migrate them reason=%s",
-            session_id,
-            len(rows),
-            MCP_TASK_SESSION_DELETED,
-        )
-        return
-    migrate(session_id, rows)
+    store = task_record_store()
+    if isinstance(store, CoreTaskRecordStore):
+        store.on_session_deleted(session_id, rows)

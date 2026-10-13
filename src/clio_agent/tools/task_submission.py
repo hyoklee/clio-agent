@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable
+from dataclasses import replace
 from typing import Any
 
 from clio_agent.gact import context
@@ -35,21 +36,99 @@ async def submit_tool_call(
         or bool(namespace and executor._namespace_direct_routes.get(namespace))
         or TASKS_EXTENSION_ID in extensions
     )
-    return await submit_with_custody(
-        executor,
-        call_tool_with_progress(
+    app = context.active_app()
+    if not capable or app is None:
+        return await call_tool_with_progress(
             client, backend_name, args, timeout=timeout, progress_handler=progress_handler
-        ),
-        capable=capable,
+        )
+    from clio_agent.gact.mcp_task_store import app_task_store
+    from clio_agent.tools.execution import get_active_tool_workspace_root
+    from clio_agent.tools.mcp_task_extension import backend_identity
+    from clio_agent.tools.native_task_tool import argument_digest
+    from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot, require_admission
+
+    call = TASK_CALL.get()
+    sid = call.session_id or context.active_session_id()
+    require_admission(app, sid)
+    session = app.state.sessions.get(sid)
+    if session is None:
+        raise RuntimeError("Task submission requires an owning session")
+    identity = backend_identity(client.transport)
+    store = app_task_store(app)
+    row = await asyncio.to_thread(
+        store.reserve_submission,
+        sid,
+        backend_name,
+        {**identity.locator, "server_id": identity.server_id},
+        {
+            "assignment": session.metadata.get("assignment_handle", ""),
+            "invocation_id": call.invocation_id,
+            "owner_agent": call.owner_agent,
+            "description": call.description,
+            "workspace_id": session.workspace_id,
+            "workspace": get_active_tool_workspace_root(),
+            "permissions": permission_snapshot(app, sid),
+            "arguments": args,
+            "argument_digest": argument_digest(backend_name, args),
+            "execution_limit_s": args.get("timeout_s"),
+            "attribution": "agent",
+        },
     )
+
+    async def submit() -> Any:
+        token = TASK_CALL.set(replace(call, submission_handle=row.handle))
+        try:
+            result = await call_tool_with_progress(
+                client, backend_name, args, timeout=timeout, progress_handler=progress_handler
+            )
+            # A task-capable tool may return an ordinary terminal result. Its
+            # extension has already bound native acceptance if it returned a task.
+            current = next(item for item in store.list() if item.handle == row.handle)
+            if current.backend.get("acceptance") != "accepted":
+                import mcp_types
+
+                wire = mcp_types.CallToolResult(
+                    content=result.content,
+                    structured_content=result.structured_content,
+                    is_error=result.is_error,
+                    _meta=result.meta,
+                ).model_dump(mode="json", by_alias=True)
+                await asyncio.to_thread(store.submission_outcome, row, result=wire)
+            return result
+        except Exception as exc:
+            from clio_agent.errors import ToolError
+
+            try:
+                current = await asyncio.to_thread(store.submission_outcome, row, error=str(exc))
+                acceptance = current.backend.get("acceptance", "uncertain")
+            except Exception:
+                logger.exception(
+                    "MCP submission outcome recording unconfirmed handle=%s", row.handle
+                )
+                acceptance = "recording_unconfirmed"
+            raise ToolError(
+                "MCP submission did not return a usable receipt. Inspect this handle before "
+                "deliberately retrying; the operation may have affected its environment.",
+                details={
+                    "handle": row.handle,
+                    "acceptance": acceptance,
+                    "retry_safe": False,
+                    "cause": str(exc),
+                    **getattr(exc, "details", {}),
+                },
+            ) from exc
+        finally:
+            TASK_CALL.reset(token)
+
+    return await submit_with_custody(executor, submit(), capable=True)
 
 
 async def submit_with_custody(executor: Any, operation: Awaitable[Any], *, capable: bool) -> Any:
     """Let Stop release the waiter while an already sent task request records its outcome.
 
     This retains the existing RPC and its transport, never repeats tools/call.
-    Submission health limits still apply inside the operation. No public handle
-    exists until the backend accepts and the existing task extension persists it.
+    Submission health limits still apply inside the operation. Its durable public
+    handle was reserved before this request; this function never replays it.
     """
     app = context.active_app()
     if not capable or app is None or app.state.mcp_app_loop is not asyncio.get_running_loop():
@@ -84,7 +163,7 @@ def _submitted(executor: Any, supervisor: Any, task: asyncio.Future[Any]) -> Non
         error = task.exception()
         assert error is not None
         logger.error(
-            "Task submission failed; no acceptance was acknowledged",
+            "Task submission ended without a usable receipt; consult its durable intent",
             exc_info=(type(error), error, error.__traceback__),
         )
     if not executor._pending_task_submissions and not executor._accepted_task_handles:

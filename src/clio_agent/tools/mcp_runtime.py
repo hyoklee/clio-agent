@@ -476,11 +476,20 @@ def make_mcp_client(
 
     if isinstance(target, Mapping):
         target = _normalize_mapping_target(target)
-
     if client_cls is None:
         from clio_agent.tools.task_receipt import TaskAwareClient  # noqa: PLC0415
 
         client_cls = TaskAwareClient
+
+    # Resolve once for SDK clients. Custom client adapters retain responsibility
+    # for their own target interpretation. Extensions must hold the same transport
+    # as the SDK, including its server-session identity, rather than a URL string.
+    from fastmcp import Client
+    from fastmcp.client.transports import infer_transport
+
+    sdk_class: Any = client_cls
+    if isinstance(sdk_class, type) and issubclass(sdk_class, Client):
+        target = infer_transport(target)
 
     kwargs: dict[str, Any] = {
         "client_info": clio_client_info(),

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,10 +17,35 @@ class TaskCall:
     invocation_id: str = ""
     owner_agent: str = ""
     session_id: str = ""
+    submission_handle: str = ""
 
 
 _EMPTY_CALL = TaskCall()
 TASK_CALL: ContextVar[TaskCall] = ContextVar("clio_task_call", default=_EMPTY_CALL)
+
+
+def permission_snapshot(app: Any, sid: str) -> dict[str, Any]:
+    """Capture current session posture and only policies relevant to this owner."""
+    session = app.state.sessions.get(sid)
+    if session is None:
+        raise RuntimeError("Task permission owner is absent")
+    policies = [
+        row
+        for row in getattr(app.state, "permission_policies", [])
+        if row.get("scope", "global") == "global"
+        or row.get("scope") == "session"
+        and row.get("scope_id") == sid
+        or row.get("scope") == "workspace"
+        and row.get("scope_id") == session.workspace_id
+    ]
+    return deepcopy(
+        {
+            "mode": session.mode,
+            "approval_mode": session.approval_mode,
+            "approval_profile": session.metadata.get("approval_profile"),
+            "policies": policies,
+        }
+    )
 
 
 def require_admission(app: Any = None, sid: str | None = None) -> None:

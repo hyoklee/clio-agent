@@ -91,12 +91,10 @@ class TaskSupervisor:
             record = store.get(key)
             if record is None:
                 raise ValueError("Task owner is unavailable")
-            if record.cancel_acknowledged:
-                return True
             callback = self.cancellers.get(row["handle"])
             if callback is None:
                 raise RuntimeError("Task transport is disconnected; cancellation is unavailable")
-            store.put(replace(record, cancel_requested=True))
+            store.put_control(replace(record, cancel_requested=True))
             future = self.cancellation_requests.get(row["handle"])
             if future is None:
                 future = asyncio.run_coroutine_threadsafe(
@@ -111,9 +109,10 @@ class TaskSupervisor:
                     self.cancellation_requests.pop(row["handle"], None)
             raise RuntimeError(f"Cancellation request was not acknowledged: {exc}") from exc
         with self.delivery_lock:
+            self.cancellation_requests.pop(row["handle"], None)
             current = store.get(key)
             if current is not None:
-                store.put(replace(current, cancel_acknowledged=True))
+                store.put_control(replace(current, cancel_acknowledged=True))
         return True
 
     async def _send_cancel(

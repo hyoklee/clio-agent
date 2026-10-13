@@ -18,6 +18,8 @@ def enqueue_task_wake(app: Any, record: Any) -> None:
 
 def result_notification_id(app: Any, sid: str, row: dict[str, Any]) -> str:
     """Identify the recipient's delivery without consuming another recipient's result."""
+    if row.get("holding_reason") or row.get("recording") == "unconfirmed":
+        return ""
     if row["owner"]["session_id"] == sid:
         return f"task-result:{row['handle']}"
     from clio_agent.gact.task_subscriptions import collect_subscription
@@ -45,7 +47,11 @@ def completion_rows(app: Any, sid: str) -> list[dict[str, Any]]:
     for row in task_views(app, sid):
         if row["owner"]["session_id"] != sid or row["effective_status"] not in TERMINAL:
             continue
-        if row.get("consumed_at") or row.get("recording") == "unconfirmed":
+        if (
+            row.get("consumed_at")
+            or row.get("recording") == "unconfirmed"
+            or row.get("holding_reason")
+        ):
             continue  # Legacy receipts remain historical; provisional results are not durable.
         identity = result_notification_id(app, sid, row)
         if journal.pending(sid, identity):

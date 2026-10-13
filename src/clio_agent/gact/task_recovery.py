@@ -17,11 +17,11 @@ from clio_agent.tools.mcp_task_records import TaskKey
 logger = logging.getLogger(__name__)
 
 
-def start_task_recovery(app: Any) -> None:
+async def start_task_recovery(app: Any) -> None:
     """Reproject storage and reconnect recoverable MCP work; never attach a recorded shell PID."""
     from clio_agent.gact.session_run_tasks import recover_session_runs
 
-    recover_session_runs(app)
+    await asyncio.to_thread(recover_session_runs, app)
     from clio_agent.gact.task_subscriptions import schedule_subscriptions
 
     schedule_subscriptions(app)
@@ -36,7 +36,14 @@ def start_task_recovery(app: Any) -> None:
     for row in store.list():
         if not row.handle or row.holding_reason or row.handle in supervisor.drivers:
             continue
-        if row.kind in {"Download", "Indexing"}:
+        if row.backend.get("acceptance") in {"submitting", "uncertain"}:
+            # A reply lost at shutdown is not evidence that nothing executed.
+            # No original backend task identity exists to reconnect or cancel.
+            await asyncio.to_thread(
+                store.submission_outcome,
+                row,
+                error="Service restarted before acceptance was confirmed",
+            )
             continue
         if row.key in mirrored:
             continue
@@ -45,14 +52,18 @@ def start_task_recovery(app: Any) -> None:
         if row.kind == "MCP" and row.backend.get("transport") == "http":
             supervisor.supervise(row.handle, recover_http(app, row.key))
         else:
-            store.put(
+            await asyncio.to_thread(
+                store.put,
                 replace(
                     row,
                     effective_status="interrupted",
                     connection_freshness="disconnected",
-                    result={"error": "Original nonrecoverable execution owner was lost"},
+                    result={
+                        "error": "Original nonrecoverable execution owner was lost",
+                        "effects_uncertain": True,
+                    },
                     notify_pending=not bool(row.consumed_at),
-                )
+                ),
             )
 
 
@@ -151,13 +162,13 @@ async def recover_http(app: Any, key: TaskKey) -> None:
                     await asyncio.sleep(min(1.0, max(0.01, expires - time.time())))
     except TaskResultValidationError as exc:
         logger.exception("Recovered task violated its output contract identity=%s", key.row_key)
-        record_invalid_result(store, key, exc)
+        await asyncio.to_thread(record_invalid_result, store, key, exc)
     except asyncio.CancelledError:
-        pause_http_observation(store, key)
+        await asyncio.to_thread(pause_http_observation, store, key)
         raise
     except Exception as exc:
         logger.exception("Task reconnect failed identity=%s", key.row_key)
-        _interrupted(store, key, str(exc))
+        await asyncio.to_thread(_interrupted, store, key, str(exc))
 
 
 def _interrupted(store: Any, key: TaskKey, reason: str) -> None:

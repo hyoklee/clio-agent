@@ -543,8 +543,8 @@ async def _read_console_sse_once(
                 if not isinstance(chunk, str):
                     raise ConsoleStreamProtocolError("log_chunk frame carried no chunk text")
                 if chunk:
-                    tail, _truncated = fold_console_increment(
-                        store, key, fallback, tail, chunk, next_offset
+                    tail, _truncated = await asyncio.to_thread(
+                        fold_console_increment, store, key, fallback, tail, chunk, next_offset
                     )
     except httpx.HTTPError as exc:
         raise ConsoleStreamDisconnected(str(exc)) from exc

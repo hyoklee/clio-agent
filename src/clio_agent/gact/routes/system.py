@@ -440,7 +440,7 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
     @app.get("/v1/capabilities", response_model=Capabilities)
     async def capabilities(request: Request) -> Capabilities | JSONResponse:
         bearer_enabled = bool(getattr(app.state, "bearer_token", None))
-        task_store_durable = task_record_store_is_durable()
+        task_store_durable = task_record_store_is_durable(app)
         response = Capabilities(
             contract_version=CONTRACT_VERSION,
             versions=build_version_info(),

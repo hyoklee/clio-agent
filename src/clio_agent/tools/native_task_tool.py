@@ -112,7 +112,7 @@ class NativeWorkloadTool(Tool):
                 raise ValueError("Submission reference does not match this workload")
             if row.get("native_identity") not in (None, identity):
                 raise ValueError("Submission reference was reused by a different native task")
-            from clio_agent.tools.task_call_context import require_admission
+            from clio_agent.tools.task_call_context import permission_snapshot, require_admission
 
             admission_error = ""
             try:
@@ -122,7 +122,7 @@ class NativeWorkloadTool(Tool):
                 session = self._host.app.state.sessions.get(row["session_id"])
                 if session is None or session.workspace_id != row["workspace_id"]:
                     raise RuntimeError("Task owner or workspace was revoked")
-                if getattr(session, "permissions", None) != row["permissions"]:
+                if permission_snapshot(self._host.app, row["session_id"]) != row["permissions"]:
                     raise RuntimeError("Task permissions changed after submission")
             except RuntimeError as exc:
                 admission_error = str(exc)

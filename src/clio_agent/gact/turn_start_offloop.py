@@ -163,6 +163,10 @@ def _prepare_turn_off_loop_steps(
     if job is not None:
         job()
 
+    from clio_agent.gact.session_run_tasks import accept_session_run
+
+    accept_session_run(state.app, state.sid, state.user_msg)
+
     _check_not_cancelled(state)
     _emit_semantic_event(
         state.app,

@@ -22,7 +22,7 @@ async def _renew(lease: TaskLease) -> None:
             await wake.wait()
         finally:
             timer.cancel()
-        lease.renew()
+        await asyncio.to_thread(lease.renew)
 
 
 async def drive_with_lease(operation: Awaitable[Result], lease: TaskLease) -> Result:

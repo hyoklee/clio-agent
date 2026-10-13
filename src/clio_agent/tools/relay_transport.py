@@ -14,6 +14,7 @@ the #1115 crash window minimal and fails loudly with ``mcp_task_record_not_durab
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import binascii
 import json
@@ -514,26 +515,17 @@ class RelayTransportClient:
         # the long-lived TaskLease. Merge onto the post-RPC row to retain a
         # concurrent wait/resume driver's lease and input ledger.
         latest = store.get(task.key) or record
-        # #1205 review D1 (1st round): persist the observed status via `put` —
-        # the old code dropped a terminal task straight off `current.status in
-        # TERMINAL_TASK_STATES` without ever writing it through `put`, so the
-        # record's stored status stayed whatever it was on the last put (almost
-        # always non-terminal).
-        # #1205 review D1 (2nd round): and no longer DROP it on terminal either —
-        # RETAIN the settled record (matches AgentTask's dismissed-field
-        # semantics; removal is an explicit later dismiss via
-        # run_registry.dismiss_run, never an automatic side effect of settling).
-        # #1236: derive the honest effective status the SAME way #1115's own poll
-        # loop does (_record_status) -- this explicit single-observation path must
-        # not let a delivered-error "completed" read as bare success either.
+        # Retain confirmed terminal history. Derive semantic failure exactly as
+        # the retained poll driver does, then persist away from the app loop.
         effective_status, effective_reason = derive_effective_status(current)
-        store.put(
+        await asyncio.to_thread(
+            store.put,
             replace(
                 latest,
                 status=current.status,
                 effective_status=effective_status,
                 effective_status_reason=effective_reason,
-            )
+            ),
         )
         # #1231: every explicit resolution folds one console increment, so a
         # record that settled before anyone waited (fast job, terminal at
@@ -670,10 +662,9 @@ class RelayTransportClient:
         )
         # ``cancel_task`` drops the row after the acknowledgement. A concurrent
         # driver may already have re-published a newer snapshot; merge onto that
-        # post-ack row rather than replaying the stale pre-cancel record. Cancel is
-        # deliberately not a task driver and therefore never steals its lease.
+        # Cancellation uses the post-ack row without acquiring the driver lease.
         latest = store.get(task.key) or record
-        store.put(replace(latest, cancel_requested=True))
+        await asyncio.to_thread(store.put, replace(latest, cancel_requested=True))
         return ack
 
     async def message(self, task: RelayTaskIdentity, text: str) -> None:
@@ -712,7 +703,7 @@ class RelayTransportClient:
             )
         if existing is None:
             ledger.capture("agent_message", payload)
-            persist_ledger(store, task.key, ledger)
+            await asyncio.to_thread(persist_ledger, store, task.key, ledger)
         await send_task_update(
             self._require_mcp_client().session,
             task.task_id,
@@ -720,7 +711,7 @@ class RelayTransportClient:
             self._timeout,
         )
         ledger.mark_delivered(["agent_message"])
-        persist_ledger(store, task.key, ledger)
+        await asyncio.to_thread(persist_ledger, store, task.key, ledger)
 
     async def stream_events(
         self,

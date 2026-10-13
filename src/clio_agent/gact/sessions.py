@@ -452,12 +452,8 @@ class SessionStore:
             if existed:
                 self._flush()
         if existed:
-            if task_rows:
-                from clio_agent.gact.mcp_task_store import (  # noqa: PLC0415 - keep leaf
-                    notify_session_deleted,
-                )
-
-                notify_session_deleted(sid, task_rows)
+            if self.task_store is not None:
+                self.task_store.on_session_deleted(sid, task_rows)
             # P2.3 SessionEnd lifecycle hook (observation): fires exactly once, only
             # when a session actually existed and was removed.
             from clio_agent.gact.hooks import dispatch_session_end  # noqa: PLC0415

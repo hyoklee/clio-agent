@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import replace
 from typing import Any
-from uuid import uuid4
 
 from clio_agent.gact.mcp_task_store import app_task_store
 from clio_agent.gact.routes.async_processes import project_session_async_processes
@@ -110,12 +108,13 @@ def task_views(
         else:
             record = records[TaskKey.from_wire(row["key"])]
             if not record.handle:
-                record = replace(record, handle="task_" + uuid4().hex)
-                store.put(record)
+                raise RuntimeError("Legacy task migration must finish before task queries")
             handle = record.handle
             kind = record.kind
             description = record.description
             owner = record.session_id
+            row["recording"] = "unconfirmed" if record.holding_reason else "confirmed"
+            row["acceptance"] = record.backend.get("acceptance", "accepted")
         status = row.get("live_state") or row.get("effective_status") or row.get("status")
         active = status not in TERMINAL
         supervisor = getattr(app.state, "task_supervisor", None)

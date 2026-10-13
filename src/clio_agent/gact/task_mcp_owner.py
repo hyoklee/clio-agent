@@ -77,16 +77,17 @@ async def _drive(
         )
     except TaskResultValidationError as exc:
         logger.exception("Task result violated its output contract identity=%s", key.row_key)
-        record_invalid_result(store, key, exc)
+        await asyncio.to_thread(record_invalid_result, store, key, exc)
     except asyncio.CancelledError:
         row = store.get(key)
         if row is not None and row.backend.get("transport") == "http":
             from clio_agent.gact.task_recovery import pause_http_observation
 
-            pause_http_observation(store, key)
+            await asyncio.to_thread(pause_http_observation, store, key)
             raise
         if row is not None:
-            store.put(
+            await asyncio.to_thread(
+                store.put,
                 replace(
                     row,
                     effective_status="interrupted",
@@ -97,7 +98,7 @@ async def _drive(
                         "recoverable": row.backend.get("transport") == "http",
                     },
                     notify_pending=not bool(row.consumed_at),
-                )
+                ),
             )
         raise
     except Exception as exc:
@@ -109,14 +110,16 @@ async def _drive(
                 from clio_agent.gact.task_recovery import recover_http
 
                 supervisor.cancellers.pop(row.handle, None)
-                store.put(
+                await asyncio.to_thread(
+                    store.put,
                     replace(
                         row, connection_freshness="reconnecting", effective_status_reason=str(exc)
-                    )
+                    ),
                 )
                 await recover_http(app, key)
             else:
-                store.put(
+                await asyncio.to_thread(
+                    store.put,
                     replace(
                         row,
                         effective_status="interrupted",
@@ -124,7 +127,7 @@ async def _drive(
                         effective_status_reason=str(exc),
                         result={"error": str(exc)},
                         notify_pending=not bool(row.consumed_at),
-                    )
+                    ),
                 )
     finally:
         row = store.get(key)

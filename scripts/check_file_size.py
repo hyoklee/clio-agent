@@ -1093,7 +1093,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # parsing/fallback logic lives in the new owner module
     # tools/relay_console_stream.py; only these thin construction/probe/cleanup
     # call sites land here, since this class is the sole owner of both doors.
-    "src/clio_agent/tools/relay_transport.py": 894,
+    "src/clio_agent/tools/relay_transport.py": 885,
     # #1232 pt 2: not previously baselined (under the 800 cap). +28 for
     # list_builtin_tool_definitions -- the boot path needs a FAST,
     # synchronous, no-I/O tool-definitions seed (built-ins only) so

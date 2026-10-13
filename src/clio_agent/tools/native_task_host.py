@@ -191,6 +191,7 @@ class NativeTaskHost:
         from clio_agent.tools.execution import get_active_tool_workspace_root
         from clio_agent.tools.task_call_context import (
             TASK_CALL,
+            permission_snapshot,
             require_admission,
             safe_description,
         )
@@ -220,7 +221,7 @@ class NativeTaskHost:
                 "session_id": sid,
                 "workspace_id": session.workspace_id,
                 "workspace": workspace,
-                "permissions": getattr(session, "permissions", None),
+                "permissions": permission_snapshot(self.app, sid),
                 "owner_agent": call.owner_agent,
                 "assignment": session.metadata.get("assignment_handle", ""),
                 "turn_id": context.active_turn_id(),

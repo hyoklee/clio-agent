@@ -44,11 +44,11 @@ async def prune_orphans_and_cache(app: FastAPI) -> None:
     await boot_prune_off_loop()
 
 
-def reconcile_connected_storage(app: FastAPI) -> None:
+async def reconcile_connected_storage(app: FastAPI) -> None:
     """Recover interrupted source operations for the server's registered workspaces."""
     from clio_agent.gact.task_recovery import start_task_recovery
 
-    start_task_recovery(app)
+    await start_task_recovery(app)
 
 
 async def shutdown_connected_storage(app: FastAPI) -> None:
@@ -72,9 +72,16 @@ async def shutdown_tasks(app: FastAPI) -> None:
 
 async def start_task_hosts(app: FastAPI) -> None:
     """Recover existing work and enter independent application-owned native roots."""
+    from clio_agent.gact.core_task_journal import core_task_journal
+    from clio_agent.gact.mcp_task_store import app_task_store
+    from clio_agent.tools.mcp_task_records import set_task_record_store
     from clio_agent.tools.native_task_host import start_native_hosts
 
-    reconcile_connected_storage(app)
+    await core_task_journal(app).restore()
+    store = app_task_store(app)
+    await asyncio.to_thread(store.migrate, app)
+    set_task_record_store(store)
+    await reconcile_connected_storage(app)
     await start_native_hosts(app)
 
 

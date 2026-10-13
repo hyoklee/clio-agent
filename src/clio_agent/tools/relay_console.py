@@ -54,6 +54,7 @@ never drift apart on tail semantics.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import replace
@@ -429,6 +430,8 @@ def make_console_on_poll(
             return
         if not chunk and next_offset == offset:
             return
-        fold_console_increment(store, key, record, tail, chunk, next_offset)
+        await asyncio.to_thread(
+            fold_console_increment, store, key, record, tail, chunk, next_offset
+        )
 
     return _on_poll

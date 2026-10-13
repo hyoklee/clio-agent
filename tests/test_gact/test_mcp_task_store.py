@@ -1,26 +1,21 @@
-"""The durable home for SEP-2663 task ids: gact session metadata (#1115).
-
-RULE 4 forbids a fifth store, so an in-flight task id is persisted onto the row it
-belongs to — the gact session registry, whose every mutation write+fsyncs to a temp
-file and atomically renames. These tests prove the guarantee on the REAL object: the
-bytes on disk, re-read by a fresh registry, drive a real reconnect.
-
-They also pin the two ways a session row can disappear underneath a live remote task
-— a delete racing a write, and deleting a session that still owns tasks. Neither may
-block the user's deletion, and neither may discard the record.
-"""
+"""Confirmed MCP history, identity collisions, orphan handling and Core recovery."""
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.storage import make_arc_store
 from clio_agent.errors import MCP_TASK_RECORD_HELD_LOCALLY, MCP_TASK_SESSION_DELETED
 from clio_agent.gact.app import build_app
+from clio_agent.gact.core_task_journal import CoreTaskJournal
 from clio_agent.gact.mcp_task_store import (
     SESSION_TASKS_METADATA_KEY,
     SessionMetadataTaskStore,
@@ -63,25 +58,35 @@ def _store_with_session(tmp_path: Path) -> tuple[SessionStore, SessionMetadataTa
 
     sessions = SessionStore(path=tmp_path / "sessions.json")
     session = sessions.create(workspace_id="ws", title="tasks")
-    return sessions, SessionMetadataTaskStore(sessions), session.id
+    return sessions, _bind_store(sessions), session.id
 
 
-def test_record_lands_in_session_metadata_on_disk(tmp_path: Path) -> None:
-    """The id is written into the session row, not a new file."""
+def _bind_store(sessions: SessionStore) -> SessionMetadataTaskStore:
+    """Attach a fresh Core client and reconstruct the confirmed history."""
+    app = SimpleNamespace(
+        state=SimpleNamespace(sessions=sessions, arc=ARCMemory(store=make_arc_store(backend="cte")))
+    )
+    journal = app.state.core_task_journal = CoreTaskJournal(app)
+    asyncio.run(journal.restore())
+    store = sessions.task_store = install_session_task_store(sessions)
+    store.migrate(app)
+    return store
+
+
+def test_record_lands_in_confirmed_core_without_metadata_body(tmp_path: Path) -> None:
+    """Core owns identity and history; metadata contains no copied task body."""
 
     sessions, store, sid = _store_with_session(tmp_path)
     key = _key("task-1", sid)
     store.put(TaskRecord(key=key, tool="slow", status="working"))
 
     on_disk = json.loads((tmp_path / "sessions.json").read_text(encoding="utf-8"))
-    rows = on_disk[sid]["metadata"][SESSION_TASKS_METADATA_KEY]
-
-    assert rows[key.row_key]["key"]["task_id"] == "task-1"
-    assert rows[key.row_key]["key"]["server_id"] == SERVER_A
-    assert rows[key.row_key]["tool"] == "slow"
-    assert rows[key.row_key]["status"] == "working"
-    # No fifth store: the task id lives in the registry file; nothing task-shaped
-    # was created next to it.
+    assert not on_disk[sid]["metadata"].get(SESSION_TASKS_METADATA_KEY)
+    restored = _bind_store(SessionStore(path=tmp_path / "sessions.json"))
+    row = restored.get(key)
+    assert row is not None and row.key.task_id == "task-1" and row.key.server_id == SERVER_A
+    assert row.tool == "slow" and row.status == "working"
+    # Core holds task history; no competing task file sits beside sessions.json.
     written = {p.name for p in tmp_path.rglob("*") if p.is_file()}
     assert "sessions.json" in written
     assert not any("task" in name for name in written)
@@ -101,10 +106,10 @@ def test_put_stamps_updated_at_on_every_write(tmp_path: Path) -> None:
     assert first.updated_at, "updated_at must be stamped on the first write"
 
     store.put(TaskRecord(key=key, tool="slow", status="completed"))
-    on_disk = json.loads((tmp_path / "sessions.json").read_text(encoding="utf-8"))
-    row = on_disk[sid]["metadata"][SESSION_TASKS_METADATA_KEY][key.row_key]
-    assert row["updated_at"], "updated_at must be stamped on disk, not just in memory"
-    assert row["status"] == "completed"
+    restored = _bind_store(SessionStore(path=tmp_path / "sessions.json"))
+    row = restored.get(key)
+    assert row is not None and row.updated_at >= first.updated_at
+    assert row.status == "completed"
 
 
 def test_record_survives_losing_the_process(tmp_path: Path) -> None:
@@ -124,7 +129,7 @@ def test_record_survives_losing_the_process(tmp_path: Path) -> None:
 
     # Simulate a restart: brand-new registry object, same file.
     reborn = SessionStore(path=tmp_path / "sessions.json")
-    recovered = SessionMetadataTaskStore(reborn).get(key)
+    recovered = _bind_store(reborn).get(key)
 
     assert recovered is not None
     assert recovered.key == key
@@ -145,7 +150,8 @@ def test_drop_removes_only_the_named_identity(tmp_path: Path) -> None:
 
     store.drop(mine)
 
-    assert store.get(mine) is None
+    retained = store.get(mine)
+    assert retained is not None and retained.dismissed
     assert store.get(theirs) is not None
 
 
@@ -169,7 +175,7 @@ def test_same_task_id_across_two_sessions_does_not_overwrite(tmp_path: Path) -> 
     sessions = SessionStore(path=tmp_path / "sessions.json")
     first = sessions.create(workspace_id="ws", title="one").id
     second = sessions.create(workspace_id="ws", title="two").id
-    store = SessionMetadataTaskStore(sessions)
+    store = _bind_store(sessions)
     one = _key("shared-id", first)
     two = _key("shared-id", second)
     store.put(TaskRecord(key=one, tool="one"))
@@ -177,7 +183,8 @@ def test_same_task_id_across_two_sessions_does_not_overwrite(tmp_path: Path) -> 
 
     store.drop(one)
 
-    assert store.get(one) is None
+    retained = store.get(one)
+    assert retained is not None and retained.dismissed
     assert (store.get(two) or TaskRecord(key=two)).tool == "two"
 
 
@@ -210,15 +217,15 @@ def test_delete_racing_a_put_holds_the_record_instead_of_losing_it(
 
     sessions, store, sid = _store_with_session(tmp_path)
     key = _key("task-race", sid)
-    real_update = sessions.update
+    real_record = store._journal().record
 
-    def deleting_update(target: str, **kwargs: Any) -> Any:
+    def deleting_record(target: str, *args: Any, **kwargs: Any) -> Any:
         """Delete the session the instant the write is attempted."""
 
         sessions.delete(target)
-        return real_update(target, **kwargs)
+        return real_record(target, *args, **kwargs)
 
-    sessions.update = deleting_update  # type: ignore[method-assign]
+    store._journal().record = deleting_record
     with caplog.at_level(logging.WARNING, logger="clio_agent.gact.mcp_task_store"):
         store.put(TaskRecord(key=key, tool="slow", status="working"))
 
@@ -237,7 +244,7 @@ def test_deleting_a_session_migrates_its_live_tasks(tmp_path: Path, caplog: Any)
 
     sessions = SessionStore(path=tmp_path / "sessions.json")
     sid = sessions.create(workspace_id="ws", title="tasks").id
-    install_session_task_store(sessions)
+    _bind_store(sessions)
     key = _key("task-live", sid)
     task_record_store().put(TaskRecord(key=key, tool="slow", status="working"))
 
@@ -275,7 +282,7 @@ def test_deleting_a_session_without_a_canceller_reports_that_nothing_was_cancell
 
     sessions = SessionStore(path=tmp_path / "sessions.json")
     sid = sessions.create(workspace_id="ws", title="tasks").id
-    install_session_task_store(sessions)
+    _bind_store(sessions)
     key = _key("task-uncancelled", sid)
     task_record_store().put(TaskRecord(key=key, status="working"))
     set_task_canceller(None)
@@ -294,7 +301,7 @@ def test_a_failing_canceller_still_migrates_the_record(tmp_path: Path) -> None:
 
     sessions = SessionStore(path=tmp_path / "sessions.json")
     sid = sessions.create(workspace_id="ws", title="tasks").id
-    install_session_task_store(sessions)
+    _bind_store(sessions)
     key = _key("task-cancel-fails", sid)
     task_record_store().put(TaskRecord(key=key, status="working"))
 
@@ -323,6 +330,8 @@ def test_persistent_session_store_publishes_itself_as_the_durable_home(
     installed = task_record_store()
 
     assert isinstance(installed, SessionMetadataTaskStore)
+    assert task_record_store_is_durable() is False
+    _bind_store(sessions)
     assert task_record_store_is_durable() is True
     assert sessions.count() == 0
 
@@ -336,8 +345,8 @@ def test_in_memory_session_store_does_not_claim_durability() -> None:
     assert task_record_store_is_durable() is False
 
 
-def test_capabilities_reports_non_durable_task_record_store(tmp_path: Path) -> None:
-    """Finding 9: the in-memory fallback is queryable with its typed reason."""
+def test_capabilities_reports_application_core_task_store(tmp_path: Path) -> None:
+    """Capabilities report the app's confirmed Core owner, not a process global."""
 
     class Agent:
         def forward(self, question: str, session_id: str, **_kwargs: Any) -> Any:
@@ -350,10 +359,7 @@ def test_capabilities_reports_non_durable_task_record_store(tmp_path: Path) -> N
         response = client.get("/v1/capabilities")
 
     assert response.status_code == 200
-    assert response.json()["capabilities"]["x_clio_task_record_store"] == {
-        "durable": False,
-        "reason": "mcp_task_record_store_absent",
-    }
+    assert response.json()["capabilities"]["x_clio_task_record_store"]["durable"] is True
 
 
 async def test_reconnect_through_the_durable_home_after_a_restart(tmp_path: Path) -> None:
@@ -361,15 +367,16 @@ async def test_reconnect_through_the_durable_home_after_a_restart(tmp_path: Path
 
     from clio_agent.tools.mcp_tasks import resume_task
 
-    sessions, _store, sid = _store_with_session(tmp_path)
-    install_session_task_store(sessions)
+    sessions, _store, sid = await asyncio.to_thread(_store_with_session, tmp_path)
     key = _key("task-5", sid)
-    task_record_store().put(TaskRecord(key=key, tool="slow", status="working"))
+    await asyncio.to_thread(
+        task_record_store().put, TaskRecord(key=key, tool="slow", status="working")
+    )
 
     # Restart: new registry, new task store, nothing carried in memory.
     set_task_record_store(None)
     reborn = SessionStore(path=tmp_path / "sessions.json")
-    install_session_task_store(reborn)
+    await asyncio.to_thread(_bind_store, reborn)
 
     class Session:
         """A minimal scripted ``ClientSession`` for the resumed poll loop."""
@@ -397,7 +404,7 @@ async def test_reconnect_through_the_durable_home_after_a_restart(tmp_path: Path
                 }
             )
 
-    session = Session()
+    session: Any = Session()  # Scripted protocol response, confined to this test.
     final = await resume_task(session, key)
 
     assert final.status == "completed"
@@ -408,3 +415,91 @@ async def test_reconnect_through_the_durable_home_after_a_restart(tmp_path: Path
     settled = task_record_store().get(key)
     assert settled is not None
     assert settled.status == "completed"
+
+
+def test_backend_session_collisions_remain_distinct_even_on_holding_path(tmp_path: Path) -> None:
+    _sessions, store, sid = _store_with_session(tmp_path)
+    one = TaskKey(SERVER_A, sid, "same", "backend-one")
+    two = TaskKey(SERVER_A, sid, "same", "backend-two")
+    store.put(TaskRecord(key=one, tool="first"))
+    store.put(TaskRecord(key=two, tool="second"))
+    first, second = store.get(one), store.get(two)
+    assert first is not None and second is not None
+    assert first.tool == "first" and second.tool == "second"
+    orphan_one = TaskKey(SERVER_A, None, "same", "backend-one")
+    orphan_two = TaskKey(SERVER_A, None, "same", "backend-two")
+    store.put(TaskRecord(key=orphan_one, tool="first orphan"))
+    store.put(TaskRecord(key=orphan_two, tool="second orphan"))
+    first_orphan, second_orphan = store.get(orphan_one), store.get(orphan_two)
+    assert first_orphan is not None and first_orphan.tool == "first orphan"
+    assert second_orphan is not None and second_orphan.tool == "second orphan"
+    assert len(store.list()) == 4
+
+
+def test_core_fault_cannot_publish_or_acknowledge_a_terminal_result(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+
+    sessions, store, sid = _store_with_session(tmp_path)
+    key = _key("accepted", sid)
+    store.put(TaskRecord(key=key, status="working", handle="retained-handle"))
+    original = store.get(key)
+    assert original is not None
+    publications: list[TaskRecord] = []
+    set_task_change_listener(publications.append)
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise OSError("Core confirmation unavailable")
+
+    monkeypatch.setattr(store._journal(), "record", fail)
+    with pytest.raises(OSError, match="confirmation unavailable"):
+        store.put(replace(original, status="completed", result={"text": "unconfirmed"}))
+    assert not publications
+    provisional = store.get(key)
+    assert provisional is not None and provisional.holding_reason == MCP_TASK_RECORD_HELD_LOCALLY
+    rebuilt = _bind_store(SessionStore(path=sessions._path))
+    confirmed = rebuilt.get(key)
+    assert confirmed is not None and confirmed.status == "working" and confirmed.result is None
+
+
+def test_legacy_import_is_idempotent_and_preserves_metadata_until_confirmed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sessions, store, sid = _store_with_session(tmp_path)
+    one = TaskRecord(key=_key("legacy-one", sid), status="completed", result={"text": "kept"})
+    two = TaskRecord(
+        key=_key("legacy-two", sid),
+        status="input_required",
+        input_answers=(TaskInputAnswer("answer", {"action": "accept"}),),
+    )
+    legacy = {row.key.row_key: row.to_wire() for row in (one, two)}
+    sessions.update(sid, metadata_patch={SESSION_TASKS_METADATA_KEY: legacy})
+    journal = store._journal()
+    original = journal.record
+
+    def fail_second(owner: str, event: str, identity: str, payload: dict[str, Any]) -> Any:
+        if identity == two.key.row_key:
+            raise OSError("migration interrupted")
+        return original(owner, event, identity, payload)
+
+    monkeypatch.setattr(journal, "record", fail_second)
+    with pytest.raises(OSError, match="migration interrupted"):
+        store.migrate(store._app)
+    retained = sessions.get(sid)
+    assert retained is not None and retained.metadata[SESSION_TASKS_METADATA_KEY] == legacy
+    first = store.get(one.key)
+    assert first is not None and first.handle and not first.description
+    monkeypatch.setattr(journal, "record", original)
+    store.migrate(store._app)
+    store.migrate(store._app)
+    rebuilt = _bind_store(SessionStore(path=sessions._path))
+    first_rebuilt, second_rebuilt = rebuilt.get(one.key), rebuilt.get(two.key)
+    assert first_rebuilt is not None and first_rebuilt.handle == first.handle
+    assert first_rebuilt.result == {"text": "kept"} and not first_rebuilt.description
+    assert second_rebuilt is not None and second_rebuilt.input_answers == two.input_answers
+    assert len(rebuilt.list()) == 2
+    retained = sessions.get(sid)
+    assert retained is not None and not retained.metadata[SESSION_TASKS_METADATA_KEY]

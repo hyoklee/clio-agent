@@ -59,6 +59,8 @@ class CoreTaskJournal:
         self.projections: dict[tuple[str, str], dict[str, dict[str, Any]]] = {}
         self.recipient_index: dict[str, dict[tuple[str, str, str], dict[str, Any]]] = {}
         self.task_relationships: dict[str, dict[str, dict[str, Any]]] = {}
+        self.result_references: dict[str, str] = {}
+        self.notification_references: dict[str, dict[str, Any]] = {}
         self.provisional_controls: deque[tuple[str, str, str, dict[str, Any]]] = deque()
         self.rows: dict[str, dict[str, Any]] = {}
         self.unconfirmed: dict[str, dict[str, Any]] = {}
@@ -103,7 +105,23 @@ class CoreTaskJournal:
                 )
             if event_type == "task.subscription":
                 self.task_relationships.setdefault(stamped["handle"], {})[sid] = stamped
+            self._index_references(event_type, stamped)
             return dict(stamped)
+
+    def _index_references(self, event_type: str, row: dict[str, Any]) -> None:
+        """Rebuild content-reference hints exclusively from confirmed Core records."""
+        if event_type == "task.mcp.observation":
+            self.result_references[row["record"]["handle"]] = row["observation_id"]
+        elif event_type == "task.native.observation":
+            self.result_references[row["handle"]] = row["observation_id"]
+        elif event_type == "task.subscription":
+            self.notification_references[row["notification_id"]] = {
+                "relationship": row["observation_id"],
+                "handle": row["handle"],
+            }
+        elif event_type in {"task.mail.accepted", "task.intervention"}:
+            notice = "mail:" + (row.get("message_id") or row["identity"])
+            self.notification_references[notice] = {"content": row["observation_id"]}
 
     def subscriptions(self, handle: str = "") -> list[dict[str, Any]]:
         """Read the rebuildable task relationship index, without scanning sessions."""
@@ -199,6 +217,7 @@ class CoreTaskJournal:
         )
         await asyncio.to_thread(self._append, arc, event)
         self.rows[stamped["handle"]] = stamped
+        self._index_references("task.native.observation", stamped)
         self.unconfirmed.pop(stamped["handle"], None)
         return dict(stamped)
 
@@ -317,35 +336,19 @@ class CoreTaskJournal:
                     "iteration": step,
                     "context_boundary": [segment.id for segment in segments],
                     "notification_ids": included,
-                    "notification_references": {
-                        row["notification_id"]: row["observation_id"]
-                        for row in self.rows.values()
-                        if row.get("notification_id") in included
-                    },
+                    "notification_references": {},
                     "scope": recorder.scope,
                 }
-                for (_, event_type), rows in self.projections.items():
-                    if event_type not in {
-                        "task.mail.accepted",
-                        "task.intervention",
-                        "task.subscription",
-                    }:
-                        continue
-                    for row in rows.values():
-                        notice = row.get("notification_id") or "mail:" + (
-                            row.get("message_id") or row["identity"]
+                for notice in included:
+                    reference = dict(self.notification_references.get(notice, {}))
+                    handle = reference.get("handle") or notice.removeprefix("task-result:")
+                    if result := self.result_references.get(handle):
+                        reference["result"] = result
+                    if not reference:
+                        raise RuntimeError(
+                            "Recipient notification lacks confirmed content references"
                         )
-                        if notice in included:
-                            record["notification_references"][notice] = (
-                                {
-                                    "relationship": row["observation_id"],
-                                    "result": self.rows.get(row["handle"], {}).get(
-                                        "observation_id"
-                                    ),
-                                }
-                                if event_type == "task.subscription"
-                                else row["observation_id"]
-                            )
+                    record["notification_references"][notice] = reference
                 identity = recorder._write("recipient_input", record, step, "")
                 if not identity:
                     raise RuntimeError("Recipient input was not confirmed in Core")
@@ -401,14 +404,18 @@ class CoreTaskJournal:
             records: dict[str, dict[str, Any]] = {}
             commits: dict[str, set[str]] = {}
             projections: dict[Any, Any] = {}
-            for session in self.app.state.sessions.list():
-                for segment in lane_segments(arc._segments, session.id, "_events"):
+            # Core history outlives the disposable session-list projection. In
+            # particular a removed child can still own an undelivered parent notice.
+            session_ids = {session.id for session in self.app.state.sessions.list()}
+            session_ids.update(arc._segments.sessions_with_scope("_events"))
+            for sid in sorted(session_ids):
+                for segment in lane_segments(arc._segments, sid, "_events"):
                     content = segment.content
                     payload = content.get("payload", {})
                     if content.get("event_type", "").startswith("task.") and payload.get(
                         "identity"
                     ):
-                        projections.setdefault((session.id, content["event_type"]), {})[
+                        projections.setdefault((sid, content["event_type"]), {})[
                             payload["identity"]
                         ] = dict(payload)
                     if content.get("event_type") == "task.native.observation":
@@ -418,14 +425,12 @@ class CoreTaskJournal:
                         payload = content["payload"]
                         if payload["handle"] in records:
                             records[payload["handle"]]["progress"] = payload
-                for scope in arc._segments.scan_scopes(session.id):
+                for scope in arc._segments.scan_scopes(sid):
                     if scope.startswith("_events"):
                         continue
-                    for segment in arc._segments.list_segments(
-                        session.id, scope, include_tombstoned=True
-                    ):
+                    for segment in arc._segments.list_segments(sid, scope, include_tombstoned=True):
                         if segment.kind == "recipient_input":
-                            commits.setdefault(session.id, set()).update(
+                            commits.setdefault(sid, set()).update(
                                 segment.content["notification_ids"]
                             )
             return records, commits, projections
@@ -434,8 +439,13 @@ class CoreTaskJournal:
             self.rows, self.input_commits, self.projections = await asyncio.to_thread(read)
             self.recipient_index = {}
             self.task_relationships = {}
+            self.result_references = {}
+            self.notification_references = {}
+            for row in self.rows.values():
+                self._index_references("task.native.observation", row)
             for (sid, event_type), rows in self.projections.items():
                 for identity, row in rows.items():
+                    self._index_references(event_type, row)
                     if recipient := row.get("recipient_session_id"):
                         self.recipient_index.setdefault(recipient, {})[
                             (sid, event_type, identity)
@@ -447,6 +457,9 @@ class CoreTaskJournal:
     async def reconcile(self) -> None:
         """Retry provisional records in application memory when Core returns."""
         async with self.lock:
+            store = getattr(self.app.state.sessions, "task_store", None)
+            if store is not None:
+                await asyncio.to_thread(store.reconcile_controls)
             while self.provisional_controls:
                 sid, event_type, identity, payload = self.provisional_controls[0]
                 await asyncio.to_thread(self.record, sid, event_type, identity, payload)

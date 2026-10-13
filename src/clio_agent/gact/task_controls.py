@@ -115,8 +115,8 @@ def query_tasks(
 ) -> dict[str, Any]:
     """List task handles, assignments and status; kind='Session' lists finite root runs.
 
-    Default scope is this conversation and descendants. Explicit workspace/global
-    reads require user_intent and session-discovery permission, not peer control.
+    Default scope is this conversation and descendants. scope='authorized' also
+    exposes peers with current human-recorded grants; model intent grants nothing.
     """
     app, sid = _scope()
     return query_snapshot(
@@ -192,6 +192,7 @@ def collect_result(
         "status": row["effective_status"],
         "result": result,
         "result_reference": row["result_reference"],
+        "recording": row.get("recording", "confirmed"),
         **({"notification_id": result_notification_id(app, sid, row)} if consume_delivery else {}),
     }
 
@@ -510,6 +511,16 @@ def cancel_selected(
                     "cancellation_requested": requested,
                     "status": row["effective_status"],
                 }
+                if row.get("key"):
+                    from clio_agent.gact.mcp_task_store import app_task_store
+                    from clio_agent.tools.mcp_task_records import TaskKey
+
+                    current = app_task_store(app).get(TaskKey.from_wire(row["key"]))
+                    result["recording"] = (
+                        "unconfirmed" if current is None or current.holding_reason else "confirmed"
+                    )
+                else:
+                    result["recording"] = row.get("recording", "confirmed")
                 outcome.update(result)
                 results.append(result)
         except (ValueError, RuntimeError) as exc:
