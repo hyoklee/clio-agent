@@ -279,6 +279,9 @@ class ClioTasksClientExtension(TasksClientExtension):
             from clio_agent.tools.task_receipt import accepted_result
 
             return accepted_result(accepted)
+        if stopped:
+            # Custody is complete; a cancelled legacy waiter must not start polling.
+            raise asyncio.CancelledError
         # #1231: the transparent auto-claim path drives EVERY task-returning call
         # through here, so a per-backend observer (e.g. relay's console-tail fold,
         # registered by relay_transport.py against this task's server_id) must be
