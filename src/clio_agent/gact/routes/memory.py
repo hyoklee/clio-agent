@@ -28,6 +28,7 @@ live here. The module imports only leaf packages (types, events, ``runtime``,
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from collections.abc import Mapping
@@ -396,7 +397,8 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
         days" without silently leaking unrelated sessions into every turn.
         """
 
-        return _memory_search_response(
+        return await asyncio.to_thread(
+            _memory_search_response,
             app,
             query=query,
             session_id=session_id,

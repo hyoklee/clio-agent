@@ -26,6 +26,7 @@ from clio_agent.gact.memory_tools import (
     build_memory_search_tool,
     build_memory_summary_tool,
 )
+from clio_agent.gact.search_assistant import build_clio_search_read_tool, build_clio_search_tool
 from clio_agent.gact.view_image_tool import build_view_image_tool
 from clio_agent.gact.view_pdf_tool import build_view_pdf_tool
 
@@ -36,6 +37,8 @@ from clio_agent.gact.view_pdf_tool import build_view_pdf_tool
 DECLARABLE_NATIVE_TOOLS: frozenset[str] = frozenset(
     {
         "ask_user",
+        "clio_search",
+        "clio_search_read",
         "create_a2ui_surface",
         "update_a2ui_components",
         "update_a2ui_data_model",
@@ -140,6 +143,8 @@ def resolve_declared_native_tools(
     available: dict[str, Any] = {}
     builders: dict[str, Callable[[], Any]] = {
         "ask_user": lambda: build_ask_user_tool(agent_def),
+        "clio_search": build_clio_search_tool,
+        "clio_search_read": build_clio_search_read_tool,
         "prepare_document_runtime": build_prepare_document_runtime_tool,
         "prepare_execution_runtime": build_prepare_execution_runtime_tool,
         "prepare_document": build_prepare_document_tool,

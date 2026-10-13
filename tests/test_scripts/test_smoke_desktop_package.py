@@ -83,7 +83,9 @@ def test_cleanup_stops_a_real_owned_tree_and_preserves_an_unrelated_process(tmp_
     code = (
         "import subprocess,sys,time; from pathlib import Path; "
         "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
-        "Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)"
+        # File existence is the readiness signal: publish the complete PID atomically.
+        "marker=Path(sys.argv[1]); pending=marker.with_suffix('.tmp'); "
+        "pending.write_text(str(p.pid)); pending.replace(marker); time.sleep(60)"
     )
     parent = subprocess.Popen([sys.executable, "-c", code, str(marker)])
     unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])

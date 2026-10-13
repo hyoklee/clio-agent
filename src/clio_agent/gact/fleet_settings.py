@@ -1,4 +1,4 @@
-"""Independent, durable model choices for CLIO's three judging roles."""
+"""Independent, durable model choices for CLIO's judges and search assistant."""
 
 from __future__ import annotations
 
@@ -51,6 +51,7 @@ class FleetUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
     revision: str
     judges: dict[JudgeRole, JudgeModel | None]
+    search: JudgeModel | None = None
 
 
 def fleet_settings() -> dict[str, Any]:
@@ -61,8 +62,17 @@ def fleet_settings() -> dict[str, Any]:
         for role in ROLES
         for value in [raw.get(role)]
     }
-    revision = hashlib.sha256(json.dumps(judges, sort_keys=True).encode()).hexdigest()
-    return {"revision": revision, "judges": judges}
+    search_raw = conf.resolve(
+        "fleet.search",
+        env="CLIO_FLEET_SEARCH",
+        default=None,
+        cast=lambda value: json.loads(value) if isinstance(value, str) else value,
+    )
+    search = JudgeModel.model_validate(search_raw).model_dump() if search_raw else None
+    revision = hashlib.sha256(
+        json.dumps({"judges": judges, "search": search}, sort_keys=True).encode()
+    ).hexdigest()
+    return {"revision": revision, "judges": judges, "search": search}
 
 
 def save_fleet_settings(update: FleetUpdate) -> dict[str, Any]:
@@ -73,7 +83,7 @@ def save_fleet_settings(update: FleetUpdate) -> dict[str, Any]:
         conf.reload()
         if update.revision != fleet_settings()["revision"]:
             raise ValueError("Fleet settings changed; reload before saving")
-        for choice in update.judges.values():
+        for choice in [*update.judges.values(), update.search]:
             if choice and (not choice.model_id.strip() or get_provider(choice.provider_id) is None):
                 raise ValueError("Choose a configured provider and a nonempty model")
         path = user_config_path()
@@ -87,6 +97,8 @@ def save_fleet_settings(update: FleetUpdate) -> dict[str, Any]:
             }
         )
         fleet["judges"] = judges
+        if "search" in update.model_fields_set:
+            fleet["search"] = update.search.model_dump() if update.search else None
         document["fleet"] = fleet
         write_document(path, document)
         conf.reload()

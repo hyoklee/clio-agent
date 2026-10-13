@@ -107,3 +107,24 @@ def test_explicit_role_uses_selected_provider_identity(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(fleet, "model_route", route)
     assert judge_route("goals", caller, adapter) == (chosen, chosen_adapter)
+
+
+def test_search_model_is_separate_and_survives_legacy_judge_updates(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    conf.reload()
+    original = fleet_settings()
+    saved = save_fleet_settings(
+        FleetUpdate(
+            revision=original["revision"],
+            judges={},
+            search={"provider_id": "codex", "model_id": "gpt-6-luna"},
+        )
+    )
+    assert saved["judges"] == original["judges"]
+    assert saved["search"]["model_id"] == "gpt-6-luna"
+    legacy = save_fleet_settings(FleetUpdate(revision=saved["revision"], judges={"goals": None}))
+    assert legacy["search"] == saved["search"]
+    reset = save_fleet_settings(FleetUpdate(revision=legacy["revision"], judges={}, search=None))
+    assert reset["search"] is None

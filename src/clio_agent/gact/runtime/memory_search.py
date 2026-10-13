@@ -20,10 +20,12 @@ imports only leaf packages (types, ``workspace_scope``, stdlib) and never loads
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import TYPE_CHECKING
 
 from fastapi import HTTPException
 
+from clio_agent.gact.attention.rendered import _project
 from clio_agent.gact.types import (
     ErrorEnvelope,
     ErrorInfo,
@@ -40,7 +42,7 @@ if TYPE_CHECKING:
 def _memory_search_terms(query: str) -> list[str]:
     """Normalize a memory search query into unique lowercase terms."""
 
-    terms = [term.lower() for term in re.findall(r"[A-Za-z0-9_.@/-]+", query)]
+    terms = [term.lower() for term in re.findall(r"[\w.@/-]+", query, re.UNICODE)]
     seen: set[str] = set()
     deduped: list[str] = []
     for term in terms:
@@ -51,14 +53,50 @@ def _memory_search_terms(query: str) -> list[str]:
     return deduped
 
 
-def _memory_search_excerpt(text: str, terms: list[str], *, max_chars: int = 480) -> str:
-    """Return a bounded excerpt around the earliest matched term."""
+def _memory_search_phrase(text: str, query: str) -> tuple[int, int] | None:
+    """Find pasted rendered prose even when the stored Markdown contains emphasis or links."""
+    if not query.strip():
+        return None
+    raw = re.search(r"\s+".join(re.escape(word) for word in query.split()), text, re.I)
+    if raw:
+        return raw.span()
+    rendered, offsets = _project(text, source=True)
+    needle, _ = _project(query, source=False)
+    found = re.search(re.escape(needle), rendered, re.I) if needle else None
+    return (offsets[found.start()], offsets[found.end() - 1] + 1) if found else None
+
+
+def _memory_search_excerpt(
+    text: str, terms: list[str], *, max_chars: int = 480, query: str = ""
+) -> str:
+    """Excerpt the exact phrase, otherwise the densest cluster of matching terms."""
 
     if len(text) <= max_chars:
         return text
     lowered = text.lower()
-    positions = [lowered.find(term) for term in terms if term and lowered.find(term) >= 0]
-    center = min(positions) if positions else 0
+    phrase = _memory_search_phrase(text, query)
+    positions = sorted(
+        [
+            (match.start(), term)
+            for term in terms
+            if term
+            for match in re.finditer(re.escape(term), lowered)
+        ]
+    )
+    # A common word near the start must not hide a useful match much later.
+    center = phrase[0] if phrase else 0
+    counts: Counter[str] = Counter()
+    left = best = 0
+    if not phrase:
+        for position, term in positions:
+            counts[term] += 1
+            while position - positions[left][0] >= max_chars // 2:
+                counts[positions[left][1]] -= 1
+                if not counts[positions[left][1]]:
+                    del counts[positions[left][1]]
+                left += 1
+            if len(counts) > best:
+                best, center = len(counts), positions[left][0]
     start = max(0, center - max_chars // 3)
     end = min(len(text), start + max_chars)
     start = max(0, end - max_chars)
@@ -137,6 +175,15 @@ def _memory_search_response(
 
     limit = max(1, min(int(limit or 20), 100))
     sessions = app.state.sessions.list(workspace_id=workspace_id or None)
+    if include_cross_session and not session_id:
+        sessions = [
+            session
+            for session in sessions
+            if not (
+                isinstance(side := session.metadata.get("side_session"), dict)
+                and side.get("ephemeral") is True
+            )
+        ]
     if session_id:
         sess = app.state.sessions.get(session_id)
         if sess is None:
@@ -203,7 +250,10 @@ def _memory_search_response(
                 matched = [term for term in terms if term in lowered]
                 if not matched:
                     continue
-                score = len(set(matched)) / len(set(terms))
+                phrase_match = _memory_search_phrase(text, query) is not None
+                if not phrase_match and len(matched) * 2 < len(terms):
+                    continue
+                score = 1.0 if phrase_match else 0.9 * len(set(matched)) / len(set(terms))
                 scope_label = session_scope_label(
                     active_workspace_id=active_workspace_id,
                     target_workspace_id=sess.workspace_id,
@@ -220,12 +270,13 @@ def _memory_search_response(
                         role=message.role,
                         created_at=message.created_at,
                         updated_at=message.updated_at,
-                        text=_memory_search_excerpt(text, matched),
+                        text=_memory_search_excerpt(text, matched, query=query),
                         score=round(score, 4),
                         match_terms=sorted(set(matched)),
                         metadata={
                             "cross_session": sid != session_id,
                             "source": "gact_transcript",
+                            "exact_phrase": phrase_match,
                             "scope": scope_label,
                             "workspace_boundary": scope_label,
                         },
@@ -243,6 +294,8 @@ def _memory_search_response(
             "workspace_id": active_workspace_id,
             "workspace_scope": "global"
             if active_workspace_id == GLOBAL_WORKSPACE_ID
+            else "connected_service"
+            if not active_workspace_id
             else "workspace",
             "limit": limit,
         },

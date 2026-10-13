@@ -481,7 +481,6 @@ def _clear_pending_anchor(app: Any, session_id: str, *, only_if: str = "") -> No
 def _publish_question_created(app: Any, question: UserQuestion) -> None:
     """Set the pending anchor + publish ``user_question.created`` (one surface)."""
 
-    record_user_question(app, question)
     sessions = getattr(app.state, "sessions", None)
     if sessions is not None:
         try:
@@ -493,6 +492,10 @@ def _publish_question_created(app: Any, question: UserQuestion) -> None:
             logger.debug(
                 "pending anchor set skipped session_id=%s error=%r", question.session_id, exc
             )
+    # Publish to the live ledger only after saving its anchor. A concurrent
+    # reader can answer as soon as the row appears and must not race a later
+    # anchor write that would leave an already-answered question pending.
+    record_user_question(app, question)
     bus = getattr(app.state, "bus", None)
     if bus is not None:
         from clio_agent.gact.events import Event  # noqa: PLC0415

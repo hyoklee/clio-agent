@@ -61,6 +61,7 @@ export default defineConfig({
 						{ label: 'Dashboards', slug: 'docs/dashboards' },
 						{ label: 'Exports and downloads', slug: 'docs/exports' },
 						{ label: 'Evidence and lineage', slug: 'docs/evidence' },
+						{ label: 'Search your work', slug: 'docs/search' },
 						{ label: 'Memory and recall', slug: 'docs/memory' },
 						{
 							label: 'Worked examples', collapsed: true,
