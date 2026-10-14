@@ -26,6 +26,7 @@ from tests.test_arc.test_conversation_owner_contracts import create_environment
         "Finalize[[ ## next_thought ##",
         "Finalize the comparison after the parent constraint arrives?",
     ],
+    ids=["parser-marker", "clean-question"],
 )
 async def test_question_validation_is_preserved_before_acceptance(
     arc: ARCMemory,
