@@ -163,6 +163,12 @@
         "type": "value"
       },
       {
+        "name": "camera",
+        "required": false,
+        "description": "Camera literal or data-model binding. longitude/latitude/zoom are required; bearing and pitch default to zero. Bound cameras are shared and updated by human navigation. Use update_a2ui_data_model on the declared path to pan, zoom or rotate, then capture the resulting view.",
+        "type": "object"
+      },
+      {
         "name": "categoryField",
         "required": false,
         "description": "Dataset column grouping points into categories.",
@@ -1113,6 +1119,23 @@
       }
     ]
   },
+  "Carousel": {
+    "description": "Browse child views one at a time, such as images, captioned instructions, or video.",
+    "properties": [
+      {
+        "name": "activeChild",
+        "required": false,
+        "description": "Child id of the displayed slide. Bind it when another control should navigate the carousel or retain its position.",
+        "type": "value"
+      },
+      {
+        "name": "children",
+        "required": true,
+        "description": "Ordered child component ids. Combine an Image and Text in a Column for a captioned slide.",
+        "type": "array"
+      }
+    ]
+  },
   "Column": {
     "description": "A vertical layout container for child components.",
     "properties": [
@@ -1300,6 +1323,12 @@
     "description": "A tabbed switcher between named child components.",
     "properties": [
       {
+        "name": "activeTab",
+        "required": false,
+        "description": "",
+        "type": "value"
+      },
+      {
         "name": "tabs",
         "required": true,
         "description": "",
@@ -1321,6 +1350,17 @@
         "required": false,
         "description": "",
         "type": "string"
+      }
+    ]
+  },
+  "Video": {
+    "description": "A video from a registered file, with playback and full-screen controls.",
+    "properties": [
+      {
+        "name": "url",
+        "required": true,
+        "description": "Registered artifact or workspace file containing the video. The viewer resolves the bytes through the connected service.",
+        "type": "value"
       }
     ]
   }

@@ -1,7 +1,7 @@
 ---
 name: present-interactive-analysis
 title: Present Interactive Analysis
-description: Use for explorable answers, generated images and SVG figures, editable message drafts, and follow-ups about selected evidence. Show saved visual artifacts with the active A2UI catalog's Image component; load the catalog for exact shapes.
+description: Use for explorable answers, generated images, illustrated guides, image collections, video, editable message drafts, and follow-ups about selected evidence. Show registered media with the active A2UI catalog; load it for exact shapes.
 ---
 
 Use this skill when interaction or structure helps the person use the answer.
@@ -105,6 +105,19 @@ Match the surface to the shape of the evidence, not to what looks impressive:
   data yourself.
 
 - A single observed value → one metric component per value.
+- A sequence of images, comparisons, or illustrated instructions → the catalog's
+  `Carousel` container. Use ordinary Image and Text components together for each
+  captioned slide; Video can be a slide or a standalone player. Keep media in
+  registered artifacts so every viewer can load them. A carousel is useful for
+  many kinds of content, not only setup guides.
+  For CLIO documentation, read the relevant guide and
+  `https://clio.iowarp.ai/media/guides.json` (or `/media/guides.json` on a supplied
+  documentation host). That index lists the guide's actual
+  image/video paths, section names, captions and available version labels.
+  Resolve relative paths against that host, obtain the matching files with an
+  available fetch or shell tool, then display their artifact references. Keep
+  the source-guide link and version qualification with the explanation. Do not
+  invent screenshots or treat viewing a slide as completing its instructions.
 - A requested illustration, photograph, or generated schematic the person
   should inspect alongside data → an Image in the same surface. Register the
   actual file first and use its artifact URL; keep a short description of what
