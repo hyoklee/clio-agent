@@ -24,6 +24,7 @@ from clio_agent.gact.agent_blueprints import (
     DEFAULT_REGISTRY_SUBMODULE_PATH,
     parse_agent_blueprint_root,
 )
+from clio_agent.gact.blueprint_coordination import check_registry_claim
 from clio_agent.gact.blueprint_install_files import (
     read_install_metadata,
     tree_checksum,
@@ -64,26 +65,29 @@ def reconcile_moved_default_registry_copies(*, source: str, install_root: Path) 
     Returns:
         One ``{"action", "id", "path"}`` entry per change, for callers and tests.
     """
-    actions: list[dict] = []
-    if not is_bundled_registry_path(source) or not install_root.is_dir():
+    from clio_agent.gact.blueprint_coordination import blueprint_write_roots
+
+    with blueprint_write_roots(install_root):
+        actions: list[dict] = []
+        if not is_bundled_registry_path(source) or not install_root.is_dir():
+            return actions
+        source_id = source_registry_id(source, DEFAULT_REGISTRY_REF)
+        try:
+            groups: dict[str, list[tuple[Path, dict[str, str]]]] = {}
+            for path in sorted(install_root.iterdir()):
+                if not path.is_dir() or not (path / "AGENT.md").is_file():
+                    continue
+                metadata = read_install_metadata(path)
+                if _from_bundled_registry(metadata, source):
+                    blueprint_id = parse_agent_blueprint_root(path, scope="install").id
+                    groups.setdefault(blueprint_id, []).append((path, metadata))
+            for blueprint_id, copies in groups.items():
+                if all(metadata.get("source") == source for _, metadata in copies):
+                    continue
+                actions.extend(_fold_copies(blueprint_id, copies, source, source_id))
+        except (OSError, ValueError) as exc:
+            logger.warning("default_registry_reconcile_failed source=%s error=%r", source, exc)
         return actions
-    source_id = source_registry_id(source, DEFAULT_REGISTRY_REF)
-    try:
-        groups: dict[str, list[tuple[Path, dict[str, str]]]] = {}
-        for path in sorted(install_root.iterdir()):
-            if not path.is_dir() or not (path / "AGENT.md").is_file():
-                continue
-            metadata = read_install_metadata(path)
-            if _from_bundled_registry(metadata, source):
-                blueprint_id = parse_agent_blueprint_root(path, scope="install").id
-                groups.setdefault(blueprint_id, []).append((path, metadata))
-        for blueprint_id, copies in groups.items():
-            if all(metadata.get("source") == source for _, metadata in copies):
-                continue
-            actions.extend(_fold_copies(blueprint_id, copies, source, source_id))
-    except (OSError, ValueError) as exc:
-        logger.warning("default_registry_reconcile_failed source=%s error=%r", source, exc)
-    return actions
 
 
 def _fold_copies(
@@ -109,6 +113,7 @@ def _fold_copies(
             )
             actions.append({"action": "kept", "id": blueprint_id, "path": str(path)})
             continue
+        check_registry_claim(path.parent)
         rmtree_extended(path)
         logger.info(
             "default_registry_copy_retired id=%s path=%s source=%s",
@@ -122,6 +127,7 @@ def _fold_copies(
         repointed = {**kept, "source": source, "source_id": source_id}
         if previous != source:
             repointed["repointed_from"] = previous
+        check_registry_claim(keeper.parent)
         write_install_metadata(keeper, repointed)
         logger.info(
             "default_registry_copy_repointed id=%s path=%s from=%s to=%s",
