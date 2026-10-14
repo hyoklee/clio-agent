@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 from typing import cast
 
@@ -191,6 +193,69 @@ def test_retained_pdf_restores_an_agent_addressable_workspace_copy_without_recon
             context.reset(session_token)
             context.reset(app_token)
     assert len(conversions) == 1
+
+
+@pytest.mark.parametrize(
+    "condition", ["valid", "changed-source", "changed-pdf", "failed", "outside-run", "malformed"]
+)
+def test_agent_render_is_reused_only_for_its_verified_source_and_pdf(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, condition: str
+) -> None:
+    """Prepare-document output becomes a retained preview without a second conversion."""
+    root = tmp_path / "workspace"
+    root.mkdir()
+    source = root / "deck.pptx"
+    source.write_bytes(b"editable presentation")
+    run = root / ".tmp" / "clio-documents" / "output" / "document-agent-render"
+    run.mkdir(parents=True)
+    pdf = (root if condition == "outside-run" else run) / "deck.pdf"
+    pdf.write_bytes(b"%PDF-1.7\nagent-rendered pages")
+    manifest = {
+        "action": "render",
+        "status": "failed" if condition == "failed" else "complete",
+        "source_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+        "pdf": str(pdf),
+        "pdf_sha256": hashlib.sha256(pdf.read_bytes()).hexdigest(),
+    }
+    if condition == "changed-source":
+        manifest["source_sha256"] = "0" * 64
+    if condition == "changed-pdf":
+        pdf.write_bytes(b"%PDF-1.7\nchanged after preparation")
+    (run / "manifest.json").write_text(
+        "malformed json" if condition == "malformed" else json.dumps(manifest), encoding="utf-8"
+    )
+    conversions: list[Path] = []
+
+    def convert(path: Path, output: Path) -> tuple[Path, str]:
+        assert condition != "valid", "A valid prepared PDF must not trigger conversion"
+        conversions.append(path)
+        fallback = output / "deck.pdf"
+        fallback.write_bytes(b"%PDF-1.7\nconverted once")
+        return fallback, "test-converter"
+
+    monkeypatch.setattr(renditions, "_convert_to_pdf", convert)
+    with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as client:
+        _, session_id = _workspace_session(client, root)
+        pinned = _pin(client, session_id, source.name)
+        endpoint = f"/v1/artifacts/{pinned['artifact_id']}/renditions?session_id={session_id}"
+        response = client.post(endpoint, json={"format": "pdf"})
+        assert response.status_code == 200, response.text
+        preview = response.json()["artifact"]
+        contents = client.get(f"/v1/artifacts/{preview['artifact_id']}/document/content").content
+        assert contents == (
+            b"%PDF-1.7\nagent-rendered pages"
+            if condition == "valid"
+            else b"%PDF-1.7\nconverted once"
+        )
+        assert (
+            client.post(endpoint, json={"format": "pdf"}).json()["artifact"]["artifact_id"]
+            == (preview["artifact_id"])
+        )
+        source_manifest = client.get(f"/v1/artifacts/{pinned['artifact_id']}/document").json()
+        assert source_manifest["pdf_rendition_artifact_id"] == preview["artifact_id"]
+    assert len(conversions) == (0 if condition == "valid" else 1)
+    assert source.read_bytes() == b"editable presentation"
+    assert (run / "manifest.json").is_file()
 
 
 @pytest.mark.parametrize("failure", [False, True])

@@ -45,6 +45,11 @@ with that mode excludes the host reader. See
   before the confined executor uses them. These repairs touch each new root only.
 - Route artifact PDF previews through the same host-side Office preparation,
   including access repair when the managed executable was already discovered.
+- Before conversion, reuse successful `prepare_document` render output whose
+  source SHA-256 matches this immutable revision and whose PDF still matches its
+  recorded hash. Copy and retain it through the existing artifact/lineage path.
+  Failed, malformed, changed or escaping outputs are ignored. Later opens use
+  the retained rendition directly; a sibling PDF filename alone is insufficient.
 - Include `visual_review: "not performed"` in initial/failure manifests. Rendering
   alone still does not assert review.
 - Preserve the requested outcome in shared todo guidance and the presentation
