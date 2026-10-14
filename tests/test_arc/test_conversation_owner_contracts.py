@@ -407,6 +407,7 @@ async def test_automatic_queue_preflight_stop_retains_unassigned_work(
     session = await asyncio.to_thread(app.state.sessions.create, workspace_id="workspace")
     sid, history = session.id, owner.history
     app.state.bus = EventBus()
+    app.state.gact_deps = SimpleNamespace()
     request = PostMessageRequest(text="Future work")
     item = await asyncio.to_thread(
         history.record_mail,
