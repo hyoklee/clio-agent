@@ -47,16 +47,29 @@ async def start(app: Any) -> None:
         assignment = history.task_snapshot(submission.owner.assignment_id)
         if session is None or assignment is None or assignment.owner.session_id != session.id:
             raise PermissionError("Execution owner is unavailable")
-        app.state.conversations.require_admission(assignment)
+        continuation = submission.provider_continuation
+        cleanup_only = bool(continuation and continuation.cancellation_only)
+        try:
+            app.state.conversations.require_admission(assignment)
+        except ValueError:
+            if continuation is None or submission.tool != "connected_data_continue":
+                raise
+            cleanup_only = True
         workspace = app.state.workspaces.get(session.workspace_id)
         if workspace is None or workspace.root_path != submission.workspace:
             raise PermissionError("Execution workspace changed after acceptance")
-        public_name = "shell_bash" if submission.tool == "bash" else submission.tool
+        policy_context = submission
+        if continuation is not None:
+            policy_context = SubmissionContext.model_validate(history.read_content(continuation.original_submission))
+            if (submission.tool != "connected_data_continue" or policy_context.tool != "connected_data_download"
+                    or policy_context.owner != submission.owner or policy_context.workspace != submission.workspace):
+                raise PermissionError("Provider continuation differs from original download custody")
+        public_name = "shell_bash" if policy_context.tool == "bash" else policy_context.tool
         declared_read = (submission.backend.owner == "conversation"
             and submission.backend.server == "clio-builtins" and submission.attribution.get("read_only") is True)
-        action = "allow" if declared_read else _policy_action_for_tool(app,
+        action = "allow" if declared_read or cleanup_only else _policy_action_for_tool(app,
             session_id=session.id, session=session, tool_name=public_name,
-            args=submission.arguments, mode="" if submission.attribution.get("human_action") is True else session.mode)
+            args=policy_context.arguments, mode="" if submission.attribution.get("human_action") is True else session.mode)
         if action == "deny":
             raise PermissionError("Execution permission was revoked")
         current_permissions = permission_snapshot(app, session.id)
@@ -124,6 +137,11 @@ async def start(app: Any) -> None:
             agent = original.get("agent_id", "") if isinstance(original, dict) else ""
             if segment.trigger.kind in {"human", "composer"} and existing is not None:
                 return existing, agent
+            if segment.trigger.kind in {"human", "composer"} and isinstance(original, dict) and original.get("message"):
+                recovered = Message.model_validate(original["message"])
+                if recovered.session_id != segment.session_id or recovered.role != "user":
+                    raise ValueError("Retained human input belongs to another session or role")
+                return recovered, agent
             stamp = now()
             return Message(id=segment.turn_id, turn_id=segment.turn_id,
                 session_id=segment.session_id, role="system", created_at=stamp, updated_at=stamp,
@@ -148,13 +166,14 @@ async def start(app: Any) -> None:
     app.state.task_resource_stack = stack
     try:
         native = NativeTools(history, authorize, recovery)
-        register_native_storage(native.roots["storage"], native.work["storage"], app)
+        register_native_storage(native.roots["storage"], native.work["storage"], app, native=native)
         app.state.native_tools = await stack.enter_async_context(native)
         app.state.builtin_boundary = await stack.enter_async_context(BuiltinBoundary(app, authorize))
         await native.restore()
         await app.state.external_tasks.restore()
         conversations.start()
         await conversations.restore()
+        await asyncio.to_thread(app.state.questions.restore)
         await app.state.question_events.restore()
         for sid in await asyncio.to_thread(history.pending_sessions):
             conversations.runner.signal(sid)

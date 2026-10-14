@@ -51,6 +51,7 @@ REMOVED_MODULES = frozenset(
         "clio_agent.gact.task_tools",
         "clio_agent.gact.turn_spawn",
         "clio_agent.gact.turn_spawn_executor",
+        "clio_agent.gact.workflow_step_watch",
         "clio_agent.gact.run_registry",
         "clio_agent.gact.agent_targets",
         "clio_agent.gact.agent_messaging",
@@ -186,6 +187,8 @@ REMOVED_STATE = frozenset(
 REMOVED_CONFIG = frozenset(
     {
         "agents.child_forward_deadline_s",
+        "workflows.step_inactivity_s",
+        "CLIO_WORKFLOW_STEP_INACTIVITY_S",
         "CLIO_CHILD_FORWARD_DEADLINE_S",
         "gact.ledger_retention.user_questions.",
         "CLIO_LEDGER_USER_QUESTIONS_",

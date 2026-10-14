@@ -4,30 +4,28 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from fastmcp import Context
 from fastmcp.utilities.tasks import TaskConfig
 
-from clio_agent.arc.task_types import SubmissionContext, TaskProgress, argument_digest
+from clio_agent.arc.task_types import ProviderContinuation, SubmissionContext, TaskProgress, TaskSnapshot
 from clio_agent.gact.native_work import NativeWork, WorkEvidence, now
 from clio_agent.gact.off_loop import join_off_loop
 from clio_agent.gact.storage.connect_tool import prepare_connect
 from clio_agent.gact.storage.indexing import run_index
 from clio_agent.gact.storage.models import FileEntry, Manifest, SourceRecord, TransferOperation
+from clio_agent.gact.storage.identity import source_submission_identity
+from clio_agent.gact.storage.globus import GlobusSource
 from clio_agent.tools.native_roots import NativeRoot
 
 
-def source_submission_identity(record: SourceRecord) -> dict[str, Any]:
-    """Capture provider/revision/options without retaining credential material."""
-    return {"provider": record.source.provider, "source_id": record.source.id,
-        "revision": record.configuration.github_ref,
-        "configuration_digest": argument_digest(record.configuration.model_dump(mode="json")),
-        "owner": record.source.owner.model_dump(mode="json")}
+if TYPE_CHECKING:
+    from clio_agent.gact.native_tools import NativeTools
 
 
-def register_native_storage(root: NativeRoot, work: NativeWork, app: Any) -> None:
+def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, native: NativeTools) -> None:
     """Install Download and Indexing on the independent storage queue."""
     service = app.state.connected_storage
 
@@ -40,12 +38,15 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any) -> Non
             raise ValueError("Storage workspace changed before execution")
         return session, Path(workspace.root_path)
 
-    def validate_source(record: SourceRecord, context: SubmissionContext) -> None:
+    def validate_source(record: SourceRecord, context: SubmissionContext,
+                        operation: TransferOperation | None = None) -> None:
         if (not record.connected or record.principal != service.principal
             or record.source.owner.clio_id != service.store.clio_id):
             raise PermissionError("Source access or ownership changed before execution")
         expected = context.attribution.get("source_identity")
-        if expected is not None and expected != source_submission_identity(record):
+        actual = source_submission_identity(record)
+        if (expected is not None and expected != actual
+                and (operation is None or operation.provider_identity != actual)):
             raise PermissionError("Approved source configuration changed before execution")
 
     def progress(context: SubmissionContext, done: int, total: int | None, unit: str) -> None:
@@ -83,7 +84,143 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any) -> Non
             "entries": len(manifest.entries) if manifest is not None else 0,
             "hashes": manifest.hashes if manifest is not None else {},
             "error": operation.error,
+            "native_job_id": operation.native_job_id,
         }
+
+    def cancellation_needed(context: SubmissionContext) -> bool:
+        with work.history._lock:
+            current = work.history.task_snapshot(context.handle)
+            if current is None:
+                raise ValueError("Provider continuation owner is unavailable")
+            try:
+                work._check_admission(current)
+            except ValueError:
+                return True  # the host-only continuation can then only cancel/clean up
+        return bool(context.provider_continuation and context.provider_continuation.cancellation_only)
+
+    @root.server.tool(name="connected_data_continue", task=TaskConfig(mode="required"))
+    async def continue_job(ctx: Context, operation_id: str, _clio_submission: str) -> dict[str, Any]:
+        """Host-only continuation of a verified existing provider job; never submit provider work."""
+        async def body(context: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:
+            continuation = context.provider_continuation
+            if continuation is None or continuation.operation_id != operation_id or operation_id != context.handle:
+                raise ValueError("Provider continuation custody is missing")
+            def prepare() -> tuple[SourceRecord, TransferOperation, Path]:
+                session, workspace = owner(context)
+                original = SubmissionContext.model_validate(work.history.read_content(continuation.original_submission))
+                operation = service.store.get("operation", operation_id, TransferOperation)
+                record = service.get(session.workspace_id, continuation.source_id)
+                if (original.owner != context.owner or original.tool != "connected_data_download"
+                    or original.arguments.get("source_id") != record.source.id
+                    or original.arguments.get("paths") != operation.selected_paths
+                    or operation.source_id != record.source.id or record.source.provider != "globus"
+                    or operation.native_job_id != continuation.provider_job_id):
+                    raise ValueError("Provider continuation differs from the original job/paths/owner")
+                validate_source(record, original, operation)
+                if operation.publication_started_at is not None and not cancellation_needed(context):
+                    raise ValueError("Earlier local publication is uncertain; inspect it before continuing")
+                if cancellation_needed(context):
+                    operation = service.store.update_operation(operation.id, cancel_requested=True)
+                return record, operation, workspace
+            record, operation, workspace = await join_off_loop(prepare)
+            previous_publication_absent = operation.publication_started_at is None
+            evidence.acquiring_effects()
+            try:
+                await service.execute_transfer(record, workspace, operation, existing_job_only=True,
+                    cancellation_requested=lambda: cancellation_needed(context),
+                    progress=lambda done, total: progress(context, done, total, "bytes"))
+            finally:
+                settled = await join_off_loop(service.store.get, "operation", operation.id, TransferOperation)
+                if settled.state in {"completed", "failed", "cancelled"} and settled.provider_cleanup_confirmed:
+                    evidence.confirm_cleanup()
+                    if previous_publication_absent:
+                        def confirm_previous() -> None:
+                            with work.history._lock:
+                                for attempt in work.history.native_attempts(context.handle):
+                                    if (attempt.incarnation not in continuation.previous_incarnations
+                                            or attempt.cleanup_state in {"confirmed", "never_started"}):
+                                        continue
+                                    receipt = work.history.write_content(context.owner.session_id, {
+                                        "incarnation": attempt.incarnation, "execution_key": attempt.execution_key,
+                                        "provider_job_id": continuation.provider_job_id,
+                                        "continuation": context.reference, "previous_runtime_gone": True,
+                                        "previous_publication_absent": True, "provider_and_staging_settled": True})
+                                    work.history.record_attempt(attempt.model_copy(update={"cleanup_state": "confirmed",
+                                        "cleanup_receipt": receipt, "finished_at": now()}))
+                        await join_off_loop(confirm_previous)
+            latest = await join_off_loop(service.get, record.source.workspace_id, record.source.id)
+            return await join_off_loop(result, latest, settled)
+        return await work.run(_clio_submission, "connected_data_continue", {"operation_id": operation_id}, body)
+
+    async def recover_provider(task: TaskSnapshot, context: SubmissionContext) -> bool:
+        def prepare() -> ProviderContinuation | None:
+            if task.kind != "Download":
+                return None
+            try:
+                operation = service.store.get("operation", task.handle, TransferOperation)
+            except KeyError:
+                return None
+            session, _ = owner(context)
+            record = service.get(session.workspace_id, operation.source_id)
+            if record.source.provider != "globus":
+                return None
+            if operation.native_request is None and operation.native_job_id is None:
+                return None
+            if (not operation.native_job_id or task.submission is None or task.backend is None
+                    or not task.backend.task_id or operation.provider_identity is None):
+                raise ValueError("Provider acceptance/custody is uncertain; inspect the original job, without resubmission")
+            validate_source(record, context, operation)
+            attempts = work.history.native_attempts(task.handle)
+            previous_leg = [attempt for attempt in attempts
+                            if attempt.backend.task_id == task.backend.task_id]
+            if len(previous_leg) > 1:
+                raise ValueError("The lost native leg had multiple execution attempts; inspect provider effects before continuing")
+            cancel_only = cancellation_needed(context)
+            if operation.publication_started_at is not None and not cancel_only:
+                raise ValueError("Local publication may already have happened; inspect its manifest/files before continuing")
+            origin = (context.provider_continuation.original_submission
+                      if context.provider_continuation is not None else task.submission)
+            return ProviderContinuation(original_submission=origin, previous_submission=task.submission,
+                previous_backend=task.backend, operation_id=operation.id, source_id=operation.source_id,
+                provider_job_id=operation.native_job_id, cancellation_only=cancel_only,
+                previous_incarnations=tuple(attempt.incarnation for attempt in attempts))
+        try:
+            continuation = await join_off_loop(prepare)
+            if continuation is None:
+                return False
+            await native.continue_provider(task, context, continuation)
+        except Exception as error:
+            reason = str(error)
+            await native._record_or_defer("provider-recovery:" + task.handle,
+                lambda: native._uncertain(task.handle, reason, lost=True))
+        return True
+
+    async def cancel_provider(task: TaskSnapshot) -> bool:
+        def request() -> bool:
+            if task.kind != "Download":
+                return False
+            try:
+                operation = service.store.get("operation", task.handle, TransferOperation)
+            except KeyError:
+                return False
+            if not operation.native_job_id:
+                return False
+            session = app.state.sessions.get(task.owner.session_id)
+            if session is None:
+                raise ValueError("Provider cancellation owner is unavailable")
+            record = service.get(session.workspace_id, operation.source_id)
+            if record.source.provider != "globus":
+                return False
+            operation = service.store.update_operation(operation.id, cancel_requested=True)
+            with service.adapter(record) as adapter:
+                if not isinstance(adapter, GlobusSource):
+                    raise ValueError("Provider cancellation does not match the retained job")
+                adapter.request_cancel_existing(operation)
+            return True  # retain the native body so provider/staging cleanup can settle
+        return await join_off_loop(request)
+
+    native.provider_recovery = recover_provider
+    native.provider_cancel = cancel_provider
 
     @root.server.tool(name="connected_data_download", task=TaskConfig(mode="required"))
     async def download(ctx: Context, source_id: str, _clio_submission: str, paths: list[str] | None = None) -> dict[str, Any]:
@@ -114,12 +251,22 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any) -> Non
                 for path in paths or ():
                     FileEntry(path=path, kind="file")
                 record = service.get(session.workspace_id, source_id)
-                validate_source(record, context)
+                try:
+                    operation = service.store.get("operation", context.handle, TransferOperation)
+                except KeyError:
+                    operation = service.store.begin_operation(record.source.id, "materialize", identifier=context.handle)
+                    created = operation
+                    operation = service.store.update_operation(operation.id,
+                        selected_paths=list(paths) if paths is not None else None, description=context.tool)
+                else:
+                    if (operation.source_id != record.source.id or operation.kind != "materialize"
+                            or operation.selected_paths != paths):
+                        raise ValueError("Retained transfer does not match the accepted invocation")
+                    # Native redelivery reuses provider custody. In particular,
+                    # Globus.poll inspects native_job_id instead of submitting a
+                    # second transfer when that identity has been confirmed.
+                validate_source(record, context, operation)
                 service.validate_download(record)
-                operation = service.store.begin_operation(record.source.id, "materialize", identifier=context.handle)
-                created = operation
-                operation = service.store.update_operation(operation.id, selected_paths=list(paths) if paths is not None else None,
-                                                            description=context.tool)
                 associate(context, record, operation)
                 return record, operation, workspace
 
@@ -136,7 +283,8 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any) -> Non
                     progress=report)
             finally:
                 settled = await join_off_loop(service.store.get, "operation", operation.id, TransferOperation)
-                if settled.state in {"completed", "failed", "cancelled"}:
+                if settled.state in {"completed", "failed", "cancelled"} and (
+                    record.source.provider != "globus" or settled.provider_cleanup_confirmed):
                     evidence.confirm_cleanup()
             latest = await asyncio.to_thread(service.get, record.source.workspace_id, source_id)
             return await asyncio.to_thread(result, latest, settled)

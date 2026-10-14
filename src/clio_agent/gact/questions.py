@@ -44,6 +44,8 @@ class QuestionCommands:
             identity, stamp = handle or "task_" + hashlib.sha256((owner.session_id + "\0question\0" + invocation_id).encode()).hexdigest(), _now()
             previous = self.history.task_snapshot(identity)
             if previous is not None:
+                if previous.owner == owner and previous.invocation_id == invocation_id and previous.details is None and not previous.raw_status:
+                    return self.post(previous, definition)
                 if (previous.owner != owner or previous.invocation_id != invocation_id
                         or previous.details is None or self._definition(previous) != definition):
                     raise ValueError("Question invocation identity was reused with different content")
@@ -70,6 +72,14 @@ class QuestionCommands:
             raise ValueError("Freeform Questions must allow a freeform answer")
         if len({option.value for option in definition.options}) != len(definition.options):
             raise ValueError("Question option values must be unique")
+
+    def restore(self) -> None:
+        """Finish posting confirmed Question headers after an interrupted owner write."""
+        with self.history._lock:
+            for handle in self.history.task_handles(kind="Question", active_only=True):
+                current = self.history.task_snapshot(handle)
+                if current is not None and not current.raw_status and current.details is not None:
+                    self.post(current, self._definition(current))
 
     @staticmethod
     def _normalize(definition: QuestionDefinition) -> QuestionDefinition:

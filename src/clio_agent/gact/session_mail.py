@@ -143,6 +143,8 @@ class SessionMail:
                 return False
             if task_owner_recipient(self.history, task) == item.recipient_session:
                 return True
+            if "observe" not in recipient.rights(task):
+                return False
             return any(subscription.enabled and subscription.recipient_session == item.recipient_session
                        for subscription in self.history.subscriptions(task.handle))
         return True

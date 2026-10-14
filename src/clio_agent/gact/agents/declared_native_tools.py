@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
-from clio_agent.gact.task_tools import (
+from clio_agent.gact.task_declarations import (
     TASK_TOOL_NAMES, TASK_COMPATIBILITY_ALIASES, build_task_tools, build_task_compatibility_tools,
 )
 
@@ -30,7 +30,7 @@ from clio_agent.gact.memory_tools import (
 )
 from clio_agent.gact.view_image_tool import build_view_image_tool
 from clio_agent.gact.view_pdf_tool import build_view_pdf_tool
-from clio_agent.gact.task_tools import build_ask_user_tool
+from clio_agent.gact.task_declarations import build_ask_user_tool
 
 #: Every in-process tool an agent may name in its ``tools:`` list. Blueprint
 #: validation accepts these as built-ins (``agent_blueprints``); whether one is

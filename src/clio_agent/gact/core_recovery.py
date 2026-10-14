@@ -22,9 +22,22 @@ class CoreRecovery:
 
     def __init__(self, history: TaskHistory) -> None:
         self.history = history
+        self._loop = asyncio.get_running_loop()
         self._pending: dict[str, RecoveryAction] = {}
         self._worker: asyncio.Task[None] | None = None
         self.on_ready: Callable[[], Awaitable[None]] | None = None
+        self.history.recovery_requested = self._request_recovery
+
+    def _request_recovery(self) -> None:
+        """Arm the existing recovery worker for every failed confirmed writer path."""
+        def register() -> None:
+            if "core-writer" not in self._pending:
+                self.defer("core-writer", self._recording_confirmed)
+        self._loop.call_soon_threadsafe(register)
+
+    async def _recording_confirmed(self) -> bool:
+        """Only a successful owner restore clears the writer hold; a probe cannot."""
+        return not self.history.requires_recovery
 
     def defer(self, identity: str, action: RecoveryAction) -> None:
         """Retain owner-local evidence until that exact reconciliation succeeds."""

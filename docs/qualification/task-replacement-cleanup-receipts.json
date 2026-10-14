@@ -79,5 +79,43 @@
       "original_authentication_unchanged": true
     },
     "root_absence_verified": false
+  },
+  "review_cache_c6": {
+    "root": "D:/Temp/clio-task-implementation-review-8fbd4130-c6",
+    "action": "guarded owned review cache removal",
+    "root_absence_verified": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "cleanup": {
+      "root": "D:/Temp/clio-task-implementation-review-8fbd4130-c6",
+      "status": "human_manual_only",
+      "command_executed": false,
+      "rejection": "blocked by policy",
+      "files": 13,
+      "logical_bytes": 2595153.0,
+      "reparse_points": 0
+    },
+    "executed": false,
+    "evidence": "docs/qualification/task-replacement-initial-review-claude-6.json"
+  },
+  "review_cache_c7": {
+    "root": "D:/Temp/clio-task-implementation-review-8fbd4130-c7",
+    "action": "guarded owned review cache removal",
+    "root_absence_verified": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "cleanup": {
+      "root": "D:\\Temp\\clio-task-implementation-review-8fbd4130-c7",
+      "files": 11,
+      "logical_bytes": 19692.0,
+      "reparse_points": 0,
+      "status": "human_manual_only",
+      "process_absent": true,
+      "audited_at": "2026-10-14T02:51:43.5883572Z",
+      "rejection": "blocked by policy",
+      "command_executed": false
+    },
+    "executed": false,
+    "evidence": "docs/qualification/task-replacement-initial-review-claude-7.json"
   }
 }

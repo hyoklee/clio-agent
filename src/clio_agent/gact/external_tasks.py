@@ -24,7 +24,7 @@ from clio_agent.gact import context
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot, safe_description
-from clio_agent.tools.task_client import AcceptedNativeCall, TaskAwareClient, TaskSubmission
+from clio_agent.tools.task_client import AcceptedNativeCall, TaskAwareClient, TaskSubmission, submission_failure
 from clio_agent.tools.task_receipt import accepted_result, validate_terminal
 from clio_agent.tools.task_transport import TaskObservationTransport
 
@@ -48,6 +48,7 @@ class ExternalTasks:
         self.app, self.history, self.recovery = app, app.state.task_history, app.state.task_recovery
         self.connections: dict[tuple[str, str, str], ExternalConnection] = {}
         self._opening: dict[tuple[str, str, str], asyncio.Task[ExternalConnection]] = {}
+        self._retiring: set[asyncio.Task[None]] = set()
         self._stack = AsyncExitStack()
         self._closing = False
 
@@ -92,7 +93,7 @@ class ExternalTasks:
                             else:
                                 await adopt()
                             self._drive(host, call)
-                            self._retire_resources(host, call)
+                            await self._retire_resources(host, call)
                         self.recovery.defer("external-adopt:" + call.submission.handle, retry)
                         raise
                     self._drive(host, call)
@@ -102,20 +103,8 @@ class ExternalTasks:
                     return await self._input(host, params, request)
 
                 transport = TaskObservationTransport(configured.transport, observe, guard)
-                client = TaskAwareClient(transport, on_task_accepted=accepted,
-                    name=configured.name, timeout=configured._session_kwargs.get("read_timeout_seconds"),
-                    init_timeout=configured._init_timeout, auto_initialize=configured.auto_initialize,
-                    client_info=configured._session_kwargs.get("client_info"), elicitation_handler=elicit,
-                    cache=configured._cache_arg, extensions=configured._extensions_arg,
-                    result_claims=configured._result_claims_arg, input_required_max_rounds=configured.input_required_max_rounds)
-                # Preserve configured protocol/roots/logging/sampling behavior; the
-                # native task callback/claims above belong to this new client.
-                own = client._session_kwargs
-                preserved = {key: value for key, value in configured._session_kwargs.items()
-                    if key in {"sampling_callback", "list_roots_callback", "logging_callback", "log_level",
-                               "message_handler", "read_timeout_seconds", "client_info", "sampling_capabilities",
-                               "mode", "prior_discover"}}
-                own.update(preserved)
+                client = TaskAwareClient.from_configured(configured, transport,
+                    on_task_accepted=accepted, elicitation_handler=elicit)
                 host.client = await self._stack.enter_async_context(client)
                 self.connections[key] = host
                 return host
@@ -130,7 +119,7 @@ class ExternalTasks:
     async def restore(self) -> None:
         """Register recovery of original external identities without submitting work."""
         for handle in await asyncio.to_thread(self.history.task_handles, kind="MCP", active_only=True):
-            current = self.history.task_snapshot(handle)
+            current = await asyncio.to_thread(self.history.task_snapshot, handle)
             if current is None or current.submission is None:
                 continue
             submission = SubmissionContext.model_validate(
@@ -151,7 +140,7 @@ class ExternalTasks:
             async def recover(handle: str = handle, submission: SubmissionContext = submission) -> bool:
                 if self._closing:
                     return True
-                task = self.history.task_snapshot(handle)
+                task = await asyncio.to_thread(self.history.task_snapshot, handle)
                 if task is None or task.terminal_at is not None:
                     return True
                 if self.app.state.agent is None:
@@ -220,10 +209,10 @@ class ExternalTasks:
         if component is None:
             raise ValueError("Tool is unavailable on the selected server")
         sid, invocation = context.active_session_id(), TASK_CALL.get().invocation_id or uuid4().hex
-        assignment = self.history.latest_assignment(sid)
+        assignment = await asyncio.to_thread(self.history.latest_assignment, sid)
         if assignment is None:
             raise ValueError("MCP calls require an owning assignment")
-        self.app.state.conversations.require_admission(assignment)
+        await asyncio.to_thread(self.app.state.conversations.require_admission, assignment)
         session = self.app.state.sessions.get(sid)
         workspace = self.app.state.workspaces.get(session.workspace_id)
         handle, reference, stamp = "task_" + uuid4().hex, uuid4().hex, now()
@@ -264,11 +253,18 @@ class ExternalTasks:
                     raise
             except Exception as error:
                 reason = str(error)
+                failure = submission_failure(error)
+                if failure == "rejected":
+                    await self._record_or_defer("external-rejected:" + handle,
+                        lambda: self._rejected(handle, reason))
+                    return mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text=json.dumps({
+                        "handle": handle, "accepted": False, "acceptance": "rejected", "error": reason,
+                        "retry_safe": True}))], is_error=True)
                 await self._record_or_defer("external-call:" + handle,
                     lambda: self._attention(handle, reason))
-                return accepted_result({"handle": handle, "kind": "MCP", "accepted": None,
-                    "acceptance": "uncertain", "retry_safe": False})
-        accepted = (self.history.task_snapshot(handle).backend is not None
+                return accepted_result({"handle": handle, "kind": "MCP", "accepted": True if failure == "recording_unconfirmed" else None,
+                    "acceptance": failure, "retry_safe": False})
+        accepted = ((await asyncio.to_thread(self.history.task_snapshot, handle)).backend is not None
                     or any(call.submission.handle == handle for call in host.calls.values()))
         if not accepted:
             await asyncio.to_thread(self._inline_result, handle, reply)
@@ -299,7 +295,7 @@ class ExternalTasks:
                 async def reconnect() -> bool:
                     if self._closing:
                         return True  # confirmed Core visibility is retained for startup recovery
-                    task = self.history.task_snapshot(call.submission.handle)
+                    task = await asyncio.to_thread(self.history.task_snapshot, call.submission.handle)
                     if task is not None and (task.terminal_at is not None or task.connection_freshness == "fresh"):
                         return True
                     driver = host.drivers.get(call.task.task_id)
@@ -313,15 +309,22 @@ class ExternalTasks:
                             await host.client.close()
                             await host.client.__aenter__()
                         await host.client.ping()
-                        self._drive(host, call)  # original ToolTask/schema; never tools/call
+                        rebound = call.reconnected(host.client)
+                        host.calls[call.task.task_id] = rebound
+                        self._drive(host, rebound)  # original identity/schema; never tools/call
                     return False  # only an actual persisted tasks/get reply clears lost visibility
                 self.recovery.defer("external-reconnect:" + call.submission.handle, reconnect)
         driver = asyncio.create_task(result())
         host.drivers[call.task.task_id] = driver
-        driver.add_done_callback(lambda finished: self._retire_resources(host, call))
+        driver.add_done_callback(lambda finished: self._schedule_retirement(host, call))
 
-    def _retire_resources(self, host: ExternalConnection, call: AcceptedNativeCall) -> None:
-        current = self.history.task_snapshot(call.submission.handle)
+    def _schedule_retirement(self, host: ExternalConnection, call: AcceptedNativeCall) -> None:
+        task = asyncio.create_task(self._retire_resources(host, call))
+        self._retiring.add(task)
+        task.add_done_callback(self._retiring.discard)
+
+    async def _retire_resources(self, host: ExternalConnection, call: AcceptedNativeCall) -> None:
+        current = await asyncio.to_thread(self.history.task_snapshot, call.submission.handle)
         driver = host.drivers.get(call.task.task_id)
         if (current is None or current.terminal_at is None or driver is not None and not driver.done()
                 or host.client is not None and any(error.accepted is call for error in host.client.unconfirmed_adoptions)):
@@ -337,6 +340,15 @@ class ExternalTasks:
         await self._record_or_defer("external-reply:" + accepted.submission.handle,
             lambda: self._record_reply(host, accepted, reply),
             retire=lambda: self._retire_resources(host, accepted))
+        current = await asyncio.to_thread(self.history.task_snapshot, accepted.submission.handle)
+        if current is not None and current.terminal_at is None and current.cancellation_requested_at is not None:
+            try:
+                await accepted.task.cancel()
+            except Exception as error:
+                reason = str(error)
+                await self._record_or_defer("external-cancel-attention:" + current.handle,
+                    lambda: self._attention(current.handle, reason, lost=False,
+                        episode="cancel:" + current.cancellation_requested_at))
 
     def _record_reply(self, host: ExternalConnection, accepted: AcceptedNativeCall, reply: ClientGetTaskResult) -> None:
         with self.history._lock:
@@ -408,7 +420,8 @@ class ExternalTasks:
                 if key in details.get("answers", {}):
                     return "", details["answers"][key]
                 qid = "task_" + hashlib.sha256((task.handle + "\0" + key).encode()).hexdigest()
-                if self.history.task_snapshot(qid) is None:
+                pending = self.history.task_snapshot(qid)
+                if pending is None or not pending.raw_status:
                     from clio_agent.gact.elicitation_config import trusted_origins
                     from clio_agent.gact.elicitation_schema import (
                         build_form_metadata, build_url_metadata, check_url_trust, translate_form_schema,
@@ -437,13 +450,8 @@ class ExternalTasks:
                         reference = self.history.write_content(task.owner.session_id, details)
                         self.history.record_snapshot(current.model_copy(update={"details": reference, "updated_at": now()}), observation_id=uuid4().hex)
                         return "", value
-                    stamp = now()
-                    q = TaskSnapshot(handle=qid, kind="Question", owner=task.owner.model_copy(update={"parent_handle": task.handle}),
-                        description=params.message, description_missing=False, label=params.message[:100],
-                        invocation_id=task.invocation_id, tool="mcp_input", created_at=stamp, updated_at=stamp,
-                        backend=BackendReference(owner="question", server=host.backend.server, session=host.backend.session, task_id=qid))
-                    self.history.record_snapshot(q, observation_id=uuid4().hex)
-                    self.app.state.questions.post(q, definition)
+                    self.app.state.questions.create(task.owner.model_copy(update={"parent_handle": task.handle}),
+                        definition, invocation_id=task.invocation_id, handle=qid)
                 return qid, None
         qid, previous = await asyncio.to_thread(question)
         if previous is not None:
@@ -477,14 +485,15 @@ class ExternalTasks:
     def _details(self, task: TaskSnapshot) -> dict[str, Any]:
         return dict(self.history.read_content(task.details)) if task.details is not None else {}
 
-    def _attention(self, handle: str, message: str) -> None:
+    def _attention(self, handle: str, message: str, *, lost: bool = True, episode: str = "") -> None:
         with self.history._lock:
             current = self.history.task_snapshot(handle)
             if current.terminal_at is not None:
                 return
             observed = current.model_copy(update={"status": "task_state_uncertain", "settlement": "unknown",
-                "connection_freshness": "lost", "updated_at": now(), "progress": TaskProgress(message=message),
-                "attention_episode": current.attention_episode or uuid4().hex})
+                "connection_freshness": "lost" if lost else current.connection_freshness,
+                "updated_at": now(), "progress": TaskProgress(message=message),
+                "attention_episode": current.attention_episode or episode or uuid4().hex})
             self.history.record_snapshot(observed, observation_id=uuid4().hex)
             publish_task_notice(self.history, observed, episode=observed.attention_episode)
 
@@ -499,11 +508,22 @@ class ExternalTasks:
                 "settlement": "external_acknowledged", "result": result, "supported_actions": ("get_result",)}), observation_id=uuid4().hex)
             # Inline output is already this invocation's observation; no task wake.
 
+    def _rejected(self, handle: str, reason: str) -> None:
+        with self.history._lock:
+            current = self.history.task_snapshot(handle)
+            if current.terminal_at is not None:
+                return
+            result = self.history.write_content(current.owner.session_id, {"error": reason, "acceptance": "rejected"})
+            stamp = now()
+            self.history.record_snapshot(current.model_copy(update={"status": "failed", "raw_status": "rejected",
+                "activity": "", "settlement": "never_started", "terminal_at": stamp, "updated_at": stamp,
+                "result": result, "supported_actions": ("get_result",)}), observation_id=uuid4().hex)
+
     async def _record_or_defer(self, identity: str, write: Any, *, retire: Any = None) -> None:
         async def record() -> None:
             await asyncio.to_thread(write)
             if retire is not None:
-                retire()
+                await retire()
         try:
             await record()
         except Exception:
@@ -513,7 +533,6 @@ class ExternalTasks:
 
     async def cancel(self, handle: str) -> dict[str, Any]:
         """Ask the verified original server; its acknowledgement is not cleanup proof."""
-        current = self.history.task_snapshot(handle)
         def intent() -> None:
             with self.history._lock:
                 selected = self.history.task_snapshot(handle)
@@ -535,4 +554,6 @@ class ExternalTasks:
         for driver in drivers:
             driver.cancel()
         await asyncio.gather(*drivers, return_exceptions=True)
+        if self._retiring:
+            await asyncio.shield(asyncio.gather(*tuple(self._retiring)))
         await self._stack.aclose()

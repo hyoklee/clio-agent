@@ -470,11 +470,6 @@ scheduler.min_interval_s: 60
 # so it bounds the cost.
 variants.max_n: 8
 
-# CLIO_WORKFLOW_STEP_INACTIVITY_S  (float)  <- src/clio_agent/gact/workflow_step_watch.py
-# No-activity window (seconds) before a declared-workflow step's child is
-# judged stalled; a long but active step never trips it.
-workflows.step_inactivity_s: 120.0
-
 # ==========================================================================
 # GACT server
 # ==========================================================================

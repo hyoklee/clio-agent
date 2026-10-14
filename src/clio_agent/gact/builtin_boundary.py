@@ -194,7 +194,7 @@ class BuiltinBoundary:
             attribution=attribution, execution_limits={},
             description=description, background=bool(public.get("background", False)) if kind == "Shell" else True)
         if kind == "Shell" and not public.get("background", False) and value.get("pending") is False:
-            from clio_agent.gact.task_tools import _collected
+            from clio_agent.gact.task_declarations import _collected
             return await asyncio.to_thread(_collected, self.app,
                 self.app.state.conversations.caller(sid), value)
         return value

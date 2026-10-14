@@ -457,6 +457,8 @@ class StepRecorder:
         caller = owner.caller(self.session)
         with owner.history._lock:
             identity = context.current_turn().input_notification_id
+            trigger = owner.history._mail.get(self.session, {}).get(identity)
+            human_head = self._mail_head if trigger is not None and trigger.kind in {"human", "composer"} else None
             from clio_agent.gact.session_mail import StagedInput
             from clio_agent.arc.task_types import CoreReference
             from clio_agent.gact.task_history import _encoded
@@ -467,7 +469,7 @@ class StepRecorder:
             observation = next((row for row in reversed(segments) if row.kind == "observation"
                 and set(row.content.get("notification_ids", ())) - acknowledged), None)
             collecting = tuple(observation.content.get("notification_ids", ())) if observation is not None else ()
-            collected = (*collecting, identity) if identity and self._mail_head else collecting
+            collected = (*collecting, identity) if identity and human_head else collecting
             staged = (StagedInput((), ()) if context.current().react_run >= 0 else
                       owner.mail.stage(caller, collected=collected))
             rendered = {}
@@ -475,8 +477,8 @@ class StepRecorder:
                 for notification in text.notification_ids:
                     rendered[notification] = {"text": str(text), "source": source,
                         "actor": "user" if source == "steer" else "algorithm"}
-            if identity and self._mail_head:
-                rendered[identity] = self._mail_head
+            if identity and human_head:
+                rendered[identity] = human_head
             references = tuple(owner.history.write_content(self.session, rendered[item.id])
                                for item in staged.items if item.id in rendered)
             boundary = ContextBoundary(session_id=self.session, scope=self.scope,

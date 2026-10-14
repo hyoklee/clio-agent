@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import contextlib
 import functools
+import hashlib
 import threading
 import uuid
 from collections.abc import Callable, Mapping
@@ -50,7 +51,6 @@ from clio_agent.arc.task_types import (
     QuestionOption,
     QuestionReply,
     TaskOwner,
-    TaskSnapshot,
 )
 from clio_agent.errors import ClioError, MCPProtocolError
 from clio_agent.gact import context as _ctx
@@ -58,7 +58,6 @@ from clio_agent.gact.agents import variant_lines
 from clio_agent.gact.agents.variant_close import PENDING_META, close_for_question
 from clio_agent.gact.agents.variant_events import emit_selected, emit_try, try_context
 from clio_agent.gact.agents.variant_records import TryRecord, VariantRun, load_run, save_run
-from clio_agent.gact.questions import QuestionCommands
 
 __all__ = [
     "DRAFT_TOOL",
@@ -430,24 +429,8 @@ def _pause(app: Any, run: VariantRun) -> None:
                 "Posting a draft choice requires the confirmed current assignment"
             )
         stamp = datetime.now(timezone.utc)
-        handle = "task_" + uuid.uuid4().hex
-        accepted = TaskSnapshot(
-            handle=handle,
-            kind="Question",
-            owner=TaskOwner(
-                human_id=assignment.owner.human_id,
-                session_id=sid,
-                assignment_id=assignment.handle,
-                parent_handle=assignment.handle,
-            ),
-            label="Choose a draft",
-            description=prompt,
-            description_missing=False,
-            invocation_id=observer_call_id() or f"{run.variants_id}:{len(run.tries)}",
-            tool=DRAFT_TOOL,
-            created_at=stamp.isoformat(),
-            updated_at=stamp.isoformat(),
-        )
+        invocation = f"{run.variants_id}:{len(run.tries)}"
+        handle = "task_" + hashlib.sha256((sid + "\0variant-question\0" + invocation).encode()).hexdigest()
         definition = QuestionDefinition(
             prompt=prompt,
             kind="choice",
@@ -481,15 +464,6 @@ def _pause(app: Any, run: VariantRun) -> None:
         # post remains discoverable by this exact run/handle after recovery.
         run.question_id, run.status = handle, "awaiting_pick"
         save_run(app, run)
-        history.record_snapshot(accepted, observation_id=uuid.uuid4().hex)
-        try:
-            QuestionCommands(history).post(accepted, definition)
-        except Exception as error:
-            try:
-                QuestionCommands(history).cancel(handle)
-            except Exception as recording_error:
-                error.add_note(f"Question {handle} recording unconfirmed: {recording_error}")
-            raise
         if run.origin == "module_variant":
             pending = _pending_runs(app, sid)
             pending[run.variants_id] = {
@@ -498,6 +472,9 @@ def _pause(app: Any, run: VariantRun) -> None:
                 "question_handle": handle,
             }
             app.state.sessions.update(sid, metadata_patch={PENDING_META: pending})
+        app.state.questions.create(TaskOwner(human_id=assignment.owner.human_id,
+            session_id=sid, assignment_id=assignment.handle, parent_handle=assignment.handle),
+            invocation, definition, handle=handle)
 
 
 def _commit(app: Any, run: VariantRun, index: int) -> TryRecord:
@@ -747,11 +724,39 @@ class UserJudgedVariant(dspy.Module):
     def forward(self, **kwargs: Any) -> Any:
         """Resume an answered run, or draft and yield the tries to the user."""
         from clio_agent.gact.injection_parts import emit_injection  # noqa: PLC0415
+        from clio_agent.gact.agents import clio_react_record
+        from clio_agent.gact.agents.clio_react import _head
+
+        # The parent owns the input. Candidate scopes deliberately do not collect
+        # session mail, so confirm the fixed parent input before forking any tries.
+        # This is the same recipient-input boundary used by the ordinary loop.
+        app = _ctx.active_app()
+        ordinary_feedback = False
+        if app is not None and _ctx.active_react_run() < 0:
+            owner = app.state.conversations
+            staged = owner.mail.stage(owner.caller(_ctx.active_session_id()))
+            ordinary_feedback = any(item.kind in {"human", "composer", "peer"}
+                                    for item in staged.items)
+            arc, session, scope = clio_react_record.arc_scope()
+            recorder = clio_react_record.StepRecorder(arc, session, scope,
+                                                      expert_id=self._clio_agent_id)
+            recorder.expert_span_id = "variant-input-" + uuid.uuid4().hex
+            signature = getattr(self.inner, "signature", None)
+            if signature is None:
+                predictors = self.inner.named_predictors()
+                if len(predictors) != 1:
+                    raise DraftAlternativesError("Variant input requires one declared input signature")
+                signature = predictors[0][1].signature
+            recorder.user_message(_head(signature, kwargs))
+            recorder.commit_input(0)
 
         resumed = resume_pending(self.inner, kwargs)
         if resumed is not None:
+            if resumed.termination_reason == "variant_pick_yield" and ordinary_feedback:
+                # Feedback is independent of a draft choice. Let the ordinary
+                # agent act on it without dismissing or replacing open Questions.
+                return self.inner(**kwargs)
             return resumed
-        app = _ctx.active_app()
         run = VariantRun(
             variants_id=new_variants_id(),
             session_id=_ctx.active_react_session(),
@@ -821,14 +826,24 @@ def resume_pending(agent: Any, inputs: Mapping[str, Any]) -> dspy.Prediction | N
     pending = [entry for entry in _pending_runs(app, sid).values()
                if entry.get("agent_id") == _ctx.active_react_scope()]
     waiting: dspy.Prediction | None = None
+    closed: dspy.Prediction | None = None
+    selected: list[dspy.Prediction] = []
     for entry in pending:
         run = load_run(app, _ctx.active_react_session() or sid, str(entry["variants_id"]))
         result = resume_question(agent, inputs, run.question_id)
         if result.termination_reason == "variant_pick_yield":
             waiting = result
         elif result.termination_reason == "variant_selected":
-            return result
-    return waiting
+            selected.append(result)
+        elif result.termination_reason == "variant_closed":
+            closed = result
+    if selected:
+        if len(selected) == 1:
+            return selected[0]
+        return dspy.Prediction(answer="\n\n".join(result.answer for result in selected),
+            termination_reason="variant_selected",
+            variant_selections=[result.variant_selection for result in selected])
+    return waiting or closed
 
 
 def resume_question(agent: Any, inputs: Mapping[str, Any], handle: str) -> dspy.Prediction:
@@ -850,8 +865,12 @@ def resume_question(agent: Any, inputs: Mapping[str, Any], handle: str) -> dspy.
         raise DraftAlternativesError("Question is not this agent's current draft continuation")
     if run.status == "selected":
         assert run.selected_index is not None
+        _clear_pending(app, sid, run.variants_id)
         return dspy.Prediction(answer=run.try_at(run.selected_index).text,
-                               termination_reason="variant_selected")
+            termination_reason="variant_selected",
+            variant_selection={"variants_id": run.variants_id, "variant": run.strategy,
+                "judge": run.judge, "winning_index": run.selected_index,
+                "pick": run.pick, "comment": run.comment})
     if question.raw_status == "pending":
         return dspy.Prediction(answer="", termination_reason="variant_pick_yield", question_handle=handle)
     if question.raw_status != "answered":  # cancelled or expired: closed without a pick

@@ -4,22 +4,27 @@ from __future__ import annotations
 
 import asyncio
 import copy
-from collections.abc import Awaitable, Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 from datetime import timedelta
 from types import TracebackType
-from typing import Any
+from typing import Any, Literal
 
 import mcp_types
 from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp_tasks.client import ToolTask
 from fastmcp_tasks.client_models import ClientCreateTaskResult
+from mcp.shared.exceptions import MCPError
 
 from clio_agent.arc.task_types import CoreReference, argument_digest
 from clio_agent.tools.task_receipt import AcceptedTaskResult
+
+
+class AcceptedCallResult(CallToolResult):
+    """SDK-facing parsed receipt created only from CLIO's typed raw acceptance."""
 
 
 @dataclass(frozen=True)
@@ -46,6 +51,18 @@ class AcceptedNativeCall:
     task: ToolTask
     creation: ClientCreateTaskResult
 
+    def reconnected(self, client: Client) -> AcceptedNativeCall:
+        """Bind observation to the fresh SDK session, preserving original acceptance."""
+        return AcceptedNativeCall(self.submission,
+            ToolTask(client, self.submission.tool_name, self.creation, raise_on_error=False), self.creation)
+
+
+@asynccontextmanager
+async def own_native_runtime(server: Any) -> AsyncIterator[None]:
+    """Keep the pinned, reference-counted native server alive across client reconnects."""
+    async with server._lifespan_manager():
+        yield
+
 
 TaskAcceptor = Callable[[AcceptedNativeCall], Awaitable[AcceptedTaskResult]]
 
@@ -58,6 +75,15 @@ class TaskAdoptionError(RuntimeError):
             f"Backend accepted {accepted.task.task_id}; adoption is unconfirmed: {cause}"
         )
         self.accepted = accepted
+
+
+def submission_failure(error: Exception) -> Literal["rejected", "recording_unconfirmed", "uncertain"]:
+    """Distinguish SDK-confirmed pre-dispatch rejection from lost/accepted custody."""
+    if isinstance(error, TaskAdoptionError):
+        return "recording_unconfirmed"
+    if isinstance(error, MCPError) and error.code in {-32600, -32601, -32602}:
+        return "rejected"
+    return "uncertain"
 
 
 class TaskAwareClient(Client):
@@ -77,6 +103,22 @@ class TaskAwareClient(Client):
         )
         self._adoptions: dict[asyncio.Future[AcceptedTaskResult], AcceptedNativeCall] = {}
         self._unconfirmed_adoptions: dict[str, TaskAdoptionError] = {}
+
+    @classmethod
+    def from_configured(cls, configured: Client, transport: Any, *,
+                        on_task_accepted: TaskAcceptor, elicitation_handler: Any) -> TaskAwareClient:
+        """Preserve configured SDK behavior; keep pinned client internals in this adapter."""
+        client = cls(transport, on_task_accepted=on_task_accepted, name=configured.name,
+            timeout=configured._session_kwargs.get("read_timeout_seconds"),
+            init_timeout=configured._init_timeout, auto_initialize=configured.auto_initialize,
+            client_info=configured._session_kwargs.get("client_info"), elicitation_handler=elicitation_handler,
+            cache=configured._cache_arg, extensions=configured._extensions_arg,
+            result_claims=configured._result_claims_arg, input_required_max_rounds=configured.input_required_max_rounds)
+        client._session_kwargs.update({key: value for key, value in configured._session_kwargs.items()
+            if key in {"sampling_callback", "list_roots_callback", "logging_callback", "log_level",
+                       "message_handler", "read_timeout_seconds", "client_info", "sampling_capabilities",
+                       "mode", "prior_discover"}})
+        return client
 
     @contextmanager
     def submission(self, context: TaskSubmission) -> Iterator[None]:
@@ -200,7 +242,7 @@ class TaskAwareClient(Client):
         raise_on_error: bool = False,
     ) -> CallToolResult:
         if isinstance(result, AcceptedTaskResult):
-            return CallToolResult(
+            return AcceptedCallResult(
                 content=result.content,
                 structured_content=result.structured_content,
                 data=result.structured_content,

@@ -33,6 +33,7 @@ def initialize_composer_state(app: Any, session_store_path: Path) -> None:
     """
 
     state_root = session_store_path.parent
+    app.state.legacy_message_intents_path = state_root / "message_intents.json"
     max_resource_bytes = conf.resolve(
         "resources.max_bytes",
         env="CLIO_RESOURCE_MAX_BYTES",

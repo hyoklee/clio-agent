@@ -186,7 +186,16 @@ class NativeWork:
                 submission
             ):
                 raise ValueError("Task context does not match the worker reference")
-            self._check_admission(current)
+            continuation = submission.provider_continuation
+            cleanup_leg = continuation is not None and submission.tool == "connected_data_continue"
+            if cleanup_leg:
+                if current.terminal_at is not None:
+                    raise ValueError("Historical provider work cannot execute again")
+                # This host-only body must still enter when cancellation closes
+                # normal admission: its only permitted effects then are control
+                # and cleanup of the verified pre-existing provider job.
+            else:
+                self._check_admission(current)
             self.authorize(submission)
             bound = current.model_copy(
                 update={

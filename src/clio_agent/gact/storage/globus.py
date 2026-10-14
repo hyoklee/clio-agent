@@ -16,7 +16,8 @@ from clio_schemas.connected_resources import SourceCapabilities
 from clio_agent.gact.storage.adapters import LocalSource
 from clio_agent.gact.storage.globus_consent import GlobusConsentRequired
 from clio_agent.gact.storage.globus_destination import GlobusDestination, receiving_destination
-from clio_agent.gact.storage.models import FileEntry, SourceRecord, TransferOperation
+from clio_agent.gact.storage.models import FileEntry, SourceRecord, TransferOperation, now
+from clio_agent.gact.storage.identity import source_submission_identity
 from clio_agent.gact.storage.store import SourceStore
 from clio_agent.gact.storage.transfers import materialize, remove_owned_tree
 
@@ -205,7 +206,8 @@ class GlobusSource:
                             recursive=row.kind == "directory",
                         )
                 operation = store.update_operation(
-                    operation.id, native_request=_wire_payload(transfer), state="running"
+                    operation.id, native_request=_wire_payload(transfer), state="running",
+                    provider_identity=source_submission_identity(self.record)
                 )
             if operation.native_job_id is None:
                 if operation.native_request is None:
@@ -243,18 +245,35 @@ class GlobusSource:
         """Reconcile native truth, publishing inputs only after transfer and local validation."""
         if operation.native_job_id is None:
             operation = self.submit(store, operation)
+        return self.poll_existing_job(store, operation, workspace_root)
+
+    def request_cancel_existing(self, operation: TransferOperation) -> None:
+        """Request cancellation by the retained job identity without submitting work."""
+        if not operation.native_job_id:
+            raise ValueError("Provider cancellation requires a verified job identity")
+        self.client.cancel_task(operation.native_job_id)
+
+    def poll_existing_job(
+        self, store: SourceStore, operation: TransferOperation, workspace_root: Path
+    ) -> TransferOperation:
+        """Observe/control an existing verified job; provider submission is unreachable."""
         if operation.native_job_id is None:
-            raise ValueError("Globus returned no transfer task identity")
+            raise ValueError("Provider continuation requires a verified Globus job identity")
+        if operation.provider_identity is None or operation.provider_identity != source_submission_identity(self.record):
+            raise ValueError("Resolved Globus source/destination custody changed; inspect the original job")
         try:
             if operation.cancel_requested:
-                self.client.cancel_task(operation.native_job_id)
+                self.request_cancel_existing(operation)
             task = self.client.get_task(operation.native_job_id)
+            if str(task.get("task_id") or operation.native_job_id) != operation.native_job_id:
+                raise ValueError("Globus returned another job identity")
         except globus_sdk.GlobusAPIError as exc:
             if exc.info.consent_required:
                 raise GlobusConsentRequired(exc.info.consent_required.required_scopes) from exc
             raise ValueError(
                 "Globus task status is unavailable; no completion or cleanup was assumed"
             ) from exc
+        operation = store.get("operation", operation.id, TransferOperation)
         operation = store.update_operation(
             operation.id, bytes_done=int(task.get("bytes_transferred", 0))
         )
@@ -266,20 +285,30 @@ class GlobusSource:
                 store.update_operation(
                     operation.id,
                     state="cancelled",
+                    provider_cleanup_confirmed=True,
                     error="Transfer completed before cancellation; the unexposed local staging copy was removed",
                 )
                 return store.get("operation", operation.id, TransferOperation)
             # The collection mapping must lead to real files on this CLIO; a
             # successful cloud job alone is not successful local materialization.
+            if operation.publication_started_at is not None:
+                raise ValueError("Local publication was already entered; inspect its manifest and files before deliberately continuing")
+            store.update_operation(operation.id, publication_started_at=now())
             adapter = LocalSource(str(stage))
-            materialize(store, self.record, adapter, workspace_root, operation)
-            remove_owned_tree(stage, owner)
+            try:
+                materialize(store, self.record, adapter, workspace_root, operation)
+            finally:
+                remove_owned_tree(stage, owner)
+                current = store.get("operation", operation.id, TransferOperation)
+                if current.state in {"completed", "failed", "cancelled"}:
+                    store.update_operation(operation.id, provider_cleanup_confirmed=True)
         elif task["status"] == "FAILED":
             state = "cancelled" if operation.cancel_requested else "failed"
             remove_owned_tree(stage, owner)
             store.update_operation(
                 operation.id,
                 state=state,
+                provider_cleanup_confirmed=True,
                 error="Globus transfer cancelled"
                 if operation.cancel_requested
                 else "Globus transfer failed; inspect the native task before retrying",

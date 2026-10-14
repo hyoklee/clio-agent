@@ -175,6 +175,9 @@ class TransferOperation(StorageModel):
     # Provider submission payload, including Globus's preallocated submission ID.
     # This is workload recovery data, not a common-task lifecycle mirror.
     native_request: dict[str, Any] | None = None
+    publication_started_at: str | None = None
+    provider_cleanup_confirmed: bool = False
+    provider_identity: dict[str, Any] | None = None
     selected_paths: list[str] | None = None
     cancel_requested: bool = False
     error: str | None = None

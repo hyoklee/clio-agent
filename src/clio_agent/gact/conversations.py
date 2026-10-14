@@ -84,6 +84,8 @@ class Conversations:
         self.runner.bind_loop(self._loop)
         self._unlisten = self.history.listen_mail(self.runner.signal)
         async def ready() -> None:
+            await asyncio.to_thread(self.app.state.questions.restore)
+            await self.app.state.question_events.restore()
             for sid in await asyncio.to_thread(self.history.pending_sessions):
                 self.runner.signal(sid)
         self.recovery.on_ready = ready
@@ -118,17 +120,17 @@ class Conversations:
         """Recover interrupted model segments; dormant assignments do not wake at boot."""
         handles = await asyncio.to_thread(self.history.task_handles, active_only=True)
         for handle in handles:
-            task = self.history.task_snapshot(handle)
+            task = await asyncio.to_thread(self.history.task_snapshot, handle)
             if task is None or task.kind not in {"Session", "Subagent"}:
                 continue
-            if self.history.latest_assignment(task.owner.session_id) != task:
+            if await asyncio.to_thread(self.history.latest_assignment, task.owner.session_id) != task:
                 continue
             session = self.app.state.sessions.get(task.owner.session_id)
             if task.activity == "paused" or session is not None and session.metadata.get("agent_paused"):
                 self._paused.add(task.owner.session_id)
                 continue
             if task.cancellation_requested_at is not None:
-                self.retain_control("cancel:" + handle, asyncio.create_task(self._cancel_subtree(task)))
+                self.retain_control(handle, asyncio.create_task(self._cancel_subtree(task)))
                 continue
             if task.activity not in {"busy", "executing", "stopping", "interrupted"}:
                 continue
@@ -216,7 +218,7 @@ class Conversations:
             return True
         if assignment.details is not None:
             details = AssignmentDetails.model_validate(self.history.read_content(assignment.details))
-            if details.dependencies and item.kind in {"task_result", "goal"}:
+            if details.dependencies and (item.kind == "goal" or item.kind == "task_result" and item.handle in details.dependencies):
                 settled = [self.history.task_snapshot(handle) for handle in details.dependencies]
                 conditions = [task is not None and task.terminal_at is not None for task in settled]
                 return any(conditions) if details.return_when == "any" else all(conditions)
@@ -432,6 +434,22 @@ class Conversations:
             for permit in lease:
                 owner_loop.call_soon_threadsafe(permit.release)
 
+    async def stopping(self, sid: str) -> None:
+        """Expose cooperative unwind without declaring worker retirement or task completion."""
+        def record() -> None:
+            with self.history._lock:
+                current = self.history.latest_assignment(sid)
+                if current is None or current.terminal_at is not None or current.activity not in {"busy", "executing"}:
+                    return
+                self.history.record_snapshot(current.model_copy(update={"activity": "stopping", "updated_at": now()}),
+                                             observation_id=uuid4().hex)
+        try:
+            await asyncio.to_thread(record)
+        except Exception:
+            async def confirm() -> None:
+                await asyncio.to_thread(record)
+            self.recovery.defer("conversation-stopping:" + sid, confirm)
+
     async def _run(self, segment: ConversationSegment) -> None:
         handle, sid = segment.assignment.handle, segment.session_id
         def activity(value: str) -> None:
@@ -444,7 +462,7 @@ class Conversations:
         await asyncio.to_thread(activity, "busy")
         context.set_turn_identity(app=self.app, session_id=sid, turn_id=segment.turn_id,
                                   trace_id=segment.turn_id, assignment_handle=handle,
-                                  input_notification_id=segment.trigger.id if segment.trigger.kind in {"human", "composer"} else "")
+                                  input_notification_id=segment.trigger.id)
         try:
             if self.runner.cancellation(sid).is_set():
                 raise asyncio.CancelledError
@@ -529,7 +547,8 @@ class Conversations:
                         return
                     latest = self.history.task_snapshot(handle)
                     if latest is not None and latest.terminal_at is None:
-                        self.history.record_snapshot(latest.model_copy(update={"activity": "paused", "updated_at": now()}),
+                        self.history.record_snapshot(latest.model_copy(update={"activity": "paused", "updated_at": now(),
+                            "supported_actions": ("observe", "wait", "message", "resume", "cancel", "restart")}),
                                                      observation_id=uuid4().hex)
                         self._control_outcome(caller, latest, "pause", {"status": "paused"},
                             "pause-outcome:" + token)
@@ -563,6 +582,11 @@ class Conversations:
             raise ValueError("Resume requires confirmed Core input recording")
         await asyncio.to_thread(self.app.state.sessions.update, sid, metadata_patch={"agent_paused": False})
         def inject() -> None:
+            current = self.history.task_snapshot(handle)
+            if current is not None and current.terminal_at is None:
+                self.history.record_snapshot(current.model_copy(update={"activity": "yielded", "updated_at": now(),
+                    "supported_actions": ("observe", "wait", "message", "pause", "cancel", "restart")}),
+                    observation_id=uuid4().hex)
             content = self.history.write_content(sid, "Resume this assignment. Accepted operations may still be running; inspect their handles and confirmed effects before retrying anything.")
             self.history.record_mail(MailItem(id="resume_" + uuid4().hex, recipient_session=sid,
                 kind="control", content=content, created_at=now(), handle=handle))
@@ -678,10 +702,18 @@ class Conversations:
             raise ValueError("Historical assignment already has a successor")
         if current.terminal_at is None:
             await self.cancel(caller, handle)
-        cancellation = self._controls.get("cancel:" + handle)
+        cancellation = self._controls.get(handle)
 
         async def restart_settled() -> None:
             if cancellation is not None:
+                # Use the same mixed-wait semantics: genuine uncertainty ends
+                # this restart request, while the cancellation owner continues
+                # reconciling cleanup. Do not silently launch a successor later.
+                await self.app.state.task_operations.wait(
+                    TaskCaller(current.owner.session_id, current.owner.human_id), handle)
+                settled = await asyncio.to_thread(self.history.task_snapshot, handle)
+                if settled is None or settled.terminal_at is None or settled.settlement not in {"confirmed", "never_started"}:
+                    raise ValueError("Restart settlement remains uncertain; no successor launched")
                 await asyncio.shield(cancellation)
             def create() -> None:
                 with self.history._lock:
@@ -741,11 +773,14 @@ class Conversations:
             except Exception as error:
                 errors.append({"handle": handle, "error": str(error)})
         changed, loop = asyncio.Event(), asyncio.get_running_loop()
-        remove = self.history.listen(lambda revision: loop.call_soon_threadsafe(changed.set), handles=tuple(handles))
+        remove = self.history.listen(lambda revision: loop.call_soon_threadsafe(changed.set),
+            handles=tuple(handle for handle in handles if handle != assignment.handle))
         try:
             while True:
                 changed.clear()
                 states = await asyncio.to_thread(lambda: [self.history.task_snapshot(handle) for handle in handles if handle != assignment.handle])
+                if all(task is not None and task.terminal_at is not None and task.settlement in {"confirmed", "never_started"} for task in states):
+                    break
                 uncertain = [task.handle for task in states if task is not None and (
                     task.status == "task_state_uncertain" or
                     task.terminal_at is not None and task.settlement not in {"confirmed", "never_started"})]
@@ -756,9 +791,12 @@ class Conversations:
                                 current = self.history.task_snapshot(assignment.handle)
                                 if current is None or current.terminal_at is not None:
                                     return
+                                message = "Descendant cancellation settlement is unconfirmed: " + json.dumps({"handles": uncertain, "errors": errors})
+                                if current.status == "task_state_uncertain" and current.progress.message == message:
+                                    return
                                 observed = current.model_copy(update={"status": "task_state_uncertain",
                                     "activity": "cancelling", "settlement": "unknown", "updated_at": now(),
-                                    "progress": TaskProgress(message="Descendant cancellation settlement is unconfirmed: " + json.dumps({"handles": uncertain, "errors": errors})),
+                                    "progress": TaskProgress(message=message),
                                     "attention_episode": current.attention_episode or uuid4().hex})
                                 self.history.record_snapshot(observed, observation_id=uuid4().hex)
                                 publish_task_notice(self.history, observed, episode=observed.attention_episode)
@@ -767,9 +805,6 @@ class Conversations:
                         await record_uncertainty()
                     except Exception:
                         self.recovery.defer("conversation-cancel-attention:" + assignment.handle, record_uncertainty)
-                    return
-                if all(task is None or task.terminal_at is not None for task in states):
-                    break
                 await changed.wait()
             def finish() -> None:
                 with self.history._lock:
@@ -784,7 +819,14 @@ class Conversations:
                         "updated_at": stamp, "result": result, "supported_actions": ("get_result", "message", "restart")})
                     self.history.record_snapshot(settled, observation_id=uuid4().hex)
                     publish_task_notice(self.history, settled)
-            await asyncio.to_thread(finish)
+            async def confirm_finish() -> None:
+                await asyncio.to_thread(finish)
+            try:
+                await confirm_finish()
+            except Exception:
+                if not self.history.requires_recovery:
+                    raise
+                self.recovery.defer("conversation-cancel-final:" + assignment.handle, confirm_finish)
         finally:
             remove()
 

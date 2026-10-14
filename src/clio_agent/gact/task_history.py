@@ -61,6 +61,8 @@ class TaskHistory:
 
     def __init__(self, arc: ARCMemory) -> None:
         self.arc = arc
+        self.recovery_requested: Callable[[], None] | None = None
+        self._requires_recovery = False
         self._lock = threading.RLock()
         self._tasks: dict[str, TaskSnapshot] = {}
         self._aliases: dict[str, dict[str, TaskAlias]] = {}
@@ -92,6 +94,19 @@ class TaskHistory:
         self._handle_listeners: dict[str, set[Callable[[int], None]]] = {}
         self._recipient_listeners: dict[str, set[Callable[[int], None]]] = {}
         self._mail_listeners: set[Callable[[str], None]] = set()
+        self._listener_lock = threading.RLock()
+
+    @property
+    def requires_recovery(self) -> bool:
+        """Whether confirmed Core writing must reconcile before new admission."""
+        return self._requires_recovery
+
+    @requires_recovery.setter
+    def requires_recovery(self, value: bool) -> None:
+        changed = value and not self._requires_recovery
+        self._requires_recovery = value
+        if changed and self.recovery_requested is not None:
+            self.recovery_requested()
 
     def write_content(self, session_id: str, value: JsonValue) -> CoreReference:
         """Confirm content once, before an observation or mailbox item refers to it."""
@@ -153,11 +168,27 @@ class TaskHistory:
                 or previous.description_missing != snapshot.description_missing
             ):
                 raise ValueError("Task identity cannot change under an existing handle")
+            continuation_reserved = False
+            if (previous is not None and previous.submission is not None
+                    and snapshot.submission is not None and previous.submission != snapshot.submission):
+                replacement = SubmissionContext.model_validate(self.read_content(snapshot.submission))
+                continuation = replacement.provider_continuation
+                continuation_reserved = (
+                    previous.kind == "Download" and previous.terminal_at is None
+                    and snapshot.backend is None and replacement.tool == "connected_data_continue"
+                    and replacement.handle == previous.handle and replacement.owner == previous.owner
+                    and replacement.invocation_id == previous.invocation_id
+                    and continuation is not None
+                    and continuation.previous_submission == previous.submission
+                    and continuation.previous_backend == previous.backend
+                    and continuation.operation_id == previous.handle
+                    and continuation.source_id == previous.resource_id
+                )
             if previous is not None and previous.backend is not None:
-                if previous.backend != snapshot.backend:
+                if previous.backend != snapshot.backend and not continuation_reserved:
                     raise ValueError("An accepted backend identity cannot be rebound")
             if previous is not None and previous.submission is not None:
-                if previous.submission != snapshot.submission:
+                if previous.submission != snapshot.submission and not continuation_reserved:
                     raise ValueError("Confirmed submission context cannot be replaced")
             if previous is not None and previous.resource_id is not None and previous.resource_id != snapshot.resource_id:
                 raise ValueError("A task's accepted resource identity cannot be rebound")
@@ -425,7 +456,7 @@ class TaskHistory:
     def listen(self, callback: Callable[[int], None], *, handles: tuple[str, ...] | None = None,
                recipient_session: str | None = None) -> Callable[[], None]:
         """Register an eviction-safe wake hint; Core remains the pending-data authority."""
-        with self._lock:
+        with self._listener_lock:
             if handles is None:
                 self._listeners.add(callback)
             else:
@@ -435,7 +466,7 @@ class TaskHistory:
                 self._recipient_listeners.setdefault(recipient_session, set()).add(callback)
 
         def remove() -> None:
-            with self._lock:
+            with self._listener_lock:
                 self._listeners.discard(callback)
                 for handle in handles or ():
                     callbacks = self._handle_listeners.get(handle, set())
@@ -452,11 +483,11 @@ class TaskHistory:
 
     def listen_mail(self, callback: Callable[[str], None]) -> Callable[[], None]:
         """Signal exact recipients after durable mailbox changes; payloads remain in Core."""
-        with self._lock:
+        with self._listener_lock:
             self._mail_listeners.add(callback)
 
         def remove() -> None:
-            with self._lock:
+            with self._listener_lock:
                 self._mail_listeners.discard(callback)
         return remove
 
@@ -789,16 +820,18 @@ class TaskHistory:
         self.revision += 1
         handle = payload.get("handle")
         recipient = payload.get("recipient_session")
-        listeners = set(self._listeners)
-        listeners.update(self._handle_listeners.get(str(handle), set()))
-        listeners.update(self._recipient_listeners.get(str(recipient), set()))
+        with self._listener_lock:
+            listeners = set(self._listeners)
+            listeners.update(self._handle_listeners.get(str(handle), set()))
+            listeners.update(self._recipient_listeners.get(str(recipient), set()))
+            mail_listeners = tuple(self._mail_listeners)
         for listener in listeners:
             try:
                 listener(self.revision)
             except Exception as error:
                 logger.warning("Task wake hint failed after Core commit: %s", type(error).__name__)
         if event_type.startswith("session.mail.") and recipient:
-            for listener in tuple(self._mail_listeners):
+            for listener in mail_listeners:
                 try:
                     listener(str(recipient))
                 except Exception as error:

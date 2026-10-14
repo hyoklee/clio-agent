@@ -47,11 +47,13 @@ engine changes only the transport:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
 import hashlib
 import json
 import logging
 import queue
+from clio_agent.providers.stream_queue import AsyncStreamQueue, StreamProducer, StreamSink
 import threading
 import time
 import uuid
@@ -257,12 +259,21 @@ class AsyncCodexDirectEngine:
     supports_function_calling = True
     supports_reasoning = True
 
-    def __init__(self, model: str, *, wire: Any | None = None, http: bool = False) -> None:
+    def __init__(self, model: str, *, wire: Any | None = None, http: bool = False,
+                 http_wire: Any | None = None) -> None:
         self.model = model
         self.wire = wire or default_wire()
         # ``http``: the operator chose stateless HTTP (``CLIO_CODEX_TRANSPORT=sse``,
         # e.g. behind a proxy that blocks WebSocket upgrades) -- no kept socket.
         self.http = http
+        self.http_wire = http_wire
+        if http and http_wire is None:
+            if wire is not None:
+                raise ValueError("A custom HTTP wire requires its explicit asynchronous counterpart")
+            from dspy.lm15 import AsyncOpenAICodexLM
+            self.http_wire = AsyncOpenAICodexLM(api_key=self.wire.api_key,
+                account_id=self.wire.account_id, base_url=self.wire.base_url,
+                originator=self.wire.originator, client_version=self.wire.client_version)
 
     async def complete(self, request: Request) -> Response:
         """Run one call and return the assembled response."""
@@ -274,13 +285,13 @@ class AsyncCodexDirectEngine:
         return self._events(request, listened=True)
 
     async def _events(self, request: Request, *, listened: bool) -> AsyncGenerator[Any, None]:
-        events: queue.SimpleQueue[Any] = queue.SimpleQueue()
+        events: AsyncStreamQueue[Any] = AsyncStreamQueue()
         key = _driven_key(conversation_key(self.model))
-        future = asyncio.run_coroutine_threadsafe(self._call(request, key, events), _OWNER.loop())
-        loop = asyncio.get_running_loop()
+        future = StreamProducer(_OWNER.loop(), lambda: self._call(request, key, events))
         outcome = CallOutcome(_RETRY_LOG, request, listened=listened)
         try:
             while True:
+                item = await future.receive(events.get())
                 if item is _END:
                     outcome.ended()
                     break
@@ -292,18 +303,19 @@ class AsyncCodexDirectEngine:
             outcome.close()
             if not future.done():
                 future.cancel()
+            await future.retire()
 
     async def aclose(self) -> None:
         """Nothing to release per engine: sockets belong to their conversations."""
 
     async def _call(
-        self, request: Request, key: tuple[str, ...] | None, out: queue.SimpleQueue[Any]
+        self, request: Request, key: tuple[str, ...] | None, out: StreamSink
     ) -> None:
         try:
             _check_media(request)  # typed refusal of oversized attachments before any send
             request = _with_reasoning_summary(request)
             if self.http:
-                await asyncio.to_thread(self._http, request, out)
+                await self._http(request, out)
                 return
             await self._run(request, key, out)
         except BaseException as exc:  # noqa: BLE001 - surfaced on the caller's loop
@@ -314,7 +326,7 @@ class AsyncCodexDirectEngine:
             out.put(_END)
 
     async def _run(
-        self, request: Request, key: tuple[str, ...] | None, out: queue.SimpleQueue[Any]
+        self, request: Request, key: tuple[str, ...] | None, out: StreamSink
     ) -> None:
         # The backend takes the bare model id, whatever the dspy.LM model string is.
         request = dataclasses.replace(request, model=self.model)
@@ -359,15 +371,17 @@ class AsyncCodexDirectEngine:
                 opened_at=live.opened_at if live is not None else time.monotonic(),
             )
 
-    def _http(self, request: Request, out: queue.SimpleQueue[Any]) -> None:
+    async def _http(self, request: Request, out: StreamSink) -> None:
         """One stateless HTTP call (lm15's own transport), events forwarded as they come."""
         from dspy.lm15 import RateLimitError  # noqa: PLC0415
 
         try:
-            for event in ToolCallAssembler().stream(
-                self.wire.stream(dataclasses.replace(request, model=self.model))
-            ):
-                out.put(event)
+            assembler = ToolCallAssembler()
+            async with contextlib.aclosing(self.http_wire.stream(
+                dataclasses.replace(request, model=self.model))) as events:
+                async for event in events:
+                    for assembled in assembler.stream((event,)):
+                        out.put(assembled)
         except RateLimitError as exc:
             if is_usage_limit_text(str(exc)):
                 raise CodexPlanLimitError(str(exc)) from exc
@@ -594,7 +608,7 @@ async def _exchange(
     request: Request,
     socket: Any,
     frame: dict[str, Any],
-    out: queue.SimpleQueue[Any],
+    out: StreamSink,
     *,
     kept: bool,
 ) -> tuple[str, tuple[str, ...]]:
@@ -635,7 +649,7 @@ async def _stream(
     request: Request,
     socket: Any,
     frame: dict[str, Any],
-    out: queue.SimpleQueue[Any],
+    out: StreamSink,
     call_id: str,
     call_index: int,
     streamed: list[bool],

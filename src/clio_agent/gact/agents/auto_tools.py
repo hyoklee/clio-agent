@@ -73,7 +73,7 @@ from clio_agent.gact.storage.setup_tool import (
     build_connected_data_write_tool,
 )
 from clio_agent.gact.todos import build_write_todos_tool
-from clio_agent.gact.task_tools import build_task_tools, build_ask_user_tool
+from clio_agent.gact.task_declarations import build_task_tools, build_ask_user_tool
 from clio_agent.gact.weather_tools import build_weather_forecast_tool
 from clio_agent.providers.model_discovery import build_refresh_provider_models_tool
 
@@ -193,5 +193,5 @@ def build_auto_react_tools(
     from clio_agent.gact.storage.knowledge_tools import build_knowledge_tools
 
     tools.extend(build_knowledge_tools())
-    from clio_agent.gact.task_tools import TASK_TOOL_NAMES
+    from clio_agent.gact.task_declarations import TASK_TOOL_NAMES
     return [tool for tool in tools if tool.name not in TASK_TOOL_NAMES or tool.name not in declared]

@@ -1,4 +1,4 @@
-"""Agent declarations for shared controls; execution crosses the built-in MCP boundary."""
+"""MCP tool declarations delegating to existing task owners and shared controls."""
 
 from __future__ import annotations
 

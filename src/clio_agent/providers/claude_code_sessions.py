@@ -506,8 +506,8 @@ class _StreamClientEntry:
             raise RuntimeError(dead_entry_error_message())
         self._ensure_loop()
         self._mark_busy()
-        caller_loop = asyncio.get_running_loop()
-        chunks: queue.SimpleQueue[tuple[Any, Any]] = queue.SimpleQueue()
+        from clio_agent.providers.stream_queue import AsyncStreamQueue, StreamProducer
+        chunks: AsyncStreamQueue[tuple[Any, Any]] = AsyncStreamQueue()
         # Captured in the CALLER's context -- the owner-loop pump has no access
         # to either contextvar once scheduled cross-thread (#993 / #901).
         gact_sid = _active_gact_session_id()
@@ -553,10 +553,11 @@ class _StreamClientEntry:
                 if not clean:
                     await self._mark_dead_and_reset()
 
-        fut = asyncio.run_coroutine_threadsafe(_pump(), self._loop)
+        fut = StreamProducer(self._loop, _pump)
         kind: Any = None
         try:
             while True:
+                kind, val = await fut.receive(chunks.get())
                 if kind is _STREAM_END:
                     break
                 if kind == "exc":
@@ -574,6 +575,7 @@ class _StreamClientEntry:
                 self.announce_dropped()
                 with contextlib.suppress(Exception):
                     asyncio.run_coroutine_threadsafe(self._mark_dead_and_reset(), self._loop)
+            await fut.retire()
             self._mark_idle()
 
     def close_blocking(self) -> None:

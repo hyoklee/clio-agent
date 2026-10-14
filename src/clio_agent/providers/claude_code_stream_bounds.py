@@ -203,12 +203,14 @@ async def await_connect_slot(
     Returns ``True`` iff the caller now holds an acquired slot; ``False`` iff
     ``abandon`` was set while still queued (no slot held either way).
     """
-    loop = asyncio.get_running_loop()
     start = time.monotonic()
     attempt = 0
     next_surface_at = 0.0  # surface immediately on the first queued attempt
     surface_gap = _SURFACE_INITIAL_S
+    if poll_interval_s <= 0:
+        raise ValueError("Connect-slot polling interval must be positive")
     while True:
+        acquired = slots.acquire(blocking=False)
         if abandon is not None and abandon.is_set():
             if acquired:
                 slots.release()  # phantom acquire: hand it right back, unused
@@ -240,6 +242,7 @@ async def await_connect_slot(
                 )
             next_surface_at = elapsed + surface_gap
             surface_gap = min(surface_gap * _SURFACE_BACKOFF_FACTOR, _SURFACE_MAX_S)
+        await asyncio.sleep(poll_interval_s)
 
 
 def sweep_idle_session_entries(

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cached_property
 
-from clio_agent.arc.task_types import CoordinationRight, TaskSnapshot
+from clio_agent.arc.task_types import CoordinationGrant, CoordinationRight, TaskSnapshot
 from clio_agent.gact.task_history import TaskHistory
 
 ALL_RIGHTS: frozenset[CoordinationRight] = frozenset({"read", "observe", "message", "control"})
@@ -24,9 +25,15 @@ class TaskAccess:
 
     def __init__(self, history: TaskHistory, caller: TaskCaller) -> None:
         self.history, self.caller = history, caller
-        self._tree = history.tree_handles(caller.session_id)
-        self._grants = history.coordination_grants(caller.session_id)
         self._target_trees: dict[str, set[str]] = {}
+
+    @cached_property
+    def _tree(self) -> set[str]:
+        return self.history.tree_handles(self.caller.session_id)
+
+    @cached_property
+    def _grants(self) -> tuple[CoordinationGrant, ...]:
+        return self.history.coordination_grants(self.caller.session_id)
 
     def rights(self, task: TaskSnapshot) -> frozenset[CoordinationRight]:
         """Keep control, messaging, observation and content rights independent."""

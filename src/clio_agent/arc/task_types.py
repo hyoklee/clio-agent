@@ -107,7 +107,7 @@ class TaskSnapshot(TaskRecord):
     @model_validator(mode="after")
     def validate_description_presence(self) -> TaskSnapshot:
         """Missing historical descriptions stay explicit rather than invented."""
-        if self.description_missing != (self.description is None):
+        if self.description_missing != (self.description is None and self.description_reference is None):
             raise ValueError("Description presence and missing-description marker disagree")
         return self
 
@@ -118,6 +118,27 @@ class TaskAlias(TaskRecord):
     alias: str
     handle: str
     source_identity: str
+
+
+class LocalRuntimeIdentity(TaskRecord):
+    """Process birth identity for an in-process native runtime, never a PID alone."""
+
+    host: str
+    pid: int = Field(gt=0)
+    created_at: float = Field(gt=0)
+
+
+class ProviderContinuation(TaskRecord):
+    """Custody of a new local execution leg for an already verified provider job."""
+
+    original_submission: CoreReference
+    previous_submission: CoreReference
+    previous_backend: BackendReference
+    operation_id: str
+    source_id: str
+    provider_job_id: str = Field(min_length=1)
+    previous_incarnations: tuple[str, ...] = ()
+    cancellation_only: bool = False
 
 
 class SubmissionContext(TaskRecord):
@@ -138,6 +159,8 @@ class SubmissionContext(TaskRecord):
     attribution: dict[str, JsonValue]
     execution_limits: dict[str, JsonValue]
     backend: BackendReference
+    local_runtime: LocalRuntimeIdentity | None = None
+    provider_continuation: ProviderContinuation | None = None
 
 
 class NativeAttempt(TaskRecord):

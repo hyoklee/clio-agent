@@ -2,7 +2,7 @@
 
 The human instructed implementation to continue, then explicitly requested no further testing until the initial implementation is complete. Write the new coverage as a batch afterward, run it sequentially with one worker, and then qualify with actual models and production service/UI. No test, lint, type-check, product service or model qualification has run after that instruction. Earlier focused passes cover earlier committed slices only.
 
-The first production integration is now wired in the feature checkout. It is ready for independent source review after the core/GACT/marketplace source commits are recorded. It is not a qualified candidate or a release-completion claim. No checks or live acceptance were run during this construction phase.
+Independent source reviews of core `8fbd41308bc5b961049fe441781d48b368aebb8e` both returned **no-go**. Calling that implementation ready was premature: required provider bridge lines were missing and described task snapshots failed validation. The initial source and review corrections are now in place for a fresh independent review. This is a construction checkpoint, not accepted implementation or runtime completion. No checks or live acceptance have run during this construction phase.
 
 Initial review tuple: GACT `3efef4afffb235bb2ee1873358591478ce63895c`; marketplace `3299065f3ee7f827f734d311d39b15bf7460ab42`. Core records both feature pointers. Dependency/runtime evidence remains the previously recorded FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and Python 3.14 source environment; it is not a final acceptance freeze.
 
@@ -20,11 +20,14 @@ Initial review tuple: GACT `3efef4afffb235bb2ee1873358591478ce63895c`; marketpla
 - Composer, human feedback, peer messages, task outcomes, goals, schedules, hooks and approvals persist inputs and signal the same TurnRunner. Input commitment expands through the existing context reader/compactor. Stopped, paused, yielded and completed assignments remain distinct.
 - Startup migration decodes legacy records without old owners or submission replay, retaining aliases, results, Questions, mail, grants, subscriptions and proven input acknowledgements.
 - REST and GACT source wiring covers common controls, compact task rows, Questions, session grants/revocation, source-operation ownership and visible pending queue errors. These UI changes have not been built or rendered.
-- Correction-review findings about pending draft choices and explicit asynchronous refinement are being addressed in production code. Their continuation tests are deferred with the rest of the new coverage.
+- Correction-review findings about pending draft choices and explicit asynchronous refinement now have source changes. Their continuation tests are deferred with the rest of the new coverage.
+- Initial-review corrections cover native async provider streams, recoverable input commitment, legacy withdrawals/subscriptions/message intents and proven acknowledgements, owner cancellation/restart settlement, and SDK reconnection. A host-only native leg can reconnect a verified existing provider job after confirmed local process loss; it cannot submit provider work and refuses ambiguous publication or former overlapping attempts. Its narrow clarification still needs Claude's independent review and actual acceptance evidence.
+
+Corrected source-review GACT pointer: `f1b099cdf479a4e2516391a525efeba17799cd65`. Marketplace remains `3299065f3ee7f827f734d311d39b15bf7460ab42`. The resulting core commit records these pointers. This remains a local review tuple, not a final acceptance freeze.
 
 ## Review and acceptance still required
 
-1. Astra and actual Claude independently review the initial integrated implementation against R2, including removal completeness, session/workflow rights, asynchronous Questions, Core input recovery, SDK coupling and physical settlement. No source review substitutes for runtime acceptance.
+1. Finish the source corrections recorded in the initial review actions, then send the corrected committed source to Astra and actual Claude for independent review. Both initial reviews are retained; neither accepts this implementation. No source review substitutes for runtime acceptance.
 2. Build fresh public-behavior tests as a batch. Execute cases individually/sequentially with one worker, then scoped formatting, lint, types and existing guards. No prior-engine evidence qualifies this source.
 3. Resolve review/check findings, integrate target changes and record the resulting dependency/schema/core/GACT/marketplace tuple before exact-head CI and the finite Q1–Q9/R1–R6 live matrix.
 4. Qualify real models, external input/reconnect, failure/recovery, capacity, physical cancellation and desktop/phone UI. Repeat each required lifecycle race five times on the final candidate. Required unavailable/skipped cases remain blocked.

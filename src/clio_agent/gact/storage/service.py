@@ -376,17 +376,24 @@ class StorageService:
         operation: TransferOperation,
         *,
         progress: Callable[[int, int], None] | None = None,
+        existing_job_only: bool = False,
+        cancellation_requested: Callable[[], bool] | None = None,
     ) -> None:
         """Execute one native-owned transfer and join its provider/cleanup on cancellation."""
 
         def step() -> bool:
             current = self.store.get("operation", operation.id, TransferOperation)
+            if cancellation_requested is not None and cancellation_requested():
+                current = self.store.update_operation(operation.id, cancel_requested=True)
             with self.adapter(record) as adapter:
                 if isinstance(adapter, GlobusSource):
-                    result = adapter.poll(self.store, current, workspace_root)
+                    result = (adapter.poll_existing_job(self.store, current, workspace_root)
+                              if existing_job_only else adapter.poll(self.store, current, workspace_root))
                     if progress is not None:
                         progress(result.bytes_done, result.bytes_total)
                     return result.state in {"completed", "failed", "cancelled"}
+                if existing_job_only:
+                    raise ValueError("Existing-job continuation is unavailable for this provider")
                 materialize(self.store, record, adapter, workspace_root, current, progress=progress)
                 return True
 

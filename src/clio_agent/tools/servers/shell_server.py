@@ -626,6 +626,8 @@ async def execute_shell(
                 cleanup.confirm_cleanup()
             raise
     except Exception as exc:  # noqa: BLE001
+        if cleanup is not None:
+            cleanup.confirm_cleanup()
         return _error("execution_failed", str(exc), details={"command": command})
 
     assert process.stdout is not None

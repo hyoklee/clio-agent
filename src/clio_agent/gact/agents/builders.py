@@ -72,7 +72,7 @@ from clio_agent.gact.runtime.type_parsing import (
 )
 from clio_agent.runtime import trace
 from clio_agent.tools.task_call_context import task_arguments
-from clio_agent.gact.task_tools import build_spawn_runtime_tools
+from clio_agent.gact.task_declarations import build_spawn_runtime_tools
 
 logger = logging.getLogger(__name__)
 

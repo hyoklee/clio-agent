@@ -240,6 +240,9 @@ class TurnRunner:
             task = resources.task
         if task is not None and not task.done():
             task.cancel()
+            owner = getattr(self.app.state, "conversations", None)
+            if owner is not None:
+                await owner.stopping(sid)
             while not task.done():
                 try:
                     await asyncio.shield(task)
