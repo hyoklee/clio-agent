@@ -8,15 +8,31 @@ the originals in content.
 
 from __future__ import annotations
 
+import copy
 import json
-from pathlib import Path
+from typing import Any
 
 import pytest
 
 from tests.equivalence import corpus as C
 from tests.equivalence import normalizers as N
 
-_REAL_STORE = Path("D:/Libraries/Documents/projects/clio-agent/.clio/agent/messages")
+
+@pytest.fixture
+def source_ledgers() -> list[tuple[str, list[dict[str, Any]]]]:
+    """Use committed wire shapes with owned, unredacted content on every host."""
+
+    ledgers = copy.deepcopy(C.committed_corpus())
+    assert ledgers, "no committed source ledgers available"
+    seeded = 0
+    for sid, rows in ledgers:
+        for row in rows:
+            for part in row.get("parts", []):
+                if isinstance(part, dict) and isinstance(part.get("text"), str):
+                    part["text"] = f"Owned redaction fixture {sid}.\nPrivate content must change."
+                    seeded += 1
+    assert seeded, "committed corpus has no text-bearing fixture"
+    return ledgers
 
 
 def test_committed_corpus_is_present_and_parses() -> None:
@@ -49,23 +65,15 @@ def test_committed_corpus_has_no_content_leaks() -> None:
     assert not leaks, f"committed corpus leaked non-structural content: {leaks[:5]}"
 
 
-def test_redaction_is_shape_preserving_under_persistence_normalizer() -> None:
+def test_redaction_is_shape_preserving_under_persistence_normalizer(
+    source_ledgers: list[tuple[str, list[dict[str, Any]]]],
+) -> None:
     """``normalized_shape(normalize(original)) == normalized_shape(normalize(redacted))``.
 
-    Runs against the REAL local ledgers when present (the strongest check), else
-    against the committed redacted corpus re-redacted (idempotence: redacting an
-    already-redacted ledger keeps the same shape)."""
+    The committed real wire shapes carry synthetic private text, so this checks
+    non-idempotent redaction without requiring a developer's private messages."""
 
-    if _REAL_STORE.is_dir():
-        sources = [
-            (fp.stem, [r for r in json.loads(fp.read_text("utf-8")) if isinstance(r, dict)])
-            for fp in sorted(_REAL_STORE.glob("sess_*.json"))[:8]
-        ]
-    else:
-        sources = C.committed_corpus()
-
-    assert sources, "no source ledgers available"
-    for sid, rows in sources:
+    for sid, rows in source_ledgers:
         if not rows:
             continue
         orig_shape = C.normalized_shape(N.normalize_persistence(rows))
@@ -73,14 +81,13 @@ def test_redaction_is_shape_preserving_under_persistence_normalizer() -> None:
         assert orig_shape == red_shape, f"redaction changed SHAPE for {sid}"
 
 
-def test_redaction_actually_changes_content() -> None:
+def test_redaction_actually_changes_content(
+    source_ledgers: list[tuple[str, list[dict[str, Any]]]],
+) -> None:
     """Redaction is not a no-op: at least one text-bearing ledger differs post-redaction."""
 
-    if not _REAL_STORE.is_dir():
-        pytest.skip("real local store not available")
     changed_any = False
-    for fp in sorted(_REAL_STORE.glob("sess_*.json"))[:8]:
-        rows = [r for r in json.loads(fp.read_text("utf-8")) if isinstance(r, dict)]
+    for _sid, rows in source_ledgers:
         if not rows:
             continue
         before = json.dumps(N.normalize_persistence(rows))
@@ -88,7 +95,7 @@ def test_redaction_actually_changes_content() -> None:
         if before != after:
             changed_any = True
             break
-    assert changed_any, "redaction changed nothing on any real ledger"
+    assert changed_any, "redaction changed nothing on any owned source ledger"
 
 
 def test_local_corpus_loader_returns_none_when_unset(monkeypatch: pytest.MonkeyPatch) -> None:
