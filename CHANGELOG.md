@@ -4,6 +4,19 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
+## [0.9.5-beta.6.1] - 2026-10-14
+
+### Fixed
+
+- Match the runtime and CLI version to the package version. Beta.6's package
+  metadata was updated while its runtime constant still reported beta.5.2;
+  the release smoke check correctly rejected that mismatch before PyPI upload.
+- Add a source regression requiring runtime, project and lock versions to agree.
+
+This beta includes all beta.6 features below. It supersedes beta.6 without
+rewriting its tag. CI and remaining live acceptance are still deferred under
+the user's explicit beta release approval; no unperformed checks are claimed.
+
 ## [0.9.5-beta.6] - 2026-10-14
 
 ### Added
