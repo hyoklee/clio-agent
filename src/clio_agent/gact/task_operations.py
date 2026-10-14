@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import hashlib
 import json
 import logging
@@ -12,12 +11,15 @@ import re
 from collections.abc import Awaitable, Callable
 from typing import Any
 
-from clio_agent import conf
-from clio_agent.arc.task_types import CoreReference, TaskSnapshot, TaskSubscription
+from clio_agent.arc.task_types import TaskSnapshot, TaskSubscription
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
+from clio_agent.gact.task_cursors import decode_cursor as _decode
+from clio_agent.gact.task_cursors import encode_cursor as _cursor
 from clio_agent.gact.task_history import TaskHistory
+from clio_agent.gact.task_observations import pattern_text, read_observations
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
+from clio_agent.gact.task_result_content import committed_evidence, read_cursor, result_page
 
 CancelOwner = Callable[[TaskSnapshot, TaskCaller], Awaitable[dict[str, Any]]]
 
@@ -34,22 +36,6 @@ def _handles(tasks: str | list[str]) -> tuple[str, ...]:
     ):
         raise ValueError("tasks must be a handle or nonempty handle list")
     return tuple(dict.fromkeys(values))
-
-
-def _cursor(value: dict[str, Any]) -> str:
-    return base64.urlsafe_b64encode(json.dumps(value, sort_keys=True).encode()).decode()
-
-
-def _decode(value: str | None) -> dict[str, Any]:
-    if value is None:
-        return {}
-    try:
-        result = json.loads(base64.urlsafe_b64decode(value))
-    except (ValueError, UnicodeDecodeError) as error:
-        raise ValueError("Invalid task cursor") from error
-    if not isinstance(result, dict):
-        raise ValueError("Invalid task cursor")
-    return result
 
 
 def _timeout(value: float | None) -> float | None:
@@ -137,10 +123,34 @@ class TaskOperations:
                 "revision": self.history.revision,
             }
 
-    def result(self, caller: TaskCaller, handle: str) -> dict[str, Any]:
+    def result(self, caller: TaskCaller, handle: str, cursor: str | None = None) -> dict[str, Any]:
         """Read retained terminal output; the recipient-input commit acknowledges collection."""
         with self.history._lock:
-            current = TaskAccess(self.history, caller).require(handle, "read")
+            canonical = self.history.resolve_handle(handle) or handle
+            position = read_cursor(cursor, caller, canonical) if cursor is not None else {}
+            current = None
+            if position.get("mode") != "shared_evidence":
+                try:
+                    current = TaskAccess(self.history, caller).require(handle, "read")
+                except ValueError:
+                    if position:
+                        raise  # A task-result continuation cannot silently change read mode.
+            if current is None:
+                pin = committed_evidence(self.history, caller, canonical)
+                return {
+                    "result_kind": "shared_evidence",
+                    "handle": pin.handle,
+                    "status": pin.status,
+                    "pending": False,
+                    "source_owner": pin.owner.model_dump(mode="json"),
+                    "terminal_at": pin.terminal_at,
+                    "description": pin.description,
+                    "description_missing": pin.description_missing,
+                    "partial": pin.partial,
+                    **result_page(
+                        self.history, caller, pin.handle, pin.result, "shared_evidence", position
+                    ),
+                }
             result: dict[str, Any] = {
                 "handle": current.handle,
                 "status": current.status,
@@ -154,19 +164,10 @@ class TaskOperations:
             if current.result is None:
                 result["result"] = None
                 return result
-            value = self.history.read_content(current.result)
-            encoded = json.dumps(value, ensure_ascii=False)
-            bound = conf.resolve(
-                "limits.tool_result_chars",
-                env="CLIO_TOOL_RESULT_CHARS",
-                default=12000,
-                cast=conf.as_int,
-            )
-            result["result_reference"] = current.result.model_dump(mode="json")
-            result["result"] = (
-                value
-                if bound <= 0 or len(encoded) <= bound
-                else {"preview": encoded[:bound], "truncated": True}
+            result.update(
+                result_page(
+                    self.history, caller, current.handle, current.result, "task_result", position
+                )
             )
             return result
 
@@ -264,10 +265,15 @@ class TaskOperations:
         pattern: str | None = None,
         timeout_s: float | None = None,
         notify: bool | None = None,
+        *,
+        row_limit: int | None = None,
+        include_state: bool = False,
     ) -> dict[str, Any]:
         """Read available changes immediately, or explicitly await output/settlement."""
         handles = await asyncio.to_thread(self._canonical_observed, caller, _handles(tasks))
         timeout, previous = _timeout(timeout_s), _decode(cursor)
+        search_start = _cursor(previous) if previous else None
+        scanned_pages = 0
         if previous and previous.get("recipient") != caller.session_id:
             raise ValueError("Observation cursor belongs to another recipient")
         try:
@@ -289,23 +295,34 @@ class TaskOperations:
                 )
             while True:
                 changed.clear()
-                result = await asyncio.to_thread(self._observations, caller, handles, previous)
+                result = await asyncio.to_thread(
+                    self._observations, caller, handles, previous, row_limit, include_state
+                )
+                if expression is not None:
+                    result.update(search_start_cursor=search_start, scanned_pages=scanned_pages)
                 if subscription_errors:
                     result["subscription_errors"] = subscription_errors
                 if (
                     expression is None
                     or result["any_settled"]
-                    or expression.search(json.dumps(result["tasks"]))
+                    or any(expression.search(pattern_text(row)) for row in result["tasks"])
                 ):
                     return result
                 remaining = None if deadline is None else max(0.0, deadline - loop.time())
                 if remaining == 0:
                     return {**result, "timed_out": True}
+                previous = _decode(result["cursor"])
+                if result["has_more"]:
+                    scanned_pages += 1
+                    await asyncio.sleep(0)  # Cancellation remains responsive while paging.
+                    continue
                 try:
                     await asyncio.wait_for(changed.wait(), remaining)
                 except TimeoutError:
                     return {
-                        **await asyncio.to_thread(self._observations, caller, handles, previous),
+                        **await asyncio.to_thread(
+                            self._observations, caller, handles, previous, row_limit, include_state
+                        ),
                         **(
                             {"subscription_errors": subscription_errors}
                             if subscription_errors
@@ -317,99 +334,14 @@ class TaskOperations:
             remove()
 
     def _observations(
-        self, caller: TaskCaller, handles: tuple[str, ...], previous: dict[str, Any]
+        self,
+        caller: TaskCaller,
+        handles: tuple[str, ...],
+        previous: dict[str, Any],
+        row_limit: int | None = None,
+        include_state: bool = False,
     ) -> dict[str, Any]:
-        access = TaskAccess(self.history, caller)
-        rows: list[dict[str, Any]] = []
-        positions: dict[str, str] = {}
-        outputs: dict[str, Any] = {}
-        settled, any_settled = True, False
-        with self.history._lock:
-            for handle in handles:
-                try:
-                    current = access.require(handle, "observe")
-                except ValueError:
-                    rows.append({"handle": handle, "error": "task_unavailable"})
-                    any_settled = True
-                    continue
-                view = access.view(current)
-                position = hashlib.sha256(json.dumps(view, sort_keys=True).encode()).hexdigest()
-                if "read" in access.rights(current):
-                    reference = current.progress.output
-                    chunks: list[Any] = []
-                    output: Any
-                    bound = conf.resolve(
-                        "limits.tool_result_chars",
-                        env="CLIO_TOOL_RESULT_CHARS",
-                        default=12000,
-                        cast=conf.as_int,
-                    )
-                    used = 0
-                    stop = previous.get("outputs", {}).get(handle)
-                    while reference is not None and reference.content_id != stop:
-                        if bound > 0 and used >= bound:
-                            view["output_truncated"] = True
-                            view["older_output_reference"] = reference.model_dump(mode="json")
-                            break
-                        value = self.history.read_content(reference)
-                        if not isinstance(value, dict) or "chunk_id" not in value:
-                            raise ValueError("Task output history is malformed")
-                        if value.get("output_source") is not None:
-                            source = self.history.read_content(
-                                CoreReference.model_validate(value["output_source"])
-                            )
-                            if not isinstance(source, dict):
-                                raise ValueError("Task public output reference is malformed")
-                            output = {
-                                "text": source.get("text", ""),
-                                "tools": value.get("tools", []),
-                            }
-                        else:
-                            output = value["output"]
-                        encoded = (
-                            output
-                            if isinstance(output, str)
-                            else json.dumps(output, ensure_ascii=False)
-                        )
-                        if bound > 0 and len(encoded) > bound - used:
-                            chunks.append(
-                                {
-                                    "preview": encoded[: bound - used],
-                                    "truncated": True,
-                                    "reference": reference.model_dump(mode="json"),
-                                }
-                            )
-                            used = bound
-                        else:
-                            chunks.append(output)
-                            used += len(encoded)
-                        older = value.get("previous")
-                        reference = (
-                            CoreReference.model_validate(older) if older is not None else None
-                        )
-                    outputs[handle] = (
-                        current.progress.output.content_id if current.progress.output else None
-                    )
-                    if chunks:
-                        view["output"] = list(reversed(chunks))
-                positions[handle] = position
-                if previous.get("positions", {}).get(handle) != position:
-                    rows.append(view)
-                settled = settled and current.terminal_at is not None
-                any_settled = (
-                    any_settled
-                    or current.terminal_at is not None
-                    or current.status == "task_state_uncertain"
-                )
-            return {
-                "tasks": rows,
-                "settled": settled,
-                "any_settled": any_settled,
-                "timed_out": False,
-                "cursor": _cursor(
-                    {"recipient": caller.session_id, "positions": positions, "outputs": outputs}
-                ),
-            }
+        return read_observations(self.history, caller, handles, previous, row_limit, include_state)
 
     def _subscribe(
         self, caller: TaskCaller, handles: tuple[str, ...], enabled: bool

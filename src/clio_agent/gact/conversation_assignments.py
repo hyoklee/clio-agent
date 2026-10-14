@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from clio_agent.arc.task_types import (
     AssignmentDetails,
+    AssignmentEvidence,
     BackendReference,
     CoordinationGrant,
     MailItem,
@@ -60,6 +61,10 @@ def _new_assignment(
         AssignmentDetails(
             predecessor=predecessor.handle if predecessor is not None else None,
             context=previous_details.context if previous_details is not None else None,
+            input_evidence=previous_details.input_evidence if previous_details is not None else (),
+            evidence_assignment=previous_details.evidence_assignment
+            if previous_details is not None
+            else None,
             parent_turn_id=parent_input.turn_id
             if parent_input is not None
             else previous_details.parent_turn_id
@@ -239,6 +244,13 @@ async def spawn(
     """Persist the original assignment before enrichment or child inference starts."""
     if not assignment.strip():
         raise ValueError("Subagent assignment cannot be empty")
+    from clio_agent.gact.assignment_evidence import validate_assignment_evidence
+
+    raw_evidence = (launch_context or {}).get("input_task_refs", [])
+    if not isinstance(raw_evidence, list):
+        raise ValueError("Delegation evidence must be an immutable reference list")
+    pins = tuple(AssignmentEvidence.model_validate(value) for value in raw_evidence)
+    await asyncio.to_thread(validate_assignment_evidence, self.history, caller, pins)
     normalized_strategy = None
     if strategy is not None:
         from clio_agent.gact.agents.module_variants import strategy_module
@@ -253,6 +265,7 @@ async def spawn(
 
     def create() -> TaskSnapshot:
         with self.history._lock:
+            validate_assignment_evidence(self.history, caller, pins)
             existing = self.history.task_snapshot(handle)
             if existing is not None:
                 session = self.sessions.get(existing.owner.session_id)
@@ -264,6 +277,13 @@ async def spawn(
                     raise ValueError("Spawn invocation was reused with different work")
                 if session.metadata.get("variant_strategy") != normalized_strategy:
                     raise ValueError("Spawn invocation was reused with a different strategy")
+                if existing.details is None:
+                    raise ValueError("Accepted assignment details are unavailable")
+                previous = AssignmentDetails.model_validate(
+                    self.history.read_content(existing.details)
+                )
+                if previous.input_evidence != pins:
+                    raise ValueError("Spawn invocation was reused with different input evidence")
                 if existing.terminal_at is not None:
                     return existing
             parent = (
@@ -315,7 +335,7 @@ async def spawn(
                 if task.resource_id is None:
                     task = task.model_copy(update={"resource_id": resource_id})
                     self.history.record_snapshot(task, observation_id=uuid4().hex)
-            if workflow_id is not None or inference_concurrency is not None:
+            if workflow_id is not None or inference_concurrency is not None or pins:
                 details = (
                     AssignmentDetails.model_validate(self.history.read_content(task.details))
                     if task.details is not None
@@ -328,6 +348,8 @@ async def spawn(
                             "workflow_id": workflow_id,
                             "workflow_step": workflow_step,
                             "inference_concurrency": inference_concurrency,
+                            "input_evidence": pins,
+                            "evidence_assignment": task.handle if pins else None,
                         }
                     ).model_dump(mode="json"),
                 )

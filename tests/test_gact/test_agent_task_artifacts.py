@@ -13,7 +13,6 @@ from clio_agent.gact.agent_task_artifacts import (
     emit_commission_parent_use,
     returned_artifact_ref,
 )
-from clio_agent.gact.agent_tasks import AgentTask
 from clio_agent.gact.artifacts.records import (
     ArtifactKind,
     Custody,
@@ -89,7 +88,7 @@ def test_returned_artifact_ref_is_real_and_context_contains_verified_report(
     assert artifact_ref["metadata"]["kind"] == "report"
     assert artifact_ref["metadata"]["uri"] == "artifact://ws_test/report.md@v1"
 
-    task = AgentTask(
+    task = SimpleNamespace(
         task_id="task_report",
         parent_session_id="parent_session",
         child_session_id="child_session",

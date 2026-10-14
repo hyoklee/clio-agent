@@ -1,0 +1,53 @@
+# Task tool compatibility
+
+New agent catalogs use `query_tasks`, `observe_tasks`, `wait_tasks`,
+`cancel_tasks`, `get_task_result` and `send_agent_message`. Existing agents may
+explicitly request these shipped aliases for one Tasks release cycle:
+
+| Legacy tool | Shared operation |
+| --- | --- |
+| `wait_agent_tasks(task_ids, timeout_s=None)` | `wait_tasks(tasks, return_when="all", timeout_s)`; results are returned under `results` |
+| `observe_agent_tasks(task_ids, cursor=1, limit=40, pattern=None, include_state=True)` | Shared observation, with honest cursor migration below |
+| `get_agent_task_output(task_id)` | `get_task_result(handle)` |
+| `message_agent(task_id, message)` | `send_agent_message(target, message)` |
+
+`cancel_agent_tasks` was an unfinished branch addition, not a shipped alias in
+the selected compatibility baseline. Use `cancel_tasks`.
+
+`spawn_agent_task` preserves `agent`, `task`, `placement`, `input_task_ids`,
+`blueprint_id` and `strategy`. `spawn_agents_parallel` preserves `spawns` and
+`placement`; each entry uses the same blueprint, evidence and strategy preparation
+as a single spawn. Invalid members return independent errors. Omitted or local
+placement works. Special relay placement is explicitly rejected; configure an
+ordinary MCP server instead.
+
+Observation cursor `1` starts the new Core history epoch with an explicit
+`legacy_history_unavailable` notice. Old numeric SSE resume positions cannot be
+translated and return `legacy_observation_history_unavailable`. Returned string
+cursors resume Core history. `limit` counts changed task rows, not old SSE events.
+`include_state` exposes actual retained workflow state when available, never a
+substitute task status. Missing state is explicit.
+
+Output pages use a task-local Core namespace, newest chunks first, with per-chunk
+offsets and continuations that retain omitted bytes. JSON fragments must be
+concatenated before parsing. Pattern observation searches disclosed output and
+progress messages, not descriptions or identity metadata. It scans available
+pages before waiting; `search_start_cursor` identifies where that pattern search
+began so earlier nonmatching output can be read independently. No background
+poller or mutable cursor store is added.
+
+Historical IDs resolve only when unambiguous. Result reads return pending state
+or bounded stored content with its exact reference and `next_cursor`. Explicit
+collection is acknowledged through the recipient-input commitment used by
+automatic delivery. Readable results remain available afterward.
+
+`input_task_ids` selects finished children owned by the spawning session. The
+child receives bounded quoted evidence and a pinned `get_task_result` cursor.
+That cursor reads only the exact snapshot in its confirmed delegation input,
+including after a successor continues the stable session. It grants no sibling
+task rights and cannot consume the source's completion notification. A separate
+task grant changing later cannot silently switch those pinned result bytes.
+
+Aliases are excluded from newly generated default catalogs. Remove them after
+the first released Tasks compatibility cycle. Old registries, drivers and
+mailboxes are not restored for compatibility.

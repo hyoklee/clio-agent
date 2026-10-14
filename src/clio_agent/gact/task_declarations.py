@@ -36,7 +36,7 @@ TASK_TOOL_NAMES = frozenset(
     }
 )
 TASK_COMPATIBILITY_ALIASES = frozenset(
-    {"wait_agent_tasks", "observe_agent_tasks", "cancel_agent_tasks"}
+    {"wait_agent_tasks", "observe_agent_tasks", "get_agent_task_output", "message_agent"}
 )
 
 
@@ -51,6 +51,8 @@ def _runtime() -> tuple[Any, Any]:
 
 
 def _collected(app: Any, caller: Any, value: dict[str, Any]) -> CollectedTaskResult:
+    if value.get("result_kind") == "shared_evidence":
+        return CollectedTaskResult(value, ())
     handles = {
         row["handle"]
         for row in value.get("outcomes", [])
@@ -140,9 +142,9 @@ def build_task_tools() -> list[Any]:
         app, caller = _runtime()
         return await app.state.task_operations.cancel(caller, tasks)
 
-    async def get_task_result(handle: str) -> dict[str, Any]:
+    async def get_task_result(handle: str, cursor: str | None = None) -> dict[str, Any]:
         app, caller = _runtime()
-        value = await asyncio.to_thread(app.state.task_operations.result, caller, handle)
+        value = await asyncio.to_thread(app.state.task_operations.result, caller, handle, cursor)
         return await asyncio.to_thread(_collected, app, caller, value)
 
     async def send_agent_message(
@@ -222,8 +224,8 @@ def build_task_tools() -> list[Any]:
         _tool(
             get_task_result,
             "get_task_result",
-            {"handle": {"type": "string"}},
-            "Read retained terminal output, or report pending. Later explicit reads remain possible.",
+            {"handle": {"type": "string"}, "cursor": _STRING},
+            "Read retained terminal output, or report pending. Follow next_cursor for bounded output; concatenate JSON chunks before parsing. A delegated evidence cursor reads only its committed snapshot. Later explicit reads remain possible.",
             read=True,
         ),
         _tool(
@@ -398,36 +400,101 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
 
 def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
     """Expose shipped names only when requested, delegating for one release cycle."""
-    tools = []
-    for alias in sorted(TASK_COMPATIBILITY_ALIASES.intersection(requested)):
-        operation = alias.removesuffix("_agent_tasks")
+    canonical = {tool.name: tool.func for tool in build_task_tools()}
 
-        async def delegate(
-            task_ids: str | list[str], timeout_s: float | None = None, _operation: str = operation
-        ) -> dict[str, Any]:
-            app, caller = _runtime()
-            if _operation == "wait":
-                value = await app.state.task_operations.wait(caller, task_ids, "all", timeout_s)
-                collected = await asyncio.to_thread(_collected, app, caller, value)
-                return CollectedTaskResult(
-                    {**collected, "results": collected["outcomes"]}, collected.notification_ids
-                )
-            if _operation == "observe":
-                return await app.state.task_operations.observe(
-                    caller, task_ids, timeout_s=timeout_s
-                )
-            return await app.state.task_operations.cancel(caller, task_ids)
-
-        tools.append(
-            _tool(
-                delegate,
-                alias,
-                {"task_ids": _TASKS, "timeout_s": _TIMEOUT},
-                "Compatibility alias for the shared task operation. Use query_tasks, observe_tasks, wait_tasks and cancel_tasks in new instructions.",
-                read=operation == "wait",
-            )
+    async def wait_agent_tasks(
+        task_ids: list[str],
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        value = await canonical["wait_tasks"](task_ids, "all", timeout_s)
+        return CollectedTaskResult(
+            {"results": value["outcomes"], **{k: v for k, v in value.items() if k != "outcomes"}},
+            value.notification_ids,
         )
-    return tools
+
+    async def observe_agent_tasks(
+        task_ids: list[str],
+        cursor: int | str = 1,
+        limit: int = 40,
+        pattern: str | None = None,
+        include_state: bool = True,
+        timeout_s: float | None = None,
+    ) -> dict[str, Any]:
+        if type(cursor) is int and cursor != 1:
+            raise ValueError(
+                "legacy_observation_history_unavailable: numeric SSE cursors cannot resume Core history"
+            )
+        if not isinstance(cursor, str) and type(cursor) is not int:
+            raise ValueError("cursor must be 1 or a returned Core cursor")
+        app, caller = _runtime()
+        result = await app.state.task_operations.observe(
+            caller,
+            task_ids,
+            None if cursor == 1 else cursor,
+            pattern,
+            timeout_s,
+            row_limit=limit,
+            include_state=include_state,
+        )
+        result["next_cursor"] = result["cursor"]
+        if cursor == 1:
+            result["notice"] = (
+                "legacy_history_unavailable: starting the Core observation epoch; limit counts changed task rows, not SSE events"
+            )
+        return result
+
+    async def get_agent_task_output(task_id: str) -> dict[str, Any]:
+        value = await canonical["get_task_result"](task_id)
+        return CollectedTaskResult({**value, "task_id": task_id}, value.notification_ids)
+
+    async def message_agent(task_id: str, message: str) -> dict[str, Any]:
+        return await canonical["send_agent_message"](task_id, message)
+
+    declarations = (
+        (
+            wait_agent_tasks,
+            "wait_agent_tasks",
+            {
+                "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "timeout_s": _TIMEOUT,
+            },
+            True,
+        ),
+        (
+            observe_agent_tasks,
+            "observe_agent_tasks",
+            {
+                "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "cursor": {
+                    "anyOf": [{"type": "integer", "minimum": 1}, {"type": "string"}],
+                    "default": 1,
+                },
+                "limit": {"type": "integer", "minimum": 1, "default": 40},
+                "pattern": _STRING,
+                "include_state": {"type": "boolean", "default": True},
+                "timeout_s": _TIMEOUT,
+            },
+            True,
+        ),
+        (get_agent_task_output, "get_agent_task_output", {"task_id": {"type": "string"}}, True),
+        (
+            message_agent,
+            "message_agent",
+            {"task_id": {"type": "string"}, "message": {"type": "string"}},
+            False,
+        ),
+    )
+    return [
+        _tool(
+            function,
+            name,
+            args,
+            "Legacy delegate retained for one release cycle. Uses shared task authorization, current bounds and result references. Numeric observation cursor 1 starts Core history; returned string cursors resume it. Use the canonical task/session controls in new instructions.",
+            read=read,
+        )
+        for function, name, args, read in declarations
+        if name in requested
+    ]
 
 
 def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -> list[Any]:
@@ -440,45 +507,83 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
     ):
         raise ValueError("Declared fanout concurrency must be a positive integer")
 
-    async def spawn_agent_task(
-        agent: str = "",
-        task: str = "",
-        blueprint_id: str | None = None,
-        strategy: dict[str, Any] | None = None,
+    def local_placement(placement: str | None) -> None:
+        if placement not in {None, "", "local"}:
+            raise ValueError(
+                "Special relay placement is unavailable; configure an ordinary MCP server"
+            )
+
+    async def prepare_and_spawn(
+        agent: str,
+        task: str,
+        placement: str | None,
+        input_task_ids: list[str] | None,
+        blueprint_id: str | None,
+        strategy: dict[str, Any] | None,
+        invocation: str,
     ) -> dict[str, Any]:
+        local_placement(placement)
         app, caller = _runtime()
         from clio_agent.gact.agents.blueprint_commission import resolve_commission_target
+        from clio_agent.gact.assignment_evidence import select_assignment_evidence
 
         target, scope, _, _ = await asyncio.to_thread(
             resolve_commission_target, app, caller.session_id, agent, blueprint_id
         )
-        return await app.state.conversations.spawn(
+        pins = await asyncio.to_thread(
+            select_assignment_evidence, app.state.task_history, caller, input_task_ids
+        )
+        result = await app.state.conversations.spawn(
             caller,
             task,
             target,
-            TASK_CALL.get().invocation_id or uuid4().hex,
+            invocation,
             inference_concurrency=concurrency,
             target_scope=scope,
             strategy=strategy,
+            launch_context={"input_task_refs": [pin.model_dump(mode="json") for pin in pins]},
+        )
+        return {**result, **({"task_id": result["handle"]} if "handle" in result else {})}
+
+    async def spawn_agent_task(
+        agent: str = "",
+        task: str = "",
+        placement: str | None = None,
+        input_task_ids: list[str] | None = None,
+        blueprint_id: str | None = None,
+        strategy: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return await prepare_and_spawn(
+            agent,
+            task,
+            placement,
+            input_task_ids,
+            blueprint_id,
+            strategy,
+            TASK_CALL.get().invocation_id or uuid4().hex,
         )
 
-    async def spawn_agents_parallel(assignments: list[dict[str, Any]]) -> dict[str, Any]:
-        app, caller = _runtime()
+    async def spawn_agents_parallel(
+        spawns: list[dict[str, Any]],
+        placement: str | None = None,
+    ) -> dict[str, Any]:
+        local_placement(placement)
         maximum = limits.get("max_items", 0)
-        if not assignments or maximum and len(assignments) > maximum:
+        if not spawns or maximum and len(spawns) > maximum:
             raise ValueError("Spawn batch is empty or exceeds its declared item budget")
         invocation = TASK_CALL.get().invocation_id or uuid4().hex
         outcomes = []
-        for index, assignment in enumerate(assignments):
+        for index, assignment in enumerate(spawns):
             try:
                 outcomes.append(
-                    await app.state.conversations.spawn(
-                        caller,
+                    await prepare_and_spawn(
+                        assignment.get("agent", ""),
                         assignment["task"],
-                        assignment["agent"],
+                        placement,
+                        assignment.get("input_task_ids"),
+                        assignment.get("blueprint_id"),
+                        assignment.get("strategy"),
                         invocation + ":" + str(index),
-                        inference_concurrency=concurrency,
-                        strategy=assignment.get("strategy"),
                     )
                 )
             except Exception as error:
@@ -487,7 +592,7 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
                     type(error).__name__,
                 )
                 outcomes.append({"index": index, "error": str(error)})
-        return {"outcomes": outcomes}
+        return {"spawned": [row for row in outcomes if "handle" in row], "outcomes": outcomes}
 
     strategy_schema = {
         "anyOf": [
@@ -515,6 +620,11 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
                 "agent": {"type": "string", "default": ""},
                 "task": {"type": "string"},
                 "blueprint_id": _STRING,
+                "placement": _STRING,
+                "input_task_ids": {
+                    "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
+                    "default": None,
+                },
                 "strategy": strategy_schema,
             },
             "Delegate the original assignment and immediately receive a Subagent handle. Optional strategy selects best_of_n/refine with n, rubric, threshold and lm/user judge. Continue work, observe_tasks, or wait_tasks. Child results wake eligible idle parents. Pause holds only the child model; cancel_tasks includes its descendant work.",
@@ -525,7 +635,8 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
             spawn_agents_parallel,
             "spawn_agents_parallel",
             {
-                "assignments": {
+                "placement": _STRING,
+                "spawns": {
                     "type": "array",
                     "minItems": 1,
                     "items": {
@@ -533,12 +644,20 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
                         "properties": {
                             "agent": {"type": "string"},
                             "task": {"type": "string"},
+                            "blueprint_id": _STRING,
+                            "input_task_ids": {
+                                "anyOf": [
+                                    {"type": "array", "items": {"type": "string"}},
+                                    {"type": "null"},
+                                ],
+                                "default": None,
+                            },
                             "strategy": strategy_schema,
                         },
                         "required": ["agent", "task"],
                         "additionalProperties": False,
                     },
-                }
+                },
             },
             "Accept several child assignments and return their Subagent handles with independent errors. Native inference budgets apply only to model calls. Use shared observation or waiting across the returned handles.",
         )

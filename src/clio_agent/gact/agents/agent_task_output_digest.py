@@ -1,36 +1,9 @@
-"""Bounded model-lane digest for a completed child task's output (#1306).
+"""Retained pure formatting for bounded child-output envelopes.
 
-``wait_agent_tasks`` honors the #880 verbatim contract: its
-completion payload's ``output`` is the child's FULL answer, byte-for-byte,
-ALWAYS. For a short (earthscope-class) answer that is the right call; for a
-content-producing child (a multi-page research report) it means a
-coordinator collecting N such children accumulates the SUM of every child's
-full output inline in its OWN context -- proven live in #1306: a single
-``wait_agent_tasks`` observation carrying two completed research answers
-measured 30,546 chars, and a researcher child turn two waves later recorded
-399,913 input tokens. The coordinator lost workflow state at that size.
-
-This mirrors the ``_clio`` truncation-envelope shape
-``tools/mcp_result_projection.py`` already uses for one oversize MCP tool
-result, applied to the SAME failure class one layer up (bytes accumulate
-ACROSS children collected into one context, not just within one call). It is
-a DIFFERENT knob from that module's ``model_tool_result_chars`` (own key, own
-consumer, own failure mode -- the house rule that module's own docstring
-states), because it bounds a different thing: one MCP call's result vs. one
-spawned child's full answer.
-
-The digest never discards data: a durable reference (the child session id +
-the id of the message holding the full text) rides the envelope, and
-``get_agent_task_output`` (built here, registered alongside the spawn tools
-in ``spawn_runtime.build_spawn_runtime_tools``) fetches it verbatim on
-demand -- recoverability is mandatory, per #1306. Nothing here decides
-anything FOR the model: the envelope only states what happened and how to
-get the rest; the model chooses whether to fetch it.
-
-The OTHER recoverability direction -- handing a child the full material of
-tasks the PARENT already collected, so a critic never has to round-trip
-through the parent at all -- lives in the sibling owner module
-``agent_task_input_refs.py`` (#1306 review round, finding 1).
+These helpers hold no execution or delivery authority. New retrieval instructions
+use get_task_result(handle); that control returns currently bounded output and
+Core references. Older saved instructions can use the explicit one-cycle
+get_agent_task_output(task_id) compatibility delegate.
 """
 
 from __future__ import annotations
@@ -41,9 +14,8 @@ from typing import Any
 #: the ``<lane>_oversize`` reason naming).
 AGENT_TASK_OUTPUT_OVERSIZE_REASON = "agent_task_output_oversize"
 
-#: The fetch tool a digest envelope's ``fetch_full_output.tool`` points at
-#: (built by :func:`build_agent_task_output_tool`).
-FETCH_FULL_OUTPUT_TOOL = "get_agent_task_output"
+#: Canonical bounded result retrieval; retained envelopes may name its legacy alias.
+FETCH_FULL_OUTPUT_TOOL = "get_task_result"
 
 
 def agent_task_output_digest_chars() -> int:
@@ -154,7 +126,7 @@ def digest_agent_task_output(
         "message_ref": message_ref,
         "fetch_full_output": {
             "tool": FETCH_FULL_OUTPUT_TOOL,
-            "args": {"task_id": task_id},
+            "args": {"handle": task_id},
         },
     }
 

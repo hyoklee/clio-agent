@@ -268,6 +268,19 @@ class TaskSubscription(TaskRecord):
     generation: int = Field(default=1, ge=1)
 
 
+class AssignmentEvidence(TaskRecord):
+    """An explicitly shared immutable result snapshot, without rights over its source task."""
+
+    handle: str
+    owner: TaskOwner
+    status: str
+    terminal_at: str
+    result: CoreReference
+    description: str | None = None
+    description_missing: bool = True
+    partial: bool = False
+
+
 class AssignmentDetails(TaskRecord):
     """Conversation-owned finite assignment and fixed context, without copied history."""
 
@@ -283,6 +296,8 @@ class AssignmentDetails(TaskRecord):
     workflow: CoreReference | None = None
     inference_concurrency: int | None = Field(default=None, ge=1)
     cancellation_members: tuple[str, ...] | None = None
+    input_evidence: tuple[AssignmentEvidence, ...] = ()
+    evidence_assignment: str | None = None
 
 
 class QuestionOption(TaskRecord):

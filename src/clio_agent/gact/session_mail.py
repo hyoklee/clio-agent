@@ -17,6 +17,7 @@ from clio_agent.gact.task_history import MailboxFull, TaskHistory
 from clio_agent.gact.task_publication import task_owner_recipient
 
 Eligibility = Callable[[str, MailItem], bool]
+ATOMIC_INPUT_KINDS = frozenset({"human", "composer", "delegation"})
 
 
 class MailText(str):
@@ -113,7 +114,7 @@ class SessionMail:
                 if budget > 0 and used + len(text) > budget:
                     if injections:
                         break
-                    if item.kind not in {"human", "composer"}:
+                    if item.kind not in ATOMIC_INPUT_KINDS:
                         reference = f"\n[Full content retained at {item.content.scope}; task {item.handle or ''}.]"
                         text = text[: max(0, budget - len(reference))] + reference
                 source = "steer" if item.kind in {"human", "composer"} else item.kind
@@ -127,7 +128,7 @@ class SessionMail:
     ) -> StagedInput:
         """Bound actual text/media before commitment; keep overflow Core-pending.
 
-        One indivisible human item may exceed this notification batch budget,
+        One indivisible human or delegation input may exceed this batch budget,
         alone. Provider attachment and request/context limits still apply.
         Explicit collections already recorded as tool observations remain
         independent of newly rendered mailbox input.
@@ -153,10 +154,10 @@ class SessionMail:
                 len(str(media.get("data", ""))) for media in value.get("media", ())
             )
             if budget > 0 and used + cost > budget:
-                if rendered_count or item.kind not in {"human", "composer"}:
+                if rendered_count or item.kind not in ATOMIC_INPUT_KINDS:
                     full = True
                     continue
-                full = True  # sole oversized human input, never clip native media
+                full = True  # sole original input, never clip assignment text or native media
             items.append(item)
             used += cost
             rendered_count += 1
@@ -201,6 +202,10 @@ class SessionMail:
                     raise ValueError("Staged input is gated; retain it pending")
                 if not self._authorized(item, access):
                     raise ValueError("Staged input authorization changed; retain it pending")
+                if item.kind == "delegation" and item.handle:
+                    from clio_agent.gact.assignment_evidence import validate_delegation_evidence
+
+                    validate_delegation_evidence(self.history, item.handle)
                 if item.handle is not None and item.kind in {
                     "task_result",
                     "attention",

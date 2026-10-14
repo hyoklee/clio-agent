@@ -44,6 +44,7 @@ def restore(self: TaskHistory) -> None:
         pending, previous_revision = self._pending, self.revision
         acknowledgements, withdrawn, grants = self._acknowledged, self._withdrawn, self._grants
         observation_inputs = self._observation_inputs
+        notification_inputs = self._notification_inputs
         iterations, locations = self._iterations, self._input_locations
         submissions, attempts = self._submissions, self._attempts
         deduplicated = self._deduplicated
@@ -61,6 +62,7 @@ def restore(self: TaskHistory) -> None:
         self._pending, self.revision = {}, 0
         self._acknowledged, self._withdrawn, self._grants = {}, {}, {}
         self._observation_inputs = {}
+        self._notification_inputs = {}
         self._iterations, self._input_locations = {}, {}
         self._submissions, self._attempts = {}, {}
         self._deduplicated = {}
@@ -115,6 +117,7 @@ def restore(self: TaskHistory) -> None:
                 grants,
             )
             self._observation_inputs = observation_inputs
+            self._notification_inputs = notification_inputs
             self._iterations, self._input_locations = iterations, locations
             self._submissions, self._attempts = submissions, attempts
             self._deduplicated = deduplicated
@@ -351,6 +354,7 @@ def _accept_input(self: TaskHistory, record: RecipientInput) -> None:
             reference.content_id
         )
     for notification_id in record.notification_ids:
+        self._notification_inputs[(record.session_id, notification_id)] = record.id
         self._pending.get(record.session_id, {}).pop(notification_id, None)
     self.revision += 1
 

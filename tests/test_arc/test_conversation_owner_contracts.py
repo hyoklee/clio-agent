@@ -340,6 +340,7 @@ async def test_busy_evidence_uses_accepted_snapshot_and_rechecks_current_access(
     arc: ARCMemory, tmp_path: Path
 ) -> None:
     """Changed evidence is delivered as-of acceptance; loss of workspace access is refused."""
+    from clio_agent.gact.context_reference_evidence import find_evidence_reference_snapshot
     from clio_agent.gact.context_references import authorize_context_reference_parts_sync
     from clio_agent.gact.messaging import queued_user_input
     from clio_agent.gact.runtime.globals import _ContextFileAccessError
@@ -360,11 +361,20 @@ async def test_busy_evidence_uses_accepted_snapshot_and_rechecks_current_access(
 
     def exercise() -> None:
         session = app.state.sessions.get(sid)
+        selected = find_evidence_reference_snapshot(
+            app, session.workspace_id, "context_frame", "accepted-frame"
+        )
+        assert selected is not None
         parts = authorize_context_reference_parts_sync(
             app,
             session,
             [
-                Part(type="context_ref", ref_kind="context_frame", ref_id="accepted-frame"),
+                Part(
+                    type="context_ref",
+                    ref_kind="context_frame",
+                    ref_id="accepted-frame",
+                    revision=selected[0]["revision"],
+                ),
             ],
         )
         message = Message(

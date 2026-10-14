@@ -410,8 +410,8 @@ class Conversations:
                     old = self.history.read_content(previous)
                     if isinstance(old, dict) and old.get("chunk_id") == source.content_id:
                         return
-                reference = self.history.write_content(
-                    task.owner.session_id,
+                reference = self.history.write_output(
+                    task.handle,
                     {
                         "chunk_id": source.content_id,
                         "output_source": source.model_dump(mode="json"),

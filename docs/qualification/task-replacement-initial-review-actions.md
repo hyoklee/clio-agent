@@ -1,5 +1,30 @@
 # Initial implementation review actions
 
+## Shipped output-getter compatibility
+
+During individual test classification, Astra verified that
+`get_agent_task_output` shipped in v0.9.2 and remained in v0.9.5-beta.5.2.
+R2 therefore requires its one-cycle delegate, rather than deletion as an
+unfinished branch internal. The correction uses the existing compatibility
+builder, common authorized result operation and `_collected` recipient identities.
+New default catalogs and newly emitted digest retrieval instructions use
+`get_task_result(handle)`. Existing bounds/references replace the old unlimited
+inline promise. No registry, task owner or extra acknowledgement path returns.
+
+Pure digest assertions remain; old getter/registry scenarios are replaced by
+real-Core alias/result/authorization/pending/collection tests. Their current
+status is authored and unexecuted. This small production delta still needs source
+review and affected checks; af8e4b6c approval does not automatically cover it.
+
+Focused proof so far: original-reservation Stop/retirement and automatic-promotion
+Stop regressions passed individually. The evidence case first refused an unpinned
+fixture reference; it is being corrected to select/pin an actual snapshot.
+Original failed attempts remain recorded. Runtime roots b1-b4 were absent afterward
+and process audits found no matching residue. Core2.3.1 emitted nanobind reference
+count diagnostics, including after a passing case; long-lived resource-growth
+acceptance remains unverified. These focused results do not pass Q3/Q7/Q8 or any
+final five-cycle race gate.
+
 ## Initial source approval
 
 Astra independently approved core af8e4b6c / GACT ce993164 / marketplace 9257bba

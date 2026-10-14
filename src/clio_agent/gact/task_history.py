@@ -38,8 +38,14 @@ if TYPE_CHECKING:
     from clio_agent.arc.memory import ARCMemory
 
 CONTENT_SCOPE = "_task_content/"
+OUTPUT_SCOPE = "_task_output/"
 logger = logging.getLogger(__name__)
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
+
+
+def output_scope(handle: str) -> str:
+    """Derive a task-local content namespace for untrusted observation continuations."""
+    return OUTPUT_SCOPE + hashlib.sha256(handle.encode()).hexdigest() + "/"
 
 
 class MailboxFull(ValueError):
@@ -65,6 +71,7 @@ class TaskHistory:
         self._mail: dict[str, dict[str, MailItem]] = {}
         self._pending: dict[str, dict[str, MailItem]] = {}
         self._inputs: dict[tuple[str, str], RecipientInput] = {}
+        self._notification_inputs: dict[tuple[str, str], str] = {}
         self._iterations: dict[tuple[str, str, str], str] = {}
         self._input_locations: dict[tuple[str, str], dict[str, Any]] = {}
         self._acknowledged: dict[str, set[str]] = {}
@@ -106,13 +113,24 @@ class TaskHistory:
 
     def write_content(self, session_id: str, value: object) -> CoreReference:
         """Confirm content once, before an observation or mailbox item refers to it."""
+        return self._write_content(session_id, value, CONTENT_SCOPE)
+
+    def write_output(self, handle: str, value: object) -> CoreReference:
+        """Confirm output in its execution's namespace using the same content writer."""
+        with self._lock:
+            task = self.task_snapshot(handle)
+            if task is None:
+                raise ValueError("Output task is unavailable")
+            return self._write_content(task.owner.session_id, value, output_scope(handle))
+
+    def _write_content(self, session_id: str, value: object, scope: str) -> CoreReference:
         assert_store_write_off_loop("task.content")
         value = _JSON_VALUE.validate_python(value, strict=True)
         digest = hashlib.sha256(_encoded(value)).hexdigest()
         content_id = digest
         reference = CoreReference(
             session_id=session_id,
-            scope=CONTENT_SCOPE + content_id,
+            scope=scope + content_id,
             content_id=content_id,
             sha256=digest,
         )
@@ -134,7 +152,12 @@ class TaskHistory:
     def read_content(self, reference: CoreReference) -> JsonValue:
         """Read an exact reference, rejecting missing or changed content."""
         assert_store_write_off_loop("task.content.read")
-        if reference.scope != CONTENT_SCOPE + reference.content_id:
+        scoped_output = (
+            reference.scope.startswith(OUTPUT_SCOPE)
+            and len(reference.scope.split("/")) == 3
+            and reference.scope.endswith("/" + reference.content_id)
+        )
+        if reference.scope != CONTENT_SCOPE + reference.content_id and not scoped_output:
             rows = [
                 row
                 for row in self.arc.list_segments(
@@ -368,6 +391,12 @@ class TaskHistory:
                 key=lambda record: record.committed_at,
                 default=None,
             )
+
+    def committed_notification_input(self, session_id: str, identity: str) -> RecipientInput | None:
+        """Resolve a confirmed exact notification input without scanning retained session history."""
+        with self._lock:
+            record_id = self._notification_inputs.get((session_id, identity))
+            return self._inputs.get((session_id, record_id)) if record_id is not None else None
 
     def record_input(self, record: RecipientInput) -> RecipientInput:
         """Confirm the sole delivery acknowledgement in the recipient's context lane.

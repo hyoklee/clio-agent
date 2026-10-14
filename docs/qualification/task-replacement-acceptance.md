@@ -137,3 +137,24 @@ FastMCP/fastmcp-tasks4.1.0 and Docket0.26.2 are installed in the owned feature e
 Sequential exact-node checks passed with one worker and no skips: the foundation/adapter/guard families, seven source-install/bundle checks and variant Question-owner cases. Bounded receipts are task-replacement-foundation-checks.json, task-replacement-installer-checks.json, task-replacement-adapter-final-checks.json, task-replacement-variant-question-checks.json and task-replacement-variant-final-checks.json. The first dependency case failed before its body on the surviving workflow import; after removing that path, the normal retry passed. Every controller reports no private runtime-directory residue before the next case. Real-Core cases emitted nanobind retained-instance/type/function diagnostics at interpreter exit; these are recorded and not claimed solved. No product services or model acceptance ran.
 
 The integrated candidate is not frozen, globally built, pushed or qualified. Application-owned native resources/observers/trusted workers, shared authorized controls, assignment/admission integration, migration, UI/prompts, CI and the fresh live matrix remain outstanding. Full-history startup replay is permitted and must be measured before optimization; retain passive latest indexes for the forthcoming hot read layer. Do not add a quarantine framework or universal execution state machine to address review suggestions.
+
+
+## Shipped compatibility correction after initial source review
+
+The finite mapping is in `docs/runtime/task-compatibility.md`, with independent
+source decisions in the `task-replacement-*-astra.md` compatibility receipts.
+This is one correction slice; it introduces no execution owner or driver.
+
+| ID | Required behavior / retained lesson | Fresh source and test | Prerequisites / evidence / expected result | Status |
+| --- | --- | --- | --- | --- |
+| C01 | Shipped spawn names, blueprint/strategy preparation, local placement and per-member failures | `task_declarations`; `test_spawn_tool_compatibility` | Real Core; same preparation path; explicit relay refusal; no child for invalid evidence | Unexecuted |
+| C02 | Finished child evidence is pinned and authorized before creation and input commit | `assignment_evidence`, `session_mail`; `test_assignment_evidence_contracts` | Real Core; original assignment committed intact; before-commit/forged evidence cannot be read | Unexecuted |
+| C03 | Shared result pages stay on exact committed content through successor recovery and grants changing | `task_result_content`, passive recipient-input index; `test_assignment_evidence_contracts` | Reconstruct exact JSON; cross-session denial; no source completion publication/acknowledgement | Unexecuted |
+| C04 | Observe retains omitted task rows and every output byte without another producer event | `task_observations`, `task_output_pages`; `test_task_observation_compatibility` | Bounded pages, late output while draining; cursor cannot disclose another task namespace | Unexecuted |
+| C05 | Honest SSE cursor migration, actual workflow state and output-only pattern search | Shared observation plus compatibility delegate; `test_task_observation_compatibility` | Numeric resume refused; string continuation works; match beyond first page; metadata is not output | Unexecuted |
+| C06 | Shipped getter/wait/message delegates preserve authorization and collection receipts | `task_declarations`; `test_task_output_compatibility` | Real Core; terminal/pending/unknown/read denial and input commitment | Unexecuted |
+
+Scoped source Ruff/format and Linux Mypy passed before behavioral execution.
+Removal, size and class guards passed; noqa-hidden swallow count remained 493.
+These are construction checks, not live/model acceptance. Earlier failed fixture
+runs remain in their individual receipts; they are not erased by this correction.

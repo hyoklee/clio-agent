@@ -419,7 +419,11 @@ class StepRecorder:
             for notification in text.notification_ids:
                 item = next(item for item in staged.items if item.id == notification)
                 payload = owner.history.read_content(item.content)
-                if (
+                if item.kind == "delegation" and isinstance(payload, dict) and item.handle:
+                    from clio_agent.gact.assignment_evidence import render_delegation
+
+                    rendered[notification] = render_delegation(owner.history, item.handle, payload)
+                elif (
                     item.kind in {"human", "composer"}
                     and isinstance(payload, dict)
                     and payload.get("message")

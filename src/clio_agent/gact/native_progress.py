@@ -47,8 +47,8 @@ class NativeProgress:
                     value = history.read_content(previous)
                     if isinstance(value, dict) and value.get("chunk_id") == identity:
                         return
-                reference = history.write_content(
-                    current.owner.session_id,
+                reference = history.write_output(
+                    current.handle,
                     {
                         "chunk_id": identity,
                         "output": output,
