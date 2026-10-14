@@ -127,3 +127,19 @@ def test_cli_main_dispatches_without_booting_agent(
     with pytest.raises(SystemExit) as result:
         main()
     assert result.value.code == 0 and received == [arguments]
+
+
+def test_other_verbs_continue_to_normal_cli() -> None:
+    from clio_agent.ui.cli_commands import handle_local_command
+
+    assert not handle_local_command([])
+    assert not handle_local_command(["doctor"])
+
+
+def test_path_migration_retains_its_standalone_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    from clio_agent.ui.cli_commands import handle_local_command
+
+    received: list[list[str]] = []
+    monkeypatch.setattr("clio_agent.path_migration.main", lambda args: received.append(args))
+    assert handle_local_command(["migrate-paths", "--dry-run"])
+    assert received == [["--dry-run"]]

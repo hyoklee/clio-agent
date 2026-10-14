@@ -57,6 +57,7 @@ from clio_agent.sdk import (
     PermissionRequested,
     SessionStatusChanged,
 )
+from clio_agent.ui.cli_commands import handle_local_command
 from clio_agent.ui.doctor import run_doctor, run_doctor_gc
 
 # ============================================================================
@@ -1006,15 +1007,7 @@ def main() -> None:
     import argparse
     import sys
 
-    if len(sys.argv) > 1 and sys.argv[1] == "blueprints":
-        from clio_agent.runtime.blueprint_coordination_cli import run_blueprint_coordination_cli
-
-        sys.exit(run_blueprint_coordination_cli(sys.argv[2:]))
-
-    if len(sys.argv) > 1 and sys.argv[1] == "migrate-paths":
-        from clio_agent.path_migration import main as migrate_main
-
-        migrate_main(sys.argv[2:])
+    if handle_local_command(sys.argv[1:]):
         return
 
     parser = argparse.ArgumentParser(
