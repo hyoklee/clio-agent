@@ -29,6 +29,7 @@ from clio_agent.gact.task_migration_inputs import (
     _migrate_inputs,
     _migrate_intents,
     _unresolved,
+    migrate_context_epochs,
 )
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 
@@ -581,3 +582,4 @@ def migrate_history(app: Any) -> None:
             )
     _migrate_intents(app, sessions, anchor)
     _migrate_inputs(app, anchor)
+    migrate_context_epochs(app)

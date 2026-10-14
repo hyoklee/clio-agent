@@ -21,6 +21,7 @@ from clio_agent.arc.task_types import (
     WorkflowCheckpoint,
     argument_digest,
 )
+from clio_agent.errors import ClioError
 
 if TYPE_CHECKING:
     from clio_agent.gact.task_history import TaskHistory
@@ -99,6 +100,61 @@ def record_workflow(self: TaskHistory, record: WorkflowCheckpoint) -> None:
         self._project("workflow.checkpoint", payload)
 
 
+def _legacy_workflow(self: TaskHistory, snapshot: TaskSnapshot) -> None:
+    """Decode retained workflow provenance without disabling unrelated canonical history."""
+    if snapshot.details is None:
+        return
+    try:
+        raw = self.read_content(snapshot.details)
+        if not isinstance(raw, dict):
+            raise ValueError("Historical assignment details are not an object")
+        workflow = AssignmentDetails.model_validate(raw).workflow
+        if workflow is not None:
+            reference = CoreReference.model_validate(workflow)
+            content = self.read_content(reference)
+            if (
+                isinstance(content, dict)
+                and all(
+                    isinstance(content.get(key), str) and content[key]
+                    for key in ("id", "invocation_id", "declaration")
+                )
+                and isinstance(content.get("request"), str)
+            ):
+                if (
+                    content.get("root_handle", snapshot.handle) != snapshot.handle
+                    or content.get("root_session", snapshot.owner.session_id)
+                    != snapshot.owner.session_id
+                ):
+                    raise ValueError("Historical workflow checkpoint belongs to another owner")
+                _project_workflow(
+                    self,
+                    WorkflowCheckpoint.model_validate(
+                        {
+                            "root_handle": snapshot.handle,
+                            "session_id": snapshot.owner.session_id,
+                            "invocation_id": content["invocation_id"],
+                            "execution_id": content["id"],
+                            "declaration": content["declaration"],
+                            "request_digest": argument_digest({"request": content["request"]}),
+                            "content": reference,
+                            "source": "legacy_snapshot",
+                        }
+                    ),
+                )
+                latest = self._workflow_latest.get(snapshot.handle)
+                if latest is not None and latest.content == reference:
+                    self._workflow_dirty.discard(snapshot.handle)
+            else:
+                raise ValueError("Historical workflow identity is incomplete")
+    except (ValueError, OSError, ClioError) as error:
+        logger.exception(
+            "Historical workflow unavailable root=%s error_type=%s",
+            snapshot.handle,
+            type(error).__name__,
+        )
+        self._workflow_unresolved[snapshot.handle] = str(error)
+
+
 def _encoded(value: Any) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
@@ -133,6 +189,7 @@ def restore(self: TaskHistory) -> None:
         recipient_grants, subscriptions = self._recipient_grants, self._subscriptions
         workflows = self._workflow_bindings, self._workflow_executions, self._workflow_latest
         workflow_dirty = self._workflow_dirty
+        workflow_unresolved = self._workflow_unresolved
         self._tasks, self._mail, self._inputs = {}, {}, {}
         self._aliases = {}
         self._pending, self.revision = {}, 0
@@ -149,6 +206,7 @@ def restore(self: TaskHistory) -> None:
         self._recipient_grants, self._subscriptions = {}, {}
         self._workflow_bindings, self._workflow_executions, self._workflow_latest = {}, {}, {}
         self._workflow_dirty = set()
+        self._workflow_unresolved = {}
         try:
             self._replaying = True
             for content in self.arc._live.iter_event_contents():
@@ -211,6 +269,7 @@ def restore(self: TaskHistory) -> None:
             self._recipient_grants, self._subscriptions = recipient_grants, subscriptions
             self._workflow_bindings, self._workflow_executions, self._workflow_latest = workflows
             self._workflow_dirty = workflow_dirty
+            self._workflow_unresolved = workflow_unresolved
             raise
         self.replay_seconds = time.monotonic() - started
         self.revision = max(previous_revision, self.revision) + 1
@@ -279,37 +338,7 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
         known = snapshot.handle in self._tasks
         self._tasks[snapshot.handle] = snapshot
         if self._replaying and snapshot.kind in {"Session", "Subagent"} and snapshot.details:
-            details = AssignmentDetails.model_validate(self.read_content(snapshot.details))
-            if details.workflow is not None:
-                content = self.read_content(details.workflow)
-                if isinstance(content, dict) and all(
-                    isinstance(content.get(key), str) and content[key]
-                    for key in ("id", "invocation_id", "declaration", "request")
-                ):
-                    if (
-                        content.get("root_handle", snapshot.handle) != snapshot.handle
-                        or content.get("root_session", snapshot.owner.session_id)
-                        != snapshot.owner.session_id
-                    ):
-                        raise ValueError("Historical workflow checkpoint belongs to another owner")
-                    _project_workflow(
-                        self,
-                        WorkflowCheckpoint.model_validate(
-                            {
-                                "root_handle": snapshot.handle,
-                                "session_id": snapshot.owner.session_id,
-                                "invocation_id": content["invocation_id"],
-                                "execution_id": content["id"],
-                                "declaration": content["declaration"],
-                                "request_digest": argument_digest({"request": content["request"]}),
-                                "content": details.workflow,
-                                "source": "legacy_snapshot",
-                            }
-                        ),
-                    )
-                    latest = self._workflow_latest.get(snapshot.handle)
-                    if latest is not None and latest.content == details.workflow:
-                        self._workflow_dirty.discard(snapshot.handle)
+            _legacy_workflow(self, snapshot)
         self._session_tasks.setdefault(snapshot.owner.session_id, set()).add(snapshot.handle)
         self._kind_tasks.setdefault(snapshot.kind, set()).add(snapshot.handle)
         self._human_tasks.setdefault(snapshot.owner.human_id, set()).add(snapshot.handle)

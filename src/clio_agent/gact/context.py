@@ -21,7 +21,25 @@ from __future__ import annotations
 
 import contextvars
 from dataclasses import dataclass, field, replace
+from datetime import datetime, timezone
 from typing import Any
+
+
+def after_context_boundary(created_at: str, boundary: str) -> bool | None:
+    """Compare retained UTC timestamps; missing legacy row times remain explicitly unknown."""
+    cutoff = datetime.fromisoformat(boundary)
+    cutoff = cutoff.replace(tzinfo=timezone.utc) if cutoff.tzinfo is None else cutoff
+    try:
+        stamp = datetime.fromisoformat(created_at)
+    except (ValueError, TypeError):
+        return None
+    stamp = stamp.replace(tzinfo=timezone.utc) if stamp.tzinfo is None else stamp
+    return stamp > cutoff
+
+
+def scope_epoch(scope: str) -> str:
+    """Read the epoch from CLIO's existing context-scope encoding."""
+    return scope.partition("#epoch:")[2].partition("#run")[0]
 
 
 @dataclass(frozen=True)
@@ -38,6 +56,7 @@ class TurnContext:
     turn_id: str = ""  # _ACTIVE_GACT_TURN_ID
     trace_id: str = ""  # _ACTIVE_GACT_TRACE_ID
     context_epoch: str = ""  # Captured from the confirmed assignment at turn admission.
+    context_epoch_after: str | None = None
     assignment_handle: str = ""  # Confirmed finite assignment; never inherited across sessions.
     input_notification_id: str = ""  # Human head already rendered by this segment.
     tool_session_id: str = ""  # _ACTIVE_TOOL_SESSION_ID
@@ -297,6 +316,9 @@ def set_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
                 cur.turn,
                 session_id=sid,
                 context_epoch=cur.turn.context_epoch if sid == cur.turn.session_id else "",
+                context_epoch_after=cur.turn.context_epoch_after
+                if sid == cur.turn.session_id
+                else None,
                 assignment_handle=cur.turn.assignment_handle if sid == cur.turn.session_id else "",
             ),
         )
@@ -317,6 +339,7 @@ def set_turn_identity(
     trace_id: str,
     execution_blueprint_id: str = "",
     context_epoch: str = "",
+    context_epoch_after: str | None = None,
     assignment_handle: str = "",
     input_notification_id: str = "",
 ) -> None:
@@ -340,6 +363,7 @@ def set_turn_identity(
                 tool_session_id=cur.turn.tool_session_id,
                 execution_blueprint_id=execution_blueprint_id,
                 context_epoch=context_epoch,
+                context_epoch_after=context_epoch_after,
                 assignment_handle=assignment_handle,
                 input_notification_id=input_notification_id,
             ),

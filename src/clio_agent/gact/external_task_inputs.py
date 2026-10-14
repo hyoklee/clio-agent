@@ -15,6 +15,7 @@ from clio_agent.arc.task_types import (
     QuestionReply,
     TaskProgress,
     TaskSnapshot,
+    argument_digest,
 )
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_publication import publish_task_notice
@@ -36,6 +37,14 @@ def _record_reply(
     with self.history._lock:
         current = self.history.task_snapshot(accepted.submission.handle)
         if current.terminal_at is not None:
+            return
+        if (
+            reply.status in {"completed", "failed", "cancelled"}
+            and current.raw_status == reply.status
+            and current.connection_freshness == "fresh"
+            and current.backend_observation is not None
+            and current.backend_observation.sha256 == argument_digest(reply.model_dump(mode="json"))
+        ):
             return
         details = self._details(current)
         requests = details.setdefault("requests", {})

@@ -10,7 +10,13 @@ from typing import Any
 from uuid import uuid4
 
 from clio_agent import conf
-from clio_agent.arc.task_types import ContextBoundary, CoreReference, MailItem, RecipientInput
+from clio_agent.arc.task_types import (
+    AssignmentDetails,
+    ContextBoundary,
+    CoreReference,
+    MailItem,
+    RecipientInput,
+)
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import MailboxFull, TaskHistory
@@ -186,6 +192,13 @@ class SessionMail:
     ) -> RecipientInput:
         """Recheck permission/eligibility, then confirm the sole delivery acknowledgement."""
         with self.history._lock:
+            from clio_agent.gact.context import scope_epoch
+
+            owner = self.history.task_snapshot(assignment_id)
+            if owner is not None and owner.details is not None:
+                details = AssignmentDetails.model_validate(self.history.read_content(owner.details))
+                if scope_epoch(boundary.scope) != details.context_epoch:
+                    raise ValueError("Model context changed; retain inputs for the admitted epoch")
             access = TaskAccess(self.history, caller)
             pending = {item.id: item for item in self.history.pending_mail(caller.session_id)}
             for item in staged.items:

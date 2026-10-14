@@ -195,7 +195,8 @@ async def cancel(self: NativeTools, handle: str) -> dict[str, Any]:
             )
 
             async def retry_provider_cancel() -> None:
-                await self.cancel(handle)
+                if not self._resources_closed:
+                    await self.cancel(handle)
 
             self.recovery.defer("provider-cancel-delivery:" + handle, retry_provider_cancel)
             reason = str(error)
@@ -255,7 +256,9 @@ async def cancel(self: NativeTools, handle: str) -> dict[str, Any]:
             "native-cancel-unknown:" + handle,
             lambda: self._uncertain(
                 handle,
-                "Cancellation admission is closed, but backend acceptance remains uncertain.",
+                "Cancellation admission is closed; physical settlement is unconfirmed."
+                if current.backend is not None and current.backend.task_id
+                else "Cancellation admission is closed, but backend acceptance remains uncertain.",
             ),
         )
         return {"handle": handle, "cancellation_requested": True, "settlement": "unknown"}
@@ -288,6 +291,8 @@ async def cancel(self: NativeTools, handle: str) -> dict[str, Any]:
 
 async def _deliver_cancel(self: NativeTools, handle: str) -> bool:
     """Retry cancellation only against this submission's adopted native identity."""
+    if self._resources_closed:
+        return True  # durable intent survives; closed RPC resources cannot deliver it
     current = await asyncio.to_thread(self._current, handle)
     if current.terminal_at is not None:
         return True

@@ -539,6 +539,10 @@ async def run_declared_workflow(
                 ):
                     raise ValueError("Workflow invocation was reused with different inputs")
                 return owner.handle, dict(history.read_content(exact.content)), True
+            if owner.handle in history._workflow_unresolved:
+                raise ValueError(
+                    "Retained workflow evidence is unavailable; inspect the original records before new execution"
+                )
             latest = history.workflow_checkpoint(owner.handle)
             existing = (
                 history.read_content(latest.content)

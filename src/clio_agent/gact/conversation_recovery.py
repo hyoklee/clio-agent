@@ -14,12 +14,14 @@ from clio_agent.arc.task_types import (
     AssignmentDetails,
     ContextBoundary,
     MailItem,
+    TaskProgress,
     TaskSnapshot,
 )
+from clio_agent.errors import ClioError
 from clio_agent.gact.native_work import now
 from clio_agent.gact.session_mail import StagedInput
 from clio_agent.gact.task_access import TaskCaller
-from clio_agent.gact.task_publication import task_owner_recipient
+from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 
 if TYPE_CHECKING:
     from clio_agent.gact.conversations import (
@@ -74,7 +76,25 @@ def _restore_input_projections(self: Conversations) -> None:
     from clio_agent.gact.workflows import repair_workflow_reference
 
     for root in tuple(self.history._workflow_dirty):
-        repair_workflow_reference(self.app, root)
+        try:
+            repair_workflow_reference(self.app, root)
+        except ValueError as error:
+            logger.exception("Workflow reference unavailable root=%s", root)
+            self.history._workflow_unresolved[root] = str(error)
+        except (OSError, ClioError) as error:
+            logger.exception(
+                "Workflow reference repair pending root=%s error_type=%s",
+                root,
+                type(error).__name__,
+            )
+
+            async def repair(root: str = root) -> None:
+                await asyncio.to_thread(repair_workflow_reference, self.app, root)
+
+            if self._loop is not None:
+                self._loop.call_soon_threadsafe(
+                    self.recovery.defer, "workflow-reference:" + root, repair
+                )
     with self.history._lock:
         items = tuple(
             item
@@ -97,13 +117,46 @@ async def restore(self: Conversations) -> None:
         if await asyncio.to_thread(self.history.latest_assignment, task.owner.session_id) != task:
             continue
         session = self.sessions.get(task.owner.session_id)
-        details = (
-            AssignmentDetails.model_validate(
-                await asyncio.to_thread(self.history.read_content, task.details)
+        try:
+            details = (
+                AssignmentDetails.model_validate(
+                    await asyncio.to_thread(self.history.read_content, task.details)
+                )
+                if task.details is not None
+                else AssignmentDetails()
             )
-            if task.details is not None
-            else AssignmentDetails()
-        )
+        except ValueError:
+            logger.exception("Assignment history unavailable handle=%s", task.handle)
+            unavailable_task: TaskSnapshot = task
+
+            def unavailable(task: TaskSnapshot = unavailable_task) -> None:
+                with self.history._lock:
+                    current = self.history.task_snapshot(task.handle)
+                    if current is None or current.terminal_at is not None:
+                        return
+                    message = "Retained assignment details are unavailable; inspect the original Core records before execution."
+                    if (
+                        current.status == "task_state_uncertain"
+                        and current.progress.message == message
+                    ):
+                        return
+                    observed = current.model_copy(
+                        update={
+                            "status": "task_state_uncertain",
+                            "activity": "unavailable",
+                            "progress": TaskProgress(message=message),
+                            "attention_episode": current.attention_episode
+                            or "assignment-history:" + current.handle,
+                            "supported_actions": ("observe", "wait", "get_result"),
+                        }
+                    )
+                    self.history.record_snapshot(observed, observation_id=uuid4().hex)
+                    publish_task_notice(
+                        self.history, observed, episode=observed.attention_episode or ""
+                    )
+
+            await asyncio.to_thread(unavailable)
+            continue
         self.arm_deadline(handle, details.execution_deadline)
         if task.cancellation_requested_at is not None:
             self.retain_control(handle, asyncio.create_task(self._cancel_subtree(task)))
@@ -123,13 +176,17 @@ async def restore(self: Conversations) -> None:
             if task is None:
                 raise ValueError("Recovery assignment is unavailable")
             with self.history._lock:
-                committed = self.history.recovery_input(task.handle)
                 details = (
                     AssignmentDetails.model_validate(self.history.read_content(task.details))
                     if task.details is not None
                     else AssignmentDetails()
                 )
+                from clio_agent.gact.context import scope_epoch
+
+                committed = self.history.recovery_input(task.handle, epoch=details.context_epoch)
                 boundary = committed.boundary if committed is not None else details.context
+                if boundary is not None and scope_epoch(boundary.scope) != details.context_epoch:
+                    boundary = None
                 if boundary is not None:
                     self._record_interrupted_calls(task, boundary)
                 detail_ref = self.history.write_content(
@@ -183,15 +240,10 @@ def _record_interrupted_calls(
 ) -> None:
     """Record uncertainty for orphaned call observations without replay or history copying."""
     segments = self.history.arc.context_view(boundary.session_id, boundary.scope).segments
-    calls = {
-        segment.content["id"]: segment
-        for segment in segments
-        if segment.kind == "tool_call" and isinstance(segment.content.get("id"), str)
-    }
-    answered = {
-        segment.content.get("call_id") for segment in segments if segment.kind == "observation"
-    }
-    for identity in calls.keys() - answered:
+    from clio_agent.arc.context_restore import unanswered_calls
+
+    for offset, (position, call) in enumerate(unanswered_calls(segments)):
+        identity = call.content["id"]
         observation = {
             "call_id": identity,
             "text": json.dumps(
@@ -207,9 +259,10 @@ def _record_interrupted_calls(
 
         self.history._confirm(
             partial(
-                self.history.arc.append_segment,
+                self.history.arc.insert_segment,
                 task.owner.session_id,
                 boundary.scope,
+                position + offset,
                 "observation",
                 observation,
                 token_count=_token_estimate(observation),

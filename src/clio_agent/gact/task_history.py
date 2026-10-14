@@ -95,6 +95,7 @@ class TaskHistory:
         self._workflow_executions: dict[tuple[str, str], WorkflowCheckpoint] = {}
         self._workflow_latest: dict[str, WorkflowCheckpoint] = {}
         self._workflow_dirty: set[str] = set()
+        self._workflow_unresolved: dict[str, str] = {}
         self.revision = 0
         self.replay_seconds = 0.0
         self.requires_recovery = False
@@ -384,14 +385,19 @@ class TaskHistory:
         with self._lock:
             return frozenset(self._observation_inputs.get((session_id, scope), ()))
 
-    def recovery_input(self, assignment_id: str) -> RecipientInput | None:
+    def recovery_input(
+        self, assignment_id: str, *, epoch: str | None = None
+    ) -> RecipientInput | None:
         """Find the last confirmed input during startup recovery, never during hot reads."""
+        from clio_agent.gact.context import scope_epoch
+
         with self._lock:
             return max(
                 (
                     record
                     for record in self._inputs.values()
                     if record.assignment_id == assignment_id
+                    and (epoch is None or scope_epoch(record.boundary.scope) == epoch)
                 ),
                 key=lambda record: record.committed_at,
                 default=None,

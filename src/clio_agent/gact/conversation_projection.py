@@ -131,6 +131,11 @@ def transcript_segments(session: str, scope: str, rows: Sequence[Any]) -> list[S
             kind, text = _get(part, "type"), _get(part, "text")
             if kind == "text" and text and _get(row, "role") == "user":
                 append("user", {"text": text})
+            elif kind == "text" and text and _get(row, "role") == "system":
+                append(
+                    "user",
+                    {"text": text, "actor": "algorithm", "source": "retained_system_context"},
+                )
             elif kind in {"text", "thinking"} and text:
                 if (
                     thought is None

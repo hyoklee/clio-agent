@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.plan_exit_resume import approved_plan_resume_text, rejected_plan_resume_text
-from clio_agent.gact.plan_review import plan_review_content
 from clio_agent.gact.planning import PLAN_VARIANT_METADATA_KEY, transition_playbook_to_execution
 
 if TYPE_CHECKING:
@@ -81,23 +79,82 @@ def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questio
         )
 
 
+def _frozen_plan_resolution(app: Any, question: Any) -> dict[str, Any]:
+    """Pin the accepted Question decision before effects; never reread a mutable plan."""
+    existing = app.state.questions.resolution(question.id)
+    if existing is not None:
+        return existing
+    from clio_agent.gact.plan_mode import _PLAN_EXIT_CLEAR_CONTEXT, _PLAN_EXIT_DECISIONS
+
+    metadata = getattr(question, "metadata", None) or {}
+    answer = getattr(question, "answer_metadata", None) or {}
+    selected = list(getattr(question, "selected_options", None) or [])
+    decision = next((item for item in selected if item in _PLAN_EXIT_DECISIONS), "reject")
+    feedback = str(getattr(question, "answer", "") or "").strip()
+    path = str(metadata.get("plan_file") or "")
+    clear = decision != "reject" and (
+        _PLAN_EXIT_CLEAR_CONTEXT in selected or bool(answer.get("clear_context"))
+    )
+    captured = metadata.get("artifact_ref")
+    artifact = (
+        dict(captured)
+        if isinstance(captured, Mapping)
+        else {
+            "saved": False,
+            "reason": "artifact_not_captured_at_review",
+        }
+    )
+    approved = {
+        "artifact_ref": artifact,
+        "plan_file": path,
+        "content": str(metadata.get("plan_content") or ""),
+        "content_status": str(metadata.get("plan_content_status") or "unavailable_at_review"),
+    }
+    composer = bool(answer.get("composer_user_message"))
+    resume_metadata: dict[str, Any] = (
+        {"plan_exit_result": "rejected", "plan_file": path}
+        if decision == "reject"
+        else {
+            "plan_exit_result": "approved",
+            "plan_exit_mode": decision,
+            "plan_exit_context_cleared": clear,
+            "plan_file": path,
+            "approved_plan": approved,
+        }
+    )
+    resume_text = (
+        (feedback if composer and feedback else rejected_plan_resume_text(feedback, path))
+        if decision == "reject"
+        else approved_plan_resume_text(decision, path, approved)
+        if decision != "exit_only"
+        else None
+    )
+    return app.state.questions.freeze_resolution(
+        question.id,
+        {
+            "decision": decision,
+            "feedback": feedback,
+            "composer_user_message": composer,
+            "plan_file": path,
+            "clear_context": clear,
+            "clear_boundary": question.created_at,
+            "context_epoch": question.id if clear else "",
+            "approved_plan": approved,
+            "resume_metadata": resume_metadata,
+            "resume_text": resume_text,
+        },
+    )
+
+
 def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, question: Any) -> None:
     """Stage the deterministic decision before releasing its admission gate."""
 
     from clio_agent.gact.events import Event
-    from clio_agent.gact.plan_mode import (
-        _PLAN_EXIT_CLEAR_CONTEXT,
-        _PLAN_EXIT_DECISIONS,
-    )
 
-    session = app.state.sessions.get(sid)
-    q_meta = getattr(question, "metadata", None) or {}
-    selected = [str(s) for s in (getattr(question, "selected_options", None) or [])]
-    answer_meta = getattr(question, "answer_metadata", None) or {}
-    plan_file = str(q_meta.get("plan_file") or "")
-    decision = next((s for s in selected if s in _PLAN_EXIT_DECISIONS), "reject")
-    clear_context = (_PLAN_EXIT_CLEAR_CONTEXT in selected) or bool(answer_meta.get("clear_context"))
-    feedback = str(getattr(question, "answer", "") or "").strip()
+    frozen = _frozen_plan_resolution(app, question)
+    decision, feedback, plan_file = frozen["decision"], frozen["feedback"], frozen["plan_file"]
+    clear_context = frozen["clear_context"]
+    answer_meta = {"composer_user_message": frozen["composer_user_message"]}
 
     if decision == "reject":
         session = app.state.sessions.get(sid)
@@ -128,7 +185,7 @@ def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questi
                 deps,
                 sid,
                 session,
-                rejected_plan_resume_text(feedback, plan_file),
+                frozen["resume_text"],
                 {"plan_exit_result": "rejected", "plan_file": plan_file},
                 question_id=question.id,
             )
@@ -155,32 +212,19 @@ def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questi
     )
     transition_playbook_to_execution(app, sid, decision_id=question.id)
 
-    from clio_agent.gact.plan_reuse import save_approved_plan
-
-    reviewed_artifact = q_meta.get("artifact_ref")
-    saved_plan = (
-        dict(reviewed_artifact)
-        if isinstance(reviewed_artifact, Mapping) and reviewed_artifact.get("saved") is True
-        else save_approved_plan(app, sid, plan_file=plan_file)
-    )
-    review = {
-        "content": str(q_meta.get("plan_content") or ""),
-        "content_status": str(q_meta.get("plan_content_status") or ""),
-    }
-    if not review["content_status"]:
-        loaded_review = plan_review_content(plan_file)
-        review = {
-            "content": str(loaded_review.get("plan_content") or ""),
-            "content_status": str(loaded_review.get("plan_content_status") or "unavailable"),
-        }
-    approved_plan = {"artifact_ref": saved_plan, "plan_file": plan_file, **review}
+    approved_plan = frozen["approved_plan"]
+    saved_plan = approved_plan["artifact_ref"]
     cleared = False
     if clear_context:
-        boundary = datetime.fromisoformat(question.created_at)
+        from clio_agent.gact.context import after_context_boundary
+        from clio_agent.gact.conversation_assignments import clear_model_context
+
+        boundary = frozen["clear_boundary"]
+        clear_model_context(app.state.conversations, sid, frozen["context_epoch"], boundary)
         retained = [
             row
             for row in app.state.messages.get(sid, [])
-            if datetime.fromisoformat(row.created_at) > boundary
+            if after_context_boundary(row.created_at, boundary) is not False
         ]
         app.state.a2ui_store.announce_ledger_clear(sid, "plan_exit_context_cleared")
         deps.replace_session_messages(app, sid, retained)
@@ -189,13 +233,7 @@ def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questi
         )
         cleared = True
     session = app.state.sessions.get(sid)
-    resume_metadata = {
-        "plan_exit_result": "approved",
-        "plan_exit_mode": decision,
-        "plan_exit_context_cleared": cleared,
-        "plan_file": plan_file,
-        "approved_plan": approved_plan,
-    }
+    resume_metadata = frozen["resume_metadata"]
     app.state.bus.publish(
         Event(
             type="plan_exit.resolved",
@@ -229,7 +267,7 @@ def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questi
         deps,
         sid,
         session,
-        approved_plan_resume_text(decision, plan_file, approved_plan),
+        frozen["resume_text"],
         resume_metadata,
         question_id=question.id,
     )

@@ -371,7 +371,8 @@ class _Loop:
             session = sessions.get(self.session) if sessions is not None else None
             primary = getattr(session, "agent", {}).get("id", "main") if session is not None else ""
             self.recorder.carry_over(
-                ledger.get(self.session, []) or [], allow_transcript=self.scope == primary
+                ledger.get(self.session, []) or [],
+                allow_transcript=self.scope == _ctx.run_keyed_scope(primary),
             )
         self.recorder.injections([*self._tool_use_note(), *_ctx.turn_injections()])
         # The continuing flag is this forward's alone: anything it starts opens its own task.

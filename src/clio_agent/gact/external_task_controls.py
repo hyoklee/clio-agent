@@ -49,27 +49,32 @@ async def cancel(owner: ExternalTasks, handle: str) -> dict[str, Any]:
 
         async def deliver(
             bound: AcceptedNativeCall = bound_call, connection: ExternalConnection = host
-        ) -> None:
+        ) -> bool:
             latest = await asyncio.to_thread(owner.history.task_snapshot, handle)
             if (
-                connection.calls.get(bound.task.task_id) is not bound
+                owner._closing
+                or connection.calls.get(bound.task.task_id) is not bound
                 or latest is not None
                 and (
                     latest.terminal_at is not None
                     or latest.raw_status in {"completed", "failed", "cancelled"}
                 )
             ):
-                return  # a newly adopted binding arms its own delivery; old RPC custody ends
+                return False  # adoption arms delivery; old RPC custody ends without an ACK
             await bound.task.cancel()
+            return True
+
+        async def retry_delivery() -> None:
+            await deliver()
 
         try:
-            await deliver()
+            acknowledged = await deliver()
         except Exception as error:
             logger.exception(
                 "Task boundary reason=external_cancel_delivery_unconfirmed error_type=%s",
                 type(error).__name__,
             )
-            owner.recovery.defer("external-cancel-delivery:" + handle, deliver)
+            owner.recovery.defer("external-cancel-delivery:" + handle, retry_delivery)
             await owner._record_or_defer(
                 "external-cancel-attention:" + handle,
                 partial(
@@ -80,7 +85,7 @@ async def cancel(owner: ExternalTasks, handle: str) -> dict[str, Any]:
         return {
             "handle": handle,
             "cancellation_requested": True,
-            "settlement": "external_acknowledged",
+            "settlement": "external_acknowledged" if acknowledged else "unknown",
         }
     return {
         "handle": handle,

@@ -3,12 +3,32 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 import msgspec
 
 from clio_agent.arc.schema import Segment, encode_segments
+
+
+def unanswered_calls(segments: Sequence[Segment]) -> list[tuple[int, Segment]]:
+    """Locate missing results before the next context-step boundary, preserving render order."""
+    pending: dict[str, Segment] = {}
+    missing: list[tuple[int, Segment]] = []
+    for position, segment in enumerate(segments):
+        if segment.status != "live":
+            continue
+        if segment.kind in {"thought", "user", "summary", "recipient_input"}:
+            missing.extend((position, call) for call in pending.values())
+            pending.clear()
+        if segment.kind == "tool_call":
+            pending[segment.content["id"]] = segment
+        elif segment.kind == "observation":
+            identity = segment.content.get("call_id")
+            if isinstance(identity, str):
+                pending.pop(identity, None)
+    missing.extend((len(segments), call) for call in pending.values())
+    return missing
 
 
 def recorded_segments(

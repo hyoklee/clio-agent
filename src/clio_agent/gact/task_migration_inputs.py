@@ -9,6 +9,7 @@ from collections.abc import Callable
 from typing import Any
 
 from clio_agent.arc.task_types import (
+    AssignmentDetails,
     ContextBoundary,
     CoreReference,
     MailItem,
@@ -19,6 +20,37 @@ from clio_agent.gact.task_history import _encoded
 from clio_agent.gact.task_publication import task_owner_recipient
 
 logger = logging.getLogger(__name__)
+
+
+def migrate_context_epochs(app: Any) -> None:
+    """Persist a legacy fixed context's existing epoch without replay or history copying."""
+    from clio_agent.gact.context import scope_epoch
+
+    history = app.state.task_history
+    for handle in history.task_handles(kind="Session") | history.task_handles(kind="Subagent"):
+        task = history.task_snapshot(handle)
+        if task is None or task.details is None:
+            continue
+        try:
+            raw = history.read_content(task.details)
+            if not isinstance(raw, dict) or "context_epoch" in raw:
+                continue
+            details = AssignmentDetails.model_validate(raw)
+            epoch = scope_epoch(details.context.scope) if details.context else ""
+            if not epoch:
+                continue
+            content = history.write_content(
+                task.owner.session_id,
+                details.model_copy(update={"context_epoch": epoch}).model_dump(mode="json"),
+            )
+            history.record_snapshot(
+                task.model_copy(update={"details": content}),
+                observation_id="migration:context-epoch:" + handle + ":" + task.details.sha256,
+            )
+        except ValueError:
+            _unresolved(
+                app, handle, "context_epoch_unavailable", task.details.model_dump(mode="json")
+            )
 
 
 def _unresolved(app: Any, identity: str, reason: str, record: Any) -> None:

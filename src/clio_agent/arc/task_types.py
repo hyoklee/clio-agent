@@ -288,6 +288,8 @@ class AssignmentDetails(TaskRecord):
     predecessor: str | None = None
     parent_turn_id: str | None = None
     context: ContextBoundary | None = None
+    context_epoch: str = ""
+    context_epoch_after: str | None = None
     last_output: CoreReference | None = None
     disposition: Literal["yield", "complete"] = "yield"
     dependencies: tuple[str, ...] = ()
@@ -346,6 +348,7 @@ class QuestionDefinition(TaskRecord):
     expires_at: str | None = None
     source: str = "ask_user"
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    resolution: CoreReference | None = None
 
 
 class QuestionAnswerAction(TaskRecord):

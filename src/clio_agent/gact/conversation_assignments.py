@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -12,6 +13,7 @@ from clio_agent.arc.task_types import (
     AssignmentDetails,
     AssignmentEvidence,
     BackendReference,
+    ContextBoundary,
     CoordinationGrant,
     MailItem,
     TaskOwner,
@@ -23,10 +25,61 @@ from clio_agent.gact.task_publication import publish_task_notice
 
 if TYPE_CHECKING:
     from clio_agent.gact.conversations import (
-        ConversationOutcome,
         Conversations,
-        ConversationSegment,
     )
+
+
+@dataclass(frozen=True)
+class ConversationSegment:
+    """One execution segment of an existing finite assignment."""
+
+    session_id: str
+    assignment: TaskSnapshot
+    turn_id: str
+    trigger: MailItem
+    text: str
+    context_epoch: str = ""
+    context_epoch_after: str | None = None
+
+
+@dataclass(frozen=True)
+class ConversationOutcome:
+    """The conversation program's result, separate from assignment disposition."""
+
+    outputs: dict[str, Any]
+    disposition: str | None = None
+    context: ContextBoundary | None = None
+    error: dict[str, Any] | None = None
+
+
+def clear_model_context(self: Conversations, sid: str, question: str, boundary: str) -> None:
+    """Confirm one exact Question epoch without erasing history or replaying accepted work."""
+    with self.history._lock:
+        current = self.history.latest_assignment(sid)
+        if current is None:
+            raise ValueError("Plan context owner is unavailable")
+        details = (
+            AssignmentDetails.model_validate(self.history.read_content(current.details))
+            if current.details
+            else AssignmentDetails()
+        )
+        if details.context_epoch == question:
+            return
+        self.runner.request_stop(sid)  # close the old segment before any uncertain epoch write
+        reference = self.history.write_content(
+            sid,
+            details.model_copy(
+                update={
+                    "context_epoch": question,
+                    "context_epoch_after": boundary,
+                    "context": None,
+                    "last_output": None,
+                }
+            ).model_dump(mode="json"),
+        )
+        self.history.record_snapshot(
+            current.model_copy(update={"details": reference}), observation_id=uuid4().hex
+        )
 
 
 def _new_assignment(
@@ -65,6 +118,10 @@ def _new_assignment(
             update={
                 "predecessor": predecessor.handle if predecessor is not None else None,
                 "context": previous_details.context if previous_details is not None else None,
+                "context_epoch": previous_details.context_epoch if previous_details else "",
+                "context_epoch_after": previous_details.context_epoch_after
+                if previous_details
+                else None,
                 "input_evidence": previous_details.input_evidence
                 if previous_details is not None
                 else (initial_details.input_evidence if initial_details is not None else ()),
@@ -148,6 +205,8 @@ def _finish_segment(
             if current.details
             else AssignmentDetails()
         )
+        if segment.context_epoch != details.context_epoch:
+            return  # a cleared model segment cannot restore its old context after retirement
         if details.execution_deadline is not None and datetime.now(
             timezone.utc
         ) >= datetime.fromisoformat(details.execution_deadline):

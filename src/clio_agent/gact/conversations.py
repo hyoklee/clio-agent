@@ -6,7 +6,6 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -26,6 +25,7 @@ from clio_agent.gact import (
     conversation_controls,
     conversation_recovery,
 )
+from clio_agent.gact.conversation_assignments import ConversationOutcome, ConversationSegment
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_work import now
 from clio_agent.gact.session_mail import SessionMail, StagedInput
@@ -35,27 +35,6 @@ from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class ConversationSegment:
-    """One execution segment of an existing finite assignment."""
-
-    session_id: str
-    assignment: TaskSnapshot
-    turn_id: str
-    trigger: MailItem
-    text: str
-
-
-@dataclass(frozen=True)
-class ConversationOutcome:
-    """The conversation program's result, separate from assignment disposition."""
-
-    outputs: dict[str, Any]
-    disposition: str | None = None
-    context: ContextBoundary | None = None
-    error: dict[str, Any] | None = None
 
 
 RunSegment = Callable[[ConversationSegment], Awaitable[ConversationOutcome]]
@@ -309,7 +288,20 @@ class Conversations:
                 if assignment.cancellation_requested_at is not None:
                     return None
                 turn_id = "turn_" + uuid4().hex
-                return ConversationSegment(sid, assignment, turn_id, trigger, text)
+                details = (
+                    AssignmentDetails.model_validate(self.history.read_content(assignment.details))
+                    if assignment.details
+                    else AssignmentDetails()
+                )
+                return ConversationSegment(
+                    sid,
+                    assignment,
+                    turn_id,
+                    trigger,
+                    text,
+                    details.context_epoch,
+                    details.context_epoch_after,
+                )
 
         segment = await asyncio.to_thread(select)
         if segment is None:
@@ -621,6 +613,8 @@ class Conversations:
             trace_id=segment.turn_id,
             assignment_handle=handle,
             input_notification_id=segment.trigger.id,
+            context_epoch=segment.context_epoch,
+            context_epoch_after=segment.context_epoch_after,
         )
         try:
             if self.runner.cancellation(sid).is_set():

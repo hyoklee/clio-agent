@@ -233,6 +233,54 @@ class QuestionCommands:
                 self.on_change(observed)
             return observed
 
+    def resolution(self, handle: str) -> dict[str, Any] | None:
+        """Read immutable server decision data without replacing a Question's answer."""
+        with self.history._lock:
+            task = self._question(handle)
+            reference = self._definition(task).resolution
+            if reference is None:
+                return None
+            value = self.history.read_content(reference)
+            if (
+                not isinstance(value, dict)
+                or value.get("question_handle") != handle
+                or value.get("answer_reference")
+                != (task.result.model_dump(mode="json") if task.result else None)
+                or value.get("raw_status") != task.raw_status
+                or value.get("terminal_at") != task.terminal_at
+            ):
+                raise ValueError("Question resolution differs from its accepted decision")
+            return value
+
+    def freeze_resolution(self, handle: str, value: dict[str, Any]) -> dict[str, Any]:
+        """Confirm content before attaching one decision reference to the original Question."""
+        with self.history._lock:
+            task = self._question(handle)
+            value = {
+                **value,
+                "question_handle": handle,
+                "answer_reference": task.result.model_dump(mode="json") if task.result else None,
+                "raw_status": task.raw_status,
+                "terminal_at": task.terminal_at,
+            }
+            existing = self.resolution(handle)
+            if existing is not None:
+                if existing != value:
+                    raise ValueError("A frozen Question decision cannot change")
+                return existing
+            if task.terminal_at is None:
+                raise ValueError("Question decision remains pending")
+            definition = self._definition(task)
+            content = self.history.write_content(task.owner.session_id, value)
+            details = self.history.write_content(
+                task.owner.session_id,
+                definition.model_copy(update={"resolution": content}).model_dump(mode="json"),
+            )
+            self.history.record_snapshot(
+                task.model_copy(update={"details": details}), observation_id=uuid4().hex
+            )
+            return value
+
     def answer(self, handle: str, reply: QuestionReply) -> TaskSnapshot:
         """Confirm one validated answer; a concurrent answer/cancel cannot overwrite it."""
         with self.history._lock:

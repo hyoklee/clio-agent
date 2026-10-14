@@ -541,6 +541,19 @@ async def _cancel_subtree(
                 type(error).__name__,
             )
             errors[handle] = {"handle": handle, "error": str(error)}
+            if self.history.requires_recovery:
+
+                async def retry_recording() -> bool:
+                    latest = await asyncio.to_thread(self.history.task_snapshot, assignment.handle)
+                    if latest is None or latest.terminal_at is not None:
+                        return True
+                    await request_member(handle)
+                    return handle not in errors
+
+                self.recovery.defer(
+                    "conversation-cancel-request:" + assignment.handle + ":" + handle,
+                    retry_recording,
+                )
 
     if request_members:
         await asyncio.gather(*(request_member(handle) for handle in handles))

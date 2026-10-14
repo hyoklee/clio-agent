@@ -170,3 +170,8 @@ C1-C8 behavioral gates are **unexecuted**. Legacy coupled-test migration, exact-
 ## R21 source-review correction packet
 
 Both R20 source reviews returned NO-GO. The complete finite correction map is `docs/design/task-replacement-corrections-r21.md`; source checks are in its matching static receipt. New context, pause/deadline, workflow identity/handoff, passive cancellation, late settlement and approval-repair regression cases retain the original behavior obligations. They are unexecuted. No test deletion, passing static check or source review waives Q1-Q9, R1-R6, migration, CI or live/model acceptance.
+
+
+## R23 initial source corrections
+
+Both independent R22 source reviews returned NO-GO; reports and the approved correction seams are retained. `docs/design/task-replacement-corrections-r23.md` records the combined finite packet: exact failed cancellation delivery, per-step orphan closure, legacy workflow identity and recovery isolation, closed-transport retry retirement, external attention deduplication, immutable Question decisions and conversation epochs. The matching static receipt has source hashes and successful scoped checks. Fresh regression construction is unexecuted; prior local tests, CI and model runs do not qualify this packet. Required Q1–Q9/R1–R6 and migration gates remain outstanding. No merge, release or installed-state change occurred.

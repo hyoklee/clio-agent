@@ -35,11 +35,11 @@ def restore_context(
     No predecessor history is copied. A known empty epoch or tombstoned scope is
     intentional. Missing trace/proof and failed reads are distinct: errors propagate.
     """
-    if arc.has_segments(session, scope) or "#epoch:" in scope:
+    if arc.has_segments(session, scope):
         return ""
     import uuid
 
-    from clio_agent.arc.context_restore import recorded_segments
+    from clio_agent.arc.context_restore import recorded_segments, unanswered_calls
     from clio_agent.arc.schema import Segment
     from clio_agent.gact import context
     from clio_agent.gact.agents.clio_react_record import fold_steps
@@ -65,25 +65,40 @@ def restore_context(
     if not found:
         if not allow_transcript:
             return ""
+        if "#epoch:" in scope:
+            boundary = context.current_turn().context_epoch_after
+            if boundary is None:
+                return ""  # no proof that transcript rows belong to this fresh epoch
+            ledger = [
+                row
+                for row in ledger
+                if context.after_context_boundary(_get(row, "created_at"), boundary) is True
+            ]
         rows = [
             row
             for row in ledger
-            if not (
-                turn_id
-                and _get(row, "role") == "user"
-                and turn_id in {_get(row, "id"), _get(row, "turn_id")}
-            )
+            if not (turn_id and turn_id in {_get(row, "id"), _get(row, "turn_id")})
         ]
         if not turn_id and rows and _get(rows[-1], "role") == "user":
             rows.pop()
         restored = transcript_segments(session, scope, rows)
         source = "saved transcript; provider continuation is unavailable"
     live = [segment for segment in restored if segment.status == "live"]
-    answered = {segment.content.get("call_id") for segment in live if segment.kind == "observation"}
-    for call in tuple(live):
-        if call.kind == "tool_call" and call.content.get("id") not in answered:
-            number = max((segment.order for segment in restored), default=0) + 1
-            restored.append(
+    recovered: list[Segment] = []
+    pending: dict[str, Segment] = {}
+    clock = max((segment.logical_time for segment in restored), default=0)
+
+    def close_step(boundary: float | None) -> None:
+        nonlocal clock
+        start = recovered[-1].order if recovered else 0.0
+        stop = boundary if boundary is not None else start + len(pending) + 1
+        previous = start
+        for position, call in enumerate(pending.values(), 1):
+            order = start + (stop - start) * position / (len(pending) + 1)
+            if not previous < order < stop:
+                raise ValueError("No representable context order for uncertain tool evidence")
+            clock += 1
+            recovered.append(
                 Segment(
                     id=uuid.uuid5(uuid.NAMESPACE_URL, session + "\0" + scope + "\0" + call.id).hex,
                     session_id=session,
@@ -91,8 +106,8 @@ def restore_context(
                     kind="observation",
                     step=call.step,
                     turn_id=call.turn_id,
-                    order=number,
-                    logical_time=max((segment.logical_time for segment in restored), default=0) + 1,
+                    order=order,
+                    logical_time=clock,
                     content={
                         "call_id": call.content["id"],
                         "is_error": True,
@@ -100,6 +115,19 @@ def restore_context(
                     },
                 )
             )
+            previous = order
+        pending.clear()
+
+    positions: dict[int, list[Segment]] = {}
+    for position, call in unanswered_calls(restored):
+        positions.setdefault(position, []).append(call)
+    for position in range(len(restored) + 1):
+        pending.update({call.content["id"]: call for call in positions.get(position, ())})
+        if pending:
+            close_step(restored[position].order if position < len(restored) else None)
+        if position < len(restored):
+            recovered.append(restored[position])
+    restored = recovered
     if not live and not unconfirmed:
         if restored:
             arc.restore_empty_context(session, scope, restored)

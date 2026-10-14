@@ -505,6 +505,8 @@ class ExternalTasks:
         if current is not None and current.cancellation_requested_at is not None:
 
             async def deliver_cancel() -> None:
+                if self._closing:
+                    return
                 task = await asyncio.to_thread(self.history.task_snapshot, call.submission.handle)
                 if (
                     task is not None
@@ -632,6 +634,13 @@ class ExternalTasks:
         with self.history._lock:
             current = self.history.task_snapshot(handle)
             if current.terminal_at is not None:
+                return
+            if (
+                current.status == "task_state_uncertain"
+                and current.progress.message == message
+                and (not lost or current.connection_freshness == "lost")
+                and current.attention_episode
+            ):
                 return
             observed = current.model_copy(
                 update={
