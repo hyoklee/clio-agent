@@ -407,6 +407,7 @@ async def test_child_inference_concurrency_uses_the_resolved_cap(
         await owner.spawn(caller, f"Child {index}", "worker", f"budget-{index}")
         for index in range(expected + 1)
     ]
+    owner.start()
     full, release = asyncio.Event(), asyncio.Event()
     entered: set[str] = set()
     active, maximum = 0, 0
@@ -425,8 +426,16 @@ async def test_child_inference_concurrency_uses_the_resolved_cap(
                 active -= 1
 
     models = [asyncio.create_task(model_call(child["session_id"])) for child in children]
+    ready = asyncio.create_task(full.wait())
     try:
-        await full.wait()
+        completed, _pending = await asyncio.wait(
+            [ready, *models], return_when=asyncio.FIRST_COMPLETED
+        )
+        if ready not in completed:
+            await next(
+                iter(completed)
+            )  # Surface a worker setup/error rather than hang on readiness.
+            pytest.fail("An inference worker retired before the configured capacity was occupied")
         assert len(entered) == expected
         async with owner.inference_slot(root.owner.session_id):
             assert active == expected  # Child budget does not become a new root-session cap.
@@ -436,7 +445,10 @@ async def test_child_inference_concurrency_uses_the_resolved_cap(
         assert maximum == expected and active == 0
     finally:
         release.set()
+        ready.cancel()
+        await asyncio.gather(ready, return_exceptions=True)
         await asyncio.gather(*models, return_exceptions=True)
+        await owner.shutdown()
         await owner.recovery.drain()
 
 

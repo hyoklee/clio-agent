@@ -199,3 +199,24 @@ The remaining-test audit additionally found the released ask_user parser-residue
 validator had been dropped with its old owner. Its algorithm is restored in the
 sole QuestionCommands input-validation path, with actual FastMCP-boundary tests;
 this is no global model recovery rule or alternate question owner.
+
+
+Astra16 gives scoped source GO for19319a3b, with no remaining P1/P2 in the
+compatibility corrections. This is neither Claude approval nor execution/CI/live
+acceptance. The subsequent2902fb99 test-only change merely names Question cases.
+
+The first inference-budget attempt on2902fb99 failed its120s diagnostic gate and
+180s project watchdog: the test restored its conversation owner but did not call
+its real start lifecycle, and then waited for readiness without propagating
+worker errors. The fixture correction calls start after preparing child records,
+waits on readiness and worker outcomes, and performs real owner shutdown.
+Production source and assertions/budgets are unchanged. The failure is retained.
+
+The watchdog left private Core59116 and1,463,104,908logical bytes. PID59116 was
+verified against its private pidfile/birth1792007360.875164, parent27404 and the
+feature-environment clio_run.exe. The normal private-daemon reaper stopped it;
+the existing identity-checked test-runtime cleanup removed the run and parent
+D:/tr2-1014-b8 without an archive. Both launcher/test processes and the daemon
+are absent. Initial deletion correctly failed on its open log; no permission
+rejection or policy bypass occurred. No subsequent test was launched before
+this custody/cleanup was settled. No unrelated Core process was stopped.
