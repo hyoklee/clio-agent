@@ -4,9 +4,20 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
-## Unreleased
+## [0.9.5-beta.6] - 2026-10-14
 
 ### Added
+
+- American Science Cloud MAG provider with project-specific model discovery,
+  unchanged gateway model IDs and Personal Access Token authentication.
+- ALCF Minerva and Tara using the existing shared Globus login. The model picker
+  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
+  while retaining separate server identities, model lists and status.
+- Global search across workspaces, Settings, Infrastructure and Runs, with
+  immediate keyboard focus, inline search model selection, guarded file handoff
+  and temporary read-only agent search.
+- Composable Carousel and Video views, documentation media guides and workflow
+  images with accessible enlargement controls.
 
 - Connect Obsidian vaults as knowledge sources, with a graph/files workbench,
   note reader, immutable chat attachments, and capability-gated knowledge tools.
@@ -15,6 +26,16 @@ TUI/HTTP surface aren't tracked here.
   and note permissions, with private client setup on the CLIO host.
 
 ### Fixed
+
+- Office binary transport, automatic PDF preview and retained conversion on
+  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
+- Sign-in listener continuity, steering transcript anchors, aligned todo controls
+  and one HTML Preview/Source/action toolbar.
+- Async native search tools and Fleet lease acquisition no longer block the
+  server event loop. Spill details retain the bounded prefix shown to the model.
+- Distinguish a gateway network-policy block from a rejected MAG API key.
+- Save long shell programs through builder files and retain required visual review
+  guidance for generated documents.
 
 - Resource derivative storage uses Windows extended paths throughout, so captured
   resources remain readable under deep workspace and custody paths.
@@ -49,6 +70,18 @@ TUI/HTTP surface aren't tracked here.
   tests on deprecation warnings.
 - Update clio-core to 2.3.1, including Windows sparse backing files and storage
   correctness fixes.
+
+### Beta qualification
+
+- Released under explicit user approval without waiting for all GitHub checks or
+  remaining live acceptance. CI continues; pending and failing results remain
+  recorded separately from completed static and live verification.
+- MAG catalog access succeeded with the user's token on another Windows machine.
+  This machine is blocked by the gateway's current network restrictions; no MAG
+  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
+  user testing with the appropriate access.
+- Opt-in shared blueprint coordination needs a compatible Core package exposing
+  the merged conditional-write API. This beta does not publish or install Core.
 
 ## [0.9.5-beta.5.2] - 2026-10-08
 
