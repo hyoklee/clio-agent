@@ -12,7 +12,7 @@ from clio_agent.gact.agent_blueprints import load_agent_blueprint_path
 from clio_agent.gact.agents import task_guidance as guidance
 from clio_agent.gact.agents.auto_tools import build_auto_react_tools
 from clio_agent.gact.agents.clio_react import ClioReAct
-from clio_agent.gact.task_tools import build_task_tools
+from clio_agent.gact.task_declarations import build_task_tools
 from clio_agent.prompts import PromptRegistry, PromptSource
 from tests._marketplace import MARKETPLACE_ROOT
 from tests._scripted_engine import Reply, scripted_lm

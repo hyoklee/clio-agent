@@ -293,10 +293,10 @@ def test_answer_field_text_is_untruncated_behind_a_long_reasoning_block() -> Non
     legitimately long JSON answer -- unlike ``turn_spawn.py``'s generic
     ``answer_excerpt`` (a 2000-char cap over the WHOLE joined message text)."""
 
-    from clio_agent.gact.turn_spawn import _ANSWER_EXCERPT_MAX
+    historical_excerpt_bound = 2000
 
     long_reasoning = "reasoning prose " * 300  # far exceeds _ANSWER_EXCERPT_MAX (2000 chars)
-    assert len(long_reasoning) > _ANSWER_EXCERPT_MAX
+    assert len(long_reasoning) > historical_excerpt_bound
     long_code_word = "x" * 2200  # a valid answer alone longer than the generic cap
     answer_json = json.dumps({"answer": {"code_word": long_code_word}})
     msg = _answer_message(

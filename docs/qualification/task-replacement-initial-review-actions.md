@@ -1,5 +1,14 @@
 # Initial implementation review actions
 
+## Initial source approval
+
+Astra independently approved core af8e4b6c / GACT ce993164 / marketplace 9257bba
+for initial production-source qualification. The complete source-only verdict is
+retained in task-replacement-initial-review-astra-13.md. No source edits, tests,
+imports or services were performed by that review. Claude's renewed verdict is
+still blocked by host authentication. Test migration and fresh qualification
+continue; CI and Q1-Q9/R1-R6 are not passed by this source approval.
+
 ## Review 12 correction candidate
 
 Astra's frozen f029d12b review returned three actionable source findings. This

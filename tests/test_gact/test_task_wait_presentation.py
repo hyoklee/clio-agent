@@ -5,7 +5,8 @@ from typing import Any
 import pytest
 
 from clio_agent.gact.agents.tool_instrumentation import instrument_tools
-from clio_agent.gact.task_tools import build_task_tools, task_presentation
+from clio_agent.gact.task_declarations import build_task_tools
+from clio_agent.gact.task_wait_presentation import wait_presentation
 
 
 def test_wait_defaults_are_explicit_in_the_agent_visible_declaration() -> None:
@@ -17,8 +18,13 @@ def test_wait_defaults_are_explicit_in_the_agent_visible_declaration() -> None:
         assert parameters["required"] == ["tasks"]
         assert parameters["properties"]["timeout_s"]["default"] is None
         assert parameters["properties"]["return_when"]["default"] == "all"
-        assert "Default: null (no deadline)" in parameters["properties"]["timeout_s"]["description"]
-        assert "timeout_s=null (no deadline)" in declaration["description"]
+        assert parameters["properties"]["timeout_s"]["anyOf"] == [
+            {"type": "number", "minimum": 0},
+            {"type": "null"},
+        ]
+        description = declaration["description"]
+        assert "unbounded" in description and "zero snapshots" in description
+        assert "positive expiry or Stop ends only this waiter" in description
 
 
 @pytest.mark.parametrize("timeout", [0, 2.5, None])
@@ -30,7 +36,7 @@ def test_wait_receipt_keeps_pending_work_visible(timeout: float | None) -> None:
         "errors": [],
         "timed_out": True,
     }
-    shown = task_presentation({"tasks": "task_child", "timeout_s": timeout}, receipt, None)
+    shown = wait_presentation({"tasks": "task_child", "timeout_s": timeout}, receipt)
     assert shown["action"] == ("Check all tasks" if timeout == 0 else "Wait for all tasks")
     assert shown["summary"] == "1 pending, 0 results collected"
     assert shown["subject"] == "wait-targets"
@@ -42,13 +48,13 @@ def test_wait_receipt_keeps_pending_work_visible(timeout: float | None) -> None:
 
 def test_mixed_wait_receipt_counts_only_collected_results() -> None:
     """A collected child and a pending child remain separate outcomes."""
-    shown = task_presentation({}, {"results": [{"handle": "ready"}], "pending": ["pending"]}, None)
+    shown = wait_presentation({}, {"results": [{"handle": "ready"}], "pending": ["pending"]})
     assert shown["summary"] == "1 pending, 1 result collected"
 
 
 def test_completed_wait_has_no_pending_snapshot() -> None:
     """A fully collected wait does not retain a running indicator."""
-    shown = task_presentation({}, {"results": [{"handle": "ready"}], "pending": []}, None)
+    shown = wait_presentation({}, {"results": [{"handle": "ready"}], "pending": []})
     assert shown["summary"] == "1 result collected"
     assert not any(block.get("status") == "pending" for block in shown["blocks"])
     assert shown["blocks"][2]["label"] == "ready: Result collected"
@@ -56,7 +62,7 @@ def test_completed_wait_has_no_pending_snapshot() -> None:
 
 def test_any_wait_shows_selection_policy_and_each_result() -> None:
     """Any can return collected evidence while other selected tasks remain pending."""
-    shown = task_presentation(
+    shown = wait_presentation(
         {"tasks": ["worker_a", "worker_b"], "return_when": "any"},
         {
             "pending": ["worker_b"],
@@ -69,19 +75,18 @@ def test_any_wait_shows_selection_policy_and_each_result() -> None:
                 }
             ],
         },
-        None,
     )
     assert shown["action"] == "Wait for any task"
     assert shown["blocks"][0]["text"] == "worker_a, worker_b"
     assert "No deadline" in shown["blocks"][1]["text"]
-    assert shown["blocks"][2]["label"] == "worker_a: Turn ended"
+    assert shown["blocks"][2]["label"] == "worker_a: Assignment complete"
     assert shown["blocks"][2]["text"] == "Audit incomplete; loader failed."
     assert shown["blocks"][3]["status"] == "pending"
 
 
 def test_wait_surfaces_failed_result_and_collection_error() -> None:
     """A returned receipt must not hide task failure behind a successful call badge."""
-    shown = task_presentation(
+    shown = wait_presentation(
         {"tasks": ["failed", "missing"]},
         {
             "pending": [],
@@ -90,7 +95,6 @@ def test_wait_surfaces_failed_result_and_collection_error() -> None:
             ],
             "errors": [{"handle": "missing", "error": "Unknown task handle"}],
         },
-        None,
     )
     assert shown["status"] == "degraded"
     assert shown["summary"] == "1 result collected, 1 unsuccessful, 1 error"
