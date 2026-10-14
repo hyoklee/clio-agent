@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import json
 import posixpath
+import sys
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from clio_agent.gact.infrastructure import node_service, process_group, reuse
+from clio_agent.gact.infrastructure import (
+    native_service_platform,
+    node_service,
+    process_group,
+    reuse,
+)
 from clio_agent.gact.infrastructure.models import CommandResult, CommandSpec, OwnedResource
 from clio_agent.gact.infrastructure.plan import DriverPlan, Readiness
 from clio_agent.gact.infrastructure.service_observation import parse_observation
@@ -27,6 +33,7 @@ def supervised_plan(
     key_variable: str = "",
     secret_env: dict[str, str] | None = None,
     runtime_files: dict[str, str] | None = None,
+    windows: bool = False,
 ) -> DriverPlan:
     """Keep lifecycle, readiness, ownership and failure cleanup identical across drivers.
 
@@ -40,6 +47,7 @@ def supervised_plan(
     # Outside the manifest (whose digest is the configuration revision): the
     # shared reuse helper beside the worker, and this operation's bypass of it.
     helper = reuse.source()
+    platform_source = Path(native_service_platform.__file__).read_text(encoding="utf-8")
     fresh = reuse.from_scratch(configuration)
 
     def command(verb: str, *, cleanup: bool = False) -> CommandSpec:
@@ -48,6 +56,8 @@ def supervised_plan(
             "owner": ownership,
             "action": verb,
             "operation_id": operation_id,
+            "script": script,
+            "platform_helper": platform_source,
         }
         if cleanup:
             body["require_operation_id"] = operation_id
@@ -71,8 +81,27 @@ def supervised_plan(
         elif verb == "status" and action == "start" and api_key:
             # Readiness proves the endpoint lists our model with the per-launch key.
             body["api_key"] = api_key
+        # The controller and manifest travel through stdin. Windows' command-line
+        # limit must not constrain a service definition or expose its credentials.
+        bootstrap = (
+            "import json,sys,types\n"
+            "request=json.load(sys.stdin)\n"
+            "platform=types.ModuleType('clio_native_platform')\n"
+            "sys.modules[platform.__name__]=platform\n"
+            "exec(request['platform_helper'], platform.__dict__)\n"
+            "controller=types.ModuleType('clio_native_controller')\n"
+            "exec(request['script'], controller.__dict__)\n"
+            "try:\n"
+            " result=controller.control(request)\n"
+            " print(result['logs'] if 'logs' in result else controller.MARKER+json.dumps(result))\n"
+            "except (OSError,ValueError,RuntimeError) as error:\n"
+            " print(str(error), file=sys.stderr); sys.exit(1)\n"
+        )
         return CommandSpec(
-            program="python3", args=["-c", script], stdin=json.dumps(body), timeout_seconds=120
+            program=sys.executable if windows else "python3",
+            args=["-c", bootstrap],
+            stdin=json.dumps(body),
+            timeout_seconds=120,
         )
 
     def record(result: CommandResult) -> list[OwnedResource]:

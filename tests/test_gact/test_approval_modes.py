@@ -20,6 +20,7 @@ from __future__ import annotations
 import threading
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -48,12 +49,14 @@ _UNCLASSIFIED = "shell.exec"
 _ALL_MODES = ("ask", "auto-edits", "bypass", "ai-review", "spotter-ai")
 
 
-def _wait_for_row(app, *, timeout: float = TURN_SIGNAL_BACKSTOP_S) -> dict:
+def _wait_for_row(
+    app: Any, *, timeout: float = TURN_SIGNAL_BACKSTOP_S, reason: str = ""
+) -> dict[str, Any]:
     """Block until the gate registers a permission row; fail if none appears."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         rows = list(app.state.permissions.values())
-        if rows:
+        if rows and (not reason or rows[0].get("reason") == reason):
             return rows[0]
         time.sleep(0.02)
     pytest.fail("permission row never registered")
@@ -406,7 +409,7 @@ def test_ai_review_escalate_prompts_and_human_resolves(tmp_path: Path, monkeypat
         thread = threading.Thread(target=fire)
         thread.start()
         try:
-            row = _wait_for_row(app)
+            row = _wait_for_row(app, reason=_ai_review_mod.REASON_AI_REVIEW_ESCALATE)
             assert row["status"] == "pending"
             assert row["reason"] == _ai_review_mod.REASON_AI_REVIEW_ESCALATE
             pid = row["id"]

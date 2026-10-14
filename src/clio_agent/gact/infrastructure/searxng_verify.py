@@ -22,7 +22,12 @@ def verify(root: Path) -> dict[str, object]:
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     query = manifest["searxng"]["verify_query"]
     base = f"http://127.0.0.1:{int(manifest['port'])}"
-    url = base + "/search?" + urllib.parse.urlencode({"q": query, "format": "json"})
+    engines = manifest["searxng"]["settings"]["use_default_settings"]["engines"]["keep_only"]
+    url = (
+        base
+        + "/search?"
+        + urllib.parse.urlencode({"q": query, "format": "json", "engines": ",".join(engines)})
+    )
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
     with opener.open(url, timeout=60) as response:
         body = json.load(response)
