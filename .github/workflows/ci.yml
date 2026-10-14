@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: Exercise real owned workers without application or Core builds
-        run: uv run --no-project --with pytest --managed-python --python 3.14 python -m pytest --confcutdir=tests/test_native_services tests/test_native_services -q -rs
+        run: uv run --no-project --with pytest --with pytest-asyncio --with pytest-timeout --managed-python --python 3.14 python -m pytest --confcutdir=tests/test_native_services tests/test_native_services -q -rs
 
   filesystem-contract:
     runs-on: ubuntu-latest

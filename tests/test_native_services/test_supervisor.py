@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import signal
@@ -16,8 +17,22 @@ from typing import Any
 
 import pytest
 
-from clio_agent.gact.infrastructure import native_service_platform as platform
-from clio_agent.gact.infrastructure import node_service, process_group
+SOURCE = Path(__file__).resolve().parents[2] / "src/clio_agent/gact/infrastructure"
+
+
+def standalone(name: str, filename: str) -> Any:
+    """Load the actual shipped stdlib files without importing the application runtime."""
+    spec = importlib.util.spec_from_file_location(name, SOURCE / filename)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+platform = standalone("clio_native_platform", "native_service_platform.py")
+process_group = standalone("clio_process_group", "process_group.py")
+node_service = standalone("clio_native_controller", "node_service.py")
 
 LAUNCHER = """
 import json, os
