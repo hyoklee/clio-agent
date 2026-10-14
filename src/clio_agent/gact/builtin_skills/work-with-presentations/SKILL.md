@@ -99,6 +99,11 @@ This registers the editable deck with a version-bound PDF preview for Clio's
 viewer. Before claiming a preview is available, confirm a successful entry in
 the publication result's `pdf_previews`; correct a missing or failed binding.
 A saved preview is not visual review.
+Keep requested rendering and visual review incomplete until the slide images have
+actually been inspected. A failed render is a blocker: do not replace that todo
+with "attempt rendering" and mark it complete, or remove the requirement. Preserve
+the original obligation, report the specific failure and continue independent
+work while it is unresolved. Only the user can waive requested review.
 A separately registered review PDF does not bind to the editable deck. Keep
 `pdf_preview=true` on the source call, or on its batch item, when a preview is
 requested; the publication workflow creates that relationship.

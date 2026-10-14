@@ -483,6 +483,15 @@ def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) 
     from clio_agent.runtime import sandbox
 
     command = [*runtime["helper_argv"], *args]
+    environment = {**os.environ, **runtime.get("shell_environment", {})}
+    if args and (
+        args[0] == "recalculate"
+        or (args[0] == "render" and len(args) > 1 and Path(args[1]).suffix.lower() != ".pdf")
+    ):
+        # The trusted host owns renderer provisioning. A confined document worker
+        # must consume the verified executable, never run Windows Installer.
+        environment["CLIO_DOCUMENT_SOFFICE"] = prepare_office_runtime()
+    environment["CLIO_DOCUMENT_CONFINED"] = "1"
     confined = sandbox.wrap_confined(
         command[0],
         command[1:],
@@ -496,8 +505,7 @@ def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) 
             [confined.command, *confined.args],
             cwd=cwd,
             env={
-                **os.environ,
-                **runtime.get("shell_environment", {}),
+                **environment,
                 **confined.env_overlay,
                 **{
                     key: value
