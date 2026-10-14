@@ -17,7 +17,7 @@ native PDF opening share one conversion per immutable artifact; reopening the
 tab joins ongoing work. Saved PDFs are loaded immediately. Converter failures
 remain visible with an explicit Retry control. Markdown, HTML and LaTeX keep
 their direct views. The combined source pin is
-`e61f8d779e206e82eb5bb1425e1f0e04cac4b378`.
+`c5d5f5eaf797ac82a1006d0011d0bc4ea87e7496`.
 Its math review example also distinguishes a rendered inline formula from plain
 code notation and explicitly labelled TeX source; renderer code remains unchanged.
 
@@ -41,6 +41,13 @@ This does not change the clio-core repository or installed Core package.
 Hosted preview qualification also caught refresh restarting an already successful
 conversion. PR #613 now retains the immutable PDF query while refreshing content
 and metadata. Its desktop/phone one-conversion assertions remain intact.
+
+The combined pin also retains merged UI #612 from develop (`97f62670`), including
+Obsidian management in Settings, vault creation/attachment choices and optional
+managed Sync. The older installed Settings page lists browser accounts only,
+which explains why the user's Attach screenshot shows Obsidian while Settings
+does not. The corresponding managed-client backend is owned by agent PR #1745;
+require that merge before this pin and preserve its independently owned worktree.
 
 New loopback HTTP regression cases cover the three OOXML types, case and MIME
 parameters, and retained UTF-8 text behavior. Rustfmt was applied; local tests,
