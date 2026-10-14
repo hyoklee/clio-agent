@@ -129,6 +129,7 @@ async def create_environment(
         lambda _sid: None,
     )
     app.state.conversations = owner
+    await owner.restore()
     return app, owner, root
 
 
