@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -112,12 +113,13 @@ def _parse_result(result: object) -> dict:
 
 @pytest.mark.asyncio
 async def test_shell_bash_runs_simple_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The shell tool should execute a bounded command and return output."""
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLIO_ALLOWED_ROOTS", str(tmp_path))
+    caplog.set_level(logging.INFO, logger="clio_agent.tools.servers.shell_server")
     conf.reload()
     if os.name == "nt":
         command = f"& '{sys.executable}' -c \"import os; print('CLIO_SHELL_OK'); print(os.environ.get('PYTHONUTF8'))\""
@@ -138,6 +140,17 @@ async def test_shell_bash_runs_simple_command(
     assert data["timed_out"] is False
     assert data["stdout"].strip().splitlines() == ["CLIO_SHELL_OK", "1"]
     assert data["stderr"] == ""
+    stages = [record for record in caplog.records if record.msg.startswith("shell_phase ")]
+    assert [record.args[1] for record in stages] == [
+        "environment",
+        "confinement",
+        "process_start",
+        "child_lifetime",
+        "output_drain",
+    ]
+    assert len({record.args[0] for record in stages}) == 1
+    assert all(record.args[2] == "completed" and record.args[3] >= 0 for record in stages)
+    assert all(command not in record.getMessage() for record in stages)
 
 
 @pytest.mark.asyncio
