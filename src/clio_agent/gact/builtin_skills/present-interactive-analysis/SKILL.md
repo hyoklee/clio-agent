@@ -234,6 +234,13 @@ the producer names unattached ids so you can repair the tree.
 For a correction in a later turn, call `inspect_a2ui_surface` to find the
 existing id and current components, then update that surface. A correction
 should replace the earlier view so both versions do not compete in the chat.
+Preserve the content the user did not ask to change: media references, child
+order, captions, source links, units, and version or availability labels.
+Replacing a Text label with a Button or another component must retain that
+label's qualifications in its visible child text or a connected Text component.
+After the update, inspect the surface again and compare the revised components
+with the earlier definition before claiming that content was preserved. A ready
+surface confirms schema acceptance; it does not establish content preservation.
 
 ## Custom charts with Altair
 
