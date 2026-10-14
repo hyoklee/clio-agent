@@ -17,7 +17,9 @@ native PDF opening share one conversion per immutable artifact; reopening the
 tab joins ongoing work. Saved PDFs are loaded immediately. Converter failures
 remain visible with an explicit Retry control. Markdown, HTML and LaTeX keep
 their direct views. The combined source pin is
-`a7b495be520ccc0294e5de8cebbee829a8eefd78`.
+`80c775cfe7014cb187596339a13b628b5e2fa01b`.
+Its math review example also distinguishes a rendered inline formula from plain
+code notation and explicitly labelled TeX source; renderer code remains unchanged.
 
 New loopback HTTP regression cases cover the three OOXML types, case and MIME
 parameters, and retained UTF-8 text behavior. Rustfmt was applied; local tests,
