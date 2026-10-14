@@ -484,6 +484,15 @@ def provision_codex_windows(
                 next_action="No action required.",
                 extra={"implementation": "mxc"},
             )
+        if mxc["status"] == "busy":
+            return CodexProvisionResult(
+                ok=False,
+                status=OUTCOME_SETUP_FAILED,
+                reason=mxc["reason"],
+                detail="Another CLIO process is still verifying native protected execution.",
+                next_action="Wait for that setup to finish, then retry Set up protected execution.",
+                extra={"implementation": "mxc"},
+            )
         if progress:
             progress(
                 f"Native MXC unavailable ({mxc['reason']}); checking legacy protected execution..."
