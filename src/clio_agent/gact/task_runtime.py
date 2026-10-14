@@ -186,7 +186,7 @@ async def start(app: Any) -> None:
         from clio_agent.gact.turn import _run_turn_in_background
         from clio_agent.gact.types import Message, Part
 
-        def prepare() -> tuple[Message, str]:
+        def prepare() -> tuple[Message, str, str]:
             original = history.read_content(segment.trigger.content)
             message_id = original.get("message_id") if isinstance(original, dict) else None
             existing = next(
@@ -200,8 +200,17 @@ async def start(app: Any) -> None:
             agent = original.get("agent_id", "") if isinstance(original, dict) else ""
             if not isinstance(agent, str):
                 raise ValueError("Retained agent identity must be a string")
-            if segment.trigger.kind in {"human", "composer"} and existing is not None:
-                return existing, agent
+            model_text = segment.text
+            retained_metadata = original.get("metadata") if isinstance(original, dict) else None
+            if (
+                isinstance(original, dict)
+                and isinstance(retained_metadata, dict)
+                and retained_metadata.get("mcp_app")
+            ):
+                retained_text = original.get("model_text", segment.text)
+                if not isinstance(retained_text, str):
+                    raise ValueError("Retained MCP App context must be text")
+                model_text = retained_text
             if (
                 segment.trigger.kind in {"human", "composer"}
                 and isinstance(original, dict)
@@ -210,7 +219,26 @@ async def start(app: Any) -> None:
                 recovered = Message.model_validate(original["message"])
                 if recovered.session_id != segment.session_id or recovered.role != "user":
                     raise ValueError("Retained human input belongs to another session or role")
-                return recovered, agent
+                return recovered, agent, model_text
+            if segment.trigger.kind in {"human", "composer"} and existing is not None:
+                return existing, agent, model_text
+            if segment.trigger.kind in {"human", "composer"}:
+                if not isinstance(original, str):
+                    raise ValueError("The retained typed human message is unavailable")
+                stamp = now()
+                return (
+                    Message(
+                        id=segment.trigger.id,
+                        turn_id=segment.turn_id,
+                        session_id=segment.session_id,
+                        role="user",
+                        created_at=stamp,
+                        updated_at=stamp,
+                        parts=[Part(type="text", text=original)],
+                    ),
+                    agent,
+                    model_text,
+                )
             stamp = now()
             assignment_details = (
                 AssignmentDetails.model_validate(history.read_content(segment.assignment.details))
@@ -229,28 +257,32 @@ async def start(app: Any) -> None:
                 if not isinstance(raw_metadata, dict):
                     raise ValueError("Trusted continuation metadata is malformed")
                 producer_metadata = raw_metadata
-            return Message(
-                id=segment.turn_id,
-                turn_id=segment.turn_id,
-                session_id=segment.session_id,
-                role="system",
-                created_at=stamp,
-                updated_at=stamp,
-                parts=[Part(id=segment.turn_id + ":continuation", type="text", text=segment.text)],
-                metadata={
-                    "system_injection": True,
-                    "assignment_handle": segment.assignment.handle,
-                    "parent_turn_id": assignment_details.parent_turn_id,
-                    **producer_metadata,
-                },
-            ), agent
+            return (
+                Message(
+                    id=segment.turn_id,
+                    turn_id=segment.turn_id,
+                    session_id=segment.session_id,
+                    role="system",
+                    created_at=stamp,
+                    updated_at=stamp,
+                    parts=[
+                        Part(id=segment.turn_id + ":continuation", type="text", text=segment.text)
+                    ],
+                    metadata={
+                        "system_injection": True,
+                        "assignment_handle": segment.assignment.handle,
+                        "parent_turn_id": assignment_details.parent_turn_id,
+                        **producer_metadata,
+                    },
+                ),
+                agent,
+                model_text,
+            )
 
-        message, agent = await asyncio.to_thread(prepare)
+        message, agent, model_text = await asyncio.to_thread(prepare)
         app.state.cancel_flags.discard(segment.session_id)
         await asyncio.to_thread(session_store.update, segment.session_id, status="running")
-        outcome = await _run_turn_in_background(
-            app, segment.session_id, segment.text, message, agent
-        )
+        outcome = await _run_turn_in_background(app, segment.session_id, model_text, message, agent)
         return (
             outcome
             if isinstance(outcome, ConversationOutcome)

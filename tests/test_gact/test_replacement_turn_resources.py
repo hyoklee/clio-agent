@@ -13,6 +13,40 @@ from clio_agent.gact.turn_runner import TurnRunner
 
 
 @pytest.mark.asyncio
+async def test_shutdown_closes_admission_already_reserved_before_segment_start() -> None:
+    """A completion arriving during shutdown cannot start an admitted model segment."""
+    entered, release, started = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    admissions: list[str] = []
+
+    async def admit(sid: str) -> tuple[str, Any]:
+        admissions.append(sid)
+        entered.set()
+        await release.wait()
+
+        async def segment() -> None:
+            started.set()
+
+        return "shutdown-race", segment()
+
+    runner = TurnRunner(SimpleNamespace(state=SimpleNamespace()), admit)
+    runner.bind_loop(asyncio.get_running_loop())
+    try:
+        runner.signal("session")
+        await entered.wait()
+        assert runner.busy("session")
+        runner.close_admission()
+        runner.signal("session")
+        runner.signal("other-session")
+        release.set()
+        await runner.drain()
+        assert admissions == ["session"] and not started.is_set()
+        assert not runner.busy("session") and not runner.busy("other-session")
+    finally:
+        release.set()
+        await runner.drain()
+
+
+@pytest.mark.asyncio
 async def test_stop_retains_slot_until_actual_worker_exit() -> None:
     entered, second = asyncio.Event(), asyncio.Event()
     release = threading.Event()

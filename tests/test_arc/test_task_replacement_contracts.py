@@ -198,6 +198,61 @@ async def test_expired_mixed_wait_preserves_running_members(arc: ARCMemory) -> N
 
 
 @pytest.mark.asyncio
+async def test_revocation_releases_unbounded_peer_wait_without_task_progress(
+    arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A grant change alone must wake the wait and recheck disclosure rights."""
+    history = TaskHistory(arc)
+    running = await asyncio.to_thread(record_task, history, "task_peer_wait")
+    grant = CoordinationGrant(
+        id="grant-peer-wait",
+        granting_human="human",
+        recipient_session="peer",
+        target_session="owner",
+        rights=("read", "observe"),
+        created_at=STAMP,
+    )
+    await asyncio.to_thread(history.record_grant, grant, observation_id="grant-peer-wait")
+    registered = asyncio.Event()
+    original = history.listen
+
+    def listen(
+        callback: Callable[[int], None],
+        *,
+        handles: tuple[str, ...] | None = None,
+        recipient_session: str | None = None,
+    ) -> Callable[[], None]:
+        remove = original(callback, handles=handles, recipient_session=recipient_session)
+        registered.set()
+        return remove
+
+    monkeypatch.setattr(history, "listen", listen)
+    operations = TaskOperations(history, forbid_cancel)
+    waiter = asyncio.create_task(operations.wait(TaskCaller("peer", "human"), running.handle))
+    try:
+        await registered.wait()
+        assert not waiter.done()
+        await asyncio.to_thread(
+            history.record_grant,
+            grant.model_copy(update={"revoked_at": STAMP}),
+            observation_id="grant-peer-revoked",
+        )
+        result = await waiter
+        assert result == {
+            "outcomes": [{"handle": running.handle, "error": "task_unavailable"}],
+            "pending": [],
+            "timed_out": False,
+        }
+        current = await asyncio.to_thread(history.task_snapshot, running.handle)
+        assert current == running and current.terminal_at is None
+        assert current.cancellation_requested_at is None
+    finally:
+        if not waiter.done():
+            waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
+
+
+@pytest.mark.asyncio
 async def test_waiter_cancellation_leaves_question_open(arc: ARCMemory) -> None:
     history = TaskHistory(arc)
     questions = QuestionCommands(history)

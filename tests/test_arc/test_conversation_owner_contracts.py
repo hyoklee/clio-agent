@@ -11,10 +11,23 @@ from uuid import uuid4
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import AssignmentDetails, TaskOwner, TaskSnapshot
+from clio_agent.arc.task_types import (
+    AssignmentDetails,
+    MailItem,
+    QuestionDefinition,
+    QuestionReply,
+    TaskAlias,
+    TaskOwner,
+    TaskSnapshot,
+)
+from clio_agent.gact import context
+from clio_agent.gact.agents.clio_react_record import StepRecorder
 from clio_agent.gact.conversations import ConversationOutcome, Conversations, ConversationSegment
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_work import now
+from clio_agent.gact.question_surface import answer_question
+from clio_agent.gact.questions import QuestionCommands
+from clio_agent.gact.session_input import withdraw_message_inputs
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import TaskHistory
@@ -120,6 +133,210 @@ async def create_environment(
 
 
 @pytest.mark.asyncio
+async def test_retained_question_alias_answers_the_authorized_canonical_task(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    """An authorized legacy address must not fail after canonical lookup succeeds."""
+    app, owner, root = await create_environment(arc, tmp_path)
+    history = app.state.task_history
+    app.state.questions = QuestionCommands(history)
+    question = await asyncio.to_thread(
+        app.state.questions.create,
+        root.owner.model_copy(update={"parent_handle": root.handle}),
+        QuestionDefinition(prompt="Choose a dataset", source="native"),
+        invocation_id="legacy-question-call",
+    )
+    await asyncio.to_thread(
+        history.record_alias,
+        TaskAlias(
+            alias="legacy-question-id", handle=question.handle, source_identity="legacy-question"
+        ),
+    )
+    try:
+        result = await asyncio.to_thread(
+            answer_question,
+            app,
+            TaskCaller(root.owner.session_id, "human", human_action=True),
+            "legacy-question-id",
+            QuestionReply(answer="Dataset B"),
+        )
+        assert result.handle == question.handle and result.raw_status == "answered"
+        saved = await asyncio.to_thread(history.task_snapshot, question.handle)
+        assert saved is not None and saved.result is not None
+        reply = QuestionReply.model_validate(
+            await asyncio.to_thread(history.read_content, saved.result)
+        )
+        assert reply.answer == "Dataset B"
+        assert await asyncio.to_thread(history.task_snapshot, "legacy-question-id") is None
+    finally:
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_busy_typed_inputs_preserve_media_and_order_through_core_recovery(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    """Commit actual model-input parts, not a JSON summary of accepted human input."""
+    from dspy.lm15 import ImagePart, TextPart
+    from dspy.lm15 import Message as ModelMessage
+
+    from clio_agent.gact.types import Message, Part
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ZQAAAABJRU5ErkJggg=="
+
+    def exercise() -> None:
+        history, sid, stamp = owner.history, root.owner.session_id, now()
+        accepted = []
+        for identity, text, media in [
+            ("input-head", "Initial assignment", False),
+            ("input-media", "Inspect this image", True),
+            ("input-later", "Then compare the result", False),
+        ]:
+            message = Message(
+                id=identity,
+                turn_id=identity,
+                session_id=sid,
+                role="user",
+                created_at=stamp,
+                updated_at=stamp,
+                parts=[
+                    Part(type="text", text=text),
+                    *([Part(type="image", data=png, media_type="image/png")] if media else []),
+                ],
+            )
+            content = history.write_content(
+                sid,
+                {
+                    "text": text,
+                    "model_text": text,
+                    "message": message.model_dump(mode="json"),
+                    "metadata": {"internal_probe": "PRIVATE_MARKER"},
+                },
+            )
+            history.record_mail(
+                MailItem(
+                    id=identity,
+                    recipient_session=sid,
+                    sender_human="human",
+                    kind="human",
+                    content=content,
+                    created_at=stamp,
+                )
+            )
+            accepted.append(identity)
+        token = context.set_app(app)
+        try:
+            context.set_turn_identity(
+                app=app,
+                session_id=sid,
+                turn_id="input-test",
+                trace_id="trace",
+                assignment_handle=root.handle,
+                input_notification_id=accepted[0],
+            )
+            context.set_react_run(-1)
+            recorder = StepRecorder(arc, sid, "main", expert_id="main")
+            recorder.user_message(ModelMessage.user("Initial assignment"))
+            recorder.commit_input(0)
+            messages = recorder.read_steps()
+            texts = ["".join(p.text for p in m.parts if isinstance(p, TextPart)) for m in messages]
+            assert len(messages) == 3 and all(m.role == "user" for m in messages)
+            assert "Initial assignment" in texts[0] and "Inspect this image" in texts[1]
+            assert "Then compare the result" in texts[2] and all(
+                "PRIVATE_MARKER" not in t for t in texts
+            )
+            images = [p for m in messages for p in m.parts if isinstance(p, ImagePart)]
+            assert len(images) == 1 and images[0].data == png
+            assert set(accepted) <= history.acknowledged_notifications(sid)
+            restored = TaskHistory(arc)
+            restored.restore()
+            app.state.task_history = restored
+            recovered = StepRecorder(arc, sid, "main", expert_id="main").read_steps()
+            assert recovered == messages and restored.pending_mail(sid) == ()
+        finally:
+            context.reset(token)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_dependency_aliases_are_canonical_and_cannot_name_the_active_assignment(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    """Legacy aliases must neither strand a dependency nor bypass the self-wait check."""
+    app, owner, root = await create_environment(arc, tmp_path)
+
+    def exercise() -> None:
+        history = owner.history
+        child = root.model_copy(
+            update={
+                "handle": "task_dependency",
+                "kind": "Shell",
+                "owner": root.owner.model_copy(update={"parent_handle": root.handle}),
+                "invocation_id": "dependency",
+                "status": "running",
+            }
+        )
+        history.record_snapshot(child, observation_id="dependency")
+        history.record_alias(
+            TaskAlias(alias="old-dependency", handle=child.handle, source_identity="legacy-child")
+        )
+        history.record_alias(
+            TaskAlias(alias="old-root", handle=root.handle, source_identity="legacy-root")
+        )
+        result = owner.set_dependencies(root.owner.session_id, ["old-dependency", child.handle])
+        assert result["dependencies"] == [child.handle]
+        saved = history.task_snapshot(root.handle)
+        details = AssignmentDetails.model_validate(history.read_content(saved.details))
+        assert details.dependencies == (child.handle,)
+        with pytest.raises(ValueError, match="cannot wait for itself"):
+            owner.set_dependencies(root.owner.session_id, "old-root")
+        assert history.task_snapshot(root.handle) == saved
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_explicit_message_deletion_withdraws_only_uncommitted_human_inputs(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    """Projection deletion cannot leave accepted instructions pending in Core."""
+    app, owner, root = await create_environment(arc, tmp_path)
+
+    def exercise() -> None:
+        history, sid = owner.history, root.owner.session_id
+        for identity, kind in [("deleted-human", "human"), ("kept-task", "task_result")]:
+            content = history.write_content(sid, identity)
+            history.record_mail(
+                MailItem(
+                    id=identity, recipient_session=sid, kind=kind, content=content, created_at=now()
+                )
+            )
+        withdraw_message_inputs(app, sid, ["deleted-human", "kept-task"])
+        assert [item.id for item in history.pending_mail(sid)] == ["kept-task"]
+        restored = TaskHistory(arc)
+        restored.restore()
+        assert [item.id for item in restored.pending_mail(sid)] == ["kept-task"]
+        assert "deleted-human" not in restored.acknowledged_notifications(sid)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
 async def test_cancellation_keeps_work_settling_during_worker_retirement(
     arc: ARCMemory,
     tmp_path: Path,
@@ -151,12 +368,21 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
     await asyncio.to_thread(history.record_snapshot, active, observation_id="active")
     await asyncio.to_thread(history.record_snapshot, old, observation_id="old")
     retiring, release, uncertain = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    cancellation_dispatched = asyncio.Event()
+    dispatched: list[str] = []
+
+    async def request_cancellation(task: TaskSnapshot) -> dict[str, Any]:
+        assert task.handle == active.handle
+        dispatched.append(task.handle)
+        cancellation_dispatched.set()
+        return {"handle": task.handle, "cancellation_requested": True}
 
     async def stop(_sid: str) -> None:
         retiring.set()
         await release.wait()
 
     monkeypatch.setattr(owner.runner, "stop", stop)
+    monkeypatch.setattr(owner, "cancel_work", request_cancellation)
     loop = asyncio.get_running_loop()
     remove = history.listen(
         lambda _revision: loop.call_soon_threadsafe(uncertain.set), handles=(root.handle,)
@@ -165,7 +391,11 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         await owner.cancel(
             TaskCaller(root.owner.session_id, "human", human_action=True), root.handle
         )
-        await retiring.wait()
+        await asyncio.gather(retiring.wait(), cancellation_dispatched.wait())
+        assert dispatched == [active.handle]
+        stopping = await asyncio.to_thread(history.task_snapshot, root.handle)
+        assert stopping is not None and stopping.terminal_at is None
+        assert stopping.cancellation_requested_at is not None
         terminal = active.model_copy(
             update={
                 "status": "cancelled",
@@ -176,6 +406,7 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         )
         await asyncio.to_thread(history.record_snapshot, terminal, observation_id="ack")
         uncertain.clear()
+        assert not release.is_set()
         release.set()
         while True:
             await uncertain.wait()

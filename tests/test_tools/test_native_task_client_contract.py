@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from fastmcp import Client, FastMCP
+from fastmcp import Client, Context, FastMCP
 from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.config import MCPConfigTransport
 from fastmcp.client.transports.memory import FastMCPTransport
@@ -24,6 +24,8 @@ from fastmcp_tasks.client_models import (
 from mcp.client.session import ClientSession
 
 from clio_agent.arc.task_types import CoreReference, argument_digest
+from clio_agent.tools.mcp_handlers import MCPClientCapabilities
+from clio_agent.tools.mcp_runtime import MCPClientHandlers, make_mcp_client
 from clio_agent.tools.native_roots import build_native_roots, resolve_native_root
 from clio_agent.tools.task_client import (
     AcceptedNativeCall,
@@ -64,6 +66,74 @@ def test_dependency_contract_is_pinned() -> None:
     assert version("fastmcp-tasks") == "4.1.0"
     assert version("mcp") == "2.0.0"
     assert version("pydocket") == "0.26.2"
+
+
+def test_default_client_factory_constructs_the_native_sdk_transport() -> None:
+    """The ordinary configured-client route must work without a class override."""
+    server = FastMCP("default-client-contract", tasks=True)
+    client = make_mcp_client(server)
+    assert isinstance(client, Client)
+    assert isinstance(client.transport, FastMCPTransport)
+    assert client.transport.server is server
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(120)  # Actual native SDK/server startup and one result observation.
+async def test_adapted_native_client_preserves_declared_capabilities_and_task_observation() -> None:
+    """The backend must see the configured modes after task observation is installed."""
+    server = FastMCP("declared-capabilities-contract", tasks=True)
+    server.add_extension(
+        TasksExtension(url="memory://", name="capabilities-" + uuid4().hex, concurrency=1)
+    )
+
+    @server.tool(task=False)
+    async def capabilities(ctx: Context) -> dict[str, Any]:
+        """Report what the actual MCP connection advertised to this backend."""
+        advertised = ctx.session.client_capabilities
+        assert advertised is not None
+        return advertised.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+    @server.tool(task=True)
+    async def native_work() -> dict[str, int]:
+        """Give the native SDK result driver an actual task to observe."""
+        return {"value": 7}
+
+    accepted: list[AcceptedNativeCall] = []
+    observed: list[str] = []
+
+    async def elicitation(*args: Any, **kwargs: Any) -> Any:
+        pytest.fail("No input request is expected")
+
+    async def adopt(call: AcceptedNativeCall) -> AcceptedTaskResult:
+        accepted.append(call)
+        return accepted_result({"accepted": True, "handle": call.submission.handle, "kind": "MCP"})
+
+    async def observe(session: ClientSession, task_id: str, reply: ClientGetTaskResult) -> None:
+        observed.append(task_id)
+
+    async def guard(session: ClientSession, task_id: str, answers: dict[str, Any]) -> None:
+        pytest.fail("No answer update is expected")
+
+    configured = make_mcp_client(
+        server,
+        handlers=MCPClientHandlers(elicitation=elicitation),
+        capabilities=MCPClientCapabilities(elicitation_form=True, elicitation_url=False),
+    )
+    transport = TaskObservationTransport(configured.transport, observe, guard)
+    client = TaskAwareClient.from_configured(
+        configured, transport, on_task_accepted=adopt, elicitation_handler=elicitation
+    )
+    async with client:
+        with client.submission(submission("capabilities")):
+            result = await client.call_tool("capabilities", {})
+        assert result.structured_content is not None
+        assert result.structured_content["elicitation"] == {"form": {}}
+        with client.submission(submission("native_work")):
+            receipt = await client.call_tool("native_work", {})
+        assert receipt.structured_content is not None and len(accepted) == 1
+        settled = await accepted[0].task.result()
+        assert settled.structured_content == {"value": 7}
+        assert observed and set(observed) == {accepted[0].task.task_id}
 
 
 def test_configured_client_preserves_protocol_negotiation() -> None:

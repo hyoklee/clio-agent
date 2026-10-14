@@ -46,6 +46,7 @@ from clio_agent.gact.runtime.globals import _new_part_id
 from clio_agent.gact.types import (
     ErrorEnvelope,
     ErrorInfo,
+    Message,
     Part,
     UserQuestion,
     UserQuestionOption,
@@ -95,7 +96,8 @@ RESERVED_CLIENT_METADATA_KEYS: frozenset[str] = frozenset(
         "scheduled",  # app.py — scheduler-fired turn marker
         "schedule_id",  # app.py — scheduler-fired turn id
         "loop_id",  # scheduler_runtime.py — monitoring wake identity
-        "task_completion_wake",  # task_completion_wake.py — accepted task delivery
+        "mcp_app",  # authenticated MCP App context/attribution is server-owned
+        "task_completion_wake",  # historical internal marker remains forbidden to clients
         "synthetic",  # compaction/catalog — server-synthesized message marker
     }
 )
@@ -560,3 +562,34 @@ def _dspy_files_from_parts(
         if resource_file is not None:
             files.append(resource_file)
     return files
+
+
+def queued_user_input(app: Any, session_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Render retained typed human input, including native media, before input commitment."""
+    from dspy.lm15 import Message as ModelMessage
+    from dspy.lm15 import TextPart
+
+    from clio_agent.gact.agents.clio_react import _media_part
+    from clio_agent.gact.agents.clio_react_record import user_to_record
+    from clio_agent.gact.context_references import authorize_context_reference_parts_sync
+    from clio_agent.gact.resource_enrichment import enrich_with_workspace_resources
+
+    message = Message.model_validate(payload["message"])
+    session = app.state.sessions.get(session_id)
+    if session is None or message.session_id != session_id or message.role != "user":
+        raise ValueError("Queued human input belongs to another session or role")
+    parts = authorize_context_reference_parts_sync(app, session, list(message.parts))
+    message = message.model_copy(update={"parts": parts})
+    text = payload.get("model_text", payload.get("text", ""))
+    if not isinstance(text, str):
+        raise ValueError("Queued model text must be a string")
+    text = enrich_with_workspace_resources(app, session_id, text, message)
+    media = [
+        *_dspy_images_from_parts(parts, app=app, workspace_id=session.workspace_id),
+        *_dspy_files_from_parts(parts, app=app, workspace_id=session.workspace_id),
+    ]
+    return user_to_record(
+        ModelMessage(
+            role="user", parts=(TextPart(text=text), *(_media_part(item) for item in media))
+        )
+    )

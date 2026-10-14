@@ -1,0 +1,5 @@
+src\clio_agent\registry\registry.py:80: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\clio_agent\registry\registry.py:81: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]
+src\clio_agent\gact\mcp_app_routes.py:213: error: Unexpected keyword argument "internal_model_text" for "accept_message_async"  [call-arg]
+src\clio_agent\gact\message_submission.py:615: note: "accept_message_async" defined here
+Found 1 error in 1 file (checked 1147 source files)

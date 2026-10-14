@@ -81,6 +81,17 @@ class ObservedTaskSession(ClientSession):
         return result
 
 
+def _observed_session_class(existing: type[ClientSession]) -> type[ClientSession]:
+    """Compose CLIO's cooperative capability override; refuse unknown session behavior."""
+    if existing is ClientSession:
+        return ObservedTaskSession
+    from clio_agent.tools.mcp_runtime import _DeclaredCapabilityOverride
+
+    if existing.__bases__ != (_DeclaredCapabilityOverride, ClientSession):
+        raise ValueError("Task observation cannot compose with this SDK session class")
+    return type("ObservedDeclaredTaskSession", (ObservedTaskSession, existing), {})
+
+
 class TaskObservationTransport(ClientTransport):
     """Wrap one fully configured server transport, retaining identity and lifecycle.
 
@@ -112,14 +123,9 @@ class TaskObservationTransport(ClientTransport):
         **session_kwargs: Any,
     ) -> AsyncIterator[ClientSession]:
         options = transport_options or TransportOptions()
-        existing = options.session_class
-        if existing is not ClientSession:
-            # No unsafe MRO composition of an arbitrary session override. Reject
-            # before tools/call; compatible explicit compositions can be added
-            # with their pinned upgrade contracts when a product route needs one.
-            raise ValueError("Task observation requires the standard SDK session class")
+        session_class = _observed_session_class(options.session_class)
         async with self.original.connect_session(
-            transport_options=replace(options, session_class=ObservedTaskSession),
+            transport_options=replace(options, session_class=session_class),
             **{
                 **session_kwargs,
                 "task_observer": self.observer,

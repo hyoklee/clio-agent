@@ -123,7 +123,7 @@ def register_task_routes(app: FastAPI) -> None:
             raise HTTPException(status_code=404, detail="Session unavailable")
         return TaskCaller(sid, app.state.human_principal, human_action=True)
 
-    @app.get("/v1/sessions/{sid}/tasks")
+    @app.get("/v1/sessions/{sid}/tasks/query")
     async def tasks(
         sid: str,
         kind: str | None = None,
@@ -354,7 +354,10 @@ def register_task_routes(app: FastAPI) -> None:
                 raise ValueError("Question unavailable")
         except ValueError as error:
             raise HTTPException(404, "Question is unavailable") from error
-        await intervene(app, current.handle, "cancel")
+        try:
+            await intervene(app, current.handle, "cancel")
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
         return await asyncio.to_thread(
             lambda: question_view(app, app.state.task_history.task_snapshot(current.handle))
         )

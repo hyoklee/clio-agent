@@ -659,6 +659,7 @@ def _start_background_user_turn(
     message_role: Literal["user", "system"] = "user",
     retained_model: Optional[dict[str, Any]] = None,
     mailbox_item: Any = None,
+    model_text: str | None = None,
 ) -> Message:
     """Stage a user or system-event turn and drive it off-thread.
 
@@ -752,6 +753,8 @@ def _start_background_user_turn(
                 "text": user_text,
                 "agent_id": turn_agent_id,
                 "metadata": user_metadata,
+                "message": user_msg.model_dump(mode="json"),
+                **({"model_text": model_text} if model_text is not None else {}),
                 **(
                     {"queue_context": mailbox_item.content.model_dump(mode="json")}
                     if mailbox_item is not None

@@ -33,9 +33,12 @@ class QuestionEvents:
         timer = self._timers.pop(task.handle, None)
         if timer is not None:
             timer.cancel()
-        event_type = (
-            "user_question.created" if task.raw_status == "pending" else "user_question.updated"
-        )
+        event_type = {
+            "pending": "user_question.created",
+            "answered": "user_question.answered",
+            "cancelled": "user_question.cancelled",
+            "expired": "user_question.expired",
+        }.get(task.raw_status, "user_question.updated")
         owner, attended = row["session_id"], row["attended_session_id"]
         for sid in dict.fromkeys((owner, attended)):
             self.app.state.bus.publish(Event(type=event_type, session_id=sid, payload=row))

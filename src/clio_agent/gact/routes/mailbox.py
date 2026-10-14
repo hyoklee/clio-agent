@@ -82,13 +82,20 @@ def promote(app: Any, sid: str, identity: str, revision: int) -> dict[str, Any]:
         value = history.read_content(item.content)
         request = PostMessageRequest.model_validate(value["request"])
         session = app.state.sessions.get(sid)
-        prepared = prepare_references_sync(app, session, request)
-        session, model, text, _images, parts = _validate_provider_and_payload(
-            app, app.state.gact_deps, sid, request, prepared=prepared
-        )
-        parts, deliveries = _plan_resource_parts(
-            app, workspace_id=session.workspace_id, message_id=item.id, parts=parts, model=model
-        )
+    prepared = prepare_references_sync(app, session, request)
+    session, model, text, _images, parts = _validate_provider_and_payload(
+        app, app.state.gact_deps, sid, request, prepared=prepared
+    )
+    parts, deliveries = _plan_resource_parts(
+        app, workspace_id=session.workspace_id, message_id=item.id, parts=parts, model=model
+    )
+    with history._lock:
+        current = next((entry for entry in queued(app, sid) if entry.id == identity), None)
+        if current != item:
+            raise HTTPException(status_code=409, detail="Queued message changed during preflight")
+        current_session = app.state.sessions.get(sid)
+        if current_session is None or current_session.workspace_id != session.workspace_id:
+            raise HTTPException(status_code=409, detail="Queued message workspace changed")
         assignment = history.latest_assignment(sid)
         if assignment is None or assignment.terminal_at is not None:
             assignment = owner._new_assignment(
@@ -103,6 +110,7 @@ def promote(app: Any, sid: str, identity: str, revision: int) -> dict[str, Any]:
             session,
             text,
             request_parts=parts,
+            model_text=prepared.model_text,
             metadata=metadata,
             user_msg_id=item.id,
             mailbox_item=item,

@@ -203,6 +203,7 @@ class TaskAwareClient(Client):
         client._session_kwargs["sampling_capabilities"] = configured._session_kwargs.get(
             "sampling_capabilities"
         )
+        client._transport_options = copy.copy(configured._transport_options)
         return client
 
     @contextmanager

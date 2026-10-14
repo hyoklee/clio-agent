@@ -115,6 +115,9 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             # carries their parts would delete a live surface as a side effect
             # of a prose edit, with no lifecycle event. Preserve them the way
             # compaction and rollback do (routes/session_a2ui_preservation.py).
+            from clio_agent.gact.session_input import withdraw_message_inputs
+
+            await run_off_loop(withdraw_message_inputs, app, sid, [message_id])
             removed = msgs.pop(i)
             retained = preserve_a2ui(sid, msgs, [removed], "message_delete")
             await run_off_loop(deps.replace_session_messages, app, sid, retained)  # #1334

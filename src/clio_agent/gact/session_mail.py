@@ -81,7 +81,11 @@ class SessionMail:
                     continue
                 value = self.history.read_content(item.content)
                 rendered = (
-                    value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+                    str(value.get("text", ""))
+                    if item.kind in {"human", "composer"} and isinstance(value, dict)
+                    else value
+                    if isinstance(value, str)
+                    else json.dumps(value, ensure_ascii=False)
                 )
                 sender = (
                     f"Human {item.sender_human}"

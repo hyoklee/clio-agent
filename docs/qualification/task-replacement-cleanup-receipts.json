@@ -192,5 +192,20 @@
     "instruction": "Never retry or bypass this exact removal, and do not execute its review.py again.",
     "files": 6,
     "removal_executed": false
+  },
+  "review_cache_c11": {
+    "root": "D:/Temp/clio-task-implementation-review-057b93bd-c11",
+    "status": "human_manual_only",
+    "process_absent": true,
+    "pids_absent": [
+      27524,
+      18992
+    ],
+    "remaining_owned_pids": [],
+    "removal_executed": false,
+    "root_absence_verified": false,
+    "rejection": "blocked by policy",
+    "instruction": "Never retry, bypass, move, remove through a parent or reuse this exact root or execute its review.py again. Root absence proof only after human state change.",
+    "auth_observation": "Original credentials changed during the read-only review. The isolated copy has a different hash and an earlier write timestamp. Other long-running Claude processes exist. Attribution is unproven; no original credentials were restored or overwritten by the cleanup."
   }
 }

@@ -344,6 +344,9 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         target_message_id: str = "",
         include_target: bool = False,
     ) -> dict[str, Any]:
+        from clio_agent.gact.session_input import withdraw_message_inputs
+
+        await run_off_loop(withdraw_message_inputs, app, sid, [m.id for m in deleted_messages])
         replacement_messages = preserve_a2ui(sid, kept_messages, deleted_messages, operation)
         await run_off_loop(deps.replace_session_messages, app, sid, replacement_messages)
         # The agents' context follows the ledger: rolled-back turns leave it too.
@@ -637,11 +640,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             )
         )
 
-    def _message_text(message: Message) -> str:
-        return "\n".join(
-            part.text for part in message.parts if part.type == "text" and part.text
-        ).strip()
-
     def _retry_source_user_message(messages: list[Message], source: Message) -> Message | None:
         if source.role == "user":
             return source
@@ -653,12 +651,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             if msg.role == "user":
                 return msg
         return None
-
-    def _retry_user_text(original_text: str, notes: str) -> str:
-        notes = notes.strip()
-        if not notes:
-            return original_text
-        return f"{original_text}\n\n[Retry notes]\n{notes}"
 
     @app.get("/v1/sessions/{sid}/attempts")
     async def list_turn_attempts(sid: str) -> dict[str, Any]:
@@ -810,7 +802,9 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         )
         app.state.turn_attempts[attempt.id] = attempt
         if req.execute and not execution_blocked_reason and source_user is not None:
-            retry_text = _retry_user_text(_message_text(source_user), req.notes)
+            retry_text = context_reference_retry.retry_user_text(
+                context_reference_retry.message_text(source_user), req.notes
+            )
             assert retry_parts is not None
             retry_user_msg = deps.start_background_user_turn(
                 sid,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
 from fastapi import FastAPI, HTTPException
@@ -84,9 +84,8 @@ class PreparedReferences:
     reference-carrying submission stalled every other session's SSE stream.
 
     ``parts`` are the canonical, authorized parts and ``model_text`` is the
-    enriched prompt for the steer branch. Acceptance itself stays synchronous
-    (it hands work to ``TurnRunner.spawn``, which must run on the loop), so the
-    expensive half is hoisted out in front of it rather than moved wholesale.
+    enriched prompt retained for later model-input rendering. Acceptance records
+    the input; the existing TurnRunner independently admits model execution.
     """
 
     parts: list[Part]
@@ -530,6 +529,8 @@ def accept_message(
     req: PostMessageRequest,
     *,
     prepared: PreparedReferences | None = None,
+    internal_model_text: str | None = None,
+    server_metadata: dict[str, Any] | None = None,
 ) -> tuple[PostMessageResponse, int]:
     """Validate and confirm one Core mailbox input, regardless of current activity."""
     import hashlib
@@ -539,6 +540,13 @@ def accept_message(
     owner = getattr(app.state, "conversations", None)
     if owner is None:
         raise HTTPException(status_code=503, detail="Core conversation runtime is not ready")
+    if prepared is None:
+        source_session = app.state.sessions.get(sid)
+        if source_session is None:
+            raise _session_not_found(sid)
+        prepared = prepare_references_sync(app, source_session, req)
+    if internal_model_text is not None:
+        prepared = replace(prepared, model_text=internal_model_text)
     session, selected, text, _images, parts = _validate_provider_and_payload(
         app, deps, sid, req, prepared=prepared
     )
@@ -589,12 +597,14 @@ def accept_message(
                 invocation_id=identity,
             )
         metadata = accepted_message_metadata(req, session, selected, parts, busy=busy)
+        metadata.update(server_metadata or {})
         message = _start_background_user_turn(
             app,
             sid,
             session,
             text,
             request_parts=parts,
+            model_text=prepared.model_text,
             metadata=metadata,
             turn_agent_id=req.extract_agent_id(),
             user_msg_id=identity,
@@ -613,13 +623,28 @@ def accept_message(
 
 
 async def accept_message_async(
-    app: FastAPI, deps: "GactDeps", sid: str, req: PostMessageRequest
+    app: FastAPI,
+    deps: "GactDeps",
+    sid: str,
+    req: PostMessageRequest,
+    *,
+    internal_model_text: str | None = None,
+    server_metadata: dict[str, Any] | None = None,
 ) -> tuple[PostMessageResponse, int]:
     """Keep validation, references and confirmed Core I/O off the application loop."""
     from clio_agent.gact.off_loop import join_off_loop
 
     prepared = await prepare_references(app, sid, req)
-    return await join_off_loop(accept_message, app, deps, sid, req, prepared=prepared)
+    return await join_off_loop(
+        accept_message,
+        app,
+        deps,
+        sid,
+        req,
+        prepared=prepared,
+        internal_model_text=internal_model_text,
+        server_metadata=server_metadata,
+    )
 
 
 __all__ = [

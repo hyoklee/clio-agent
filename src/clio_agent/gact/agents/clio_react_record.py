@@ -370,90 +370,102 @@ class StepRecorder:
         from clio_agent.arc.task_types import ContextBoundary
         from clio_agent.gact import context
 
-        owner = getattr(getattr(context.active_app(), "state", None), "conversations", None)
+        app = context.active_app()
+        owner = getattr(getattr(app, "state", None), "conversations", None)
         if owner is None:
             return
         assignment = context.active_assignment_handle()
         if not assignment:
             raise ValueError("Model input has no confirmed conversation assignment")
         caller = owner.caller(self.session)
+        identity = context.current_turn().input_notification_id
         with owner.history._lock:
-            identity = context.current_turn().input_notification_id
             trigger = owner.history._mail.get(self.session, {}).get(identity)
-            human_head = (
-                self._mail_head
-                if trigger is not None and trigger.kind in {"human", "composer"}
-                else None
-            )
-            import hashlib
+        human_head = (
+            self._mail_head
+            if trigger is not None and trigger.kind in {"human", "composer"}
+            else None
+        )
+        import hashlib
 
-            from clio_agent.arc.task_types import CoreReference
-            from clio_agent.gact.session_mail import StagedInput
-            from clio_agent.gact.task_history import _encoded
+        from clio_agent.arc.task_types import CoreReference
+        from clio_agent.gact.session_mail import StagedInput
+        from clio_agent.gact.task_history import _encoded
 
-            segments = self.arc.context_view(self.session, self.scope).segments
-            acknowledged = owner.history.acknowledged_notifications(self.session)
-            observation = next(
-                (
-                    row
-                    for row in reversed(segments)
-                    if row.kind == "observation"
-                    and set(row.content.get("notification_ids", ())) - acknowledged
-                ),
-                None,
-            )
-            collecting = (
-                tuple(observation.content.get("notification_ids", ()))
-                if observation is not None
-                else ()
-            )
-            collected = (*collecting, identity) if identity and human_head else collecting
-            staged = (
-                StagedInput((), ())
-                if context.current().react_run >= 0
-                else owner.mail.stage(caller, collected=collected)
-            )
-            rendered = {}
-            for source, text in staged.injections:
-                for notification in text.notification_ids:
+        segments = self.arc.context_view(self.session, self.scope).segments
+        acknowledged = owner.history.acknowledged_notifications(self.session)
+        observation = next(
+            (
+                row
+                for row in reversed(segments)
+                if row.kind == "observation"
+                and set(row.content.get("notification_ids", ())) - acknowledged
+            ),
+            None,
+        )
+        collecting = (
+            tuple(observation.content.get("notification_ids", ()))
+            if observation is not None
+            else ()
+        )
+        collected = (*collecting, identity) if identity and human_head else collecting
+        staged = (
+            StagedInput((), ())
+            if context.current().react_run >= 0
+            else owner.mail.stage(caller, collected=collected)
+        )
+        rendered = {}
+        for source, text in staged.injections:
+            for notification in text.notification_ids:
+                item = next(item for item in staged.items if item.id == notification)
+                payload = owner.history.read_content(item.content)
+                if (
+                    item.kind in {"human", "composer"}
+                    and isinstance(payload, dict)
+                    and payload.get("message")
+                ):
+                    from clio_agent.gact.messaging import queued_user_input
+
+                    rendered[notification] = queued_user_input(app, self.session, payload)
+                else:
                     rendered[notification] = {
                         "text": str(text),
                         "source": source,
                         "actor": "user" if source == "steer" else "algorithm",
                     }
-            if identity and human_head:
-                rendered[identity] = human_head
-            references = tuple(
-                owner.history.write_content(self.session, rendered[item.id])
-                for item in staged.items
-                if item.id in rendered
-            )
-            boundary = ContextBoundary(
+        if identity and human_head:
+            rendered[identity] = human_head
+        references = tuple(
+            owner.history.write_content(self.session, rendered[item.id])
+            for item in staged.items
+            if item.id in rendered
+        )
+        boundary = ContextBoundary(
+            session_id=self.session,
+            scope=self.scope,
+            logical_time=max((row.logical_time for row in segments), default=0),
+        )
+        owner.mail.commit(
+            caller,
+            staged,
+            assignment_id=assignment,
+            iteration_id=f"{self.turn_id}:{self.expert_span_id}:{step}",
+            boundary=boundary,
+            turn_id=self.turn_id,
+            rendered_content=references,
+            tool_observation=CoreReference(
                 session_id=self.session,
                 scope=self.scope,
-                logical_time=max((row.logical_time for row in segments), default=0),
+                content_id=str(observation.id),
+                sha256=hashlib.sha256(_encoded(observation.content)).hexdigest(),
             )
-            owner.mail.commit(
-                caller,
-                staged,
-                assignment_id=assignment,
-                iteration_id=f"{self.turn_id}:{self.expert_span_id}:{step}",
-                boundary=boundary,
-                turn_id=self.turn_id,
-                rendered_content=references,
-                tool_observation=CoreReference(
-                    session_id=self.session,
-                    scope=self.scope,
-                    content_id=str(observation.id),
-                    sha256=hashlib.sha256(_encoded(observation.content)).hexdigest(),
-                )
-                if observation is not None
-                and set(collecting).intersection(item.id for item in staged.items)
-                else None,
-            )
-            for source, text in staged.injections:
-                if source != "steer":
-                    emit_injection(source, str(text), agent_id=self.expert_id)
+            if observation is not None
+            and set(collecting).intersection(item.id for item in staged.items)
+            else None,
+        )
+        for source, text in staged.injections:
+            if source != "steer":
+                emit_injection(source, str(text), agent_id=self.expert_id)
 
     def injections(self, injections: Sequence[tuple[str, str]]) -> None:
         """Record CLIO's additions for this turn, each once.

@@ -1,5 +1,22 @@
 # Initial implementation review actions
 
+## Review 11: corrected source remains NO-GO
+
+Frozen core 057b93bd / GACT ce993164 / marketplace 9257bba was independently reviewed by Astra and actual Claude Code. Both accepted the review-10 source corrections and the removal direction, but found remaining integration defects. Their complete bounded receipts are retained. Neither executed runtime acceptance. Claude exited0 with no remaining owned children; original authentication changed during the review and cannot be claimed unchanged. The isolated copy differs from the current original; other Claude processes are active. No credential restoration is performed.
+
+Required correction set, within existing owners:
+
+1. Restore the trusted MCP App model-context carrier; reserve server-owned metadata from public clients.
+2. Preserve canonical typed human/composer messages in Core and render attachments and reference content before recipient-input commitment for initial, busy and recovered arrivals. Do not consume a JSON summary instead of actual media. Keep expensive hydration/hash work outside the global writer lock; recheck the staged immutable item at commit.
+3. Withdraw pending inputs on explicit message deletion and undo/rewind. Do not treat arbitrary projection replacement as deletion.
+4. Canonicalize authorized goal dependency aliases before self-check, deduplication and persistence.
+5. Preserve SDK transport options and compose the known cooperative CLIO capability session with observed task replies; reject incompatible classes before submission.
+6. Restore terminal Question events understood by the shipped Go TUI, and preserve the legacy to-do GET route by giving the new common query a distinct route.
+7. Move queued reference preflight outside the Core lock, retaining revision and authorization rechecks at publication. Map Question cancellation conflicts through the usual HTTP error contract.
+
+Source changes for items4-6 are in progress; this is not acceptance. The central input correction is one canonical Core payload and existing model-input renderer, not another inbox, execution owner or history store. Required tests include busy/multiple queued media, MCP App context, Core-only recovery, withdrawal before commit, alias self-dependency, capability advertisement and preflight concurrency. Initial implementation is not accepted, and no fresh product tests/models have launched.
+
+
 ## Correction candidate after review 10
 
 These are source corrections awaiting independent acceptance and fresh behavior evidence:

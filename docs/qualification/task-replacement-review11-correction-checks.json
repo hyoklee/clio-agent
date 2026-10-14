@@ -1,0 +1,33 @@
+{
+  "recorded_at": "2026-10-14T17:41:09.975598+00:00",
+  "source_parent": "057b93bd14fbb42d0704c9eec6861ab4ba82602b",
+  "candidate": "containing correction commit",
+  "gact": "ce99316446848ddd269b1bf782ff2c87cc9db14a",
+  "marketplace": "9257bba5953b012ba796299df4c633e698dbaddc",
+  "checks": {
+    "ruff_full_src": 0,
+    "format_full_src": 0,
+    "mypy_full_linux": {
+      "exit": 0,
+      "modules": 1147
+    },
+    "source_guards": {
+      "exit": 0,
+      "count": 9
+    },
+    "application_import_without_lifespan": 0,
+    "whitespace": 0
+  },
+  "windows_mypy": {
+    "exit": 1,
+    "inherited_posix_errors": 16,
+    "files_unchanged_from": "98a7a5ee",
+    "owned_caller_error": "corrected; Linux full check passes; Windows full rerun not claimed"
+  },
+  "tests_executed_this_construction_phase": 0,
+  "independent_review": "pending next committed correction tuple",
+  "runtime_acceptance": false,
+  "new_execution_owners": 0,
+  "new_history_stores": 0,
+  "prohibited_path_retries": 0
+}

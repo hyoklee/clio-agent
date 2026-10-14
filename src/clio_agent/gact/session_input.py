@@ -9,6 +9,17 @@ from clio_agent.arc.task_types import MailItem, MailKind
 from clio_agent.gact.native_work import now
 
 
+def withdraw_message_inputs(app: Any, session_id: str, message_ids: list[str]) -> None:
+    """Withdraw only pending human/composer inputs removed by an explicit human edit."""
+    history = app.state.task_history
+    with history._lock:
+        pending = {item.id: item for item in history.pending_mail(session_id)}
+        for identity in message_ids:
+            item = pending.get(identity)
+            if item is not None and item.kind in {"human", "composer"}:
+                history.withdraw_mail(session_id, identity)
+
+
 def accept_session_input(
     app: Any,
     session_id: str,

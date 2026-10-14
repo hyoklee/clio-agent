@@ -253,17 +253,14 @@ class Conversations:
                             )
                 staged = self.mail.stage(caller)
                 if not staged.items:
-                    from clio_agent.gact.routes.mailbox import promote_next
-
-                    promote_next(self.app, sid)
-                    staged = self.mail.stage(caller)
-                    if not staged.items:
-                        return None
+                    return None
                 trigger = staged.items[0]
                 value = self.history.read_content(trigger.content)
                 input_text = (
                     value.get("text", "")
                     if trigger.kind in {"human", "composer"} and isinstance(value, dict)
+                    else value
+                    if trigger.kind in {"human", "composer"} and isinstance(value, str)
                     else "Continue the retained assignment using the queued messages and task outcomes."
                 )
                 if not isinstance(input_text, str):
@@ -293,6 +290,24 @@ class Conversations:
                 return ConversationSegment(sid, assignment, turn_id, trigger, text)
 
         segment = await asyncio.to_thread(select)
+        if segment is None:
+
+            def prepare_queue() -> None:
+                from clio_agent.gact.routes.mailbox import promote_next
+
+                with self.history._lock:
+                    if (
+                        self._closing
+                        or self.history.requires_recovery
+                        or self.execution_gate(sid) is not None
+                    ):
+                        return
+                    if self.mail.stage(self.caller(sid)).items:
+                        return
+                promote_next(self.app, sid)
+
+            await asyncio.to_thread(prepare_queue)
+            segment = await asyncio.to_thread(select)
         return (segment.turn_id, self._run(segment)) if segment is not None else None
 
     def caller(self, sid: str) -> TaskCaller:
@@ -345,10 +360,12 @@ class Conversations:
             current = self.history.latest_assignment(sid)
             if current is None or current.terminal_at is not None:
                 raise ValueError("Dependencies require an active assignment")
-            for handle in handles:
-                if handle == current.handle:
-                    raise ValueError("An assignment cannot wait for itself")
-                TaskAccess(self.history, caller).require(handle, "observe")
+            access = TaskAccess(self.history, caller)
+            handles = tuple(
+                dict.fromkeys(access.require(handle, "observe").handle for handle in handles)
+            )
+            if current.handle in handles:
+                raise ValueError("An assignment cannot wait for itself")
             details = (
                 AssignmentDetails.model_validate(self.history.read_content(current.details))
                 if current.details is not None
