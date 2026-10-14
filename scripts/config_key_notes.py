@@ -1256,8 +1256,4 @@ KEY_NOTES: dict[str, str] = {
         "atoms; set false to make clio-core the only transcript store (not allowed in History "
         "mode, where the file is the only durable copy)."
     ),
-    "workflows.step_inactivity_s": (
-        "No-activity window (seconds) before a declared-workflow step's child is judged stalled; a "
-        "long but active step never trips it."
-    ),
 }

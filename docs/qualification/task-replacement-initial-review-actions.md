@@ -1,5 +1,29 @@
 # Initial implementation review actions
 
+## Review of 9b0a91ec / f1b099cd
+
+Astra and actual Claude independently returned no-go. The next correction candidate uses the existing owners rather than adding another task layer. Source corrections are present; the new regression batch remains unexecuted and these rows are not acceptance passes.
+
+| Finding | Correction | Fresh evidence still required |
+| --- | --- | --- |
+| Downloads reject their own queued operation | Validate before reserving a new transfer; verified native redelivery reuses its operation | Actual native Download and bytes/hash checks |
+| Choice selection/dismissal acknowledges unrelated feedback | Run the conversation program on ordinary feedback after resolving the choice | Choice plus feedback and reverse-order choices |
+| Native/provider cancellation has one RPC attempt | Retain owner-local cancellation delivery retry in existing Core recovery | Failed RPC, original-identity retry, actual cleanup |
+| Provider reservation/reattachment failure loses recovery | Keep exact pre-dispatch context/reservation and original provider identity pending; no uncertain call replay | Core outage and surviving job reconnect |
+| Restart's own-session wait is refused | Trusted owner settlement wait does not impersonate a model waiting on itself | Restart after cancellation, no successor before settlement |
+| A previous native leg cannot publish its cleanup receipt | Existing incarnation can confirm its own receipt independently of the newer leg; unknown previous attempts remain unknown | Attempt/incarnation fault cases and continuation |
+| Historical tasks block cancellation, or live tasks disappear during Stop | Persist cancellation membership at closed admission; exclude only earlier outcomes | Terminal reply during worker retirement and recovery |
+| Held result collection fails after observation persistence | Exact explicit collection commits its authorized durable observation through the recipient-input boundary | Held result collection/automatic delivery race |
+| Cleanup continuation and body use different admission rules | Native workers use the conversation owner's ancestor/session cancellation predicate | Cancellation admission race and cleanup-only continuation |
+| Legacy migration drops/over-acknowledges records | Fold current wire fields, retain unmappable rows in Core, finish interrupted withdrawals, require actual input proof | Migration twice, orphan/claimed/cancelled data |
+| Released spawn strategy lost | Validate before child creation; retain immutable normalized strategy; delete broken old adapter | Invalid strategy, replay refusal, LM/user builder cases |
+| Private native identity and reconnect construction leak across owners | Move SDK identity and ToolTask reconstruction to the pinned client adapter | Actual pinned SDK contracts |
+| Linux epoch birth comparison can drift | Use boot identity plus monotonic process start; legacy proof remains uncertain | Clock shift/PID reuse cases and platform qualification |
+
+The focused Astra follow-up confirmed that `external_acknowledged` must not count as physical settlement. It also established spawn strategy in released tags from `v0.9.5-beta.1` through `v0.9.5-beta.5.2`; preserve that public behavior without restoring the removed spawn engine.
+
+## Earlier review of 8fbd4130
+
 Reviewed source: core `8fbd41308bc5b961049fe441781d48b368aebb8e`, GACT `3efef4afffb235bb2ee1873358591478ce63895c`, marketplace `3299065f3ee7f827f734d311d39b15bf7460ab42`. Both Astra and actual Claude completed independent read-only source reviews and returned no-go. Corrective source construction is in progress; it has not been checked or qualified. No acceptance row is passed by these reviews.
 
 | Finding | Existing owner and correction boundary | Required fresh evidence |

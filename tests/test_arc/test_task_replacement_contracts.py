@@ -1,0 +1,349 @@
+"""Replacement public contracts on real Core; these are not model acceptance."""
+
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+import pytest
+
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.task_types import (
+    BackendReference,
+    ContextBoundary,
+    CoordinationGrant,
+    NativeAttempt,
+    QuestionDefinition,
+    QuestionReply,
+    RecipientInput,
+    TaskOwner,
+    TaskSnapshot,
+    TaskSubscription,
+)
+from clio_agent.gact.questions import QuestionCommands
+from clio_agent.gact.session_mail import SessionMail
+from clio_agent.gact.task_access import TaskCaller
+from clio_agent.gact.task_history import TaskHistory
+from clio_agent.gact.task_operations import TaskOperations
+from clio_agent.gact.task_publication import publish_task_notice
+
+STAMP = "2026-10-14T04:00:00Z"
+
+
+def record_task(
+    history: TaskHistory,
+    handle: str,
+    *,
+    session: str = "owner",
+    description: str = "Original assignment",
+) -> TaskSnapshot:
+    """Publish a workload owner's observation through the production Core writer."""
+    task = TaskSnapshot(
+        handle=handle,
+        kind="Shell",
+        tool="bash",
+        label="Command",
+        owner=TaskOwner(human_id="human", session_id=session),
+        invocation_id=handle,
+        created_at=STAMP,
+        updated_at=STAMP,
+        description=description,
+        description_missing=False,
+        status="running",
+        supported_actions=("observe", "wait", "cancel", "get_result"),
+    )
+    history.record_snapshot(task, observation_id="start:" + handle)
+    return task
+
+
+def finish(history: TaskHistory, task: TaskSnapshot, *, status: str = "completed") -> None:
+    """Supply an independent owner's settled observation, without a fake execution engine."""
+    result = history.write_content(task.owner.session_id, {"output": task.handle, "status": status})
+    settled = task.model_copy(
+        update={
+            "status": status,
+            "raw_status": status,
+            "terminal_at": STAMP,
+            "settlement": "confirmed",
+            "result": result,
+        }
+    )
+    history.record_snapshot(settled, observation_id="finish:" + task.handle)
+    publish_task_notice(history, settled)
+
+
+async def forbid_cancel(task: TaskSnapshot, caller: TaskCaller) -> dict[str, Any]:
+    """A read/wait case must never reach an execution owner's cancellation path."""
+    pytest.fail(f"Unexpected cancellation of {task.handle} by {caller.session_id}")
+
+
+def test_description_reference_survives_core_restore(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    original = record_task(
+        history, "task_description", description="Transfer selected analysis files"
+    )
+    retained = history.task_snapshot(original.handle)
+    assert retained is not None and retained.description_reference is not None
+    assert history.read_content(retained.description_reference) == original.description
+    restored = TaskHistory(arc)
+    restored.restore()
+    assert restored.task_snapshot(original.handle) == retained
+
+
+@pytest.mark.asyncio
+async def test_expired_mixed_wait_preserves_running_members(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    running = await asyncio.to_thread(record_task, history, "task_running")
+    failed = await asyncio.to_thread(record_task, history, "task_failed")
+    await asyncio.to_thread(finish, history, failed, status="failed")
+    operations = TaskOperations(history, forbid_cancel)
+    caller = TaskCaller("owner", "human")
+    result = await operations.wait(
+        caller, [running.handle, failed.handle, "task_missing"], timeout_s=0
+    )
+    assert result["pending"] == [running.handle]
+    outcomes = {item["handle"]: item for item in result["outcomes"]}
+    assert outcomes[failed.handle]["status"] == "failed"
+    assert outcomes["task_missing"]["error"] == "task_unavailable"
+    current = await asyncio.to_thread(history.task_snapshot, running.handle)
+    assert current is not None and current.status == "running"
+    assert current.cancellation_requested_at is None
+
+
+@pytest.mark.asyncio
+async def test_waiter_cancellation_leaves_question_open(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    questions = QuestionCommands(history)
+    owner = TaskOwner(human_id="human", session_id="owner")
+    question = await asyncio.to_thread(
+        questions.create,
+        owner,
+        QuestionDefinition(prompt="Which dataset should I analyze?"),
+        invocation_id="ask-1",
+    )
+    operations = TaskOperations(history, forbid_cancel)
+    waiter = asyncio.create_task(operations.wait(TaskCaller("owner", "human"), question.handle))
+    await asyncio.sleep(0)
+    waiter.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await waiter
+    current = await asyncio.to_thread(history.task_snapshot, question.handle)
+    assert current is not None and current.status == "input_required"
+    assert current.cancellation_requested_at is None
+    await asyncio.to_thread(questions.answer, question.handle, QuestionReply(answer="Dataset B"))
+    collected = await operations.wait(TaskCaller("owner", "human"), question.handle, timeout_s=0)
+    assert collected["pending"] == []
+    assert collected["outcomes"][0]["status"] == "completed"
+
+
+def test_question_creation_recovers_unposted_definition(
+    arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    history = TaskHistory(arc)
+    questions = QuestionCommands(history)
+    definition = QuestionDefinition(prompt="Approve the destination?")
+    original = questions.post
+
+    def fail_post(accepted: TaskSnapshot, definition: QuestionDefinition) -> TaskSnapshot:
+        raise OSError("crash before posting")
+
+    monkeypatch.setattr(questions, "post", fail_post)
+    with pytest.raises(OSError, match="before posting"):
+        questions.create(
+            TaskOwner(human_id="human", session_id="owner"),
+            definition,
+            invocation_id="ask-recover",
+            handle="task_question_recover",
+        )
+    retained = history.task_snapshot("task_question_recover")
+    assert retained is not None and retained.details is not None
+    assert retained.raw_status == ""
+    assert QuestionDefinition.model_validate(history.read_content(retained.details)) == definition
+    monkeypatch.setattr(questions, "post", original)
+    questions.restore()
+    posted = history.task_snapshot(retained.handle)
+    assert posted is not None and posted.status == "input_required"
+    assert (
+        questions.create(
+            posted.owner, definition, invocation_id="ask-recover", handle=posted.handle
+        )
+        == posted
+    )
+
+
+def test_revoking_observe_holds_published_subscriber_input(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    task = record_task(history, "task_subscription")
+    grant = CoordinationGrant(
+        id="grant-observe",
+        granting_human="human",
+        recipient_session="peer",
+        target_session="owner",
+        rights=("read", "observe"),
+        created_at=STAMP,
+    )
+    history.record_grant(grant, observation_id="grant-initial")
+    history.record_subscription(
+        TaskSubscription(
+            handle=task.handle, recipient_session="peer", enabled=True, updated_at=STAMP
+        )
+    )
+    finish(history, task)
+    mailbox = SessionMail(history, lambda _sid, _item: True)
+    peer = TaskCaller("peer", "human")
+    staged = mailbox.stage(peer)
+    assert len(staged.items) == 1
+    history.record_grant(
+        grant.model_copy(update={"revoked_at": STAMP}), observation_id="grant-revoke"
+    )
+    history.record_grant(
+        grant.model_copy(update={"id": "grant-read", "rights": ("read",)}),
+        observation_id="grant-read-only",
+    )
+    assert mailbox.stage(peer).items == ()
+    assert len(history.pending_mail("peer")) == 1
+    assert len(history.pending_mail("owner")) == 1
+    with pytest.raises(ValueError, match="authorization changed"):
+        mailbox.commit(
+            peer,
+            staged,
+            assignment_id="peer-assignment",
+            iteration_id="peer-iteration",
+            boundary=ContextBoundary(session_id="peer", scope="main", logical_time=0),
+        )
+    assert history.acknowledged_notifications("peer") == frozenset()
+    assert TaskOperations(history, forbid_cancel).result(peer, task.handle)["status"] == "completed"
+
+
+def test_query_filters_and_pagination_never_count_unrelated_tasks(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    first = record_task(history, "task_a")
+    second = record_task(history, "task_b")
+    record_task(history, "task_hidden", session="unrelated", description="Private assignment")
+    operations = TaskOperations(history, forbid_cancel)
+    caller = TaskCaller("owner", "human")
+    page = operations.query(caller, limit=1)
+    assert page["total"] == 2
+    assert [row["handle"] for row in page["tasks"]] == [first.handle]
+    restored = TaskHistory(arc)
+    restored.restore()
+    following = TaskOperations(restored, forbid_cancel).query(
+        caller, cursor=page["cursor"], limit=1
+    )
+    assert following["total"] == 2
+    assert [row["handle"] for row in following["tasks"]] == [second.handle]
+    assert operations.query(caller, handle="task_hidden")["tasks"] == []
+
+
+def test_collection_receipt_cannot_consume_another_recipient(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    task = record_task(history, "task_recipient")
+    history.record_grant(
+        CoordinationGrant(
+            id="grant-peer",
+            granting_human="human",
+            recipient_session="peer",
+            target_session="owner",
+            rights=("read", "observe"),
+            created_at=STAMP,
+        ),
+        observation_id="grant-peer",
+    )
+    history.record_subscription(
+        TaskSubscription(
+            handle=task.handle, recipient_session="peer", enabled=True, updated_at=STAMP
+        )
+    )
+    finish(history, task)
+    (peer_item,) = history.pending_mail("peer")
+    history.record_input(
+        RecipientInput(
+            id="peer-input",
+            session_id="peer",
+            assignment_id="peer-assignment",
+            iteration_id="peer-iteration",
+            boundary=ContextBoundary(session_id="peer", scope="main", logical_time=0),
+            notification_ids=(peer_item.id,),
+            content=(peer_item.content,),
+            committed_at=STAMP,
+        )
+    )
+    assert history.pending_mail("peer") == ()
+    assert len(history.pending_mail("owner")) == 1
+    assert (
+        TaskOperations(history, forbid_cancel).result(TaskCaller("peer", "human"), task.handle)[
+            "status"
+        ]
+        == "completed"
+    )
+
+
+def test_cleanup_receipt_cannot_settle_another_incarnation(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    task = record_task(history, "task_incarnation")
+    backend = BackendReference(
+        owner="native", server="clio-shell", session="runtime", task_id="native-1"
+    )
+    history.record_snapshot(
+        task.model_copy(update={"backend": backend}), observation_id="bind-native"
+    )
+    first = NativeAttempt(
+        handle=task.handle,
+        incarnation="first",
+        backend=backend,
+        leg=1,
+        started_at=STAMP,
+        execution_key="execution-first",
+    )
+    second = first.model_copy(
+        update={"incarnation": "second", "leg": 2, "execution_key": "execution-second"}
+    )
+    history.record_attempt(first)
+    history.record_attempt(second)
+    receipt = history.write_content(
+        "owner",
+        {
+            "incarnation": first.incarnation,
+            "execution_key": first.execution_key,
+            "physical_cleanup": "confirmed",
+        },
+    )
+    with pytest.raises(ValueError, match="another native incarnation"):
+        history.record_attempt(
+            second.model_copy(
+                update={
+                    "cleanup_receipt": receipt,
+                    "cleanup_state": "confirmed",
+                    "finished_at": STAMP,
+                }
+            )
+        )
+    assert history.native_attempts(task.handle)[1].cleanup_state == "pending"
+
+
+def test_explicit_collection_of_held_result_uses_its_durable_observation(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    task = record_task(history, "task_held")
+    finish(history, task)
+    (notice,) = history.pending_mail("owner")
+    held = notice.model_copy(
+        update={"delivery": "held", "held_reason": "historical_delivery_unknown", "revision": 2}
+    )
+    history.update_mail(held, expected_revision=1)
+    caller = TaskCaller("owner", "human")
+    mailbox = SessionMail(history, lambda _sid, _item: False)
+    assert mailbox.stage(caller).items == ()
+    staged = mailbox.collection(caller, (held.id,))
+    observation = history.write_content(
+        "owner", {"handle": task.handle, "output": "Already collected"}
+    )
+    mailbox.commit(
+        caller,
+        staged,
+        assignment_id="assignment",
+        iteration_id="collection",
+        boundary=ContextBoundary(session_id="owner", scope="main", logical_time=0),
+        tool_observation=observation,
+    )
+    assert history.pending_mail("owner") == ()
+    assert held.id in history.acknowledged_notifications("owner")

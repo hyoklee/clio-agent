@@ -1,0 +1,16 @@
+{
+  "phase": "correction candidate before independent source review",
+  "core_parent": "9b0a91ecc4b6ea2be014dca3fa7f9de32d4f3c70",
+  "gact": "f1b099cdf479a4e2516391a525efeba17799cd65",
+  "checks": {
+    "ruff_scoped": "passed",
+    "ruff_format_scoped": "passed",
+    "mypy_scoped": {"status": "passed", "production_files": 14, "errors": 0, "earlier_errors": [83, 2], "receipt": "task-replacement-construction-mypy.log"},
+    "removal_guard": {"status": "passed", "violations": 0},
+    "diff_whitespace": "passed"
+  },
+  "tests": "fresh batch written, unexecuted",
+  "ci": "not run for this candidate",
+  "live_qualification": "not run for this candidate",
+  "release_ready": false
+}

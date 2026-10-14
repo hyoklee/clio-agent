@@ -13,10 +13,12 @@ from types import TracebackType
 from typing import Any, Literal
 
 import mcp_types
+from docket.dependencies import current_execution
 from fastmcp import Client
 from fastmcp.client.client import CallToolResult
 from fastmcp_tasks.client import ToolTask
 from fastmcp_tasks.client_models import ClientCreateTaskResult
+from fastmcp_tasks.context import get_task_context, get_task_leg_number
 from mcp.shared.exceptions import MCPError
 
 from clio_agent.arc.task_types import CoreReference, argument_digest
@@ -53,8 +55,57 @@ class AcceptedNativeCall:
 
     def reconnected(self, client: Client) -> AcceptedNativeCall:
         """Bind observation to the fresh SDK session, preserving original acceptance."""
-        return AcceptedNativeCall(self.submission,
-            ToolTask(client, self.submission.tool_name, self.creation, raise_on_error=False), self.creation)
+        return AcceptedNativeCall(
+            self.submission,
+            ToolTask(client, self.submission.tool_name, self.creation, raise_on_error=False),
+            self.creation,
+        )
+
+
+@dataclass(frozen=True)
+class NativeExecutionIdentity:
+    """Pinned native-worker identity, isolated from workload admission policy."""
+
+    task_id: str
+    auth_scope: str
+    leg: int
+    execution_key: str
+
+
+def native_execution_identity() -> NativeExecutionIdentity:
+    """Read the native worker context without assuming request ContextVars survive."""
+    task = get_task_context()
+    if task is None:
+        raise ValueError("Owned work requires native task execution")
+    return NativeExecutionIdentity(
+        task.task_id, task.task_scope or "", get_task_leg_number(), current_execution.get().key
+    )
+
+
+def restore_native_call(
+    client: Client,
+    submission: TaskSubmission,
+    *,
+    task_id: str,
+    status: str,
+    created_at: str,
+    updated_at: str,
+) -> AcceptedNativeCall:
+    """Reattach SDK observation to a recorded identity without another tools/call."""
+    creation = ClientCreateTaskResult.model_validate(
+        {
+            "task_id": task_id,
+            "status": status
+            if status in {"working", "input_required", "completed", "failed", "cancelled"}
+            else "working",
+            "created_at": created_at,
+            "last_updated_at": updated_at,
+            "result_type": "task",
+        }
+    )
+    return AcceptedNativeCall(
+        submission, ToolTask(client, submission.tool_name, creation, raise_on_error=False), creation
+    )
 
 
 @asynccontextmanager
@@ -77,7 +128,9 @@ class TaskAdoptionError(RuntimeError):
         self.accepted = accepted
 
 
-def submission_failure(error: Exception) -> Literal["rejected", "recording_unconfirmed", "uncertain"]:
+def submission_failure(
+    error: Exception,
+) -> Literal["rejected", "recording_unconfirmed", "uncertain"]:
     """Distinguish SDK-confirmed pre-dispatch rejection from lost/accepted custody."""
     if isinstance(error, TaskAdoptionError):
         return "recording_unconfirmed"
@@ -105,19 +158,51 @@ class TaskAwareClient(Client):
         self._unconfirmed_adoptions: dict[str, TaskAdoptionError] = {}
 
     @classmethod
-    def from_configured(cls, configured: Client, transport: Any, *,
-                        on_task_accepted: TaskAcceptor, elicitation_handler: Any) -> TaskAwareClient:
+    def from_configured(
+        cls,
+        configured: Client,
+        transport: Any,
+        *,
+        on_task_accepted: TaskAcceptor,
+        elicitation_handler: Any,
+    ) -> TaskAwareClient:
         """Preserve configured SDK behavior; keep pinned client internals in this adapter."""
-        client = cls(transport, on_task_accepted=on_task_accepted, name=configured.name,
+        client = cls(
+            transport,
+            on_task_accepted=on_task_accepted,
+            name=configured.name,
             timeout=configured._session_kwargs.get("read_timeout_seconds"),
-            init_timeout=configured._init_timeout, auto_initialize=configured.auto_initialize,
-            client_info=configured._session_kwargs.get("client_info"), elicitation_handler=elicitation_handler,
-            cache=configured._cache_arg, extensions=configured._extensions_arg,
-            result_claims=configured._result_claims_arg, input_required_max_rounds=configured.input_required_max_rounds)
-        client._session_kwargs.update({key: value for key, value in configured._session_kwargs.items()
-            if key in {"sampling_callback", "list_roots_callback", "logging_callback", "log_level",
-                       "message_handler", "read_timeout_seconds", "client_info", "sampling_capabilities",
-                       "mode", "prior_discover"}})
+            init_timeout=configured._init_timeout,
+            auto_initialize=configured.auto_initialize,
+            client_info=configured._session_kwargs.get("client_info"),
+            elicitation_handler=elicitation_handler,
+            cache=configured._cache_arg,
+            extensions=configured._extensions_arg,
+            result_claims=configured._result_claims_arg,
+            input_required_max_rounds=configured.input_required_max_rounds,
+            mode=configured.mode,
+            prior_discover=configured.prior_discover,
+        )
+        client._session_kwargs["sampling_callback"] = configured._session_kwargs.get(
+            "sampling_callback"
+        )
+        client._session_kwargs["list_roots_callback"] = configured._session_kwargs.get(
+            "list_roots_callback"
+        )
+        client._session_kwargs["logging_callback"] = configured._session_kwargs.get(
+            "logging_callback"
+        )
+        client._session_kwargs["log_level"] = configured._session_kwargs.get("log_level")
+        client._session_kwargs["message_handler"] = configured._session_kwargs.get(
+            "message_handler"
+        )
+        client._session_kwargs["read_timeout_seconds"] = configured._session_kwargs.get(
+            "read_timeout_seconds"
+        )
+        client._session_kwargs["client_info"] = configured._session_kwargs.get("client_info")
+        client._session_kwargs["sampling_capabilities"] = configured._session_kwargs.get(
+            "sampling_capabilities"
+        )
         return client
 
     @contextmanager

@@ -2,6 +2,8 @@
 
 ## 1. Objective, constraints and ownership
 
+Removal-audit implementation note: the exact `user_questions` string in `gact/task_migration.py` is exempt only for reading retained historical metadata. The guard still rejects attributes, imports, definitions and other uses of the retired authority. A fresh guard regression verifies that distinction. No historical owner is installed.
+
 Target a Tasks release on October 14, America/Chicago. This is a target, not permission to bypass acceptance. If required gates remain failed or unavailable, publish no Tasks release: keep the currently released product unchanged, report the exact blocker, and continue on the isolated feature branch. Do not revive the old engine to meet the date.
 
 Use codex/agent-facing-async-tasks in core and GACT, starting from core 5475042f / GACT 32044a38. Core owns runtime/tools/REST/persistence/prompts and website; GACT owns UI/API bindings and browser acceptance. Preserve the installed Desktop, auth, defaults, released pins and unrelated human work.

@@ -4,14 +4,30 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 TaskKind = Literal["Shell", "Download", "Indexing", "MCP", "Session", "Subagent", "Question"]
 CoordinationRight = Literal["read", "observe", "message", "control"]
-MailKind = Literal["human", "peer", "delegation", "task_result", "attention", "question_answer", "control",
-                   "goal", "loop", "schedule", "hook", "a2ui", "spotter", "approval", "composer"]
+MailKind = Literal[
+    "human",
+    "peer",
+    "delegation",
+    "task_result",
+    "attention",
+    "question_answer",
+    "control",
+    "goal",
+    "loop",
+    "schedule",
+    "hook",
+    "a2ui",
+    "spotter",
+    "approval",
+    "composer",
+]
 
 
 class TaskRecord(BaseModel):
@@ -21,10 +37,10 @@ class TaskRecord(BaseModel):
     schema_version: Literal[1] = 1
 
 
-def argument_digest(arguments: dict[str, JsonValue]) -> str:
+def argument_digest(arguments: Mapping[str, object]) -> str:
     """Bind confirmed custody to the exact JSON arguments sent to the backend."""
     encoded = json.dumps(
-        arguments, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
+        dict(arguments), sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     ).encode()
     return hashlib.sha256(encoded).hexdigest()
 
@@ -107,7 +123,9 @@ class TaskSnapshot(TaskRecord):
     @model_validator(mode="after")
     def validate_description_presence(self) -> TaskSnapshot:
         """Missing historical descriptions stay explicit rather than invented."""
-        if self.description_missing != (self.description is None and self.description_reference is None):
+        if self.description_missing != (
+            self.description is None and self.description_reference is None
+        ):
             raise ValueError("Description presence and missing-description marker disagree")
         return self
 
@@ -126,6 +144,8 @@ class LocalRuntimeIdentity(TaskRecord):
     host: str
     pid: int = Field(gt=0)
     created_at: float = Field(gt=0)
+    boot_id: str | None = None
+    started_since_boot: float | None = None
 
 
 class ProviderContinuation(TaskRecord):
@@ -258,6 +278,7 @@ class AssignmentDetails(TaskRecord):
     workflow_step: str | None = None
     workflow: CoreReference | None = None
     inference_concurrency: int | None = Field(default=None, ge=1)
+    cancellation_members: tuple[str, ...] | None = None
 
 
 class QuestionOption(TaskRecord):

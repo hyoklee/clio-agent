@@ -10,22 +10,28 @@ from uuid import uuid4
 from fastmcp import Context
 from fastmcp.utilities.tasks import TaskConfig
 
-from clio_agent.arc.task_types import ProviderContinuation, SubmissionContext, TaskProgress, TaskSnapshot
+from clio_agent.arc.task_types import (
+    ProviderContinuation,
+    SubmissionContext,
+    TaskProgress,
+    TaskSnapshot,
+)
 from clio_agent.gact.native_work import NativeWork, WorkEvidence, now
 from clio_agent.gact.off_loop import join_off_loop
 from clio_agent.gact.storage.connect_tool import prepare_connect
+from clio_agent.gact.storage.globus import GlobusSource
+from clio_agent.gact.storage.identity import source_submission_identity
 from clio_agent.gact.storage.indexing import run_index
 from clio_agent.gact.storage.models import FileEntry, Manifest, SourceRecord, TransferOperation
-from clio_agent.gact.storage.identity import source_submission_identity
-from clio_agent.gact.storage.globus import GlobusSource
 from clio_agent.tools.native_roots import NativeRoot
-
 
 if TYPE_CHECKING:
     from clio_agent.gact.native_tools import NativeTools
 
 
-def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, native: NativeTools) -> None:
+def register_native_storage(
+    root: NativeRoot, work: NativeWork, app: Any, *, native: NativeTools
+) -> None:
     """Install Download and Indexing on the independent storage queue."""
     service = app.state.connected_storage
 
@@ -34,19 +40,29 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
         if session is None:
             raise ValueError("Storage session is unavailable")
         workspace = app.state.workspaces.get(session.workspace_id)
-        if workspace is None or Path(workspace.root_path).resolve() != Path(context.workspace).resolve():
+        if (
+            workspace is None
+            or Path(workspace.root_path).resolve() != Path(context.workspace).resolve()
+        ):
             raise ValueError("Storage workspace changed before execution")
         return session, Path(workspace.root_path)
 
-    def validate_source(record: SourceRecord, context: SubmissionContext,
-                        operation: TransferOperation | None = None) -> None:
-        if (not record.connected or record.principal != service.principal
-            or record.source.owner.clio_id != service.store.clio_id):
+    def validate_source(
+        record: SourceRecord, context: SubmissionContext, operation: TransferOperation | None = None
+    ) -> None:
+        if (
+            not record.connected
+            or record.principal != service.principal
+            or record.source.owner.clio_id != service.store.clio_id
+        ):
             raise PermissionError("Source access or ownership changed before execution")
         expected = context.attribution.get("source_identity")
         actual = source_submission_identity(record)
-        if (expected is not None and expected != actual
-                and (operation is None or operation.provider_identity != actual)):
+        if (
+            expected is not None
+            and expected != actual
+            and (operation is None or operation.provider_identity != actual)
+        ):
             raise PermissionError("Approved source configuration changed before execution")
 
     def progress(context: SubmissionContext, done: int, total: int | None, unit: str) -> None:
@@ -54,31 +70,54 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
             current = work.history.task_snapshot(context.handle)
             if current is None or current.terminal_at is not None:
                 return
-            work.history.record_snapshot(current.model_copy(update={
-                "updated_at": now(), "progress": TaskProgress(completed=done, total=total, unit=unit)
-            }), observation_id=uuid4().hex)
+            work.history.record_snapshot(
+                current.model_copy(
+                    update={
+                        "updated_at": now(),
+                        "progress": TaskProgress(completed=done, total=total, unit=unit),
+                    }
+                ),
+                observation_id=uuid4().hex,
+            )
 
-    def associate(context: SubmissionContext, record: SourceRecord, operation: TransferOperation) -> None:
+    def associate(
+        context: SubmissionContext, record: SourceRecord, operation: TransferOperation
+    ) -> None:
         with work.history._lock:
             current = work.history.task_snapshot(context.handle)
             if current is None:
                 raise ValueError("Storage task is unavailable")
-            details = work.history.write_content(context.owner.session_id, {
-                "source_id": record.source.id, "operation_id": operation.id,
-                "provider": record.source.provider, "selected_paths": operation.selected_paths,
-                "revision": record.configuration.github_ref,
-            })
-            work.history.record_snapshot(current.model_copy(update={"details": details, "updated_at": now(),
-                "resource_id": record.source.id}),
-                                         observation_id=uuid4().hex)
+            details = work.history.write_content(
+                context.owner.session_id,
+                {
+                    "source_id": record.source.id,
+                    "operation_id": operation.id,
+                    "provider": record.source.provider,
+                    "selected_paths": operation.selected_paths,
+                    "revision": record.configuration.github_ref,
+                },
+            )
+            work.history.record_snapshot(
+                current.model_copy(
+                    update={
+                        "details": details,
+                        "updated_at": now(),
+                        "resource_id": record.source.id,
+                    }
+                ),
+                observation_id=uuid4().hex,
+            )
 
     def result(record: SourceRecord, operation: TransferOperation) -> dict[str, Any]:
         manifest_id = operation.manifest_id or record.manifest_id or record.linked_manifest_id
         manifest = service.store.get("manifest", manifest_id, Manifest) if manifest_id else None
         return {
-            "source_id": record.source.id, "provider": record.source.provider,
-            "operation_id": operation.id, "state": operation.state,
-            "bytes_done": operation.bytes_done, "bytes_total": operation.bytes_total,
+            "source_id": record.source.id,
+            "provider": record.source.provider,
+            "operation_id": operation.id,
+            "state": operation.state,
+            "bytes_done": operation.bytes_done,
+            "bytes_total": operation.bytes_total,
             "manifest_id": manifest_id,
             "revision": manifest.revision if manifest is not None else None,
             "entries": len(manifest.entries) if manifest is not None else 0,
@@ -96,61 +135,116 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
                 work._check_admission(current)
             except ValueError:
                 return True  # the host-only continuation can then only cancel/clean up
-        return bool(context.provider_continuation and context.provider_continuation.cancellation_only)
+        return bool(
+            context.provider_continuation and context.provider_continuation.cancellation_only
+        )
 
     @root.server.tool(name="connected_data_continue", task=TaskConfig(mode="required"))
-    async def continue_job(ctx: Context, operation_id: str, _clio_submission: str) -> dict[str, Any]:
+    async def continue_job(
+        ctx: Context, operation_id: str, _clio_submission: str
+    ) -> dict[str, Any]:
         """Host-only continuation of a verified existing provider job; never submit provider work."""
+
         async def body(context: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:
             continuation = context.provider_continuation
-            if continuation is None or continuation.operation_id != operation_id or operation_id != context.handle:
+            if (
+                continuation is None
+                or continuation.operation_id != operation_id
+                or operation_id != context.handle
+            ):
                 raise ValueError("Provider continuation custody is missing")
+
             def prepare() -> tuple[SourceRecord, TransferOperation, Path]:
                 session, workspace = owner(context)
-                original = SubmissionContext.model_validate(work.history.read_content(continuation.original_submission))
+                original = SubmissionContext.model_validate(
+                    work.history.read_content(continuation.original_submission)
+                )
                 operation = service.store.get("operation", operation_id, TransferOperation)
                 record = service.get(session.workspace_id, continuation.source_id)
-                if (original.owner != context.owner or original.tool != "connected_data_download"
+                if (
+                    original.owner != context.owner
+                    or original.tool != "connected_data_download"
                     or original.arguments.get("source_id") != record.source.id
                     or original.arguments.get("paths") != operation.selected_paths
-                    or operation.source_id != record.source.id or record.source.provider != "globus"
-                    or operation.native_job_id != continuation.provider_job_id):
-                    raise ValueError("Provider continuation differs from the original job/paths/owner")
+                    or operation.source_id != record.source.id
+                    or record.source.provider != "globus"
+                    or operation.native_job_id != continuation.provider_job_id
+                ):
+                    raise ValueError(
+                        "Provider continuation differs from the original job/paths/owner"
+                    )
                 validate_source(record, original, operation)
-                if operation.publication_started_at is not None and not cancellation_needed(context):
-                    raise ValueError("Earlier local publication is uncertain; inspect it before continuing")
+                if operation.publication_started_at is not None and not cancellation_needed(
+                    context
+                ):
+                    raise ValueError(
+                        "Earlier local publication is uncertain; inspect it before continuing"
+                    )
                 if cancellation_needed(context):
                     operation = service.store.update_operation(operation.id, cancel_requested=True)
                 return record, operation, workspace
+
             record, operation, workspace = await join_off_loop(prepare)
             previous_publication_absent = operation.publication_started_at is None
             evidence.acquiring_effects()
             try:
-                await service.execute_transfer(record, workspace, operation, existing_job_only=True,
+                await service.execute_transfer(
+                    record,
+                    workspace,
+                    operation,
+                    existing_job_only=True,
                     cancellation_requested=lambda: cancellation_needed(context),
-                    progress=lambda done, total: progress(context, done, total, "bytes"))
+                    progress=lambda done, total: progress(context, done, total, "bytes"),
+                )
             finally:
-                settled = await join_off_loop(service.store.get, "operation", operation.id, TransferOperation)
-                if settled.state in {"completed", "failed", "cancelled"} and settled.provider_cleanup_confirmed:
+                settled = await join_off_loop(
+                    service.store.get, "operation", operation.id, TransferOperation
+                )
+                if (
+                    settled.state in {"completed", "failed", "cancelled"}
+                    and settled.provider_cleanup_confirmed
+                ):
                     evidence.confirm_cleanup()
                     if previous_publication_absent:
+
                         def confirm_previous() -> None:
                             with work.history._lock:
                                 for attempt in work.history.native_attempts(context.handle):
-                                    if (attempt.incarnation not in continuation.previous_incarnations
-                                            or attempt.cleanup_state in {"confirmed", "never_started"}):
+                                    if (
+                                        attempt.incarnation
+                                        not in continuation.previous_incarnations
+                                        or attempt.cleanup_state in {"confirmed", "never_started"}
+                                    ):
                                         continue
-                                    receipt = work.history.write_content(context.owner.session_id, {
-                                        "incarnation": attempt.incarnation, "execution_key": attempt.execution_key,
-                                        "provider_job_id": continuation.provider_job_id,
-                                        "continuation": context.reference, "previous_runtime_gone": True,
-                                        "previous_publication_absent": True, "provider_and_staging_settled": True})
-                                    work.history.record_attempt(attempt.model_copy(update={"cleanup_state": "confirmed",
-                                        "cleanup_receipt": receipt, "finished_at": now()}))
+                                    receipt = work.history.write_content(
+                                        context.owner.session_id,
+                                        {
+                                            "incarnation": attempt.incarnation,
+                                            "execution_key": attempt.execution_key,
+                                            "provider_job_id": continuation.provider_job_id,
+                                            "continuation": context.reference,
+                                            "previous_runtime_gone": True,
+                                            "previous_publication_absent": True,
+                                            "provider_and_staging_settled": True,
+                                        },
+                                    )
+                                    work.history.record_attempt(
+                                        attempt.model_copy(
+                                            update={
+                                                "cleanup_state": "confirmed",
+                                                "cleanup_receipt": receipt,
+                                                "finished_at": now(),
+                                            }
+                                        )
+                                    )
+
                         await join_off_loop(confirm_previous)
             latest = await join_off_loop(service.get, record.source.workspace_id, record.source.id)
             return await join_off_loop(result, latest, settled)
-        return await work.run(_clio_submission, "connected_data_continue", {"operation_id": operation_id}, body)
+
+        return await work.run(
+            _clio_submission, "connected_data_continue", {"operation_id": operation_id}, body
+        )
 
     async def recover_provider(task: TaskSnapshot, context: SubmissionContext) -> bool:
         def prepare() -> ProviderContinuation | None:
@@ -166,33 +260,75 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
                 return None
             if operation.native_request is None and operation.native_job_id is None:
                 return None
-            if (not operation.native_job_id or task.submission is None or task.backend is None
-                    or not task.backend.task_id or operation.provider_identity is None):
-                raise ValueError("Provider acceptance/custody is uncertain; inspect the original job, without resubmission")
+            if (
+                not operation.native_job_id
+                or task.submission is None
+                or task.backend is None
+                or not task.backend.task_id
+                or operation.provider_identity is None
+            ):
+                raise ValueError(
+                    "Provider acceptance/custody is uncertain; inspect the original job, without resubmission"
+                )
             validate_source(record, context, operation)
             attempts = work.history.native_attempts(task.handle)
-            previous_leg = [attempt for attempt in attempts
-                            if attempt.backend.task_id == task.backend.task_id]
+            previous_leg = [
+                attempt for attempt in attempts if attempt.backend.task_id == task.backend.task_id
+            ]
             if len(previous_leg) > 1:
-                raise ValueError("The lost native leg had multiple execution attempts; inspect provider effects before continuing")
+                raise ValueError(
+                    "The lost native leg had multiple execution attempts; inspect provider effects before continuing"
+                )
             cancel_only = cancellation_needed(context)
             if operation.publication_started_at is not None and not cancel_only:
-                raise ValueError("Local publication may already have happened; inspect its manifest/files before continuing")
-            origin = (context.provider_continuation.original_submission
-                      if context.provider_continuation is not None else task.submission)
-            return ProviderContinuation(original_submission=origin, previous_submission=task.submission,
-                previous_backend=task.backend, operation_id=operation.id, source_id=operation.source_id,
-                provider_job_id=operation.native_job_id, cancellation_only=cancel_only,
-                previous_incarnations=tuple(attempt.incarnation for attempt in attempts))
-        try:
+                raise ValueError(
+                    "Local publication may already have happened; inspect its manifest/files before continuing"
+                )
+            origin = (
+                context.provider_continuation.original_submission
+                if context.provider_continuation is not None
+                else task.submission
+            )
+            return ProviderContinuation(
+                original_submission=origin,
+                previous_submission=task.submission,
+                previous_backend=task.backend,
+                operation_id=operation.id,
+                source_id=operation.source_id,
+                provider_job_id=operation.native_job_id,
+                cancellation_only=cancel_only,
+                previous_incarnations=tuple(attempt.incarnation for attempt in attempts),
+            )
+
+        continuation: ProviderContinuation | None = None
+
+        async def reattach() -> bool:
+            nonlocal continuation
+            if "provider-reservation:" + task.handle in native.recovery.pending:
+                return False  # the exact reserved context owns its safe retry
+            latest = await join_off_loop(work.history.task_snapshot, task.handle)
+            if (
+                latest is None
+                or latest.terminal_at is not None
+                or latest.submission != task.submission
+            ):
+                return True  # a different reservation must never be submitted again
             continuation = await join_off_loop(prepare)
+            if continuation is not None:
+                await native.continue_provider(task, context, continuation)
+            return True
+
+        try:
+            await reattach()
             if continuation is None:
-                return False
-            await native.continue_provider(task, context, continuation)
+                return "provider-reservation:" + task.handle in native.recovery.pending
         except Exception as error:
             reason = str(error)
-            await native._record_or_defer("provider-recovery:" + task.handle,
-                lambda: native._uncertain(task.handle, reason, lost=True))
+            native.recovery.defer("provider-reattach:" + task.handle, reattach)
+            await native._record_or_defer(
+                "provider-recovery:" + task.handle,
+                lambda: native._uncertain(task.handle, reason, lost=True),
+            )
         return True
 
     async def cancel_provider(task: TaskSnapshot) -> bool:
@@ -217,18 +353,22 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
                     raise ValueError("Provider cancellation does not match the retained job")
                 adapter.request_cancel_existing(operation)
             return True  # retain the native body so provider/staging cleanup can settle
+
         return await join_off_loop(request)
 
     native.provider_recovery = recover_provider
     native.provider_cancel = cancel_provider
 
     @root.server.tool(name="connected_data_download", task=TaskConfig(mode="required"))
-    async def download(ctx: Context, source_id: str, _clio_submission: str, paths: list[str] | None = None) -> dict[str, Any]:
+    async def download(
+        ctx: Context, source_id: str, _clio_submission: str, paths: list[str] | None = None
+    ) -> dict[str, Any]:
         """Download approved source paths; return a task handle immediately and notify on completion.
 
         Continue independent work, observe progress or wait_tasks explicitly.
         Conversation Stop leaves the transfer running; cancel_tasks cancels it.
         """
+
         async def body(context: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:
             created: TransferOperation | None = None
             loop = asyncio.get_running_loop()
@@ -236,12 +376,17 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
             def report(done: int, total: int) -> None:
                 def record() -> None:
                     progress(context, done, total, "bytes")
+
                 try:
                     record()
                 except Exception:
+
                     async def retry() -> None:
                         await asyncio.to_thread(record)
-                    loop.call_soon_threadsafe(work.recovery.defer, "storage-progress:" + context.handle, retry)
+
+                    loop.call_soon_threadsafe(
+                        work.recovery.defer, "storage-progress:" + context.handle, retry
+                    )
 
             def prepare() -> tuple[SourceRecord, TransferOperation, Path]:
                 nonlocal created
@@ -254,19 +399,28 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
                 try:
                     operation = service.store.get("operation", context.handle, TransferOperation)
                 except KeyError:
-                    operation = service.store.begin_operation(record.source.id, "materialize", identifier=context.handle)
+                    validate_source(record, context)
+                    service.validate_download(record)
+                    operation = service.store.begin_operation(
+                        record.source.id, "materialize", identifier=context.handle
+                    )
                     created = operation
-                    operation = service.store.update_operation(operation.id,
-                        selected_paths=list(paths) if paths is not None else None, description=context.tool)
+                    operation = service.store.update_operation(
+                        operation.id,
+                        selected_paths=list(paths) if paths is not None else None,
+                        description=context.tool,
+                    )
                 else:
-                    if (operation.source_id != record.source.id or operation.kind != "materialize"
-                            or operation.selected_paths != paths):
+                    if (
+                        operation.source_id != record.source.id
+                        or operation.kind != "materialize"
+                        or operation.selected_paths != paths
+                    ):
                         raise ValueError("Retained transfer does not match the accepted invocation")
                     # Native redelivery reuses provider custody. In particular,
                     # Globus.poll inspects native_job_id instead of submitting a
                     # second transfer when that identity has been confirmed.
                 validate_source(record, context, operation)
-                service.validate_download(record)
                 associate(context, record, operation)
                 return record, operation, workspace
 
@@ -274,37 +428,54 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
                 record, operation, workspace = await join_off_loop(prepare)
             except BaseException:
                 if created is not None:
-                    await join_off_loop(service.store.update_operation, created.id,
-                                        state="cancelled", cancel_requested=True)
+                    await join_off_loop(
+                        service.store.update_operation,
+                        created.id,
+                        state="cancelled",
+                        cancel_requested=True,
+                    )
                 raise
             evidence.acquiring_effects()
             try:
-                await service.execute_transfer(record, workspace, operation,
-                    progress=report)
+                await service.execute_transfer(record, workspace, operation, progress=report)
             finally:
-                settled = await join_off_loop(service.store.get, "operation", operation.id, TransferOperation)
+                settled = await join_off_loop(
+                    service.store.get, "operation", operation.id, TransferOperation
+                )
                 if settled.state in {"completed", "failed", "cancelled"} and (
-                    record.source.provider != "globus" or settled.provider_cleanup_confirmed):
+                    record.source.provider != "globus" or settled.provider_cleanup_confirmed
+                ):
                     evidence.confirm_cleanup()
             latest = await asyncio.to_thread(service.get, record.source.workspace_id, source_id)
             return await asyncio.to_thread(result, latest, settled)
 
-        return await work.run(_clio_submission, "connected_data_download", {"source_id": source_id, "paths": paths}, body)
+        return await work.run(
+            _clio_submission,
+            "connected_data_download",
+            {"source_id": source_id, "paths": paths},
+            body,
+        )
 
-    async def index_body(context: SubmissionContext, evidence: WorkEvidence,
-                          arguments: dict[str, Any]) -> dict[str, Any]:
+    async def index_body(
+        context: SubmissionContext, evidence: WorkEvidence, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         created: TransferOperation | None = None
         loop = asyncio.get_running_loop()
 
         def report(count: int) -> None:
             def record() -> None:
                 progress(context, count, None, "entries")
+
             try:
                 record()
             except Exception:
+
                 async def retry() -> None:
                     await asyncio.to_thread(record)
-                loop.call_soon_threadsafe(work.recovery.defer, "storage-progress:" + context.handle, retry)
+
+                loop.call_soon_threadsafe(
+                    work.recovery.defer, "storage-progress:" + context.handle, retry
+                )
 
         def prepare() -> tuple[SourceRecord, TransferOperation] | dict[str, Any]:
             nonlocal created
@@ -312,12 +483,16 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
             if "source_id" in arguments:
                 record = service.get(session.workspace_id, arguments["source_id"])
             else:
-                prepared = prepare_connect(app, arguments, human_action=True, session_id=context.owner.session_id)
+                prepared = prepare_connect(
+                    app, arguments, human_action=True, session_id=context.owner.session_id
+                )
                 if "immediate_result" in prepared:
                     return prepared["immediate_result"]
                 record = service.get(session.workspace_id, prepared["source_id"])
             validate_source(record, context)
-            operation = service.store.begin_operation(record.source.id, "indexing", identifier=context.handle)
+            operation = service.store.begin_operation(
+                record.source.id, "indexing", identifier=context.handle
+            )
             created = operation
             associate(context, record, operation)
             return record, operation
@@ -326,7 +501,12 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
             prepared = await join_off_loop(prepare)
         except BaseException:
             if created is not None:
-                await join_off_loop(service.store.update_operation, created.id, state="cancelled", cancel_requested=True)
+                await join_off_loop(
+                    service.store.update_operation,
+                    created.id,
+                    state="cancelled",
+                    cancel_requested=True,
+                )
             raise
         if isinstance(prepared, dict):
             return prepared
@@ -335,25 +515,47 @@ def register_native_storage(root: NativeRoot, work: NativeWork, app: Any, *, nat
         try:
             await run_index(service, record, operation, report_progress=report)
         finally:
-            settled = await join_off_loop(service.store.get, "operation", operation.id, TransferOperation)
+            settled = await join_off_loop(
+                service.store.get, "operation", operation.id, TransferOperation
+            )
             if settled.state in {"completed", "failed", "cancelled"}:
                 evidence.confirm_cleanup()
-        latest = await asyncio.to_thread(service.store.get, "source", record.source.id, SourceRecord)
+        latest = await asyncio.to_thread(
+            service.store.get, "source", record.source.id, SourceRecord
+        )
         return await asyncio.to_thread(result, latest, settled)
 
     @root.server.tool(name="connected_data_connect", task=TaskConfig(mode="required"))
-    async def connect(ctx: Context, provider: str, root: str, label: str, _clio_submission: str,
-                      mode: str = "read_only", configuration: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def connect(
+        ctx: Context,
+        provider: str,
+        root: str,
+        label: str,
+        _clio_submission: str,
+        mode: str = "read_only",
+        configuration: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Connect and index a folder as a task; Stop leaves accepted indexing running."""
-        arguments = {"provider": provider, "root": root, "label": label,
-                     "mode": mode, "configuration": configuration}
+        arguments = {
+            "provider": provider,
+            "root": root,
+            "label": label,
+            "mode": mode,
+            "configuration": configuration,
+        }
+
         async def body(context: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:
             return await index_body(context, evidence, arguments)
+
         return await work.run(_clio_submission, "connected_data_connect", arguments, body)
 
     @root.server.tool(name="connected_data_index", task=TaskConfig(mode="required"))
     async def index(ctx: Context, source_id: str, _clio_submission: str) -> dict[str, Any]:
         """Refresh a connected folder manifest as a task, retaining its previous manifest on failure."""
+
         async def body(context: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:
             return await index_body(context, evidence, {"source_id": source_id})
-        return await work.run(_clio_submission, "connected_data_index", {"source_id": source_id}, body)
+
+        return await work.run(
+            _clio_submission, "connected_data_index", {"source_id": source_id}, body
+        )

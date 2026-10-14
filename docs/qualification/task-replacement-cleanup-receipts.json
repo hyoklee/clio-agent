@@ -117,5 +117,16 @@
     },
     "executed": false,
     "evidence": "docs/qualification/task-replacement-initial-review-claude-7.json"
+  },
+  "review_cache_c8": {
+    "process_absent": true,
+    "removal_executed": false,
+    "root": "D:\\Temp\\clio-task-implementation-review-9b0a91ec-c8",
+    "files": 10,
+    "reparse_points": 0,
+    "status": "human_manual_only",
+    "logical_bytes": 7152,
+    "rejection": "blocked by policy",
+    "root_absence_verified": false
   }
 }

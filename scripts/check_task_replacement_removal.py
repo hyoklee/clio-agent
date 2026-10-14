@@ -201,6 +201,10 @@ REMOVED_CONFIG = frozenset(
 # No unfinished branch interface has a compatibility exemption.
 COMPATIBILITY_ALIASES: frozenset[str] = frozenset()
 
+# These exact string literals decode old data only. Attributes, imports and
+# definitions remain forbidden even in this file.
+HISTORICAL_BINDINGS = frozenset({("src/clio_agent/gact/task_migration.py", "user_questions")})
+
 
 def violations(root: Path = ROOT) -> list[str]:
     """Find retired production authority, import, configuration and catalog bindings."""
@@ -246,7 +250,10 @@ def violations(root: Path = ROOT) -> list[str]:
             elif isinstance(node, ast.Attribute) and node.attr in REMOVED_NAMES | REMOVED_STATE:
                 findings.append(f"{relative}:{node.lineno}: retired attribute {node.attr}")
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
-                if node.value in REMOVED_NAMES | REMOVED_STATE | REMOVED_CONFIG | REMOVED_MODULES:
+                if (
+                    node.value in REMOVED_NAMES | REMOVED_STATE | REMOVED_CONFIG | REMOVED_MODULES
+                    and (relative, node.value) not in HISTORICAL_BINDINGS
+                ):
                     findings.append(f"{relative}:{node.lineno}: retired binding {node.value}")
             if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
                 blocked_call = None

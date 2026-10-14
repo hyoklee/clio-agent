@@ -401,7 +401,6 @@ def _drafting_note(run: VariantRun) -> str:
 
 def _pause(app: Any, run: VariantRun) -> None:
     """Post one common Core Question immediately; the assignment yields while it is open."""
-    from clio_agent.gact.artifacts.observer_bridge import observer_call_id  # noqa: PLC0415
 
     candidates = [t for t in run.tries if t.status == "completed"]
     if not candidates:
@@ -430,7 +429,10 @@ def _pause(app: Any, run: VariantRun) -> None:
             )
         stamp = datetime.now(timezone.utc)
         invocation = f"{run.variants_id}:{len(run.tries)}"
-        handle = "task_" + hashlib.sha256((sid + "\0variant-question\0" + invocation).encode()).hexdigest()
+        handle = (
+            "task_"
+            + hashlib.sha256((sid + "\0variant-question\0" + invocation).encode()).hexdigest()
+        )
         definition = QuestionDefinition(
             prompt=prompt,
             kind="choice",
@@ -472,9 +474,17 @@ def _pause(app: Any, run: VariantRun) -> None:
                 "question_handle": handle,
             }
             app.state.sessions.update(sid, metadata_patch={PENDING_META: pending})
-        app.state.questions.create(TaskOwner(human_id=assignment.owner.human_id,
-            session_id=sid, assignment_id=assignment.handle, parent_handle=assignment.handle),
-            invocation, definition, handle=handle)
+        app.state.questions.create(
+            TaskOwner(
+                human_id=assignment.owner.human_id,
+                session_id=sid,
+                assignment_id=assignment.handle,
+                parent_handle=assignment.handle,
+            ),
+            definition,
+            invocation_id=invocation,
+            handle=handle,
+        )
 
 
 def _commit(app: Any, run: VariantRun, index: int) -> TryRecord:
@@ -648,9 +658,13 @@ def build_draft_alternatives_tool() -> Any:
             result = resume_question(loop.agent, loop.inputs, question_handle)
             if result.termination_reason == "variant_closed":
                 return "The draft Question was cancelled or expired."
-            return str(result.answer) if result.termination_reason == "variant_selected" else (
-                f"Draft choice remains pending. Question handle: {result.question_handle}. "
-                "Continue independent work or wait_tasks for the answer."
+            return (
+                str(result.answer)
+                if result.termination_reason == "variant_selected"
+                else (
+                    f"Draft choice remains pending. Question handle: {result.question_handle}. "
+                    "Continue independent work or wait_tasks for the answer."
+                )
             )
         return _draft(
             int(n),
@@ -723,9 +737,9 @@ class UserJudgedVariant(dspy.Module):
 
     def forward(self, **kwargs: Any) -> Any:
         """Resume an answered run, or draft and yield the tries to the user."""
-        from clio_agent.gact.injection_parts import emit_injection  # noqa: PLC0415
         from clio_agent.gact.agents import clio_react_record
         from clio_agent.gact.agents.clio_react import _head
+        from clio_agent.gact.injection_parts import emit_injection  # noqa: PLC0415
 
         # The parent owns the input. Candidate scopes deliberately do not collect
         # session mail, so confirm the fixed parent input before forking any tries.
@@ -735,24 +749,28 @@ class UserJudgedVariant(dspy.Module):
         if app is not None and _ctx.active_react_run() < 0:
             owner = app.state.conversations
             staged = owner.mail.stage(owner.caller(_ctx.active_session_id()))
-            ordinary_feedback = any(item.kind in {"human", "composer", "peer"}
-                                    for item in staged.items)
+            ordinary_feedback = any(
+                item.kind in {"human", "composer", "peer"} for item in staged.items
+            )
             arc, session, scope = clio_react_record.arc_scope()
-            recorder = clio_react_record.StepRecorder(arc, session, scope,
-                                                      expert_id=self._clio_agent_id)
+            recorder = clio_react_record.StepRecorder(
+                arc, session, scope, expert_id=self._clio_agent_id
+            )
             recorder.expert_span_id = "variant-input-" + uuid.uuid4().hex
             signature = getattr(self.inner, "signature", None)
             if signature is None:
                 predictors = self.inner.named_predictors()
                 if len(predictors) != 1:
-                    raise DraftAlternativesError("Variant input requires one declared input signature")
+                    raise DraftAlternativesError(
+                        "Variant input requires one declared input signature"
+                    )
                 signature = predictors[0][1].signature
             recorder.user_message(_head(signature, kwargs))
             recorder.commit_input(0)
 
         resumed = resume_pending(self.inner, kwargs)
         if resumed is not None:
-            if resumed.termination_reason == "variant_pick_yield" and ordinary_feedback:
+            if ordinary_feedback:
                 # Feedback is independent of a draft choice. Let the ordinary
                 # agent act on it without dismissing or replacing open Questions.
                 return self.inner(**kwargs)
@@ -823,8 +841,11 @@ def resume_pending(agent: Any, inputs: Mapping[str, Any]) -> dspy.Prediction | N
     app, sid = _ctx.active_app(), _ctx.active_session_id()
     if app is None:
         return None
-    pending = [entry for entry in _pending_runs(app, sid).values()
-               if entry.get("agent_id") == _ctx.active_react_scope()]
+    pending = [
+        entry
+        for entry in _pending_runs(app, sid).values()
+        if entry.get("agent_id") == _ctx.active_react_scope()
+    ]
     waiting: dspy.Prediction | None = None
     closed: dspy.Prediction | None = None
     selected: list[dspy.Prediction] = []
@@ -840,15 +861,19 @@ def resume_pending(agent: Any, inputs: Mapping[str, Any]) -> dspy.Prediction | N
     if selected:
         if len(selected) == 1:
             return selected[0]
-        return dspy.Prediction(answer="\n\n".join(result.answer for result in selected),
+        return dspy.Prediction(
+            answer="\n\n".join(result.answer for result in selected),
             termination_reason="variant_selected",
-            variant_selections=[result.variant_selection for result in selected])
+            variant_selections=[result.variant_selection for result in selected],
+        )
     return waiting or closed
 
 
 def resume_question(agent: Any, inputs: Mapping[str, Any], handle: str) -> dspy.Prediction:
     """Continue the exact retained choice without retargeting another draft run."""
     app, sid = _ctx.active_app(), _ctx.active_session_id()
+    if app is None:
+        raise DraftAlternativesError("Retained draft Question requires its owning application")
     question = app.state.task_history.task_snapshot(handle)
     if question is None:
         raise DraftAlternativesError(
@@ -858,7 +883,9 @@ def resume_question(agent: Any, inputs: Mapping[str, Any], handle: str) -> dspy.
         raise DraftAlternativesError("Retained draft Question belongs to another owner")
     if question.details is None:
         raise DraftAlternativesError("Draft Question posting needs recovery")
-    definition = QuestionDefinition.model_validate(app.state.task_history.read_content(question.details))
+    definition = QuestionDefinition.model_validate(
+        app.state.task_history.read_content(question.details)
+    )
     variants_id = str(definition.metadata.get("variants_id") or "")
     run = load_run(app, sid, variants_id)
     if run.agent_id != _ctx.active_react_scope() or run.question_id != handle:
@@ -866,16 +893,27 @@ def resume_question(agent: Any, inputs: Mapping[str, Any], handle: str) -> dspy.
     if run.status == "selected":
         assert run.selected_index is not None
         _clear_pending(app, sid, run.variants_id)
-        return dspy.Prediction(answer=run.try_at(run.selected_index).text,
+        return dspy.Prediction(
+            answer=run.try_at(run.selected_index).text,
             termination_reason="variant_selected",
-            variant_selection={"variants_id": run.variants_id, "variant": run.strategy,
-                "judge": run.judge, "winning_index": run.selected_index,
-                "pick": run.pick, "comment": run.comment})
+            variant_selection={
+                "variants_id": run.variants_id,
+                "variant": run.strategy,
+                "judge": run.judge,
+                "winning_index": run.selected_index,
+                "pick": run.pick,
+                "comment": run.comment,
+            },
+        )
     if question.raw_status == "pending":
-        return dspy.Prediction(answer="", termination_reason="variant_pick_yield", question_handle=handle)
+        return dspy.Prediction(
+            answer="", termination_reason="variant_pick_yield", question_handle=handle
+        )
     if question.raw_status != "answered":  # cancelled or expired: closed without a pick
         close_for_question(app, question)
-        return dspy.Prediction(answer="", termination_reason="variant_closed", question_handle=handle)
+        return dspy.Prediction(
+            answer="", termination_reason="variant_closed", question_handle=handle
+        )
     if question.result is None:
         raise DraftAlternativesError("Answered draft Question has no confirmed result")
     reply = QuestionReply.model_validate(app.state.task_history.read_content(question.result))
@@ -900,10 +938,13 @@ def resume_question(agent: Any, inputs: Mapping[str, Any], handle: str) -> dspy.
             forked_from=pick,
         )
         _pause(app, run)
-        return dspy.Prediction(answer="", termination_reason="variant_pick_yield", question_handle=run.question_id)
+        return dspy.Prediction(
+            answer="", termination_reason="variant_pick_yield", question_handle=run.question_id
+        )
     winner = drafts.select_pick(pick)
-    record = (_mark_selected(app, run, winner) if run.origin == DRAFT_TOOL
-              else _commit(app, run, winner))
+    record = (
+        _mark_selected(app, run, winner) if run.origin == DRAFT_TOOL else _commit(app, run, winner)
+    )
     _clear_pending(app, sid, run.variants_id)
     return dspy.Prediction(
         answer=record.text,

@@ -27,6 +27,7 @@ def test_draft_choice_posts_and_answers_one_common_question(
     sessions = SessionStore(path=tmp_path / "sessions.json")
     session = sessions.create(workspace_id="workspace")
     app.state.arc, app.state.task_history, app.state.sessions = arc, history, sessions
+    app.state.questions = QuestionCommands(history)
     stamp = "2026-10-13T22:00:00Z"
     assignment = TaskSnapshot(
         handle="task_assignment",

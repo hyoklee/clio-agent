@@ -10,7 +10,7 @@ from typing import Any
 from uuid import uuid4
 
 import pytest
-from fastmcp import FastMCP
+from fastmcp import Client, FastMCP
 from fastmcp.client.transports.base import ClientTransport
 from fastmcp.client.transports.config import MCPConfigTransport
 from fastmcp.client.transports.memory import FastMCPTransport
@@ -30,6 +30,7 @@ from clio_agent.tools.task_client import (
     TaskAdoptionError,
     TaskAwareClient,
     TaskSubmission,
+    restore_native_call,
 )
 from clio_agent.tools.task_receipt import (
     AcceptedTaskResult,
@@ -63,6 +64,21 @@ def test_dependency_contract_is_pinned() -> None:
     assert version("fastmcp-tasks") == "4.1.0"
     assert version("mcp") == "2.0.0"
     assert version("pydocket") == "0.26.2"
+
+
+def test_configured_client_preserves_protocol_negotiation() -> None:
+    async def refuse_acceptance(call: AcceptedNativeCall) -> AcceptedTaskResult:
+        pytest.fail("This configuration contract must not submit work")
+
+    configured = Client(FastMCP("configured"), mode="legacy", name="configured-client")
+    adapted = TaskAwareClient.from_configured(
+        configured,
+        configured.transport,
+        on_task_accepted=refuse_acceptance,
+        elicitation_handler=None,
+    )
+    assert adapted.mode == configured.mode == "legacy"
+    assert adapted.prior_discover is configured.prior_discover
 
 
 def native_creation() -> ClientCreateTaskResult:
@@ -258,8 +274,19 @@ async def test_sdk_acceptance_returns_before_work_and_drives_one_result() -> Non
             assert independent.structured_content == {"independent": 11}
             assert not settled.is_set()
             assert len(accepted) == 1
+            rebound = restore_native_call(
+                client,
+                accepted[0].submission,
+                task_id=accepted[0].task.task_id,
+                status=accepted[0].creation.status,
+                created_at=accepted[0].creation.created_at,
+                updated_at=accepted[0].creation.last_updated_at,
+            )
+            assert rebound.task.task_id == accepted[0].task.task_id
+            assert rebound.submission == accepted[0].submission
+            assert not settled.is_set() and len(accepted) == 1
             release.set()
-            result = await accepted[0].task.result()
+            result = await rebound.task.result()
             assert result.structured_content == {"value": 7}
             assert observed[-1].status == "completed"
             assert settled.is_set()

@@ -553,23 +553,6 @@ def strategy_module(strategy: Any, *, agent_id: str) -> dict[str, Any]:
     return module
 
 
-def spawn_scope_with_strategy(
-    scope: Mapping[str, Any] | None, strategy: Any, *, agent_id: str
-) -> dict[str, Any] | None:
-    """The child session's scope metadata, carrying a validated spawn ``strategy``.
-
-    An invalid strategy is a typed refused spawn (``invalid_strategy``): no child exists.
-    """
-
-    if not strategy:
-        return None if scope is None else dict(scope)
-    try:
-        module = strategy_module(strategy, agent_id=agent_id)
-    except ValueError as exc:
-        raise SpawnError(str(exc), reason="invalid_strategy") from exc
-    return {**dict(scope or {}), "variant_strategy": module}
-
-
 def with_session_strategy(agent_def: "AgentDef") -> "AgentDef":
     """``agent_def`` with the active session's spawn strategy as its module variant."""
     sessions = getattr(getattr(_ctx.active_app(), "state", None), "sessions", None)

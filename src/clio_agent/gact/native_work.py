@@ -7,15 +7,11 @@ agent delivery. Durable state lives exclusively in the common Core history.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
-
-from docket.dependencies import current_execution
-from fastmcp_tasks.context import get_task_context, get_task_leg_number
-from pydantic import JsonValue
 
 from clio_agent.arc.task_types import (
     BackendReference,
@@ -28,6 +24,7 @@ from clio_agent.gact import context as gact_context
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.tools.execution import tool_workspace_context
+from clio_agent.tools.task_client import native_execution_identity
 
 SUBMISSION_ARGUMENT = "_clio_submission"
 SubmissionAuthorizer = Callable[[SubmissionContext], None]
@@ -65,32 +62,30 @@ class NativeWork:
         authorize: SubmissionAuthorizer,
         cleanup_observer: CleanupObserver,
         recovery: CoreRecovery,
-        cancelled: Callable[[str], bool],
+        admission: Callable[[TaskSnapshot], None],
     ) -> None:
         self.history, self.backend = history, backend
         self.authorize, self.cleanup_observer = authorize, cleanup_observer
-        self.recovery, self.cancelled = recovery, cancelled
+        self.recovery, self.admission = recovery, admission
 
     async def run(
         self,
         reference: str,
         tool: str,
-        arguments: dict[str, JsonValue],
+        arguments: Mapping[str, object],
         body: Callable[[SubmissionContext, WorkEvidence], Awaitable[dict[str, Any]]],
     ) -> dict[str, Any]:
         """Validate the queued invocation, then retain its cleanup across cancellation."""
-        task = get_task_context()
-        if task is None:
-            raise ValueError("Owned work requires native task execution")
+        task = native_execution_identity()
         backend = self.backend.model_copy(
-            update={"task_id": task.task_id, "auth_scope": task.task_scope or ""}
+            update={"task_id": task.task_id, "auth_scope": task.auth_scope}
         )
         attempt = NativeAttempt(
             handle="",  # resolved from the confirmed opaque reference, never a model argument
             incarnation=uuid4().hex,
             backend=backend,
-            leg=get_task_leg_number(),
-            execution_key=current_execution.get().key,
+            leg=task.leg,
+            execution_key=task.execution_key,
             started_at=now(),
         )
         # Admission itself must finish before cancellation can release the wrapper.
@@ -167,7 +162,7 @@ class NativeWork:
         self,
         reference: str,
         tool: str,
-        arguments: dict[str, JsonValue],
+        arguments: Mapping[str, object],
         attempt: NativeAttempt,
     ) -> tuple[SubmissionContext, NativeAttempt]:
         with self.history._lock:
@@ -186,6 +181,14 @@ class NativeWork:
                 submission
             ):
                 raise ValueError("Task context does not match the worker reference")
+            if current.backend_observation is not None and current.backend == attempt.backend:
+                observed = self.history.read_content(current.backend_observation)
+                if isinstance(observed, dict) and observed.get("status") in {
+                    "completed",
+                    "failed",
+                    "cancelled",
+                }:
+                    raise ValueError("A terminal native execution leg cannot enter again")
             continuation = submission.provider_continuation
             cleanup_leg = continuation is not None and submission.tool == "connected_data_continue"
             if cleanup_leg:
@@ -212,31 +215,23 @@ class NativeWork:
             return submission, admitted
 
     def _check_admission(self, current: TaskSnapshot) -> None:
-        original_handle = current.handle
-        seen: set[str] = set()
-        while True:
-            if current.handle in seen:
-                raise ValueError("Task lineage is cyclic")
-            seen.add(current.handle)
-            if current.cancellation_requested_at is not None or self.cancelled(current.handle):
-                raise ValueError("Task subtree admission is closed")
-            if current.handle == original_handle and current.terminal_at is not None:
-                raise ValueError("Historical task cannot execute again")
-            parent = current.owner.parent_handle
-            if parent is None:
-                return
-            ancestor = self.history.task_snapshot(parent)
-            if ancestor is None:
-                raise ValueError("Task ancestry is unavailable")
-            current = ancestor
+        if current.terminal_at is not None:
+            raise ValueError("Historical task cannot execute again")
+        self.admission(current)
 
     def _finished(self, attempt: NativeAttempt, outcome: str, evidence: WorkEvidence) -> None:
         with self.history._lock:
             current = self.history.task_snapshot(attempt.handle)
             if current is None:
                 raise ValueError("Native task disappeared before cleanup recording")
-            previous = next((row for row in self.history.native_attempts(attempt.handle)
-                             if row.incarnation == attempt.incarnation), None)
+            previous = next(
+                (
+                    row
+                    for row in self.history.native_attempts(attempt.handle)
+                    if row.incarnation == attempt.incarnation
+                ),
+                None,
+            )
             if previous is not None and previous.cleanup_state in {"confirmed", "never_started"}:
                 return
             state = (

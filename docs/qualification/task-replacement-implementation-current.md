@@ -1,6 +1,20 @@
 # Replacement construction checkpoint
 
-The human instructed implementation to continue, then explicitly requested no further testing until the initial implementation is complete. Write the new coverage as a batch afterward, run it sequentially with one worker, and then qualify with actual models and production service/UI. No test, lint, type-check, product service or model qualification has run after that instruction. Earlier focused passes cover earlier committed slices only.
+## October 14 correction candidate
+
+Both independent reviews of core `9b0a91ecc4b6ea2be014dca3fa7f9de32d4f3c70` / GACT `f1b099cdf479a4e2516391a525efeba17799cd65` returned **no-go**. Their receipts are `task-replacement-initial-review-astra-8.md` and `task-replacement-initial-review-claude-8.json`. Claude reviewed runtime and grant bindings, not the complete UI. Neither review qualifies runtime behavior.
+
+The subsequent source correction pass addresses Download self-rejection; ordinary feedback during draft selection/dismissal; native/provider cancellation retry; provider reservation and reattachment retry; predecessor-attempt cleanup evidence; explicit collection of held results; common descendant admission; restart's internal settlement wait; legacy withdrawals, attribution and input proofs; stable Linux process-birth proof; and SDK worker/reconnect coupling. Cancellation captures its descendant membership before worker retirement and retains work that becomes terminal during that retirement. External acknowledgement alone remains insufficient cleanup evidence. The released spawn-time strategy is restored through the conversation owner, independently of trusted blueprint scope; its broken old wrapper is removed.
+
+Fresh regression cases have been written as a batch for shared controls, migration, Questions, native ownership/cancellation recovery, conversation cancellation/strategy, process identity, stream queues and session-worker retirement. They have **not executed**. Scoped Ruff lint/format, Mypy on 14 changed production files, diff whitespace and the removal guard pass. Mypy initially reported 83 errors, then two, before the final zero-error result; these checks led to explicit SDK/JSON/null guards and typed callbacks rather than suppressions. Required CI, Q1–Q9, R1–R6, migration and uncertainty/final runtime gates remain blocked pending fresh evidence. This is initial source for renewed independent review, not accepted implementation or release readiness.
+
+Session deletion still uses the cold Core replay path. In-process replay revisions now remain monotonic. Startup/deletion cost and bounded hot reads must be measured before deciding whether a smaller passive-index invalidation is required; no checkpoint framework has been added.
+
+The completed c8 Claude review exited zero, both owned PIDs are absent, and original authentication hashes matched. Its 10-file/7,152-byte cache removal was rejected before execution. Exact `D:/Temp/clio-task-implementation-review-9b0a91ec-c8` is human-manual-only, alongside c1–c7. No absence is claimed and none may be retried or bypassed.
+
+## Earlier construction checkpoint
+
+The human instructed implementation to continue, then explicitly requested no further testing until the initial implementation is complete. Write new coverage as a batch afterward, run it sequentially with one worker, and then qualify with actual models and production service/UI. No checks ran during the earlier construction described below. Earlier focused passes cover earlier committed slices only.
 
 Independent source reviews of core `8fbd41308bc5b961049fe441781d48b368aebb8e` both returned **no-go**. Calling that implementation ready was premature: required provider bridge lines were missing and described task snapshots failed validation. The initial source and review corrections are now in place for a fresh independent review. This is a construction checkpoint, not accepted implementation or runtime completion. No checks or live acceptance have run during this construction phase.
 
