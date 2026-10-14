@@ -46,6 +46,7 @@ const visualCapture = ['clio.raster-viewport.v1', 'clio.mesh-viewport.v1'].inclu
       <h2>What the agent supplies</h2>
       <p>{contract.description}</p>
       <p>The agent chooses the content and binds it to the component. CLIO then renders the view and its available controls.</p>
+      {name === 'Carousel' && <p>Try the arrows to move through two illustrated steps and a video. Each slide keeps its matching caption. Use the same container for comparison figures, photos or other supported views; images keep their enlarge and download controls.</p>}
       {linked && <p>When this view uses the same dataset as another view, selection travels with each row. A person can find the same observation across the views.</p>}
       {visualCapture && <p>The viewport can carry selected geometry or a labelled visual region into a follow-up, preserving the visual context of the question.</p>}
     </section>

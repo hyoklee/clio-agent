@@ -3,7 +3,7 @@ export const widgetGroups = [
   { title: 'Decisions and work', names: ['clio.weather.v1', 'clio.message-draft.v1', 'clio.steps.v1', 'clio.action-card.v1', 'clio.approval.v1', 'clio.workflow.v1'] },
   { title: 'Information', names: ['clio.metric.v1', 'clio.status.v1', 'clio.progress.v1', 'clio.callout.v1', 'clio.artifact.v1', 'clio.code.v1', 'clio.diff.v1', 'clio.mermaid.v1'] },
   { title: 'Controls', names: ['Button', 'CheckBox', 'ChoicePicker', 'DateTimeInput', 'Slider', 'TextField', 'clio.slider.v1'] },
-  { title: 'Layout and media', names: ['Column', 'Divider', 'Frame', 'Grid', 'Icon', 'Image', 'List', 'Modal', 'Row', 'Tabs', 'Text'] },
+  { title: 'Layout and media', names: ['Carousel', 'Column', 'Divider', 'Frame', 'Grid', 'Icon', 'Image', 'List', 'Modal', 'Row', 'Tabs', 'Text', 'Video'] },
 ];
 
 const labels = {
@@ -63,6 +63,8 @@ export const widgetUses = {
   Grid: 'Arrange comparable views or controls in columns.',
   Icon: 'Add a small visual cue to a label or action.',
   Image: 'Show a figure, photo, or generated visual beside the analysis.',
+  Carousel: 'Browse images, captioned instructions, video, or other views one at a time. Documentation walkthroughs are one use; comparison figures and visual collections work too.',
+  Video: 'Play a saved demonstration or other footage with ordinary playback controls.',
   List: 'Present related items that a person can scan quickly.',
   Modal: 'Present focused detail or a decision without losing the surrounding view.',
   Row: 'Place related components beside each other.',
@@ -73,6 +75,13 @@ export const widgetUses = {
 // Plain-language documentation supplements fields whose catalog has no prose.
 // These explanations do not add inputs or change the renderer contract.
 export const widgetFieldHelp = {
+  Carousel: {
+    children: 'Ordered child component ids. Combine an Image and Text in a Column for a captioned slide.',
+    activeChild: 'Child id of the displayed slide. Bind it when another control should navigate the carousel or retain its position.',
+  },
+  Video: {
+    url: 'Registered artifact or workspace file containing the video. The viewer resolves the bytes through the connected service.',
+  },
   'clio.mesh-viewport.v1': {
     meshUri: 'Reference to a registered mesh artifact, such as artifact://artifact_specimen. The viewer loads the model from that artifact.',
     materialUri: 'Registered MTL companion file for an OBJ model.',
