@@ -474,6 +474,25 @@ def compose_output_fields(
         The complete result dict.
     """
 
+    if base.get("exit_code") not in {None, 0}:
+        from clio_agent.tools.servers.shell_commands import (
+            command_length_error,
+            is_command_length_output,
+        )
+
+        if any(
+            is_command_length_output(capture.head_excerpt(4096))
+            or is_command_length_output(capture.tail_excerpt(4096))
+            for capture in captures
+        ):
+            base = {
+                **base,
+                **command_length_error(
+                    str(base.get("command", "")),
+                    "The native shell rejected the command line as too long.",
+                    bound="native_shell",
+                ),
+            }
     excerpted = {capture.stream for capture in captures if capture.overflowed}
     if not excerpted:
         inline = _assemble(base, captures, excerpted, 0, root)

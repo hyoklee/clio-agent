@@ -8,7 +8,15 @@ description: Create, edit and inspect editable PowerPoint presentations, includi
 Call `prepare_document_runtime` and use its execution-host commands and library
 inventory. Execute Python builders with `python_argv` (uv selects the prepared
 Python), and JavaScript builders with `javascript.script_argv` (pnpm executes
-managed Node). Create slides with `python-pptx` in the prepared Python environment,
+managed Node). Save the builder as a `.py` or `.mjs` file before execution, then
+append that file path to the supplied argument array. Use an available tool that
+actually writes the file, or create/append it with small UTF-8 shell writes (about
+1-2 KB per call on Windows). A single large here-string piped to `Set-Content`
+still exceeds launcher limits before it can save the file. Do not embed a whole
+deck builder in one command, even below the shell tool's advertised input budget;
+do not retry that form after a command-length error. Keep the saved builder for
+inspection and revision, and publish it separately only if source was requested.
+Create slides with `python-pptx` in the prepared Python environment,
 or `pptxgenjs` when JavaScript is ready. Store JavaScript builders in the returned
 JavaScript workspace so both CommonJS and ES module imports resolve. A working
 Node executable alone does not make packages available to scripts stored elsewhere.
