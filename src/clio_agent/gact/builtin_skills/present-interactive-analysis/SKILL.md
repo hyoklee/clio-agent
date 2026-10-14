@@ -44,7 +44,8 @@ Load all needed exact component schemas together through `load_skill(..., files=
 Avoid separate lookups for each component or schema definition.
 
 For a revision, use this tool sequence before the final answer:
-`inspect_a2ui_surface` → `update_a2ui_surface` → `inspect_a2ui_surface`.
+`inspect_a2ui_surface` → `update_a2ui_components` → `inspect_a2ui_surface`.
+For bound-data changes, use `update_a2ui_data_model` as the update step instead.
 Preserve the content the user did not ask to change: media references, child
 order, captions, source links, units, and version or availability labels.
 Replacing a Text label with a Button or another component must retain that
