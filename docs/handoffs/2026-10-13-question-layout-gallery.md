@@ -17,6 +17,9 @@ owning agent. A walkthrough shows the selected option and comment together.
 ## Source and capture evidence
 
 - UI source: `f3bac76f125c2a110a614ea4f1657a7051c3197b`.
+- Each new question capture labels that UI revision and its capture date, including
+  inside the image viewer. The retained visual example is identified as an earlier
+  demo rather than inheriting the current preview's version.
 - Actual components are exercised by the committed test-only review page
   `web/tests/review/docs-question-controls.html` in the UI repository.
 - New native and connected-tool captures use seeded fictional questions. The

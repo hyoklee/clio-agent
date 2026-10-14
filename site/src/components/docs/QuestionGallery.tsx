@@ -13,10 +13,11 @@ interface QuestionExample {
   previewHeight?: number;
   alt: string;
   caption: string;
+  version?: string;
 }
 
 /** Browse real interface captures without mistaking them for answer controls. */
-export default function QuestionGallery({ examples }: { examples: readonly QuestionExample[] }) {
+export default function QuestionGallery({ examples, version }: { examples: readonly QuestionExample[]; version: string }) {
   const [active, setActive] = useState(examples[0]?.id ?? '');
   const interactive = useClientReady();
   const index = examples.findIndex((example) => example.id === active);
@@ -37,7 +38,7 @@ export default function QuestionGallery({ examples }: { examples: readonly Quest
       {examples.map((example) => (
         <TabsContent className="space-y-3" key={example.id} value={example.id}>
           <p className="m-0 text-base leading-relaxed">{example.explanation}</p>
-          <Capture alt={example.alt} caption={example.caption} image={example.image} previewHeight={example.previewHeight} />
+          <Capture alt={example.alt} caption={example.caption} image={example.image} previewHeight={example.previewHeight} version={example.version ?? version} />
         </TabsContent>
       ))}
     </Tabs>

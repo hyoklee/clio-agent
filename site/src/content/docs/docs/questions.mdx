@@ -31,7 +31,7 @@ Choose a tab or use the arrows to browse seven examples. These are screenshots,
 not live answer controls; click an image to enlarge it. The examples use fictional
 information in a development build, without new model analysis.
 
-<QuestionGallery client:visible examples={[
+<QuestionGallery client:visible version="Development preview · UI f3bac76f · 13 October 2026" examples={[
   {
     id: 'choice', label: 'Choice',
     explanation: 'Choose one offered option. Use its + to add a clarification or change to that choice, then Send response.',
@@ -78,6 +78,7 @@ information in a development build, without new model analysis.
     id: 'visual', label: 'Visual question',
     explanation: 'Inspect the accompanying chart, image or table, then answer using the controls provided with it.',
     image: await captureImage(visualQuestion),
+    version: 'Earlier demo · 12 October 2026 · before the compact question controls',
     alt: 'A retained visual question with a bike-station chart, Hill and Downtown choices and an optional comment',
     caption: 'The chart supplies context for a decision. Hill stations and a comment are drafted; the answer has not been sent. This is a retained demo capture.',
   },
@@ -104,6 +105,7 @@ option has a **+** at its right edge, including before you have selected it.
 3. Check the selected option and comment, then choose **Send response**.
 
 <Capture client:visible image={await captureImage(choiceComment)} previewHeight={475}
+  version="Development preview · UI f3bac76f · 13 October 2026"
   alt="Treatment groups selected with its comment open, a clarification about missing measurements, and a plus still available on Changes over time"
   caption="The choice and its comment are sent together. The minus folds the comment field; switching choices preserves each draft."
 />
@@ -130,6 +132,7 @@ write your answer in **Your response**. Here, the answer asks CLIO to inspect
 missing measurements before deciding which comparison to make.
 
 <Capture client:visible image={await captureImage(differentAnswer)} previewHeight={479}
+  version="Development preview · UI f3bac76f · 13 October 2026"
   alt="Something else selected with a written answer asking to inspect missing measurements before choosing a comparison"
   caption="This proposes a different next step. To keep an offered option and add a condition, use that option's + instead."
 />

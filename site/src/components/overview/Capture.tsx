@@ -17,6 +17,8 @@ interface Props {
 	image: CaptureImage;
 	alt: string;
 	caption: string;
+	/** Version of the captured interface, independent of the website build. */
+	version?: string;
 	sizes?: string;
 	/** Load eagerly; used for the capture in the first viewport. */
 	priority?: boolean;
@@ -28,7 +30,7 @@ interface Props {
  * A real product capture in a reui Frame. Clicking it opens the full-size
  * image in a dialog, with the caption as the dialog's description.
  */
-export default function Capture({ image, alt, caption, sizes = '(min-width: 64rem) 44rem, 100vw', priority, previewHeight }: Props) {
+export default function Capture({ image, alt, caption, version, sizes = '(min-width: 64rem) 44rem, 100vw', priority, previewHeight }: Props) {
 	const interactive = useClientReady();
 	return (
 		<Dialog>
@@ -58,12 +60,15 @@ export default function Capture({ image, alt, caption, sizes = '(min-width: 64re
 						</DialogTrigger>
 					</FramePanel>
 				</Frame>
-				<figcaption className="mt-2 text-sm leading-relaxed text-muted-foreground">{caption}</figcaption>
+				<figcaption className="mt-2 text-sm leading-relaxed text-muted-foreground">
+					{version && <span className="block text-xs">{version}</span>}
+					{caption}
+				</figcaption>
 			</figure>
 			<DialogContent className="w-[min(96vw,1400px)] max-w-none max-h-[96dvh] overflow-y-auto pt-10 sm:max-w-none">
 				<DialogTitle className="sr-only">{alt}</DialogTitle>
 				<img src={image.full} alt={alt} width={image.width} height={image.height} className="mx-auto block h-auto max-h-[calc(96dvh-12rem)] w-full rounded-md object-contain" />
-				<DialogDescription>{caption}</DialogDescription>
+				<DialogDescription>{version && <span className="block text-xs">{version}</span>}{caption}</DialogDescription>
 				<a href={image.full} target="_blank" rel="noreferrer" className="text-sm font-medium text-primary underline underline-offset-4" aria-label="Open full-size image (new tab)">Open full-size image</a>
 			</DialogContent>
 		</Dialog>
