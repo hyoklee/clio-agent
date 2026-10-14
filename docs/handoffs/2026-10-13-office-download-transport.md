@@ -17,15 +17,25 @@ native PDF opening share one conversion per immutable artifact; reopening the
 tab joins ongoing work. Saved PDFs are loaded immediately. Converter failures
 remain visible with an explicit Retry control. Markdown, HTML and LaTeX keep
 their direct views. The combined source pin is
-`80c775cfe7014cb187596339a13b628b5e2fa01b`.
+`af95306b59902e42c242bf87a5b7bdb6ffbbff18`.
 Its math review example also distinguishes a rendered inline formula from plain
 code notation and explicitly labelled TeX source; renderer code remains unchanged.
+
+UI PR #614 keeps an agent-response sign-in dialog mounted while its verified
+connection owner is rechecked in the background. Previously that refresh
+unmounted the dialog and aborted its private OAuth return listener. A completed
+owner mismatch or failed check still closes sign-in. Native lifecycle logs now
+record only a phase, port and timestamp; callback URLs and credentials are never
+logged. Regression cases cover refresh continuity and an owner change. This is
+a confirmed source defect, but the user's particular Google return failure has
+not been traced to that dialog. The supplied port was closed when inspected and
+the local app log ended in a clean shutdown without a matching sign-in request.
 
 New loopback HTTP regression cases cover the three OOXML types, case and MIME
 parameters, and retained UTF-8 text behavior. Rustfmt was applied; local tests,
 application builds/reloads and model inference were not run. Hosted qualification
-is required before merging UI #611, then #613, then this agent source pin. The
-combined UI tree includes both fixes so their hosted checks can run in parallel
+is required before merging UI #611, then #613, then #614, then this agent source
+pin. The combined UI tree includes these fixes so their hosted checks run in parallel
 with the agent pin. Agent #1743 separately corrects Windows renderer access.
 This change
 does not rewrite the existing export, regenerate the deck, or establish visual
