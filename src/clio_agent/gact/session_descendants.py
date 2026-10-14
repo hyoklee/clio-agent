@@ -80,6 +80,37 @@ def _session_store_index(app: "FastAPI") -> dict[str, list[str]]:
     return index
 
 
+def descendant_walk(app: "FastAPI", root_session_id: str, *,
+                    max_depth: int = _DEFAULT_DESCENDANT_DEPTH) -> tuple[list[SessionDescendant], bool]:
+    """Read delegated Core lineage and independent session-fork topology."""
+    history = app.state.task_history
+    children = _session_store_index(app)
+    delegated: dict[tuple[str, str], str] = {}
+    for handle in history.tree_handles(root_session_id):
+        task = history.task_snapshot(handle)
+        if task is None or task.kind != "Subagent" or task.owner.parent_handle is None:
+            continue
+        parent = history.task_snapshot(task.owner.parent_handle)
+        if parent is not None:
+            key = (parent.owner.session_id, task.owner.session_id)
+            delegated[key] = task.handle
+            children.setdefault(key[0], []).append(key[1])
+    rows, pending, visited, truncated = [], [(root_session_id, 0)], {root_session_id}, False
+    for parent, depth in pending:
+        for child in dict.fromkeys(children.get(parent, ())):
+            if child in visited:
+                continue
+            if depth >= max_depth:
+                truncated = True
+                continue
+            visited.add(child)
+            handle = delegated.get((parent, child), "")
+            rows.append(SessionDescendant(child, parent, depth + 1,
+                AGENT_TASK_ATTRIBUTION if handle else SESSION_FORK_ATTRIBUTION, handle))
+            pending.append((child, depth + 1))
+    return rows, truncated
+
+
 
 
 def descendant_sessions(

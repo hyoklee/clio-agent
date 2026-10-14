@@ -32,6 +32,7 @@ from clio_agent.gact.autonomy_guard import (
     reconcile_autonomous_controls,
     settle_failed_loop_schedule,
 )
+from clio_agent.gact.session_input import accept_session_input
 
 if TYPE_CHECKING:
     from fastapi import FastAPI

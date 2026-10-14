@@ -48,12 +48,14 @@ PLAN_ACL_PLAN_FILE_PRIORITY = 70
 #: ``web_fetch`` (read external context). Reads are already fast-allowed by
 #: :func:`grant_resolver.is_read_only`. Only ``plan_exit`` gets the unconditional anti-lockout allow
 #: (F1 #1057 B5); a user ``deny`` on ``ask_user``/``web_fetch`` is honoured.
-PLAN_ACL_PLAN_TOOLS: tuple[str, ...] = ("plan_exit", "ask_user", "web_fetch")
+_TASK_CONTROLS: tuple[str, ...] = ("observe_tasks", "send_agent_message", "spawn_agent_task",
+    "pause_agent", "resume_agent", "restart_agent", "cancel_tasks")
+PLAN_ACL_PLAN_TOOLS: tuple[str, ...] = ("plan_exit", "ask_user", "web_fetch", *_TASK_CONTROLS)
 
 #: The registered-publication tool Architect mode ALLOWS despite the @40 deny-everything default.
 #: ``create_artifact`` remains subject to workspace containment, overwrite, custody, and registry
 #: checks; this does not grant direct file/edit/shell tools. An explicit user deny still wins.
-PLAN_ACL_ARCHITECT_TOOLS: tuple[str, ...] = ("create_artifact",)
+PLAN_ACL_ARCHITECT_TOOLS: tuple[str, ...] = ("create_artifact", "ask_user", *_TASK_CONTROLS)
 
 #: The policy mode a read-only side session resolves under (``gact/side_sessions.py``): the
 #: deny-everything default with NO carve-out, so only tools that DECLARE no side effects (fast-allowed

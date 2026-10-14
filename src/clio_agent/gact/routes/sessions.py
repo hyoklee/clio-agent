@@ -47,7 +47,6 @@ from clio_agent.gact.routes.session_rows import filter_session_rows, rows_to_wir
 from clio_agent.gact.routes.side_sessions import register_side_session_routes
 from clio_agent.gact.runtime.globals import _new_attempt_id
 from clio_agent.gact.runtime.retention import enforce_dict_bound
-from clio_agent.gact.session_descendants import purge_session_tasks
 from clio_agent.gact.session_tool_output import delete_session_tool_output
 from clio_agent.gact.types import (
     ErrorEnvelope,
@@ -209,6 +208,10 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             summary=f"delete session {sid}",
             reason="user_requested_session_delete",
         )
+        active = app.state.task_history.tree_handles(sid) & app.state.task_history.task_handles(active_only=True)
+        if active or app.state.turn_runner.busy(sid):
+            raise HTTPException(status_code=409, detail={"error": "session_has_active_work",
+                "message": "Cancel and settle active work before deleting this session.", "handles": sorted(active)})
         # P4.1 #1079 cancel-both: a deleted session must not orphan its loop wakeup.
         stop_session_loop(app, sid)
         stop_session_goal(app, sid)  # P4.2 #1080: abandon any active goal (goal_abandoned)
@@ -243,7 +246,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         deps.delete_session_context_files(app, sid)
         await run_off_loop(delete_session_tool_output, app, sess.workspace_id, sid)
         await run_off_loop(deps.release_session_arc, app, sid)  # #1334: drops _events scopes
-        purge_session_tasks(app, sid)
+        await run_off_loop(app.state.task_history.restore)
         app.state.a2ui_catalogs.forget_session(sid)
         app.state.a2ui_store.forget_session(sid)
         return Response(status_code=204)

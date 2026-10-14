@@ -10,7 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 TaskKind = Literal["Shell", "Download", "Indexing", "MCP", "Session", "Subagent", "Question"]
 CoordinationRight = Literal["read", "observe", "message", "control"]
-MailKind = Literal["human", "peer", "task_result", "attention", "question_answer", "control"]
+MailKind = Literal["human", "peer", "delegation", "task_result", "attention", "question_answer", "control",
+                   "goal", "loop", "schedule", "hook", "a2ui", "spotter", "approval", "composer"]
 
 
 class TaskRecord(BaseModel):
@@ -77,6 +78,7 @@ class TaskSnapshot(TaskRecord):
     kind: TaskKind
     owner: TaskOwner
     description: str | None = None
+    description_reference: CoreReference | None = None
     description_missing: bool = True
     label: str
     invocation_id: str
@@ -96,6 +98,11 @@ class TaskSnapshot(TaskRecord):
     terminal_at: str | None = None
     result: CoreReference | None = None
     details: CoreReference | None = None
+    submission: CoreReference | None = None
+    backend_observation: CoreReference | None = None
+    deduplication_key: str | None = None
+    attention_episode: str | None = None
+    resource_id: str | None = None
 
     @model_validator(mode="after")
     def validate_description_presence(self) -> TaskSnapshot:
@@ -103,6 +110,14 @@ class TaskSnapshot(TaskRecord):
         if self.description_missing != (self.description is None):
             raise ValueError("Description presence and missing-description marker disagree")
         return self
+
+
+class TaskAlias(TaskRecord):
+    """Historical identifier mapping; collisions deliberately remain ambiguous."""
+
+    alias: str
+    handle: str
+    source_identity: str
 
 
 class SubmissionContext(TaskRecord):
@@ -122,6 +137,7 @@ class SubmissionContext(TaskRecord):
     confinement: dict[str, JsonValue]
     attribution: dict[str, JsonValue]
     execution_limits: dict[str, JsonValue]
+    backend: BackendReference
 
 
 class NativeAttempt(TaskRecord):
@@ -132,7 +148,10 @@ class NativeAttempt(TaskRecord):
     backend: BackendReference
     leg: int = Field(ge=1)
     started_at: str
+    execution_key: str
     cleanup_receipt: CoreReference | None = None
+    finished_at: str | None = None
+    cleanup_state: Literal["pending", "never_started", "confirmed", "unknown"] = "pending"
 
 
 class MailItem(TaskRecord):
@@ -147,6 +166,10 @@ class MailItem(TaskRecord):
     created_at: str
     handle: str | None = None
     episode: str | None = None
+    revision: int = Field(default=1, ge=1)
+    delivery: Literal["eligible", "queued", "held"] = "eligible"
+    held_reason: str = ""
+    queued_order: int | None = None
 
 
 class ContextBoundary(TaskRecord):
@@ -169,6 +192,11 @@ class RecipientInput(TaskRecord):
     content: tuple[CoreReference, ...]
     committed_at: str
     tool_observation: CoreReference | None = None
+    rendered_content: tuple[CoreReference, ...] = ()
+    turn_id: str = ""
+    human_input: bool = False
+    legacy_proof: CoreReference | None = None
+    legacy_notification_ids: tuple[str, ...] = ()
 
 
 class CoordinationGrant(TaskRecord):
@@ -181,7 +209,32 @@ class CoordinationGrant(TaskRecord):
     rights: tuple[CoordinationRight, ...]
     created_at: str
     target_handle: str | None = None
+    target_scope: Literal["session", "tree"] = "session"
     revoked_at: str | None = None
+
+
+class TaskSubscription(TaskRecord):
+    """Recipient-specific observation of an exact historical execution handle."""
+
+    handle: str
+    recipient_session: str
+    enabled: bool
+    updated_at: str
+    generation: int = Field(default=1, ge=1)
+
+
+class AssignmentDetails(TaskRecord):
+    """Conversation-owned finite assignment and fixed context, without copied history."""
+
+    predecessor: str | None = None
+    context: ContextBoundary | None = None
+    disposition: Literal["yield", "complete"] = "yield"
+    dependencies: tuple[str, ...] = ()
+    return_when: Literal["any", "all"] = "all"
+    workflow_id: str | None = None
+    workflow_step: str | None = None
+    workflow: CoreReference | None = None
+    inference_concurrency: int | None = Field(default=None, ge=1)
 
 
 class QuestionOption(TaskRecord):
@@ -195,7 +248,7 @@ class QuestionOption(TaskRecord):
 class QuestionDefinition(TaskRecord):
     """Question content; lifecycle exists only in its common TaskSnapshot."""
 
-    prompt: str
+    prompt: str = Field(min_length=1)
     kind: Literal["freeform", "choice", "confirmation", "multi_choice"] = "freeform"
     options: tuple[QuestionOption, ...] = ()
     allow_freeform: bool = True
@@ -214,3 +267,4 @@ class QuestionReply(TaskRecord):
     parts: tuple[dict[str, JsonValue], ...] = ()
     responder_human: str | None = None
     responder_session: str | None = None
+    action: Literal["accept", "decline", "cancel"] = "accept"

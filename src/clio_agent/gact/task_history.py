@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -24,8 +25,12 @@ from clio_agent.arc.task_types import (
     CoordinationGrant,
     CoreReference,
     MailItem,
+    NativeAttempt,
     RecipientInput,
+    SubmissionContext,
     TaskSnapshot,
+    TaskSubscription,
+    TaskAlias,
 )
 from clio_agent.errors import ClioError
 
@@ -34,6 +39,7 @@ if TYPE_CHECKING:
 
 INDEX_KIND = "task_index"
 CONTENT_SCOPE = "_task_content/"
+logger = logging.getLogger(__name__)
 
 
 class MailboxFull(ValueError):
@@ -57,23 +63,41 @@ class TaskHistory:
         self.arc = arc
         self._lock = threading.RLock()
         self._tasks: dict[str, TaskSnapshot] = {}
+        self._aliases: dict[str, dict[str, TaskAlias]] = {}
         self._mail: dict[str, dict[str, MailItem]] = {}
         self._pending: dict[str, dict[str, MailItem]] = {}
         self._inputs: dict[tuple[str, str], RecipientInput] = {}
         self._iterations: dict[tuple[str, str, str], str] = {}
         self._input_locations: dict[tuple[str, str], dict[str, Any]] = {}
         self._acknowledged: dict[str, set[str]] = {}
+        self._observation_inputs: dict[tuple[str, str], set[str]] = {}
         self._withdrawn: dict[str, set[str]] = {}
         self._grants: dict[str, CoordinationGrant] = {}
+        self._submissions: dict[str, CoreReference] = {}
+        self._attempts: dict[str, dict[str, NativeAttempt]] = {}
+        self._deduplicated: dict[tuple[str, str], str] = {}
+        self._session_tasks: dict[str, set[str]] = {}
+        self._kind_tasks: dict[str, set[str]] = {}
+        self._human_tasks: dict[str, set[str]] = {}
+        self._active_tasks: set[str] = set()
+        self._resource_tasks: dict[str, set[str]] = {}
+        self._assignments: dict[str, str] = {}
+        self._children: dict[str, set[str]] = {}
+        self._recipient_grants: dict[str, set[str]] = {}
+        self._subscriptions: dict[str, dict[str, TaskSubscription]] = {}
         self.revision = 0
         self.replay_seconds = 0.0
         self.requires_recovery = False
+        self._listeners: set[Callable[[int], None]] = set()
+        self._handle_listeners: dict[str, set[Callable[[int], None]]] = {}
+        self._recipient_listeners: dict[str, set[Callable[[int], None]]] = {}
+        self._mail_listeners: set[Callable[[str], None]] = set()
 
     def write_content(self, session_id: str, value: JsonValue) -> CoreReference:
         """Confirm content once, before an observation or mailbox item refers to it."""
         assert_store_write_off_loop("task.content")
-        content_id = uuid4().hex
         digest = hashlib.sha256(_encoded(value)).hexdigest()
+        content_id = digest
         reference = CoreReference(
             session_id=session_id,
             scope=CONTENT_SCOPE + content_id,
@@ -81,6 +105,10 @@ class TaskHistory:
             sha256=digest,
         )
         with self._writing():
+            existing = self.arc.list_segments(session_id, reference.scope)
+            if existing:
+                self.read_content(reference)
+                return reference
             self._confirm(
                 lambda: self.arc.append_segment(
                     session_id,
@@ -95,7 +123,11 @@ class TaskHistory:
         """Read an exact reference, rejecting missing or changed content."""
         assert_store_write_off_loop("task.content.read")
         if reference.scope != CONTENT_SCOPE + reference.content_id:
-            raise ValueError("Invalid task-content address")
+            rows = [row for row in self.arc.list_segments(reference.session_id, reference.scope)
+                    if str(row.id) == reference.content_id and row.kind in {"observation", "recipient_input", "thought"}]
+            if len(rows) != 1 or hashlib.sha256(_encoded(rows[0].content)).hexdigest() != reference.sha256:
+                raise ValueError("Invalid or changed tool observation reference")
+            return rows[0].content
         rows = self.arc.list_segments(reference.session_id, reference.scope)
         if len(rows) != 1:
             raise ValueError("Task content is absent or ambiguous")
@@ -124,6 +156,14 @@ class TaskHistory:
             if previous is not None and previous.backend is not None:
                 if previous.backend != snapshot.backend:
                     raise ValueError("An accepted backend identity cannot be rebound")
+            if previous is not None and previous.submission is not None:
+                if previous.submission != snapshot.submission:
+                    raise ValueError("Confirmed submission context cannot be replaced")
+            if previous is not None and previous.resource_id is not None and previous.resource_id != snapshot.resource_id:
+                raise ValueError("A task's accepted resource identity cannot be rebound")
+            if previous is not None and previous.cancellation_requested_at is not None:
+                if previous.cancellation_requested_at != snapshot.cancellation_requested_at:
+                    raise ValueError("A cancellation intent cannot be silently cleared")
             if previous is not None and previous.terminal_at is not None:
                 if (
                     snapshot.terminal_at != previous.terminal_at
@@ -133,14 +173,23 @@ class TaskHistory:
                     raise ValueError("A historical terminal outcome cannot be reopened or replaced")
             if snapshot.result is not None:
                 self.read_content(snapshot.result)
+            reference = previous.description_reference if previous is not None else snapshot.description_reference
+            if snapshot.description is not None and reference is None:
+                reference = self.write_content(snapshot.owner.session_id, snapshot.description)
+            if reference is not None and self.read_content(reference) != snapshot.description:
+                raise ValueError("Task description reference differs from its immutable assignment")
+            snapshot = snapshot.model_copy(update={"description_reference": reference})
+            stored = snapshot.model_dump(mode="json")
+            if reference is not None:
+                stored["description"] = None
             self._record(
                 "task.observed",
                 snapshot.owner.session_id,
                 observation_id,
-                snapshot.model_dump(mode="json"),
+                stored,
             )
-            self._put_index("task/" + snapshot.handle, snapshot.model_dump(mode="json"))
-            self._project("task.observed", snapshot.model_dump(mode="json"))
+            self._put_index("task/" + snapshot.handle, stored)
+            self._project("task.observed", stored)
 
     def record_mail(self, item: MailItem, *, max_pending_messages: int = 0) -> MailItem:
         """Accept durable session mail; only pending peer messages count toward a cap."""
@@ -164,6 +213,60 @@ class TaskHistory:
             self._project("session.mail.accepted", payload)
             return item
 
+    def record_submission(self, context: SubmissionContext) -> CoreReference:
+        """Confirm trusted context once and index its opaque worker-only reference."""
+        with self._writing():
+            existing = self._submissions.get(context.reference)
+            if existing is not None:
+                if self.read_content(existing) != context.model_dump(mode="json"):
+                    raise ValueError("Submission reference cannot be reused")
+                return existing
+            content = self.write_content(context.owner.session_id, context.model_dump(mode="json"))
+            payload = {"reference": context.reference, "content": content.model_dump(mode="json")}
+            self._record("task.submission", context.owner.session_id, context.reference, payload)
+            self._put_index("submission/" + context.reference, payload)
+            self._project("task.submission", payload)
+            return content
+
+    def submission_context(self, reference: str) -> SubmissionContext:
+        """Resolve an exact confirmed worker reference without scanning other tasks."""
+        with self._lock:
+            content = self._submissions.get(reference)
+            if content is None:
+                raise ValueError("Submission reference is unavailable")
+            return SubmissionContext.model_validate(self.read_content(content))
+
+    def record_attempt(self, attempt: NativeAttempt) -> None:
+        """Retain native admission/cleanup evidence under its unique incarnation."""
+        with self._writing():
+            previous = self._attempts.get(attempt.handle, {}).get(attempt.incarnation)
+            if previous is not None:
+                lifecycle = {
+                    "cleanup_receipt": None,
+                    "finished_at": None,
+                    "cleanup_state": "pending",
+                }
+                if previous.model_copy(update=lifecycle) != (attempt.model_copy(update=lifecycle)):
+                    raise ValueError("Native incarnation identity cannot change")
+                if previous.cleanup_state in {"confirmed", "never_started"} and previous != attempt:
+                    raise ValueError("Native cleanup evidence cannot be replaced")
+                if previous == attempt:
+                    return
+            current = self.task_snapshot(attempt.handle)
+            if current is None or current.backend != attempt.backend:
+                raise ValueError("Native admission does not match the bound task")
+            if attempt.cleanup_receipt is not None:
+                self.read_content(attempt.cleanup_receipt)
+            payload = attempt.model_dump(mode="json")
+            self._record("task.native_attempt", current.owner.session_id, uuid4().hex, payload)
+            self._put_index("attempt/" + attempt.handle + "/" + attempt.incarnation, payload)
+            self._project("task.native_attempt", payload)
+
+    def native_attempts(self, handle: str) -> tuple[NativeAttempt, ...]:
+        """Read observed attempts; a receipt never settles a different incarnation."""
+        with self._lock:
+            return tuple(self._attempts.get(handle, {}).values())
+
     def withdraw_mail(self, session_id: str, notification_id: str) -> None:
         """Withdraw uncommitted input; committed model input cannot be rewritten."""
         assert_store_write_off_loop("task.mail.withdraw")
@@ -175,6 +278,23 @@ class TaskHistory:
             payload = {"recipient_session": session_id, "id": notification_id}
             self._record("session.mail.withdrawn", session_id, uuid4().hex, payload)
             self._project("session.mail.withdrawn", payload)
+
+    def acknowledged_notifications(self, session_id: str) -> frozenset[str]:
+        """Return confirmed input identities; uncommitted context is not delivered."""
+        with self._lock:
+            return frozenset(self._acknowledged.get(session_id, ()))
+
+    def committed_observations(self, session_id: str, scope: str) -> frozenset[str]:
+        """Read durable collection proofs even after their input record was compacted."""
+        with self._lock:
+            return frozenset(self._observation_inputs.get((session_id, scope), ()))
+
+    def recovery_input(self, assignment_id: str) -> RecipientInput | None:
+        """Find the last confirmed input during startup recovery, never during hot reads."""
+        with self._lock:
+            return max((record for record in self._inputs.values()
+                        if record.assignment_id == assignment_id),
+                       key=lambda record: record.committed_at, default=None)
 
     def record_input(self, record: RecipientInput) -> RecipientInput:
         """Confirm the sole delivery acknowledgement in the recipient's context lane.
@@ -198,6 +318,12 @@ class TaskHistory:
                     raise ValueError("Recipient input identity was reused")
                 return previous
             self._validate_input_eligibility(record)
+            if record.legacy_notification_ids:
+                if record.legacy_proof is None or record.legacy_proof.session_id != record.session_id:
+                    raise ValueError("Legacy acknowledgements require their original recipient input")
+                proof = self.read_content(record.legacy_proof)
+                if not isinstance(proof, dict) or not set(record.legacy_notification_ids) <= set(proof.get("notification_ids", ())):
+                    raise ValueError("Legacy acknowledgement lacks a confirmed context record")
             for notification_id, reference in zip(
                 record.notification_ids, record.content, strict=True
             ):
@@ -207,6 +333,13 @@ class TaskHistory:
                     raise ValueError("Input content differs from the accepted mailbox item")
             if record.tool_observation is not None:
                 self.read_content(record.tool_observation)
+            from clio_agent.gact.agents.clio_react_record import _token_estimate
+            input_tokens = 0
+            for reference in record.rendered_content:
+                value = self.read_content(reference)
+                if not isinstance(value, dict):
+                    raise ValueError("Rendered model input must be a message record")
+                input_tokens += _token_estimate(value)
             payload = record.model_dump(mode="json")
             locator_name = "input/" + record.session_id + "/" + record.id
             locator = {
@@ -234,7 +367,8 @@ class TaskHistory:
                     record.boundary.scope,
                     "recipient_input",
                     payload,
-                    turn_id=record.iteration_id,
+                    turn_id=record.turn_id or record.iteration_id,
+                    token_count=input_tokens,
                 )
             )
             self._accept_input(record)
@@ -261,9 +395,159 @@ class TaskHistory:
 
     def task_snapshot(self, handle: str) -> TaskSnapshot | None:
         """Read the internal passive view; public controls must authorize first."""
-        assert_store_write_off_loop("task.snapshot.read")
         with self._lock:
             return self._tasks.get(handle)
+
+    def resolve_handle(self, value: str) -> str | None:
+        """Resolve an exact public handle or an unambiguous historical alias only."""
+        with self._lock:
+            aliases = self._aliases.get(value)
+            handles = {row.handle for row in aliases.values()} if aliases else set()
+            if value in self._tasks:
+                handles.add(value)
+            return next(iter(handles)) if len(handles) == 1 else None
+
+    def record_alias(self, alias: TaskAlias) -> None:
+        """Confirm a migration mapping without retargeting its original execution."""
+        with self._writing():
+            previous = self._aliases.get(alias.alias, {}).get(alias.source_identity)
+            if previous is not None:
+                if previous != alias:
+                    raise ValueError("Historical identity mapping cannot be replaced")
+                return
+            task = self._tasks.get(alias.handle)
+            if task is None:
+                raise ValueError("Alias target has not been confirmed")
+            payload = alias.model_dump(mode="json")
+            self._record("task.alias", task.owner.session_id, uuid4().hex, payload)
+            self._project("task.alias", payload)
+
+    def listen(self, callback: Callable[[int], None], *, handles: tuple[str, ...] | None = None,
+               recipient_session: str | None = None) -> Callable[[], None]:
+        """Register an eviction-safe wake hint; Core remains the pending-data authority."""
+        with self._lock:
+            if handles is None:
+                self._listeners.add(callback)
+            else:
+                for handle in handles:
+                    self._handle_listeners.setdefault(handle, set()).add(callback)
+            if recipient_session is not None:
+                self._recipient_listeners.setdefault(recipient_session, set()).add(callback)
+
+        def remove() -> None:
+            with self._lock:
+                self._listeners.discard(callback)
+                for handle in handles or ():
+                    callbacks = self._handle_listeners.get(handle, set())
+                    callbacks.discard(callback)
+                    if not callbacks:
+                        self._handle_listeners.pop(handle, None)
+                if recipient_session is not None:
+                    callbacks = self._recipient_listeners.get(recipient_session, set())
+                    callbacks.discard(callback)
+                    if not callbacks:
+                        self._recipient_listeners.pop(recipient_session, None)
+
+        return remove
+
+    def listen_mail(self, callback: Callable[[str], None]) -> Callable[[], None]:
+        """Signal exact recipients after durable mailbox changes; payloads remain in Core."""
+        with self._lock:
+            self._mail_listeners.add(callback)
+
+        def remove() -> None:
+            with self._lock:
+                self._mail_listeners.discard(callback)
+        return remove
+
+    def update_mail(self, item: MailItem, *, expected_revision: int) -> MailItem:
+        """Edit/promote accepted but uncommitted input without changing its identity."""
+        with self._writing():
+            current = self._mail.get(item.recipient_session, {}).get(item.id)
+            if current is None or current.revision != expected_revision:
+                raise ValueError("Mailbox revision changed; refresh before retrying")
+            if item.id in self._acknowledged.get(item.recipient_session, set()) or item.id in self._withdrawn.get(item.recipient_session, set()):
+                raise ValueError("Committed or withdrawn input cannot be edited")
+            if (item.sender_session != current.sender_session or item.sender_human != current.sender_human
+                or item.kind != current.kind or item.created_at != current.created_at
+                or item.revision != current.revision + 1):
+                raise ValueError("Mailbox identity or revision cannot be replaced")
+            self.read_content(item.content)
+            payload = item.model_dump(mode="json")
+            self._record("session.mail.updated", item.recipient_session, uuid4().hex, payload)
+            self._put_index("mail/" + item.recipient_session + "/" + item.id, payload)
+            self._project("session.mail.updated", payload)
+            return item
+
+    def equivalent_active_task(self, session_id: str, key: str) -> TaskSnapshot | None:
+        """Resolve a reserved equivalent request without another scheduler or owner scan."""
+        with self._lock:
+            handle = self._deduplicated.get((session_id, key))
+            return self._tasks.get(handle) if handle is not None else None
+
+    def tree_handles(self, session_id: str) -> set[str]:
+        """Return the stable session's work and delegated descendants, never its ancestors."""
+        with self._lock:
+            handles = set(self._session_tasks.get(session_id, set()))
+            pending = list(handles)
+            while pending:
+                for child in self._children.get(pending.pop(), set()):
+                    if child not in handles:
+                        handles.add(child)
+                        pending.append(child)
+            return handles
+
+    def session_handles(self, session_id: str) -> set[str]:
+        """Read the passive session index without loading or scanning task history."""
+        with self._lock:
+            return set(self._session_tasks.get(session_id, set()))
+
+    def task_handles(self, *, kind: str | None = None, human_id: str | None = None,
+                     active_only: bool = False) -> set[str]:
+        """Read passive Core indexes; callers authorize before disclosing selected rows."""
+        with self._lock:
+            selections = []
+            if kind is not None:
+                selections.append(self._kind_tasks.get(kind, set()))
+            if human_id is not None:
+                selections.append(self._human_tasks.get(human_id, set()))
+            if active_only:
+                selections.append(self._active_tasks)
+            if not selections:
+                return set(self._tasks)
+            result = set(min(selections, key=len))
+            for selection in selections:
+                result.intersection_update(selection)
+            return result
+
+    def resource_handles(self, resource_id: str) -> set[str]:
+        """Read owner-published resource associations from a passive Core index."""
+        with self._lock:
+            return set(self._resource_tasks.get(resource_id, ()))
+
+    def latest_assignment(self, session_id: str) -> TaskSnapshot | None:
+        """Resolve a stable session's latest finite assignment from its passive Core index."""
+        with self._lock:
+            handle = self._assignments.get(session_id)
+            return self._tasks.get(handle) if handle is not None else None
+
+    def coordination_grants(self, recipient_session: str) -> tuple[CoordinationGrant, ...]:
+        """Read exact human/configuration relationships for one recipient."""
+        with self._lock:
+            return tuple(self._grants[key] for key in self._recipient_grants.get(recipient_session, set()))
+
+    def record_subscription(self, subscription: TaskSubscription) -> None:
+        """Confirm an exact-handle notification preference; the caller authorizes first."""
+        with self._writing():
+            payload = subscription.model_dump(mode="json")
+            self._record("task.subscription", subscription.recipient_session, uuid4().hex, payload)
+            self._put_index("subscription/" + subscription.handle + "/" + subscription.recipient_session, payload)
+            self._project("task.subscription", payload)
+
+    def subscriptions(self, handle: str) -> tuple[TaskSubscription, ...]:
+        """Read subscribers from the passive relationship index, without per-subscriber workers."""
+        with self._lock:
+            return tuple(self._subscriptions.get(handle, {}).values())
 
     def pending_mail(self, session_id: str) -> tuple[MailItem, ...]:
         """Read pending inputs without claiming, consuming or imposing retention."""
@@ -271,22 +555,55 @@ class TaskHistory:
         with self._lock:
             return tuple(self._pending.get(session_id, {}).values())
 
+    def pending_sessions(self) -> tuple[str, ...]:
+        """Read the pending-recipient index for startup/readiness, without scanning history."""
+        with self._lock:
+            return tuple(session for session, pending in self._pending.items() if pending)
+
     def restore(self) -> None:
         """Replay Core once at startup, including interrupted recipient-input commits."""
         assert_store_write_off_loop("task.restore")
         started = time.monotonic()
         with self._lock:
             tasks, mail, inputs = self._tasks, self._mail, self._inputs
+            aliases = self._aliases
             pending, previous_revision = self._pending, self.revision
             acknowledgements, withdrawn, grants = self._acknowledged, self._withdrawn, self._grants
+            observation_inputs = self._observation_inputs
             iterations, locations = self._iterations, self._input_locations
+            submissions, attempts = self._submissions, self._attempts
+            deduplicated = self._deduplicated
+            session_tasks, children = self._session_tasks, self._children
+            kind_tasks, human_tasks, active_tasks = self._kind_tasks, self._human_tasks, self._active_tasks
+            resource_tasks = self._resource_tasks
+            assignments = self._assignments
+            recipient_grants, subscriptions = self._recipient_grants, self._subscriptions
             self._tasks, self._mail, self._inputs = {}, {}, {}
+            self._aliases = {}
             self._pending, self.revision = {}, 0
             self._acknowledged, self._withdrawn, self._grants = {}, {}, {}
+            self._observation_inputs = {}
             self._iterations, self._input_locations = {}, {}
+            self._submissions, self._attempts = {}, {}
+            self._deduplicated = {}
+            self._session_tasks, self._children = {}, {}
+            self._kind_tasks, self._human_tasks, self._active_tasks = {}, {}, set()
+            self._resource_tasks = {}
+            self._assignments = {}
+            self._recipient_grants, self._subscriptions = {}, {}
             try:
                 for content in self.arc._live.iter_event_contents():
-                    self._project(str(content.get("event_type", "")), content.get("payload") or {})
+                    event_type = str(content.get("event_type", ""))
+                    payload = content.get("payload") or {}
+                    if event_type in {
+                        "task.observed", "task.submission", "task.native_attempt", "task.subscription", "task.alias",
+                        "session.mail.accepted", "session.mail.updated", "session.mail.withdrawn",
+                        "session.coordination.grant", "session.input.prepared",
+                    } and not {"schema_version", "observation_id", "record"} <= payload.keys():
+                        if "schema_version" in payload:
+                            raise ValueError("Task history observation envelope is incomplete")
+                        continue  # unversioned historical formats are decoded at startup migration
+                    self._project(event_type, payload)
                 scopes: dict[tuple[str, str], dict[str, RecipientInput]] = {}
                 for locator in self._input_locations.values():
                     key = (locator["session_id"], locator["scope"])
@@ -299,13 +616,22 @@ class TaskHistory:
             except Exception:
                 self.requires_recovery = True
                 self._tasks, self._mail, self._inputs = tasks, mail, inputs
+                self._aliases = aliases
                 self._pending, self.revision = pending, previous_revision
                 self._acknowledged, self._withdrawn, self._grants = (
                     acknowledgements,
                     withdrawn,
                     grants,
                 )
+                self._observation_inputs = observation_inputs
                 self._iterations, self._input_locations = iterations, locations
+                self._submissions, self._attempts = submissions, attempts
+                self._deduplicated = deduplicated
+                self._session_tasks, self._children = session_tasks, children
+                self._kind_tasks, self._human_tasks, self._active_tasks = kind_tasks, human_tasks, active_tasks
+                self._resource_tasks = resource_tasks
+                self._assignments = assignments
+                self._recipient_grants, self._subscriptions = recipient_grants, subscriptions
                 raise
             self.replay_seconds = time.monotonic() - started
             self.requires_recovery = False
@@ -322,7 +648,7 @@ class TaskHistory:
                 raise
 
     def _repair_indexes(self) -> None:
-        rows: list[tuple[str, TaskSnapshot | MailItem | CoordinationGrant]] = [
+        rows: list[tuple[str, TaskSnapshot | MailItem | CoordinationGrant | NativeAttempt | TaskSubscription]] = [
             ("task/" + key, row) for key, row in self._tasks.items()
         ]
         rows.extend(
@@ -331,8 +657,23 @@ class TaskHistory:
             for key, row in items.items()
         )
         rows.extend(("grant/" + key, row) for key, row in self._grants.items())
+        rows.extend(("subscription/" + handle + "/" + recipient, row)
+                    for handle, subscriptions in self._subscriptions.items()
+                    for recipient, row in subscriptions.items())
+        rows.extend(
+            ("attempt/" + handle + "/" + key, row)
+            for handle, attempts in self._attempts.items()
+            for key, row in attempts.items()
+        )
         for key, row in rows:
             payload = row.model_dump(mode="json")
+            if isinstance(row, TaskSnapshot) and row.description_reference is not None:
+                payload["description"] = None
+            if self.arc._store.get(INDEX_KIND, key) != _encoded(payload):
+                self._put_index(key, payload)
+        for reference, content in self._submissions.items():
+            payload = {"reference": reference, "content": content.model_dump(mode="json")}
+            key = "submission/" + reference
             if self.arc._store.get(INDEX_KIND, key) != _encoded(payload):
                 self._put_index(key, payload)
         for (session_id, identity), locator in self._input_locations.items():
@@ -377,16 +718,48 @@ class TaskHistory:
             if payload.get("schema_version") != 1:
                 raise ValueError("Unsupported task observation version; migration required")
             payload = payload["record"]
-        if event_type == "task.observed":
+        if event_type == "task.alias":
+            alias = TaskAlias.model_validate(payload)
+            self._aliases.setdefault(alias.alias, {})[alias.source_identity] = alias
+        elif event_type == "task.observed":
             snapshot = TaskSnapshot.model_validate(payload)
+            if snapshot.description_reference is not None:
+                description = self.read_content(snapshot.description_reference)
+                if not isinstance(description, str):
+                    raise ValueError("Task assignment content must be text")
+                snapshot = snapshot.model_copy(update={"description": description})
+            known = snapshot.handle in self._tasks
             self._tasks[snapshot.handle] = snapshot
-        elif event_type == "session.mail.accepted":
+            self._session_tasks.setdefault(snapshot.owner.session_id, set()).add(snapshot.handle)
+            self._kind_tasks.setdefault(snapshot.kind, set()).add(snapshot.handle)
+            self._human_tasks.setdefault(snapshot.owner.human_id, set()).add(snapshot.handle)
+            if snapshot.resource_id is not None:
+                self._resource_tasks.setdefault(snapshot.resource_id, set()).add(snapshot.handle)
+            if snapshot.terminal_at is None:
+                self._active_tasks.add(snapshot.handle)
+            else:
+                self._active_tasks.discard(snapshot.handle)
+            if snapshot.kind in {"Session", "Subagent"}:
+                if not known or snapshot.owner.session_id not in self._assignments:
+                    self._assignments[snapshot.owner.session_id] = snapshot.handle
+            if snapshot.owner.parent_handle is not None:
+                self._children.setdefault(snapshot.owner.parent_handle, set()).add(snapshot.handle)
+            if snapshot.deduplication_key:
+                key = (snapshot.owner.session_id, snapshot.deduplication_key)
+                if snapshot.terminal_at is None and snapshot.cancellation_requested_at is None:
+                    self._deduplicated[key] = snapshot.handle
+                elif self._deduplicated.get(key) == snapshot.handle:
+                    self._deduplicated.pop(key, None)
+        elif event_type in {"session.mail.accepted", "session.mail.updated"}:
             item = MailItem.model_validate(payload)
+            previous = self._mail.get(item.recipient_session, {}).get(item.id)
             self._mail.setdefault(item.recipient_session, {})[item.id] = item
             excluded = self._acknowledged.get(item.recipient_session, set()) | self._withdrawn.get(
                 item.recipient_session, set()
             )
             if item.id not in excluded:
+                if previous is not None and previous.delivery == "queued" and item.delivery == "eligible":
+                    self._pending.get(item.recipient_session, {}).pop(item.id, None)
                 self._pending.setdefault(item.recipient_session, {})[item.id] = item
         elif event_type == "session.mail.withdrawn":
             self._withdrawn.setdefault(payload["recipient_session"], set()).add(payload["id"])
@@ -394,21 +767,50 @@ class TaskHistory:
         elif event_type == "session.coordination.grant":
             grant = CoordinationGrant.model_validate(payload)
             self._grants[grant.id] = grant
+            self._recipient_grants.setdefault(grant.recipient_session, set()).add(grant.id)
         elif event_type == "session.input.prepared":
             key = (payload["session_id"], payload["id"])
             previous = self._input_locations.get(key)
             if previous is not None and previous != payload:
                 raise ValueError("Canonical input location identity was reused")
             self._input_locations[key] = payload
+        elif event_type == "task.submission":
+            self._submissions[payload["reference"]] = CoreReference.model_validate(
+                payload["content"]
+            )
+        elif event_type == "task.native_attempt":
+            attempt = NativeAttempt.model_validate(payload)
+            self._attempts.setdefault(attempt.handle, {})[attempt.incarnation] = attempt
+        elif event_type == "task.subscription":
+            subscription = TaskSubscription.model_validate(payload)
+            self._subscriptions.setdefault(subscription.handle, {})[subscription.recipient_session] = subscription
         else:
             return
         self.revision += 1
+        handle = payload.get("handle")
+        recipient = payload.get("recipient_session")
+        listeners = set(self._listeners)
+        listeners.update(self._handle_listeners.get(str(handle), set()))
+        listeners.update(self._recipient_listeners.get(str(recipient), set()))
+        for listener in listeners:
+            try:
+                listener(self.revision)
+            except Exception as error:
+                logger.warning("Task wake hint failed after Core commit: %s", type(error).__name__)
+        if event_type.startswith("session.mail.") and recipient:
+            for listener in tuple(self._mail_listeners):
+                try:
+                    listener(str(recipient))
+                except Exception as error:
+                    logger.warning("Mailbox wake hint failed after Core commit: %s", type(error).__name__)
 
     def _scope_inputs(self, session_id: str, scope: str) -> dict[str, RecipientInput]:
         records: dict[str, RecipientInput] = {}
         for segment in self.arc.list_segments(session_id, scope, include_tombstoned=True):
             if segment.kind != "recipient_input":
                 continue
+            if "schema_version" not in segment.content:
+                continue  # decoded once by the data-only historical migration
             record = RecipientInput.model_validate(segment.content)
             if record.session_id != session_id or record.boundary.scope != scope:
                 raise ValueError("Recipient input is stored under a different context")
@@ -432,6 +834,10 @@ class TaskHistory:
         self._inputs[key] = record
         self._iterations[(record.session_id, record.assignment_id, record.iteration_id)] = record.id
         self._acknowledged.setdefault(record.session_id, set()).update(record.notification_ids)
+        self._acknowledged[record.session_id].update(record.legacy_notification_ids)
+        if record.tool_observation is not None:
+            reference = record.tool_observation
+            self._observation_inputs.setdefault((reference.session_id, reference.scope), set()).add(reference.content_id)
         for notification_id in record.notification_ids:
             self._pending.get(record.session_id, {}).pop(notification_id, None)
         self.revision += 1

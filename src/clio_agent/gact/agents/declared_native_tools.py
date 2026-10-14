@@ -1,9 +1,12 @@
-"""Resolve declaration-scoped in-process tools outside the MCP gateway."""
+"""Resolve declarations for built-ins registered at the application MCP boundary."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from clio_agent.gact.task_tools import (
+    TASK_TOOL_NAMES, TASK_COMPATIBILITY_ALIASES, build_task_tools, build_task_compatibility_tools,
+)
 
 from clio_agent.gact.a2ui_producer import (
     build_capture_a2ui_surface_tool,
@@ -27,6 +30,7 @@ from clio_agent.gact.memory_tools import (
 )
 from clio_agent.gact.view_image_tool import build_view_image_tool
 from clio_agent.gact.view_pdf_tool import build_view_pdf_tool
+from clio_agent.gact.task_tools import build_ask_user_tool
 
 #: Every in-process tool an agent may name in its ``tools:`` list. Blueprint
 #: validation accepts these as built-ins (``agent_blueprints``); whether one is
@@ -50,7 +54,7 @@ DECLARABLE_NATIVE_TOOLS: frozenset[str] = frozenset(
         "prepare_document_runtime",
         "prepare_execution_runtime",
         "prepare_document",
-    }
+    } | TASK_TOOL_NAMES | TASK_COMPATIBILITY_ALIASES
 )
 
 
@@ -137,6 +141,9 @@ def resolve_declared_native_tools(
         and (name != "view_pdf" or supports_pdf)
     ]
     available: dict[str, Any] = {}
+    if TASK_TOOL_NAMES.intersection(requested):
+        available.update({tool.name: tool for tool in build_task_tools() if tool.name in requested})
+    available.update({tool.name: tool for tool in build_task_compatibility_tools(requested)})
     builders: dict[str, Callable[[], Any]] = {
         "ask_user": lambda: build_ask_user_tool(agent_def),
         "prepare_document_runtime": build_prepare_document_runtime_tool,

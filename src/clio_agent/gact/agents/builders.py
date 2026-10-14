@@ -72,6 +72,7 @@ from clio_agent.gact.runtime.type_parsing import (
 )
 from clio_agent.runtime import trace
 from clio_agent.tools.task_call_context import task_arguments
+from clio_agent.gact.task_tools import build_spawn_runtime_tools
 
 logger = logging.getLogger(__name__)
 
@@ -283,6 +284,8 @@ def _build_prompt_user_agent_module(base_agent: Any, agent_def: "AgentDef") -> A
             answer = str(getattr(result, "answer", "") or "")
             return dspy.Prediction(
                 answer=answer,
+                assignment_disposition=getattr(result, "assignment_disposition", None),
+                clio_context_boundary=getattr(result, "clio_context_boundary", None),
                 selected_expert=self.agent_def.id,
                 routing_rationale=f"Session selected user agent {self.agent_def.id!r}.",
                 route_source="user_agent",
@@ -1076,6 +1079,8 @@ def _build_blueprint_dspy_module(base_agent: Any, agent_def: "AgentDef") -> Any:
                 delegation=getattr(result, "delegation", ""),
                 reasoning=getattr(result, "reasoning", ""),
                 tools_called=tools_called,
+                assignment_disposition=getattr(result, "assignment_disposition", None),
+                clio_context_boundary=getattr(result, "clio_context_boundary", None),
                 termination_reason=getattr(result, "termination_reason", ""),
                 # #953 [5]: carry the variant winner stamp (else dropped here) to the turn.
                 variant_selection=getattr(result, "variant_selection", None),
@@ -1252,6 +1257,8 @@ def _build_tool_user_agent_module(base_agent: Any, agent_def: "AgentDef") -> Any
                     getattr(result, "expert_handoffs", None)
                 ),
                 tools_called=[],
+                assignment_disposition=getattr(result, "assignment_disposition", None),
+                clio_context_boundary=getattr(result, "clio_context_boundary", None),
                 termination_reason=getattr(result, "termination_reason", ""),
                 error_info=getattr(result, "error_info", None),
             )

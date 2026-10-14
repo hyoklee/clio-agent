@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+
+def build_goal_wait_tool() -> Any:
+    """Declare goal dependencies without leaving a dormant assignment's worker parked."""
+    from clio_agent.gact.agents.tool_instrumentation import native_tool
+    from clio_agent.gact import context
+
+    def wait_for(tasks: str | list[str], return_when: str = "all") -> dict[str, Any]:
+        app = context.active_app()
+        return app.state.conversations.set_dependencies(context.active_session_id(), tasks, return_when)
+
+    return native_tool(wait_for, name="wait_for", args={
+        "tasks": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "minItems": 1}]},
+        "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"}},
+        desc="Declare the current goal's any/all task dependencies, then yield. Partial results remain queued until this condition; human feedback and Question answers still arrive. Use wait_tasks for an explicit active wait.",
+        presentation="wait", title="Await goal dependencies", domain="goals")
+
 from typing import Any
 
 from clio_agent.gact import context as _ctx

@@ -26,7 +26,9 @@ class TaskResultValidationError(ValueError):
 def accepted_result(receipt: dict[str, Any]) -> AcceptedTaskResult:
     """Validate the application receipt before returning it through the SDK."""
     if (
-        receipt.get("accepted") is not True
+        (receipt.get("accepted") is not True and not (
+            receipt.get("accepted") is None and receipt.get("acceptance") == "uncertain"
+            and receipt.get("retry_safe") is False))
         or receipt.get("kind") not in {"MCP", "Shell", "Download", "Indexing"}
         or not str(receipt.get("handle", "")).startswith("task_")
     ):

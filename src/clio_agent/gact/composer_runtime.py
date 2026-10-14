@@ -80,234 +80,26 @@ def register_composer_routes(app: Any, deps: Any) -> None:
         register_normalized_provider_catalog_routes,
     )
     from clio_agent.gact.routes.resources import register_resource_routes  # noqa: PLC0415
+    from clio_agent.gact.routes.mailbox import register_mailbox_routes
 
     register_resource_routes(app, deps)
     register_normalized_provider_catalog_routes(app, deps)
+    register_mailbox_routes(app)
 
 
 def session_autostart_suspended(app: Any, session_id: str) -> bool:
-    """Whether future queued messages are paused, independently of sent feedback.
-
-    Persist the pause across follow-up feedback turns and restarts. Legacy
-    cancelled sessions without this metadata retain their previous queue pause.
-    An explicit idle send resumes the queue; automatically delivered feedback
-    does not. Already accepted steers remain eligible at the next idle boundary.
-    """
-
+    """Future composer pause is separate from accepted mail and task wakes."""
     session = app.state.sessions.get(session_id)
-    metadata = getattr(session, "metadata", {}) or {}
-    return bool(
-        metadata.get("composer_queue_paused", getattr(session, "status", "") == "cancelled")
-    )
+    return bool(session is not None and session.metadata.get("composer_queue_paused", False))
 
 
-def _head_is_blocked(app: Any, session_id: str, head: Any) -> bool:
-    """True when THIS head, at THIS revision, already failed terminally."""
-
-    row = _blocked_heads(app).get(session_id)
-    return bool(
-        row and row.get("queued_message_id") == head.id and row.get("revision") == head.revision
-    )
+def stop_session_composer_autostart(app: Any, session_id: str) -> dict[str, Any]:
+    """Persist future-message suspension without withdrawing submitted feedback."""
+    app.state.sessions.update(session_id, metadata_patch={"composer_queue_paused": True})
+    return {"suspended": True}
 
 
-def _clear_blocked_head(app: Any, session_id: str) -> None:
-    """Forget a session's blocked head (it promoted, or the queue emptied)."""
-
-    _blocked_heads(app).pop(session_id, None)
-
-
-def blocked_queue_head(app: Any, session_id: str) -> dict[str, Any] | None:
-    """The queue head this session is frozen behind, if any (read-side helper)."""
-
-    row = _blocked_heads(app).get(session_id)
-    return dict(row) if row else None
-
-
-def _typed_cause(exc: BaseException) -> dict[str, Any]:
-    """Unwrap the typed error envelope acceptance raised, when there is one.
-
-    The auto-promoter used to swallow the ``HTTPException`` acceptance raised
-    into a generic ``queue_auto_promotion_failed``, so a client saw a bare
-    "something went wrong" with a ``retry_on`` implying recovery -- while the
-    manual ``POST .../promote`` door, which lets the exception through, showed the
-    real reason. The two doors now agree: the typed cause rides the payload.
-    """
-
-    from fastapi import HTTPException  # noqa: PLC0415
-
-    # The acceptance stack raises the SAME typed envelope in three carriers, and the
-    # ``except Exception`` seam above sees all of them: an ``HTTPException`` whose
-    # detail was already ``model_dump``-ed, one whose detail is still the envelope
-    # MODEL, and a bare carrier holding an ``ErrorInfo`` on ``error_info``
-    # (``_ContextFileAccessError``). Unwrapping only the first flattened the other
-    # two to the exception class name.
-    carried = _error_info_fields(getattr(exc, "error_info", None))
-    if not isinstance(exc, HTTPException):
-        if carried is not None:
-            # No HTTP status of its own: this reason never reached a route boundary.
-            return {"status_code": 0, **carried}
-        return {"status_code": 0, "error": type(exc).__name__, "message": str(exc)}
-    error = _error_info_fields(_envelope_error(exc.detail)) or {
-        "error": "http_error",
-        "message": "",
-        "details": {},
-        "recoverable": False,
-    }
-    return {"status_code": int(exc.status_code), **error}
-
-
-def _as_mapping(value: Any) -> Mapping[str, Any] | None:
-    """Read a Pydantic model or a plain mapping through one shape."""
-
-    dump = getattr(value, "model_dump", None)
-    if callable(dump):
-        value = dump(exclude_none=True)
-    return value if isinstance(value, Mapping) else None
-
-
-def _envelope_error(detail: Any) -> Any:
-    """Pull the ``error`` member out of an ``ErrorEnvelope`` in either carrier."""
-
-    envelope = _as_mapping(detail)
-    return None if envelope is None else envelope.get("error")
-
-
-def _error_info_fields(error: Any) -> dict[str, Any] | None:
-    """Project one ``ErrorInfo`` (model or mapping) onto the cause's field set."""
-
-    fields = _as_mapping(error)
-    if fields is None:
-        return None
-    typed = str(fields.get("error") or "").strip()
-    if not typed:
-        return None
-    return {
-        "error": typed,
-        "message": str(fields.get("message") or ""),
-        "details": dict(fields.get("details") or {}),
-        "recoverable": bool(fields.get("recoverable", False)),
-    }
-
-
-def _is_terminal_cause(cause: Mapping[str, Any]) -> bool:
-    """A 4xx cause will not fix itself; re-driving it forever is a silent freeze."""
-
-    status = int(cause.get("status_code") or 0)
-    return 400 <= status < 500
-
-
-def _mark_head_blocked(app: Any, session_id: str, head: Any, cause: Mapping[str, Any]) -> None:
-    """Emit the distinct terminal reason naming the row the client must edit.
-
-    Nothing is deleted: the queued row stays durable, listed and editable. What
-    changes is the story the client is told -- the head will NOT recover on its
-    own, and the queue behind it is frozen until this row is edited or removed.
-    """
-
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-
-    logger.warning(
-        "queued-message head blocked reason=queue_head_blocked session=%s message=%s cause=%s",
-        session_id,
-        head.id,
-        cause.get("error"),
-    )
-    _blocked_heads(app)[session_id] = {
-        "queued_message_id": head.id,
-        "revision": head.revision,
-        "cause": dict(cause),
-    }
-    app.state.bus.publish(
-        Event(
-            type="queued_message.head_blocked",
-            session_id=session_id,
-            payload={
-                "queued_message_id": head.id,
-                "reason": "queue_head_blocked",
-                "cause": dict(cause),
-                "recoverable": False,
-                "blocks_queue": True,
-                "recovery_actions": ["edit_queued_message", "delete_queued_message"],
-            },
-        )
-    )
-
-
-def _publish_promotion_failure(
-    app: Any,
-    session_id: str,
-    message_id: str,
-    error: str,
-    *,
-    cause: Mapping[str, Any],
-    terminal: bool,
-) -> None:
-    """Emit the typed promotion failure. The row stays durable either way.
-
-    ``retry_on`` names the concrete events that re-drive a RECOVERABLE failure. A
-    terminal (4xx) cause carries no ``retry_on`` at all, because promising a
-    retry that can only fail again is exactly the head-of-line freeze this
-    reports.
-    """
-
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-
-    payload: dict[str, Any] = {
-        "queued_message_id": message_id,
-        "error": error,
-        "cause": dict(cause),
-        "recoverable": not terminal,
-    }
-    if terminal:
-        payload["blocks_queue"] = True
-        payload["recovery_actions"] = ["edit_queued_message", "delete_queued_message"]
-    else:
-        payload["retry_on"] = ["session_idle", "queue_mutation", "manual_promote"]
-    app.state.bus.publish(
-        Event(
-            type="queued_message.promotion_failed",
-            session_id=session_id,
-            payload=payload,
-        )
-    )
-
-
-def resource_capabilities(app: Any) -> dict[str, Any]:
-    """Report the workspace-resource service's live limits and converter registry.
-
-    A client must know the upload ceiling BEFORE it starts a resumable upload,
-    and which converters are configured before it expects a structured view.
-    Both are read off the stores this module built rather than restated, so the
-    advertised contract cannot drift from what the service actually enforces.
-    """
-
-    store = getattr(app.state, "resource_store", None)
-    if store is None:
-        return {}
-    factory = getattr(app.state, "resource_converter_factory", None)
-    # A quarantined index is a REAL capability statement: the service is up but
-    # its history is gone, and a client that sees an empty resource list is
-    # entitled to know why rather than concluding nothing was ever uploaded.
-    degradations = [
-        row
-        for row in (
-            getattr(store, "load_degradation", None),
-            getattr(getattr(app.state, "resource_delivery_store", None), "load_degradation", None),
-        )
-        if row
-    ]
-    return {
-        "enabled": True,
-        "max_bytes": int(store.max_resource_bytes),
-        "converters": factory.capabilities() if factory is not None else [],
-        "degradations": degradations,
-    }
-
-
-def delete_workspace_resources(app: Any, workspace_id: str) -> None:
-    """Delete workspace-owned resource bytes and provider-delivery records."""
-
-    for store_name in ("resource_store", "resource_delivery_store"):
-        store = getattr(app.state, store_name, None)
-        if store is not None:
-            store.delete_workspace(workspace_id)
+def resume_session_composer_autostart(app: Any, session_id: str) -> None:
+    """An explicit human send/resume releases only the future composer pause."""
+    app.state.sessions.update(session_id, metadata_patch={"composer_queue_paused": False})
+    app.state.turn_runner.signal(session_id)

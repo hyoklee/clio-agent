@@ -532,6 +532,58 @@ def accepted_message_metadata(
     return metadata
 
 
+def accept_message(app: FastAPI, deps: "GactDeps", sid: str, req: PostMessageRequest,
+                   *, prepared: PreparedReferences | None = None) -> tuple[PostMessageResponse, int]:
+    """Validate and confirm one Core mailbox input, regardless of current activity."""
+    import hashlib
+    from clio_agent.gact.turn import _start_background_user_turn
+
+    owner = getattr(app.state, "conversations", None)
+    if owner is None:
+        raise HTTPException(status_code=503, detail="Core conversation runtime is not ready")
+    session, selected, text, parts, deliveries = _validate_provider_and_payload(
+        app, deps, sid, req, prepared=prepared)
+    key = _idempotency_key(req)
+    identity = ("user_" + hashlib.sha256((sid + "\0" + key).encode()).hexdigest()
+                if key else _new_message_id("user"))
+    with owner.history._lock:
+        previous = next((row for row in app.state.messages.get(sid, []) if row.id == identity), None)
+        accepted = owner.history._mail.get(sid, {}).get(identity)
+        if previous is not None and accepted is not None:
+            saved = owner.history.read_content(accepted.content)
+            if saved.get("text") != text:
+                raise HTTPException(status_code=409, detail="Message identity was reused with changed content")
+            return PostMessageResponse(message_id=identity, accepted_at=previous.created_at,
+                effective_model=selected, behavior=req.behavior, idempotent_replay=True,
+                task_handle=(owner.history.latest_assignment(sid).handle
+                             if owner.history.latest_assignment(sid) is not None else None)), 200
+        busy = app.state.turn_runner.busy(sid)
+        if not busy and req.delivery != "steer":
+            from clio_agent.gact.composer_runtime import resume_session_composer_autostart
+            resume_session_composer_autostart(app, sid)
+        assignment = owner.history.latest_assignment(sid)
+        if assignment is None or assignment.terminal_at is not None:
+            assignment = owner._new_assignment(sid, text, owner.caller(sid).human_id,
+                predecessor=assignment, invocation_id=identity)
+        metadata = accepted_message_metadata(req, session, selected, parts, busy=busy)
+        message = _start_background_user_turn(app, sid, session, text,
+            request_parts=parts, metadata=metadata, turn_agent_id=req.extract_agent_id(),
+            user_msg_id=identity, replace_existing_user_message=previous is not None)
+        _commit_resource_deliveries(app, sid, deliveries)
+        return PostMessageResponse(message_id=message.id, accepted_at=message.created_at,
+            delivery="steer" if busy else "start", state="pending_steer" if busy else "started",
+            effective_model=selected, behavior=req.behavior, task_handle=assignment.handle), 202
+
+
+async def accept_message_async(app: FastAPI, deps: "GactDeps", sid: str,
+                               req: PostMessageRequest) -> tuple[PostMessageResponse, int]:
+    """Keep validation, references and confirmed Core I/O off the application loop."""
+    from clio_agent.gact.off_loop import join_off_loop
+
+    prepared = await prepare_references(app, sid, req)
+    return await join_off_loop(accept_message, app, deps, sid, req, prepared=prepared)
+
+
 
 
 __all__ = [

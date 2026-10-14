@@ -7,6 +7,11 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 
+def _task_id_for_owner(app: "FastAPI", owner: str) -> str:
+    """Resolve the session's finite assignment through the passive Core index."""
+    assignment = app.state.task_history.latest_assignment(owner)
+    return assignment.handle if assignment is not None else ""
+
 
 
 def _surface_actions(surface: Mapping[str, Any]) -> list[str]:

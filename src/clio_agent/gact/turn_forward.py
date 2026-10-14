@@ -69,6 +69,35 @@ if TYPE_CHECKING:
     from clio_agent.prompts import PromptRegistry
 
 
+async def _run_turn_setup_off_loop(state: "TurnState", function: Callable[[], Any]) -> Any:
+    """Run finite preparation off-loop and retire it before propagating cancellation."""
+    from clio_agent.gact.off_loop import join_off_loop
+
+    return await join_off_loop(function)
+
+
+async def _run_module(state: "TurnState", module: Any, cancel: Callable[[], bool]) -> Any:
+    """Run the production module in this session's exclusively owned turn worker."""
+    from clio_agent.agent import cancellation_checker
+
+    def forward() -> Any:
+        with cancellation_checker(cancel), _tool_session_context(state.sid, lease_fleet=False):
+            kwargs = {"question": state.enriched_text, "session_id": state.sid,
+                      "session_mode": state.sess.mode, "session_edit_mode": state.sess.edit_mode,
+                      "cancel_requested": cancel,
+                      **native_input_kwargs(state.app, state.sid, module,
+                          images=state.native_images, files=state.native_files)}
+            return module(**kwargs)
+
+    return await state.app.state.turn_runner.run_sync(state.sid, forward)
+
+
+async def forward_turn(state: "TurnState") -> Any:
+    """Retain the workspace lease for this segment; no whole-turn executor pool."""
+    async with _async_tool_session_context(state.sid):
+        return await _forward_turn_leased(state)
+
+
 
 
 

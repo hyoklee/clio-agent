@@ -62,5 +62,22 @@
       "original_authentication_unchanged": true
     },
     "root_absence_verified": false
+  },
+  "review_cache_c5": {
+    "root": "C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/.clio-review-c5",
+    "action": "guarded owned review cache removal",
+    "executed": false,
+    "reason": "blocked by policy",
+    "manual_only": true,
+    "files": 7,
+    "logical_bytes": 52527,
+    "links": 0,
+    "review_process": {
+      "pid": 62776,
+      "birth": 1791930974.850556,
+      "exit_code": 0,
+      "original_authentication_unchanged": true
+    },
+    "root_absence_verified": false
   }
 }

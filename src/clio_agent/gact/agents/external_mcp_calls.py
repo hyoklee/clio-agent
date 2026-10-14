@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import threading
+from functools import partial
 from collections.abc import Mapping
 from typing import Any
 
@@ -35,19 +36,18 @@ async def _call_enabled_external_mcp_tool(
     gate = getattr(app.state, "pending_permission_gate", None)
     if gate is None:
         gate = app.state.make_permission_gate()
-    decision = _invoke_permission_gate(
+    from clio_agent.gact.tool_dispatch import run_owned_callable
+
+    decision = await run_owned_callable(partial(_invoke_permission_gate,
         gate,
         observer_name,
         dict(tool_args),
         _external_mcp_permission_context(tool_annotations),
-    )
+    ))
     if decision != "allow":
         raise PermissionError(f"tool call {observer_name!r} denied by permission gate")
 
-    # Execution path (#1106 + #1113): this dynamic-agent call dispatches call_tool, so
-    # its client comes from make_elicitation_client — the single factory PLUS the
-    # elicitation handler bound to THIS call's invocation (one client per call).
-    from clio_agent.gact.elicitation_bridge import make_elicitation_client  # noqa: PLC0415
+    from clio_agent.tools.mcp_runtime import make_mcp_client
     from clio_agent.gact.mcp_apps import call_tool_result_to_observer  # noqa: PLC0415
     from clio_agent.tools.execution import notify_tool_observer  # noqa: PLC0415
     from clio_agent.tools.mcp_config import (  # noqa: PLC0415
@@ -59,7 +59,7 @@ async def _call_enabled_external_mcp_tool(
     spec = info.get("spec", {})
     try:
         transport = transport_from_spec(spec)
-        client_ctx = make_elicitation_client(app, transport, server_id, tool_name)
+        client_ctx = make_mcp_client(transport, server_id=server_id)
     except MCPTransportError:
         raise RuntimeError(f"unknown stored MCP transport for {server_id}") from None
     except (ImportError, RuntimeError, TypeError, ValueError, OSError) as exc:
@@ -71,19 +71,16 @@ async def _call_enabled_external_mcp_tool(
     notify_tool_observer(tool_observer, observer_name, dict(tool_args), "started")
     try:
         from clio_agent.gact.artifacts.observer_bridge import observer_call_id
-        from clio_agent.tools.mcp_executor import AsyncMCPToolExecutor
         from clio_agent.tools.task_call_context import TASK_CALL, TaskCall
 
-        executor = AsyncMCPToolExecutor(
-            transport, client_factory=lambda _: client_ctx, server_id=server_id
-        )
         token = TASK_CALL.set(
             TaskCall(invocation_id=observer_call_id(), owner_agent=_ctx.active_react_scope())
         )
         try:
-            async with executor:
-                outcome = await executor.call_tool_result(tool_name, dict(tool_args))
-                result = outcome.raw_result
+            import hashlib
+            auth_scope = hashlib.sha256(json.dumps(dict(spec), sort_keys=True, default=str).encode()).hexdigest()
+            result = await app.state.external_tasks.call(server_id, client_ctx, tool_name,
+                dict(tool_args), auth_scope=auth_scope)
         finally:
             TASK_CALL.reset(token)
     except Exception as raw_exc:  # noqa: BLE001
@@ -137,12 +134,14 @@ def _run_external_mcp_tool_sync(
             running = None
         if running is application_loop:
             raise RuntimeError("Synchronous MCP tools must execute off the application loop")
-        return asyncio.run_coroutine_threadsafe(
+        from clio_agent.gact.tool_dispatch import call_on_application
+
+        return call_on_application(
+            application_loop,
             _call_enabled_external_mcp_tool(
                 app, server_id, info, tool_name, tool_args, tool_annotations
             ),
-            application_loop,
-        ).result()
+        )
     try:
         asyncio.get_running_loop()
     except RuntimeError:

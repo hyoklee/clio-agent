@@ -18,7 +18,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Protocol
 
 from fastmcp import Context, FastMCP
 from pydantic import Field
@@ -34,6 +34,7 @@ from clio_agent.tools.builtin_annotations import (
 from clio_agent.tools.file_policy import FileAccessPolicy, FilePolicyError
 from clio_agent.tools.servers.shell_output import (
     StreamCapture,
+    ProgressReporter,
     compose_output_fields,
     read_process_stream,
     shell_result_char_budget,
@@ -469,15 +470,38 @@ async def bash(
     kills its process tree. Accepted background tasks require explicit cancellation.
     """
 
+    if background:
+        return _error(
+            "native_submission_required", "Background shell must use the native MCP task client."
+        )
+    return await execute_shell(ctx, command, cwd, timeout_s, max_output_bytes)
+
+
+class ShellCleanupObserver(Protocol):
+    """Attempt-specific evidence supplied to the native worker, never a task driver."""
+
+    def acquiring_effects(self) -> None:
+        """Mark process acquisition before the spawn can produce side effects."""
+
+    def confirm_cleanup(self) -> None:
+        """Confirm actual process-tree and reader retirement."""
+
+
+async def execute_shell(
+    ctx: ProgressReporter,
+    command: str,
+    cwd: str | None = None,
+    timeout_s: float = _DEFAULT_TIMEOUT_S,
+    max_output_bytes: int = _SHELL_LIMITS.default_output_bytes,
+    *,
+    cleanup: ShellCleanupObserver | None = None,
+) -> dict[str, Any]:
+    """Execute the retained confined workload, shared by both native shell modes."""
     if not isinstance(command, str) or not command.strip():
         return _error(
             "invalid_command",
             "command must be a non-empty string.",
             details={"field": "command"},
-        )
-    if background:
-        return _error(
-            "native_submission_required", "Background shell must use the native MCP task client."
         )
     command = command.strip()
     max_chars = _SHELL_LIMITS.max_command_chars
@@ -548,6 +572,9 @@ async def bash(
     )
     run_argv = [confined.command, *confined.args]
     run_env = {**os.environ, **prepared, "PYTHONUTF8": "1", **confined.env_overlay}
+    # The model's shell is not the authenticated human control channel.
+    for internal_credential in ("CLIO_AUTH_TOKEN", "CLIO_GACT_BEARER_TOKEN"):
+        run_env.pop(internal_credential, None)
     # Prepared scratch is already inside this workspace's writable territory.
     run_env.update({key: prepared[key] for key in ("TEMP", "TMP", "TMPDIR") if key in prepared})
     from clio_agent.paths import workspace_state_dir  # noqa: PLC0415
@@ -572,6 +599,8 @@ async def bash(
         from clio_agent.runtime.task_process_tree import task_spawn_options
 
         process_options = task_spawn_options(confined.popen_kwargs)
+        if cleanup is not None:
+            cleanup.acquiring_effects()
         spawn = asyncio.create_task(
             asyncio.create_subprocess_exec(
                 *run_argv,
@@ -593,6 +622,8 @@ async def bash(
             # A cancelled submission waiter cannot abandon a newly created
             # suspended process. Resolve this exact spawn before stopping it.
             await _cancel_pending_spawn(spawn)
+            if cleanup is not None:
+                cleanup.confirm_cleanup()
             raise
     except Exception as exc:  # noqa: BLE001
         return _error("execution_failed", str(exc), details={"command": command})
@@ -645,7 +676,12 @@ async def bash(
         finally:
             tree.close()
             if physical_settlement:
-
+                if cleanup is not None and all(reader.done() for reader in readers):
+                    # A reader failure can leave output custody unconfirmed.
+                    if all(
+                        not reader.cancelled() and reader.exception() is None for reader in readers
+                    ):
+                        cleanup.confirm_cleanup()
                 base = {
                     "command": command,
                     "cwd": str(safe_cwd),

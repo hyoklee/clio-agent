@@ -1,6 +1,7 @@
 """Document artifact manifests, reviews, renditions, and editor adapters."""
 
 from __future__ import annotations
+from clio_agent.gact.session_input import accept_session_input
 
 import asyncio
 import json

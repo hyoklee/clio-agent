@@ -15,6 +15,22 @@ if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
 
 
+def _stage_plan_exit_resume(app: "FastAPI", deps: "GactDeps", sid: str, session: Any,
+                            text: str, metadata: dict[str, Any], *, question_id: str) -> None:
+    """Publish approved/revised work into the sole session admission mailbox."""
+    from clio_agent.gact.session_input import accept_session_input
+
+    accept_session_input(app, sid, text, metadata={**metadata, "approval": True},
+        steer_message_id="plan-answer:" + question_id, source="plan_exit")
+
+
+def _stage_plan_revision_message(app: "FastAPI", deps: "GactDeps", sid: str,
+                                  session: Any, feedback: str, *, plan_file: str,
+                                  question_id: str) -> None:
+    """Retain human revision feedback without launching a competing turn."""
+    _stage_plan_exit_resume(app, deps, sid, session, feedback,
+        {"plan_exit_result": "rejected", "plan_file": plan_file}, question_id=question_id)
+
 
 
 
@@ -39,7 +55,8 @@ def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questio
     feedback = str(getattr(question, "answer", "") or "").strip()
 
     app.state.sessions.update(
-        sid, metadata_patch={_PLAN_EXIT_PENDING_KEY: {}, "pending_user_question_id": ""}
+        sid, metadata_patch={_PLAN_EXIT_PENDING_KEY: {}, "pending_user_question_id": "",
+                             "execution_gate": ""}
     )
 
     if decision == "reject":

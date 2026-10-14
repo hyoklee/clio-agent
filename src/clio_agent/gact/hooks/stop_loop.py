@@ -30,6 +30,7 @@ orchestrator that fires the hooks, persists the counters, and enqueues the re-dr
 """
 
 from __future__ import annotations
+from clio_agent.gact.session_input import accept_session_input
 
 import logging
 from collections.abc import Mapping

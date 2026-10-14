@@ -39,6 +39,7 @@ class TurnContext:
     trace_id: str = ""  # _ACTIVE_GACT_TRACE_ID
     context_epoch: str = ""  # Captured from the confirmed assignment at turn admission.
     assignment_handle: str = ""  # Confirmed finite assignment; never inherited across sessions.
+    input_notification_id: str = ""  # Human head already rendered by this segment.
     tool_session_id: str = ""  # _ACTIVE_TOOL_SESSION_ID
     # Optional Agent Blueprint selected by this message's execution mode.  This
     # is deliberately turn-scoped: Deep Research layers its coordinator over
@@ -317,6 +318,7 @@ def set_turn_identity(
     execution_blueprint_id: str = "",
     context_epoch: str = "",
     assignment_handle: str = "",
+    input_notification_id: str = "",
 ) -> None:
     """Establish the whole turn layer at once. BARE set, NO token.
 
@@ -339,6 +341,7 @@ def set_turn_identity(
                 execution_blueprint_id=execution_blueprint_id,
                 context_epoch=context_epoch,
                 assignment_handle=assignment_handle,
+                input_notification_id=input_notification_id,
             ),
         )
     )

@@ -36,6 +36,10 @@ from clio_agent.gact.types import (
     RespondInteractionRequest,
     UserQuestion,
 )
+from clio_agent.arc.task_types import QuestionReply
+from clio_agent.gact.question_surface import answer_question, question_row
+from clio_agent.gact.task_access import TaskAccess, TaskCaller
+from clio_agent.gact.human_controls import intervene
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
@@ -291,6 +295,75 @@ class InteractionProjection:
     degradations: list[dict[str, str]] = field(default_factory=list)
 
 
+def _question_from_interaction_id(app: FastAPI, identity: str) -> UserQuestion | None:
+    if not identity.startswith("question:"):
+        return None
+    handle = identity.removeprefix("question:")
+    task = app.state.task_history.task_snapshot(handle)
+    return question_row(app, handle) if task is not None and task.kind == "Question" and task.details else None
+
+
+def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingInteraction:
+    """Render a common Question through the shipped interaction contract."""
+    return PendingInteraction(id="question:" + question.id, kind="question",
+        owner_session_id=question.owner_session_id, attended_session_id=question.attended_session_id,
+        task_id=question.task_handle or question.id, status=question.status,
+        title="Review the plan" if is_plan_exit_question(question) else "Question",
+        prompt=question.prompt, requires_human_response=question.status == "pending",
+        audience=question.audience, routing_state=question.agent_elicitation_routing,
+        answered_by=question.answered_by,
+        source=PendingInteractionSource(protocol="mcp" if question.source.startswith("mcp") else "native",
+            tool_name=question.source, invocation_id=str(question.metadata.get("invocation_id") or "")),
+        created_at=question.created_at, revision=question.updated_at,
+        payload={"question_id": question.id, "question_kind": question.kind,
+            "options": [option.model_dump() for option in question.options],
+            "allow_freeform": question.allow_freeform, "answer": question.answer,
+            "selected_options": question.selected_options, "metadata": question.metadata,
+            "answer_metadata": question.answer_metadata,
+            **(question.metadata.get("elicitation") or {}),
+            **(plan_exit_payload(question) if is_plan_exit_question(question) else {})},
+        actions=["answer", "cancel"] if question.status == "pending" else [])
+
+
+def project_pending_interactions(app: FastAPI, root_session_id: str, *,
+                                 include_children: bool = False,
+                                 include_recent_resolved: bool = False,
+                                 resolved_limit: int = 20) -> InteractionProjection:
+    """Combine presentation kinds; Question lifecycle stays in the common Core row."""
+    history = app.state.task_history
+    caller = TaskCaller(root_session_id, app.state.human_principal, human_action=True)
+    access = TaskAccess(history, caller)
+    owners = _session_scope(app, root_session_id, include_children)
+    handles = set().union(*(history.session_handles(owner) for owner in owners))
+    handles.intersection_update(history.task_handles(kind="Question", human_id=caller.human_id))
+    pending, resolved, degradations = [], [], []
+    for handle in handles:
+        task = access.require(handle, "read")
+        if task.details is None:
+            degradations.append({"reason": "question_content_unconfirmed", "owner_session_id": task.owner.session_id})
+            continue
+        row = _question_interaction(app, question_row(app, handle))
+        (pending if row.status == "pending" else resolved).append(row)
+    for permission in app.state.permissions.values():
+        if str(permission.get("session_id") or "") in owners:
+            row = _permission_interaction(app, permission)
+            (pending if row.status == "pending" else resolved).append(row)
+    for owner in _owners_newest_first(app, owners):
+        surfaces, reasons = _a2ui_interactions(app, owner)
+        degradations.extend(reasons)
+        for row in surfaces:
+            (pending if row.status == "pending" else resolved).append(row)
+    if include_recent_resolved:
+        resolved.sort(key=lambda row: (row.revision, row.id), reverse=True)
+        pending.extend(resolved[:resolved_limit])
+    pending.sort(key=lambda row: (row.created_at, row.id), reverse=True)
+    limit = interactions_projection_limit()
+    if limit > 0 and len(pending) > limit:
+        degradations.append({"reason": "projection_limit", "owner_session_id": root_session_id})
+        pending = pending[:limit]
+    return InteractionProjection(_stamp_request_sequence(pending), degradations)
+
+
 
 
 def _interaction_wire(row: PendingInteraction) -> dict[str, Any]:
@@ -378,12 +451,11 @@ def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
                 )
             action = request.action or "answer"
             if action == "cancel":
-                updated = await app.state.cancel_user_question(question.session_id, question.id)
+                await intervene(app, question.id, "cancel")
             elif action == "answer":
-                updated = await app.state.answer_user_question(
-                    question.session_id,
-                    question.id,
-                    AnswerUserQuestionRequest(
+                await run_in_threadpool(answer_question, app,
+                    TaskCaller(root_session_id, app.state.human_principal, human_action=True),
+                    question.id, QuestionReply(
                         answer=request.answer,
                         selected_options=request.selected_options,
                         # User-submitted form fields remain an exact field map.
@@ -391,10 +463,12 @@ def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
                         # question/interaction instead of overwriting equally
                         # named schema fields inside answer metadata.
                         metadata=dict(request.metadata),
+                        responder_human=app.state.human_principal,
                     ),
                 )
             else:
                 raise _error(422, "validation_error", "question action must be answer or cancel")
+            updated = await run_in_threadpool(question_row, app, question.id)
             return {"interaction": _interaction_wire(_question_interaction(app, updated))}
 
         permission_id = interaction_id.removeprefix("permission:")

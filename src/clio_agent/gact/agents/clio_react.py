@@ -364,10 +364,6 @@ class _Loop:
 
         expert_span = uuid.uuid4().hex[:16]
         self.recorder.started(expert_span, self.inputs)
-        state = getattr(_ctx.active_app(), "state", None)
-        ledger = getattr(state, "messages", None)
-        if ledger is not None:
-            self.recorder.carry_over(ledger.get(self.session, []) or [])
         self.recorder.injections([*self._tool_use_note(), *_ctx.turn_injections()])
         # The continuing flag is this forward's alone: anything it starts opens its own task.
         continue_token = _CONTINUING.set(False) if _CONTINUING.get() else None
@@ -401,6 +397,15 @@ class _Loop:
         """Tell an agent with tools, once, that one step may call several at once."""
         return [("tool_use", TOOL_USE_NOTE)] if set(self.agent.tools) - {"submit"} else []
 
+    def _arrivals(self) -> bool:
+        """Inspect Core-pending arrivals; only the next input commit delivers them."""
+        from clio_agent.gact import context
+
+        owner = getattr(getattr(context.active_app(), "state", None), "conversations", None)
+        if owner is None or context.current().react_run >= 0:
+            return False
+        return bool(owner.mail.stage(owner.caller(self.session)).items)
+
     def _one_step(self) -> dspy.Prediction | None:
         from clio_agent.gact import context as _ctx  # noqa: PLC0415
         from clio_agent.gact.compaction import maybe_autocompact  # noqa: PLC0415
@@ -408,6 +413,7 @@ class _Loop:
         _raise_if_cancelled()
         self._arrivals()
         maybe_autocompact(self.autocompact)
+        self.recorder.commit_input(self.step)
         request = Request(
             model=self.lm.model,
             system=self.system,
@@ -415,7 +421,6 @@ class _Loop:
             tools=self.tools,
             config=self.config,
         )
-        self.recorder.commit_input(self.step)
         try:
             response = _call_lm(self.lm, request)
         except (ContextWindowExceededError, ContextLengthError):
@@ -599,7 +604,13 @@ class _Loop:
 
     def _prediction(self, outputs: dict[str, Any], reason: str) -> dspy.Prediction:
         # The agent's messages are what clio-core holds for its scope: one source.
-        return dspy.Prediction(**outputs, messages=self._context(), termination_reason=reason)
+        prediction = dspy.Prediction(**outputs, messages=self._context(), termination_reason=reason,
+            assignment_disposition=getattr(outputs, "assignment_disposition", None))
+        from clio_agent.arc.task_types import ContextBoundary
+        view = self.recorder.arc.context_view(self.recorder.session, self.recorder.scope)
+        prediction.clio_context_boundary = ContextBoundary(session_id=self.recorder.session,
+            scope=self.recorder.scope, logical_time=max((row.logical_time for row in view.segments), default=0))
+        return prediction
 
 
 # --------------------------------------------------------------------------- #
@@ -645,7 +656,10 @@ def _call_lm(lm: Any, request: Request) -> Response:
                 group.start_soon(watch_cancel)
                 try:
                     with dspy.context(send_stream=send):
-                        response = await lm.acall(request)
+                        owner = getattr(getattr(_ctx.active_app(), "state", None), "conversations", None)
+                        slot = owner.inference_slot(session_id) if owner is not None else contextlib.nullcontext()
+                        async with slot:
+                            response = await lm.acall(request)
                 finally:
                     finished.set()
                     await send.aclose()

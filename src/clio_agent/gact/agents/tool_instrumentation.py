@@ -322,10 +322,8 @@ def native_tool(
     setattr(func, TITLE_ATTR, sanitize_tool_title(title))
     setattr(func, DOMAIN_ATTR, _validated_domain(domain, tool_name=name))
     setattr(func, READ_ONLY_ATTR, bool(read_only))
-    from clio_agent.tools.builtin_control_host import builtin_control_bridge
-
     tool = _clio_native_tool_class()(func=func, name=name, desc=desc, args=args)
-    tool.func = builtin_control_bridge(func, name=name, description=desc or "", args=tool.args)
+    setattr(func, "_clio_builtin", True)
     return tool
 
 
@@ -561,6 +559,13 @@ def instrument_tools(tools: Iterable[Any]) -> list[Any]:
 
 
 def _instrument_tool(tool: Any) -> Any:
+    from clio_agent.gact import context
+
+    boundary = getattr(getattr(context.active_app(), "state", None), "builtin_boundary", None)
+    if getattr(getattr(tool, "func", None), "_clio_builtin", False):
+        if boundary is None:
+            raise RuntimeError("Built-in MCP boundary is not ready")
+        tool = boundary.bind(tool)
     func = getattr(tool, "func", None)
     name = str(getattr(tool, "name", "") or "").strip()
     if not callable(func) or not name:

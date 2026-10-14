@@ -10,22 +10,20 @@ from clio_agent.gact.agents.tool_instrumentation import native_tool
 from clio_agent.gact.permission_gate import _invoke_permission_gate
 from clio_agent.gact.storage.models import CreateSource
 from clio_agent.gact.storage.setup_tool import connected_data_status, setup_presentation
-from clio_agent.tools.task_call_context import require_admission
 
 
 
 
 def prepare_connect(
-    app: Any, arguments: dict[str, Any], *, human_action: bool = False
+    app: Any, arguments: dict[str, Any], *, human_action: bool = False, session_id: str = ""
 ) -> dict[str, Any]:
     """Approve source attachment and reserve inputs before native indexing submission."""
     provider, root, label = (arguments[key] for key in ("provider", "root", "label"))
     mode, configuration = arguments.get("mode", "read_only"), arguments.get("configuration")
-    sid = context.active_session_id()
+    sid = session_id or context.active_session_id()
     session = app.state.sessions.get(sid) if app is not None and sid else None
     if app is None or session is None:
         raise ValueError("Source connection requires an active CLIO workspace session")
-    require_admission(app, sid)
     workspace = app.state.workspaces.get(session.workspace_id)
     if workspace is None:
         raise ValueError("The session workspace is unavailable on this CLIO")
@@ -67,9 +65,9 @@ def prepare_connect(
         service.store.put("source", prepared.source.id, prepared)
         existing = prepared
     if provider in {"github", "google_drive", "globus"} and not service.auth.connected(existing):
-        result = connected_data_status()
-        result["connection"] = {"source_id": existing.source.id, "state": "sign_in_required"}
-        return {"immediate_result": result}
+        return {"immediate_result": {"source_id": existing.source.id,
+            "state": "sign_in_required", "error": {"code": "source_sign_in_required",
+            "message": "Sign in before indexing this source."}}}
     if not existing.linked_manifest_id:
         if provider == "github":
             from clio_agent.gact.storage.github_preflight import source_cli
@@ -84,7 +82,8 @@ def prepare_connect(
                 ["api", f"repos/{org}/{repo}/contents" + (f"/{folder}" if folder else "")],
             )
 
-        return index_inputs(app, existing)
+        return {"source_id": existing.source.id, "workspace_id": session.workspace_id,
+                "workspace_root": workspace.root_path}
     result = connected_data_status()
     result["connection"] = {"source_id": existing.source.id, "state": "linked"}
     return {"immediate_result": result}
@@ -93,9 +92,9 @@ def prepare_connect(
 def build_connected_data_connect_tool() -> Any:
     """Declare source attachment as an effectful, observed native tool."""
     return native_tool(
-        connected_data_connect,
+        _native_connect,
         name="connected_data_connect",
-        desc=connected_data_connect.__doc__,
+        desc="Connect and index an approved source folder. Returns an Indexing handle immediately; files are downloaded only by connected_data_download. Observe progress, wait explicitly, or continue independent work. Stop leaves accepted indexing running.",
         args={
             "provider": {"type": "string", "description": "Provider reported by source status."},
             "root": {"type": "string", "description": "Requested folder or repository location."},
@@ -108,3 +107,23 @@ def build_connected_data_connect_tool() -> Any:
         domain="resources",
         read_only=False,
     )
+
+
+async def _native_connect(provider: str, root: str, label: str, mode: str = "read_only",
+                          configuration: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Submit indexing through the application-owned native storage client."""
+    from clio_agent.gact.builtin_boundary import submit_native_tool
+
+    return await submit_native_tool("connected_data_connect", {"provider": provider,
+        "root": root, "label": label, "mode": mode, "configuration": configuration})
+
+
+def build_connected_data_index_tool() -> Any:
+    """Declare explicit manifest refresh through the same native storage workload."""
+    async def index(source_id: str) -> dict[str, Any]:
+        from clio_agent.gact.builtin_boundary import submit_native_tool
+        return await submit_native_tool("connected_data_index", {"source_id": source_id})
+    return native_tool(index, name="connected_data_index",
+        desc="Refresh a connected folder's index and immediately receive an Indexing handle. Continue work or wait_tasks; Stop leaves it running. Failure or cancellation retains the previous manifest.",
+        args={"source_id": {"type": "string"}}, presentation=setup_presentation,
+        title="Refresh folder index", domain="resources", read_only=False)

@@ -368,6 +368,46 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         # Bounded here, in the caller's context (the spill lands in its workspace).
         return _bounded_model_tool_result(outcome.model_text)
 
+    async def call_tool_result(self, name: str, args: Mapping[str, Any]) -> _MCPCallOutcome:
+        """Dispatch one RPC; application-owned SDK clients retain accepted task transports."""
+        import contextvars
+        import mcp_types
+        from clio_agent.gact import context
+
+        app = context.active_app()
+        loop = getattr(getattr(app, "state", None), "mcp_app_loop", None)
+        if app is not None and loop is not None:
+            captured = contextvars.copy_context()
+            async def product_call() -> _MCPCallOutcome:
+                if name in {"bash", "shell_bash"}:
+                    value = await app.state.builtin_boundary.native_call(name, dict(args), captured)
+                    result = mcp_types.CallToolResult(content=[mcp_types.TextContent(type="text", text=json.dumps(value))], structured_content=value)
+                    return _MCPCallOutcome(json.dumps(value), result, "shell")
+                namespace, _, bare = name.partition("_")
+                proxy = self._namespace_servers.get(namespace)
+                if proxy is not None:
+                    configured, decision = resolve_and_build_direct_client(namespace, self._clio_namespace_direct_factories)
+                    record_namespace_route_decision(namespace, decision)
+                    if configured is None:
+                        configured = self._client_factory(proxy)
+                    server, tool = namespace, bare
+                    spec = getattr(self, "_clio_namespace_specs", {}).get(namespace, {})
+                else:
+                    configured, server, tool = self._client_factory(self._server), self._server_id or "primary", name
+                    spec = {"server": server, "transport": type(configured.transport).__name__}
+                auth_scope = hashlib.sha256(json.dumps(spec, sort_keys=True, default=str).encode()).hexdigest()
+                result = await app.state.external_tasks.call(server, configured, tool, dict(args), auth_scope=auth_scope)
+                return _MCPCallOutcome(_result_to_text(result), result, namespace if proxy is not None else None)
+            coroutine = product_call()
+            if asyncio.get_running_loop() is loop:
+                return await coroutine
+            return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(coroutine, loop))
+        # CLI callers retain ordinary SDK inline/input behavior. Product Tasks
+        # require the application owner, and never inherit a resident executor.
+        client, tool, namespace = await self._route(name)
+        result = await client.call_tool(tool, dict(args))
+        return _MCPCallOutcome(_result_to_text(result), result, namespace)
+
 
     async def read_resource(self, namespace: str | None, uri: str) -> Any:
         """Read ``uri`` from exactly ``namespace`` (or the composite gateway).

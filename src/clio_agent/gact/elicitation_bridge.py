@@ -261,18 +261,8 @@ def make_elicitation_hook(
 def _resolve_trusted_origins(explicit: Sequence[str] | None) -> tuple[str, ...]:
     """Resolve the url-mode trust allow-list (explicit arg else config)."""
 
-    if explicit is not None:
-        return tuple(explicit)
-    from clio_agent import conf  # noqa: PLC0415
-
-    default: list[str] = []
-    configured = conf.resolve(
-        "tools.mcp.elicitation.url_trusted_origins",
-        env="CLIO_MCP_ELICITATION_URL_TRUSTED_ORIGINS",
-        default=default,
-        cast=conf.as_csv,
-    )
-    return tuple(configured or ())
+    from clio_agent.gact.elicitation_config import trusted_origins
+    return trusted_origins(explicit)
 
 
 def make_elicitation_client(

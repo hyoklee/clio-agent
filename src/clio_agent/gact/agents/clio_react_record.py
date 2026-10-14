@@ -407,6 +407,7 @@ class StepRecorder:
         self.turn_id = _active_semantic_turn_id()
         self.expert_span_id = ""
         self.head_id = ""  # this forward's user message on the scope
+        self._mail_head: dict[str, Any] | None = None
         self._reader = ContextReader(arc, session, scope)
 
     def read_steps(self) -> list[Message]:
@@ -415,7 +416,7 @@ class StepRecorder:
 
     def started(self, expert_span_id: str, inputs: Mapping[str, Any]) -> None:
         """Open the expert lifecycle on the highway."""
-        from clio_agent.gact.agents.context_recovery import context_identity
+        from clio_agent.gact.agents.context_identity import context_identity
         from clio_agent.gact.runtime.globals import _emit_expert_lifecycle_event  # noqa: PLC0415
         from clio_agent.tools.mcp_runtime import wire_value  # noqa: PLC0415
 
@@ -434,85 +435,62 @@ class StepRecorder:
     def user_message(self, message: Message) -> None:
         """Record the forward's user message; the projection starts every turn with it."""
         content = user_to_record(message)
+        from clio_agent.gact import context
+
+        identity = context.current_turn().input_notification_id
+        if identity:
+            self._mail_head = content
+            return  # only the confirmed input record admits this head to context
         self.head_id = self._write("user", content, 0, "")
 
+    def commit_input(self, step: int) -> None:
+        """Confirm staged Core input immediately before constructing the model request."""
+        from clio_agent.arc.task_types import ContextBoundary
+        from clio_agent.gact import context
 
-    def carry_over(self, ledger: Sequence[Any]) -> None:
-        """Restore an absent scope from its recorded operations, once.
-
-        Transcript reconstruction is used only when no scope operations exist;
-        it preserves recorded tool parts and declares any missing information.
-        """
-        if self.arc is None or self.arc.has_segments(self.session, self.scope):
+        owner = getattr(getattr(context.active_app(), "state", None), "conversations", None)
+        if owner is None:
             return
-        if "#epoch:" in self.scope:
-            # Fresh context is another scope in the existing Core hierarchy.
-            # Its first input must not reconstruct the predecessor's transcript.
-            return
-        from clio_agent.gact.conversation_projection import (  # noqa: PLC0415
-            model_context_messages,
-        )
+        assignment = context.active_assignment_handle()
+        if not assignment:
+            raise ValueError("Model input has no confirmed conversation assignment")
+        caller = owner.caller(self.session)
+        with owner.history._lock:
+            identity = context.current_turn().input_notification_id
+            from clio_agent.gact.session_mail import StagedInput
+            from clio_agent.arc.task_types import CoreReference
+            from clio_agent.gact.task_history import _encoded
+            import hashlib
 
-        rows = list(model_context_messages(list(ledger)))
-        # The loop records this forward's question itself. Earlier unanswered
-        # questions (e.g. a branch/rewind at a user message) remain model context.
-        if self.turn_id:
-            rows = [row for row in rows if _field(row, "id") != self.turn_id]
-        elif rows and _field(rows[-1], "role") == "user":
-            rows.pop()  # standalone callers supply the current question at the tail
-        from clio_agent.gact.agents.context_recovery import (
-            context_identity,
-            recorded_context,
-            recovery_details,
-            transcript_context,
-        )
-
-        restored = recorded_context(self.session, self.scope, ledger)
-        if restored:
-            fold_steps([s for s in restored if s.status == "live"])
-            identity = context_identity(self.arc, self.session, self.scope)
-            if self.arc.restore_empty_context(self.session, self.scope, restored):
-                note = f"Restored {len(restored)} recorded context segments for {self.scope} from the durable trace, including tool inputs and results."
-                self._write(
-                    "user", {"text": note, "source": "earlier_turns", "actor": "algorithm"}, 0, ""
-                )
-                emit_injection(
-                    "earlier_turns", recovery_details(note, restored), agent_id=self.expert_id
-                )
-                from clio_agent.gact import context
-                from clio_agent.gact.runtime.globals import _emit_semantic_event
-
-                app = context.active_app()
-                if app is not None:
-                    _emit_semantic_event(
-                        app,
-                        self.session,
-                        "context.recovered",
-                        turn_id=self.turn_id,
-                        status="completed",
-                        payload={
-                            **identity,
-                            "source": "durable_trace",
-                            "restored_segments": len(restored),
-                        },
-                    )
-            return
-        restored = transcript_context(self.session, self.scope, rows)
-        carried = len(restored)
-        if carried:
-            fold_steps(restored)
-            if not self.arc.restore_empty_context(self.session, self.scope, restored):
-                return
-            note = (
-                f"Reconstructed {carried} earlier context records from the saved transcript, "
-                "including recorded tool inputs and results. Provider continuation state is unavailable."
-            )
-            self._write(
-                "user", {"text": note, "source": "earlier_turns", "actor": "algorithm"}, 0, ""
-            )
-            emit_injection(
-                "earlier_turns", recovery_details(note, restored), agent_id=self.expert_id
-            )
+            segments = self.arc.context_view(self.session, self.scope).segments
+            acknowledged = owner.history.acknowledged_notifications(self.session)
+            observation = next((row for row in reversed(segments) if row.kind == "observation"
+                and set(row.content.get("notification_ids", ())) - acknowledged), None)
+            collecting = tuple(observation.content.get("notification_ids", ())) if observation is not None else ()
+            collected = (*collecting, identity) if identity and self._mail_head else collecting
+            staged = (StagedInput((), ()) if context.current().react_run >= 0 else
+                      owner.mail.stage(caller, collected=collected))
+            rendered = {}
+            for source, text in staged.injections:
+                for notification in text.notification_ids:
+                    rendered[notification] = {"text": str(text), "source": source,
+                        "actor": "user" if source == "steer" else "algorithm"}
+            if identity and self._mail_head:
+                rendered[identity] = self._mail_head
+            references = tuple(owner.history.write_content(self.session, rendered[item.id])
+                               for item in staged.items if item.id in rendered)
+            boundary = ContextBoundary(session_id=self.session, scope=self.scope,
+                logical_time=max((row.logical_time for row in segments), default=0))
+            owner.mail.commit(caller, staged, assignment_id=assignment,
+                iteration_id=f"{self.turn_id}:{self.expert_span_id}:{step}", boundary=boundary,
+                turn_id=self.turn_id,
+                rendered_content=references,
+                tool_observation=CoreReference(session_id=self.session, scope=self.scope,
+                    content_id=str(observation.id), sha256=hashlib.sha256(_encoded(observation.content)).hexdigest())
+                    if observation is not None and set(collecting).intersection(item.id for item in staged.items) else None)
+            for source, text in staged.injections:
+                if source != "steer":
+                    emit_injection(source, str(text), agent_id=self.expert_id)
 
 
     def injections(self, injections: Sequence[tuple[str, str]]) -> None:
@@ -611,28 +589,28 @@ class StepRecorder:
         }
         if not thinking_complete:
             thought["thinking_incomplete"] = True
-        self._write("thought", thought, step, span)
+        thought_id = self._write("thought", thought, step, span)
         rows: list[dict[str, Any]] = []
         for call in calls:
             value, is_error = results.get(call.id, ("", False))
-            notification_ids: list[str] = []
+            from clio_agent.gact.tool_observation import CollectedTaskResult
+
+            notification_ids = list(value.notification_ids) if isinstance(value, CollectedTaskResult) else []
             self._write(
                 "tool_call",
                 {"id": call.id, "name": call.name, "args": dict(call.input)},
                 step,
                 span,
             )
-            self._write(
-                "observation",
-                {
+            observation = {
                     "call_id": call.id,
                     "text": _arc_obs_value(value),
                     "is_error": is_error,
                     **({"notification_ids": notification_ids} if notification_ids else {}),
-                },
-                step,
-                span,
-            )
+                }
+            observation_id = self._write("observation", observation, step, span)
+            if notification_ids:
+                self._commit_collection(observation_id, observation, tuple(notification_ids), call.id)
             rows.append(
                 {
                     "id": call.id,
@@ -642,6 +620,15 @@ class StepRecorder:
                     "is_error": is_error,
                 }
             )
+        from clio_agent.gact import context
+        owner = getattr(getattr(context.active_app(), "state", None), "conversations", None)
+        if owner is not None and context.current().react_run < 0 and context.active_assignment_handle():
+            import hashlib
+            from clio_agent.arc.task_types import CoreReference
+            from clio_agent.gact.task_history import _encoded
+            owner.record_progress(context.active_assignment_handle(),
+                CoreReference(session_id=self.session, scope=self.scope, content_id=thought_id,
+                    sha256=hashlib.sha256(_encoded(thought)).hexdigest()), tuple(call.name for call in calls), step)
         _emit_react_step_event(
             expert_id=self.expert_id,
             expert_span_id=self.expert_span_id,
@@ -652,6 +639,26 @@ class StepRecorder:
             tool_calls=rows,
             is_finish=any(call.name == "submit" for call in calls),
         )
+
+    def _commit_collection(self, identity: str, content: dict[str, Any],
+                           notifications: tuple[str, ...], call_id: str) -> None:
+        """Acknowledge collection only after its real tool observation is durable."""
+        import hashlib
+        from clio_agent.arc.task_types import ContextBoundary, CoreReference
+        from clio_agent.gact import context
+        from clio_agent.gact.task_history import _encoded
+
+        owner = context.active_app().state.conversations
+        caller = owner.caller(self.session)
+        with owner.history._lock:
+            staged = owner.mail.collection(caller, notifications)
+            segments = self.arc.context_view(self.session, self.scope).segments
+            owner.mail.commit(caller, staged, assignment_id=context.active_assignment_handle(),
+                iteration_id=f"tool:{self.turn_id}:{self.expert_span_id}:{call_id}",
+                boundary=ContextBoundary(session_id=self.session, scope=self.scope,
+                    logical_time=max((row.logical_time for row in segments), default=0)),
+                tool_observation=CoreReference(session_id=self.session, scope=self.scope,
+                    content_id=identity, sha256=hashlib.sha256(_encoded(content)).hexdigest()))
 
     def completed(
         self,
@@ -733,10 +740,6 @@ def _token_estimate(content: Mapping[str, Any]) -> int:
     media = content.get("media") or []
     text = {k: v for k, v in content.items() if k != "media"}
     return max(1, len(json.dumps(text, default=str)) // 4 + _MEDIA_TOKENS * len(media))
-
-
-def _field(row: Any, name: str) -> Any:
-    return row.get(name) if isinstance(row, Mapping) else getattr(row, name, None)
 
 
 def _text(value: Any) -> str:

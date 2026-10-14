@@ -510,6 +510,8 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     )
     from clio_agent.gact.turn_stream import settle_turn_transcript  # noqa: PLC0415
     from clio_agent.gact.types import UserQuestion  # noqa: PLC0415
+    from clio_agent.arc.task_types import QuestionDefinition, TaskOwner
+    from clio_agent.gact.question_surface import question_row
 
     plan_file = str(pending.get("plan_file") or recorded_plan_file(session) or "")
     summary = str(pending.get("summary") or "")
@@ -560,13 +562,26 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     # answer arriving right after the status event starts the resume turn, whose
     # transcript a late settle here would close.
     settle_turn_transcript(state)
-    record_user_question(app, question)
+    history = app.state.task_history
+    with history._lock:
+        assignment = history.latest_assignment(state.sid)
+        if assignment is None:
+            raise ValueError("Plan approval requires its owning assignment")
+        app.state.conversations.require_admission(assignment)
+        app.state.questions.create(TaskOwner(human_id=assignment.owner.human_id,
+            session_id=state.sid, assignment_id=assignment.handle, parent_handle=assignment.handle),
+            QuestionDefinition(prompt=question.prompt, kind=question.kind,
+                options=[option.model_dump() for option in question.options],
+                allow_freeform=True, source="plan_exit", metadata=question.metadata),
+            invocation_id=state.turn_id + ":plan_exit", handle=question.id)
+    question = question_row(app, question.id)
     updated = app.state.sessions.update(
         state.sid,
         status="waiting_user",
         message_count=len(app.state.messages.get(state.sid, [])),
         metadata_patch={
             "pending_user_question_id": question.id,
+            "execution_gate": question.id,
             _PLAN_EXIT_PENDING_KEY: {**dict(pending), "surfaced": True, "question_id": question.id},
         },
     )

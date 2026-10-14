@@ -778,6 +778,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.scheduler_task = task
 
     server_boot.start(app)  # clio-core attach + first doctor pass, both off-loop (typed rows)
+    from clio_agent.gact import task_runtime
+
+    app.state.task_runtime_start = asyncio.create_task(task_runtime.start(app))
     agent_task: Optional[asyncio.Task] = None
     if getattr(app.state, "want_agent", False) and app.state.agent is None:
         agent_task = asyncio.create_task(_construct_agent_async(app))
@@ -786,6 +789,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     provider_catalog_task = server_boot.start_provider_catalog(app)
 
 
+    await asyncio.shield(app.state.task_runtime_start)
     yield
 
 
@@ -826,7 +830,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             pass
 
     # Settle turns and task owners while their durable stores are still alive.
-    await drain_app_turns(app, logger)
+    await task_runtime.close(app)
 
     # Desktop Quit must release the shared runtime before any later executor join can
     # block on a provider/tool worker.  The turn drain above is the safety boundary:
@@ -959,6 +963,11 @@ async def _construct_agent_async(app: "FastAPI") -> None:
     if not await registry_boot.boot_fold_artifact_registry_offloop(app, loop):
         return  # wedged store — agent stays unready with a typed agent_init_error
     agent_initialization.mark_agent_ready(app, agent, boot=True)
+    starting = getattr(app.state, "task_runtime_start", None)
+    if starting is not None:
+        await asyncio.shield(starting)
+        for sid in await asyncio.to_thread(app.state.task_history.pending_sessions):
+            app.state.turn_runner.signal(sid)
 
     # #972: enforce the CAS store byte budget across every workspace at boot (off-loop,
     # #1001 cadence — the registry is now folded, so the reachability scan is ready).
@@ -2022,6 +2031,9 @@ def build_app(
     # replace, active-model ref + override error and the agent-not-available
     # error travel on ``deps``.
     register_messages_routes(app, deps)
+    from clio_agent.gact.routes.tasks import register_task_routes
+
+    register_task_routes(app)
     composer_runtime.register_composer_routes(app, deps)
     register_a2ui_routes(app, deps)
 

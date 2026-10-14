@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI, HTTPException, Request
 
 from clio_agent.gact.events import Event
+from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.runtime.memory_search import (
     _memory_search_response,
     _message_text_excerpt,
@@ -115,114 +116,25 @@ def _memory_tool_audit(
 
 
 def _memory_tool_policy(
-    app: FastAPI,
-    *,
-    session_id: str,
-    target_session_id: str,
-    body: Mapping[str, Any],
+    app: FastAPI, *, session_id: str, target_session_id: str, body: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Decide whether a cross-session memory-tool read is permitted.
-
-    Same-session reads are always allowed. Cross-session reads require explicit
-    user intent within the same workspace; the global workspace requires global
-    intent; any other workspace is denied. Returns a decision dict carrying the
-    resolved active/target sessions and scope label.
-    """
+    """Authorize retained session content through human/configuration Core relationships."""
+    from clio_agent.gact.task_access import TaskAccess
 
     active = app.state.sessions.get(session_id)
     if active is None:
-        raise _memory_tool_error(
-            status_code=404,
-            error="not_found",
-            message=f"session not found: {session_id}",
-            details={"session_id": session_id},
-            recoverable=False,
-        )
-    target = app.state.sessions.get(target_session_id)
-    if target is None:
-        raise _memory_tool_error(
-            status_code=404,
-            error="not_found",
-            message=f"session not found: {target_session_id}",
-            details={"session_id": target_session_id},
-            recoverable=False,
-        )
-
-    requested_scope = str(body.get("scope") or "session").strip() or "session"
-    user_intent = str(body.get("user_intent") or body.get("reason") or "").strip()
-    allow_cross_session = bool(body.get("allow_cross_session")) or bool(user_intent)
-    allow_global = bool(body.get("allow_global")) or requested_scope in {
-        "global",
-        "user",
-        "user_global",
-    }
-    active_workspace = str(getattr(active, "workspace_id", "") or "")
-    target_workspace = str(getattr(target, "workspace_id", "") or "")
-
-    if session_id == target_session_id:
-        return {
-            "allowed": True,
-            "decision": "allow_same_session",
-            "scope": "session",
-            "active_session": active,
-            "target_session": target,
-            "workspace_id": active_workspace,
-            "user_intent": user_intent,
-        }
-
-    if target_workspace == GLOBAL_WORKSPACE_ID:
-        if allow_global:
-            return {
-                "allowed": True,
-                "decision": "allow_global_user_intent",
-                "scope": "global",
-                "active_session": active,
-                "target_session": target,
-                "workspace_id": GLOBAL_WORKSPACE_ID,
-                "user_intent": user_intent,
-            }
-        return {
-            "allowed": False,
-            "decision": "deny_global_requires_intent",
-            "scope": "global",
-            "active_session": active,
-            "target_session": target,
-            "workspace_id": GLOBAL_WORKSPACE_ID,
-            "user_intent": user_intent,
-        }
-
-    if active_workspace and active_workspace == target_workspace:
-        if allow_cross_session:
-            return {
-                "allowed": True,
-                "decision": "allow_same_workspace_user_intent",
-                "scope": "current_workspace",
-                "active_session": active,
-                "target_session": target,
-                "workspace_id": active_workspace,
-                "user_intent": user_intent,
-            }
-        return {
-            "allowed": False,
-            "decision": "deny_cross_session_requires_intent",
-            "scope": "current_workspace",
-            "active_session": active,
-            "target_session": target,
-            "workspace_id": active_workspace,
-            "user_intent": user_intent,
-        }
-
-    return {
-        "allowed": False,
-        "decision": "deny_other_workspace",
-        "scope": "other_workspace",
-        "active_session": active,
-        "target_session": target,
-        "workspace_id": active_workspace,
-        "target_workspace_id": target_workspace,
-        "user_intent": user_intent,
-    }
-
+        raise _memory_tool_error(status_code=404, error="not_found", message="Session unavailable",
+            details={}, recoverable=False)
+    caller = app.state.conversations.caller(session_id)
+    allowed = target_session_id in TaskAccess(app.state.task_history, caller).session_candidates("read")
+    target = app.state.sessions.get(target_session_id) if allowed else None
+    allowed = allowed and target is not None
+    return {"allowed": allowed, "decision": "allow_core_relationship" if allowed else "deny_session_unavailable",
+        "scope": "session" if session_id == target_session_id else "authorized",
+        "active_session": active, "target_session": target,
+        "workspace_id": active.workspace_id,
+        "target_workspace_id": target.workspace_id if target is not None else "",
+        "user_intent": str(body.get("user_intent") or body.get("reason") or "")}
 
 def _raise_memory_policy_denied(
     app: FastAPI,
@@ -442,79 +354,12 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
         caller = body.get("caller", {})
         caller_map = caller if isinstance(caller, Mapping) else {}
         user_intent = str(body.get("user_intent") or body.get("reason") or "").strip()
-        allow_cross_session = bool(body.get("allow_cross_session")) or bool(user_intent)
-        allow_global = bool(body.get("allow_global")) or scope in {
-            "global",
-            "user",
-            "user_global",
-        }
-        active_workspace = str(getattr(active, "workspace_id", "") or "")
-
-        if scope in {"global", "user", "user_global"}:
-            if not allow_global:
-                policy = {
-                    "decision": "deny_global_requires_intent",
-                    "scope": "global",
-                    "workspace_id": active_workspace,
-                    "target_workspace_id": GLOBAL_WORKSPACE_ID,
-                    "user_intent": user_intent,
-                }
-                _raise_memory_policy_denied(
-                    app,
-                    tool_name="memory_search_sessions",
-                    session_id=sid,
-                    target_session_id="",
-                    caller=caller_map,
-                    policy=policy,
-                    query=query,
-                )
-            response = _memory_search_response(
-                app,
-                query=query,
-                workspace_id=GLOBAL_WORKSPACE_ID,
-                include_cross_session=True,
-                limit=limit,
-            )
-            policy_decision = "allow_global_user_intent"
-            policy_scope = "global"
-        elif scope in {"current_workspace", "workspace", "cross_session"}:
-            if not allow_cross_session:
-                policy = {
-                    "decision": "deny_cross_session_requires_intent",
-                    "scope": "current_workspace",
-                    "workspace_id": active_workspace,
-                    "user_intent": user_intent,
-                }
-                _raise_memory_policy_denied(
-                    app,
-                    tool_name="memory_search_sessions",
-                    session_id=sid,
-                    target_session_id="",
-                    caller=caller_map,
-                    policy=policy,
-                    query=query,
-                )
-            response = _memory_search_response(
-                app,
-                query=query,
-                session_id=sid,
-                workspace_id=active_workspace,
-                include_cross_session=True,
-                limit=limit,
-            )
-            policy_decision = "allow_same_workspace_user_intent"
-            policy_scope = "current_workspace"
-        else:
-            response = _memory_search_response(
-                app,
-                query=query,
-                session_id=sid,
-                include_cross_session=False,
-                limit=limit,
-            )
-            policy_decision = "allow_same_session"
-            policy_scope = "session"
-
+        from clio_agent.gact.runtime.memory_search import agent_memory_search
+        active_workspace = active.workspace_id
+        caller_map = {"agent_id": active.agent.id}
+        response = await run_off_loop(agent_memory_search, app, sid, query=query, scope=scope, limit=limit)
+        policy_decision = response.metadata["policy_decision"]
+        policy_scope = response.metadata["policy_scope"]
         audit = _memory_tool_audit(
             app,
             tool_name="memory_search_sessions",

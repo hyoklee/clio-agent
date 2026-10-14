@@ -493,6 +493,33 @@ def stop_session_goal(app: Any, sid: str, *, reason: str = "goal_abandoned") -> 
 # Finalize-boundary dispatch — the goal RIDES the Stop-loop re-drive seam.
 
 
+def _enqueue_goal_redrive(app: Any, session_id: str, decision: Any, goal: dict[str, Any]) -> None:
+    """Confirm one goal continuation; only TurnRunner decides when it can execute."""
+    from clio_agent.gact.session_input import accept_session_input
+
+    goal_id = str(goal.get("goal_id", ""))
+    iteration = int(decision.new_state.get("iters_elapsed", 0))
+    accept_session_input(app, session_id,
+        f"Continue the active goal: {goal.get('condition', '')}\n{decision.guidance}",
+        metadata={"goal_id": goal_id, "goal_continuation": True},
+        steer_message_id=f"goal:{goal_id}:{iteration}", source="goal")
+
+
+def waiting_on_tasks(app: Any, sid: str, goal: dict[str, Any]) -> bool:
+    """Read the conversation owner's declared dependency condition from Core."""
+    from clio_agent.arc.task_types import AssignmentDetails
+
+    current = app.state.task_history.latest_assignment(sid)
+    if current is None or current.details is None:
+        return False
+    details = AssignmentDetails.model_validate(app.state.task_history.read_content(current.details))
+    if not details.dependencies:
+        return False
+    settled = [app.state.task_history.task_snapshot(handle) for handle in details.dependencies]
+    states = [task is not None and task.terminal_at is not None for task in settled]
+    return not (any(states) if details.return_when == "any" else all(states))
+
+
 def _settle_goal_decision(
     app: Any, session_id: str, goal: dict[str, Any], llm: Any, turn_id: str, trace_id: str
 ) -> GoalDecision | None:

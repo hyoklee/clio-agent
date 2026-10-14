@@ -53,7 +53,7 @@ def make_turn_cancel_event(state: "TurnState") -> None:
     onto ``state``.
     """
 
-    state.turn_cancel_event = threading.Event()
+    state.turn_cancel_event = state.app.state.turn_runner.cancellation(state.sid)
     state.app.state.cancel_events[state.sid] = state.turn_cancel_event
     if state.sid in state.app.state.cancel_flags:
         state.turn_cancel_event.set()

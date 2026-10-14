@@ -288,12 +288,15 @@ def new_turn_state(
 
         execution_blueprint_id = DEEP_RESEARCH_BLUEPRINT_ID
 
+    admitted = _ctx.current_turn()
     _ctx.set_turn_identity(
         app=app,
         session_id=sid,
         turn_id=turn_id,
         trace_id=trace_id,
         execution_blueprint_id=execution_blueprint_id,
+        assignment_handle=admitted.assignment_handle if admitted.session_id == sid else "",
+        input_notification_id=admitted.input_notification_id if admitted.session_id == sid else "",
     )
     from clio_agent.gact.app import _dspy_images_from_parts  # noqa: PLC0415
     from clio_agent.gact.messaging import _dspy_files_from_parts  # noqa: PLC0415

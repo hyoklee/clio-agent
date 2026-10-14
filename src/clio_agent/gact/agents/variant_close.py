@@ -95,6 +95,8 @@ def _release(app: Any, sid: str, variants_id: str) -> None:
     pointer = metadata.get(PENDING_META)
     if isinstance(pointer, Mapping) and pointer.get("variants_id") == variants_id:
         patch[PENDING_META] = {}
+    elif isinstance(pointer, Mapping) and variants_id in pointer:
+        patch[PENDING_META] = {key: value for key, value in pointer.items() if key != variants_id}
     if patch:
         app.state.sessions.update(sid, metadata_patch=patch)
 

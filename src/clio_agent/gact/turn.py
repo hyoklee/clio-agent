@@ -51,10 +51,11 @@ from clio_agent.gact.delegation import (
 )
 from clio_agent.gact.events import Event, EventBus, _publish_transcript_event
 from clio_agent.gact.evidence import _propose_edit_diffs_from_pred
-from clio_agent.gact.message_intents import stage_intent_user_message
+from clio_agent.gact.session_store import _append_session_message, _replace_session_messages
 from clio_agent.gact.messaging import (
     _agent_accepts_images,
     _image_part_summaries,
+    _prediction_summary,
     _user_message_parts,
 )
 from clio_agent.gact.off_loop import emit_semantic_event_async
@@ -82,10 +83,9 @@ from clio_agent.gact.tool_observer import (
     _tool_calls_from_handoff_rows,
 )
 from clio_agent.gact.turn_cancellation import settle_asyncio_cancellation
-from clio_agent.gact.turn_finalize import maybe_pause_for_user
 from clio_agent.gact.turn_forward import _run_turn_setup_off_loop, forward_turn
 from clio_agent.gact.turn_prologue_guard import run_finalize_or_settle_prologue_gap
-from clio_agent.gact.turn_start_offloop import prepare_turn_off_loop, spawn_user_turn
+from clio_agent.gact.turn_start_offloop import prepare_turn_off_loop
 from clio_agent.gact.turn_state import DeferredTranscriptJob, new_turn_state
 from clio_agent.gact.turn_stream import bind_live_emitter, settle_turn_transcript
 from clio_agent.gact.turn_usage import roll_up_usage
@@ -155,20 +155,8 @@ async def _apply_turn_prediction(
         state.error_info = pred_error_info
         if not state.error_info.details.get("partial", False):
             state.answer_text = ""
-    # #1334: both pause seams persist the paused transcript (store RPCs), so they run
-    # on the turn executor like finalize; the coroutine only reads their verdict.
-    if await _run_turn_setup_off_loop(
-        state,
-        lambda: maybe_pause_for_user(state, state.pred, update_retry_attempt=update_retry_attempt),
-    ):
-        # #767 Phase B: the ask_user pause exits the turn before the
-        # finalize region — the seam mints the question, flips the
-        # session to waiting_user, and settles the ledger (see
-        # turn_finalize.py).
-        return False
-    # P1.4 #1066: plan_exit is the SAME turn-ending yield — surface the pending
-    # plan-exit as an N-way approval question and exit before finalize (owner
-    # module gact/plan_mode.py; only the call site lands here).
+    # Ordinary Questions are immediate tools. Plan exit retains its explicit
+    # human approval gate and yields through the same conversation owner.
     from clio_agent.gact.plan_mode import maybe_pause_for_plan_exit  # noqa: PLC0415
 
     if await _run_turn_setup_off_loop(state, lambda: maybe_pause_for_plan_exit(state)):
@@ -276,7 +264,7 @@ async def _run_turn_in_background(
     user_msg: "Message",
     turn_agent_id: str = "",
     transcript_job: Optional[DeferredTranscriptJob] = None,
-) -> None:
+) -> Any:
     """Drive an agent turn off the request thread.
 
     The POST handler returns immediately after staging the user
@@ -644,6 +632,14 @@ async def _run_turn_in_background(
         )
     finally:
         turn_lm_ledger.close_ledger(lm_ledger_token)
+    from clio_agent.gact.conversations import ConversationOutcome
+
+    return ConversationOutcome(
+        outputs=_prediction_summary(state.pred) if state.pred is not None else {"answer": state.answer_text},
+        disposition=getattr(state.pred, "assignment_disposition", None),
+        context=getattr(state.pred, "clio_context_boundary", None),
+        error=state.error_info.model_dump(mode="json") if state.error_info is not None else None,
+    )
 
 
 def _start_background_user_turn(
@@ -661,6 +657,7 @@ def _start_background_user_turn(
     replace_existing_user_message: bool = False,
     message_role: Literal["user", "system"] = "user",
     retained_model: Optional[dict[str, Any]] = None,
+    mailbox_item: Any = None,
 ) -> Message:
     """Stage a user or system-event turn and drive it off-thread.
 
@@ -675,9 +672,14 @@ def _start_background_user_turn(
     promote an ALREADY persisted pending steer: acceptance wrote that identity
     durably, so staging replaces that row in place, its accepted stamp kept.
     """
-    with app.state.turn_runner.reservation(sid, user_msg_id) as reservation:
+    owner = getattr(app.state, "conversations", None)
+    if owner is None:
+        raise RuntimeError("Core conversation admission is not ready")
+    from clio_agent.arc.task_types import MailItem
 
-        require_execution_allowed(app, sid)
+    # This finite request boundary persists input only. TurnRunner owns the
+    # decision to inject it into a busy segment or admit an idle session.
+    with owner.history._lock:
         now = time.time()
         user_metadata = dict(metadata or {})
         from clio_agent.gact.automatic_turn_injection import automatic_turn_injection
@@ -730,25 +732,26 @@ def _start_background_user_turn(
 
         # #1334: the ledger + local store are written here (the 202 already promised the
         # identity); the ARC transcript persist is handed to the turn to run off the loop.
-        transcript_job = stage_intent_user_message(
-            app, sid, user_msg, replace_existing=replace_existing_user_message, defer_atoms=True
-        )
-        app.state.sessions.update(
-            sid,
-            status="running",
-            message_count=len(app.state.messages.get(sid, [])),
-        )
-        app.state.bus.publish(
-            Event(
-                type="session.status_changed",
-                session_id=sid,
-                payload={
-                    "session_id": sid,
-                    "status": "running",
-                    "prev_status": prev_status,
-                },
-            )
-        )
+        if replace_existing_user_message:
+            rows = list(app.state.messages.get(sid, []))
+            rows = [user_msg if row.id == user_msg.id else row for row in rows]
+            if not any(row.id == user_msg.id for row in rows):
+                rows.append(user_msg)
+            _replace_session_messages(app, sid, rows)
+        else:
+            _append_session_message(app, sid, user_msg)
+        content = owner.history.write_content(sid, {"message_id": user_msg.id, "text": user_text,
+            "agent_id": turn_agent_id, "metadata": user_metadata,
+            **({"queue_context": mailbox_item.content.model_dump(mode="json")} if mailbox_item is not None else {})})
+        if mailbox_item is None:
+            owner.history.record_mail(MailItem(id=user_msg.id, recipient_session=sid,
+                sender_human=owner.caller(sid).human_id if message_role == "user" else None,
+                kind="human" if message_role == "user" else "hook", content=content,
+                created_at=user_msg.created_at))
+        else:
+            owner.history.update_mail(mailbox_item.model_copy(update={"content": content,
+                "delivery": "eligible", "revision": mailbox_item.revision + 1}),
+                expected_revision=mailbox_item.revision)
         app.state.bus.publish(
             Event(
                 type="message.created",
@@ -757,17 +760,4 @@ def _start_background_user_turn(
             )
         )
 
-        # #948 S1 (#662): route through the TurnRunner, the single owner of turn-task
-        # lifetime (master strong ref, app-loop anchor, busy-gate handle, slot release).
-        # ``spawn_user_turn`` wraps that spawn with the deferred-persist guard: a turn
-        # cancelled before its prologue must not take the user message's atoms with it.
-        spawn_user_turn(
-            app,
-            sid,
-            turn_id=user_msg_id,
-            transcript_job=transcript_job,
-            reservation=reservation,
-            run_turn=_run_turn_in_background,
-            args=(app, sid, user_text, user_msg, turn_agent_id),
-        )
         return user_msg

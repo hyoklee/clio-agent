@@ -12,6 +12,52 @@ from dspy.lm15 import ToolCallPart
 from clio_agent.gact.agents.dspy_native_tool import ClioNativeTool
 
 
+class SubmittedOutputs(dict[str, Any]):
+    """Validated signature values with a separate orchestration disposition."""
+
+    def __init__(self, values: Mapping[str, Any], disposition: str | None) -> None:
+        super().__init__(values)
+        self.assignment_disposition = disposition
+
+
+def submit_tool(signature: Any) -> ClioNativeTool:
+    """Build the finish boundary without adding orchestration to signature outputs."""
+    fields = signature.output_fields
+    if "assignment_disposition" in fields:
+        raise ValueError("assignment_disposition is reserved for conversation orchestration")
+    schemas = {name: _json_schema(field.annotation) for name, field in fields.items()}
+    for name, field in fields.items():
+        present, value = _declared_default(field)
+        if present:
+            schemas[name]["default"] = value
+    schemas["assignment_disposition"] = {
+        "anyOf": [{"type": "string", "enum": ["yield", "complete"]}, {"type": "null"}],
+        "default": None,
+        "description": "Yield preserves this assignment; complete ends it. Accepted background work continues.",
+    }
+
+    def submit(**values: Any) -> SubmittedOutputs:
+        disposition = values.pop("assignment_disposition", None)
+        if disposition not in {None, "yield", "complete"}:
+            raise ValueError("assignment_disposition must be yield or complete")
+        unexpected = values.keys() - fields.keys()
+        if unexpected:
+            raise ValueError(f"Unknown output fields: {sorted(unexpected)}")
+        validated = {}
+        for name, field in fields.items():
+            if name not in values:
+                present, value = _declared_default(field)
+                if not present:
+                    raise ValueError(f"Missing output: {name}")
+            else:
+                value = values[name]
+            validated[name] = pydantic.TypeAdapter(field.annotation).validate_python(value)
+        return SubmittedOutputs(validated, disposition)
+
+    return ClioNativeTool(submit, name="submit", args=schemas,
+        desc="Return the declared outputs and yield or complete this assignment. Yield when awaiting background work or answers.")
+
+
 def tool_names(tools: Iterable[Any]) -> list[str]:
     """Return stable names from DSPy tool-like objects."""
 

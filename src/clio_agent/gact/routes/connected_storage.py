@@ -44,6 +44,7 @@ from clio_agent.gact.storage.models import (
     SourceRecord,
 )
 from clio_agent.gact.storage.service import StorageService, provider_capabilities
+from clio_agent.gact.storage.task_controls import source_operation_views, submit_source_action, validate_task_owner
 from clio_agent.gact.storage.sftp import SftpSource
 from clio_agent.gact.storage.ssh_target import SshTargetSource
 
@@ -649,6 +650,7 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         """Link or explicitly refresh folder metadata through its fsspec backend."""
 
         def attach() -> SourceRecord:
+            validate_task_owner(app, wid, body.session_id if body else "")
             record = record_for(wid, source_id)
             if getattr(app.state, "resource_store", None) is not None:
                 drafts().change(source_id, body.draft_id if body else "")
@@ -663,7 +665,6 @@ def register_connected_storage_routes(app: FastAPI) -> None:
                         raise ValueError("Confirm that saving edits will update the originals")
                 service.set_link_access(record, body.access)
                 service.store.put("source", source_id, record)
-            validate_task_owner(app, wid, body.session_id if body else "")
             return record
 
         record = await change_access(attach)
@@ -698,7 +699,7 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         """Read durable transfer progress and native task IDs."""
         record_for(wid, source_id, connected=False)
         rows = await run(lambda: source_operation_views(app, source_id))
-        return {"operations": [row.model_dump(exclude={"native_request"}) for row in rows]}
+        return {"operations": rows}
 
     @app.post("/v1/workspaces/{wid}/sources/{source_id}/review")
     async def review(wid: str, source_id: str) -> dict[str, Any]:

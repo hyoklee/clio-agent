@@ -45,6 +45,27 @@ async def run_off_loop(
     return await loop.run_in_executor(executor, lambda: ctx.run(fn, *args))
 
 
+async def join_off_loop(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
+    """Retire finite blocking work before propagating cancellation to its owner.
+
+    This is for store/preparation operations, never unbounded queue/lock waits.
+    It does not turn a cancelled waiter into proof that its thread has exited.
+    """
+    worker = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
+    cancellation: asyncio.CancelledError | None = None
+    while True:
+        try:
+            result = await asyncio.shield(worker)
+            break
+        except asyncio.CancelledError as error:
+            cancellation = error
+            if worker.cancelled():
+                raise
+    if cancellation is not None:
+        raise cancellation
+    return result
+
+
 async def emit_semantic_event_async(
     app: Any, sid: str, event_type: str, **kwargs: Any
 ) -> dict[str, Any]:

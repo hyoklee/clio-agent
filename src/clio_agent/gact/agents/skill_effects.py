@@ -753,7 +753,21 @@ def maybe_apply_skill_effect(ref: "SkillRef", *, agent_id: str) -> str | None:
     return f"[skill effect: {outcome.detail}]\n\n# Skill: {ref.id}\n{body}"
 
 
-def apply_spawn_skill_effect(ref: "SkillRef", *, agent_id: str, task: str) -> tuple[str, Any, str]:
-    """Delegate the explicit child launch to the skill-spawn effect owner."""
+async def apply_spawn_skill_effect(ref: "SkillRef", *, agent_id: str, task: str) -> dict[str, Any]:
+    """Launch a declared skill through the shared conversation assignment owner."""
+    import asyncio
+    from uuid import uuid4
+    from clio_agent.tools.task_call_context import TASK_CALL
 
-    return apply_effect(ref, agent_id=agent_id, task=task)
+    effect = parse_skill_effect(ref.meta)
+    if effect is None or effect.kind != EFFECT_SPAWN_SUBAGENT:
+        raise SkillEffectError("Skill has no declared child effect", reason="invalid_spawn_effect")
+    app, sid = _ctx.active_app(), _ctx.active_session_id()
+    if app is None or not sid:
+        raise SkillEffectError("Skill requires an active conversation", reason="no_active_session")
+    body = await asyncio.to_thread(read_skill_body, ref)
+    caller = app.state.conversations.caller(sid)
+    spawned = await app.state.conversations.spawn(caller, task, effect.agent or agent_id,
+        TASK_CALL.get().invocation_id or uuid4().hex,
+        launch_context={"skill_id": ref.id, "instructions": body})
+    return {**spawned, "skill_effect": effect.kind, "skill_id": ref.id}

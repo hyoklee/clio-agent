@@ -183,7 +183,9 @@ class TaskAwareClient(Client):
 
     async def retry_adoption(self, handle: str) -> AcceptedTaskResult:
         """Retry identity recording only; never repeat tools/call or task execution."""
-        failure = self._unconfirmed_adoptions[handle]
+        failure = self._unconfirmed_adoptions.get(handle)
+        if failure is None:
+            raise ValueError("No unconfirmed acceptance exists for this handle")
         accepted = failure.accepted
         if any(call.submission.handle == handle for call in self._adoptions.values()):
             raise ValueError("Acceptance recording is already pending")
@@ -208,7 +210,12 @@ class TaskAwareClient(Client):
         return await super()._parse_call_tool_result(name, result, raise_on_error)
 
     async def close(self) -> None:
-        """Retain accepted identity recording until it settles, without a hidden cutoff."""
+        """Retain custody until recording settles, without a hidden cutoff.
+
+        A recording failure intentionally refuses closure: the application owner
+        must reconcile the retained native identity before retiring its transport.
+        Closing in a finally block would abandon accepted work during a Core outage.
+        """
         await self._finish_adoptions()
         await super().close()
 

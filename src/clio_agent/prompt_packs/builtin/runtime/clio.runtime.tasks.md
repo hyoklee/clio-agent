@@ -95,7 +95,7 @@ fixed Core context references. It does not copy transcripts or replay operations
 After uncertain recovery, inspect effects and deliberately retry or revise work;
 an explicit resubmission creates a new linked handle.
 
-message_agent addresses an exact authorized session or agent handle discovered
+send_agent_message addresses an exact authorized session or agent handle discovered
 through session search/summary or task query. Busy recipients receive mail before
 their next iteration; idle recipients wake; paused recipients retain it. Respect
 sender attribution and reply only when needed, using source_session_id and the
