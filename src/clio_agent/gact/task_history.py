@@ -29,6 +29,7 @@ from clio_agent.arc.task_types import (
     TaskAlias,
     TaskSnapshot,
     TaskSubscription,
+    WorkflowCheckpoint,
 )
 from clio_agent.errors import ClioError
 from clio_agent.gact import task_history_projection
@@ -90,6 +91,10 @@ class TaskHistory:
         self._children: dict[str, set[str]] = {}
         self._recipient_grants: dict[str, set[str]] = {}
         self._subscriptions: dict[str, dict[str, TaskSubscription]] = {}
+        self._workflow_bindings: dict[tuple[str, str], WorkflowCheckpoint] = {}
+        self._workflow_executions: dict[tuple[str, str], WorkflowCheckpoint] = {}
+        self._workflow_latest: dict[str, WorkflowCheckpoint] = {}
+        self._workflow_dirty: set[str] = set()
         self.revision = 0
         self.replay_seconds = 0.0
         self.requires_recovery = False
@@ -695,6 +700,22 @@ class TaskHistory:
     def restore(self) -> None:
         "Replay Core once at startup, including interrupted recipient-input commits."
         return task_history_projection.restore(self)
+
+    def record_workflow(self, record: WorkflowCheckpoint) -> None:
+        """Confirm owner-authored checkpoint provenance, then update passive indexes."""
+        task_history_projection.record_workflow(self, record)
+
+    def workflow_checkpoint(
+        self, root: str, invocation: str | None = None
+    ) -> WorkflowCheckpoint | None:
+        """Resolve an exact invocation without scanning history or retargeting a retry."""
+        with self._lock:
+            binding = (
+                self._workflow_bindings.get((root, invocation))
+                if invocation is not None
+                else self._workflow_latest.get(root)
+            )
+            return self._workflow_executions.get((root, binding.execution_id)) if binding else None
 
     @contextmanager
     def _writing(self) -> Iterator[None]:

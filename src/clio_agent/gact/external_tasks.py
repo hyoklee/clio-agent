@@ -169,11 +169,14 @@ class ExternalTasks:
             if opening.done():
                 self._opening.pop(key, None)
 
-    async def restore(self) -> None:
+    async def restore(self, handles: tuple[str, ...] | None = None) -> None:
         """Register recovery of original external identities without submitting work."""
-        for handle in await asyncio.to_thread(
-            self.history.task_handles, kind="MCP", active_only=True
-        ):
+        selected = (
+            handles
+            if handles is not None
+            else await asyncio.to_thread(self.history.task_handles, kind="MCP", active_only=True)
+        )
+        for handle in selected:
             current = await asyncio.to_thread(self.history.task_snapshot, handle)
             if current is None or current.submission is None:
                 continue
@@ -498,6 +501,19 @@ class ExternalTasks:
     def _drive(self, host: ExternalConnection, call: AcceptedNativeCall) -> None:
         if call.task.task_id in host.drivers and not host.drivers[call.task.task_id].done():
             return
+        current = self.history.task_snapshot(call.submission.handle)
+        if current is not None and current.cancellation_requested_at is not None:
+
+            async def deliver_cancel() -> None:
+                task = await asyncio.to_thread(self.history.task_snapshot, call.submission.handle)
+                if (
+                    task is not None
+                    and task.terminal_at is None
+                    and task.raw_status not in {"completed", "failed", "cancelled"}
+                ):
+                    await self.cancel(task.handle)
+
+            self.recovery.defer("external-cancel-delivery:" + current.handle, deliver_cancel)
 
         async def result() -> None:
             try:
@@ -557,13 +573,23 @@ class ExternalTasks:
         driver = host.drivers.get(call.task.task_id)
         if (
             current is None
-            or current.terminal_at is None
+            or self.history.requires_recovery
+            or current.backend_observation is None
+            or current.raw_status not in {"completed", "failed", "cancelled"}
             or driver is not None
             and not driver.done()
             or host.client is not None
             and any(error.accepted is call for error in host.client.unconfirmed_adoptions)
         ):
             return
+        raw = await asyncio.to_thread(self.history.read_content, current.backend_observation)
+        reply = ClientGetTaskResult.model_validate(raw)
+        if (
+            current.submission != call.submission.context
+            or current.backend != host.backend.model_copy(update={"task_id": call.task.task_id})
+            or reply.task_id != call.task.task_id
+        ):
+            raise ValueError("External custody differs from the SDK resource being retired")
         if host.calls.get(call.task.task_id) is call:
             host.calls.pop(call.task.task_id)
             host.drivers.pop(call.task.task_id, None)
@@ -579,29 +605,6 @@ class ExternalTasks:
             lambda: self._record_reply(host, accepted, reply),
             retire=lambda: self._retire_resources(host, accepted),
         )
-        current = await asyncio.to_thread(self.history.task_snapshot, accepted.submission.handle)
-        if (
-            current is not None
-            and current.terminal_at is None
-            and current.cancellation_requested_at is not None
-        ):
-            try:
-                await accepted.task.cancel()
-            except Exception as error:
-                logger.exception(
-                    "Task boundary reason=external_cancellation_failed error_type=%s",
-                    type(error).__name__,
-                )
-                reason = str(error)
-                await self._record_or_defer(
-                    "external-cancel-attention:" + current.handle,
-                    lambda: self._attention(
-                        current.handle,
-                        reason,
-                        lost=False,
-                        episode="cancel:" + current.cancellation_requested_at,
-                    ),
-                )
 
     def _record_reply(
         self, host: ExternalConnection, accepted: AcceptedNativeCall, reply: ClientGetTaskResult
@@ -738,43 +741,10 @@ class ExternalTasks:
             self.recovery.defer(identity, record)
 
     async def cancel(self, handle: str) -> dict[str, Any]:
-        """Ask the verified original server; its acknowledgement is not cleanup proof."""
+        """Request cancellation through this owner's verified live SDK binding."""
+        from clio_agent.gact.external_task_controls import cancel
 
-        def intent() -> None:
-            with self.history._lock:
-                selected = self.history.task_snapshot(handle)
-                if (
-                    selected is not None
-                    and selected.terminal_at is None
-                    and selected.cancellation_requested_at is None
-                ):
-                    self.history.record_snapshot(
-                        selected.model_copy(
-                            update={
-                                "cancellation_requested_at": now(),
-                                "activity": "cancelling",
-                                "updated_at": now(),
-                            }
-                        ),
-                        observation_id=uuid4().hex,
-                    )
-
-        await self._record_or_defer("external-cancel:" + handle, intent)
-        for host in self.connections.values():
-            for call in host.calls.values():
-                if call.submission.handle == handle:
-                    await call.task.cancel()
-                    return {
-                        "handle": handle,
-                        "cancellation_requested": True,
-                        "settlement": "external_acknowledged",
-                    }
-        return {
-            "handle": handle,
-            "cancellation_requested": False,
-            "settlement": "unknown",
-            "error": "Original task transport is unavailable",
-        }
+        return await cancel(self, handle)
 
     async def close(self) -> None:
         """Retire observation without claiming surviving external jobs were cancelled."""

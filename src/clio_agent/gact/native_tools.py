@@ -219,9 +219,9 @@ class NativeTools:
             result.append(row)
         return result
 
-    async def restore(self) -> None:
+    async def restore(self, handles: tuple[str, ...] | None = None) -> None:
         "Reattach persistent native identities; never replay a recorded submission."
-        return await native_task_recovery.restore(self)
+        return await native_task_recovery.restore(self, handles)
 
     async def submit(
         self,
@@ -688,7 +688,9 @@ class NativeTools:
         driver, rpc = self._drivers.get(handle), self._rpc.get(handle)
         if (
             current is None
-            or current.terminal_at is None
+            or self.history.requires_recovery
+            or current.backend_observation is None
+            or current.raw_status not in {"completed", "failed", "cancelled"}
             or driver is not None
             and not driver.done()
             or rpc is not None
@@ -700,15 +702,37 @@ class NativeTools:
             )
         ):
             return
-        accepted = self._calls.pop(handle, None)
+        accepted = self._calls.get(handle)
         if accepted is not None:
+            observation = current.backend_observation
+
+            def verify() -> None:
+                context = SubmissionContext.model_validate(
+                    self.history.read_content(accepted.submission.context)
+                )
+                reply = ClientGetTaskResult.model_validate(self.history.read_content(observation))
+                if (
+                    current.submission != accepted.submission.context
+                    or current.backend
+                    != context.backend.model_copy(update={"task_id": accepted.task.task_id})
+                    or reply.task_id != accepted.task.task_id
+                    or context.output_schema != accepted.submission.output_schema
+                ):
+                    raise ValueError("Native custody differs from the SDK resource being retired")
+
+            await asyncio.to_thread(verify)
+            if self._calls.get(handle) is not accepted:
+                return
+        retired_call = self._calls.pop(handle, None)
+        if retired_call is not None:
             for root in self.roots:
-                key = (root, accepted.task.task_id)
-                if self._identities.get(key) is accepted:
+                key = (root, retired_call.task.task_id)
+                if self._identities.get(key) is retired_call:
                     self._identities.pop(key)
         self._drivers.pop(handle, None)
         self._rpc.pop(handle, None)
-        self._control_holds.discard(handle)
+        if current.terminal_at is not None:
+            self._control_holds.discard(handle)
 
     def _rejected(self, handle: str, reason: str) -> None:
         with self.history._lock:
@@ -739,6 +763,13 @@ class NativeTools:
         with self.history._lock:
             current = self._current(handle)
             if current.terminal_at is not None:
+                return
+            if (
+                current.status == "task_state_uncertain"
+                and current.progress.message == reason
+                and current.attention_episode is not None
+                and (not lost or current.connection_freshness == "lost")
+            ):
                 return
             observed = current.model_copy(
                 update={

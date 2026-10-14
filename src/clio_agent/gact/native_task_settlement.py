@@ -80,6 +80,11 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
                             attempt.model_copy(update={"cleanup_state": "unknown"})
                         )
                 attempts = self.history.native_attempts(current.handle)
+        if any(attempt.cleanup_state == "unknown" for attempt in attempts) and (
+            current.status != "task_state_uncertain" or current.attention_episode is None
+        ):
+            self._uncertain(current.handle, "Physical settlement is unconfirmed")
+            current = self._current(current.handle)
         if current.backend_observation is None:
             return
         reply = ClientGetTaskResult.model_validate(
@@ -89,10 +94,19 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
             return
         status = reply.status
         if accepted is None:
-            return  # acceptance custody will install its captured contract
+            if current.submission is None:
+                return
+            context = SubmissionContext.model_validate(
+                self.history.read_content(current.submission)
+            )
+            if current.backend != context.backend.model_copy(update={"task_id": reply.task_id}):
+                raise ValueError("Late native result differs from original submission custody")
+            schema = context.output_schema
+        else:
+            schema = accepted.submission.output_schema
         validation_problem = ""
         try:
-            validate_terminal(accepted.submission.output_schema, reply)
+            validate_terminal(schema, reply)
         except ValueError as error:
             validation_problem = "Backend result contract failure: " + str(error)
             status = "failed"
@@ -104,13 +118,9 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
         if any(attempt.cleanup_state in {"pending", "unknown"} for attempt in attempts):
             # Preserve the captured-contract result without using a fresh receipt
             # as proof for another incarnation. Explicit reads remain nonfinal.
-            if any(attempt.cleanup_state == "unknown" for attempt in attempts):
+            if validation_problem:
                 self._uncertain(
-                    current.handle,
-                    "Physical settlement is unconfirmed; backend reported "
-                    + reply.status
-                    + ". "
-                    + validation_problem,
+                    current.handle, "Physical settlement is unconfirmed. " + validation_problem
                 )
             return
         if reply.result is not None:
@@ -206,11 +216,26 @@ async def cancel(self: NativeTools, handle: str) -> dict[str, Any]:
                 if latest.terminal_at is not None or handle in self._calls:
                     return True
                 if latest.submission is None:
-                    return False
+                    await self._record_or_defer(
+                        "provider-cancel-attention:" + handle,
+                        lambda: self._uncertain(
+                            handle,
+                            "Original provider submission context is unavailable; inspect the retained job identity.",
+                        ),
+                    )
+                    return True
                 context = SubmissionContext.model_validate(
                     await asyncio.to_thread(self.history.read_content, latest.submission)
                 )
-                return await recover_provider(latest, context)
+                if not await recover_provider(latest, context):
+                    await self._record_or_defer(
+                        "provider-cancel-attention:" + handle,
+                        lambda: self._uncertain(
+                            handle,
+                            "The existing provider owner cannot safely reattach this job; inspect its original identity.",
+                        ),
+                    )
+                return True
 
             self.recovery.defer("provider-cancel-reconnect:" + handle, reconnect_cancel)
         return {
@@ -266,9 +291,14 @@ async def _deliver_cancel(self: NativeTools, handle: str) -> bool:
     current = await asyncio.to_thread(self._current, handle)
     if current.terminal_at is not None:
         return True
+    if (
+        current.raw_status in {"completed", "failed", "cancelled"}
+        and current.backend_observation is not None
+    ):
+        return True  # delivery is obsolete; cleanup and attention remain independently unresolved
     bound = self._calls.get(handle)
     if bound is None or current.submission != bound.submission.context:
-        return False
+        return current.cancellation_requested_at is not None
     if current.backend is not None and current.backend.task_id != bound.task.task_id:
         return False
     await bound.task.cancel()

@@ -13,6 +13,7 @@ from clio_agent.arc.task_types import (
     MailItem,
     TaskProgress,
     TaskSnapshot,
+    argument_digest,
 )
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
@@ -454,7 +455,7 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
                     current,
                     "restart",
                     {"status": "not_started", "error": reason},
-                    "restart-attention:" + handle,
+                    "restart-attention:" + handle + ":" + argument_digest({"reason": reason}),
                 )
 
             try:
@@ -474,7 +475,11 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
 
 
 async def _cancel_subtree(
-    self: Conversations, assignment: TaskSnapshot, *, members: tuple[str, ...] | None = None
+    self: Conversations,
+    assignment: TaskSnapshot,
+    *,
+    members: tuple[str, ...] | None = None,
+    request_members: bool = True,
 ) -> None:
     previous_watch = self._cancel_watches.pop(assignment.handle, None)
     if previous_watch is not None:
@@ -537,18 +542,8 @@ async def _cancel_subtree(
             )
             errors[handle] = {"handle": handle, "error": str(error)}
 
-    await asyncio.gather(*(request_member(handle) for handle in handles))
-    if errors:
-
-        async def retry_requests() -> bool:
-            current = await asyncio.to_thread(self.history.task_snapshot, assignment.handle)
-            if current is not None and current.terminal_at is not None:
-                return True
-            await asyncio.gather(*(request_member(handle) for handle in tuple(errors)))
-            changed.set()
-            return not errors
-
-        self.recovery.defer("conversation-cancel-requests:" + assignment.handle, retry_requests)
+    if request_members:
+        await asyncio.gather(*(request_member(handle) for handle in handles))
 
     def wake(_revision: int) -> None:
         loop.call_soon_threadsafe(changed.set)
@@ -688,7 +683,9 @@ async def _cancel_subtree(
                         self.retain_control(
                             assignment.handle,
                             asyncio.create_task(
-                                self._cancel_subtree(assignment, members=tuple(handles))
+                                self._cancel_subtree(
+                                    assignment, members=tuple(handles), request_members=False
+                                )
                             ),
                         )
 

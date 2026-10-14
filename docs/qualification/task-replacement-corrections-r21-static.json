@@ -1,0 +1,183 @@
+{
+  "at": "2026-10-14T21:25:46.092092+00:00",
+  "parent": "f020a5912ca9a2fe57be7dd3aaba1f640bc669f5",
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "src/clio_agent/arc/context_restore.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/agents/clio_react.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_identity.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversation_projection.py",
+        "src/clio_agent/gact/conversation_recovery.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/external_tasks.py",
+        "src/clio_agent/gact/native_task_recovery.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/native_tools.py",
+        "src/clio_agent/gact/plan_exit_resolution.py",
+        "src/clio_agent/gact/planning.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/task_history.py",
+        "src/clio_agent/gact/task_history_projection.py",
+        "src/clio_agent/gact/task_operations.py",
+        "src/clio_agent/gact/task_runtime.py",
+        "src/clio_agent/gact/workflows.py",
+        "src/clio_agent/gact/external_task_controls.py"
+      ],
+      "exit": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "--check",
+        "src/clio_agent/arc/context_restore.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/agents/clio_react.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_identity.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversation_projection.py",
+        "src/clio_agent/gact/conversation_recovery.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/external_tasks.py",
+        "src/clio_agent/gact/native_task_recovery.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/native_tools.py",
+        "src/clio_agent/gact/plan_exit_resolution.py",
+        "src/clio_agent/gact/planning.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/task_history.py",
+        "src/clio_agent/gact/task_history_projection.py",
+        "src/clio_agent/gact/task_operations.py",
+        "src/clio_agent/gact/task_runtime.py",
+        "src/clio_agent/gact/workflows.py",
+        "src/clio_agent/gact/external_task_controls.py"
+      ],
+      "exit": 0,
+      "output": "23 files already formatted\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_task_replacement_removal.py"
+      ],
+      "exit": 0,
+      "output": "Task replacement removal guard: 0 violations\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_file_size.py"
+      ],
+      "exit": 0,
+      "output": "OK: no file under src/clio_agent exceeds its ratchet baseline (cap 800 for new files).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_no_class_in_function.py"
+      ],
+      "exit": 0,
+      "output": "OK: no class-in-function under src/clio_agent exceeds its ratchet baseline.\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_noqa_swallows.py"
+      ],
+      "exit": 1,
+      "output": "noqa-hidden swallows over C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent: 494 in 202 files\nFAIL gact/external_task_controls.py: 1 > 0\nFix the new swallow (typed failure, or a sanctioned loud fallback) instead.\n"
+    },
+    {
+      "command": [
+        "mypy",
+        "--platform",
+        "linux",
+        "src/clio_agent/arc/context_restore.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/agents/clio_react.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_identity.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversation_projection.py",
+        "src/clio_agent/gact/conversation_recovery.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/external_tasks.py",
+        "src/clio_agent/gact/native_task_recovery.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/native_tools.py",
+        "src/clio_agent/gact/plan_exit_resolution.py",
+        "src/clio_agent/gact/planning.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/task_history.py",
+        "src/clio_agent/gact/task_history_projection.py",
+        "src/clio_agent/gact/task_operations.py",
+        "src/clio_agent/gact/task_runtime.py",
+        "src/clio_agent/gact/workflows.py",
+        "src/clio_agent/gact/external_task_controls.py"
+      ],
+      "exit": 0,
+      "output": "Success: no issues found in 23 source files",
+      "exec_session": 79832,
+      "note": "Actual completed sequential static invocation, not rerun for receipt"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_noqa_swallows.py"
+      ],
+      "exit": 0,
+      "output": "noqa-hidden swallows: 493 in 201 files",
+      "note": "After explicit logged error handling; earlier failed construction check retained above"
+    },
+    {
+      "command": [
+        "mypy",
+        "--platform",
+        "linux",
+        "src/clio_agent/gact/external_task_controls.py"
+      ],
+      "exit": 0,
+      "output": "Success: no issues found in 1 source file",
+      "exec_command_chunk": "bd74bc"
+    }
+  ],
+  "behavioral_tests": "unexecuted for R21",
+  "live_qualification": "unexecuted for replacement candidate",
+  "source_sha256": {
+    "src/clio_agent/arc/context_restore.py": "4cead81dcb3b45f851b68544decc0b57e0abcfcc5e12e07e92d19b3af01da2aa",
+    "src/clio_agent/arc/task_types.py": "81225a0c177d403b86b82adcd5e011128268527e726b689280bfb384b1f5b92d",
+    "src/clio_agent/gact/agents/clio_react.py": "a53ddd5a9f55aae087249964e51206771faaa6a0f4a57a5b3708c193c398e055",
+    "src/clio_agent/gact/agents/clio_react_record.py": "b004c111506af9d87dfdff6c0b8720da0a90d7106f9480528e5b6bb1d82ea42d",
+    "src/clio_agent/gact/agents/context_identity.py": "5bdcf396f7111ad14cee1e28a4609f3dca6e09f6c32b8c4fe813887f7a1a7286",
+    "src/clio_agent/gact/conversation_assignments.py": "81e9c833e5503e01e647cb4208fae7d6c19f0a5a8e79f23cd8232f2dcb13135d",
+    "src/clio_agent/gact/conversation_controls.py": "ee5245a716855c9aad97d389d55e872d307360ba313c5f67f0e2835181d3578d",
+    "src/clio_agent/gact/conversation_projection.py": "904f0ca16ebdf1eaaabd6ee394c96630dea39719337b021b17bdb1cda55215ae",
+    "src/clio_agent/gact/conversation_recovery.py": "70de5679b1de837e50a2fa2d215b31737552a327e8614cb7317c8ae7ab24cb5f",
+    "src/clio_agent/gact/conversations.py": "08c34f273acaf21333eec003b9cb8602ed7f4a8bb0a8eac4e69d29d2c2730639",
+    "src/clio_agent/gact/external_tasks.py": "f858740eb085b077406e0bdc48934039c3d9f606727feb9f57abf2aa632e90fe",
+    "src/clio_agent/gact/native_task_recovery.py": "c2979d816ff6511744173673e37873cc6b6db7d2f1faf65c6f903a317aa21c34",
+    "src/clio_agent/gact/native_task_settlement.py": "ae45a5119f941b9e24a0511e8b7a913993b4fcbf49049fc41ba6983337b0b80e",
+    "src/clio_agent/gact/native_tools.py": "6dc345495fbb7b2ea3688f5cc046ffdfab3c8b010256ee58f2df0a2fae3671d6",
+    "src/clio_agent/gact/plan_exit_resolution.py": "4af98e2f7c25735fb8f9bd2bed88580662d7c672de706912647eda697ea88a22",
+    "src/clio_agent/gact/planning.py": "e6c8359c2e9fd952905889ad62826ab60671b5106045e7419ba1ab12c92e9e4b",
+    "src/clio_agent/gact/question_events.py": "1ade586557c37a075110759026ae5df396c6f79c54da51e54a479f927316309a",
+    "src/clio_agent/gact/task_history.py": "94f1aacf80960ce47297179c86ec5c951b8067cd37df4644803f13c41c520c19",
+    "src/clio_agent/gact/task_history_projection.py": "16675e0cd907ba4a72ee02cc48dab7c72c8a03b33b6c04a0bdaa7c7732ee0b51",
+    "src/clio_agent/gact/task_operations.py": "30fc2fdcb00c01422fb6c8983eb401e1a3cd96e03bed8d4bdc5b71e0cd3d5fa6",
+    "src/clio_agent/gact/task_runtime.py": "68a0c5d8de3246da20a320865b343ef0b54ef3d3168a6401c84133ded4e056d8",
+    "src/clio_agent/gact/workflows.py": "f66f4fc94f431a24825fbbfe08c3d36277820e4fd295b543348af6709b335af7",
+    "src/clio_agent/gact/external_task_controls.py": "fcc92e919e03fad7c911a7530c4e8d0c73c2b2fedd288c14e8311909824dae77"
+  },
+  "final_static_state": "passed; earlier construction failure repaired without changing guard"
+}

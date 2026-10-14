@@ -21,7 +21,15 @@ def context_identity(arc: Any, session: str, scope: str) -> dict[str, Any]:
     }
 
 
-def restore_context(arc: Any, session: str, scope: str, turn_id: str, ledger: Sequence[Any]) -> str:
+def restore_context(
+    arc: Any,
+    session: str,
+    scope: str,
+    turn_id: str,
+    ledger: Sequence[Any],
+    *,
+    allow_transcript: bool = True,
+) -> str:
     """Restore only an absent exact scope; prepared input never becomes a receipt.
 
     No predecessor history is copied. A known empty epoch or tombstoned scope is
@@ -55,7 +63,17 @@ def restore_context(arc: Any, session: str, scope: str, turn_id: str, ledger: Se
     )
     source = "recorded context operations"
     if not found:
-        rows = [row for row in ledger if not turn_id or _get(row, "id") != turn_id]
+        if not allow_transcript:
+            return ""
+        rows = [
+            row
+            for row in ledger
+            if not (
+                turn_id
+                and _get(row, "role") == "user"
+                and turn_id in {_get(row, "id"), _get(row, "turn_id")}
+            )
+        ]
         if not turn_id and rows and _get(rows[-1], "role") == "user":
             rows.pop()
         restored = transcript_segments(session, scope, rows)
@@ -82,7 +100,9 @@ def restore_context(arc: Any, session: str, scope: str, turn_id: str, ledger: Se
                     },
                 )
             )
-    if not restored and not unconfirmed:
+    if not live and not unconfirmed:
+        if restored:
+            arc.restore_empty_context(session, scope, restored)
         return ""
     note = "Recovered this session's context from " + source + ". No operation was replayed."
     if unconfirmed:

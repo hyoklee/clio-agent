@@ -224,6 +224,14 @@ async def complete_deferred(self: Conversations, sid: str, assignment_handle: st
             details = AssignmentDetails.model_validate(self.history.read_content(current.details))
             if details.last_output is None:
                 raise ValueError("Deferred completion has no retained model outcome")
+            if details.execution_deadline and datetime.now(timezone.utc) >= datetime.fromisoformat(
+                details.execution_deadline
+            ):
+                if self._loop is not None:
+                    self._loop.call_soon_threadsafe(
+                        self.arm_deadline, current.handle, details.execution_deadline
+                    )
+                return
             reference = self.history.write_content(
                 sid,
                 details.model_copy(update={"disposition": "complete"}).model_dump(mode="json"),

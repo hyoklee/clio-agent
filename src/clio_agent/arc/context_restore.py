@@ -46,6 +46,9 @@ def recorded_segments(
             if segment.turn_id and segment.turn_id not in retained_turns:
                 continue
             if segment.kind == "recipient_input":
+                if "schema_version" not in segment.content:
+                    unconfirmed = True
+                    continue
                 candidate = RecipientInput.model_validate(segment.content)
                 if confirmed_inputs.get(candidate.id) != candidate:
                     unconfirmed = True

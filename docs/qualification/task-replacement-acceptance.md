@@ -165,3 +165,8 @@ runs remain in their individual receipts; they are not erased by this correction
 Astra R17 and actual Claude R18 found production gaps after the compatibility source review. The finite C1-C8 owner/removal map and reviewed decisions are in `docs/design/task-replacement-corrections-r19.md`. The initial source packet is implemented for same-session context recovery, closed-plan Question repair, stale visual answers, assignment-bound pause/resume, workflow checkpoints and deliberate retry, declared execution deadlines, and nonfinal uncertain-result inspection with passive cancellation rechecks.
 
 C1-C8 behavioral gates are **unexecuted**. Legacy coupled-test migration, exact-head CI, Q1-Q9 and R1-R6 remain outstanding. No earlier executor/model evidence qualifies this replacement. Human continuation through unsettled cancellation is an optional R2 amendment awaiting a direct human choice; strict settlement remains in force meanwhile. Review source copies R17/R18 and R19 were removed after their processes settled; bounded reports remain, with no archive.
+
+
+## R21 source-review correction packet
+
+Both R20 source reviews returned NO-GO. The complete finite correction map is `docs/design/task-replacement-corrections-r21.md`; source checks are in its matching static receipt. New context, pause/deadline, workflow identity/handoff, passive cancellation, late settlement and approval-repair regression cases retain the original behavior obligations. They are unexecuted. No test deletion, passing static check or source review waives Q1-Q9, R1-R6, migration, CI or live/model acceptance.

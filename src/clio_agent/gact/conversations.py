@@ -606,6 +606,8 @@ class Conversations:
                 current = self.history.task_snapshot(handle)
                 if current is None or current.terminal_at is not None:
                     return
+                if current.cancellation_requested_at:
+                    value = "cancelling"
                 self.history.record_snapshot(
                     current.model_copy(update={"activity": value, "updated_at": now()}),
                     observation_id=uuid4().hex,
@@ -764,10 +766,16 @@ class Conversations:
         return await conversation_controls.restart(self, caller, handle)
 
     async def _cancel_subtree(
-        self, assignment: TaskSnapshot, *, members: tuple[str, ...] | None = None
+        self,
+        assignment: TaskSnapshot,
+        *,
+        members: tuple[str, ...] | None = None,
+        request_members: bool = True,
     ) -> None:
         """Delegate to the same conversation owner\'s controls implementation."""
-        return await conversation_controls._cancel_subtree(self, assignment, members=members)
+        return await conversation_controls._cancel_subtree(
+            self, assignment, members=members, request_members=request_members
+        )
 
     def close_admission(self) -> None:
         """Reject new model admission while existing owners retire their work."""

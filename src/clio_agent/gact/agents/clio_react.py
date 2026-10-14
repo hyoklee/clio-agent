@@ -364,9 +364,15 @@ class _Loop:
 
         expert_span = uuid.uuid4().hex[:16]
         self.recorder.started(expert_span, self.inputs)
-        ledger = getattr(getattr(_ctx.active_app(), "state", None), "messages", None)
-        if ledger is not None:
-            self.recorder.carry_over(ledger.get(self.session, []) or [])
+        state = getattr(_ctx.active_app(), "state", None)
+        ledger = getattr(state, "messages", None)
+        if ledger is not None and _ctx.active_react_run() < 0:
+            sessions = getattr(state, "sessions", None)
+            session = sessions.get(self.session) if sessions is not None else None
+            primary = getattr(session, "agent", {}).get("id", "main") if session is not None else ""
+            self.recorder.carry_over(
+                ledger.get(self.session, []) or [], allow_transcript=self.scope == primary
+            )
         self.recorder.injections([*self._tool_use_note(), *_ctx.turn_injections()])
         # The continuing flag is this forward's alone: anything it starts opens its own task.
         continue_token = _CONTINUING.set(False) if _CONTINUING.get() else None

@@ -336,11 +336,18 @@ class StepRecorder:
         """The scope's context as messages; only the open tail step is re-folded."""
         return self._reader.read()
 
-    def carry_over(self, ledger: Sequence[Any]) -> None:
+    def carry_over(self, ledger: Sequence[Any], *, allow_transcript: bool = True) -> None:
         """Restore validated context for this exact session before the current input."""
         from clio_agent.gact.agents.context_identity import restore_context
 
-        note = restore_context(self.arc, self.session, self.scope, self.turn_id, ledger)
+        note = restore_context(
+            self.arc,
+            self.session,
+            self.scope,
+            self.turn_id,
+            ledger,
+            allow_transcript=allow_transcript,
+        )
         if note:
             emit_injection("context_recovery", note, agent_id=self.expert_id)
 

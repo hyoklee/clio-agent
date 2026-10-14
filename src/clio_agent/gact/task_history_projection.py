@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from clio_agent.arc.loop_guard import assert_store_write_off_loop
 from clio_agent.arc.task_types import (
+    AssignmentDetails,
     CoordinationGrant,
     CoreReference,
     MailItem,
@@ -17,12 +18,85 @@ from clio_agent.arc.task_types import (
     TaskAlias,
     TaskSnapshot,
     TaskSubscription,
+    WorkflowCheckpoint,
+    argument_digest,
 )
 
 if TYPE_CHECKING:
     from clio_agent.gact.task_history import TaskHistory
 
 INDEX_KIND = "task_index"
+
+
+def _project_workflow(self: TaskHistory, record: WorkflowCheckpoint) -> None:
+    """Index immutable invocation bindings; canonical checkpoints outrank legacy projections."""
+    binding_key = record.root_handle, record.invocation_id
+    execution_key = record.root_handle, record.execution_id
+    prior = self._workflow_bindings.get(binding_key)
+    if prior is not None and (
+        prior.execution_id != record.execution_id
+        or prior.declaration != record.declaration
+        or prior.request_digest != record.request_digest
+        or prior.session_id != record.session_id
+    ):
+        raise ValueError("Workflow invocation identity was reused")
+
+    def newer(previous: WorkflowCheckpoint | None) -> bool:
+        return (
+            previous is None
+            or previous.source == "legacy_snapshot"
+            or record.source == "checkpoint"
+        )
+
+    if newer(prior):
+        self._workflow_bindings[binding_key] = record
+    if newer(self._workflow_executions.get(execution_key)):
+        self._workflow_executions[execution_key] = record
+    if newer(self._workflow_latest.get(record.root_handle)):
+        self._workflow_latest[record.root_handle] = record
+    self._workflow_dirty.add(record.root_handle)
+
+
+def record_workflow(self: TaskHistory, record: WorkflowCheckpoint) -> None:
+    """Write existing runner provenance through the same confirmed Core writer."""
+    with self._writing():
+        owner = self.task_snapshot(record.root_handle)
+        body = self.read_content(record.content)
+        if (
+            owner is None
+            or owner.owner.session_id != record.session_id
+            or record.content.session_id != record.session_id
+            or not isinstance(body, dict)
+            or body.get("id") != record.execution_id
+            or body.get("root_handle") != record.root_handle
+            or body.get("root_session") != record.session_id
+            or body.get("declaration") != record.declaration
+            or argument_digest({"request": body.get("request")}) != record.request_digest
+            or record.source != "checkpoint"
+        ):
+            raise ValueError("Workflow checkpoint differs from its owner or declared identity")
+        previous = self._workflow_bindings.get((record.root_handle, record.invocation_id))
+        if previous is not None and (
+            previous.execution_id,
+            previous.declaration,
+            previous.request_digest,
+        ) != (record.execution_id, record.declaration, record.request_digest):
+            raise ValueError("Workflow invocation identity was reused")
+        payload = record.model_dump(mode="json")
+        self._record(
+            "workflow.checkpoint",
+            record.session_id,
+            record.root_handle + ":" + record.invocation_id + ":" + record.content.sha256,
+            payload,
+        )
+        self._put_index(
+            "workflow/"
+            + record.root_handle
+            + "/"
+            + argument_digest({"invocation": record.invocation_id}),
+            payload,
+        )
+        self._project("workflow.checkpoint", payload)
 
 
 def _encoded(value: Any) -> bytes:
@@ -57,6 +131,8 @@ def restore(self: TaskHistory) -> None:
         resource_tasks = self._resource_tasks
         assignments = self._assignments
         recipient_grants, subscriptions = self._recipient_grants, self._subscriptions
+        workflows = self._workflow_bindings, self._workflow_executions, self._workflow_latest
+        workflow_dirty = self._workflow_dirty
         self._tasks, self._mail, self._inputs = {}, {}, {}
         self._aliases = {}
         self._pending, self.revision = {}, 0
@@ -71,6 +147,8 @@ def restore(self: TaskHistory) -> None:
         self._resource_tasks = {}
         self._assignments = {}
         self._recipient_grants, self._subscriptions = {}, {}
+        self._workflow_bindings, self._workflow_executions, self._workflow_latest = {}, {}, {}
+        self._workflow_dirty = set()
         try:
             self._replaying = True
             for content in self.arc._live.iter_event_contents():
@@ -89,6 +167,7 @@ def restore(self: TaskHistory) -> None:
                         "session.mail.withdrawn",
                         "session.coordination.grant",
                         "session.input.prepared",
+                        "workflow.checkpoint",
                     }
                     and not {"schema_version", "observation_id", "record"} <= payload.keys()
                 ):
@@ -130,6 +209,8 @@ def restore(self: TaskHistory) -> None:
             self._resource_tasks = resource_tasks
             self._assignments = assignments
             self._recipient_grants, self._subscriptions = recipient_grants, subscriptions
+            self._workflow_bindings, self._workflow_executions, self._workflow_latest = workflows
+            self._workflow_dirty = workflow_dirty
             raise
         self.replay_seconds = time.monotonic() - started
         self.revision = max(previous_revision, self.revision) + 1
@@ -173,6 +254,11 @@ def _repair_indexes(self: TaskHistory) -> None:
         key = "input/" + session_id + "/" + identity
         if self.arc._store.get(INDEX_KIND, key) != _encoded(locator):
             self._put_index(key, locator)
+    for (root, invocation), record in self._workflow_bindings.items():
+        self._put_index(
+            "workflow/" + root + "/" + argument_digest({"invocation": invocation}),
+            record.model_dump(mode="json"),
+        )
 
 
 def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> None:
@@ -192,6 +278,38 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
             snapshot = snapshot.model_copy(update={"description": description})
         known = snapshot.handle in self._tasks
         self._tasks[snapshot.handle] = snapshot
+        if self._replaying and snapshot.kind in {"Session", "Subagent"} and snapshot.details:
+            details = AssignmentDetails.model_validate(self.read_content(snapshot.details))
+            if details.workflow is not None:
+                content = self.read_content(details.workflow)
+                if isinstance(content, dict) and all(
+                    isinstance(content.get(key), str) and content[key]
+                    for key in ("id", "invocation_id", "declaration", "request")
+                ):
+                    if (
+                        content.get("root_handle", snapshot.handle) != snapshot.handle
+                        or content.get("root_session", snapshot.owner.session_id)
+                        != snapshot.owner.session_id
+                    ):
+                        raise ValueError("Historical workflow checkpoint belongs to another owner")
+                    _project_workflow(
+                        self,
+                        WorkflowCheckpoint.model_validate(
+                            {
+                                "root_handle": snapshot.handle,
+                                "session_id": snapshot.owner.session_id,
+                                "invocation_id": content["invocation_id"],
+                                "execution_id": content["id"],
+                                "declaration": content["declaration"],
+                                "request_digest": argument_digest({"request": content["request"]}),
+                                "content": details.workflow,
+                                "source": "legacy_snapshot",
+                            }
+                        ),
+                    )
+                    latest = self._workflow_latest.get(snapshot.handle)
+                    if latest is not None and latest.content == details.workflow:
+                        self._workflow_dirty.discard(snapshot.handle)
         self._session_tasks.setdefault(snapshot.owner.session_id, set()).add(snapshot.handle)
         self._kind_tasks.setdefault(snapshot.kind, set()).add(snapshot.handle)
         self._human_tasks.setdefault(snapshot.owner.human_id, set()).add(snapshot.handle)
@@ -230,6 +348,8 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
     elif event_type == "session.mail.withdrawn":
         self._withdrawn.setdefault(payload["recipient_session"], set()).add(payload["id"])
         self._pending.get(payload["recipient_session"], {}).pop(payload["id"], None)
+    elif event_type == "workflow.checkpoint":
+        _project_workflow(self, WorkflowCheckpoint.model_validate(payload))
     elif event_type == "session.coordination.grant":
         grant = CoordinationGrant.model_validate(payload)
         self._grants[grant.id] = grant

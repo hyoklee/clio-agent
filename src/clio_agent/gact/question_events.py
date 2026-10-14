@@ -26,7 +26,25 @@ class QuestionEvents:
 
     def changed(self, task: TaskSnapshot) -> None:
         """Signal a confirmed owner observation from its finite Core writer thread."""
-        row = question_view(self.app, task)
+        try:
+            row = question_view(self.app, task)
+        except Exception as error:
+            logger.exception(
+                "Task boundary reason=question_view_pending error_type=%s", type(error).__name__
+            )
+
+            async def repair() -> None:
+                current = await asyncio.to_thread(
+                    self.app.state.task_history.task_snapshot, task.handle
+                )
+                if current is not None:
+                    projected = await asyncio.to_thread(question_view, self.app, current)
+                    self._publish(current, projected)
+
+            self.loop.call_soon_threadsafe(
+                self.app.state.task_recovery.defer, "question-view:" + task.handle, repair
+            )
+            return
         self.loop.call_soon_threadsafe(self._publish, task, row)
 
     def _publish(self, task: TaskSnapshot, row: dict[str, Any]) -> None:
@@ -49,7 +67,19 @@ class QuestionEvents:
             async def resolve() -> None:
                 await asyncio.to_thread(resolve_plan_question, self.app, task)
 
-            self.app.state.task_recovery.defer("plan-question:" + task.handle, resolve)
+            async def repair() -> None:
+                try:
+                    await resolve()
+                except Exception as error:
+                    logger.exception(
+                        "Task boundary reason=plan_question_repair_pending error_type=%s",
+                        type(error).__name__,
+                    )
+                    self.app.state.task_recovery.defer("plan-question:" + task.handle, resolve)
+
+            repairing = asyncio.create_task(repair())
+            self._active.add(repairing)
+            repairing.add_done_callback(self._active.discard)
         if not self._closing and task.raw_status == "pending" and row["expires_at"]:
             deadline = datetime.fromisoformat(row["expires_at"])
             delay = max(0.0, (deadline - datetime.now(timezone.utc)).total_seconds())
@@ -89,7 +119,7 @@ class QuestionEvents:
                 gate = session.metadata.get("execution_gate")
                 task = history.task_snapshot(gate) if isinstance(gate, str) and gate else None
                 if task is not None and task.kind == "Question" and task.terminal_at is not None:
-                    resolve_plan_question(self.app, task)
+                    self.changed(task)
 
         await asyncio.to_thread(replay)
 

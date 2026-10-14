@@ -71,6 +71,10 @@ def _input_committed(self: Conversations, staged: StagedInput) -> None:
 
 def _restore_input_projections(self: Conversations) -> None:
     """Repair display receipts from confirmed inputs, without redelivering mail."""
+    from clio_agent.gact.workflows import repair_workflow_reference
+
+    for root in tuple(self.history._workflow_dirty):
+        repair_workflow_reference(self.app, root)
     with self.history._lock:
         items = tuple(
             item
@@ -108,6 +112,7 @@ async def restore(self: Conversations) -> None:
             task.activity == "paused"
             or session is not None
             and session.metadata.get("agent_paused")
+            and session.metadata.get("agent_paused_assignment", task.handle) == task.handle
         ):
             self._paused[task.owner.session_id] = task.handle
             continue

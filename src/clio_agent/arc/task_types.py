@@ -314,6 +314,19 @@ class AssignmentDetails(TaskRecord):
         return self
 
 
+class WorkflowCheckpoint(TaskRecord):
+    """Declared-run provenance; execution remains owned by the existing workflow runner."""
+
+    root_handle: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    invocation_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+    declaration: str = Field(min_length=1)
+    request_digest: str = Field(min_length=1)
+    content: CoreReference
+    source: Literal["checkpoint", "legacy_snapshot"] = "checkpoint"
+
+
 class QuestionOption(TaskRecord):
     """One displayed option and its exact answer value."""
 

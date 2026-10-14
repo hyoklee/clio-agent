@@ -29,12 +29,21 @@ if TYPE_CHECKING:
     from clio_agent.gact.native_tools import NativeTools
 
 
-async def restore(self: NativeTools) -> None:
+async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> None:
     """Reattach persistent native identities; never replay a recorded submission."""
-    handles = await asyncio.to_thread(self.history.task_handles, active_only=True)
-    for handle in handles:
+    selected = (
+        handles
+        if handles is not None
+        else tuple(await asyncio.to_thread(self.history.task_handles, active_only=True))
+    )
+    for handle in selected:
         current = await asyncio.to_thread(self._current, handle)
-        if current.submission is None:
+        if (
+            current.terminal_at is not None
+            or current.submission is None
+            or handle in self._calls
+            or handle in self._rpc
+        ):
             continue
         submission = SubmissionContext.model_validate(
             await asyncio.to_thread(self.history.read_content, current.submission)
@@ -55,7 +64,20 @@ async def restore(self: NativeTools) -> None:
                 partial(self._uncertain, handle, "Original native root is unavailable"),
             )
             continue
-        if self.roots[root].settings.url.startswith("memory://"):
+        if (
+            self.roots[root].settings.url.startswith("memory://")
+            and submission.local_runtime != local_runtime_identity()
+        ):
+            if submission.local_runtime is None or not local_runtime_gone(submission.local_runtime):
+                await self._record_or_defer(
+                    "native-recovery:" + handle,
+                    partial(
+                        self._uncertain,
+                        handle,
+                        "Original memory runtime visibility is unconfirmed; no operation was replayed.",
+                    ),
+                )
+                continue
             if root == "storage" and self.provider_recovery is not None:
                 if await self.provider_recovery(current, submission):
                     continue
@@ -114,7 +136,9 @@ async def restore(self: NativeTools) -> None:
             )
             continue
 
-        def lost_attempts(handle: str = handle) -> None:
+        def lost_attempts(handle: str = handle, submission: SubmissionContext = submission) -> None:
+            if submission.local_runtime == local_runtime_identity():
+                return
             for attempt in self.history.native_attempts(handle):
                 if attempt.cleanup_state == "pending":
                     self.history.record_attempt(

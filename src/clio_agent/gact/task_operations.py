@@ -47,8 +47,15 @@ def _timeout(value: float | None) -> float | None:
 class TaskOperations:
     """Common controls delegate execution; no task is driven or scheduled here."""
 
-    def __init__(self, history: TaskHistory, cancel_owner: CancelOwner) -> None:
+    def __init__(
+        self,
+        history: TaskHistory,
+        cancel_owner: CancelOwner,
+        *,
+        refresh_owner: Callable[[TaskSnapshot], None] | None = None,
+    ) -> None:
         self.history, self.cancel_owner = history, cancel_owner
+        self.refresh_owner = refresh_owner
 
     def query(
         self,
@@ -292,6 +299,16 @@ class TaskOperations:
     ) -> dict[str, Any]:
         """Read available changes immediately, or explicitly await output/settlement."""
         handles = await asyncio.to_thread(self._canonical_observed, caller, _handles(tasks))
+        if self.refresh_owner is not None:
+            for handle in handles:
+                try:
+                    task = await asyncio.to_thread(
+                        TaskAccess(self.history, caller).require, handle, "observe"
+                    )
+                except ValueError:
+                    continue
+                if task.terminal_at is None and task.status == "task_state_uncertain":
+                    self.refresh_owner(task)
         timeout, previous = _timeout(timeout_s), _decode(cursor)
         search_start = _cursor(previous) if previous else None
         scanned_pages = 0

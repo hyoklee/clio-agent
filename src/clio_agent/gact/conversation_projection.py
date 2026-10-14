@@ -21,7 +21,7 @@ from collections.abc import Sequence
 from typing import Any, Mapping
 
 from clio_agent.arc.schema import Segment
-from clio_agent.gact.summarization_record import row_summarization
+from clio_agent.gact.summarization_record import as_summarization, row_summarization
 
 __all__ = ["model_context_messages"]
 
@@ -90,7 +90,7 @@ def transcript_segments(session: str, scope: str, rows: Sequence[Any]) -> list[S
 
     This is only for scopes without recorded context operations. Tool inputs/results
     remain exact where retained. Missing arguments and continuation are explicit;
-    an unanswered call rejects the entire reconstruction before any context is written.
+    the context restorer closes unanswered calls with explicit uncertainty before publication.
     """
     import json
 
@@ -117,18 +117,27 @@ def transcript_segments(session: str, scope: str, rows: Sequence[Any]) -> list[S
         if _get(row, "role") == "user":
             turn = str(_get(row, "turn_id") or _row_id(row))
         summary = row_summarization(row)
+        parts = list(_get(row, "parts") or [])
         if summary is not None and summary.text:
             append("summary", {"text": summary.text})
-            continue
+            checkpoint = max(
+                index for index, part in enumerate(parts) if as_summarization(part) is not None
+            )
+            parts = parts[checkpoint + 1 :]
         telemetry = iter((_get(row, "metadata") or {}).get("tools_called") or [])
         calls: set[str] = set()
         thought: dict[str, Any] | None = None
-        for part in _get(row, "parts") or []:
+        for part in parts:
             kind, text = _get(part, "type"), _get(part, "text")
             if kind == "text" and text and _get(row, "role") == "user":
                 append("user", {"text": text})
             elif kind in {"text", "thinking"} and text:
-                if not calls:
+                if (
+                    thought is None
+                    or not calls
+                    and segments
+                    and segments[-1].kind in {"observation", "user", "summary"}
+                ):
                     thought = append("thought", {"text": ""})
                 if thought is None:
                     raise ValueError("Recorded assistant step has no opening")
@@ -188,8 +197,6 @@ def transcript_segments(session: str, scope: str, rows: Sequence[Any]) -> list[S
                     },
                 )
                 calls.remove(identity)
-        if calls:
-            raise ValueError(
-                "Retained transcript has unanswered tool calls; no partial context was restored"
-            )
+        # The context owner marks any orphaned call uncertain before atomic
+        # publication. Decoding alone never asserts that its effects succeeded.
     return segments

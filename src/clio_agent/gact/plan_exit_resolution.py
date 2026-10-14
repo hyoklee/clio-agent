@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.plan_exit_resume import approved_plan_resume_text, rejected_plan_resume_text
@@ -152,7 +153,7 @@ def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questi
             },
         )
     )
-    transition_playbook_to_execution(app, sid)
+    transition_playbook_to_execution(app, sid, decision_id=question.id)
 
     from clio_agent.gact.plan_reuse import save_approved_plan
 
@@ -175,10 +176,16 @@ def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questi
     approved_plan = {"artifact_ref": saved_plan, "plan_file": plan_file, **review}
     cleared = False
     if clear_context:
+        boundary = datetime.fromisoformat(question.created_at)
+        retained = [
+            row
+            for row in app.state.messages.get(sid, [])
+            if datetime.fromisoformat(row.created_at) > boundary
+        ]
         app.state.a2ui_store.announce_ledger_clear(sid, "plan_exit_context_cleared")
-        deps.replace_session_messages(app, sid, [])
+        deps.replace_session_messages(app, sid, retained)
         app.state.sessions.update(
-            sid, message_count=0, metadata_patch={"plan_exit_context_cleared": True}
+            sid, message_count=len(retained), metadata_patch={"plan_exit_context_cleared": True}
         )
         cleared = True
     session = app.state.sessions.get(sid)

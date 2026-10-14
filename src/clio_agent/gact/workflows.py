@@ -205,13 +205,19 @@ def _parse_step_timeout(raw: Mapping[str, Any], *, step_id: str) -> tuple[float,
         return 0.0, ""
     try:
         value = conf.as_float(raw_value)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, OverflowError):
         return 0.0, (
             f"workflow step {step_id!r} 'timeout_s' must be a positive number, "
             f"got {type(raw_value).__name__}"
         )
     if not math.isfinite(value) or value <= 0:
         return 0.0, f"workflow step {step_id!r} 'timeout_s' must be > 0, got {value}"
+    from datetime import datetime, timedelta, timezone
+
+    try:
+        datetime.now(timezone.utc) + timedelta(seconds=value)
+    except OverflowError:
+        return 0.0, f"workflow step {step_id!r} 'timeout_s' exceeds the timestamp range"
     return value, ""
 
 
@@ -457,6 +463,44 @@ def _render_task(step: WorkflowStep, request: str) -> str:
     return task
 
 
+def repair_workflow_reference(app: Any, root_handle: str) -> None:
+    """Repair only owner projections from already confirmed checkpoint provenance."""
+    from uuid import uuid4
+
+    from clio_agent.arc.task_types import AssignmentDetails
+    from clio_agent.gact.native_work import now
+
+    history = app.state.task_history
+    with history._lock:
+        root = history.task_snapshot(root_handle)
+        checkpoint = history.workflow_checkpoint(root_handle)
+        if root is None or checkpoint is None or root.details is None:
+            history._workflow_dirty.discard(root_handle)
+            return
+        details = AssignmentDetails.model_validate(history.read_content(root.details))
+        if details.workflow != checkpoint.content:
+            reference = history.write_content(
+                root.owner.session_id,
+                details.model_copy(
+                    update={"workflow": checkpoint.content, "workflow_id": checkpoint.execution_id}
+                ).model_dump(mode="json"),
+            )
+            history.record_snapshot(
+                root.model_copy(update={"details": reference, "updated_at": now()}),
+                observation_id=uuid4().hex,
+            )
+        latest = history.latest_assignment(root.owner.session_id)
+        if latest is not None and latest.handle == root_handle:
+            app.state.sessions.update(
+                root.owner.session_id,
+                metadata_patch={
+                    "workflow_id": checkpoint.execution_id,
+                    "workflow_root_session": root.owner.session_id,
+                },
+            )
+        history._workflow_dirty.discard(root_handle)
+
+
 async def run_declared_workflow(
     app: Any, caller: Any, agent_def: "AgentDef", request: str, invocation_id: str
 ) -> dict[str, Any]:
@@ -472,7 +516,7 @@ async def run_declared_workflow(
     from datetime import datetime, timedelta, timezone
     from uuid import uuid4
 
-    from clio_agent.arc.task_types import AssignmentDetails, argument_digest
+    from clio_agent.arc.task_types import AssignmentDetails, WorkflowCheckpoint, argument_digest
     from clio_agent.gact.native_work import now
 
     workflow = parse_workflow(agent_def)
@@ -481,15 +525,27 @@ async def run_declared_workflow(
     digest = argument_digest({"steps": [asdict(step) for step in workflow.steps]})
     history = app.state.task_history
 
-    def load() -> tuple[str, dict[str, Any]]:
+    def load() -> tuple[str, dict[str, Any], bool]:
         with history._lock:
             owner = history.latest_assignment(caller.session_id)
             if owner is None or owner.terminal_at is not None:
                 raise ValueError("Workflow execution requires an active assignment")
             app.state.conversations.require_admission(owner)
             details = AssignmentDetails.model_validate(history.read_content(owner.details))
+            exact = history.workflow_checkpoint(owner.handle, invocation_id)
+            if exact is not None:
+                if exact.declaration != digest or exact.request_digest != argument_digest(
+                    {"request": request}
+                ):
+                    raise ValueError("Workflow invocation was reused with different inputs")
+                return owner.handle, dict(history.read_content(exact.content)), True
+            latest = history.workflow_checkpoint(owner.handle)
             existing = (
-                history.read_content(details.workflow) if details.workflow is not None else None
+                history.read_content(latest.content)
+                if latest is not None
+                else history.read_content(details.workflow)
+                if details.workflow is not None
+                else None
             )
             if existing is not None and (
                 not existing.get("finished", existing.get("complete"))
@@ -499,38 +555,69 @@ async def run_declared_workflow(
                     raise ValueError(
                         "An unfinished declared workflow has different inputs; inspect its children first"
                     )
-                return owner.handle, dict(existing)
+                return owner.handle, dict(existing), False
             same_failed_request = bool(
                 existing is not None
                 and existing.get("failed_step")
                 and existing["declaration"] == digest
                 and existing["request"] == request
             )
-            return owner.handle, {
-                "id": "workflow_"
-                + hashlib.sha256((owner.handle + "\0" + invocation_id).encode()).hexdigest(),
-                "root_session": caller.session_id,
-                "root_handle": owner.handle,
-                "invocation_id": invocation_id,
-                "predecessor": existing["id"] if existing is not None else None,
-                "retry_of": existing["id"]
-                if same_failed_request and existing is not None
-                else None,
-                "declaration": digest,
-                "request": request,
-                "steps": {
-                    key: dict(row) for key, row in existing["steps"].items() if row.get("merged")
-                }
-                if same_failed_request and existing is not None
-                else {},
-                "state": dict(existing["state"])
-                if same_failed_request and existing is not None
-                else {},
-                "complete": False,
-                "finished": False,
-            }
+            return (
+                owner.handle,
+                {
+                    "id": "workflow_"
+                    + hashlib.sha256((owner.handle + "\0" + invocation_id).encode()).hexdigest(),
+                    "root_session": caller.session_id,
+                    "root_handle": owner.handle,
+                    "invocation_id": invocation_id,
+                    "predecessor": existing["id"] if existing is not None else None,
+                    "retry_of": existing["id"]
+                    if same_failed_request and existing is not None
+                    else None,
+                    "declaration": digest,
+                    "request": request,
+                    "steps": {
+                        key: dict(row)
+                        for key, row in existing["steps"].items()
+                        if row.get("merged")
+                    }
+                    if same_failed_request and existing is not None
+                    else {},
+                    "state": dict(existing["state"])
+                    if same_failed_request and existing is not None
+                    else {},
+                    "complete": False,
+                    "finished": False,
+                    "status": "running",
+                },
+                False,
+            )
 
-    owner_handle, execution = await asyncio.to_thread(load)
+    owner_handle, execution, replay = await asyncio.to_thread(load)
+    if replay:
+        recorded_outcomes = []
+        for row in execution["steps"].values():
+            try:
+                recorded_outcomes.append(
+                    await asyncio.to_thread(app.state.task_operations.result, caller, row["handle"])
+                )
+            except ValueError:
+                recorded_outcomes.append({"handle": row["handle"], "error": "task_unavailable"})
+        return {
+            "workflow_id": execution["id"],
+            "root_handle": owner_handle,
+            "status": execution.get(
+                "status",
+                "completed"
+                if execution.get("complete")
+                else STALL_CHILD_FAILED
+                if execution.get("failed_step")
+                else "running",
+            ),
+            "workflow_state": execution["state"],
+            "outcomes": recorded_outcomes,
+            "replayed": True,
+        }
 
     def save() -> None:
         with history._lock:
@@ -538,6 +625,17 @@ async def run_declared_workflow(
             app.state.conversations.require_admission(owner)
             details = AssignmentDetails.model_validate(history.read_content(owner.details))
             checkpoint = history.write_content(caller.session_id, execution)
+            history.record_workflow(
+                WorkflowCheckpoint(
+                    root_handle=owner_handle,
+                    session_id=caller.session_id,
+                    invocation_id=invocation_id,
+                    execution_id=execution["id"],
+                    declaration=digest,
+                    request_digest=argument_digest({"request": request}),
+                    content=checkpoint,
+                )
+            )
             reference = history.write_content(
                 caller.session_id,
                 details.model_copy(
@@ -555,6 +653,7 @@ async def run_declared_workflow(
                     "workflow_root_session": caller.session_id,
                 },
             )
+            history._workflow_dirty.discard(owner_handle)
 
     await asyncio.to_thread(save)
     completed: set[str] = set()
@@ -574,6 +673,8 @@ async def run_declared_workflow(
         if row is None:
             gate = evaluate_step_gate(step, execution["state"], completed)
             if not gate.satisfied:
+                execution["status"] = STALL_PREDICATE_UNSATISFIED
+                await asyncio.to_thread(save)
                 return {
                     "workflow_id": execution["id"],
                     "status": STALL_PREDICATE_UNSATISFIED,
@@ -589,6 +690,7 @@ async def run_declared_workflow(
                 execution["id"] + ":" + step.id,
                 workflow_id=execution["id"],
                 workflow_step=step.id,
+                launch_context={"workflow_state": dict(execution["state"])},
                 execution_deadline=(
                     datetime.now(timezone.utc) + timedelta(seconds=step.timeout_s)
                 ).isoformat()
@@ -601,6 +703,10 @@ async def run_declared_workflow(
         waited = await app.state.task_operations.wait(caller, row["handle"], "all")
         outcomes.extend(waited["outcomes"])
         if waited["pending"]:
+            execution["status"] = (
+                "task_state_uncertain" if not waited["timed_out"] else STALL_STEP_TIMEOUT
+            )
+            await asyncio.to_thread(save)
             return {
                 "workflow_id": execution["id"],
                 "status": "task_state_uncertain" if not waited["timed_out"] else STALL_STEP_TIMEOUT,
@@ -635,13 +741,16 @@ async def run_declared_workflow(
             ):
                 execution["finished"] = True
                 execution["failed_step"] = step.id
+                execution["status"] = (
+                    STALL_STEP_TIMEOUT if deadline_exceeded else STALL_CHILD_FAILED
+                )
                 await asyncio.to_thread(save)
             return {
                 "workflow_id": execution["id"],
-                "status": STALL_STEP_TIMEOUT
-                if deadline_exceeded
-                else "task_state_uncertain"
+                "status": "task_state_uncertain"
                 if child is not None and child.settlement not in {"confirmed", "never_started"}
+                else STALL_STEP_TIMEOUT
+                if deadline_exceeded
                 else STALL_CHILD_FAILED,
                 "step": step.id,
                 "outcomes": outcomes,
@@ -660,6 +769,7 @@ async def run_declared_workflow(
         await asyncio.to_thread(save)
     execution["complete"] = True
     execution["finished"] = True
+    execution["status"] = "completed"
     await asyncio.to_thread(save)
     return {
         "workflow_id": execution["id"],

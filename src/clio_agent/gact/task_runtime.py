@@ -303,7 +303,19 @@ async def start(app: Any) -> None:
         app, history, recovery, run_segment, cancel_owned, create_child, gate
     )
     app.state.conversations = conversations
-    app.state.task_operations = TaskOperations(history, cancel_owner)
+
+    def request_refresh(task: TaskSnapshot) -> None:
+        if task.backend is None or task.backend.owner not in {"native", "external_mcp"}:
+            return
+        native_owner = task.backend.owner == "native"
+
+        async def refresh() -> None:
+            owner = app.state.native_tools if native_owner else app.state.external_tasks
+            await owner.restore((task.handle,))
+
+        recovery.defer("task-refresh:" + task.handle, refresh)
+
+    app.state.task_operations = TaskOperations(history, cancel_owner, refresh_owner=request_refresh)
 
     def task_changed(task: TaskSnapshot) -> None:
         from clio_agent.gact.events import Event
