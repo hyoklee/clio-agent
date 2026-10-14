@@ -85,8 +85,10 @@ async def test_builtin_sdk_roundtrip_preserves_trusted_context_and_native_errors
             with pytest.raises(PermissionError, match="owner denied"):
                 await boundary.call(refusing, {"value": "owner denied"}, contextvars.copy_context())
             assert not boundary.invocations and len(verified) == 3
-            assert owner.history.tree_handles(root.owner.session_id) == {root.handle}
-            assert owner.history.pending_mail(root.owner.session_id) == ()
+            assert await asyncio.to_thread(owner.history.tree_handles, root.owner.session_id) == {
+                root.handle
+            }
+            assert await asyncio.to_thread(owner.history.pending_mail, root.owner.session_id) == ()
             for declaration in (tool, refusing):
                 assert (
                     "_clio_submission"
