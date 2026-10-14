@@ -17,7 +17,7 @@ native PDF opening share one conversion per immutable artifact; reopening the
 tab joins ongoing work. Saved PDFs are loaded immediately. Converter failures
 remain visible with an explicit Retry control. Markdown, HTML and LaTeX keep
 their direct views. The combined source pin is
-`c5d5f5eaf797ac82a1006d0011d0bc4ea87e7496`.
+`a47306f3737ca078fde6c07d8c56a82bbdcebcbc`.
 Its math review example also distinguishes a rendered inline formula from plain
 code notation and explicitly labelled TeX source; renderer code remains unchanged.
 
@@ -49,13 +49,17 @@ which explains why the user's Attach screenshot shows Obsidian while Settings
 does not. The corresponding managed-client backend is owned by agent PR #1745;
 require that merge before this pin and preserve its independently owned worktree.
 
-New loopback HTTP regression cases cover the three OOXML types, case and MIME
-parameters, and retained UTF-8 text behavior. Rustfmt was applied; local tests,
-application builds/reloads and model inference were not run. Hosted qualification
-is required before merging UI #611, then #613, then #614, then #615, then this agent source
-pin. The combined UI tree includes these fixes so their hosted checks run in parallel
-with the agent pin. Agent #1743 separately corrects Windows renderer access.
-This change
-does not rewrite the existing export, regenerate the deck, or establish visual
-review. The installed app retains its earlier source revision until a later
-authorized rebuild.
+The final beta source pin also includes PDF fit/zoom #616, the unified HTML
+Preview/Source toolbar #617, composable Carousel/Video #619, todo alignment #620,
+compact model-aware search #621, global search #622, AmSC branding #623 and the
+expandable ALCF inference server group #624. It preserves Obsidian #612/#618 and
+all intervening develop additions. Agent #1745 is merged; its UI gitlink is an
+ancestor of this combined pin.
+
+Focused static and hosted results, actual live actions and deferred checks are
+recorded separately in the campaign evidence. On 2026-10-14 the user explicitly
+authorized merging and releasing this beta without waiting for CI or remaining
+live acceptance, so they can test it. This pin does not claim that pending checks
+passed. It does not rewrite the existing export, regenerate the OPAL deck or
+establish visual review. Installed Core/app versions remain unchanged by the
+source merge; the beta release is a separate published candidate.
