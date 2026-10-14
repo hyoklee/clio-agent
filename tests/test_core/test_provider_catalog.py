@@ -185,6 +185,7 @@ class TestDerivedViews:
             "openai": "OPENAI_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
+            "amsc_mag": "AMSC_TOKEN",
             "azure_openai": "AZURE_API_KEY",
             "gemini": "GOOGLE_API_KEY",
             "nvidia_nim": "NVIDIA_NIM_API_KEY",
