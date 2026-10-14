@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from collections.abc import Collection
 from contextlib import ExitStack
@@ -11,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from clio_agent.gact.blueprint_coordination import check_registry_claim
 from clio_agent.gact.blueprint_install_files import (
     copy_blueprint_tree,
     tree_checksum,
@@ -39,6 +41,7 @@ def _rollback(
     root: Path, directory: Path, rows: list[dict[str, Any]], tombstones: str | None = None
 ) -> None:
     for row in reversed(rows):
+        check_registry_claim(root)
         destination = _child(root, row["destination"])
         backup = _child(directory, row["backup"])
         staged = _child(directory, row["staged"])
@@ -47,10 +50,12 @@ def _rollback(
         if backup.exists():
             if destination.exists():
                 rmtree_extended(destination)
+            check_registry_claim(root)
             rename_extended(backup, destination)
         elif not row["existed"] and not staged.exists() and destination.exists():
             rmtree_extended(destination)
     ledger = _child(root, ".uninstalled.json")
+    check_registry_claim(root)
     if tombstones is not None:
         temporary = directory / "tombstones.restore"
         temporary.write_bytes(bytes.fromhex(tombstones))
@@ -99,6 +104,7 @@ def _recover(root: Path, owner: Path) -> None:
             write_json_atomic(journal, state)
         if state["status"] == "committed" and state.get("retain_backups"):
             continue
+        check_registry_claim(root)
         rmtree_extended(directory)
 
 
@@ -134,7 +140,7 @@ class InstallRevision:
         except BaseException:
             if hasattr(self, "directory"):
                 _ACTIVE_REVISIONS.discard(self.directory)
-            self._locks.close()
+            self._locks.__exit__(*sys.exc_info())
             raise
 
     def _record(self, status: str) -> None:
@@ -210,6 +216,7 @@ class InstallRevision:
 
     def apply(self) -> None:
         """Swap all staged trees under the caller's turn boundary, rolling back on failure."""
+        check_registry_claim(self.root)
         # External editors do not take our lock. Recheck after potentially slow
         # MCP preparation, before the first rename, so their edits survive.
         for row in self.entries:
@@ -221,9 +228,11 @@ class InstallRevision:
         self.applying = True
         try:
             for row in self.entries:
+                check_registry_claim(self.root)
                 destination = _child(self.root, row["destination"])
                 if destination.exists():
                     rename_extended(destination, self.directory / row["backup"])
+                check_registry_claim(self.root)
                 rename_extended(self.directory / row["staged"], destination)
         except BaseException:
             _rollback(self.root, self.directory, self.entries, self.tombstones)
@@ -233,11 +242,13 @@ class InstallRevision:
 
     def finish(self) -> None:
         """Commit only after install receipts and uninstall decisions were persisted."""
+        check_registry_claim(self.root)
         self._record("committed")
         self.committed = True
         self.applying = False
 
     def __exit__(self, *exc: Any) -> None:
+        outcome = exc
         try:
             if self.applying:
                 _rollback(self.root, self.directory, self.entries, self.tombstones)
@@ -247,7 +258,11 @@ class InstallRevision:
             if not self.applying and not (
                 self.committed and any(r["repair"] for r in self.entries)
             ):
+                check_registry_claim(self.root)
                 rmtree_extended(self.directory)
+        except BaseException:
+            outcome = sys.exc_info()
+            raise
         finally:
             _ACTIVE_REVISIONS.discard(self.directory)
-            self._locks.close()
+            self._locks.__exit__(*outcome)

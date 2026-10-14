@@ -1006,6 +1006,11 @@ def main() -> None:
     import argparse
     import sys
 
+    if len(sys.argv) > 1 and sys.argv[1] == "blueprints":
+        from clio_agent.runtime.blueprint_coordination_cli import run_blueprint_coordination_cli
+
+        sys.exit(run_blueprint_coordination_cli(sys.argv[2:]))
+
     if len(sys.argv) > 1 and sys.argv[1] == "migrate-paths":
         from clio_agent.path_migration import main as migrate_main
 
