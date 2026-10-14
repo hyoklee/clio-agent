@@ -158,3 +158,10 @@ Scoped source Ruff/format and Linux Mypy passed before behavioral execution.
 Removal, size and class guards passed; noqa-hidden swallow count remained 493.
 These are construction checks, not live/model acceptance. Earlier failed fixture
 runs remain in their individual receipts; they are not erased by this correction.
+
+
+## Retained-behavior correction packet R19
+
+Astra R17 and actual Claude R18 found production gaps after the compatibility source review. The finite C1-C8 owner/removal map and reviewed decisions are in `docs/design/task-replacement-corrections-r19.md`. The initial source packet is implemented for same-session context recovery, closed-plan Question repair, stale visual answers, assignment-bound pause/resume, workflow checkpoints and deliberate retry, declared execution deadlines, and nonfinal uncertain-result inspection with passive cancellation rechecks.
+
+C1-C8 behavioral gates are **unexecuted**. Legacy coupled-test migration, exact-head CI, Q1-Q9 and R1-R6 remain outstanding. No earlier executor/model evidence qualifies this replacement. Human continuation through unsettled cancellation is an optional R2 amendment awaiting a direct human choice; strict settlement remains in force meanwhile. Review source copies R17/R18 and R19 were removed after their processes settled; bounded reports remain, with no archive.

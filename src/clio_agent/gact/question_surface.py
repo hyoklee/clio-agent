@@ -122,12 +122,22 @@ def answer_question(
             update={"parts": tuple(part.model_dump(mode="json") for part in prepared.parts)}
         )
     answered = app.state.questions.answer(task.handle, reply)
+    resolve_plan_question(app, answered)
+    return answered
+
+
+def resolve_plan_question(app: Any, task: TaskSnapshot) -> None:
+    """Repair the existing plan decision from any durably closed approval Question."""
     from clio_agent.gact.routes.plan_interactions import is_plan_exit_question
 
+    if task.terminal_at is None:
+        return
+    session = app.state.sessions.get(task.owner.session_id)
+    if session is None or session.metadata.get("execution_gate") != task.handle:
+        return
     row = question_row(app, task.handle)
-    if is_plan_exit_question(row) and session.metadata.get("execution_gate") == task.handle:
+    if is_plan_exit_question(row):
         from clio_agent.gact.plan_exit_resolution import resolve_plan_exit_answer
 
         resolve_plan_exit_answer(app, app.state.gact_deps, session.id, row)
         app.state.conversations.runner.signal(session.id)
-    return answered

@@ -7,6 +7,7 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -86,12 +87,14 @@ class Conversations:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._unlisten: Callable[[], None] | None = None
         self._controls: dict[str, asyncio.Task[None]] = {}
+        self._cancel_watches: dict[str, Callable[[], None]] = {}
         self._control_holds: set[str] = set()
-        self._paused: set[str] = set()
+        self._paused: dict[str, str] = {}
         self._inference: dict[int, asyncio.Semaphore] = {}
         self._fanout_inference: dict[str, asyncio.Semaphore] = {}
         self._restarting: set[str] = set()
         self._pause_tokens: dict[str, str] = {}
+        self._deadlines: dict[str, asyncio.TimerHandle] = {}
         self._restoring = True
         self._closing = False
 
@@ -118,6 +121,18 @@ class Conversations:
         if self._loop is not None and not self._closing:
             for sid in self.history.pending_sessions():
                 self.runner.signal(sid)
+
+    def arm_deadline(self, handle: str, deadline: str | None) -> None:
+        """Apply an already recorded explicit execution budget on the owner loop."""
+        conversation_recovery.arm_deadline(self, handle, deadline)
+
+    def model_paused(self, sid: str) -> bool:
+        """Apply only the latest active assignment's model hold, including legacy holds."""
+        task, session = self.history.latest_assignment(sid), self.sessions.get(sid)
+        if task is None or task.terminal_at is not None or session is None:
+            return False
+        held = self._paused.get(sid) or session.metadata.get("agent_paused_assignment")
+        return held == task.handle if held else bool(session.metadata.get("agent_paused"))
 
     def retain_control(self, identity: str, task: asyncio.Task[None]) -> None:
         """Retain live control work until retirement, without accumulating completed jobs."""
@@ -163,7 +178,7 @@ class Conversations:
         if self._restoring:
             return False
         session = self.sessions.get(sid)
-        if session is None or sid in self._paused or session.metadata.get("agent_paused"):
+        if session is None or self.model_paused(sid):
             return False
         if item.kind == "composer" and item.automatic_promotion:
             from clio_agent.gact.composer_runtime import session_autostart_suspended
@@ -456,6 +471,12 @@ class Conversations:
             if task.handle in seen:
                 raise ValueError("Assignment lineage is cyclic")
             seen.add(task.handle)
+            if task.kind in {"Session", "Subagent"} and task.terminal_at is None and task.details:
+                details = AssignmentDetails.model_validate(self.history.read_content(task.details))
+                if details.execution_deadline and datetime.now(
+                    timezone.utc
+                ) >= datetime.fromisoformat(details.execution_deadline):
+                    raise ValueError("Assignment execution deadline exceeded; admission is closed")
             latest = self.history.latest_assignment(task.owner.session_id)
             if latest is not None and (
                 latest.cancellation_requested_at is not None or latest.handle in self._control_holds
@@ -485,6 +506,8 @@ class Conversations:
 
         def limits() -> tuple[int, str | None, int | None]:
             task = self.history.latest_assignment(sid)
+            if task is not None:
+                self.require_admission(task)
             details = (
                 AssignmentDetails.model_validate(self.history.read_content(task.details))
                 if task is not None and task.details is not None
@@ -611,10 +634,10 @@ class Conversations:
                         "interrupted"
                         if self._closing
                         else "paused"
-                        if sid in self._paused
+                        if self.model_paused(sid)
                         else "stopped"
                     )
-                    if not self._closing and sid not in self._paused:
+                    if not self._closing and not self.model_paused(sid):
                         pending = next(
                             (
                                 item
@@ -704,6 +727,7 @@ class Conversations:
         *,
         workflow_id: str | None = None,
         workflow_step: str | None = None,
+        execution_deadline: str | None = None,
         inference_concurrency: int | None = None,
         launch_context: dict[str, Any] | None = None,
         target_scope: dict[str, Any] | None = None,
@@ -723,6 +747,7 @@ class Conversations:
             invocation_id,
             workflow_id=workflow_id,
             workflow_step=workflow_step,
+            execution_deadline=execution_deadline,
             inference_concurrency=inference_concurrency,
             launch_context=launch_context,
             target_scope=target_scope,
@@ -752,6 +777,12 @@ class Conversations:
     async def shutdown(self) -> None:
         """Retire model workers before the application closes native owners/Core."""
         self.close_admission()
+        for timer in self._deadlines.values():
+            timer.cancel()
+        self._deadlines.clear()
+        for remove in self._cancel_watches.values():
+            remove()
+        self._cancel_watches.clear()
         await self.runner.drain()
         if self._controls:
             await asyncio.shield(

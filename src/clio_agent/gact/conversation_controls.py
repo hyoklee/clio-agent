@@ -65,22 +65,43 @@ def _control_outcome(
 
 async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Hold model execution and context; accepted workloads continue."""
-    current = await asyncio.to_thread(TaskAccess(self.history, caller).require, handle, "control")
-    if current.kind not in {"Session", "Subagent"} or current.terminal_at is not None:
-        raise ValueError("Only an active conversation assignment can pause")
-    self._paused.add(current.owner.session_id)
     token = uuid4().hex
-    self._pause_tokens[current.owner.session_id] = token
+
+    def request() -> tuple[TaskSnapshot, Any]:
+        with self.history._lock:
+            current = TaskAccess(self.history, caller).require(handle, "control")
+            latest = self.history.latest_assignment(current.owner.session_id)
+            if (
+                current.kind not in {"Session", "Subagent"}
+                or current.terminal_at is not None
+                or latest is None
+                or latest.handle != handle
+                or current.cancellation_requested_at
+            ):
+                raise ValueError("Pause requires the current uncancelled assignment")
+            self._paused[current.owner.session_id] = handle
+            self._pause_tokens[current.owner.session_id] = token
+            return current, self.runner.request_stop(current.owner.session_id)
+
+    current, reservation = await asyncio.to_thread(request)
 
     async def hold() -> None:
-        await self.runner.stop(current.owner.session_id)
+        if reservation is not None:
+            await self.runner.stop(current.owner.session_id, reservation=reservation)
 
         def settle() -> None:
             with self.history._lock:
                 if self._pause_tokens.get(current.owner.session_id) != token:
                     return
                 latest = self.history.task_snapshot(handle)
-                if latest is not None and latest.terminal_at is None:
+                active = self.history.latest_assignment(current.owner.session_id)
+                if (
+                    latest is not None
+                    and latest.terminal_at is None
+                    and latest.cancellation_requested_at is None
+                    and active is not None
+                    and active.handle == handle
+                ):
                     self.history.record_snapshot(
                         latest.model_copy(
                             update={
@@ -117,13 +138,27 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
     self.retain_control("pause:" + handle, asyncio.create_task(hold()))
 
     async def record() -> None:
-        if self._pause_tokens.get(current.owner.session_id) != token:
-            return
-        await asyncio.to_thread(
-            self.sessions.update,
-            current.owner.session_id,
-            metadata_patch={"agent_paused": True},
-        )
+        def confirm_pause() -> None:
+            with self.history._lock:
+                latest = self.history.latest_assignment(current.owner.session_id)
+                if (
+                    self._pause_tokens.get(current.owner.session_id) != token
+                    or latest is None
+                    or latest.handle != handle
+                    or latest.terminal_at is not None
+                    or latest.cancellation_requested_at is not None
+                ):
+                    return
+                self.sessions.update(
+                    current.owner.session_id,
+                    metadata_patch={
+                        "agent_paused": True,
+                        "agent_paused_assignment": handle,
+                        "agent_pause_token": token,
+                    },
+                )
+
+        await asyncio.to_thread(confirm_pause)
 
     recording = "confirmed"
     try:
@@ -143,17 +178,43 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
     if current.kind not in {"Session", "Subagent"} or current.terminal_at is not None:
         raise ValueError("Resume requires the current active assignment")
     sid = current.owner.session_id
+    latest = await asyncio.to_thread(self.history.latest_assignment, sid)
+    session = self.sessions.get(sid)
+    if latest is None or latest.handle != handle or current.cancellation_requested_at is not None:
+        raise ValueError("Resume requires the current uncancelled assignment")
+    if session is None:
+        raise ValueError("Resume session is unavailable")
+    if not self.model_paused(sid):
+        return {"handle": handle, "resumed": False, "already_running": True}
+    paused_assignment = session.metadata.get("agent_paused_assignment")
+    if paused_assignment and paused_assignment != handle:
+        raise ValueError("The model hold belongs to another assignment")
     if self.history.requires_recovery:
         raise ValueError("Resume requires confirmed Core input recording")
-    await asyncio.to_thread(self.sessions.update, sid, metadata_patch={"agent_paused": False})
 
     def inject() -> None:
+        with self.history._lock:
+            inject_locked()
+
+    def inject_locked() -> None:
         current = self.history.task_snapshot(handle)
+        latest = self.history.latest_assignment(sid)
+        if (
+            current is None
+            or latest is None
+            or latest.handle != handle
+            or current.cancellation_requested_at
+        ):
+            raise ValueError("Resume no longer addresses the current uncancelled assignment")
+        session = self.sessions.get(sid)
+        if session is None or not self.model_paused(sid):
+            return
+        token = self._pause_tokens.get(sid) or session.metadata.get("agent_pause_token") or "legacy"
         if current is not None and current.terminal_at is None:
             self.history.record_snapshot(
                 current.model_copy(
                     update={
-                        "activity": "yielded",
+                        "activity": "stopping" if self.runner.busy(sid) else "yielded",
                         "updated_at": now(),
                         "supported_actions": (
                             "observe",
@@ -171,20 +232,31 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
             sid,
             "Resume this assignment. Accepted operations may still be running; inspect their handles and confirmed effects before retrying anything.",
         )
-        self.history.record_mail(
-            MailItem(
-                id="resume_" + uuid4().hex,
-                recipient_session=sid,
-                kind="control",
-                content=content,
-                created_at=now(),
-                handle=handle,
+        identity = "resume:" + handle + ":" + str(token)
+        if identity not in self.history._mail.get(sid, {}):
+            self.history.record_mail(
+                MailItem(
+                    id=identity,
+                    recipient_session=sid,
+                    kind="control",
+                    content=content,
+                    created_at=now(),
+                    handle=handle,
+                )
             )
+        self.sessions.update(
+            sid,
+            metadata_patch={
+                "agent_paused": False,
+                "agent_paused_assignment": "",
+                "agent_pause_token": "",
+            },
         )
+        if self._paused.get(sid) == handle:
+            self._paused.pop(sid, None)
+        self._pause_tokens.pop(sid, None)
 
     await asyncio.to_thread(inject)
-    self._paused.discard(sid)
-    self._pause_tokens.pop(sid, None)
     self.runner.signal(sid)
     return {"handle": handle, "resumed": True}
 
@@ -310,7 +382,14 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
                 or settled.terminal_at is None
                 or settled.settlement not in {"confirmed", "never_started"}
             ):
-                raise ValueError("Restart settlement remains uncertain; no successor launched")
+                raise ValueError(
+                    "Restart settlement remains uncertain; no successor launched. "
+                    + (
+                        settled.progress.message
+                        if settled is not None
+                        else "Assignment unavailable"
+                    )
+                )
             await asyncio.shield(cancellation)
 
         def create() -> None:
@@ -397,6 +476,10 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
 async def _cancel_subtree(
     self: Conversations, assignment: TaskSnapshot, *, members: tuple[str, ...] | None = None
 ) -> None:
+    previous_watch = self._cancel_watches.pop(assignment.handle, None)
+    if previous_watch is not None:
+        previous_watch()
+
     def membership() -> set[str]:
         if members is not None:
             return set(members)
@@ -421,7 +504,7 @@ async def _cancel_subtree(
                 and (task.terminal_at is None or task.terminal_at > stamp)
             }
 
-    handles = await asyncio.to_thread(membership)
+    handles = tuple(sorted((await asyncio.to_thread(membership)) - {assignment.handle}))
     changed, loop = asyncio.Event(), asyncio.get_running_loop()
     retirement = asyncio.create_task(self.runner.stop(assignment.owner.session_id))
 
@@ -495,10 +578,10 @@ async def _cancel_subtree(
             ):
                 break
             uncertain = [
-                task.handle
-                for task in states
-                if task is not None
-                and (
+                handle
+                for handle, task in zip(handles, states, strict=True)
+                if task is None
+                or (
                     task.status == "task_state_uncertain"
                     or task.terminal_at is not None
                     and task.settlement not in {"confirmed", "never_started"}
@@ -523,6 +606,7 @@ async def _cancel_subtree(
                 async def record_uncertainty(
                     uncertain: list[str] = uncertain,
                     current_errors: tuple[dict[str, str], ...] = current_errors,
+                    states: list[TaskSnapshot | None] = states,
                 ) -> None:
                     def record() -> None:
                         with self.history._lock:
@@ -531,7 +615,21 @@ async def _cancel_subtree(
                                 return
                             message = (
                                 "Descendant cancellation settlement is unconfirmed: "
-                                + json.dumps({"handles": uncertain, "errors": current_errors})
+                                + json.dumps(
+                                    {
+                                        "members": [
+                                            {
+                                                "handle": task.handle,
+                                                "raw_status": task.raw_status,
+                                                "episode": task.attention_episode,
+                                            }
+                                            for task in states
+                                            if task is not None and task.handle in uncertain
+                                        ],
+                                        "handles": uncertain,
+                                        "errors": current_errors,
+                                    }
+                                )
                             )
                             if (
                                 current.status == "task_state_uncertain"
@@ -546,6 +644,13 @@ async def _cancel_subtree(
                                     "updated_at": now(),
                                     "progress": TaskProgress(message=message),
                                     "attention_episode": current.attention_episode or uuid4().hex,
+                                    "supported_actions": (
+                                        "observe",
+                                        "wait",
+                                        "message",
+                                        "cancel",
+                                        "restart",
+                                    ),
                                 }
                             )
                             self.history.record_snapshot(observed, observation_id=uuid4().hex)
@@ -565,12 +670,71 @@ async def _cancel_subtree(
                     self.recovery.defer(
                         "conversation-cancel-attention:" + assignment.handle, record_uncertainty
                     )
+                if retired_cleanly and all(
+                    task is None or task.handle in uncertain or task.terminal_at is not None
+                    for task in states
+                ):
+                    # Unknown evidence cannot be obtained by keeping a waiter
+                    # suspended. Recheck only when an owner records a change.
+                    def recheck() -> None:
+                        if self._closing:
+                            return
+                        job = self._controls.get(assignment.handle)
+                        if job is not None and not job.done():
+                            job.add_done_callback(lambda _done: recheck())
+                            return
+                        if assignment.handle not in self._cancel_watches:
+                            return
+                        self.retain_control(
+                            assignment.handle,
+                            asyncio.create_task(
+                                self._cancel_subtree(assignment, members=tuple(handles))
+                            ),
+                        )
+
+                    def observed(_revision: int) -> None:
+                        loop.call_soon_threadsafe(recheck)
+
+                    if not self._closing:
+                        self._cancel_watches[assignment.handle] = self.history.listen(
+                            observed, handles=tuple(handles)
+                        )
+                        if changed.is_set():
+                            loop.call_soon(recheck)
+                    return
             await changed.wait()
+
+        def clear_pause(current: TaskSnapshot) -> None:
+            latest = self.history.latest_assignment(current.owner.session_id)
+            session = self.sessions.get(current.owner.session_id)
+            if (
+                latest is not None
+                and latest.handle == current.handle
+                and session is not None
+                and session.metadata.get("agent_paused_assignment", current.handle)
+                == current.handle
+            ):
+                self.sessions.update(
+                    current.owner.session_id,
+                    metadata_patch={
+                        "agent_paused": False,
+                        "agent_paused_assignment": "",
+                        "agent_pause_token": "",
+                    },
+                )
+                if self._paused.get(current.owner.session_id) == current.handle:
+                    self._paused.pop(current.owner.session_id, None)
+                self._pause_tokens.pop(current.owner.session_id, None)
 
         def finish() -> None:
             with self.history._lock:
                 current = self.history.task_snapshot(assignment.handle)
-                if current is None or current.terminal_at is not None:
+                if current is None:
+                    return
+                if current.terminal_at is not None:
+                    if current.status == "cancelled":
+                        clear_pause(current)
+                        publish_task_notice(self.history, current)
                     return
                 stamp = now()
                 result = self.history.write_content(
@@ -594,6 +758,9 @@ async def _cancel_subtree(
                     }
                 )
                 self.history.record_snapshot(settled, observation_id=uuid4().hex)
+                if self._loop is not None:
+                    self._loop.call_soon_threadsafe(self.arm_deadline, settled.handle, None)
+                clear_pause(settled)
                 publish_task_notice(self.history, settled)
 
         async def confirm_finish() -> None:

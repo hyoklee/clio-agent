@@ -3,11 +3,65 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterable, Mapping
 from typing import Any
 
 import msgspec
 
 from clio_agent.arc.schema import Segment, encode_segments
+
+
+def recorded_segments(
+    events: Iterable[Mapping[str, Any]],
+    session_id: str,
+    scope: str,
+    retained_turns: set[str],
+    confirmed_inputs: Mapping[str, Any],
+) -> tuple[list[Segment], bool, bool]:
+    """Fold exact-scope trace evidence without promoting input write intents to commits.
+
+    ``confirmed_inputs`` must be read from canonical Core records before restoration.
+    Trace order, rather than a possibly reset process clock, decides later edits.
+    Unconfirmed recipient inputs remain outside the live context and mailbox receipts.
+    """
+    from clio_agent.arc.context_view import fold_atoms
+    from clio_agent.arc.task_types import RecipientInput
+
+    state: dict[str, Segment] = {}
+    unconfirmed = False
+    found = False
+    for event in events:
+        if event.get("session_id") != session_id or event.get("event_type") != "arc.op":
+            continue
+        payload = event.get("payload")
+        if not isinstance(payload, Mapping) or payload.get("scope") != scope:
+            continue
+        found = True
+        if payload.get("op") == "restore":
+            state.clear()
+        for raw in payload.get("segments_written") or []:
+            segment = msgspec.convert(raw, Segment)
+            if segment.session_id != session_id or segment.scope != scope:
+                raise ValueError("Recorded context belongs to another session or scope")
+            if segment.turn_id and segment.turn_id not in retained_turns:
+                continue
+            if segment.kind == "recipient_input":
+                candidate = RecipientInput.model_validate(segment.content)
+                if confirmed_inputs.get(candidate.id) != candidate:
+                    unconfirmed = True
+                    continue
+            state[segment.id] = segment
+        for identity in payload.get("segments_tombstoned") or []:
+            if identity in state:
+                state[identity] = msgspec.structs.replace(
+                    state[identity], status="tombstoned", tombstoned_at=int(payload["logical_time"])
+                )
+    # Explicit tombstones and append-only deletion/compaction atoms both survive.
+    tombstones = {
+        segment.id: segment for segment in state.values() if segment.status == "tombstoned"
+    }
+    folded = fold_atoms(list(state.values()), scope, as_of=None, include_tombstoned=True)
+    return [tombstones.get(segment.id, segment) for segment in folded], unconfirmed, found
 
 
 def restore_folded_context(

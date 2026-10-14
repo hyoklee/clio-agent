@@ -63,11 +63,30 @@ def _stage_plan_revision_message(
 def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, question: Any) -> None:
     """Apply one explicit plan decision and stage the corresponding lifecycle transition."""
 
+    with app.state.task_history._lock:
+        from clio_agent.gact.plan_mode import _PLAN_EXIT_PENDING_KEY
+
+        session = app.state.sessions.get(sid)
+        if session is None or session.metadata.get("execution_gate") != question.id:
+            return
+        _resolve_plan_exit_answer(app, deps, sid, question)
+        app.state.sessions.update(
+            sid,
+            metadata_patch={
+                _PLAN_EXIT_PENDING_KEY: {},
+                "pending_user_question_id": "",
+                "execution_gate": "",
+            },
+        )
+
+
+def _resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, question: Any) -> None:
+    """Stage the deterministic decision before releasing its admission gate."""
+
     from clio_agent.gact.events import Event
     from clio_agent.gact.plan_mode import (
         _PLAN_EXIT_CLEAR_CONTEXT,
         _PLAN_EXIT_DECISIONS,
-        _PLAN_EXIT_PENDING_KEY,
     )
 
     session = app.state.sessions.get(sid)
@@ -78,15 +97,6 @@ def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questio
     decision = next((s for s in selected if s in _PLAN_EXIT_DECISIONS), "reject")
     clear_context = (_PLAN_EXIT_CLEAR_CONTEXT in selected) or bool(answer_meta.get("clear_context"))
     feedback = str(getattr(question, "answer", "") or "").strip()
-
-    app.state.sessions.update(
-        sid,
-        metadata_patch={
-            _PLAN_EXIT_PENDING_KEY: {},
-            "pending_user_question_id": "",
-            "execution_gate": "",
-        },
-    )
 
     if decision == "reject":
         session = app.state.sessions.get(sid)

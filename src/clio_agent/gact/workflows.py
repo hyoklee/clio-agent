@@ -6,6 +6,7 @@ not retained as an alternate owner or imported during blueprint validation.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Literal, Optional
@@ -209,7 +210,7 @@ def _parse_step_timeout(raw: Mapping[str, Any], *, step_id: str) -> tuple[float,
             f"workflow step {step_id!r} 'timeout_s' must be a positive number, "
             f"got {type(raw_value).__name__}"
         )
-    if value <= 0:
+    if not math.isfinite(value) or value <= 0:
         return 0.0, f"workflow step {step_id!r} 'timeout_s' must be > 0, got {value}"
     return value, ""
 
@@ -468,6 +469,7 @@ async def run_declared_workflow(
     import asyncio
     import hashlib
     from dataclasses import asdict
+    from datetime import datetime, timedelta, timezone
     from uuid import uuid4
 
     from clio_agent.arc.task_types import AssignmentDetails, argument_digest
@@ -490,24 +492,42 @@ async def run_declared_workflow(
                 history.read_content(details.workflow) if details.workflow is not None else None
             )
             if existing is not None and (
-                not existing.get("complete") or existing.get("invocation_id") == invocation_id
+                not existing.get("finished", existing.get("complete"))
+                or existing.get("invocation_id") == invocation_id
             ):
                 if existing["declaration"] != digest or existing["request"] != request:
                     raise ValueError(
                         "An unfinished declared workflow has different inputs; inspect its children first"
                     )
                 return owner.handle, dict(existing)
+            same_failed_request = bool(
+                existing is not None
+                and existing.get("failed_step")
+                and existing["declaration"] == digest
+                and existing["request"] == request
+            )
             return owner.handle, {
                 "id": "workflow_"
                 + hashlib.sha256((owner.handle + "\0" + invocation_id).encode()).hexdigest(),
                 "root_session": caller.session_id,
                 "root_handle": owner.handle,
                 "invocation_id": invocation_id,
+                "predecessor": existing["id"] if existing is not None else None,
+                "retry_of": existing["id"]
+                if same_failed_request and existing is not None
+                else None,
                 "declaration": digest,
                 "request": request,
-                "steps": {},
-                "state": {},
+                "steps": {
+                    key: dict(row) for key, row in existing["steps"].items() if row.get("merged")
+                }
+                if same_failed_request and existing is not None
+                else {},
+                "state": dict(existing["state"])
+                if same_failed_request and existing is not None
+                else {},
                 "complete": False,
+                "finished": False,
             }
 
     owner_handle, execution = await asyncio.to_thread(load)
@@ -539,19 +559,29 @@ async def run_declared_workflow(
     await asyncio.to_thread(save)
     completed: set[str] = set()
     outcomes: list[dict[str, Any]] = []
-    for step in workflow.steps:
-        gate = evaluate_step_gate(step, execution["state"], completed)
-        if not gate.satisfied:
-            return {
-                "workflow_id": execution["id"],
-                "status": STALL_PREDICATE_UNSATISFIED,
-                "step": step.id,
-                "predicate": gate.predicate,
-                "observed": gate.observed,
-                "outcomes": outcomes,
-            }
+    for index, step in enumerate(workflow.steps):
         row = execution["steps"].get(step.id)
+        if (
+            row is not None
+            and "merged" not in row
+            and any(later.id in execution["steps"] for later in workflow.steps[index + 1 :])
+        ):
+            row["merged"] = True
+            await asyncio.to_thread(save)
+        if row is not None and row.get("merged"):
+            completed.update({step.id, step.child})
+            continue
         if row is None:
+            gate = evaluate_step_gate(step, execution["state"], completed)
+            if not gate.satisfied:
+                return {
+                    "workflow_id": execution["id"],
+                    "status": STALL_PREDICATE_UNSATISFIED,
+                    "step": step.id,
+                    "predicate": gate.predicate,
+                    "observed": gate.observed,
+                    "outcomes": outcomes,
+                }
             spawned = await app.state.conversations.spawn(
                 caller,
                 _render_task(step, request),
@@ -559,13 +589,16 @@ async def run_declared_workflow(
                 execution["id"] + ":" + step.id,
                 workflow_id=execution["id"],
                 workflow_step=step.id,
+                execution_deadline=(
+                    datetime.now(timezone.utc) + timedelta(seconds=step.timeout_s)
+                ).isoformat()
+                if step.timeout_s > 0
+                else None,
             )
             row = {"handle": spawned["handle"], "session": spawned["session_id"]}
             execution["steps"][step.id] = row
             await asyncio.to_thread(save)
-        waited = await app.state.task_operations.wait(
-            caller, row["handle"], "all", step.timeout_s or None
-        )
+        waited = await app.state.task_operations.wait(caller, row["handle"], "all")
         outcomes.extend(waited["outcomes"])
         if waited["pending"]:
             return {
@@ -576,10 +609,40 @@ async def run_declared_workflow(
                 "outcomes": outcomes,
             }
         child = await asyncio.to_thread(history.task_snapshot, row["handle"])
+        child_details = (
+            AssignmentDetails.model_validate(
+                await asyncio.to_thread(history.read_content, child.details)
+            )
+            if child is not None and child.details is not None
+            else AssignmentDetails()
+        )
+        deadline_exceeded = bool(
+            child is not None
+            and child_details.execution_deadline
+            and child.cancellation_requested_at
+            and datetime.fromisoformat(child.cancellation_requested_at)
+            >= datetime.fromisoformat(child_details.execution_deadline)
+        )
         if child is None or child.status != "completed":
+            if (
+                child is not None
+                and child.terminal_at is not None
+                and child.settlement
+                in {
+                    "confirmed",
+                    "never_started",
+                }
+            ):
+                execution["finished"] = True
+                execution["failed_step"] = step.id
+                await asyncio.to_thread(save)
             return {
                 "workflow_id": execution["id"],
-                "status": STALL_CHILD_FAILED,
+                "status": STALL_STEP_TIMEOUT
+                if deadline_exceeded
+                else "task_state_uncertain"
+                if child is not None and child.settlement not in {"confirmed", "never_started"}
+                else STALL_CHILD_FAILED,
                 "step": step.id,
                 "outcomes": outcomes,
             }
@@ -592,9 +655,11 @@ async def run_declared_workflow(
         if not isinstance(state, Mapping):
             raise ValueError("Child workflow_state must be a mapping")
         _merge_step_state(execution["state"], state)
+        row["merged"] = True
         completed.update({step.id, step.child})
         await asyncio.to_thread(save)
     execution["complete"] = True
+    execution["finished"] = True
     await asyncio.to_thread(save)
     return {
         "workflow_id": execution["id"],

@@ -127,6 +127,7 @@ def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode:
                     "message": "Task state is uncertain; inspect effects before deciding to retry."
                     if episode
                     else "Task settled.",
+                    **({"details": current.progress.message} if episode else {}),
                 },
             )
         for recipient, notice_id in recipients.items():

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+from datetime import datetime, timezone
 from functools import partial
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -16,6 +18,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.gact.native_work import now
 from clio_agent.gact.session_mail import StagedInput
+from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_publication import task_owner_recipient
 
 if TYPE_CHECKING:
@@ -90,6 +93,14 @@ async def restore(self: Conversations) -> None:
         if await asyncio.to_thread(self.history.latest_assignment, task.owner.session_id) != task:
             continue
         session = self.sessions.get(task.owner.session_id)
+        details = (
+            AssignmentDetails.model_validate(
+                await asyncio.to_thread(self.history.read_content, task.details)
+            )
+            if task.details is not None
+            else AssignmentDetails()
+        )
+        self.arm_deadline(handle, details.execution_deadline)
         if task.cancellation_requested_at is not None:
             self.retain_control(handle, asyncio.create_task(self._cancel_subtree(task)))
             continue
@@ -98,7 +109,7 @@ async def restore(self: Conversations) -> None:
             or session is not None
             and session.metadata.get("agent_paused")
         ):
-            self._paused.add(task.owner.session_id)
+            self._paused[task.owner.session_id] = task.handle
             continue
         if task.activity not in {"busy", "executing", "stopping", "interrupted"}:
             continue
@@ -200,3 +211,65 @@ def _record_interrupted_calls(
                 turn_id="recovery:" + task.handle,
             )
         )
+
+
+logger = logging.getLogger(__name__)
+
+
+def arm_deadline(self: Conversations, handle: str, deadline: str | None) -> None:
+    """Own only an explicit assignment limit; its callback uses ordinary cancellation."""
+    previous = self._deadlines.pop(handle, None)
+    if previous is not None:
+        previous.cancel()
+    if deadline is None or self._closing or self._loop is None:
+        return
+    expires = datetime.fromisoformat(deadline)
+    if expires.tzinfo is None:
+        raise ValueError("An execution deadline requires a timezone")
+
+    async def expire() -> None:
+        def due() -> TaskSnapshot | None:
+            with self.history._lock:
+                task = self.history.task_snapshot(handle)
+                if task is None or task.terminal_at is not None or task.details is None:
+                    return None
+                details = AssignmentDetails.model_validate(self.history.read_content(task.details))
+                if details.execution_deadline != deadline:
+                    return None
+                if datetime.now(timezone.utc) < expires:
+                    if self._loop is not None:
+                        self._loop.call_soon_threadsafe(self.arm_deadline, handle, deadline)
+                    return None
+                if task.cancellation_requested_at is not None:
+                    return None
+                return task
+
+        task = await asyncio.to_thread(due)
+        if task is not None:
+            await self.cancel(TaskCaller(task.owner.session_id, task.owner.human_id), task.handle)
+
+    def elapsed() -> None:
+        self._deadlines.pop(handle, None)
+
+        async def enforce() -> None:
+            try:
+                await expire()
+            except Exception as error:
+                logger.exception(
+                    "Task boundary reason=execution_deadline_recording_unconfirmed error_type=%s",
+                    type(error).__name__,
+                )
+                try:
+                    task = await asyncio.to_thread(self.history.task_snapshot, handle)
+                    if task is not None and task.terminal_at is None:
+                        await self.cancel(
+                            TaskCaller(task.owner.session_id, task.owner.human_id), handle
+                        )
+                finally:
+                    self.recovery.defer("execution-deadline:" + handle, expire)
+
+        self.retain_control("execution-deadline:" + handle, asyncio.create_task(enforce()))
+
+    self._deadlines[handle] = self._loop.call_later(
+        max(0.0, (expires - datetime.now(timezone.utc)).total_seconds()), elapsed
+    )

@@ -1,0 +1,109 @@
+{
+  "status": "completed review",
+  "host": "homelab",
+  "root": "/home/jcernuda/.cache/clio-task-review-19319a3b-r17",
+  "same_verified_snapshot_as": "r17",
+  "source_core": "9486991a",
+  "production_source_base": "19319a3b",
+  "gact": "ce99316446848ddd269b1bf782ff2c87cc9db14a",
+  "marketplace": "9257bba5953b012ba796299df4c633e698dbaddc",
+  "focus_sha256": "6174948c43d138adf596985b78196923cb58c88e9f070aa50a33cdd9f7b0ca8f",
+  "model_requested": "claude-sonnet-5-5",
+  "auth": "existing host login, no credential copies",
+  "session_persistence": false,
+  "ssh_pid": 43064,
+  "remote_controller_pid": 3314772,
+  "remote_cli_pid": 3314773,
+  "model": "claude-sonnet-5-5",
+  "actual_tools": [
+    "Glob",
+    "Grep",
+    "Read"
+  ],
+  "outcome": {
+    "status": "completed review",
+    "attempt": "r18",
+    "root": "/home/jcernuda/.cache/clio-task-review-19319a3b-r17",
+    "controller_pid": 3314772,
+    "started_at": "2026-10-14T20:21:00.990379+00:00",
+    "tool_calls": 53,
+    "tool_errors": 1,
+    "tool_names": [
+      "Glob",
+      "Read",
+      "Grep"
+    ],
+    "session_persistence": false,
+    "cli_pid": 3314773,
+    "process_group": 3314773,
+    "model": "claude-sonnet-5-5",
+    "session_id": "567f20fb-98d3-45f1-8859-e482427dfa5f",
+    "actual_tools": [
+      "Glob",
+      "Grep",
+      "Read"
+    ],
+    "mcp_servers": [],
+    "result_subtype": "success",
+    "result_is_error": false,
+    "usage": {
+      "input_tokens": 74,
+      "cache_creation_input_tokens": 264269,
+      "cache_read_input_tokens": 5850809,
+      "output_tokens": 38360,
+      "output_tokens_details": {
+        "thinking_tokens": 29573
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 264269,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 2,
+          "output_tokens": 3815,
+          "cache_read_input_tokens": 264759,
+          "cache_creation_input_tokens": 2619,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 2619
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    },
+    "duration_ms": 310239,
+    "exit_code": 0,
+    "ended_at": "2026-10-14T20:26:12.427974+00:00",
+    "cli_settled": true
+  },
+  "ssh_exit": 0,
+  "report_file": "docs/qualification/task-replacement-implementation-claude-r18.md",
+  "report_sha256": "210ffa61609742a5aba30e553b0cc7acc2a70d968506d7aff46966dcee50ca64",
+  "report_bytes": 7292,
+  "cleanup": {
+    "checked_at": "2026-10-14T20:37:33.741643+00:00",
+    "root": "/home/jcernuda/.cache/clio-task-review-19319a3b-r17",
+    "root_absent": true,
+    "pids_absent": {
+      "3274574": true,
+      "3278380": true,
+      "3278381": true,
+      "3314772": true,
+      "3314773": true
+    },
+    "source_manifest_predelete_verified": true,
+    "source_files": 4648,
+    "source_logical_bytes": 40824928,
+    "archive": false,
+    "note": "Removal succeeded; post-removal receipt formatting failed on older Python datetime.UTC. This is read-only absence verification."
+  }
+}

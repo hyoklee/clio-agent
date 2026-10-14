@@ -115,14 +115,14 @@ class QuestionCommands:
     def visual_question(
         self, session_id: str, surface_id: str, action_name: str
     ) -> TaskSnapshot | None:
-        """Resolve only the named answer action on one session-owned visual surface."""
+        """Preserve answer identity even after closure; reused surfaces require an exact ID."""
         with self.history._lock:
             candidates = []
             for handle in self.history.resource_handles(
                 question_surface_resource(session_id, surface_id)
             ):
                 current = self.history.task_snapshot(handle)
-                if current is None or current.kind != "Question" or current.terminal_at is not None:
+                if current is None or current.kind != "Question":
                     continue
                 definition = self._definition(current)
                 if definition.metadata.get("a2ui_answer_action", "question.submit") == action_name:

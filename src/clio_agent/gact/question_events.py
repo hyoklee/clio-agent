@@ -9,7 +9,7 @@ from typing import Any
 
 from clio_agent.arc.task_types import TaskSnapshot
 from clio_agent.gact.events import Event
-from clio_agent.gact.question_surface import question_view
+from clio_agent.gact.question_surface import question_view, resolve_plan_question
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +42,14 @@ class QuestionEvents:
         owner, attended = row["session_id"], row["attended_session_id"]
         for sid in dict.fromkeys((owner, attended)):
             self.app.state.bus.publish(Event(type=event_type, session_id=sid, payload=row))
+        if task.terminal_at is not None and (
+            row["source"] == "plan_exit" or row["metadata"].get("plan_exit_approval")
+        ):
+
+            async def resolve() -> None:
+                await asyncio.to_thread(resolve_plan_question, self.app, task)
+
+            self.app.state.task_recovery.defer("plan-question:" + task.handle, resolve)
         if not self._closing and task.raw_status == "pending" and row["expires_at"]:
             deadline = datetime.fromisoformat(row["expires_at"])
             delay = max(0.0, (deadline - datetime.now(timezone.utc)).total_seconds())
@@ -77,6 +85,11 @@ class QuestionEvents:
                 task = history.task_snapshot(handle)
                 if task is not None and task.details is not None:
                     self.changed(task)
+            for session in self.app.state.sessions.list():
+                gate = session.metadata.get("execution_gate")
+                task = history.task_snapshot(gate) if isinstance(gate, str) and gate else None
+                if task is not None and task.kind == "Question" and task.terminal_at is not None:
+                    resolve_plan_question(self.app, task)
 
         await asyncio.to_thread(replay)
 

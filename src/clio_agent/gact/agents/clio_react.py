@@ -364,6 +364,9 @@ class _Loop:
 
         expert_span = uuid.uuid4().hex[:16]
         self.recorder.started(expert_span, self.inputs)
+        ledger = getattr(getattr(_ctx.active_app(), "state", None), "messages", None)
+        if ledger is not None:
+            self.recorder.carry_over(ledger.get(self.session, []) or [])
         self.recorder.injections([*self._tool_use_note(), *_ctx.turn_injections()])
         # The continuing flag is this forward's alone: anything it starts opens its own task.
         continue_token = _CONTINUING.set(False) if _CONTINUING.get() else None

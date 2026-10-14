@@ -336,6 +336,14 @@ class StepRecorder:
         """The scope's context as messages; only the open tail step is re-folded."""
         return self._reader.read()
 
+    def carry_over(self, ledger: Sequence[Any]) -> None:
+        """Restore validated context for this exact session before the current input."""
+        from clio_agent.gact.agents.context_identity import restore_context
+
+        note = restore_context(self.arc, self.session, self.scope, self.turn_id, ledger)
+        if note:
+            emit_injection("context_recovery", note, agent_id=self.expert_id)
+
     def started(self, expert_span_id: str, inputs: Mapping[str, Any]) -> None:
         """Open the expert lifecycle on the highway."""
         from clio_agent.gact.agents.context_identity import context_identity

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -117,6 +118,12 @@ def _new_assignment(
         ),
     )
     self.history.record_snapshot(task, observation_id=uuid4().hex)
+    if self._loop is not None:
+        self._loop.call_soon_threadsafe(
+            self.arm_deadline,
+            task.handle,
+            initial_details.execution_deadline if initial_details else None,
+        )
     return task
 
 
@@ -141,6 +148,14 @@ def _finish_segment(
             if current.details
             else AssignmentDetails()
         )
+        if details.execution_deadline is not None and datetime.now(
+            timezone.utc
+        ) >= datetime.fromisoformat(details.execution_deadline):
+            if self._loop is not None:
+                self._loop.call_soon_threadsafe(
+                    self.arm_deadline, current.handle, details.execution_deadline
+                )
+            return
         dependencies = [self.history.task_snapshot(handle) for handle in details.dependencies]
         session = self.sessions.get(segment.session_id)
         if session is None:
@@ -186,6 +201,8 @@ def _finish_segment(
             )
         observed = current.model_copy(update=updates)
         self.history.record_snapshot(observed, observation_id=uuid4().hex)
+        if observed.terminal_at is not None and self._loop is not None:
+            self._loop.call_soon_threadsafe(self.arm_deadline, observed.handle, None)
         publish_task_notice(self.history, observed)
 
 
@@ -226,6 +243,8 @@ async def complete_deferred(self: Conversations, sid: str, assignment_handle: st
                 }
             )
             self.history.record_snapshot(settled, observation_id=uuid4().hex)
+            if self._loop is not None:
+                self._loop.call_soon_threadsafe(self.arm_deadline, settled.handle, None)
             publish_task_notice(self.history, settled)
 
     await asyncio.to_thread(complete)
@@ -240,6 +259,7 @@ async def spawn(
     *,
     workflow_id: str | None = None,
     workflow_step: str | None = None,
+    execution_deadline: str | None = None,
     inference_concurrency: int | None = None,
     launch_context: dict[str, Any] | None = None,
     target_scope: dict[str, Any] | None = None,
@@ -340,6 +360,7 @@ async def spawn(
                 initial_details=AssignmentDetails(
                     workflow_id=workflow_id,
                     workflow_step=workflow_step,
+                    execution_deadline=execution_deadline,
                     inference_concurrency=inference_concurrency,
                     input_evidence=pins,
                     evidence_assignment=handle if pins else None,

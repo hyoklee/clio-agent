@@ -160,6 +160,27 @@ class TaskOperations:
             if current.status in {"failed", "task_state_uncertain"}:
                 result["reason"] = current.progress.message
             if current.terminal_at is None:
+                if current.backend_observation is not None and current.raw_status in {
+                    "completed",
+                    "failed",
+                    "cancelled",
+                    "inline",
+                }:
+                    result.update(
+                        result_page(
+                            self.history,
+                            caller,
+                            current.handle,
+                            current.backend_observation,
+                            "task_result",
+                            position,
+                        )
+                    )
+                    result.update(
+                        result_kind="backend_evidence",
+                        raw_status=current.raw_status,
+                        evidence_is_final=False,
+                    )
                 return result
             if current.result is None:
                 result["result"] = None

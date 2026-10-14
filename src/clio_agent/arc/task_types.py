@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
+from datetime import datetime, timezone
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
@@ -294,10 +295,23 @@ class AssignmentDetails(TaskRecord):
     workflow_id: str | None = None
     workflow_step: str | None = None
     workflow: CoreReference | None = None
+    execution_deadline: str | None = None
     inference_concurrency: int | None = Field(default=None, ge=1)
     cancellation_members: tuple[str, ...] | None = None
     input_evidence: tuple[AssignmentEvidence, ...] = ()
     evidence_assignment: str | None = None
+
+    @model_validator(mode="after")
+    def validate_execution_deadline(self) -> AssignmentDetails:
+        """Require a finite, timezone-qualified absolute deadline when explicitly set."""
+        for stamp in (self.execution_deadline,):
+            if stamp is not None:
+                value = datetime.fromisoformat(stamp)
+                if value.tzinfo is None or value.astimezone(timezone.utc).timestamp() <= 0:
+                    raise ValueError(
+                        "An execution deadline requires a positive timezone-qualified timestamp"
+                    )
+        return self
 
 
 class QuestionOption(TaskRecord):

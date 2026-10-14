@@ -80,11 +80,6 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
                             attempt.model_copy(update={"cleanup_state": "unknown"})
                         )
                 attempts = self.history.native_attempts(current.handle)
-        if any(attempt.cleanup_state == "unknown" for attempt in attempts):
-            self._uncertain(current.handle, "Physical settlement is unconfirmed")
-            return
-        if any(attempt.cleanup_state == "pending" for attempt in attempts):
-            return
         if current.backend_observation is None:
             return
         reply = ClientGetTaskResult.model_validate(
@@ -95,17 +90,29 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
         status = reply.status
         if accepted is None:
             return  # acceptance custody will install its captured contract
+        validation_problem = ""
         try:
             validate_terminal(accepted.submission.output_schema, reply)
         except ValueError as error:
+            validation_problem = "Backend result contract failure: " + str(error)
             status = "failed"
             current = current.model_copy(
                 update={
-                    "progress": current.progress.model_copy(
-                        update={"message": "Backend result contract failure: " + str(error)}
-                    )
+                    "progress": current.progress.model_copy(update={"message": validation_problem})
                 }
             )
+        if any(attempt.cleanup_state in {"pending", "unknown"} for attempt in attempts):
+            # Preserve the captured-contract result without using a fresh receipt
+            # as proof for another incarnation. Explicit reads remain nonfinal.
+            if any(attempt.cleanup_state == "unknown" for attempt in attempts):
+                self._uncertain(
+                    current.handle,
+                    "Physical settlement is unconfirmed; backend reported "
+                    + reply.status
+                    + ". "
+                    + validation_problem,
+                )
+            return
         if reply.result is not None:
             result = reply.result
             structured = result.get("structuredContent") or {}
