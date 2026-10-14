@@ -10,6 +10,8 @@ import dspy
 import pytest
 from dspy.lm15 import ToolResultPart
 
+from clio_agent.gact import context
+from clio_agent.gact.agents.blueprint_tool_recording import recording_blueprint_tool
 from clio_agent.gact.agents.clio_react import ClioReAct
 from clio_agent.gact.agents.tool_instrumentation import (
     declare_structured_content,
@@ -88,7 +90,42 @@ def test_async_native_observation_waits_for_body_and_cleans_declarations(
     assert pop_declared_structured_content() is None
 
 
-def test_clio_react_executes_instrumented_async_native_tool() -> None:
+@pytest.mark.parametrize("error_type", [RuntimeError, asyncio.CancelledError])
+def test_recorded_async_native_failure_keeps_blueprint_evidence(
+    error_type: type[BaseException],
+) -> None:
+    async def refused(query: str) -> str:
+        """Fail after the asynchronous body starts."""
+        await asyncio.sleep(0)
+        raise error_type("source interrupted")
+
+    tool = recording_blueprint_tool(
+        native_tool(
+            refused,
+            name="async_refusal",
+            desc="Read a source.",
+            args={"query": {"type": "string"}},
+            presentation="text",
+            domain="memory",
+            read_only=True,
+        )
+    )
+    (tool,) = instrument_tools([tool])
+    rows: list[dict[str, Any]] = []
+    token = context.set_blueprint_tool_rows(rows)
+    try:
+        with pytest.raises(error_type, match="source interrupted"):
+            asyncio.run(tool.acall(query="campaign"))
+    finally:
+        context.reset(token)
+    assert len(rows) == 1
+    assert rows[0]["ok"] is False
+    assert rows[0]["args"] == {"query": "campaign"}
+    assert rows[0]["error"] == "source interrupted"
+    assert rows[0]["telemetry_source"] == "blueprint_react_tool_wrapper"
+
+
+def test_clio_react_executes_recorded_and_instrumented_async_native_tool() -> None:
     async def source(query: str) -> str:
         """Read a source through the normal asynchronous tool path."""
         await asyncio.sleep(0)
@@ -96,22 +133,29 @@ def test_clio_react_executes_instrumented_async_native_tool() -> None:
 
     (tool,) = instrument_tools(
         [
-            native_tool(
-                source,
-                name="async_source",
-                desc="Find a source.",
-                args={"query": {"type": "string"}},
-                presentation="text",
-                domain="memory",
-                read_only=True,
+            recording_blueprint_tool(
+                native_tool(
+                    source,
+                    name="async_source",
+                    desc="Find a source.",
+                    args={"query": {"type": "string"}},
+                    presentation="text",
+                    domain="memory",
+                    read_only=True,
+                )
             )
         ]
     )
     lm, engine = scripted_lm(
         [calls(("async_source", {"query": "campaign review"})), Reply(text="Located it.")]
     )
-    with dspy.context(lm=lm):
-        result = ClioReAct("question -> answer", tools=[tool])(question="Find the document")
+    rows: list[dict[str, Any]] = []
+    token = context.set_blueprint_tool_rows(rows)
+    try:
+        with dspy.context(lm=lm):
+            result = ClioReAct("question -> answer", tools=[tool])(question="Find the document")
+    finally:
+        context.reset(token)
     assert result.answer == "Located it."
     observed = [
         part
@@ -124,3 +168,7 @@ def test_clio_react_executes_instrumented_async_native_tool() -> None:
     assert "".join(getattr(part, "text", "") for part in observed[0].content) == (
         "Found campaign review"
     )
+    assert len(rows) == 1
+    assert rows[0]["ok"] is True
+    assert rows[0]["args"] == {"query": "campaign review"}
+    assert rows[0]["result"] == "Found campaign review"

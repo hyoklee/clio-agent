@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import shutil
 import threading
 from pathlib import Path
@@ -18,6 +19,7 @@ from clio_agent.gact.agent_blueprint_sources import (
     source_registry_id,
     upsert_agent_blueprint_source,
 )
+from clio_agent.gact.agents.blueprint_tool_recording import recording_blueprint_tool
 from clio_agent.gact.agents.tool_instrumentation import instrument_tools
 from clio_agent.gact.app import build_app
 from clio_agent.gact.routes.workspace_file_read import readable_workspace_file
@@ -296,13 +298,23 @@ async def test_native_tools_read_real_sources_and_global_search_omits_ephemeral_
     app_token, session_token = context.set_app(app), context.set_session_id(side.id)
     try:
         search_tool, read_tool = instrument_tools(
-            [build_clio_search_tool(), build_clio_search_read_tool()]
+            [
+                recording_blueprint_tool(build_clio_search_tool()),
+                recording_blueprint_tool(build_clio_search_read_tool()),
+            ]
         )
-        found = await search_tool.acall(
-            query="Evidence", kind="sessions", workspace_id=workspace.id
-        )
+
+        async def read_sources() -> tuple[Any, Any]:
+            found = await search_tool.acall(
+                query="Evidence", kind="sessions", workspace_id=workspace.id
+            )
+            read = await read_tool.acall(workspace_id=workspace.id, path="notes.txt")
+            return found, read
+
+        # Match ClioReAct's worker loop: observation persists Core-backed evidence
+        # and must not run on the registered request/test event loop.
+        found, read = await asyncio.to_thread(lambda: asyncio.run(read_sources()))
         assert found["hits"][0]["session_id"] == session.id
-        read = await read_tool.acall(workspace_id=workspace.id, path="notes.txt")
         assert read["text"] == "Evidence from the file"
     finally:
         context.reset(session_token)
