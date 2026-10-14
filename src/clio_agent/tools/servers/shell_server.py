@@ -33,6 +33,12 @@ from clio_agent.tools.builtin_annotations import (
     SHELL_TOOL_ANNOTATIONS as SHELL_TOOL_ANNOTATIONS,
 )
 from clio_agent.tools.file_policy import FileAccessPolicy, FilePolicyError
+from clio_agent.tools.servers.shell_commands import (
+    SCRIPT_FILE_GUIDANCE,
+    command_length_error,
+    is_command_length_exception,
+    windows_launch_error,
+)
 from clio_agent.tools.servers.shell_output import (
     StreamCapture,
     compose_output_fields,
@@ -99,11 +105,10 @@ def resolve_shell_limits() -> ShellLimits:
     Defaults, and why:
 
     * ``shell_max_command_chars`` 16,000 (was 4,000, which rejected ordinary
-      heredoc profiling scripts). On Windows the command rides the PowerShell /
-      cmd command line, which CreateProcess caps at 32,767 characters; 16,000
-      stays under that even if quoting doubled every character, and covers a
-      ~200-line inline script. Past it, the rejection tells the model to write
-      the script to a file and run the file.
+      heredoc profiling scripts). This is the CLIO input budget; Windows launchers
+      can reject smaller commands, particularly cmd/.cmd/.bat at 8,191 characters.
+      Quoting and wrapper arguments also count. Programs belong in workspace
+      script files; the native launch string is checked separately.
     * ``shell_default_output_bytes`` 8,192 per stream (was 16,384). The result
       must fit the downstream 12,000-character tool-result bounds or it gets
       rewrapped into a truncated JSON-in-JSON preview (#887); 16 KiB made that
@@ -340,9 +345,9 @@ def _limits_text(limits: ShellLimits) -> str:
     """Model-facing statement of the effective limits and the spill behaviour."""
 
     return (
-        f"Limits: the command may be up to {limits.max_command_chars} characters; for a "
-        "longer script, write it to a file in the workspace first and run that file (for "
-        "example `uv run python analysis.py`). stdout and stderr each return inline up to "
+        f"Limits: CLIO accepts up to {limits.max_command_chars} command characters, but native "
+        "shells/launchers can impose smaller bounds, even below this budget. "
+        f"{SCRIPT_FILE_GUIDANCE} stdout and stderr each return inline up to "
         f"max_output_bytes (default {limits.default_output_bytes}, at most "
         f"{limits.max_output_bytes}) and the whole result stays under "
         f"{limits.result_chars} characters. Output beyond that is not lost: the complete "
@@ -510,19 +515,11 @@ async def bash(
     command = command.strip()
     max_chars = _SHELL_LIMITS.max_command_chars
     if len(command) > max_chars:
-        next_action = (
-            "Split the script into shorter shell calls that write a file inside the workspace, "
-            "then run that file with a short command (for example `uv run python analysis.py`). "
-            "fs_propose_edit only stages a reviewable diff; it does not write the file."
-        )
-        return _error(
-            "command_too_long",
-            f"command is {len(command)} characters; the limit is {max_chars}. {next_action}",
-            details={
-                "received_chars": len(command),
-                "max_chars": max_chars,
-                "next_action": next_action,
-            },
+        return command_length_error(
+            command,
+            f"command is {len(command)} characters; the limit is {max_chars}.",
+            bound="clio_input",
+            max_chars=max_chars,
         )
     try:
         timeout = float(timeout_s)
@@ -585,6 +582,8 @@ async def bash(
         raise
     phase_started = _log_shell_phase(call_id, "confinement", phase_started)
     run_argv = [confined.command, *confined.args]
+    if os.name == "nt" and (launch_error := windows_launch_error(run_argv, command)):
+        return launch_error
     run_env = {**os.environ, **prepared, "PYTHONUTF8": "1", **confined.env_overlay}
     # Prepared scratch is already inside this workspace's writable territory.
     run_env.update({key: prepared[key] for key in ("TEMP", "TMP", "TMPDIR") if key in prepared})
@@ -644,6 +643,8 @@ async def bash(
         process = await spawn
     except Exception as exc:  # noqa: BLE001
         _log_shell_phase(call_id, "process_start", phase_started, outcome="failed")
+        if is_command_length_exception(exc):
+            return command_length_error(command, str(exc), bound="native_spawn")
         return _error("execution_failed", str(exc), details={"command": command})
     phase_started = _log_shell_phase(call_id, "process_start", phase_started)
 

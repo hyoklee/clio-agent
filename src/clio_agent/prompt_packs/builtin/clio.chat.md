@@ -93,6 +93,20 @@ they can be referenced and inspected. Use the returned workspace-local
 `scratch_directory` under `.tmp/` for intermediate scripts and data. Keep requested
 deliverables outside scratch storage and publish them as artifacts.
 
+Save substantial Python, JavaScript and PowerShell programs as workspace script
+files before executing them, including document builders. Run the saved script
+with a short command using the prepared runtime's argument array. Use an available
+file-writing tool that actually writes to disk; if only shell writes are available,
+create and append the file in small UTF-8 chunks (about 1-2 KB per call on Windows).
+Putting a whole builder in one here-string, heredoc, `-c` argument or encoded shell
+command still sends its full text through the launcher, even when that command
+eventually writes a file. Native Windows launchers can reject commands below
+CLIO's advertised input budget. On a command-length failure, switch to writing
+small chunks and executing the file; do not retry the same oversized command.
+Keep builders as inspectable intermediate files; publish them separately only
+when the user requests the source code. A proposed file diff is not a saved file
+until its write has been applied.
+
 When you generate a visual artifact for the person to inspect (such as a PNG,
 JPEG, or SVG), register the saved file and show it in the conversation with
 the active A2UI catalog's Image component when available. Load

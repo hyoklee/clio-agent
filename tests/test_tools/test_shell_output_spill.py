@@ -250,6 +250,26 @@ async def test_over_long_command_gets_actionable_write_a_file_message(workspace:
     assert "fs_propose_edit only stages" in error["details"]["next_action"]
 
 
+@pytest.mark.asyncio
+async def test_native_command_length_failure_preserves_output_and_explains_recovery(
+    workspace: Path,
+) -> None:
+    """A launched child can reject input below CLIO's cap; the MCP result remains actionable."""
+    script = workspace / "native_failure.py"
+    script.write_text(
+        "import sys\nprint('The command line is too long.', file=sys.stderr)\nsys.exit(1)\n",
+        encoding="utf-8",
+    )
+    result = await _run(workspace, {"command": _python(script), "timeout_s": 30})
+    assert result["exit_code"] == 1
+    assert "The command line is too long." in result["stderr"]
+    assert result["error"]["code"] == "command_too_long"
+    assert result["error"]["details"]["bound"] == "native_shell"
+    assert "small shell calls" in result["error"]["details"]["next_action"]
+    assert "here-string" in result["error"]["message"]
+    assert len(json.dumps(result)) <= shell_result_char_budget()
+
+
 def test_default_command_cap_fits_a_heredoc_analysis_script() -> None:
     """A ~150-line profiling heredoc is accepted by default (old cap was 4,000)."""
 
