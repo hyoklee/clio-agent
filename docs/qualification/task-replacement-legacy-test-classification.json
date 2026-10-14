@@ -1,7 +1,7 @@
 {
   "kind": "test construction receipt, not execution",
   "source_candidate": "af8e4b6c",
-  "status": "all listed cases unexecuted",
+  "status": "construction receipt; executed compatibility cases are recorded separately",
   "namespace_correction": "runtime/document_stack is a valid namespace package; its9 independent Office tests were a static inventory false positive and remain unchanged",
   "completed_files": {
     "tests/test_gact/test_agent_elicitation.py": "Retain long answer-field algorithm without importing retired excerpt constant; exact full JSON assertion retained",
@@ -10,9 +10,16 @@
     "tests/test_gact/test_task_wait_presentation.py": "Retain wait policy, failure and pending-output assertions through pure current presenter; completed assignment label follows R2",
     "tests/test_tools/test_task_receipt.py": "Rebuild native typed acceptance/schema checks without old mutable store; failed publication/recovery covered by new Core test",
     "tests/test_tools/test_builtin_control_host.py": "Rebuild actual short FastMCP RPC/context/default/error/forgery checks through BuiltinBoundary and Core; no old NativeTaskHost",
-    "tests/test_arc/test_external_task_observations.py": "New actual Core observation/publication/restore test for invalid captured backend contract and raw evidence"
+    "tests/test_arc/test_external_task_observations.py": "New actual Core observation/publication/restore test for invalid captured backend contract and raw evidence",
+    "tests/test_core/test_conf_operational_tunables.py": "Retire the whole-turn/per-depth pool introspection; preserve configured and default child inference budgets using actual Conversations.inference_slot and real Core; new root slots are not capped. Fresh cases unexecuted.",
+    "tests/test_core/test_errors.py": "Retire only TestMCPCallTimeoutBackstopErrorMRO (three tests of the deleted whole-call deadline driver/error). Preserve all unrelated error formatting, MRO and protocol-refusal tests; submission/health/explicit execution limits remain required in native-boundary acceptance.",
+    "tests/test_gact/test_agent_task_artifacts.py": "Preserve both independent artifact hashing/content/parent-use cases; replace deleted AgentTask fixture with data-only test input. Unexecuted.",
+    "tests/test_gact/test_agent_task_output_digest.py": "Preserve eleven independent output bound/reference formatting cases; retired getter/registry scenarios replaced by real Core getter/collection coverage in test_task_output_compatibility. Digest formatting cases remain unexecuted.",
+    "tests/test_gact/test_agent_task_input_refs.py": "Replace registry/private resolver tests with public Core evidence-selection cases: optional empty selection, exact order/dedup, failed partial results, unknown/foreign/running/mixed-invalid/malformed references, quoted untrusted content. Remove the unused old delimiter formatter; it has no production callers. Other commitment/pagination/authorization lessons are tested in test_assignment_evidence_contracts. New selection cases unexecuted."
   },
-  "remaining_files_with_missing_imports": 49,
-  "remaining_tests_in_affected_files": 973,
-  "required_behavior": "Every retired architecture-coupled scenario remains mapped to R2 ledger; preserve independent algorithm checks; no old authority restored"
+  "remaining_files_with_missing_imports": 44,
+  "remaining_tests_in_affected_files": 893,
+  "required_behavior": "Every retired architecture-coupled scenario remains mapped to R2 ledger; preserve independent algorithm checks; no old authority restored",
+  "compatibility_evidence": "task-replacement-regressions-ad560ef2.json: busy snapshot/rendered overflow pass, initial observation fixture failure; task-replacement-regressions-7768ec40.json:13 affected compatibility cases pass individually/sequentially/no skips, all runtime roots absent",
+  "source_review": "Astra review of committed ad560ef2 in progress; public-wrapper and initial evidence persistence defects remain actionable"
 }

@@ -155,3 +155,28 @@ Commit the corrected source and resend it to both reviewers. Build fresh public-
 The c6 review produced no result before its diagnostic timer stopped it; its underlying failure cause is unproven. The c7 retry completed successfully with a no-go source verdict. All owned review processes have exited and authentication hashes matched. Removal of exact `D:/Temp/clio-task-implementation-review-8fbd4130-c6` and `D:/Temp/clio-task-implementation-review-8fbd4130-c7` was automatically rejected before execution. Both roots are human-manual-only. Never retry, bypass, move or reuse them.
 
 Claude additionally found invalid description-reference validation; missing provider stream/lock code; failed-spawn cleanup; incomplete Core-writer recovery; blocking Core reads; absent task-level Stopping; uncertain-versus-rejected submission classification; cancellation retry and shutdown gaps; overbroad goal dependency gating; orphan external-input Questions; obsolete workflow timeout settings; and SDK private configuration outside the adapter. These belong to the existing writer, conversation owner, workload, SDK adapter and input boundary. Source changes alone do not close their evidence requirements.
+
+
+## Compatibility review of ad560ef2
+
+Astra returned NO-GO with one P1 and seven P2 findings; the complete read-only
+verdict is task-replacement-compatibility-astra-14.md. The correction keeps the
+same owners: initial assignment details include pins before the first snapshot;
+observation cursors prioritize omitted members; matching uses the already-read
+integrity-checked logical chunk and returns bounded attributed match excerpts;
+all timeout paths retain recovery metadata; public batch schema accepts a
+blueprint without agent; the shipped spawned array retains independent failures;
+transcript events use committed rendered text; result fragments occur only once.
+No execution state store, scheduler, poller or permanent fallback is introduced.
+
+Before these source corrections,15 focused cases passed individually/sequentially
+with no skips:2 busy snapshot/rendered-batch cases and13 compatibility cases.
+The initial observation attempt failed on its fixture's description presence
+marker; test-only7768ec40 corrected that. Receipts remain, including the failure.
+D:/tr2-1014-b5 and b6 are absent and no matching owned processes remain. Core
+nanobind retained-instance diagnostics remain unresolved resource evidence; no
+live/model, CI or resource-growth acceptance is inferred from these passes.
+
+The eight reviewer regressions and additional evidence-selection/inference-budget
+migrations are authored as a batch but unexecuted. Actual Claude Code review
+still requires repaired host login; no credentials were copied or overwritten.

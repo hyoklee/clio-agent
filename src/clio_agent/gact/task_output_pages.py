@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from clio_agent.arc.task_types import AssignmentDetails, CoreReference, TaskSnapshot
@@ -14,6 +15,7 @@ def output_page(
     task: TaskSnapshot,
     previous: dict[str, Any] | None,
     budget: int | None,
+    pattern: re.Pattern[str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any], int, bool]:
     """Read newest chunks first, retaining omitted bytes and a fixed backlog anchor."""
     state = dict(previous or {})
@@ -68,17 +70,36 @@ def output_page(
             raise ValueError("Output offset is outside its chunk")
         end = len(encoded) if budget is None else min(len(encoded), offset + budget - used)
         partial = offset > 0 or end < len(encoded)
-        chunks.append(
-            {
-                "reference": reference.model_dump(mode="json"),
-                "chunk_id": value["chunk_id"],
-                "offset": offset,
-                "next_offset": end,
-                "output": encoded[offset:end] if partial else output,
-                "fragment": partial,
-                "serialization": "text" if isinstance(output, str) else "json-sort-unicode-v1",
-            }
-        )
+        chunk: dict[str, Any] = {
+            "reference": reference.model_dump(mode="json"),
+            "chunk_id": value["chunk_id"],
+            "offset": offset,
+            "next_offset": end,
+            "output": encoded[offset:end] if partial else output,
+            "fragment": partial,
+            "serialization": "text" if isinstance(output, str) else "json-sort-unicode-v1",
+        }
+        if pattern is not None:
+            # Pagination does not split the logical chunk already validated above.
+            match = next((m for m in pattern.finditer(encoded) if m.end() > offset), None)
+            if match is not None:
+                displayed_end = (
+                    match.end()
+                    if budget is None
+                    else min(match.end(), match.start() + budget - used)
+                )
+                chunk.update(
+                    output=encoded[match.start() : displayed_end],
+                    offset=match.start(),
+                    next_offset=displayed_end,
+                    fragment=True,
+                    pattern_match={
+                        "start": match.start(),
+                        "end": match.end(),
+                        "excerpt_truncated": displayed_end < match.end(),
+                    },
+                )
+        chunks.append(chunk)
         used += end - offset
         if end < len(encoded):
             offset = end

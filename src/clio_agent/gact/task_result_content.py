@@ -102,7 +102,7 @@ def result_page(
     end = min(len(encoded), offset + bound) if bound > 0 else len(encoded)
     result.update(
         result={"preview": encoded[offset:end], "truncated": end < len(encoded)},
-        chunk=encoded[offset:end],
+        chunk_field="result.preview",
         offset=offset,
         next_offset=end,
         serialization=SERIALIZATION,

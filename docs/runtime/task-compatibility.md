@@ -29,15 +29,21 @@ cursors resume Core history. `limit` counts changed task rows, not old SSE event
 substitute task status. Missing state is explicit.
 
 Output pages use a task-local Core namespace, newest chunks first, with per-chunk
-offsets and continuations that retain omitted bytes. JSON fragments must be
+offsets and continuations that retain omitted bytes. Omitted tasks receive
+priority over new changes on already-served tasks in the next page. JSON fragments must be
 concatenated before parsing. Pattern observation searches disclosed output and
 progress messages, not descriptions or identity metadata. It scans available
 pages before waiting; `search_start_cursor` identifies where that pattern search
-began so earlier nonmatching output can be read independently. No background
+began so earlier nonmatching output can be read independently. Matching searches
+the complete integrity-checked logical output chunk, independently of its page
+boundaries. A matching excerpt includes its exact span and an explicit truncation
+marker; it does not pretend a partial excerpt is the entire match. No background
 poller or mutable cursor store is added.
 
 Historical IDs resolve only when unambiguous. Result reads return pending state
-or bounded stored content with its exact reference and `next_cursor`. Explicit
+or bounded stored content with its exact reference and `next_cursor`. A paginated
+fragment is stored once at `result.preview`, identified by `chunk_field`; offsets
+and serialization describe how to reconstruct it. Explicit
 collection is acknowledged through the recipient-input commitment used by
 automatic delivery. Readable results remain available afterward.
 

@@ -38,6 +38,7 @@ def _new_assignment(
     parent: TaskSnapshot | None = None,
     invocation_id: str,
     handle: str | None = None,
+    initial_details: AssignmentDetails | None = None,
 ) -> TaskSnapshot:
     if predecessor is not None and predecessor.terminal_at is None:
         raise ValueError("An active assignment must settle before a successor is created")
@@ -58,19 +59,27 @@ def _new_assignment(
     parent_input = self.history.recovery_input(parent.handle) if parent is not None else None
     details = self.history.write_content(
         sid,
-        AssignmentDetails(
-            predecessor=predecessor.handle if predecessor is not None else None,
-            context=previous_details.context if previous_details is not None else None,
-            input_evidence=previous_details.input_evidence if previous_details is not None else (),
-            evidence_assignment=previous_details.evidence_assignment
-            if previous_details is not None
-            else None,
-            parent_turn_id=parent_input.turn_id
-            if parent_input is not None
-            else previous_details.parent_turn_id
-            if previous_details is not None
-            else None,
-        ).model_dump(mode="json"),
+        (initial_details or AssignmentDetails())
+        .model_copy(
+            update={
+                "predecessor": predecessor.handle if predecessor is not None else None,
+                "context": previous_details.context if previous_details is not None else None,
+                "input_evidence": previous_details.input_evidence
+                if previous_details is not None
+                else (initial_details.input_evidence if initial_details is not None else ()),
+                "evidence_assignment": previous_details.evidence_assignment
+                if previous_details is not None
+                else initial_details.evidence_assignment
+                if initial_details is not None
+                else None,
+                "parent_turn_id": parent_input.turn_id
+                if parent_input is not None
+                else previous_details.parent_turn_id
+                if previous_details is not None
+                else None,
+            }
+        )
+        .model_dump(mode="json"),
     )
     session = self.sessions.get(sid)
     if session is None:
@@ -328,6 +337,13 @@ async def spawn(
                 parent=parent,
                 invocation_id=invocation_id,
                 handle=handle,
+                initial_details=AssignmentDetails(
+                    workflow_id=workflow_id,
+                    workflow_step=workflow_step,
+                    inference_concurrency=inference_concurrency,
+                    input_evidence=pins,
+                    evidence_assignment=handle if pins else None,
+                ),
             )
             if resource_id is not None:
                 if task.resource_id is not None and task.resource_id != resource_id:
@@ -335,34 +351,11 @@ async def spawn(
                 if task.resource_id is None:
                     task = task.model_copy(update={"resource_id": resource_id})
                     self.history.record_snapshot(task, observation_id=uuid4().hex)
-            if workflow_id is not None or inference_concurrency is not None or pins:
-                details = (
-                    AssignmentDetails.model_validate(self.history.read_content(task.details))
-                    if task.details is not None
-                    else AssignmentDetails()
-                )
-                reference = self.history.write_content(
+            if workflow_id is not None:
+                self.sessions.update(
                     child.id,
-                    details.model_copy(
-                        update={
-                            "workflow_id": workflow_id,
-                            "workflow_step": workflow_step,
-                            "inference_concurrency": inference_concurrency,
-                            "input_evidence": pins,
-                            "evidence_assignment": task.handle if pins else None,
-                        }
-                    ).model_dump(mode="json"),
+                    metadata_patch={"workflow_id": workflow_id, "workflow_step": workflow_step},
                 )
-                task = task.model_copy(update={"details": reference})
-                self.history.record_snapshot(task, observation_id=uuid4().hex)
-                if workflow_id is not None:
-                    self.sessions.update(
-                        child.id,
-                        metadata_patch={
-                            "workflow_id": workflow_id,
-                            "workflow_step": workflow_step,
-                        },
-                    )
             # Trusted delegation configuration grants only the return-message
             # channel. It conveys no ancestor read/observe/control rights.
             grant_id = "delegation-reply:" + task.handle

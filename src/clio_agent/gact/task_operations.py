@@ -296,7 +296,13 @@ class TaskOperations:
             while True:
                 changed.clear()
                 result = await asyncio.to_thread(
-                    self._observations, caller, handles, previous, row_limit, include_state
+                    self._observations,
+                    caller,
+                    handles,
+                    previous,
+                    row_limit,
+                    include_state,
+                    expression,
                 )
                 if expression is not None:
                     result.update(search_start_cursor=search_start, scanned_pages=scanned_pages)
@@ -305,6 +311,11 @@ class TaskOperations:
                 if (
                     expression is None
                     or result["any_settled"]
+                    or any(
+                        "pattern_match" in chunk
+                        for row in result["tasks"]
+                        for chunk in row.get("output", [])
+                    )
                     or any(expression.search(pattern_text(row)) for row in result["tasks"])
                 ):
                     return result
@@ -321,13 +332,21 @@ class TaskOperations:
                 except TimeoutError:
                     return {
                         **await asyncio.to_thread(
-                            self._observations, caller, handles, previous, row_limit, include_state
+                            self._observations,
+                            caller,
+                            handles,
+                            previous,
+                            row_limit,
+                            include_state,
+                            expression,
                         ),
                         **(
                             {"subscription_errors": subscription_errors}
                             if subscription_errors
                             else {}
                         ),
+                        "search_start_cursor": search_start,
+                        "scanned_pages": scanned_pages,
                         "timed_out": True,
                     }
         finally:
@@ -340,8 +359,11 @@ class TaskOperations:
         previous: dict[str, Any],
         row_limit: int | None = None,
         include_state: bool = False,
+        pattern: re.Pattern[str] | None = None,
     ) -> dict[str, Any]:
-        return read_observations(self.history, caller, handles, previous, row_limit, include_state)
+        return read_observations(
+            self.history, caller, handles, previous, row_limit, include_state, pattern
+        )
 
     def _subscribe(
         self, caller: TaskCaller, handles: tuple[str, ...], enabled: bool

@@ -57,7 +57,8 @@ async def test_single_and_batch_spawn_share_blueprint_preparation_and_preserve_n
                 {"agent": "writer", "task": "Continue independent work", "blueprint_id": "last"},
             ]
         )
-        assert len(batch["spawned"]) == 2
+        assert len(batch["spawned"]) == 3
+        assert batch["spawned"] == batch["outcomes"]
         assert batch["outcomes"][1]["index"] == 1 and "error" in batch["outcomes"][1]
         assert resolved == [
             ("writer", "single"),
@@ -67,7 +68,7 @@ async def test_single_and_batch_spawn_share_blueprint_preparation_and_preserve_n
         ]
         snapshots = await asyncio.to_thread(owner.history.session_handles, root.owner.session_id)
         assert root.handle in snapshots
-        assert all(row["task_id"] == row["handle"] for row in batch["spawned"])
+        assert all(row["task_id"] == row["handle"] for row in batch["spawned"] if "handle" in row)
         before = len(app.state.sessions.list())
         with pytest.raises(ValueError, match="relay placement"):
             await tools["spawn_agent_task"].func(agent="writer", task="Remote", placement="relay")

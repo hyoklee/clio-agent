@@ -62,6 +62,7 @@ REMOVED_MODULES = frozenset(
         "clio_agent.gact.relay_timeline",
         "clio_agent.gact.agents.relay_expert_invoker",
         "clio_agent.gact.agents.relay_invoker_runtime",
+        "clio_agent.gact.agents.agent_task_input_refs",
         "clio_agent.gact.routes.agent_tasks",
         "clio_agent.gact.routes.async_processes",
         "clio_agent.gact.routes.relay",

@@ -1,0 +1,231 @@
+"""Regression checks for the independently reviewed public compatibility boundaries."""
+
+from __future__ import annotations
+
+import asyncio
+import contextvars
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.task_types import AssignmentDetails, TaskSnapshot
+from clio_agent.gact import context
+from clio_agent.gact.agents import blueprint_commission, clio_react_record
+from clio_agent.gact.assignment_evidence import select_assignment_evidence
+from clio_agent.gact.builtin_boundary import BuiltinBoundary
+from clio_agent.gact.task_access import TaskCaller
+from clio_agent.gact.task_declarations import build_spawn_runtime_tools
+from clio_agent.gact.task_operations import TaskOperations
+from tests.test_arc.test_assignment_evidence_contracts import evidence_children
+from tests.test_arc.test_conversation_owner_contracts import create_environment
+from tests.test_arc.test_task_observation_compatibility import (
+    append_output,
+    forbidden_cancel,
+    running_shell,
+)
+
+
+@pytest.mark.asyncio
+async def test_first_assignment_pins_evidence_before_an_interrupted_acceptance(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, owner, source, _critic, _body = await evidence_children(arc, tmp_path)
+    history = owner.history
+    parent = await asyncio.to_thread(history.task_snapshot, source.owner.parent_handle)
+    assert parent is not None
+    caller = TaskCaller(parent.owner.session_id, "human")
+    pins = await asyncio.to_thread(select_assignment_evidence, history, caller, [source.handle])
+    original = history.record_snapshot
+    recorded: list[str] = []
+
+    def interrupt(snapshot: TaskSnapshot, *, observation_id: str) -> None:
+        original(snapshot, observation_id=observation_id)
+        if snapshot.description == "Resilient assignment" and not recorded:
+            recorded.append(snapshot.handle)
+            assert snapshot.details is not None
+            details = AssignmentDetails.model_validate(history.read_content(snapshot.details))
+            assert details.input_evidence == pins and details.evidence_assignment == snapshot.handle
+            raise RuntimeError("Lost reply after the first confirmed assignment observation")
+
+    monkeypatch.setattr(history, "record_snapshot", interrupt)
+    before = len(app.state.sessions.list())
+    arguments = {
+        "launch_context": {"input_task_refs": [pin.model_dump(mode="json") for pin in pins]}
+    }
+    with pytest.raises(RuntimeError, match="Lost reply"):
+        await owner.spawn(caller, "Resilient assignment", "critic", "resilient", **arguments)
+    accepted = await owner.spawn(caller, "Resilient assignment", "critic", "resilient", **arguments)
+    assert accepted["accepted"] is True and accepted["handle"] == recorded[0]
+    assert len(app.state.sessions.list()) == before + 1
+    pending = await asyncio.to_thread(history.pending_mail, accepted["session_id"])
+    assert [item.id for item in pending] == ["assignment:" + accepted["handle"]]
+    await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_new_earlier_output_cannot_starve_an_omitted_observation_member(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    _app, owner, root = await create_environment(arc, tmp_path)
+    first = await asyncio.to_thread(running_shell, owner.history, root, "first")
+    second = await asyncio.to_thread(running_shell, owner.history, root, "second")
+    first = await asyncio.to_thread(append_output, owner.history, first, "first output")
+    second = await asyncio.to_thread(append_output, owner.history, second, "READY")
+    operations, caller = (
+        TaskOperations(owner.history, forbidden_cancel),
+        TaskCaller(root.owner.session_id, "human"),
+    )
+    page = await operations.observe(caller, [first.handle, second.handle], row_limit=1)
+    assert page["tasks"][0]["handle"] == first.handle and page["has_more"] is True
+    first = await asyncio.to_thread(append_output, owner.history, first, "new first output")
+    next_page = await operations.observe(
+        caller, [first.handle, second.handle], page["cursor"], row_limit=1
+    )
+    assert next_page["tasks"][0]["handle"] == second.handle
+    assert next_page["tasks"][0]["output"][0]["output"] == "READY"
+    await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_pattern_matches_logical_output_across_a_remaining_page_budget(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _app, owner, root = await create_environment(arc, tmp_path)
+    monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "7")
+    first = await asyncio.to_thread(running_shell, owner.history, root, "first")
+    second = await asyncio.to_thread(running_shell, owner.history, root, "second")
+    first = await asyncio.to_thread(append_output, owner.history, first, "12345")
+    second = await asyncio.to_thread(append_output, owner.history, second, "prefix READY suffix")
+    operations, caller = (
+        TaskOperations(owner.history, forbidden_cancel),
+        TaskCaller(root.owner.session_id, "human"),
+    )
+    result = await operations.observe(
+        caller, [first.handle, second.handle], pattern="READY", timeout_s=1
+    )
+    assert result["timed_out"] is False
+    chunk = next(row for row in result["tasks"] if row["handle"] == second.handle)["output"][0]
+    assert chunk["pattern_match"] == {"start": 7, "end": 12, "excerpt_truncated": True}
+    assert chunk["output"] == "RE"
+    assert (
+        sum(len(chunk["output"]) for row in result["tasks"] for chunk in row.get("output", [])) <= 7
+    )
+    assert "search_start_cursor" in result
+    await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_expired_pattern_wait_retains_its_search_recovery_metadata(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    _app, owner, root = await create_environment(arc, tmp_path)
+    task = await asyncio.to_thread(running_shell, owner.history, root, "shell")
+    task = await asyncio.to_thread(append_output, owner.history, task, "no match")
+    result = await TaskOperations(owner.history, forbidden_cancel).observe(
+        TaskCaller(root.owner.session_id, "human"),
+        task.handle,
+        pattern="READY",
+        timeout_s=0.03,
+    )
+    assert result["timed_out"] is True and result["tasks"] == []
+    assert "search_start_cursor" in result and result["scanned_pages"] == 0
+    assert (await asyncio.to_thread(owner.history.task_snapshot, task.handle)).terminal_at is None
+    await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_public_fastmcp_fanout_accepts_blueprint_only_and_keeps_failed_positions(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, owner, root = await create_environment(arc, tmp_path)
+    app.state.mcp_app_loop = asyncio.get_running_loop()
+    app.state.workspaces = SimpleNamespace(
+        get=lambda _wid: SimpleNamespace(root_path=str(tmp_path))
+    )
+
+    def resolve(_app: Any, _sid: str, agent: str, blueprint: str | None) -> tuple[Any, ...]:
+        assert agent == "" and blueprint == "writer-blueprint"
+        return "writer", {"blueprint_id": blueprint}, None, None
+
+    monkeypatch.setattr(blueprint_commission, "resolve_commission_target", resolve)
+    tool = next(
+        tool
+        for tool in build_spawn_runtime_tools(None, SimpleNamespace(fanout={}))
+        if tool.name == "spawn_agents_parallel"
+    )
+    token, sid = context.set_app(app), context.set_session_id(root.owner.session_id)
+    try:
+        async with BuiltinBoundary(app, lambda _context: None) as boundary:
+            result = await boundary.call(
+                tool,
+                {
+                    "spawns": [
+                        {"blueprint_id": "writer-blueprint", "task": "Write original"},
+                        {
+                            "blueprint_id": "writer-blueprint",
+                            "task": "Invalid evidence",
+                            "input_task_ids": ["missing"],
+                        },
+                    ]
+                },
+                contextvars.copy_context(),
+            )
+        assert result["spawned"] == result["outcomes"] and len(result["spawned"]) == 2
+        assert result["spawned"][0]["accepted"] is True
+        assert result["spawned"][1]["index"] == 1 and "error" in result["spawned"][1]
+    finally:
+        context.reset(sid)
+        context.reset(token)
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_transcript_injection_matches_the_committed_rendered_delegation(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    app, owner, _source, critic, _body = await evidence_children(arc, tmp_path)
+    emitted: list[str] = []
+    monkeypatch.setattr(
+        clio_react_record, "emit_injection", lambda _source, text, **_kwargs: emitted.append(text)
+    )
+
+    def commit() -> None:
+        token = context.set_app(app)
+        try:
+            context.set_turn_identity(
+                app=app,
+                session_id=critic.owner.session_id,
+                turn_id="critic-turn",
+                trace_id="critic-trace",
+                assignment_handle=critic.handle,
+                input_notification_id="assignment:" + critic.handle,
+            )
+            recorder = clio_react_record.StepRecorder(
+                arc, critic.owner.session_id, "main", expert_id="critic"
+            )
+            recorder.commit_input(0)
+            committed = owner.history.recovery_input(critic.handle)
+            assert committed is not None and len(committed.rendered_content) == 1
+            rendered = owner.history.read_content(committed.rendered_content[0])
+            assert isinstance(rendered, dict)
+            assert emitted == [rendered["text"]]
+            assert emitted[0].startswith("Critique the original research")
+            assert "get_task_result" in emitted[0] and "cursor" in emitted[0]
+        finally:
+            context.reset(token)
+
+    await asyncio.to_thread(commit)
+    await owner.recovery.drain()

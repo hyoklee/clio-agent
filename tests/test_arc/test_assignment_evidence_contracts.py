@@ -119,8 +119,9 @@ async def test_shared_evidence_requires_committed_input_and_never_collects_sourc
             "source_owner"
         ] == source.owner.model_dump(mode="json")
         collected = await asyncio.to_thread(_collected, app, caller, page)
+        assert page["chunk_field"] == "result.preview" and "chunk" not in page
         assert collected.notification_ids == ()
-        pieces.append(page["chunk"])
+        pieces.append(page["result"]["preview"])
         cursor = page["next_cursor"]
         if cursor is None:
             break
@@ -182,11 +183,11 @@ async def test_shared_evidence_cursor_survives_grant_revocation_and_successor_re
         history.restore()
 
     await asyncio.to_thread(successor)
-    pieces, cursor = [first["chunk"]], first["next_cursor"]
+    pieces, cursor = [first["result"]["preview"]], first["next_cursor"]
     while cursor is not None:
         page = await asyncio.to_thread(operations.result, caller, source.handle, cursor)
         assert page["result_kind"] == "shared_evidence"
-        pieces.append(page["chunk"])
+        pieces.append(page["result"]["preview"])
         cursor = page["next_cursor"]
     assert json.loads("".join(pieces)) == body
     with pytest.raises(ValueError, match="different read"):

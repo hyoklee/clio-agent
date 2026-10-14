@@ -470,7 +470,9 @@ class StepRecorder:
         )
         for source, text in staged.injections:
             if source != "steer":
-                emit_injection(source, str(text), agent_id=self.expert_id)
+                for notification in text.notification_ids:
+                    value = rendered[notification]
+                    emit_injection(source, str(value.get("text", "")), agent_id=self.expert_id)
 
     def injections(self, injections: Sequence[tuple[str, str]]) -> None:
         """Record CLIO's additions for this turn, each once.

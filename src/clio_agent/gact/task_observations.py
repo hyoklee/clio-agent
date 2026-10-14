@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from clio_agent import conf
@@ -20,6 +21,7 @@ def read_observations(
     previous: dict[str, Any],
     row_limit: int | None = None,
     include_state: bool = False,
+    pattern: re.Pattern[str] | None = None,
 ) -> dict[str, Any]:
     """Advance only returned rows/bytes; preserve omitted positions in the opaque cursor."""
     if row_limit is not None and (type(row_limit) is not int or row_limit < 1):
@@ -39,8 +41,14 @@ def read_observations(
         "limits.tool_result_chars", env="CLIO_TOOL_RESULT_CHARS", default=12000, cast=conf.as_int
     )
     budget = bound if bound > 0 else None
+    start = previous.get("scan_start", 0)
+    if type(start) is not int or not 0 <= start < len(handles):
+        raise ValueError("Observation cursor has an invalid scan position")
+    next_start, first_omitted = start, None
     with history._lock:
-        for handle in handles:
+        for scanned in range(len(handles)):
+            index = (start + scanned) % len(handles)
+            handle = handles[index]
             try:
                 current = access.require(handle, "observe")
             except ValueError:
@@ -52,6 +60,8 @@ def read_observations(
                     positions[handle] = "unavailable"
                 else:
                     has_more = True
+                    if first_omitted is None:
+                        first_omitted = index
                 any_settled = True
                 continue
             settled = settled and current.terminal_at is not None
@@ -76,10 +86,12 @@ def read_observations(
                 output_changed and budget == 0
             ):
                 has_more = True
+                if first_omitted is None:
+                    first_omitted = index
                 continue
             if "read" in access.rights(current):
                 chunks, continuation, used, more = output_page(
-                    history, current, output_state, budget
+                    history, current, output_state, budget, pattern
                 )
                 outputs[handle] = continuation
                 if budget is not None:
@@ -89,6 +101,7 @@ def read_observations(
                 view["output_truncated"] = more
                 has_more = has_more or more
             positions[handle] = position
+            next_start = (index + 1) % len(handles)
             rows.append(view)
         return {
             "tasks": rows,
@@ -103,6 +116,7 @@ def read_observations(
                     "handles": list(handles),
                     "positions": positions,
                     "outputs": outputs,
+                    "scan_start": first_omitted if first_omitted is not None else next_start,
                 }
             ),
         }

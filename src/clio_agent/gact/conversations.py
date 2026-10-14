@@ -340,6 +340,7 @@ class Conversations:
         parent: TaskSnapshot | None = None,
         invocation_id: str,
         handle: str | None = None,
+        initial_details: AssignmentDetails | None = None,
     ) -> TaskSnapshot:
         """Delegate to the same conversation owner\'s assignments implementation."""
         return conversation_assignments._new_assignment(
@@ -351,6 +352,7 @@ class Conversations:
             parent=parent,
             invocation_id=invocation_id,
             handle=handle,
+            initial_details=initial_details,
         )
 
     def set_dependencies(

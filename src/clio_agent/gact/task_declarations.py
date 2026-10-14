@@ -592,7 +592,7 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
                     type(error).__name__,
                 )
                 outcomes.append({"index": index, "error": str(error)})
-        return {"spawned": [row for row in outcomes if "handle" in row], "outcomes": outcomes}
+        return {"spawned": outcomes, "outcomes": outcomes}
 
     strategy_schema = {
         "anyOf": [
@@ -654,7 +654,7 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
                             },
                             "strategy": strategy_schema,
                         },
-                        "required": ["agent", "task"],
+                        "required": ["task"],
                         "additionalProperties": False,
                     },
                 },

@@ -384,43 +384,59 @@ def test_model_and_evidence_tool_result_bounds_are_independent() -> None:
     assert len(bounded["preview"]) <= 40
 
 
-# --------------------------------------------------------------------------- #
-# Child-task concurrency (gact/turn_spawn_executor.py)
-# --------------------------------------------------------------------------- #
+# Child inference budgets apply only during model calls, never whole turns.
 
 
-def test_agent_task_concurrency_uses_the_resolved_cap() -> None:
-    """``agent_tasks.max_concurrent`` reaches the per-depth pool, with one default."""
+@pytest.mark.asyncio
+@pytest.mark.parametrize("configured", [None, 6])
+async def test_child_inference_concurrency_uses_the_resolved_cap(
+    arc: Any,
+    tmp_path: Path,
+    configured: int | None,
+) -> None:
+    from clio_agent.gact.task_access import TaskCaller
+    from tests.test_arc.test_conversation_owner_contracts import create_environment
 
-    from clio_agent.gact.turn_spawn_executor import (
-        DEFAULT_MAX_CONCURRENT_AGENT_TASKS,
-        agent_task_executor_for_depth,
-        install_agent_task_executor,
-        shutdown_agent_task_executors,
-    )
+    if configured is not None:
+        set_config("agent_tasks", {"max_concurrent": configured})
+    expected = 3 if configured is None else configured
+    _app, owner, root = await create_environment(arc, tmp_path)
+    caller = TaskCaller(root.owner.session_id, "human")
+    children = [
+        await owner.spawn(caller, f"Child {index}", "worker", f"budget-{index}")
+        for index in range(expected + 1)
+    ]
+    full, release = asyncio.Event(), asyncio.Event()
+    entered: set[str] = set()
+    active, maximum = 0, 0
 
-    set_config("agent_tasks", {"max_concurrent": 6})
-    app = SimpleNamespace(state=SimpleNamespace())
-    install_agent_task_executor(app)
+    async def model_call(sid: str) -> None:
+        nonlocal active, maximum
+        async with owner.inference_slot(sid):
+            entered.add(sid)
+            active += 1
+            maximum = max(maximum, active)
+            if active == expected:
+                full.set()
+            try:
+                await release.wait()
+            finally:
+                active -= 1
+
+    models = [asyncio.create_task(model_call(child["session_id"])) for child in children]
     try:
-        assert app.state.max_concurrent_agent_tasks == 6
-        assert agent_task_executor_for_depth(app, 1)._max_workers == 6
+        await full.wait()
+        assert len(entered) == expected
+        async with owner.inference_slot(root.owner.session_id):
+            assert active == expected  # Child budget does not become a new root-session cap.
+        release.set()
+        await asyncio.gather(*models)
+        assert entered == {child["session_id"] for child in children}
+        assert maximum == expected and active == 0
     finally:
-        shutdown_agent_task_executors(app)
-
-    # A pool built before install() falls back to the SAME named default the
-    # resolver documents -- not a second, drifting literal.
-    bare = SimpleNamespace(
-        state=SimpleNamespace(agent_task_executors={}, agent_task_executor_lock=None)
-    )
-    import threading
-
-    bare.state.agent_task_executor_lock = threading.Lock()
-    pool = agent_task_executor_for_depth(bare, 1)
-    try:
-        assert pool._max_workers == DEFAULT_MAX_CONCURRENT_AGENT_TASKS
-    finally:
-        shutdown_agent_task_executors(bare)
+        release.set()
+        await asyncio.gather(*models, return_exceptions=True)
+        await owner.recovery.drain()
 
 
 # --------------------------------------------------------------------------- #
