@@ -62,6 +62,7 @@ class TaskHistory:
 
     def __init__(self, arc: ARCMemory) -> None:
         self.arc = arc
+        self._replaying = False
         self.recovery_requested: Callable[[], None] | None = None
         self._requires_recovery = False
         self._lock = threading.RLock()
@@ -697,6 +698,7 @@ class TaskHistory:
             self._assignments = {}
             self._recipient_grants, self._subscriptions = {}, {}
             try:
+                self._replaying = True
                 for content in self.arc._live.iter_event_contents():
                     event_type = str(content.get("event_type", ""))
                     payload = content.get("payload") or {}
@@ -730,6 +732,7 @@ class TaskHistory:
                         self._accept_input(recovered)
                 self._repair_indexes()
             except Exception:
+                self._replaying = False
                 self.requires_recovery = True
                 self._tasks, self._mail, self._inputs = tasks, mail, inputs
                 self._aliases = aliases
@@ -756,6 +759,8 @@ class TaskHistory:
             self.replay_seconds = time.monotonic() - started
             self.revision = max(previous_revision, self.revision) + 1
             self.requires_recovery = False
+            self._replaying = False
+        self._notify(restored=True)
 
     @contextmanager
     def _writing(self) -> Iterator[None]:
@@ -918,22 +923,39 @@ class TaskHistory:
         else:
             return
         self.revision += 1
+        if self._replaying:
+            return
         handle = payload.get("handle")
         recipient = payload.get("recipient_session")
+        self._notify(
+            handle=handle, recipient=recipient if event_type.startswith("session.mail.") else None
+        )
+
+    def _notify(self, *, handle: Any = None, recipient: Any = None, restored: bool = False) -> None:
+        """Signal indexes once after replay, rather than waking on historical rows."""
         with self._listener_lock:
             listeners = set(self._listeners)
-            listeners.update(self._handle_listeners.get(str(handle), set()))
-            listeners.update(self._recipient_listeners.get(str(recipient), set()))
+            if restored:
+                for callbacks in (
+                    *self._handle_listeners.values(),
+                    *self._recipient_listeners.values(),
+                ):
+                    listeners.update(callbacks)
+            else:
+                listeners.update(self._handle_listeners.get(str(handle), set()))
+                listeners.update(self._recipient_listeners.get(str(recipient), set()))
             mail_listeners = tuple(self._mail_listeners)
         for listener in listeners:
             try:
                 listener(self.revision)
             except Exception as error:
                 logger.warning("Task wake hint failed after Core commit: %s", type(error).__name__)
-        if event_type.startswith("session.mail.") and recipient:
+        for pending_recipient in (
+            self.pending_sessions() if restored else (str(recipient),) if recipient else ()
+        ):
             for mail_listener in mail_listeners:
                 try:
-                    mail_listener(str(recipient))
+                    mail_listener(pending_recipient)
                 except Exception as error:
                     logger.warning(
                         "Mailbox wake hint failed after Core commit: %s", type(error).__name__

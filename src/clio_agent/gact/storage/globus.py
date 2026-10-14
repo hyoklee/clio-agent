@@ -16,8 +16,8 @@ from clio_schemas.connected_resources import SourceCapabilities
 from clio_agent.gact.storage.adapters import LocalSource
 from clio_agent.gact.storage.globus_consent import GlobusConsentRequired
 from clio_agent.gact.storage.globus_destination import GlobusDestination, receiving_destination
-from clio_agent.gact.storage.models import FileEntry, SourceRecord, TransferOperation, now
 from clio_agent.gact.storage.identity import source_submission_identity
+from clio_agent.gact.storage.models import FileEntry, SourceRecord, TransferOperation, now
 from clio_agent.gact.storage.store import SourceStore
 from clio_agent.gact.storage.transfers import materialize, remove_owned_tree
 
@@ -35,6 +35,10 @@ def _wire_payload(value: Any) -> Any:
     if isinstance(value, datetime):
         return value.isoformat()
     return value
+
+
+class GlobusStatusUnavailable(RuntimeError):
+    """A transient provider response leaves the original job pending observation."""
 
 
 class GlobusSource:
@@ -134,6 +138,13 @@ class GlobusSource:
 
     def submit(self, store: SourceStore, operation: TransferOperation) -> TransferOperation:
         """Save a submission ID before sending, so retry cannot create a second native job."""
+        operation = store.get("operation", operation.id, TransferOperation)
+        if operation.cancel_requested:
+            if operation.native_job_id is None and operation.native_request is None:
+                operation = store.update_operation(
+                    operation.id, state="cancelled", provider_cleanup_confirmed=True
+                )
+            return operation
         config = self.record.configuration
         if operation.native_request is None:
             receiving, _ = receiving_destination(store)
@@ -206,10 +217,15 @@ class GlobusSource:
                             recursive=row.kind == "directory",
                         )
                 operation = store.update_operation(
-                    operation.id, native_request=_wire_payload(transfer), state="running",
-                    provider_identity=source_submission_identity(self.record)
+                    operation.id,
+                    native_request=_wire_payload(transfer),
+                    state="running",
+                    provider_identity=source_submission_identity(self.record),
                 )
             if operation.native_job_id is None:
+                operation = store.get("operation", operation.id, TransferOperation)
+                if operation.cancel_requested:
+                    return operation
                 if operation.native_request is None:
                     raise ValueError("The Globus submission receipt is missing")
                 result = self.client.submit_transfer(operation.native_request)
@@ -259,8 +275,13 @@ class GlobusSource:
         """Observe/control an existing verified job; provider submission is unreachable."""
         if operation.native_job_id is None:
             raise ValueError("Provider continuation requires a verified Globus job identity")
-        if operation.provider_identity is None or operation.provider_identity != source_submission_identity(self.record):
-            raise ValueError("Resolved Globus source/destination custody changed; inspect the original job")
+        if (
+            operation.provider_identity is None
+            or operation.provider_identity != source_submission_identity(self.record)
+        ):
+            raise ValueError(
+                "Resolved Globus source/destination custody changed; inspect the original job"
+            )
         try:
             if operation.cancel_requested:
                 self.request_cancel_existing(operation)
@@ -270,6 +291,10 @@ class GlobusSource:
         except globus_sdk.GlobusAPIError as exc:
             if exc.info.consent_required:
                 raise GlobusConsentRequired(exc.info.consent_required.required_scopes) from exc
+            if exc.http_status in {408, 429, 500, 502, 503, 504}:
+                raise GlobusStatusUnavailable(
+                    "Globus status is temporarily unavailable; the original job remains pending"
+                ) from exc
             raise ValueError(
                 "Globus task status is unavailable; no completion or cleanup was assumed"
             ) from exc
@@ -292,7 +317,9 @@ class GlobusSource:
             # The collection mapping must lead to real files on this CLIO; a
             # successful cloud job alone is not successful local materialization.
             if operation.publication_started_at is not None:
-                raise ValueError("Local publication was already entered; inspect its manifest and files before deliberately continuing")
+                raise ValueError(
+                    "Local publication was already entered; inspect its manifest and files before deliberately continuing"
+                )
             store.update_operation(operation.id, publication_started_at=now())
             adapter = LocalSource(str(stage))
             try:

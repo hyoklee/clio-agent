@@ -16,6 +16,53 @@ from clio_agent.gact.task_migration import migrate_history
 STAMP = "2026-10-13T20:00:00Z"
 
 
+def test_invalid_historical_rows_are_retained_without_blocking_valid_neighbors(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    sessions = SessionStore(path=tmp_path / "sessions.json")
+    owner = sessions.create(workspace_id="workspace")
+    legacy_event(
+        arc,
+        owner.id,
+        "task.question.observation",
+        {
+            "question": {
+                "id": "bad-question",
+                "kind": "unsupported",
+                "prompt": "Retain me",
+                "status": "pending",
+            }
+        },
+    )
+    legacy_event(
+        arc,
+        owner.id,
+        "task.native.observation",
+        {
+            "handle": "task_good",
+            "kind": "Shell",
+            "tool": "bash",
+            "status": "completed",
+            "result": {"output": "retained"},
+        },
+    )
+    history = TaskHistory(arc)
+    app = SimpleNamespace(
+        state=SimpleNamespace(task_history=history, sessions=sessions, human_principal="human")
+    )
+    migrate_history(app)
+    valid = history.task_snapshot("task_good")
+    assert valid is not None and valid.status == "completed"
+    assert history.read_content(valid.result) == {"output": "retained"}
+    (reference,) = app.state.task_migration_issues
+    assert history.read_content(reference)["reason"] == "invalid_historical_record:ValidationError"
+    before = len(list(arc._live.iter_event_contents()))
+    migrate_history(app)
+    assert app.state.task_migration_issues == [reference]
+    assert len(list(arc._live.iter_event_contents())) == before
+
+
 def legacy_event(arc: ARCMemory, sid: str, kind: str, body: dict[str, Any]) -> None:
     """Write the former wire format as data, without importing any retired owner."""
     arc.record_semantic_event(

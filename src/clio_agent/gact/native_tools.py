@@ -141,19 +141,11 @@ class NativeTools:
         traceback: TracebackType | None,
     ) -> None:
         """Close admission, settle owned native work, then retire clients and Core hints."""
-        self._closing = True
+        await self.request_shutdown()
         # Resolve outstanding submissions before cancelling their verified identities.
         if self._rpc:
             await asyncio.shield(asyncio.gather(*tuple(self._rpc.values()), return_exceptions=True))
-        for handle in tuple(self._calls):
-            try:
-                await self.cancel(handle)
-            except Exception as error:
-                reason = str(error)
-                await self._record_or_defer(
-                    "native-shutdown:" + handle,
-                    partial(self._uncertain, handle, reason),
-                )
+        await self.request_shutdown()
         for handle in tuple(self._calls):
             await self.await_settlement(handle, allow_uncertainty=False)
         self._resources_closed = True
@@ -167,6 +159,42 @@ class NativeTools:
         if self._retiring:
             await asyncio.shield(asyncio.gather(*tuple(self._retiring)))
         await self._stack.__aexit__(exc_type, exc, traceback)
+
+    async def request_shutdown(self) -> None:
+        """Close admission and request local cancellation while transports stay available."""
+        self._closing = True
+
+        def reserved() -> set[str]:
+            with self.history._lock:
+                return {
+                    handle
+                    for handle in self.history.task_handles(active_only=True)
+                    if (task := self.history.task_snapshot(handle)) is not None
+                    and task.kind in {"Shell", "Download", "Indexing"}
+                    and task.submission is not None
+                    and (
+                        task.backend is None
+                        or any(
+                            task.backend.owner == "native"
+                            and task.backend.server == root.server
+                            and task.backend.session == root.session
+                            and task.backend.queue == root.queue
+                            for root in self.backends.values()
+                        )
+                    )
+                }
+
+        handles = set(self._calls) | set(self._rpc) | await asyncio.to_thread(reserved)
+
+        async def request(handle: str) -> None:
+            try:
+                await self.cancel(handle)
+            except Exception as error:
+                await self._record_or_defer(
+                    "native-shutdown:" + handle, partial(self._uncertain, handle, str(error))
+                )
+
+        await asyncio.gather(*(request(handle) for handle in handles))
 
     async def public_tools(self, kind: NativeRootKind) -> list[dict[str, Any]]:
         """Expose ordinary arguments only; caller-supplied internal references are refused."""
@@ -300,6 +328,11 @@ class NativeTools:
             driver = asyncio.create_task(self._drive(accepted))
             self._drivers[handle] = driver
             driver.add_done_callback(partial(self._driver_retired, handle))
+            if current.cancellation_requested_at is not None:
+                self._control_holds.add(handle)
+                self.recovery.defer(
+                    "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
+                )
 
     async def submit(
         self,
@@ -576,6 +609,8 @@ class NativeTools:
 
     def _confirm(self, context: SubmissionContext, kind: TaskKind, description: str) -> Any:
         with self.history._lock:
+            if self._closing:
+                raise ValueError("Native admission is closed")
             parent = self.history.task_snapshot(context.owner.assignment_id)
             if (
                 parent is None
@@ -644,6 +679,10 @@ class NativeTools:
             raise ValueError("Native server reused a task identity for another submission")
         self._calls[handle] = accepted
         self._identities[(root, accepted.task.task_id)] = accepted
+        if handle in self._control_holds:
+            self.recovery.defer(
+                "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
+            )
         try:
             return await self._confirm_acceptance(root, accepted)
         except Exception:
@@ -893,12 +932,15 @@ class NativeTools:
                     )
                 ):
                     status = "failed"
+            withdrawn = current.cancellation_requested_at is not None and not attempts
+            if withdrawn:
+                status = "cancelled"
             stamp = now()
             settled = current.model_copy(
                 update={
                     "status": status,
                     "activity": "",
-                    "settlement": "confirmed" if attempts else "never_started",
+                    "settlement": "never_started" if withdrawn or not attempts else "confirmed",
                     "terminal_at": stamp,
                     "updated_at": stamp,
                     "result": current.backend_observation,
@@ -976,6 +1018,9 @@ class NativeTools:
             }
         accepted = self._calls.get(handle)
         if accepted is None:
+            self.recovery.defer(
+                "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
+            )
             await self._record_or_defer(
                 "native-cancel-unknown:" + handle,
                 lambda: self._uncertain(
@@ -985,20 +1030,15 @@ class NativeTools:
             )
             return {"handle": handle, "cancellation_requested": True, "settlement": "unknown"}
 
-        async def deliver_cancel() -> bool:
-            current = await asyncio.to_thread(self._current, handle)
-            if current.terminal_at is not None:
-                return True
-            bound = self._calls.get(handle)
-            if bound is None:
-                return False
-            await bound.task.cancel()
-            return True
-
         try:
-            await deliver_cancel()
+            if not await self._deliver_cancel(handle):
+                self.recovery.defer(
+                    "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
+                )
         except Exception as error:
-            self.recovery.defer("native-cancel-delivery:" + handle, deliver_cancel)
+            self.recovery.defer(
+                "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
+            )
             reason = str(error)
             await self._record_or_defer(
                 "native-cancel-attention:" + handle,
@@ -1011,6 +1051,19 @@ class NativeTools:
             if "native-cancel:" + handle in self.recovery.pending
             else "confirmed",
         }
+
+    async def _deliver_cancel(self, handle: str) -> bool:
+        """Retry cancellation only against this submission's adopted native identity."""
+        current = await asyncio.to_thread(self._current, handle)
+        if current.terminal_at is not None:
+            return True
+        bound = self._calls.get(handle)
+        if bound is None or current.submission != bound.submission.context:
+            return False
+        if current.backend is not None and current.backend.task_id != bound.task.task_id:
+            return False
+        await bound.task.cancel()
+        return True
 
     async def await_settlement(
         self, handle: str, *, allow_uncertainty: bool = True

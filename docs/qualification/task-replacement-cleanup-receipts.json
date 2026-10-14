@@ -128,5 +128,18 @@
     "logical_bytes": 7152,
     "rejection": "blocked by policy",
     "root_absence_verified": false
+  },
+  "review_cache_c9": {
+    "status": "human_manual_only",
+    "root_absence_verified": false,
+    "logical_bytes": 34550,
+    "removal_executed": false,
+    "reparse_points": 0,
+    "audited_at": "2026-10-14T06:14:20.6396674Z",
+    "directories": 9,
+    "root": "D:\\Temp\\clio-task-implementation-review-90a7db56-c9",
+    "files": 11,
+    "process_absent": true,
+    "rejection": "blocked by policy"
   }
 }

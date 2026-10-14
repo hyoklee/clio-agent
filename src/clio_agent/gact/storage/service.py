@@ -16,7 +16,7 @@ from clio_agent.gact.storage.adapters import LocalSource, SourceAdapter
 from clio_agent.gact.storage.auth import StorageAuth
 from clio_agent.gact.storage.drive import DriveSource, drive_folder_id
 from clio_agent.gact.storage.github_access import GitHubAccess
-from clio_agent.gact.storage.globus import GlobusSource
+from clio_agent.gact.storage.globus import GlobusSource, GlobusStatusUnavailable
 from clio_agent.gact.storage.globus_consent import GlobusConsentRequired
 from clio_agent.gact.storage.globus_destination import receiving_destination
 from clio_agent.gact.storage.models import CreateSource, SourceRecord, TransferOperation
@@ -222,10 +222,7 @@ class StorageService:
     def require_idle(self, record: SourceRecord) -> None:
         """Refuse edits while an operation may still publish data or progress."""
         if any(
-            operation.source_id == record.source.id
-            and (
-                operation.state in {"queued", "running"}
-            )
+            operation.source_id == record.source.id and (operation.state in {"queued", "running"})
             for operation in self.store.list("operation", TransferOperation)
         ):
             raise ValueError("Cancel or finish the active transfer before changing this source")
@@ -387,8 +384,11 @@ class StorageService:
                 current = self.store.update_operation(operation.id, cancel_requested=True)
             with self.adapter(record) as adapter:
                 if isinstance(adapter, GlobusSource):
-                    result = (adapter.poll_existing_job(self.store, current, workspace_root)
-                              if existing_job_only else adapter.poll(self.store, current, workspace_root))
+                    result = (
+                        adapter.poll_existing_job(self.store, current, workspace_root)
+                        if existing_job_only
+                        else adapter.poll(self.store, current, workspace_root)
+                    )
                     if progress is not None:
                         progress(result.bytes_done, result.bytes_total)
                     return result.state in {"completed", "failed", "cancelled"}
@@ -412,6 +412,9 @@ class StorageService:
                     break  # The joined worker's error and cleanup state are inspected below.
             try:
                 settled = worker.result()
+            except GlobusStatusUnavailable as exc:
+                self.store.update_operation(operation.id, error=str(exc))
+                settled = False
             except (OSError, ValueError, RuntimeError) as exc:
                 current = self.store.get("operation", operation.id, TransferOperation)
                 if current.state not in {"completed", "failed", "cancelled"}:

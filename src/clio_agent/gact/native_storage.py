@@ -16,6 +16,7 @@ from clio_agent.arc.task_types import (
     TaskProgress,
     TaskSnapshot,
 )
+from clio_agent.errors import ClioError
 from clio_agent.gact.native_work import NativeWork, WorkEvidence, now
 from clio_agent.gact.off_loop import join_off_loop
 from clio_agent.gact.storage.connect_tool import prepare_connect
@@ -23,6 +24,7 @@ from clio_agent.gact.storage.globus import GlobusSource
 from clio_agent.gact.storage.identity import source_submission_identity
 from clio_agent.gact.storage.indexing import run_index
 from clio_agent.gact.storage.models import FileEntry, Manifest, SourceRecord, TransferOperation
+from clio_agent.gact.task_history import RecordingUnconfirmed
 from clio_agent.tools.native_roots import NativeRoot
 
 if TYPE_CHECKING:
@@ -238,7 +240,16 @@ def register_native_storage(
                                         )
                                     )
 
-                        await join_off_loop(confirm_previous)
+                        async def retain_previous_evidence() -> None:
+                            await join_off_loop(confirm_previous)
+
+                        try:
+                            await retain_previous_evidence()
+                        except (ClioError, OSError, TimeoutError, RecordingUnconfirmed):
+                            work.recovery.defer(
+                                "provider-predecessor-cleanup:" + context.reference,
+                                retain_previous_evidence,
+                            )
             latest = await join_off_loop(service.get, record.source.workspace_id, record.source.id)
             return await join_off_loop(result, latest, settled)
 

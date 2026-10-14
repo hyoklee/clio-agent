@@ -310,6 +310,16 @@ async def dispatch_action(
     # common sequential replay.
     existing_peek = find_by_idempotency_key(surface.actions, idempotency_key)
     if existing_peek is not None:
+        retry = ActionRecord.from_wire(existing_peek)
+        if (
+            retry is not None
+            and retry.state == "received"
+            and destination not in {"permission", "run", "client"}
+        ):
+            delivered_retry = await deliver_to_agent(
+                app, sid, retry, narration=retry.narration, context=context
+            )
+            existing_peek = delivered_retry.to_wire()
         return _duplicate_result(
             app, sid, existing_peek, name=name, destination=destination, surface=surface
         )
@@ -342,6 +352,16 @@ async def dispatch_action(
     # duplicate racing the peek above is still caught here.
     existing = persist_new_record(app, record)
     if existing is not None:
+        retry = ActionRecord.from_wire(existing)
+        if (
+            retry is not None
+            and retry.state == "received"
+            and destination not in {"permission", "run", "client"}
+        ):
+            delivered_retry = await deliver_to_agent(
+                app, sid, retry, narration=retry.narration, context=context
+            )
+            existing = delivered_retry.to_wire()
         return _duplicate_result(
             app, sid, existing, name=name, destination=destination, surface=surface
         )

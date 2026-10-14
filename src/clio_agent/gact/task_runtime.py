@@ -15,6 +15,8 @@ from clio_agent.gact.native_storage import register_native_storage
 from clio_agent.gact.native_tools import NativeTools
 from clio_agent.gact.question_events import QuestionEvents
 from clio_agent.gact.questions import QuestionCommands
+from clio_agent.gact.sessions import Session as StoredSession
+from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_operations import TaskOperations
@@ -24,6 +26,7 @@ async def start(app: Any) -> None:
     """Attach one confirmed Core writer before exposing durable task acceptance."""
     from clio_agent.gact.server_boot import process_arc_off_loop
 
+    session_store: SessionStore = app.state.sessions
     arc = await process_arc_off_loop(app)
     if arc is None:
         raise RuntimeError("Durable tasks require clio-core; History mode cannot accept them")
@@ -44,7 +47,7 @@ async def start(app: Any) -> None:
         from clio_agent.gact.permission_gate import _policy_action_for_tool
         from clio_agent.tools.task_call_context import permission_snapshot
 
-        session = app.state.sessions.get(submission.owner.session_id)
+        session = session_store.get(submission.owner.session_id)
         assignment = history.task_snapshot(submission.owner.assignment_id)
         if session is None or assignment is None or assignment.owner.session_id != session.id:
             raise PermissionError("Execution owner is unavailable")
@@ -109,6 +112,7 @@ async def start(app: Any) -> None:
             settled = await asyncio.to_thread(app.state.questions.cancel, current.handle)
             return {
                 "handle": settled.handle,
+                "cancellation_requested": settled.status == "cancelled",
                 "status": settled.status,
                 "settlement": settled.settlement,
             }
@@ -121,10 +125,10 @@ async def start(app: Any) -> None:
 
     def create_child(
         parent_id: str, agent_id: str, target_scope: dict[str, Any] | None = None
-    ) -> Any:
+    ) -> StoredSession:
         from clio_agent.gact.agents.resolution import _resolve_runtime_dynamic_agent
 
-        parent = app.state.sessions.get(parent_id)
+        parent = session_store.get(parent_id)
         if parent is None:
             raise ValueError("Parent session is unavailable")
         definition = (
@@ -164,11 +168,11 @@ async def start(app: Any) -> None:
             cursor = app.state.task_history.task_snapshot(cursor.owner.parent_handle)
         if depth > MAX_SPAWN_DEPTH:
             raise ValueError("Subagent spawn depth exceeds the configured safety boundary")
-        return app.state.sessions.create(
+        return session_store.create(
             workspace_id=parent.workspace_id,
             title=title,
             parent_session_id=parent_id,
-            model=parent.model.model_dump(),
+            model=dict(parent.model),
             agent={"id": agent_id},
             mode=parent.mode,
             edit_mode=parent.edit_mode,
@@ -221,7 +225,7 @@ async def start(app: Any) -> None:
 
         message, agent = await asyncio.to_thread(prepare)
         app.state.cancel_flags.discard(segment.session_id)
-        await asyncio.to_thread(app.state.sessions.update, segment.session_id, status="running")
+        await asyncio.to_thread(session_store.update, segment.session_id, status="running")
         outcome = await _run_turn_in_background(
             app, segment.session_id, segment.text, message, agent
         )
@@ -234,7 +238,7 @@ async def start(app: Any) -> None:
     def gate(sid: str) -> str | None:
         if app.state.agent is None:
             return "agent_not_ready"
-        session = app.state.sessions.get(sid)
+        session = session_store.get(sid)
         return (
             "session_unavailable"
             if session is None
@@ -273,6 +277,11 @@ async def start(app: Any) -> None:
 async def close(app: Any) -> None:
     """Stop model admission, settle local native work, then close transports/Core evidence."""
     conversations = getattr(app.state, "conversations", None)
+    if conversations is not None:
+        conversations.close_admission()
+    native = getattr(app.state, "native_tools", None)
+    if native is not None:
+        await native.request_shutdown()
     if conversations is not None:
         await conversations.shutdown()
     question_events = getattr(app.state, "question_events", None)

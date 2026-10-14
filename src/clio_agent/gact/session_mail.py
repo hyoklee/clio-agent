@@ -41,8 +41,14 @@ class StagedInput:
 class SessionMail:
     """Compose bounded model input without a lossy inbox or competing delivery guard."""
 
-    def __init__(self, history: TaskHistory, eligible: Eligibility) -> None:
+    def __init__(
+        self,
+        history: TaskHistory,
+        eligible: Eligibility,
+        committed: Callable[[StagedInput], None] | None = None,
+    ) -> None:
         self.history, self.eligible = history, eligible
+        self.committed = committed
 
     def stage(self, caller: TaskCaller, *, collected: tuple[str, ...] = ()) -> StagedInput:
         """Read eligible arrivals in accepted order; no query/staging operation consumes them."""
@@ -162,7 +168,10 @@ class SessionMail:
                 turn_id=turn_id,
                 human_input=any(item.kind in {"human", "composer"} for item in staged.items),
             )
-            return self.history.record_input(record)
+            confirmed = self.history.record_input(record)
+        if self.committed is not None:
+            self.committed(staged)
+        return confirmed
 
     def collection(self, caller: TaskCaller, identities: tuple[str, ...]) -> StagedInput:
         """Select only notices represented by a persisted explicit tool observation."""

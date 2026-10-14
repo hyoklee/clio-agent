@@ -433,6 +433,12 @@ def _pause(app: Any, run: VariantRun) -> None:
             "task_"
             + hashlib.sha256((sid + "\0variant-question\0" + invocation).encode()).hexdigest()
         )
+        previous = history.task_snapshot(handle)
+        previous_definition = (
+            QuestionDefinition.model_validate(history.read_content(previous.details))
+            if previous is not None and previous.details is not None
+            else None
+        )
         definition = QuestionDefinition(
             prompt=prompt,
             kind="choice",
@@ -444,7 +450,9 @@ def _pause(app: Any, run: VariantRun) -> None:
                 )
                 for item in candidates
             ),
-            expires_at=(stamp + timedelta(seconds=run.pick_expires_in_s)).isoformat()
+            expires_at=previous_definition.expires_at
+            if previous_definition is not None
+            else (stamp + timedelta(seconds=run.pick_expires_in_s)).isoformat()
             if run.pick_expires_in_s > 0
             else None,
             metadata={

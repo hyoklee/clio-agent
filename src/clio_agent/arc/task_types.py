@@ -146,6 +146,7 @@ class LocalRuntimeIdentity(TaskRecord):
     created_at: float = Field(gt=0)
     boot_id: str | None = None
     started_since_boot: float | None = None
+    start_ticks: int | None = None
 
 
 class ProviderContinuation(TaskRecord):

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +18,7 @@ from clio_agent.gact.resource_processing import (
     ResourceConverterFactory,
     ResourceProcessingStore,
 )
-from clio_agent.gact.types import Message
 
-AppendMessage = Callable[[Any, str, Message], None]
 logger = logging.getLogger(__name__)
 
 
@@ -77,15 +74,45 @@ def register_composer_routes(app: Any, deps: Any) -> None:
     store), so re-registering them would duplicate the surface.
     """
 
+    from clio_agent.gact.routes.mailbox import register_mailbox_routes
     from clio_agent.gact.routes.provider_catalog import (  # noqa: PLC0415
         register_normalized_provider_catalog_routes,
     )
     from clio_agent.gact.routes.resources import register_resource_routes  # noqa: PLC0415
-    from clio_agent.gact.routes.mailbox import register_mailbox_routes
 
     register_resource_routes(app, deps)
     register_normalized_provider_catalog_routes(app, deps)
     register_mailbox_routes(app)
+
+
+def resource_capabilities(app: Any) -> dict[str, Any]:
+    """Expose the actual retained resource limits, converters and degradation."""
+    store = getattr(app.state, "resource_store", None)
+    if store is None:
+        return {}
+    factory = getattr(app.state, "resource_converter_factory", None)
+    degradations = [
+        row
+        for row in (
+            getattr(store, "load_degradation", None),
+            getattr(getattr(app.state, "resource_delivery_store", None), "load_degradation", None),
+        )
+        if row
+    ]
+    return {
+        "enabled": True,
+        "max_bytes": int(store.max_resource_bytes),
+        "converters": factory.capabilities() if factory is not None else [],
+        "degradations": degradations,
+    }
+
+
+def delete_workspace_resources(app: Any, workspace_id: str) -> None:
+    """Remove workspace-owned resources through their existing stores."""
+    for name in ("resource_store", "resource_delivery_store"):
+        store = getattr(app.state, name, None)
+        if store is not None:
+            store.delete_workspace(workspace_id)
 
 
 def session_autostart_suspended(app: Any, session_id: str) -> bool:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from typing import Any
 
 import pytest
@@ -16,6 +17,7 @@ from clio_agent.arc.task_types import (
     QuestionDefinition,
     QuestionReply,
     RecipientInput,
+    TaskAlias,
     TaskOwner,
     TaskSnapshot,
     TaskSubscription,
@@ -43,7 +45,9 @@ def record_task(
         kind="Shell",
         tool="bash",
         label="Command",
-        owner=TaskOwner(human_id="human", session_id=session),
+        owner=TaskOwner(
+            human_id="human", session_id=session, assignment_id="assignment_" + session
+        ),
         invocation_id=handle,
         created_at=STAMP,
         updated_at=STAMP,
@@ -75,6 +79,89 @@ def finish(history: TaskHistory, task: TaskSnapshot, *, status: str = "completed
 async def forbid_cancel(task: TaskSnapshot, caller: TaskCaller) -> dict[str, Any]:
     """A read/wait case must never reach an execution owner's cancellation path."""
     pytest.fail(f"Unexpected cancellation of {task.handle} by {caller.session_id}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("control", ["wait", "observe"])
+async def test_legacy_alias_wakes_on_the_canonical_owner_observation(
+    arc: ARCMemory,
+    monkeypatch: pytest.MonkeyPatch,
+    control: str,
+) -> None:
+    history = TaskHistory(arc)
+    task = await asyncio.to_thread(record_task, history, "task_canonical")
+    await asyncio.to_thread(
+        history.record_alias,
+        TaskAlias(alias="old-id", handle=task.handle, source_identity="legacy"),
+    )
+    registered = asyncio.Event()
+    original = history.listen
+
+    def listen(
+        callback: Callable[[int], None],
+        *,
+        handles: tuple[str, ...] = (),
+        recipient_session: str | None = None,
+    ) -> Callable[[], None]:
+        remove = original(callback, handles=handles, recipient_session=recipient_session)
+        assert handles == (task.handle,)
+        registered.set()
+        return remove
+
+    monkeypatch.setattr(history, "listen", listen)
+    operations, caller = TaskOperations(history, forbid_cancel), TaskCaller("owner", "human")
+    waiter = asyncio.create_task(
+        operations.wait(caller, "old-id")
+        if control == "wait"
+        else operations.observe(caller, "old-id", pattern="never-matches-output")
+    )
+    try:
+        await asyncio.wait_for(registered.wait(), 1)
+        await asyncio.to_thread(finish, history, task)
+        result = await asyncio.wait_for(waiter, 1)
+        assert not result.get("timed_out", False)
+        rows = result["outcomes"] if control == "wait" else result["tasks"]
+        assert rows[0]["handle"] == task.handle and rows[0]["status"] == "completed"
+    finally:
+        if not waiter.done():
+            waiter.cancel()
+        await asyncio.gather(waiter, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_uncertain_legacy_status_does_not_require_an_episode_to_end_wait(
+    arc: ARCMemory,
+) -> None:
+    history = TaskHistory(arc)
+    task = await asyncio.to_thread(record_task, history, "task_uncertain")
+    await asyncio.to_thread(
+        history.record_snapshot,
+        task.model_copy(update={"status": "task_state_uncertain", "settlement": "unknown"}),
+        observation_id="uncertain-without-episode",
+    )
+    result = await asyncio.wait_for(
+        TaskOperations(history, forbid_cancel).wait(TaskCaller("owner", "human"), task.handle), 1
+    )
+    assert result["pending"] == [task.handle] and not result["timed_out"]
+    assert result["outcomes"] == [{"handle": task.handle, "status": "task_state_uncertain"}]
+    assert history.acknowledged_notifications("owner") == frozenset()
+
+
+def test_restore_coalesces_hints_without_losing_pending_core_mail(arc: ARCMemory) -> None:
+    history = TaskHistory(arc)
+    tasks = [record_task(history, "task_replay_" + str(index)) for index in range(3)]
+    for task in tasks:
+        finish(history, task)
+    restored = TaskHistory(arc)
+    hints: list[int] = []
+    mail: list[str] = []
+    restored.listen(hints.append)
+    restored.listen_mail(mail.append)
+    restored.restore()
+    assert hints == [restored.revision] and mail == ["owner"]
+    assert {item.handle for item in restored.pending_mail("owner")} == {
+        task.handle for task in tasks
+    }
 
 
 def test_description_reference_survives_core_restore(arc: ARCMemory) -> None:
@@ -114,7 +201,7 @@ async def test_expired_mixed_wait_preserves_running_members(arc: ARCMemory) -> N
 async def test_waiter_cancellation_leaves_question_open(arc: ARCMemory) -> None:
     history = TaskHistory(arc)
     questions = QuestionCommands(history)
-    owner = TaskOwner(human_id="human", session_id="owner")
+    owner = TaskOwner(human_id="human", session_id="owner", assignment_id="assignment_owner")
     question = await asyncio.to_thread(
         questions.create,
         owner,
@@ -150,7 +237,7 @@ def test_question_creation_recovers_unposted_definition(
     monkeypatch.setattr(questions, "post", fail_post)
     with pytest.raises(OSError, match="before posting"):
         questions.create(
-            TaskOwner(human_id="human", session_id="owner"),
+            TaskOwner(human_id="human", session_id="owner", assignment_id="assignment_owner"),
             definition,
             invocation_id="ask-recover",
             handle="task_question_recover",

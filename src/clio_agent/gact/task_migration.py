@@ -6,7 +6,7 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, cast
 
 from clio_agent.arc.task_types import (
@@ -65,6 +65,13 @@ def _mapped(identity: str) -> str:
     return "task_migrated_" + hashlib.sha256(identity.encode()).hexdigest()
 
 
+def _session_events(history: Any) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Read ownership from Core's segment envelope, rather than event content."""
+    for session_id in history.arc._live._event_session_ids():
+        for segment in history.arc._live.iter_session_event_segments(session_id):
+            yield session_id, segment.content
+
+
 def migrate_history(app: Any) -> None:
     """Persist stable mappings, content and proven acknowledgements without execution."""
     history = app.state.task_history
@@ -75,11 +82,11 @@ def migrate_history(app: Any) -> None:
     withdrawals: set[tuple[str, str]] = set()
     subscriptions: dict[tuple[str, str], dict[str, Any]] = {}
     grants: dict[tuple[str, str], dict[str, Any]] = {}
-    for event in history.arc._live.iter_event_contents():
+    for sid, event in _session_events(history):
         payload = event.get("payload") or {}
         if "schema_version" in payload:
             continue
-        event_type, sid = event.get("event_type"), str(event.get("session_id") or "")
+        event_type = event.get("event_type")
         if event_type in _FORMATS:
             family, key = _FORMATS[event_type]
             row = payload.get(key, {}) if key else payload
@@ -201,267 +208,293 @@ def migrate_history(app: Any) -> None:
 
     ordered = sorted(latest.items(), key=lambda pair: pair[1][0] != "assignment")
     for identity, (family, sid, row, payload) in ordered:
-        handle = handles[identity]
-        owner_sid = str(row.get("child_session_id") or sid) if family == "assignment" else sid
-        session = sessions.get(owner_sid)
-        if session is None:
-            _unresolved(app, identity, "owning_session_unavailable", row)
-            continue
-        if history.task_snapshot(handle) is None:
-            description = row.get("description") or (
-                row.get("prompt") if family == "question" else None
-            )
-            created = str(row.get("created_at") or payload.get("recorded_at") or session.created_at)
-            updated = str(row.get("updated_at") or payload.get("recorded_at") or created)
-            raw = str(row.get("raw_status") or row.get("status") or "unknown")
-            kind = (
-                str(row.get("assignment_kind") or "Subagent")
-                if family == "assignment"
-                else "Question"
-                if family == "question"
-                else str(row.get("kind") or "MCP")
-            )
-            if kind not in {
-                "Shell",
-                "Download",
-                "Indexing",
-                "MCP",
-                "Session",
-                "Subagent",
-                "Question",
-            }:
-                kind = "MCP"
-            kind = cast(TaskKind, kind)
-            parent_sid = (
-                str(row.get("parent_session_id") or "") if family == "assignment" else owner_sid
-            )
-            try:
-                parent = (
-                    anchor(parent_sid)
-                    if parent_sid and (family != "assignment" or kind == "Subagent")
-                    else None
-                )
-            except ValueError:
-                _unresolved(app, identity, "parent_session_unavailable", row)
+        try:
+            handle = handles[identity]
+            owner_sid = str(row.get("child_session_id") or sid) if family == "assignment" else sid
+            session = sessions.get(owner_sid)
+            if session is None:
+                _unresolved(app, identity, "owning_session_unavailable", row)
                 continue
-            owner = TaskOwner(
-                human_id=str(session.metadata.get("owner_human_id") or app.state.human_principal),
-                session_id=owner_sid,
-                assignment_id=handle if family == "assignment" else parent or "",
-                parent_handle=parent,
-            )
-            retained = history.write_content(
-                owner_sid,
-                {
-                    "format": family,
-                    "source_identity": identity,
-                    "observation_id": payload.get("observation_id"),
-                    "record": row,
-                    "delivery": "unknown",
-                },
-            )
-            details = retained
-            if family == "assignment":
-                checkpoint = row.get("context_checkpoint") or {}
-                boundary = (
-                    ContextBoundary(
-                        session_id=owner_sid,
-                        scope=checkpoint["scope"],
-                        logical_time=int(checkpoint.get("logical_time", 0)),
-                    )
-                    if checkpoint.get("scope")
-                    else None
+            if history.task_snapshot(handle) is None:
+                description = row.get("description") or (
+                    row.get("prompt") if family == "question" else None
                 )
-                details = history.write_content(
-                    owner_sid,
-                    AssignmentDetails(
-                        context=boundary, predecessor=row.get("supersedes_task_id") or None
-                    ).model_dump(mode="json"),
+                created = str(
+                    row.get("created_at") or payload.get("recorded_at") or session.created_at
                 )
-            elif family == "question":
-                definition = QuestionDefinition(
-                    prompt=str(row.get("prompt") or "Question"),
-                    kind=row.get("kind", "freeform"),
-                    options=row.get("options", ()),
-                    allow_freeform=bool(row.get("allow_freeform", True)),
-                    expires_at=row.get("expires_at") or None,
-                    source=row.get("source", "ask_user"),
-                    metadata=row.get("metadata", {}),
-                )
-                details = history.write_content(owner_sid, definition.model_dump(mode="json"))
-            backend = row.get("backend") or {}
-            backend_key = row.get("key") or {}
-            placement = str(row.get("placement") or "local")
-            reference = BackendReference(
-                owner="conversation"
-                if family == "assignment"
-                else "question"
-                if family == "question"
-                else "native"
-                if family == "native"
-                else "external_mcp",
-                server=str(
-                    backend_key.get("server_id") or backend.get("server_id") or "historical"
-                ),
-                auth_scope=str(backend.get("auth_scope") or ""),
-                session=str(
-                    backend_key.get("backend_session_id") or backend.get("backend_session_id") or ""
-                ),
-                task_id=str(
-                    backend_key.get("task_id") or row.get("task_id") or row.get("id") or handle
-                ),
-                transport="historical_relay"
-                if placement == "relay"
-                else str(row.get("transport") or "unknown"),
-                placement=placement,
-            )
-            terminal = raw in _TERMINAL
-            status = str(row.get("effective_status") or raw) if terminal else "task_state_uncertain"
-            if (
-                terminal
-                and raw == "completed"
-                and isinstance(row.get("result"), dict)
-                and row["result"].get("isError")
-            ):
-                status = "failed"
-            if family == "question":
-                status = (
-                    "completed"
-                    if raw == "answered"
-                    else "input_required"
-                    if raw == "pending"
-                    else "cancelled"
-                    if raw == "cancelled"
-                    else "failed"
-                )
-            elif family == "assignment" and not terminal and placement != "relay":
-                status = "active"
-            value = row.get("result")
-            if family == "question" and raw == "answered":
-                value = QuestionReply(
-                    answer=str(row.get("answer") or ""),
-                    selected_options=row.get("selected_options", ()),
-                    metadata=row.get("answer_metadata", {}),
-                ).model_dump(mode="json")
-            result = history.write_content(owner_sid, value) if value is not None else None
-            tool = str(
-                row.get("tool")
-                or (
-                    "conversation"
+                updated = str(row.get("updated_at") or payload.get("recorded_at") or created)
+                raw = str(row.get("raw_status") or row.get("status") or "unknown")
+                kind = (
+                    str(row.get("assignment_kind") or "Subagent")
                     if family == "assignment"
-                    else "ask_user"
+                    else "Question"
                     if family == "question"
-                    else "historical"
+                    else str(row.get("kind") or "MCP")
                 )
-            )
-            task = TaskSnapshot(
-                handle=handle,
-                kind=kind,
-                owner=owner,
-                description=description,
-                description_missing=description is None,
-                label=str(row.get("run_label") or row.get("tool") or session.title),
-                invocation_id=str(
-                    row.get("invocation_id") or row.get("parent_turn_id") or "migration:" + handle
-                ),
-                tool=tool,
-                created_at=created,
-                updated_at=updated,
-                backend=reference,
-                raw_status=raw,
-                status=status,
-                activity="yielded"
-                if family == "assignment" and not terminal
-                else "waiting_for_input"
-                if raw == "pending"
-                else "",
-                terminal_at=updated if terminal else None,
-                settlement="historical_unknown",
-                details=details,
-                result=result,
-                backend_observation=retained,
-                cancellation_requested_at=updated if row.get("cancel_requested") else None,
-                connection_freshness="unavailable",
-                supported_actions=("observe", "wait", "get_result", "message")
-                if family == "assignment"
-                else ("observe", "wait", "cancel", "answer")
-                if raw == "pending"
-                else ("observe", "wait", "get_result"),
-            )
-            history.record_snapshot(task, observation_id="migration:" + handle)
-        task = history.task_snapshot(handle)
-        aliases = {
-            str(row[name])
-            for name in ("task_id", "handle_id", "handle", "task_handle", "id")
-            if row.get(name)
-        }
-        for alias in aliases:
-            history.record_alias(TaskAlias(alias=alias, handle=handle, source_identity=identity))
-        if row.get("notify_pending") and task.terminal_at is not None:
-            publish_task_notice(history, task)
-    for (recipient, identity), row in mail.items():
-        if not identity or recipient not in sessions:
-            _unresolved(
-                app, "mail:" + recipient + ":" + identity, "mailbox_identity_incomplete", row
-            )
-            continue
-        if identity not in history._mail.get(recipient, {}):
-            content = history.write_content(
-                recipient,
-                {
-                    "text": row.get("text", ""),
-                    "legacy": row,
-                    "message_id": identity,
-                    "message": row.get("message"),
-                    "metadata": row.get("metadata") or {},
-                    "reply_to": row.get("reply_to") or None,
-                    "delivery": "unknown",
-                },
-            )
-            kind = _legacy_mail_kind(row)
-            ambiguous = bool(
-                row.get("delivered_at")
-                or row.get("claimed_at")
-                or row.get("consumed_at")
-                or row.get("state") in {"claimed", "consumed"}
-            )
-            missing_sender = kind == "peer" and not row.get("source_session_id")
-            history.record_mail(
-                MailItem(
-                    id=identity,
-                    recipient_session=recipient,
-                    sender_session=row.get("source_session_id") or None,
-                    sender_human=str(
-                        row.get("actor_human")
-                        or sessions[recipient].metadata.get("owner_human_id")
-                        or app.state.human_principal
+                if kind not in {
+                    "Shell",
+                    "Download",
+                    "Indexing",
+                    "MCP",
+                    "Session",
+                    "Subagent",
+                    "Question",
+                }:
+                    kind = "MCP"
+                kind = cast(TaskKind, kind)
+                parent_sid = (
+                    str(row.get("parent_session_id") or "") if family == "assignment" else owner_sid
+                )
+                try:
+                    parent = (
+                        anchor(parent_sid)
+                        if parent_sid and (family != "assignment" or kind == "Subagent")
+                        else None
                     )
-                    if kind in {"human", "control"}
-                    else None,
-                    kind=kind,
-                    content=content,
-                    delivery="held" if ambiguous or missing_sender else "eligible",
-                    held_reason="historical_sender_unavailable"
-                    if missing_sender
-                    else "historical_delivery_unknown"
-                    if ambiguous
-                    else "",
-                    handle=history.latest_assignment(recipient).handle
-                    if history.latest_assignment(recipient)
-                    else anchor(recipient),
-                    created_at=str(
-                        row.get("accepted_at")
-                        or row.get("recorded_at")
-                        or sessions[recipient].created_at
+                except ValueError:
+                    _unresolved(app, identity, "parent_session_unavailable", row)
+                    continue
+                owner = TaskOwner(
+                    human_id=str(
+                        session.metadata.get("owner_human_id") or app.state.human_principal
                     ),
+                    session_id=owner_sid,
+                    assignment_id=handle if family == "assignment" else parent or "",
+                    parent_handle=parent,
                 )
+                retained = history.write_content(
+                    owner_sid,
+                    {
+                        "format": family,
+                        "source_identity": identity,
+                        "observation_id": payload.get("observation_id"),
+                        "record": row,
+                        "delivery": "unknown",
+                    },
+                )
+                details = retained
+                if family == "assignment":
+                    checkpoint = row.get("context_checkpoint") or {}
+                    boundary = (
+                        ContextBoundary(
+                            session_id=owner_sid,
+                            scope=checkpoint["scope"],
+                            logical_time=int(checkpoint.get("logical_time", 0)),
+                        )
+                        if checkpoint.get("scope")
+                        else None
+                    )
+                    details = history.write_content(
+                        owner_sid,
+                        AssignmentDetails(
+                            context=boundary, predecessor=row.get("supersedes_task_id") or None
+                        ).model_dump(mode="json"),
+                    )
+                elif family == "question":
+                    definition = QuestionDefinition(
+                        prompt=str(row.get("prompt") or "Question"),
+                        kind=row.get("kind", "freeform"),
+                        options=row.get("options", ()),
+                        allow_freeform=bool(row.get("allow_freeform", True)),
+                        expires_at=row.get("expires_at") or None,
+                        source=row.get("source", "ask_user"),
+                        metadata=row.get("metadata", {}),
+                    )
+                    details = history.write_content(owner_sid, definition.model_dump(mode="json"))
+                backend = row.get("backend") or {}
+                backend_key = row.get("key") or {}
+                placement = str(row.get("placement") or "local")
+                reference = BackendReference(
+                    owner="conversation"
+                    if family == "assignment"
+                    else "question"
+                    if family == "question"
+                    else "native"
+                    if family == "native"
+                    else "external_mcp",
+                    server=str(
+                        backend_key.get("server_id") or backend.get("server_id") or "historical"
+                    ),
+                    auth_scope=str(backend.get("auth_scope") or ""),
+                    session=str(
+                        backend_key.get("backend_session_id")
+                        or backend.get("backend_session_id")
+                        or ""
+                    ),
+                    task_id=str(
+                        backend_key.get("task_id") or row.get("task_id") or row.get("id") or handle
+                    ),
+                    transport="historical_relay"
+                    if placement == "relay"
+                    else str(row.get("transport") or "unknown"),
+                    placement=placement,
+                )
+                terminal = raw in _TERMINAL
+                status = (
+                    str(row.get("effective_status") or raw) if terminal else "task_state_uncertain"
+                )
+                if (
+                    terminal
+                    and raw == "completed"
+                    and isinstance(row.get("result"), dict)
+                    and row["result"].get("isError")
+                ):
+                    status = "failed"
+                if family == "question":
+                    status = (
+                        "completed"
+                        if raw == "answered"
+                        else "input_required"
+                        if raw == "pending"
+                        else "cancelled"
+                        if raw == "cancelled"
+                        else "failed"
+                    )
+                elif family == "assignment" and not terminal and placement != "relay":
+                    status = "active"
+                value = row.get("result")
+                if family == "question" and raw == "answered":
+                    value = QuestionReply(
+                        answer=str(row.get("answer") or ""),
+                        selected_options=row.get("selected_options", ()),
+                        metadata=row.get("answer_metadata", {}),
+                    ).model_dump(mode="json")
+                result = history.write_content(owner_sid, value) if value is not None else None
+                tool = str(
+                    row.get("tool")
+                    or (
+                        "conversation"
+                        if family == "assignment"
+                        else "ask_user"
+                        if family == "question"
+                        else "historical"
+                    )
+                )
+                task = TaskSnapshot(
+                    handle=handle,
+                    kind=kind,
+                    owner=owner,
+                    description=description,
+                    description_missing=description is None,
+                    label=str(row.get("run_label") or row.get("tool") or session.title),
+                    invocation_id=str(
+                        row.get("invocation_id")
+                        or row.get("parent_turn_id")
+                        or "migration:" + handle
+                    ),
+                    tool=tool,
+                    created_at=created,
+                    updated_at=updated,
+                    backend=reference,
+                    raw_status=raw,
+                    status=status,
+                    activity="yielded"
+                    if family == "assignment" and not terminal
+                    else "waiting_for_input"
+                    if raw == "pending"
+                    else "",
+                    terminal_at=updated if terminal else None,
+                    settlement="historical_unknown",
+                    details=details,
+                    result=result,
+                    backend_observation=retained,
+                    cancellation_requested_at=updated if row.get("cancel_requested") else None,
+                    connection_freshness="unavailable",
+                    attention_episode="migration:" + handle
+                    if status == "task_state_uncertain"
+                    else None,
+                    supported_actions=("observe", "wait", "get_result", "message")
+                    if family == "assignment"
+                    else ("observe", "wait", "cancel", "answer")
+                    if raw == "pending"
+                    else ("observe", "wait", "get_result"),
+                )
+                history.record_snapshot(task, observation_id="migration:" + handle)
+            task = history.task_snapshot(handle)
+            aliases = {
+                str(row[name])
+                for name in ("task_id", "handle_id", "handle", "task_handle", "id")
+                if row.get(name)
+            }
+            for alias in aliases:
+                history.record_alias(
+                    TaskAlias(alias=alias, handle=handle, source_identity=identity)
+                )
+            if row.get("notify_pending") and task.terminal_at is not None:
+                publish_task_notice(history, task)
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            _unresolved(app, identity, "invalid_historical_record:" + type(error).__name__, row)
+    for (recipient, identity), row in mail.items():
+        try:
+            if not identity or recipient not in sessions:
+                _unresolved(
+                    app, "mail:" + recipient + ":" + identity, "mailbox_identity_incomplete", row
+                )
+                continue
+            if identity not in history._mail.get(recipient, {}):
+                content = history.write_content(
+                    recipient,
+                    {
+                        "text": row.get("text", ""),
+                        "legacy": row,
+                        "message_id": identity,
+                        "message": row.get("message"),
+                        "metadata": row.get("metadata") or {},
+                        "reply_to": row.get("reply_to") or None,
+                        "delivery": "unknown",
+                    },
+                )
+                kind = _legacy_mail_kind(row)
+                ambiguous = bool(
+                    row.get("delivered_at")
+                    or row.get("claimed_at")
+                    or row.get("consumed_at")
+                    or row.get("state") in {"claimed", "consumed"}
+                )
+                missing_sender = kind == "peer" and not row.get("source_session_id")
+                history.record_mail(
+                    MailItem(
+                        id=identity,
+                        recipient_session=recipient,
+                        sender_session=row.get("source_session_id") or None,
+                        sender_human=str(
+                            row.get("actor_human")
+                            or sessions[recipient].metadata.get("owner_human_id")
+                            or app.state.human_principal
+                        )
+                        if kind in {"human", "control"}
+                        else None,
+                        kind=kind,
+                        content=content,
+                        delivery="held" if ambiguous or missing_sender else "eligible",
+                        held_reason="historical_sender_unavailable"
+                        if missing_sender
+                        else "historical_delivery_unknown"
+                        if ambiguous
+                        else "",
+                        handle=history.latest_assignment(recipient).handle
+                        if history.latest_assignment(recipient)
+                        else anchor(recipient),
+                        created_at=str(
+                            row.get("accepted_at")
+                            or row.get("recorded_at")
+                            or sessions[recipient].created_at
+                        ),
+                    )
+                )
+            if (
+                (recipient, identity) in withdrawals
+                and identity not in history._withdrawn.get(recipient, set())
+                and identity not in history.acknowledged_notifications(recipient)
+            ):
+                history.withdraw_mail(recipient, identity)
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            _unresolved(
+                app,
+                "mail:" + recipient + ":" + identity,
+                "invalid_historical_record:" + type(error).__name__,
+                row,
             )
-        if (
-            (recipient, identity) in withdrawals
-            and identity not in history._withdrawn.get(recipient, set())
-            and identity not in history.acknowledged_notifications(recipient)
-        ):
-            history.withdraw_mail(recipient, identity)
     for (sid, _), row in subscriptions.items():
         handle = history.resolve_handle(str(row.get("handle") or ""))
         if handle is not None and not any(
@@ -476,42 +509,57 @@ def migrate_history(app: Any) -> None:
                 )
             )
     for (sid, identity), row in grants.items():
-        recipient = str(row.get("recipient") or sid)
-        target = row.get("target_scope") or {}
-        human = str(row.get("granting_human") or "")
-        if (
-            not identity
-            or not human
-            or recipient not in sessions
-            or target.get("session_id") not in sessions
-        ):
-            continue  # the original event remains readable; incomplete data grants no rights
-        if any(grant.id == identity for grant in history.coordination_grants(recipient)):
-            continue
-        stamp = str(row.get("recorded_at") or sessions[recipient].updated_at)
-        exact = history.resolve_handle(str(target.get("handle") or ""))
-        if target.get("handle") and exact is None:
-            continue  # an ambiguous exact grant cannot become a session grant
-        history.record_grant(
-            CoordinationGrant(
-                id=identity,
-                granting_human=human,
-                recipient_session=recipient,
-                target_session=target["session_id"],
-                target_handle=exact,
-                target_scope="tree" if target.get("descendants") else "session",
-                rights=tuple(row.get("rights", ())),
-                created_at=stamp,
-                revoked_at=stamp if row.get("revoked") else None,
-            ),
-            observation_id="migration-grant:" + identity,
-        )
+        try:
+            recipient = str(row.get("recipient") or sid)
+            target = row.get("target_scope") or {}
+            human = str(row.get("granting_human") or "")
+            if (
+                not identity
+                or not human
+                or recipient not in sessions
+                or target.get("session_id") not in sessions
+            ):
+                continue  # the original event remains readable; incomplete data grants no rights
+            if any(grant.id == identity for grant in history.coordination_grants(recipient)):
+                continue
+            stamp = str(row.get("recorded_at") or sessions[recipient].updated_at)
+            exact = history.resolve_handle(str(target.get("handle") or ""))
+            if target.get("handle") and exact is None:
+                continue  # an ambiguous exact grant cannot become a session grant
+            history.record_grant(
+                CoordinationGrant(
+                    id=identity,
+                    granting_human=human,
+                    recipient_session=recipient,
+                    target_session=target["session_id"],
+                    target_handle=exact,
+                    target_scope="tree" if target.get("descendants") else "session",
+                    rights=tuple(row.get("rights", ())),
+                    created_at=stamp,
+                    revoked_at=stamp if row.get("revoked") else None,
+                ),
+                observation_id="migration-grant:" + identity,
+            )
+        except (ValueError, TypeError, KeyError, AttributeError) as error:
+            _unresolved(
+                app,
+                "grant:" + sid + ":" + identity,
+                "invalid_historical_record:" + type(error).__name__,
+                row,
+            )
     # Relationships must be restored before terminal publication. Unknown historical
     # owner delivery is retained as held mail, rather than guessed delivered or
     # automatically repeated. Actual retained input proofs below can acknowledge it.
     for identity, (_, _, row, _) in ordered:
         task = history.task_snapshot(handles[identity])
-        if task is None or task.terminal_at is None:
+        if task is None:
+            continue
+        if task.status == "task_state_uncertain":
+            publish_task_notice(
+                history, task, episode=task.attention_episode or "migration:" + task.handle
+            )
+            continue
+        if task.terminal_at is None:
             continue
         if not row.get("notify_pending") and not any(
             item.enabled for item in history.subscriptions(task.handle)
@@ -570,140 +618,167 @@ def _migrate_intents(app: Any, sessions: dict[str, Any], anchor: Callable[[str],
     path = getattr(app.state, "legacy_message_intents_path", None)
     if path is None or not path.exists():
         return
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw = path.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw)
+    except ValueError:
+        _unresolved(app, "message-intents", "invalid_historical_json", raw)
+        return
     if not isinstance(payload, dict):
-        raise ValueError("Historical message intents must be an object")
+        _unresolved(app, "message-intents", "invalid_historical_intents", payload)
+        return
     history = app.state.task_history
     for family in ("pending", "queued"):
         rows = payload.get(family, [])
         if not isinstance(rows, list):
-            raise ValueError("Historical message intents must contain lists")
+            _unresolved(app, "message-intents:" + family, "invalid_historical_family", rows)
+            continue
         for position, row in enumerate(rows):
-            if not isinstance(row, dict):
-                raise ValueError("Historical message intent is not an object")
-            sid = str(row.get("session_id") or "")
-            identity = str((row.get("message_id") if family == "pending" else row.get("id")) or "")
-            if not identity or sid not in sessions:
-                _unresolved(
-                    app, f"intent:{family}:{sid}:{identity}", "intent_recipient_unavailable", row
-                )
-                continue
-            if identity in history._mail.get(sid, {}):
-                if (
-                    family == "pending"
-                    and row.get("state") == "cancelled"
-                    and identity not in history._withdrawn.get(sid, set())
-                    and identity not in history.acknowledged_notifications(sid)
-                ):
-                    history.withdraw_mail(sid, identity)
-                elif (
-                    family == "pending"
-                    and row.get("state") in {"claimed", "consumed"}
-                    and identity not in history.acknowledged_notifications(sid)
-                ):
-                    existing = history._mail[sid][identity]
-                    body = history.read_content(existing.content)
-                    if (
-                        isinstance(body, dict)
-                        and body.get("legacy") is not None
-                        and body.get("legacy_intent_state") != row["state"]
-                    ):
-                        content = history.write_content(
-                            sid, {**body, "legacy_intent_state": row["state"]}
-                        )
-                        history.update_mail(
-                            existing.model_copy(
-                                update={
-                                    "content": content,
-                                    "delivery": "held",
-                                    "held_reason": "historical_delivery_unknown",
-                                    "revision": existing.revision + 1,
-                                }
-                            ),
-                            expected_revision=existing.revision,
-                        )
-                continue  # a confirmed replacement record/revision always wins
-            session = sessions[sid]
-            stamp = str(row.get("accepted_at") or row.get("created_at") or session.created_at)
-            human = str(session.metadata.get("owner_human_id") or app.state.human_principal)
-            if family == "queued":
-                request = PostMessageRequest.model_validate(
-                    {
-                        key: row[key]
-                        for key in (
-                            "text",
-                            "parts",
-                            "metadata",
-                            "client_message_id",
-                            "idempotency_key",
-                            "behavior",
-                            "model",
-                        )
-                        if key in row
-                    }
-                )
-                content = history.write_content(
-                    sid,
-                    {
-                        "request": request.model_dump(mode="json"),
-                        "updated_at": row.get("updated_at") or stamp,
-                        "legacy": row,
-                    },
-                )
-                item = MailItem(
-                    id=identity,
-                    recipient_session=sid,
-                    sender_human=human,
-                    kind="composer",
-                    content=content,
-                    created_at=stamp,
-                    delivery="queued",
-                    revision=int(row.get("revision") or 1),
-                    queued_order=position,
-                )
-            else:
-                state = str(row.get("state") or "pending")
-                if state not in {"pending", "claimed", "consumed", "cancelled"}:
-                    _unresolved(app, f"intent:{sid}:{identity}", "unknown_feedback_state", row)
+            try:
+                if not isinstance(row, dict):
+                    _unresolved(
+                        app, f"intent:{family}:{position}", "invalid_historical_intent", row
+                    )
                     continue
-                message = Message(
-                    id=identity,
-                    session_id=sid,
-                    turn_id="",
-                    role="user",
-                    created_at=stamp,
-                    updated_at=stamp,
-                    metadata=row.get("metadata") or {},
-                    parts=[Part.model_validate(part) for part in row.get("parts", [])]
-                    or [Part(id=identity + ":text", type="text", text=str(row.get("text") or ""))],
+                sid = str(row.get("session_id") or "")
+                identity = str(
+                    (row.get("message_id") if family == "pending" else row.get("id")) or ""
                 )
-                content = history.write_content(
-                    sid,
-                    {
-                        "text": row.get("text") or "",
-                        "message_id": identity,
-                        "message": message.model_dump(mode="json"),
-                        "legacy": row,
-                        "delivery": "unknown",
-                        "legacy_intent_state": state,
-                    },
+                if not identity or sid not in sessions:
+                    _unresolved(
+                        app,
+                        f"intent:{family}:{sid}:{identity}",
+                        "intent_recipient_unavailable",
+                        row,
+                    )
+                    continue
+                if identity in history._mail.get(sid, {}):
+                    if (
+                        family == "pending"
+                        and row.get("state") == "cancelled"
+                        and identity not in history._withdrawn.get(sid, set())
+                        and identity not in history.acknowledged_notifications(sid)
+                    ):
+                        history.withdraw_mail(sid, identity)
+                    elif (
+                        family == "pending"
+                        and row.get("state") in {"claimed", "consumed"}
+                        and identity not in history.acknowledged_notifications(sid)
+                    ):
+                        existing = history._mail[sid][identity]
+                        body = history.read_content(existing.content)
+                        if (
+                            isinstance(body, dict)
+                            and body.get("legacy") is not None
+                            and body.get("legacy_intent_state") != row["state"]
+                        ):
+                            content = history.write_content(
+                                sid, {**body, "legacy_intent_state": row["state"]}
+                            )
+                            history.update_mail(
+                                existing.model_copy(
+                                    update={
+                                        "content": content,
+                                        "delivery": "held",
+                                        "held_reason": "historical_delivery_unknown",
+                                        "revision": existing.revision + 1,
+                                    }
+                                ),
+                                expected_revision=existing.revision,
+                            )
+                    continue  # a confirmed replacement record/revision always wins
+                session = sessions[sid]
+                stamp = str(row.get("accepted_at") or row.get("created_at") or session.created_at)
+                human = str(session.metadata.get("owner_human_id") or app.state.human_principal)
+                if family == "queued":
+                    request = PostMessageRequest.model_validate(
+                        {
+                            key: row[key]
+                            for key in (
+                                "text",
+                                "parts",
+                                "metadata",
+                                "client_message_id",
+                                "idempotency_key",
+                                "behavior",
+                                "model",
+                            )
+                            if key in row
+                        }
+                    )
+                    content = history.write_content(
+                        sid,
+                        {
+                            "request": request.model_dump(mode="json"),
+                            "updated_at": row.get("updated_at") or stamp,
+                            "legacy": row,
+                        },
+                    )
+                    item = MailItem(
+                        id=identity,
+                        recipient_session=sid,
+                        sender_human=human,
+                        kind="composer",
+                        content=content,
+                        created_at=stamp,
+                        delivery="queued",
+                        revision=int(row.get("revision") or 1),
+                        queued_order=position,
+                    )
+                else:
+                    state = str(row.get("state") or "pending")
+                    if state not in {"pending", "claimed", "consumed", "cancelled"}:
+                        _unresolved(app, f"intent:{sid}:{identity}", "unknown_feedback_state", row)
+                        continue
+                    message = Message(
+                        id=identity,
+                        session_id=sid,
+                        turn_id="",
+                        role="user",
+                        created_at=stamp,
+                        updated_at=stamp,
+                        metadata=row.get("metadata") or {},
+                        parts=[Part.model_validate(part) for part in row.get("parts", [])]
+                        or [
+                            Part(
+                                id=identity + ":text", type="text", text=str(row.get("text") or "")
+                            )
+                        ],
+                    )
+                    content = history.write_content(
+                        sid,
+                        {
+                            "text": row.get("text") or "",
+                            "message_id": identity,
+                            "message": message.model_dump(mode="json"),
+                            "legacy": row,
+                            "delivery": "unknown",
+                            "legacy_intent_state": state,
+                        },
+                    )
+                    item = MailItem(
+                        id=identity,
+                        recipient_session=sid,
+                        sender_human=human,
+                        kind="human",
+                        content=content,
+                        created_at=stamp,
+                        handle=anchor(sid),
+                        delivery="held" if state in {"claimed", "consumed"} else "eligible",
+                        held_reason="historical_delivery_unknown"
+                        if state in {"claimed", "consumed"}
+                        else "",
+                    )
+                history.record_mail(item)
+                if family == "pending" and row.get("state") == "cancelled":
+                    history.withdraw_mail(sid, identity)
+            except (ValueError, TypeError, KeyError, AttributeError) as error:
+                _unresolved(
+                    app,
+                    f"intent:{family}:{position}",
+                    "invalid_historical_intent:" + type(error).__name__,
+                    row,
                 )
-                item = MailItem(
-                    id=identity,
-                    recipient_session=sid,
-                    sender_human=human,
-                    kind="human",
-                    content=content,
-                    created_at=stamp,
-                    handle=anchor(sid),
-                    delivery="held" if state in {"claimed", "consumed"} else "eligible",
-                    held_reason="historical_delivery_unknown"
-                    if state in {"claimed", "consumed"}
-                    else "",
-                )
-            history.record_mail(item)
-            if family == "pending" and row.get("state") == "cancelled":
-                history.withdraw_mail(sid, identity)
 
 
 def _migrate_inputs(app: Any, anchor: Callable[[str], str]) -> None:

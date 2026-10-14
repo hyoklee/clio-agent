@@ -27,7 +27,9 @@ from clio_agent.arc.task_types import (
 from clio_agent.gact import context
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_work import now
-from clio_agent.gact.session_mail import SessionMail
+from clio_agent.gact.session_mail import SessionMail, StagedInput
+from clio_agent.gact.sessions import Session as StoredSession
+from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
@@ -56,7 +58,7 @@ class ConversationOutcome:
 
 RunSegment = Callable[[ConversationSegment], Awaitable[ConversationOutcome]]
 CancelWork = Callable[[TaskSnapshot], Awaitable[dict[str, Any]]]
-CreateChild = Callable[[str, str, dict[str, Any] | None], Any]
+CreateChild = Callable[[str, str, dict[str, Any] | None], StoredSession]
 ExecutionGate = Callable[[str], str | None]
 
 
@@ -74,11 +76,12 @@ class Conversations:
         execution_gate: ExecutionGate,
     ) -> None:
         self.app, self.history, self.recovery = app, history, recovery
+        self.sessions: SessionStore = app.state.sessions
         self.run_segment, self.cancel_work = run_segment, cancel_work
         self.create_child, self.execution_gate = create_child, execution_gate
         self.runner = app.state.turn_runner
         self.runner.admit = self._admit
-        self.mail = SessionMail(history, self.eligible)
+        self.mail = SessionMail(history, self.eligible, self._input_committed)
         self._loop: asyncio.AbstractEventLoop | None = None
         self._unlisten: Callable[[], None] | None = None
         self._controls: dict[str, asyncio.Task[None]] = {}
@@ -90,6 +93,31 @@ class Conversations:
         self._pause_tokens: dict[str, str] = {}
         self._restoring = True
         self._closing = False
+
+    def _input_committed(self, staged: StagedInput) -> None:
+        """Derive A2UI display state only after the Core input acknowledgement."""
+        for item in staged.items:
+            if item.kind != "a2ui":
+                continue
+
+            async def project(item: MailItem = item) -> None:
+                def update() -> None:
+                    from clio_agent.gact.a2ui_actions.record import mark_a2ui_action_consumed
+
+                    content = self.history.read_content(item.content)
+                    metadata = content.get("metadata") if isinstance(content, dict) else None
+                    mark_a2ui_action_consumed(
+                        self.app,
+                        item.recipient_session,
+                        metadata if isinstance(metadata, dict) else None,
+                    )
+
+                await asyncio.to_thread(update)
+
+            if self._loop is not None:
+                self._loop.call_soon_threadsafe(
+                    self.recovery.defer, "a2ui-consumed:" + item.id, project
+                )
 
     def start(self) -> None:
         """Bind one queue to exact durable mailbox/policy changes on the app loop."""
@@ -168,16 +196,16 @@ class Conversations:
                 != task
             ):
                 continue
-            session = self.app.state.sessions.get(task.owner.session_id)
+            session = self.sessions.get(task.owner.session_id)
+            if task.cancellation_requested_at is not None:
+                self.retain_control(handle, asyncio.create_task(self._cancel_subtree(task)))
+                continue
             if (
                 task.activity == "paused"
                 or session is not None
                 and session.metadata.get("agent_paused")
             ):
                 self._paused.add(task.owner.session_id)
-                continue
-            if task.cancellation_requested_at is not None:
-                self.retain_control(handle, asyncio.create_task(self._cancel_subtree(task)))
                 continue
             if task.activity not in {"busy", "executing", "stopping", "interrupted"}:
                 continue
@@ -281,7 +309,7 @@ class Conversations:
         """One admission/injection policy; producers do not independently spawn turns."""
         if self._restoring:
             return False
-        session = self.app.state.sessions.get(sid)
+        session = self.sessions.get(sid)
         if session is None or sid in self._paused or session.metadata.get("agent_paused"):
             return False
         gate = session.metadata.get("execution_gate")
@@ -417,7 +445,7 @@ class Conversations:
     def caller(self, sid: str) -> TaskCaller:
         """Resolve agent identity from the controlled session/assignment, never model fields."""
         assignment = self.history.latest_assignment(sid)
-        session = self.app.state.sessions.get(sid)
+        session = self.sessions.get(sid)
         if session is None:
             raise ValueError("Session is unavailable")
         human = (
@@ -461,7 +489,9 @@ class Conversations:
                 context=previous_details.context if previous_details is not None else None,
             ).model_dump(mode="json"),
         )
-        session = self.app.state.sessions.get(sid)
+        session = self.sessions.get(sid)
+        if session is None:
+            raise ValueError("Assignment session is unavailable")
         task = TaskSnapshot(
             handle=handle,
             kind="Subagent" if parent is not None else "Session",
@@ -824,7 +854,9 @@ class Conversations:
                 else AssignmentDetails()
             )
             dependencies = [self.history.task_snapshot(handle) for handle in details.dependencies]
-            session = self.app.state.sessions.get(segment.session_id)
+            session = self.sessions.get(segment.session_id)
+            if session is None:
+                raise ValueError("Assignment session is no longer available")
             has_work = (
                 any(task is not None and task.terminal_at is None for task in pending)
                 or any(task is None or task.terminal_at is None for task in dependencies)
@@ -924,7 +956,7 @@ class Conversations:
             if self._pause_tokens.get(current.owner.session_id) != token:
                 return
             await asyncio.to_thread(
-                self.app.state.sessions.update,
+                self.sessions.update,
                 current.owner.session_id,
                 metadata_patch={"agent_paused": True},
             )
@@ -947,9 +979,7 @@ class Conversations:
         sid = current.owner.session_id
         if self.history.requires_recovery:
             raise ValueError("Resume requires confirmed Core input recording")
-        await asyncio.to_thread(
-            self.app.state.sessions.update, sid, metadata_patch={"agent_paused": False}
-        )
+        await asyncio.to_thread(self.sessions.update, sid, metadata_patch={"agent_paused": False})
 
         def inject() -> None:
             current = self.history.task_snapshot(handle)
@@ -1118,11 +1148,11 @@ class Conversations:
             with self.history._lock:
                 existing = self.history.task_snapshot(handle)
                 if existing is not None:
-                    session = self.app.state.sessions.get(existing.owner.session_id)
+                    session = self.sessions.get(existing.owner.session_id)
                     if (
                         existing.description != assignment
                         or session is None
-                        or session.agent.id != agent_id
+                        or session.agent.get("id") != agent_id
                     ):
                         raise ValueError("Spawn invocation was reused with different work")
                     if session.metadata.get("variant_strategy") != normalized_strategy:
@@ -1138,8 +1168,10 @@ class Conversations:
                     if existing is not None
                     else self.create_child(caller.session_id, agent_id, target_scope)
                 )
+                if child is None:
+                    raise ValueError("Accepted child session is no longer available")
                 if normalized_strategy is not None and existing is None:
-                    self.app.state.sessions.update(
+                    self.sessions.update(
                         child.id, metadata_patch={"variant_strategy": normalized_strategy}
                     )
                 task = existing or self._new_assignment(
@@ -1169,10 +1201,9 @@ class Conversations:
                     task = task.model_copy(update={"details": reference})
                     self.history.record_snapshot(task, observation_id=uuid4().hex)
                     if workflow_id is not None:
-                        self.app.state.sessions.update(
+                        self.sessions.update(
                             child.id,
-                            metadata={
-                                **child.metadata,
+                            metadata_patch={
                                 "workflow_id": workflow_id,
                                 "workflow_step": workflow_step,
                             },
@@ -1375,14 +1406,20 @@ class Conversations:
                 }
 
         handles = await asyncio.to_thread(membership)
-        await self.runner.stop(assignment.owner.session_id)
-        errors = []
-        for handle in handles:
-            if handle == assignment.handle:
-                continue
+        changed, loop = asyncio.Event(), asyncio.get_running_loop()
+        retirement = asyncio.create_task(self.runner.stop(assignment.owner.session_id))
+
+        def retired(_task: asyncio.Task[None]) -> None:
+            loop.call_soon_threadsafe(changed.set)
+
+        retirement.add_done_callback(retired)
+        errors: dict[str, dict[str, str]] = {}
+
+        async def request_member(handle: str) -> None:
             task = await asyncio.to_thread(self.history.task_snapshot, handle)
             if task is None or task.terminal_at is not None:
-                continue
+                errors.pop(handle, None)
+                return
             try:
                 if task.kind in {"Session", "Subagent"}:
                     await self.cancel(
@@ -1391,10 +1428,24 @@ class Conversations:
                 else:
                     effect = await self.cancel_work(task)
                     if effect.get("error"):
-                        errors.append({"handle": handle, "error": str(effect["error"])})
+                        errors[handle] = {"handle": handle, "error": str(effect["error"])}
+                        return
+                errors.pop(handle, None)
             except Exception as error:
-                errors.append({"handle": handle, "error": str(error)})
-        changed, loop = asyncio.Event(), asyncio.get_running_loop()
+                errors[handle] = {"handle": handle, "error": str(error)}
+
+        await asyncio.gather(*(request_member(handle) for handle in handles))
+        if errors:
+
+            async def retry_requests() -> bool:
+                current = await asyncio.to_thread(self.history.task_snapshot, assignment.handle)
+                if current is not None and current.terminal_at is not None:
+                    return True
+                await asyncio.gather(*(request_member(handle) for handle in tuple(errors)))
+                changed.set()
+                return not errors
+
+            self.recovery.defer("conversation-cancel-requests:" + assignment.handle, retry_requests)
 
         def wake(_revision: int) -> None:
             loop.call_soon_threadsafe(changed.set)
@@ -1413,7 +1464,12 @@ class Conversations:
                         if handle != assignment.handle
                     ]
                 )
-                if all(
+                retired_cleanly = (
+                    retirement.done()
+                    and not retirement.cancelled()
+                    and retirement.exception() is None
+                )
+                if retired_cleanly and all(
                     task is not None
                     and task.terminal_at is not None
                     and task.settlement in {"confirmed", "never_started"}
@@ -1430,9 +1486,26 @@ class Conversations:
                         and task.settlement not in {"confirmed", "never_started"}
                     )
                 ]
-                if errors or uncertain:
+                retirement_error = (
+                    str(retirement.exception())
+                    if retirement.done()
+                    and not retirement.cancelled()
+                    and retirement.exception() is not None
+                    else "Parent retirement was interrupted"
+                    if retirement.cancelled()
+                    else None
+                )
+                current_errors = tuple(errors.values()) + (
+                    ({"handle": assignment.handle, "error": retirement_error},)
+                    if retirement_error
+                    else ()
+                )
+                if current_errors or uncertain:
 
-                    async def record_uncertainty(uncertain: list[str] = uncertain) -> None:
+                    async def record_uncertainty(
+                        uncertain: list[str] = uncertain,
+                        current_errors: tuple[dict[str, str], ...] = current_errors,
+                    ) -> None:
                         def record() -> None:
                             with self.history._lock:
                                 current = self.history.task_snapshot(assignment.handle)
@@ -1440,7 +1513,7 @@ class Conversations:
                                     return
                                 message = (
                                     "Descendant cancellation settlement is unconfirmed: "
-                                    + json.dumps({"handles": uncertain, "errors": errors})
+                                    + json.dumps({"handles": uncertain, "errors": current_errors})
                                 )
                                 if (
                                     current.status == "task_state_uncertain"
@@ -1516,9 +1589,13 @@ class Conversations:
         finally:
             remove()
 
+    def close_admission(self) -> None:
+        """Reject new model admission while existing owners retire their work."""
+        self._closing = True
+
     async def shutdown(self) -> None:
         """Retire model workers before the application closes native owners/Core."""
-        self._closing = True
+        self.close_admission()
         await self.runner.drain()
         if self._controls:
             await asyncio.shield(

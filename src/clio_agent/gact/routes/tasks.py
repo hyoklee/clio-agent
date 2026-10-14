@@ -9,7 +9,10 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from clio_agent.arc.task_types import CoordinationGrant, QuestionDefinition, QuestionReply, TaskSnapshot
+from clio_agent.arc.task_types import (
+    CoordinationGrant,
+    QuestionReply,
+)
 from clio_agent.gact.auth import configured_bearer_token, has_valid_bearer
 from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.native_work import now
@@ -19,11 +22,13 @@ from clio_agent.gact.task_access import TaskAccess, TaskCaller
 
 class SelectedTasks(BaseModel):
     """Shared per-handle selection; a failed member never affects its neighbors."""
+
     tasks: str | list[str]
 
 
 class ObserveRequest(SelectedTasks):
     """The shared observation contract; omission preserves subscription policy."""
+
     cursor: str | None = None
     pattern: str | None = None
     timeout_s: float | None = Field(default=None, ge=0)
@@ -32,12 +37,14 @@ class ObserveRequest(SelectedTasks):
 
 class WaitRequest(SelectedTasks):
     """An explicit mixed-task wait, with no product deadline by default."""
+
     return_when: Literal["any", "all"] = "all"
     timeout_s: float | None = Field(default=None, ge=0)
 
 
 class GrantRequest(BaseModel):
     """Authenticated human/configuration rights, never model intent."""
+
     model_config = ConfigDict(extra="forbid")
     recipient_session: str
     target_session: str
@@ -47,6 +54,7 @@ class GrantRequest(BaseModel):
 
 class AnswerRequest(BaseModel):
     """Validated answer payload; responder identity is assigned by this boundary."""
+
     answer: str = ""
     selected_options: tuple[str, ...] = ()
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -59,82 +67,165 @@ def process_view(app: Any, task: dict[str, Any]) -> dict[str, Any]:
     parent = app.state.task_history.task_snapshot(owner.get("parent_handle", ""))
     activity = task.get("activity", "")
     status = task["status"]
-    displayed = status if task.get("terminal_at") or status == "task_state_uncertain" else {
-        "busy": "running", "executing": "running", "idle": "yielded",
-        "cancelling": "cancellation_requested", "waiting_for_input": "waiting_user",
-    }.get(activity, activity or status)
-    return {**task, "id": task["handle"], "handle_id": task["handle"],
-        "task_kind": task["kind"], "kind": "agent" if task["kind"] in {"Session", "Subagent"} else
-            "question" if task["kind"] == "Question" else "mcp-task", "title": task["label"],
-        "live_state": displayed, "effective_status": displayed,
-        "owner_session_id": owner["session_id"], "child_session_id": owner["session_id"] if task["kind"] in {"Session", "Subagent"} else "",
+    displayed = (
+        status
+        if task.get("terminal_at") or status == "task_state_uncertain"
+        else {
+            "busy": "running",
+            "executing": "running",
+            "idle": "yielded",
+            "cancelling": "cancellation_requested",
+            "waiting_for_input": "waiting_user",
+        }.get(activity, activity or status)
+    )
+    return {
+        **task,
+        "id": task["handle"],
+        "handle_id": task["handle"],
+        "task_kind": task["kind"],
+        "kind": "agent"
+        if task["kind"] in {"Session", "Subagent"}
+        else "question"
+        if task["kind"] == "Question"
+        else "mcp-task",
+        "title": task["label"],
+        "live_state": displayed,
+        "effective_status": displayed,
+        "owner_session_id": owner["session_id"],
+        "child_session_id": owner["session_id"] if task["kind"] in {"Session", "Subagent"} else "",
         "parent_session_id": parent.owner.session_id if parent is not None else owner["session_id"],
-        "parent_turn_id": task["invocation_id"], "cancel_requested": task["cancellation_requested_at"] is not None,
-        "placement": backend.get("placement", "local"), "metadata": {},
-        "result_reference": task.get("result"), "result": None,
-        "error_reason": task.get("progress", {}).get("message", "") if status in {"failed", "task_state_uncertain"} else ""}
+        "parent_turn_id": task["invocation_id"],
+        "cancel_requested": task["cancellation_requested_at"] is not None,
+        "placement": backend.get("placement", "local"),
+        "metadata": {},
+        "result_reference": task.get("result"),
+        "result": None,
+        "error_reason": task.get("progress", {}).get("message", "")
+        if status in {"failed", "task_state_uncertain"}
+        else "",
+    }
 
 
 def register_task_routes(app: FastAPI) -> None:
     """Register canonical controls plus pure compatibility projections."""
+
     def caller(sid: str) -> TaskCaller:
         session = app.state.sessions.get(sid)
         if session is None:
             raise HTTPException(status_code=404, detail="Session unavailable")
         assignment = app.state.task_history.latest_assignment(sid)
-        owner = assignment.owner.human_id if assignment is not None else session.metadata.get("owner_human_id", app.state.human_principal)
+        owner = (
+            assignment.owner.human_id
+            if assignment is not None
+            else session.metadata.get("owner_human_id", app.state.human_principal)
+        )
         if owner != app.state.human_principal:
             raise HTTPException(status_code=404, detail="Session unavailable")
         return TaskCaller(sid, app.state.human_principal, human_action=True)
 
     @app.get("/v1/sessions/{sid}/tasks")
-    async def tasks(sid: str, kind: str | None = None, status: str | None = None,
-                     cursor: str | None = None, limit: int = 50, scope: str = "tree",
-                     handle: str | None = None, tool: str | None = None,
-                     agent: str | None = None, active_only: bool = False) -> dict[str, Any]:
-        return await asyncio.to_thread(app.state.task_operations.query, await asyncio.to_thread(caller, sid),
-            kind=kind, status=status, cursor=cursor, limit=limit, scope=scope,
-            handle=handle, tool=tool, agent=agent, active_only=active_only)
+    async def tasks(
+        sid: str,
+        kind: str | None = None,
+        status: str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
+        scope: str = "tree",
+        handle: str | None = None,
+        tool: str | None = None,
+        agent: str | None = None,
+        active_only: bool = False,
+    ) -> dict[str, Any]:
+        return await asyncio.to_thread(
+            app.state.task_operations.query,
+            await asyncio.to_thread(caller, sid),
+            kind=kind,
+            status=status,
+            cursor=cursor,
+            limit=limit,
+            scope=scope,
+            handle=handle,
+            tool=tool,
+            agent=agent,
+            active_only=active_only,
+        )
 
     @app.post("/v1/sessions/{sid}/tasks/observe")
     async def observe(sid: str, body: ObserveRequest) -> dict[str, Any]:
-        return await app.state.task_operations.observe(await asyncio.to_thread(caller, sid), **body.model_dump())
+        return await app.state.task_operations.observe(
+            await asyncio.to_thread(caller, sid), **body.model_dump()
+        )
 
     @app.post("/v1/sessions/{sid}/tasks/wait")
     async def wait(sid: str, body: WaitRequest) -> dict[str, Any]:
-        return await app.state.task_operations.wait(await asyncio.to_thread(caller, sid), **body.model_dump())
+        return await app.state.task_operations.wait(
+            await asyncio.to_thread(caller, sid), **body.model_dump()
+        )
 
     @app.get("/v1/sessions/{sid}/tasks/{handle}/result")
     async def result(sid: str, handle: str) -> dict[str, Any]:
-        return await asyncio.to_thread(app.state.task_operations.result, await asyncio.to_thread(caller, sid), handle)
+        return await asyncio.to_thread(
+            app.state.task_operations.result, await asyncio.to_thread(caller, sid), handle
+        )
 
     @app.get("/v1/sessions/{sid}/tasks/mailbox")
     async def mailbox(sid: str) -> dict[str, Any]:
         selected = await asyncio.to_thread(caller, sid)
+
         def project() -> dict[str, Any]:
             owner = app.state.conversations
             access = TaskAccess(app.state.task_history, selected)
-            return {"pending": [{"id": item.id, "kind": item.kind, "handle": item.handle,
-                "created_at": item.created_at, "delivery": item.delivery,
-                "held_reason": item.held_reason,
-                "eligible": owner.eligible(sid, item) and owner.mail._authorized(item, access)}
-                for item in app.state.task_history.pending_mail(sid)]}
+            return {
+                "pending": [
+                    {
+                        "id": item.id,
+                        "kind": item.kind,
+                        "handle": item.handle,
+                        "created_at": item.created_at,
+                        "delivery": item.delivery,
+                        "held_reason": item.held_reason,
+                        "eligible": owner.eligible(sid, item)
+                        and owner.mail._authorized(item, access),
+                    }
+                    for item in app.state.task_history.pending_mail(sid)
+                ]
+            }
+
         return await asyncio.to_thread(project)
 
     @app.get("/v1/sessions/{sid}/async-processes")
     async def processes(sid: str) -> dict[str, Any]:
         def project() -> dict[str, Any]:
             result = app.state.task_operations.query(caller(sid), limit=10000)
-            return {"processes": [process_view(app, row) for row in result["tasks"]], "revision": result["revision"]}
+            return {
+                "processes": [process_view(app, row) for row in result["tasks"]],
+                "revision": result["revision"],
+            }
+
         return await asyncio.to_thread(project)
 
     @app.get("/v1/sessions/{sid}/agent-tasks")
     async def agent_tasks(sid: str) -> dict[str, Any]:
         def project() -> dict[str, Any]:
-            rows = app.state.task_operations.query(caller(sid), kind="Subagent", limit=10000)["tasks"]
-            return {"tasks": [{"task_id": row["handle"], "child_session_id": row["owner"]["session_id"],
-                "parent_session_id": sid, "status": row["status"], "live_state": row["activity"] or row["status"],
-                "created_at": row["created_at"], "updated_at": row["updated_at"], "run_label": row["label"]} for row in rows]}
+            rows = app.state.task_operations.query(caller(sid), kind="Subagent", limit=10000)[
+                "tasks"
+            ]
+            return {
+                "tasks": [
+                    {
+                        "task_id": row["handle"],
+                        "child_session_id": row["owner"]["session_id"],
+                        "parent_session_id": sid,
+                        "status": row["status"],
+                        "live_state": row["activity"] or row["status"],
+                        "created_at": row["created_at"],
+                        "updated_at": row["updated_at"],
+                        "run_label": row["label"],
+                    }
+                    for row in rows
+                ]
+            }
+
         return await asyncio.to_thread(project)
 
     @app.post("/v1/sessions/{sid}/tasks/cancel")
@@ -149,38 +240,65 @@ def register_task_routes(app: FastAPI) -> None:
                 if "error" in effect:
                     errors.append({"handle": handle, "error": effect["error"]})
                 else:
-                    results.append({**effect, "cancellation_requested": effect.get("cancellation_requested", False),
-                                    "status": effect.get("status", "cancellation_requested")})
+                    results.append(
+                        {
+                            **effect,
+                            "cancellation_requested": effect.get("cancellation_requested", False),
+                            "status": effect.get("status", "cancellation_requested"),
+                        }
+                    )
             except ValueError as error:
                 errors.append({"handle": handle, "error": str(error)})
         return {"results": results, "errors": errors}
 
     @app.post("/v1/sessions/{sid}/agent-controls/{handle}/{action}")
-    async def control(sid: str, handle: str, action: Literal["pause", "resume", "restart"]) -> dict[str, Any]:
-        await asyncio.to_thread(caller, sid)
-        effect = await intervene(app, handle, action)
-        task = await asyncio.to_thread(app.state.task_history.task_snapshot, handle)
-        return {**effect, "session_id": task.owner.session_id, "status": effect.get("status", action + "_requested")}
+    async def control(
+        sid: str, handle: str, action: Literal["pause", "resume", "restart"]
+    ) -> dict[str, Any]:
+        identity = await asyncio.to_thread(caller, sid)
+        task = await asyncio.to_thread(
+            TaskAccess(app.state.task_history, identity).require, handle, "control"
+        )
+        effect = await intervene(app, task.handle, action)
+        return {
+            **effect,
+            "session_id": task.owner.session_id,
+            "status": effect.get("status", action + "_requested"),
+        }
 
     @app.get("/v1/sessions/{sid}/questions")
     async def questions(sid: str, status: str | None = None) -> dict[str, Any]:
         def project() -> dict[str, Any]:
-            rows = app.state.task_operations.query(caller(sid), kind="Question", limit=10000)["tasks"]
-            values = [question_view(app, app.state.task_history.task_snapshot(row["handle"])) for row in rows]
-            return {"questions": [row for row in values if status is None or row["status"] == status]}
+            rows = app.state.task_operations.query(caller(sid), kind="Question", limit=10000)[
+                "tasks"
+            ]
+            values = [
+                question_view(app, app.state.task_history.task_snapshot(row["handle"]))
+                for row in rows
+            ]
+            return {
+                "questions": [row for row in values if status is None or row["status"] == status]
+            }
+
         return await asyncio.to_thread(project)
 
     @app.get("/v1/questions")
-    async def all_questions(session_id: str | None = None, status: str | None = None) -> dict[str, Any]:
+    async def all_questions(
+        session_id: str | None = None, status: str | None = None
+    ) -> dict[str, Any]:
         def project() -> dict[str, Any]:
             history = app.state.task_history
-            handles = history.task_handles(kind="Question", human_id=app.state.human_principal,
-                                           active_only=status == "pending")
+            handles = history.task_handles(
+                kind="Question", human_id=app.state.human_principal, active_only=status == "pending"
+            )
             if session_id is not None:
                 handles.intersection_update(history.tree_handles(caller(session_id).session_id))
             values = [question_view(app, history.task_snapshot(handle)) for handle in handles]
             values.sort(key=lambda row: (row["created_at"], row["id"]))
-            return {"questions": [row for row in values if status is None or row["status"] == status]}
+            return {
+                "questions": [row for row in values if status is None or row["status"] == status]
+            }
+
         return await asyncio.to_thread(project)
 
     @app.post("/v1/sessions/{sid}/questions/{handle}/answer")
@@ -189,24 +307,36 @@ def register_task_routes(app: FastAPI) -> None:
             reply = QuestionReply(**body.model_dump(), responder_human=app.state.human_principal)
             current = answer_question(app, caller(sid), handle, reply)
             return question_view(app, current)
+
         return await asyncio.to_thread(apply)
 
     @app.post("/v1/sessions/{sid}/questions/{handle}/cancel")
     async def cancel_question(sid: str, handle: str) -> dict[str, Any]:
         await asyncio.to_thread(caller, sid)
         await intervene(app, handle, "cancel")
-        return await asyncio.to_thread(lambda: question_view(app, app.state.task_history.task_snapshot(handle)))
+        return await asyncio.to_thread(
+            lambda: question_view(app, app.state.task_history.task_snapshot(handle))
+        )
 
     def authenticated_human(request: Request) -> None:
         if not has_valid_bearer(request.scope, configured_bearer_token()):
-            raise HTTPException(status_code=401, detail="Session grants require the authenticated human control channel")
+            raise HTTPException(
+                status_code=401,
+                detail="Session grants require the authenticated human control channel",
+            )
 
     @app.get("/v1/sessions/{sid}/coordination-grants")
     async def grants(sid: str, request: Request) -> dict[str, Any]:
         authenticated_human(request)
         await asyncio.to_thread(caller, sid)
-        return await asyncio.to_thread(lambda: {"grants": [row.model_dump(mode="json")
-            for row in app.state.task_history.coordination_grants(sid)]})
+        return await asyncio.to_thread(
+            lambda: {
+                "grants": [
+                    row.model_dump(mode="json")
+                    for row in app.state.task_history.coordination_grants(sid)
+                ]
+            }
+        )
 
     @app.post("/v1/sessions/{sid}/coordination-grants")
     async def grant(sid: str, body: GrantRequest, request: Request) -> dict[str, Any]:
@@ -214,28 +344,50 @@ def register_task_routes(app: FastAPI) -> None:
         await asyncio.to_thread(caller, sid)
         if body.recipient_session != sid:
             raise HTTPException(status_code=400, detail="Grant recipient differs from this session")
+
         def apply() -> dict[str, Any]:
             target = app.state.sessions.get(body.target_session)
             assignment = app.state.task_history.latest_assignment(body.target_session)
-            human = (assignment.owner.human_id if assignment is not None else
-                     target.metadata.get("owner_human_id", app.state.human_principal) if target is not None else None)
+            human = (
+                assignment.owner.human_id
+                if assignment is not None
+                else target.metadata.get("owner_human_id", app.state.human_principal)
+                if target is not None
+                else None
+            )
             if target is None or human != app.state.human_principal:
-                raise ValueError("Grant target is unavailable")
-            row = CoordinationGrant(id="grant_" + uuid4().hex, granting_human=app.state.human_principal,
-                created_at=now(), **body.model_dump())
+                raise HTTPException(status_code=404, detail="Grant target is unavailable")
+            row = CoordinationGrant(
+                id="grant_" + uuid4().hex,
+                granting_human=app.state.human_principal,
+                created_at=now(),
+                **body.model_dump(),
+            )
             app.state.task_history.record_grant(row, observation_id=uuid4().hex)
             return row.model_dump(mode="json")
+
         return await asyncio.to_thread(apply)
 
     @app.delete("/v1/sessions/{sid}/coordination-grants/{identity}")
     async def revoke(sid: str, identity: str, request: Request) -> dict[str, Any]:
         authenticated_human(request)
         await asyncio.to_thread(caller, sid)
+
         def apply() -> dict[str, Any]:
-            row = next((row for row in app.state.task_history.coordination_grants(sid) if row.id == identity), None)
+            row = next(
+                (
+                    row
+                    for row in app.state.task_history.coordination_grants(sid)
+                    if row.id == identity
+                ),
+                None,
+            )
             if row is None or row.granting_human != app.state.human_principal:
                 raise ValueError("Grant unavailable")
-            revoked = row if row.revoked_at is not None else row.model_copy(update={"revoked_at": now()})
+            revoked = (
+                row if row.revoked_at is not None else row.model_copy(update={"revoked_at": now()})
+            )
             app.state.task_history.record_grant(revoked, observation_id=uuid4().hex)
             return revoked.model_dump(mode="json")
+
         return await asyncio.to_thread(apply)
