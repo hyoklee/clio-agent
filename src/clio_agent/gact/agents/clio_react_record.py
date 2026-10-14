@@ -435,6 +435,7 @@ class StepRecorder:
                     }
         if identity and human_head:
             rendered[identity] = human_head
+        staged = owner.mail.bound_rendered(staged, rendered)
         references = tuple(
             owner.history.write_content(self.session, rendered[item.id])
             for item in staged.items

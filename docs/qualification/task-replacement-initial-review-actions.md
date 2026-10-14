@@ -1,5 +1,32 @@
 # Initial implementation review actions
 
+## Review 12 correction candidate
+
+Astra's frozen f029d12b review returned three actionable source findings. This
+candidate corrects them in the existing conversation owner, mailbox and renderer:
+
+- Stop reaches an assignment-less admission reservation before asynchronous
+  preflight completes. Automatic promotion rechecks suspension before publication
+  and again through normal eligibility. Stop retirement is pinned to its original
+  reservation; a later task-result wake is not silently cancelled.
+- Busy typed-input rendering uses the existing admitted-snapshot resolver. Stale
+  evidence is labelled as-of acceptance while unavailable/private evidence is
+  still refused.
+- Final rendered text and media count toward the notification batch budget.
+  Excess accepted items remain Core-pending. One oversized indivisible human input
+  is admitted alone, including the initial head. Explicit collections already
+  represented by tool observations remain separate. No base64 clipping or partial
+  message acknowledgement; existing whole-request media/context limits still apply.
+
+Astra separately approved this batching policy in a focused read-only decision;
+that is not implementation acceptance. Four regressions were authored and remain
+unexecuted. Static production checks, independent implementation review, fresh
+behavior tests, exact-head CI and Q1-Q9/R1-R6 live acceptance remain distinct gates.
+
+## Review 12 authentication prerequisite
+
+Frozen core f029d12b is under renewed Astra source review. Actual Claude Code returned an OAuth-expired refresh failure before any model inference; no source verdict was produced. The normal host CLI also reports loggedIn=false/authMethod=none. Original credential hash remained217e114a during this attempt. A human login refresh was requested asynchronously; implementation and test construction continue independently. Do not patch task code for this provider prerequisite. Stop cloning refreshable OAuth credentials for future reviews: use the existing host login after it is repaired, no-session-persistence, read-only tools and bounded in-repository receipts, without another credential copy or temporary review cache. Attribution of the earlier host login change is unproven. Both failed-review owned processes ended; automatic removal was rejected before execution, and exact c12 root is manual-only.
+
 ## Review 11: corrected source remains NO-GO
 
 Frozen core 057b93bd / GACT ce993164 / marketplace 9257bba was independently reviewed by Astra and actual Claude Code. Both accepted the review-10 source corrections and the removal direction, but found remaining integration defects. Their complete bounded receipts are retained. Neither executed runtime acceptance. Claude exited0 with no remaining owned children; original authentication changed during the review and cannot be claimed unchanged. The isolated copy differs from the current original; other Claude processes are active. No credential restoration is performed.
@@ -14,7 +41,7 @@ Required correction set, within existing owners:
 6. Restore terminal Question events understood by the shipped Go TUI, and preserve the legacy to-do GET route by giving the new common query a distinct route.
 7. Move queued reference preflight outside the Core lock, retaining revision and authorization rechecks at publication. Map Question cancellation conflicts through the usual HTTP error contract.
 
-Source changes for items4-6 are in progress; this is not acceptance. The central input correction is one canonical Core payload and existing model-input renderer, not another inbox, execution owner or history store. Required tests include busy/multiple queued media, MCP App context, Core-only recovery, withdrawal before commit, alias self-dependency, capability advertisement and preflight concurrency. Initial implementation is not accepted, and no fresh product tests/models have launched.
+The principal review-11 corrections were committed in f029d12b and Astra's review-12 source trace confirmed them. This is not runtime acceptance. The central input correction is one canonical Core payload and existing model-input renderer, not another inbox, execution owner or history store. Required tests include busy/multiple queued media, MCP App context, Core-only recovery, withdrawal before commit, alias self-dependency, capability advertisement and preflight concurrency. Initial implementation is not accepted, and no fresh product tests/models have launched.
 
 
 ## Correction candidate after review 10

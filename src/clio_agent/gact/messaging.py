@@ -571,18 +571,19 @@ def queued_user_input(app: Any, session_id: str, payload: dict[str, Any]) -> dic
 
     from clio_agent.gact.agents.clio_react import _media_part
     from clio_agent.gact.agents.clio_react_record import user_to_record
-    from clio_agent.gact.context_references import authorize_context_reference_parts_sync
+    from clio_agent.gact.context_reference_delivery import enrich_with_context_references
     from clio_agent.gact.resource_enrichment import enrich_with_workspace_resources
 
     message = Message.model_validate(payload["message"])
     session = app.state.sessions.get(session_id)
     if session is None or message.session_id != session_id or message.role != "user":
         raise ValueError("Queued human input belongs to another session or role")
-    parts = authorize_context_reference_parts_sync(app, session, list(message.parts))
-    message = message.model_copy(update={"parts": parts})
+    parts = list(message.parts)
     text = payload.get("model_text", payload.get("text", ""))
     if not isinstance(text, str):
         raise ValueError("Queued model text must be a string")
+    if any(part.type == "context_ref" for part in parts):
+        text = enrich_with_context_references(app, session_id, payload.get("text", ""), message)
     text = enrich_with_workspace_resources(app, session_id, text, message)
     media = [
         *_dspy_images_from_parts(parts, app=app, workspace_id=session.workspace_id),

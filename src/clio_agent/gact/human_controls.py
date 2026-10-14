@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from typing import Any
 from uuid import uuid4
 
@@ -15,11 +16,21 @@ from clio_agent.gact.task_publication import task_owner_recipient
 logger = logging.getLogger(__name__)
 
 
-async def intervene(app: Any, handle: str, action: str, *, message: str = "") -> dict[str, Any]:
+async def intervene(
+    app: Any,
+    handle: str,
+    action: str,
+    *,
+    message: str = "",
+    stop_reservation: threading.Event | None = None,
+    stop_reservation_captured: bool = False,
+) -> dict[str, Any]:
     """Apply an authenticated human action and queue its attributed parent notice."""
     history = app.state.task_history
     caller = TaskCaller("", app.state.human_principal, human_action=True)
     current = await asyncio.to_thread(TaskAccess(history, caller).require, handle, "control")
+    if action == "stop" and not stop_reservation_captured:
+        stop_reservation = app.state.turn_runner.request_stop(current.owner.session_id)
     identity, stamp = "intervention_" + uuid4().hex, now()
     intent = {
         "id": identity,
@@ -70,18 +81,20 @@ async def intervene(app: Any, handle: str, action: str, *, message: str = "") ->
         effect = await getattr(app.state.conversations, action)(caller, handle)
     elif action == "stop":
         sid = current.owner.session_id
-        event = app.state.turn_runner.cancellation(sid) if app.state.turn_runner.busy(sid) else None
-        if event is not None:
-            event.set()
+        reservation = stop_reservation
+        stopping = reservation is not None
 
         async def stop() -> None:
-            await app.state.turn_runner.stop(sid)
+            if reservation is not None:
+                await app.state.turn_runner.stop(sid, reservation=reservation)
 
         app.state.conversations.retain_control(identity, asyncio.create_task(stop()))
+        busy = app.state.turn_runner.busy(sid)
+        still_stopping = busy and app.state.turn_runner.cancellation(sid) is reservation
         effect = {
             "handle": handle,
-            "turn_stop_requested": event is not None,
-            "status": "stopping" if event is not None else "idle",
+            "turn_stop_requested": stopping,
+            "status": "stopping" if still_stopping else "running" if busy else "idle",
             "accepted_tasks_continue": True,
         }
     elif action == "message":

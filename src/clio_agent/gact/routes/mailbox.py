@@ -63,8 +63,11 @@ def wire(app: Any, item: MailItem) -> dict[str, Any]:
     }
 
 
-def promote(app: Any, sid: str, identity: str, revision: int) -> dict[str, Any]:
+def promote(
+    app: Any, sid: str, identity: str, revision: int, *, automatic: bool = False
+) -> dict[str, Any]:
     """Validate current provider/resources and promote one item without another mailbox."""
+    from clio_agent.gact.composer_runtime import session_autostart_suspended
     from clio_agent.gact.message_submission import (
         _commit_resource_deliveries,
         _plan_resource_parts,
@@ -96,6 +99,12 @@ def promote(app: Any, sid: str, identity: str, revision: int) -> dict[str, Any]:
         current_session = app.state.sessions.get(sid)
         if current_session is None or current_session.workspace_id != session.workspace_id:
             raise HTTPException(status_code=409, detail="Queued message workspace changed")
+        if automatic and (
+            session_autostart_suspended(app, sid)
+            or current_session.metadata.get("agent_paused")
+            or app.state.turn_runner.stop_requested(sid)
+        ):
+            return {"queued_message_id": item.id, "status": "pending", "suspended": True}
         assignment = history.latest_assignment(sid)
         if assignment is None or assignment.terminal_at is not None:
             assignment = owner._new_assignment(
@@ -113,7 +122,7 @@ def promote(app: Any, sid: str, identity: str, revision: int) -> dict[str, Any]:
             model_text=prepared.model_text,
             metadata=metadata,
             user_msg_id=item.id,
-            mailbox_item=item,
+            mailbox_item=item.model_copy(update={"automatic_promotion": automatic}),
             replace_existing_user_message=any(
                 row.id == item.id for row in app.state.messages.get(sid, [])
             ),
@@ -154,7 +163,7 @@ def promote_next(app: Any, sid: str) -> None:
     ):
         return
     try:
-        promote(app, sid, item.id, item.revision)
+        promote(app, sid, item.id, item.revision, automatic=True)
     except HTTPException as error:
         history = app.state.task_history
         value = history.read_content(item.content)

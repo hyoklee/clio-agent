@@ -165,6 +165,11 @@ class Conversations:
         session = self.sessions.get(sid)
         if session is None or sid in self._paused or session.metadata.get("agent_paused"):
             return False
+        if item.kind == "composer" and item.automatic_promotion:
+            from clio_agent.gact.composer_runtime import session_autostart_suspended
+
+            if session_autostart_suspended(self.app, sid):
+                return False
         gate = session.metadata.get("execution_gate")
         if gate:
             return False
@@ -228,6 +233,8 @@ class Conversations:
         def select() -> ConversationSegment | None:
             with self.history._lock:
                 if self._closing or self.history.requires_recovery:
+                    return None
+                if self.runner.stop_requested(sid):
                     return None
                 if self.execution_gate(sid) is not None:
                     return None

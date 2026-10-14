@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Any
 from uuid import uuid4
 
 from clio_agent import conf
@@ -112,15 +113,63 @@ class SessionMail:
                 if budget > 0 and used + len(text) > budget:
                     if injections:
                         break
-                    text = (
-                        text[:budget]
-                        + f"\n[Full content retained at {item.content.scope}; task {item.handle or ''}.]"
-                    )
+                    if item.kind not in {"human", "composer"}:
+                        reference = f"\n[Full content retained at {item.content.scope}; task {item.handle or ''}.]"
+                        text = text[: max(0, budget - len(reference))] + reference
                 source = "steer" if item.kind in {"human", "composer"} else item.kind
                 injections.append((source, MailText(text, (item.id,))))
                 items.append(item)
                 used += len(text)
             return StagedInput(tuple(items), tuple(injections), collected)
+
+    def bound_rendered(
+        self, staged: StagedInput, rendered: Mapping[str, dict[str, Any]]
+    ) -> StagedInput:
+        """Bound actual text/media before commitment; keep overflow Core-pending.
+
+        One indivisible human item may exceed this notification batch budget,
+        alone. Provider attachment and request/context limits still apply.
+        Explicit collections already recorded as tool observations remain
+        independent of newly rendered mailbox input.
+        """
+        budget = conf.resolve(
+            "limits.model_tool_result_chars",
+            env="CLIO_MODEL_TOOL_RESULT_CHARS",
+            default=12000,
+            cast=conf.as_int,
+        )
+        items: list[MailItem] = []
+        used, rendered_count, full = 0, 0, False
+        for item in staged.items:
+            value = rendered.get(item.id)
+            if value is None:
+                if item.id not in staged.collected:
+                    raise ValueError("Staged notification has no rendered input")
+                items.append(item)
+                continue
+            if full:
+                continue
+            cost = len(str(value.get("text", ""))) + sum(
+                len(str(media.get("data", ""))) for media in value.get("media", ())
+            )
+            if budget > 0 and used + cost > budget:
+                if rendered_count or item.kind not in {"human", "composer"}:
+                    full = True
+                    continue
+                full = True  # sole oversized human input, never clip native media
+            items.append(item)
+            used += cost
+            rendered_count += 1
+        included = {item.id for item in items}
+        return StagedInput(
+            tuple(items),
+            tuple(
+                (source, text)
+                for source, text in staged.injections
+                if set(text.notification_ids) <= included
+            ),
+            staged.collected,
+        )
 
     def commit(
         self,

@@ -13,6 +13,54 @@ from clio_agent.gact.turn_runner import TurnRunner
 
 
 @pytest.mark.asyncio
+async def test_stop_waits_for_preflight_retirement_and_cannot_stop_a_later_reservation() -> None:
+    """Stop owns a reserved admission even when it has no model segment yet."""
+    entered, release, later = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    ended = asyncio.Event()
+    offered = 0
+    started: list[str] = []
+
+    async def admit(sid: str) -> tuple[str, Any] | None:
+        nonlocal offered
+        offered += 1
+        if offered == 1:
+            entered.set()
+            await release.wait()
+        elif offered > 2:
+            return None
+
+        async def segment() -> None:
+            started.append(sid)
+            later.set()
+            await ended.wait()
+
+        return str(offered), segment()
+
+    runner = TurnRunner(SimpleNamespace(state=SimpleNamespace()), admit)
+    runner.bind_loop(asyncio.get_running_loop())
+    try:
+        runner.signal("session")
+        await entered.wait()
+        reservation = runner.request_stop("session")
+        assert reservation is not None and reservation.is_set()
+        stopping = asyncio.create_task(runner.stop("session", reservation=reservation))
+        await asyncio.sleep(0)
+        assert not stopping.done() and runner.busy("session")
+        release.set()
+        await stopping
+        assert started == [] and not runner.busy("session")
+        runner.signal("session")
+        await later.wait()
+        await runner.stop("session", reservation=reservation)
+        assert runner.busy("session") and not runner.cancellation("session").is_set()
+        assert started == ["session"]
+    finally:
+        release.set()
+        ended.set()
+        await runner.drain()
+
+
+@pytest.mark.asyncio
 async def test_shutdown_closes_admission_already_reserved_before_segment_start() -> None:
     """A completion arriving during shutdown cannot start an admitted model segment."""
     entered, release, started = asyncio.Event(), asyncio.Event(), asyncio.Event()

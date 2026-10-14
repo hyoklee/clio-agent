@@ -266,6 +266,220 @@ async def test_busy_typed_inputs_preserve_media_and_order_through_core_recovery(
 
 
 @pytest.mark.asyncio
+async def test_rendered_mail_batches_count_the_initial_head_and_retain_overflow(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An indivisible head counts against batching and does not acknowledge its followers."""
+    from dspy.lm15 import ImagePart, TextPart
+    from dspy.lm15 import Message as ModelMessage
+
+    monkeypatch.setenv("CLIO_MODEL_TOOL_RESULT_CHARS", "120")
+    app, owner, root = await create_environment(arc, tmp_path)
+    png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ZQAAAABJRU5ErkJggg=="
+
+    def exercise() -> None:
+        sid, history = root.owner.session_id, owner.history
+        for identity in ("large-head", "later-human", "final-notice"):
+            history.record_mail(
+                MailItem(
+                    id=identity,
+                    recipient_session=sid,
+                    sender_human="human",
+                    kind="human" if identity != "final-notice" else "control",
+                    content=history.write_content(sid, identity),
+                    created_at=now(),
+                )
+            )
+        token = context.set_app(app)
+        try:
+            context.set_turn_identity(
+                app=app,
+                session_id=sid,
+                turn_id="batch-test",
+                trace_id="batch-trace",
+                assignment_handle=root.handle,
+                input_notification_id="large-head",
+            )
+            recorder = StepRecorder(arc, sid, "main", expert_id="main")
+            recorder.user_message(
+                ModelMessage(
+                    role="user",
+                    parts=(TextPart(text="h" * 100), ImagePart(data=png, media_type="image/png")),
+                )
+            )
+            recorder.commit_input(0)
+            assert history.acknowledged_notifications(sid) == {"large-head"}
+            assert [item.id for item in history.pending_mail(sid)] == [
+                "later-human",
+                "final-notice",
+            ]
+            (message,) = recorder.read_steps()
+            assert any(isinstance(part, ImagePart) and part.data == png for part in message.parts)
+            assert any(
+                isinstance(part, TextPart) and part.text == "h" * 100 for part in message.parts
+            )
+            restored = TaskHistory(arc)
+            restored.restore()
+            assert [item.id for item in restored.pending_mail(sid)] == [
+                "later-human",
+                "final-notice",
+            ]
+            assert restored.acknowledged_notifications(sid) == {"large-head"}
+        finally:
+            context.reset(token)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_busy_evidence_uses_accepted_snapshot_and_rechecks_current_access(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """Changed evidence is delivered as-of acceptance; loss of workspace access is refused."""
+    from clio_agent.gact.context_references import authorize_context_reference_parts_sync
+    from clio_agent.gact.messaging import queued_user_input
+    from clio_agent.gact.runtime.globals import _ContextFileAccessError
+    from clio_agent.gact.types import Message, Part
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    app.state.context_frames = {
+        sid: [
+            {
+                "id": "accepted-frame",
+                "session_id": sid,
+                "status": "completed",
+                "items": [{"kind": "context_ref", "source_id": "original-source"}],
+            }
+        ]
+    }
+
+    def exercise() -> None:
+        session = app.state.sessions.get(sid)
+        parts = authorize_context_reference_parts_sync(
+            app,
+            session,
+            [
+                Part(type="context_ref", ref_kind="context_frame", ref_id="accepted-frame"),
+            ],
+        )
+        message = Message(
+            id="evidence-input",
+            session_id=sid,
+            role="user",
+            created_at=now(),
+            updated_at=now(),
+            parts=parts,
+        )
+        payload = {"text": "Review the evidence", "message": message.model_dump(mode="json")}
+        app.state.context_frames[sid][0]["items"] = [{"source_id": "changed-source"}]
+        rendered = queued_user_input(app, sid, payload)
+        assert "as-of snapshot; current state has moved" in rendered["text"]
+        assert "original-source" in rendered["text"] and "changed-source" not in rendered["text"]
+        private = app.state.sessions.create(workspace_id="different-workspace")
+        app.state.context_frames[private.id] = app.state.context_frames.pop(sid)
+        with pytest.raises(_ContextFileAccessError):
+            queued_user_input(app, sid, payload)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_automatic_queue_preflight_stop_retains_unassigned_work(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fresh session cannot acquire an assignment through a preflight that Stop suspended."""
+    import threading
+
+    from clio_agent.gact import message_submission
+    from clio_agent.gact.events import EventBus
+    from clio_agent.gact.routes.mailbox import promote, queued
+    from clio_agent.gact.routes.session_cancellation import cancel_session_state_async
+    from clio_agent.gact.types import PostMessageRequest
+
+    app, owner, _root = await create_environment(arc, tmp_path)
+    session = await asyncio.to_thread(app.state.sessions.create, workspace_id="workspace")
+    sid, history = session.id, owner.history
+    app.state.bus = EventBus()
+    request = PostMessageRequest(text="Future work")
+    item = await asyncio.to_thread(
+        history.record_mail,
+        MailItem(
+            id="future-input",
+            recipient_session=sid,
+            kind="composer",
+            sender_human="human",
+            content=await asyncio.to_thread(
+                history.write_content, sid, {"request": request.model_dump(mode="json")}
+            ),
+            created_at=now(),
+            delivery="queued",
+            queued_order=1,
+        ),
+    )
+    entered, released = asyncio.Event(), asyncio.Event()
+    release = threading.Event()
+    loop = asyncio.get_running_loop()
+    original = message_submission.prepare_references_sync
+
+    def prepare(*args: Any, **kwargs: Any) -> Any:
+        loop.call_soon_threadsafe(entered.set)
+        release.wait()
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(message_submission, "prepare_references_sync", prepare)
+    monkeypatch.setattr(
+        message_submission,
+        "_validate_provider_and_payload",
+        lambda *_a, **_k: (
+            session,
+            None,
+            "Future work",
+            [],
+            [],
+        ),
+    )
+    monkeypatch.setattr(message_submission, "_plan_resource_parts", lambda *_a, **_k: ([], []))
+    outcomes = []
+
+    async def admit(_sid: str) -> None:
+        outcomes.append(
+            await asyncio.to_thread(promote, app, sid, item.id, item.revision, automatic=True)
+        )
+
+    runner = TurnRunner(app, admit)
+    runner.bind_loop(loop)
+    app.state.turn_runner = owner.runner = runner
+    try:
+        runner.signal(sid)
+        await entered.wait()
+        assert history.latest_assignment(sid) is None
+        effect = await cancel_session_state_async(app, None, sid)
+        assert effect["status"] == "stopping" and runner.cancellation(sid).is_set()
+        assert app.state.sessions.get(sid).metadata["composer_queue_paused"] is True
+        runner.run_when_released(sid, released.set)
+        release.set()
+        await released.wait()
+        await asyncio.gather(*tuple(owner._controls.values()))
+        assert outcomes == [{"queued_message_id": item.id, "status": "pending", "suspended": True}]
+        assert history.latest_assignment(sid) is None and queued(app, sid) == [item]
+        assert app.state.sessions.get(sid).status == "idle"
+        automatic = item.model_copy(update={"delivery": "eligible", "automatic_promotion": True})
+        assert not owner.eligible(sid, automatic)
+        assert owner.eligible(sid, automatic.model_copy(update={"automatic_promotion": False}))
+    finally:
+        release.set()
+        await runner.drain()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
 async def test_dependency_aliases_are_canonical_and_cannot_name_the_active_assignment(
     arc: ARCMemory,
     tmp_path: Path,

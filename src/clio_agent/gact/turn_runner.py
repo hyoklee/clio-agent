@@ -242,6 +242,12 @@ class TurnRunner:
                 raise ValueError("Session has no active segment")
             return resources.stop
 
+    def stop_requested(self, sid: str) -> bool:
+        """Atomically inspect reservation cancellation during off-loop admission checks."""
+        with self._lock:
+            resources = self._turns.get(sid)
+            return resources is not None and resources.stop.is_set()
+
     def run_when_released(self, sid: str, callback: Callable[[], None]) -> None:
         """Publish passive idle status only after the session's real worker exits."""
         with self._lock:
@@ -256,14 +262,25 @@ class TurnRunner:
         if self._loop is not None and resources.task is not None and not resources.task.done():
             self._loop.call_soon_threadsafe(resources.task.cancel)
 
-    async def stop(self, sid: str) -> None:
-        """Stop the model segment and its waiters, preserving accepted background work."""
+    def request_stop(self, sid: str) -> threading.Event | None:
+        """Synchronously close a reserved segment, including asynchronous admission preflight."""
         with self._lock:
             resources = self._turns.get(sid)
             if resources is None:
+                return None
+            self._request_stop(resources)
+            return resources.stop
+
+    async def stop(self, sid: str, *, reservation: threading.Event | None = None) -> None:
+        """Stop the model segment and its waiters, preserving accepted background work."""
+        with self._lock:
+            resources = self._turns.get(sid)
+            if resources is None or reservation is not None and resources.stop is not reservation:
                 return
             self._request_stop(resources)
             task = resources.task
+            released: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+            self._released.setdefault(sid, []).append(lambda: released.set_result(None))
         if task is not None and not task.done():
             owner = getattr(self.app.state, "conversations", None)
             if owner is not None:
@@ -275,6 +292,7 @@ class TurnRunner:
                     if task.done():
                         break
         await self._retire(resources)
+        await asyncio.shield(released)
 
     def close_admission(self) -> None:
         """Close the actual reservation gate before asynchronous shutdown work."""

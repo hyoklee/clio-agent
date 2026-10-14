@@ -214,6 +214,7 @@ class MailItem(TaskRecord):
     delivery: Literal["eligible", "queued", "held"] = "eligible"
     held_reason: str = ""
     queued_order: int | None = None
+    automatic_promotion: bool = False
 
 
 class ContextBoundary(TaskRecord):
