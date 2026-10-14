@@ -1,5 +1,5 @@
 import { Maximize2 } from 'lucide-react';
-import { useSyncExternalStore } from 'react';
+import { useClientReady } from '@/lib/use-client-ready';
 import { Frame, FramePanel } from '@/components/reui/frame';
 import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
@@ -20,18 +20,16 @@ interface Props {
 	sizes?: string;
 	/** Load eagerly; used for the capture in the first viewport. */
 	priority?: boolean;
+	/** Show only the content area of a full browser capture; retain the full source in the viewer. */
+	previewHeight?: number;
 }
-
-const subscribe = () => () => {};
-const ready = () => true;
-const serverReady = () => false;
 
 /**
  * A real product capture in a reui Frame. Clicking it opens the full-size
  * image in a dialog, with the caption as the dialog's description.
  */
-export default function Capture({ image, alt, caption, sizes = '(min-width: 64rem) 44rem, 100vw', priority }: Props) {
-	const interactive = useSyncExternalStore(subscribe, ready, serverReady);
+export default function Capture({ image, alt, caption, sizes = '(min-width: 64rem) 44rem, 100vw', priority, previewHeight }: Props) {
+	const interactive = useClientReady();
 	return (
 		<Dialog>
 			<figure className="m-0 min-w-0" style={{ maxWidth: image.width }}>
@@ -41,6 +39,7 @@ export default function Capture({ image, alt, caption, sizes = '(min-width: 64re
 							className="group relative block w-full cursor-zoom-in border-0 bg-transparent p-0 disabled:cursor-wait"
 							aria-label={`View larger: ${alt}`}
 							disabled={!interactive}
+							style={previewHeight ? { height: 0, paddingBottom: `${previewHeight / image.width * 100}%`, overflow: 'hidden' } : undefined}
 						>
 							<img
 								src={image.src}
@@ -51,7 +50,7 @@ export default function Capture({ image, alt, caption, sizes = '(min-width: 64re
 								alt={alt}
 								loading={priority ? 'eager' : 'lazy'}
 								decoding="async"
-								className="block h-auto w-full"
+								className={previewHeight ? 'absolute top-0 left-0 h-auto w-full' : 'block h-auto w-full'}
 							/>
 							<span className="absolute top-2 right-2 inline-flex size-8 items-center justify-center rounded-md bg-background/80 text-foreground opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
 								<Maximize2 className="size-4" aria-hidden="true" />
