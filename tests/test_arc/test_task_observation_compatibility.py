@@ -40,6 +40,7 @@ def running_shell(history: TaskHistory, parent: TaskSnapshot, handle: str) -> Ta
         tool="shell_bash",
         label="Needle only in metadata",
         description="Needle only in metadata",
+        description_missing=False,
         created_at=stamp,
         updated_at=stamp,
         status="running",
