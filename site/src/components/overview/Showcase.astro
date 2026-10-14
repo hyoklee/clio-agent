@@ -15,7 +15,7 @@ const items = await Promise.all([
 		link: 'Explore file workflows',
 		image: figure,
 		alt: 'Current CLIO file viewer showing the complete fictional bike findings report, its limitations and source filenames',
-		caption: 'Synthetic worked example: the report distinguishes dock counts from trips and keeps its limitations beside the finding. Authored through CLIO’s production tools; no model run.',
+		caption: 'The report distinguishes dock counts from trips and keeps its limitations beside the finding. Follow the source filenames to inspect the supporting tables.',
 	},
 	{
 		id: 'dashboards' as const,
@@ -26,7 +26,7 @@ const items = await Promise.all([
 		link: 'Build a dashboard',
 		image: dashboard,
 		alt: 'Current CLIO dashboard showing morning bike availability, station balances, a linked map and the complete five-station table',
-		caption: 'Synthetic worked example, authored through CLIO’s production tools for this walkthrough. Fictional counts and locations illustrate the workflow; this is not a new model run.',
+		caption: 'Explore the time series, station comparison, map and source records together. A shared selection connects the views.',
 	},
 	{
 		id: 'activity' as const,
@@ -37,7 +37,7 @@ const items = await Promise.all([
 		link: 'Inspect a run',
 		image: activity,
         alt: 'Current CLIO Evidence view showing all six registered files for the fictional bike walkthrough',
-		caption: 'The same synthetic example, with all six registered files visible. Open an artifact to inspect its preview, versions and recorded lineage.',
+		caption: 'All six registered files are visible. Open an artifact to inspect its preview, versions and recorded lineage.',
 	},
 ].map(async (item) => ({ ...item, image: await captureImage(item.image) })));
 ---

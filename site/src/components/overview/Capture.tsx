@@ -63,6 +63,10 @@ export default function Capture({ image, alt, caption, version, sizes = '(min-wi
 				<figcaption className="mt-2 text-sm leading-relaxed text-muted-foreground">
 					{version && <span className="block text-xs">{version}</span>}
 					{caption}
+					{' '}
+					<DialogTrigger className="cursor-zoom-in underline underline-offset-4 disabled:cursor-wait" disabled={!interactive}>
+						Click to enlarge.
+					</DialogTrigger>
 				</figcaption>
 			</figure>
 			<DialogContent className="w-[min(96vw,1400px)] max-w-none max-h-[96dvh] overflow-y-auto pt-10 sm:max-w-none">

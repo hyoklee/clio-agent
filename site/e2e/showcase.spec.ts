@@ -24,7 +24,7 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 		await enlarge.click();
 		const dialog = page.getByRole('dialog');
 		await expect(dialog).toBeVisible();
-		await expect(dialog).toContainText('Synthetic worked example');
+		await expect(dialog).toContainText('The report distinguishes dock counts from trips');
 		const bounds = await dialog.boundingBox();
 		const viewport = page.viewportSize()!;
 		expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -52,7 +52,7 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 		await reportEnlarge.click();
 		await expect(dialog).toBeVisible();
 		await expect(dialog.getByRole('img')).toHaveAttribute('alt', /complete five-station table/);
-		await expect(dialog).toContainText('not a new model run');
+		await expect(dialog).toContainText('A shared selection connects the views.');
 		await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
 		await page.screenshot({ path: test.info().outputPath(`report-dialog-${width}.png`) });
 		await page.keyboard.press('Escape');

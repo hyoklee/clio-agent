@@ -8,6 +8,9 @@ import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
 import work from '../../../assets/captures/docs-work-goal.png';
 import scheduled from '../../../assets/captures/docs-schedule-injection.png';
+import goal from '../../../assets/captures/docs-goal-completed.png';
+import taskResult from '../../../assets/captures/docs-wait-all-result.png';
+import loop from '../../../assets/captures/docs-loop-injections.png';
 
 <PreviewGuide features="The continued-work controls pictured here" />
 
@@ -42,6 +45,11 @@ A completion judgment is a check against the stated objective. It does not
 independently validate a scientific interpretation. Open the saved results and
 their sources before using them.
 
+<Capture client:visible image={await captureImage(goal)}
+  alt="A goal continues until the third checkpoint is saved, then appears under Previous as Completed"
+  caption="The goal continues while a required checkpoint is missing. After the last file is saved, Work keeps the completed goal under Previous."
+/>
+
 ## Wait for a simulation or other task
 
 If a tool started a background task, CLIO can wait for its completion result.
@@ -51,6 +59,11 @@ independent work while the task runs.
 A task's completion notice means the operation ended. Read its returned result
 to determine whether it succeeded. Waiting does not restart the operation;
 [Follow work in progress](/docs/following-work/) explains where to find it.
+
+<Capture client:visible image={await captureImage(taskResult)}
+  alt="Wait for all tasks with no deadline, one collected result and the child agent's answer"
+  caption="The wait returns the task's answer for inspection. Read the result before deciding how the analysis should continue."
+/>
 
 ## Monitor with a loop
 
@@ -64,6 +77,11 @@ when it finishes or fails, then stop monitoring. Ask before submitting any new j
 
 Inspect the loop in **Work**. Goals and monitoring are independent: finishing a
 goal does not automatically stop a separate loop. Check both when the project ends.
+
+<Capture client:visible image={await captureImage(loop)}
+  alt="Two Loop wake entries followed by separate saved monitoring reports"
+  caption="Each Loop wake carries the monitoring instruction into another check. The reports below the wake entries retain each check's output."
+/>
 
 ## Schedule a future instruction
 
@@ -79,7 +97,7 @@ the scheduled work waits for that turn rather than starting a second turn at onc
 
 <Capture client:visible image={await captureImage(scheduled)}
   alt="A scheduled instruction recorded in the conversation before the resulting work"
-  caption="The saved instruction appears in the activity record when due. This retained example demonstrates the control, not a new scientific analysis."
+  caption="The saved instruction appears as Scheduled wake when due. Open it to read the instruction, then inspect the resulting work."
 />
 
 ## Inspect and control Work

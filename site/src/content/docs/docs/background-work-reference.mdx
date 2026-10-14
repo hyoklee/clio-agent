@@ -3,7 +3,7 @@ title: "Background work: limits and API reference"
 description: Pursue an objective, monitor a job, or schedule a future turn, with controls in Work.
 ---
 
-import { Aside, Steps } from "@astrojs/starlight/components";
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import Capture from "../../../components/overview/Capture";
 import { captureImage } from "../../../lib/captures";
 import fleet from "../../../assets/captures/docs-fleet-judges.png";
@@ -27,11 +27,7 @@ from their owning conversation's work views.
 | Check a running job periodically | Loop | Monitor HPC job status and report when it finishes |
 | Act at a particular time | Schedule | At 3pm, inspect the latest results and prepare a report |
 
-<Aside type="note" title="Development build">
-This guide describes the updated development controls. Verification uses fictional
-files and real model/tool calls. It checks the controls, rather than scientific
-validity, and does not claim a multi-day reliability test.
-</Aside>
+<PreviewGuide features="The continued-work controls pictured here" />
 
 ## Start a goal
 

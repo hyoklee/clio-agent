@@ -123,7 +123,7 @@ test('memory and evidence are separate guides and existing bookmarks redirect', 
 	const image = page.getByRole('button', { name: /^View larger:/ });
 	await image.scrollIntoViewIfNeeded();
 	await image.click();
-	await expect(page.getByRole('dialog')).toContainText('first of four matches');
+	await expect(page.getByRole('dialog')).toContainText('Open returns to the matching source message.');
 	await page.keyboard.press('Escape');
 	await page.getByText('Inspect an actual returned overview', { exact: true }).click();
 	const resultLink = page.getByRole('link', { name: 'recorded tool result', exact: true });
