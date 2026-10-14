@@ -26,6 +26,8 @@ from clio_agent.gact.app import build_app
 from clio_agent.gact.injection_parts import emit_injection
 from clio_agent.gact.protocol.v3.message import part_to_v3_block
 from clio_agent.tools import injections
+from clio_agent.tools.mcp_result_projection import bounded_model_tool_result
+from tests._config_layer import set_config
 from tests._scripted_engine import Reply, calls, scripted_lm
 
 SESSION, SCOPE = "s1", "agentA"
@@ -128,6 +130,64 @@ def test_an_injection_lands_in_the_transcript_and_on_the_wire(tmp_path: Path) ->
         assert part["metadata"] == {"actor": "algorithm", "call_id": "c1"}
         block = part_to_v3_block(part)
         assert (block["type"], block["source"], block["call_id"]) == ("injection", "todos", "c1")
+
+
+def test_spill_details_match_the_result_prefix_the_loop_gives_the_model(
+    tmp_path: Path,
+    emitted: list[dict[str, Any]],
+) -> None:
+    set_config("limits", {"model_tool_result_chars": 2_000})
+    arc = ARCMemory(data_dir=str(tmp_path / "arc"))
+    original = "first row: measured leaf area\n" + "measurement\n" * 500 + "unshown-last-row"
+
+    def search(q: str) -> str:
+        return bounded_model_tool_result(original, root=tmp_path, session_id=SESSION)
+
+    lm, engine = scripted_lm([calls(("search", {"q": "x"})), Reply(text="ok")])
+    agent = ClioReAct("question -> answer", tools=[dspy.Tool(search, name="search")])
+    with _plane(arc), dspy.context(lm=lm):
+        agent(question="q")
+
+    [row] = [item for item in emitted if item["source"] == "result_spilled"]
+    observation = engine.requests[1].messages[-1].parts[0].content[0].text
+    assert row["call_id"] == "call_0_0"
+    assert row["text"] == observation
+    assert "first row: measured leaf area" in row["text"]
+    assert "unshown-last-row" not in row["text"]
+    assert len(row["text"]) <= 2_000
+    # Recording details does not send a duplicate standalone injection to the model.
+    assert not any("result_spilled" in text for text in _clio_messages(engine.requests[1]))
+
+
+def test_spill_prefix_survives_transcript_and_v3_projection(tmp_path: Path) -> None:
+    set_config("limits", {"model_tool_result_chars": 2_000})
+    original = "first row: retained prefix\n" + "measurement\n" * 500 + "unshown-last-row"
+    with injections.collect() as told:
+        result = bounded_model_tool_result(original, root=tmp_path, session_id=SESSION)
+    assert told == [("result_spilled", result)]
+    app = build_app(sessions_path=tmp_path / "s.json")
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
+        tokens = [ctx.set_app(app), ctx.set_session_id(sid)]
+        try:
+            for source, text in told:
+                assert emit_injection(source, text, call_id="spill-call")
+        finally:
+            for token in reversed(tokens):
+                ctx.reset(token)
+        messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        [part] = [
+            part
+            for message in messages
+            for part in message["parts"]
+            if part["type"] == "injection" and part["source"] == "result_spilled"
+        ]
+        assert part["text"] == result
+        block = part_to_v3_block(part)
+        assert block["call_id"] == "spill-call"
+        assert block["text"] == result
+        assert "first row: retained prefix" in block["text"]
+        assert "unshown-last-row" not in block["text"]
 
 
 def test_no_app_session_means_nothing_to_show() -> None:
