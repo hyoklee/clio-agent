@@ -31,10 +31,6 @@ the conversation.
   caption="Start with the compact receipt: what ran, its exit code and its duration. Open the row for the command and output; the information icon opens technical details."
 />
 
-The images use the development interface and fictional examples. Command and
-task results are replays of retained operations, without rerunning them.
-Click any image to inspect it at full size.
-
 ## Tools, tasks, and todos
 
 | Item | What it represents | Where to look |
@@ -96,7 +92,7 @@ child tab also has a **Make central** button.
 
 <Capture client:visible image={await captureImage(childTab)}
   alt="A child-agent conversation open in a workspace tab beside its parent, with Make central and its own follow-up box"
-  caption="The parent stays visible when you open a child. This browser capture uses the test-only workspace fixture; no agent or model was run."
+  caption="The parent stays visible when you open a child. Use Make central to give the child conversation more room."
 />
 
 Open the child from **Child agents**, then type in its follow-up box and select
@@ -110,7 +106,7 @@ takes you back there.
 
 <Capture client:visible image={await captureImage(childFollowup)}
   alt="Delegated conversation footer with a follow-up about calibration, Send, and Return to parent"
-  caption="The central child view now has the same follow-up box as its side panel. This screenshot uses a fictional draft for interface review; no agent was run."
+  caption="Send a follow-up from the child's central view or side panel. Return to parent takes you back to the owning conversation."
 />
 
 An unsent draft survives closing and reopening the child view or moving it

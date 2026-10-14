@@ -27,9 +27,7 @@ when a delegated agent needs your input.
 
 ## See the different question types
 
-Choose a tab or use the arrows to browse seven examples. These are screenshots,
-not live answer controls; click an image to enlarge it. The examples use fictional
-information in a development build, without new model analysis.
+Choose a tab or use the arrows to browse seven question types.
 
 <QuestionGallery client:visible version="Development preview · UI f3bac76f · 13 October 2026" examples={[
   {
@@ -72,15 +70,15 @@ information in a development build, without new model analysis.
     explanation: 'A connected service may ask you to finish a step in your browser. Read the destination before choosing Open link or Decline.',
     image: await captureImage(link), previewHeight: 226,
     alt: 'A browser sign-in request showing the full example.org destination with Decline and Open link controls',
-    caption: 'The address is visible before you decide. This fictional example was captured without opening the link.',
+    caption: 'Read the full destination before choosing Open link or Decline.',
   },
   {
     id: 'visual', label: 'Visual question',
     explanation: 'Inspect the accompanying chart, image or table, then answer using the controls provided with it.',
     image: await captureImage(visualQuestion),
     version: 'Earlier demo · 12 October 2026 · before the compact question controls',
-    alt: 'A retained visual question with a bike-station chart, Hill and Downtown choices and an optional comment',
-    caption: 'The chart supplies context for a decision. Hill stations and a comment are drafted; the answer has not been sent. This is a retained demo capture.',
+    alt: 'A visual question with a bike-station chart, Hill and Downtown choices and an optional comment',
+    caption: 'The chart supplies context for a decision. Hill stations and a comment are drafted; the answer has not been sent.',
   },
 ]} />
 
