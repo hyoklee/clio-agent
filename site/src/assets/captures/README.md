@@ -72,8 +72,9 @@ Four new light-mode detail captures accompany the end-user work guides:
 These are unmodified browser detail captures at 1.5 device pixels per CSS pixel.
 The component replays preserve the recorded prompts, options, instructions,
 commands, and results. They do not launch a model, rerun a command, or create a
-fresh unanswered question. The website captions disclose the replay and gallery
-sources. The guides also reuse the existing Evidence, conversation-family Gantt,
+fresh unanswered question. Capture provenance remains in this README and the
+manifests; website captions explain the depicted controls and actions. The guides
+also reuse the existing Evidence, conversation-family Gantt,
 and Work captures with their recorded provenance.
 
 Originals, selected source records, display projections, rejected framing,

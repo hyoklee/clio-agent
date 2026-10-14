@@ -5,7 +5,6 @@ description: Ask a question, set the scope, review decisions and keep work in on
 
 import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { Aside, Steps } from '@astrojs/starlight/components';
-import { Image } from 'astro:assets';
 import messagePreview from '../../../assets/captures/docs-message-preview.png';
 import markedMessages from '../../../assets/captures/docs-marked-messages.png';
 import Capture from '../../../components/overview/Capture';
@@ -121,20 +120,20 @@ the line to jump there. A question's preview includes the following answer when
 one is available. These are excerpts of the recorded conversation, not new
 AI-generated summaries.
 
-<figure>
-  <Image src={messagePreview} alt="Message rail preview with a bold title, two lines of answer context, and a filled bookmark button" />
-  <figcaption>A filled bookmark means this message is saved in your marked list.</figcaption>
-</figure>
+<Capture client:visible image={await captureImage(messagePreview)}
+  alt="Message rail preview with a bold title, two lines of answer context, and a filled bookmark button"
+  caption="A filled bookmark means this message is saved in your marked list."
+/>
 
 Choose the bookmark in a preview, or **Mark message** beside a message's other
 actions. The bookmark above the rail opens **Marked messages**; select an entry
 to return to it. On a narrow window, open **Transcript outline** and choose
 **Marked**. Choose **Unmark message** to remove a mark.
 
-<figure>
-  <Image src={markedMessages} alt="Marked messages list opened from the bookmark above the conversation rail" />
-  <figcaption>Each entry keeps its title and a short excerpt, so you can choose where to return.</figcaption>
-</figure>
+<Capture client:visible image={await captureImage(markedMessages)}
+  alt="Marked messages list opened from the bookmark above the conversation rail"
+  caption="Each entry keeps its title and a short excerpt, so you can choose where to return."
+/>
 
 Marks are saved **with the conversation** and appear in other CLIO clients and
 session exports. An exported HTML review shows the bookmark beside marked
@@ -142,9 +141,6 @@ messages; importing the transcript preserves them. Branching copies marks on
 the copied messages, and each branch can change its marks independently.
 Rewind and undo remove marks for messages they discard. Marking a message
 does not add it to the model's context or change its content.
-
-These screenshots show the development build, using recorded Codex/Luna
-responses about fictional calibration readings.
 
 ## Rate a response or attach a comment
 
@@ -162,7 +158,7 @@ to remove the comment separately.
 
 <Capture client:visible image={await captureImage(ratingComment)}
   alt="Response feedback editor with Good and Bad choices, a comment field, Cancel and Save feedback"
-  caption="These native captures use a fictional browser-test response. The comment remains in the editor if saving fails so you can retry." />
+  caption="The comment remains in the editor if saving fails so you can retry." />
 
 Feedback is attached to that response and saved by the connected service. It
 does not send a follow-up to the agent. Use the composer to ask for a correction

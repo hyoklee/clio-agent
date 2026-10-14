@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from clio_agent.tools import mcp_result_projection
+from clio_agent.tools import injections, mcp_result_projection
 from clio_agent.tools.execution import tool_workspace_context
 from clio_agent.tools.mcp_result_projection import bounded_model_tool_result
 from tests._config_layer import set_config
@@ -26,19 +26,25 @@ def _spilled_path(result: str) -> Path:
 
 
 def test_a_result_that_fits_is_returned_whole() -> None:
-    assert bounded_model_tool_result("small result") == "small result"
+    with injections.collect() as told:
+        assert bounded_model_tool_result("small result") == "small result"
+    assert told == []
 
 
 def test_an_oversize_result_goes_to_a_file_and_the_agent_is_told(tmp_path: Path) -> None:
     set_config("limits", {"model_tool_result_chars": 2_000})
     rows = "\n".join(f"row-{i:05d},{'x' * 40}" for i in range(500))
-    with tool_workspace_context(str(tmp_path)):
+    with tool_workspace_context(str(tmp_path)), injections.collect() as told:
         result = bounded_model_tool_result(rows)
 
     assert len(result) <= 2_000
     assert result.startswith("[clio: result_spilled] This result is ")
     assert f"{len(rows):,} characters" in result
     head = result.split("\n\n", 1)[1]
+    assert head
+    assert told == [("result_spilled", result)]
+    assert len(told[0][1]) <= 2_000
+    assert "row-00499" not in told[0][1]
     assert rows.startswith(head) and head.endswith(",") is False  # ends on a whole line
     spilled = _spilled_path(result)
     assert spilled.read_text(encoding="utf-8") == rows
@@ -65,7 +71,9 @@ def test_a_failed_spill_is_told_never_silent(
 
     monkeypatch.setattr(mcp_result_projection, "_spill", _refuse)
     with caplog.at_level("WARNING", logger="clio_agent.tools.mcp_result_projection"):
-        result = bounded_model_tool_result("y" * 5_000)
+        with injections.collect() as told:
+            result = bounded_model_tool_result("y" * 5_000)
     assert "could not be saved (disk full)" in result
     assert "reason=model_tool_result_spill_failed" in caplog.text
     assert len(result) <= 500
+    assert told == [("result_spilled", result)]

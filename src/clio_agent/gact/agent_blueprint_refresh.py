@@ -245,16 +245,21 @@ def uninstall_agent_blueprint(
 
     home = home or Path.home()
     root = installed_root(_install_root(home=home, cwd=cwd, scope=scope), blueprint_id)
-    if not root.exists():
-        raise FileNotFoundError(f"installed agent blueprint not found: {blueprint_id}")
-    from clio_agent.gact.agent_blueprints import parse_agent_blueprint_root
+    from clio_agent.gact.blueprint_coordination import blueprint_write_roots, check_registry_claim
 
-    identity = identity_fields(parse_agent_blueprint_root(root, scope=scope))["identity"]
-    rmtree_extended(root)
-    tombstones = read_uninstalled_tombstones(home=home, cwd=cwd, scope=scope)
-    tombstones.add(identity)
-    write_uninstalled_tombstones(tombstones, home=home, cwd=cwd, scope=scope)
-    return {"uninstalled": {"id": blueprint_id, "scope": scope, "root": str(root)}}
+    with blueprint_write_roots(root.parent):
+        check_registry_claim(root.parent)
+        if not root.exists():
+            raise FileNotFoundError(f"installed agent blueprint not found: {blueprint_id}")
+        from clio_agent.gact.agent_blueprints import parse_agent_blueprint_root
+
+        identity = identity_fields(parse_agent_blueprint_root(root, scope=scope))["identity"]
+        rmtree_extended(root)
+        check_registry_claim(root.parent)
+        tombstones = read_uninstalled_tombstones(home=home, cwd=cwd, scope=scope)
+        tombstones.add(identity)
+        write_uninstalled_tombstones(tombstones, home=home, cwd=cwd, scope=scope)
+        return {"uninstalled": {"id": blueprint_id, "scope": scope, "root": str(root)}}
 
 
 def uninstalled_tombstones_path(*, home: Path, cwd: Path, scope: str = "global") -> Path:
@@ -287,11 +292,13 @@ def write_uninstalled_tombstones(
 ) -> None:
     """Persist the uninstall ledger (created on first uninstall, pruned on install)."""
 
+    from clio_agent.gact.blueprint_coordination import blueprint_write_roots, check_registry_claim
     from clio_agent.gact.blueprint_ledgers import write_json_atomic
 
     path = uninstalled_tombstones_path(home=home, cwd=cwd, scope=scope)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_json_atomic(path, {"uninstalled": sorted(ids)})
+    with blueprint_write_roots(path.parent):
+        check_registry_claim(path.parent)
+        write_json_atomic(path, {"uninstalled": sorted(ids)})
 
 
 def clear_uninstall_tombstones(

@@ -8,6 +8,9 @@ for (const width of [390, 1440]) {
     await expect(page.getByRole('heading', { level: 1, name: 'Continue work over time' })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Wait for a simulation or other task' })).toBeVisible();
     const readerCaptures = [
+      'A goal continues until the third checkpoint',
+      'Wait for all tasks with no deadline',
+      'Two Loop wake entries',
       'A scheduled instruction recorded in the conversation',
       'Work showing a completed goal',
     ];
