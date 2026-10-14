@@ -19,6 +19,12 @@ TUI/HTTP surface aren't tracked here.
 - Composable Carousel and Video views, documentation media guides and workflow
   images with accessible enlargement controls.
 
+- Connect Obsidian vaults as knowledge sources, with a graph/files workbench,
+  note reader, immutable chat attachments, and capability-gated knowledge tools.
+  Local vaults default to read only; reviewed edits reuse the connected-source
+  write pipeline. Optional official Headless Sync runs separately from indexing
+  and note permissions, with private client setup on the CLIO host.
+
 ### Fixed
 
 - Office binary transport, automatic PDF preview and retained conversion on
@@ -30,28 +36,6 @@ TUI/HTTP surface aren't tracked here.
 - Distinguish a gateway network-policy block from a rejected MAG API key.
 - Save long shell programs through builder files and retain required visual review
   guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
-
-### Added
-
-- Connect Obsidian vaults as knowledge sources, with a graph/files workbench,
-  note reader, immutable chat attachments, and capability-gated knowledge tools.
-  Local vaults default to read only; reviewed edits reuse the connected-source
-  write pipeline. Optional official Headless Sync runs separately from indexing
-  and note permissions, with private client setup on the CLIO host.
-
-### Fixed
 
 - Resource derivative storage uses Windows extended paths throughout, so captured
   resources remain readable under deep workspace and custody paths.
@@ -86,6 +70,18 @@ TUI/HTTP surface aren't tracked here.
   tests on deprecation warnings.
 - Update clio-core to 2.3.1, including Windows sparse backing files and storage
   correctness fixes.
+
+### Beta qualification
+
+- Released under explicit user approval without waiting for all GitHub checks or
+  remaining live acceptance. CI continues; pending and failing results remain
+  recorded separately from completed static and live verification.
+- MAG catalog access succeeded with the user's token on another Windows machine.
+  This machine is blocked by the gateway's current network restrictions; no MAG
+  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
+  user testing with the appropriate access.
+- Opt-in shared blueprint coordination needs a compatible Core package exposing
+  the merged conditional-write API. This beta does not publish or install Core.
 
 ## [0.9.5-beta.5.2] - 2026-10-08
 
@@ -129,43 +125,6 @@ adding another backend contract change.
 
 ### Added
 
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
-
-### Added
-
 - Download a complete conversation as self-contained HTML. Effects exports include
   the selected session and its children; Full exports add the workspace snapshot.
   Recorded tool inputs/results, loaded skills, permissions and file checksums remain
@@ -202,43 +161,6 @@ The pinned clio-core 2.2.1 omits the optional search indexer; ARC persistence wo
 and indexed segment search reports that limitation.
 
 ## [0.9.5-beta.3] — 2026-10-05
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -281,43 +203,6 @@ The pinned clio-core 2.2.1 wheels omit the optional search indexer. ARC persiste
 works; indexed segment searches report the missing-indexer limitation.
 
 ## [0.9.5-beta.2] — 2026-10-03
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -366,43 +251,6 @@ works; indexed segment searches report the missing-indexer limitation.
   permission still gets a typed 404, never a silent reroute (#1549 #28).
 
 ## [0.9.5-beta.1] — 2026-10-02
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -549,43 +397,6 @@ works; indexed segment searches report the missing-indexer limitation.
 
 ### Added
 
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
-
-### Added
-
 - A2UI `clio.chart.v1`: charts from presets or an Altair / Vega-Lite spec,
   rows from inline `data` or a `dataUri` narrowed with `dataQuery`
   (clio-schemas 0.5.1).
@@ -626,43 +437,6 @@ No GACT-contract change. Desktop hotfix release: ships the desktop app 0.11.2.22
 ## [0.9.4.20] — 2026-09-27
 
 ## [0.9.4.19] — 2026-09-27
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -761,43 +535,6 @@ No GACT-contract change. Desktop hotfix release: ships the desktop app 0.11.2.22
   one is enforced (#1478).
 
 ## [0.9.4.18] — 2026-09-26
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -959,43 +696,6 @@ No GACT-contract change. Desktop hotfix release: ships the desktop app 0.11.2.22
 
 ### Added
 
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
-
-### Added
-
 - `view_pdf`: an agent on a PDF-capable model can attach a workspace PDF, or a
   page range of it, natively to its next step. Offered only when the model's
   discovered capabilities include `pdf` (today the Claude Code models; Codex
@@ -1052,43 +752,6 @@ No GACT-contract change. Desktop hotfix release: ships the desktop app 0.11.2.22
   that uses the deployment transport.
 
 ## [0.9.4.13] - 2026-09-22
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -1212,43 +875,6 @@ service to that remote agent, and completing a Deep Research run through it.
 
 ### Added
 
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
-
-### Added
-
 - Remote deployments can keep CLIO data, runtime coordination, and clio-core
   CTE state under an explicit persistent installation root.
 - Desktop-managed Web Search connections are stored as normal MCP
@@ -1284,43 +910,6 @@ service to that remote agent, and completing a Deep Research run through it.
 This maintenance release repairs the bundled desktop first-launch path found
 during external-user verification of v0.9.4, and adds signed desktop
 auto-update alongside a set of desktop-panel and provider-handshake fixes.
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -1418,43 +1007,6 @@ bundled desktop startup experience.
 
 This release pairs the agent runtime with the new GACT React workspace and
 expands the bundled scientific blueprint catalog.
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -1722,43 +1274,6 @@ untyped degrade reasons) — plan write-deny, plan-exit approve with no phantom
 re-approval, a PreToolUse hook firing on a live tool call, reserved-metadata
 400, cron firing a scheduled turn, a loop tripping a sticky bound, and an
 LLM-judge goal met + cleared.
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 
@@ -2278,43 +1793,6 @@ top to bottom (S7 newest first, back to the S2–S3 substrate).
   killing.
 
 ### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
-
-### Added
 - **Inline, copyable boot log on the failure card** (gact-tui#317): a new
   `read_logs` desktop command surfaces the boot-log transcript inline with a
   Copy button, so a failed boot can be captured without leaving the app (the
@@ -2325,43 +1803,6 @@ top to bottom (S7 newest first, back to the S2–S3 substrate).
   placeholder "C" glyph (gact-tui#317). Desktop app 0.7.1 → 0.7.2.
 
 ## [0.7.4] — 2026-07-15
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 - Skill semantics with progressive disclosure (#916): experts get a tier-1
@@ -2516,43 +1957,6 @@ The resource-usage campaign release. Pairs with gact-tui **v0.9.6**
 (pinned submodule) and marketplace **v0.5.4**.
 
 ### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
-
-### Added
 - `PUT /v1/providers/lm` accepts `thinking_level` (`off|low|medium|high`;
   out-of-vocabulary values are a structured 422). `GET`/`PUT` responses
   report `thinking_level` and the resolved `thinking_effective`
@@ -2584,43 +1988,6 @@ The grounding-demo release. Pairs with gact-tui **v0.9.5** (pinned
 submodule) — #233 render parity + #232 protocol convergence on the
 client side, matched by the contract-surface changes below on the
 server side.
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 - `GET /v1/sessions/{id}/messages` now honors pagination
@@ -2655,43 +2022,6 @@ in `/v1/capabilities` that's `true` has been verified end-to-end with
 either an integration test, a curl trace, or a screenshot — see
 `docs/archive/CAPABILITIES_MATRIX.md` for the full matrix. **No silent
 downgrades anywhere; if a flag is true, it works.**
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 - **Third-party MCP install + use endpoints** (#13).
@@ -2755,43 +2085,6 @@ downgrades anywhere; if a flag is true, it works.**
   now strict-only.
 
 ## [0.3.0] — 2026-04-25
-
-### Added
-
-- American Science Cloud MAG provider with project-specific model discovery,
-  unchanged gateway model IDs and Personal Access Token authentication.
-- ALCF Minerva and Tara using the existing shared Globus login. The model picker
-  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
-  while retaining separate server identities, model lists and status.
-- Global search across workspaces, Settings, Infrastructure and Runs, with
-  immediate keyboard focus, inline search model selection, guarded file handoff
-  and temporary read-only agent search.
-- Composable Carousel and Video views, documentation media guides and workflow
-  images with accessible enlargement controls.
-
-### Fixed
-
-- Office binary transport, automatic PDF preview and retained conversion on
-  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
-- Sign-in listener continuity, steering transcript anchors, aligned todo controls
-  and one HTML Preview/Source/action toolbar.
-- Async native search tools and Fleet lease acquisition no longer block the
-  server event loop. Spill details retain the bounded prefix shown to the model.
-- Distinguish a gateway network-policy block from a rejected MAG API key.
-- Save long shell programs through builder files and retain required visual review
-  guidance for generated documents.
-
-### Beta qualification
-
-- Released under explicit user approval without waiting for all GitHub checks or
-  remaining live acceptance. CI continues; pending and failing results remain
-  recorded separately from completed static and live verification.
-- MAG catalog access succeeded with the user's token on another Windows machine.
-  This machine is blocked by the gateway's current network restrictions; no MAG
-  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
-  user testing with the appropriate access.
-- Opt-in shared blueprint coordination needs a compatible Core package exposing
-  the merged conditional-write API. This beta does not publish or install Core.
 
 ### Added
 - GACT contract v0.2 implementation (28/30 capabilities supported;
