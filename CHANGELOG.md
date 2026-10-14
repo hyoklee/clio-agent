@@ -4,6 +4,22 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
+## [0.9.5-beta.7] - 2026-10-14
+
+### Fixed
+
+- Publish the merged Carousel/Video schema as clio-schemas0.6.0b9 and require
+  that version in Python package metadata. Preserve the exact reviewed schema
+  Git revision in the development uv source override and lockfile. PyPI rejects
+  direct Git dependencies in published metadata; the versioned dependency is
+  installable through the normal package index.
+- Keep runtime, project and lock versions aligned at0.9.5b7.
+
+Includes all beta.6 features below. Beta.6's runtime mismatch is corrected, and
+beta.6.1's CLI smoke passed before PyPI rejected its direct schema dependency.
+Both earlier tags remain unchanged. The user explicitly authorized this beta
+without waiting for remaining test CI or live acceptance.
+
 ## [0.9.5-beta.6.1] - 2026-10-14
 
 ### Fixed
