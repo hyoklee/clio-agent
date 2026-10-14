@@ -21,6 +21,7 @@ from clio_agent import paths
 from clio_agent.providers.dependencies import _uv_executable
 from clio_agent.runtime.document_stack.node_paths import node_path
 from clio_agent.runtime.document_stack.process import scratch_root
+from clio_agent.runtime.document_wheels import bundled_wheel_requirements
 from clio_agent.runtime.execution_environment import (
     bundled_root,
     publish_environment,
@@ -104,10 +105,14 @@ def _fingerprint() -> str:
     return digest.hexdigest()[:20]
 
 
-def _probe(python: Path) -> dict[str, Any]:
+def _probe(python: Path, *, discovery_only: bool = False) -> dict[str, Any]:
     result = json.loads(
         _run(
-            [str(python), str(STACK_ROOT / "inventory.py")],
+            [
+                str(python),
+                str(STACK_ROOT / "inventory.py"),
+                *(["--execution-only"] if discovery_only else []),
+            ],
             cwd=STACK_ROOT,
             env={**os.environ, "CLIO_DOCUMENT_OFFICE_ROOT": str(office_runtime_root())},
         )
@@ -148,7 +153,9 @@ print(json.dumps(checks))
     return checks
 
 
-def _python_runtime(cache: Path, uv: str) -> tuple[Path, dict[str, Any]]:
+def _python_runtime(
+    cache: Path, uv: str, *, discovery_only: bool = False
+) -> tuple[Path, dict[str, Any]]:
     project = cache / "project"
     project.mkdir(parents=True, exist_ok=True)
     for name in ("pyproject.toml", "uv.lock"):
@@ -156,13 +163,55 @@ def _python_runtime(cache: Path, uv: str) -> tuple[Path, dict[str, Any]]:
     environment = cache / "python"
     python = environment / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     repair = python.is_file()
+
+    def probe() -> dict[str, Any]:
+        return _probe(python, discovery_only=True) if discovery_only else _probe(python)
+
     if repair:
         try:
-            return python, _probe(python)
+            return python, probe()
         except (DocumentRuntimeError, ValueError):
             # A damaged cache is repaired by the same locked sync as first use.
             pass
-    env = {**os.environ, "UV_PROJECT_ENVIRONMENT": str(environment)}
+    env = {
+        **os.environ,
+        "UV_PROJECT_ENVIRONMENT": str(environment),
+        # Keep wheel unpacking and the environment on the selected installation
+        # drive. uv can hardlink shared files instead of copying them across drives.
+        "UV_CACHE_DIR": str(cache.parent / "uv-document-cache"),
+    }
+    runtime = bundled_root()
+    try:
+        requirements = bundled_wheel_requirements(runtime, STACK_ROOT, project)
+    except (OSError, ValueError, KeyError, TypeError) as error:
+        raise DocumentRuntimeError(f"Bundled document packages are invalid: {error}") from error
+    if requirements is not None:
+        assert runtime is not None  # A verified wheel bundle can only come from a runtime.
+        if not repair:
+            _run(
+                [uv, "venv", "--no-managed-python", "--python", sys.executable, str(environment)],
+                cwd=project,
+                env=env,
+            )
+        _run(
+            [
+                uv,
+                "pip",
+                "sync",
+                "--python",
+                str(python),
+                str(requirements),
+                "--no-index",
+                "--find-links",
+                str(runtime / "document-wheels"),
+                "--require-hashes",
+                "--only-binary=:all:",
+                *(["--reinstall"] if repair else []),
+            ],
+            cwd=project,
+            env=env,
+        )
+        return python, probe()
     _run(
         [
             uv,
@@ -180,7 +229,7 @@ def _python_runtime(cache: Path, uv: str) -> tuple[Path, dict[str, Any]]:
         cwd=project,
         env=env,
     )
-    return python, _probe(python)
+    return python, probe()
 
 
 def _pnpm_command(package: Path, node: str, env: dict[str, str]) -> Path:
@@ -309,12 +358,16 @@ def prepare_document_runtime(
     *,
     cache_root: Path | None = None,
     progress: Callable[[str], None] | None = None,
+    discovery_only: bool = False,
 ) -> dict[str, Any]:
     """Prepare and probe an isolated document runtime without changing Clio's interpreter.
 
     First use downloads Node.js and the locked package sets using Clio's Python. A failed
     JavaScript setup leaves the independently verified Python stack available.
     Native converters are discovered and reported, never advertised as installed.
+    ``discovery_only`` freshly inspects executables and package metadata, without
+    importing every package or probing document converters/fonts. Requested imports
+    are independently checked by the execution tool; no prior answer is reused.
     """
     workspace = workspace.resolve(strict=True)
     from clio_agent.tools.file_policy import FileAccessPolicy
@@ -333,7 +386,11 @@ def prepare_document_runtime(
     with FileLock(str(cache / "prepare.lock"), timeout=240):
         if progress is not None:
             progress("Preparing and checking Python document packages...")
-        python, inventory = _python_runtime(cache, uv)
+        python, inventory = (
+            _python_runtime(cache, uv, discovery_only=True)
+            if discovery_only
+            else _python_runtime(cache, uv)
+        )
         if progress is not None:
             progress("Python document packages are ready. Preparing Node.js packages...")
         output = scratch / "output"
@@ -418,7 +475,12 @@ def prepare_office_runtime() -> str:
     from clio_agent.runtime.document_stack.office import ensure_office
     from clio_agent.runtime.document_stack.process import find_native
 
-    return find_native("soffice") or ensure_office(office_runtime_root())
+    managed_root = office_runtime_root()
+    native = find_native("soffice")
+    if native and not Path(native).resolve().is_relative_to(managed_root.resolve()):
+        return native
+    # A discovered managed executable still needs its host-side access repair.
+    return ensure_office(managed_root)
 
 
 def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) -> dict[str, Any]:
@@ -426,6 +488,15 @@ def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) 
     from clio_agent.runtime import sandbox
 
     command = [*runtime["helper_argv"], *args]
+    environment = {**os.environ, **runtime.get("shell_environment", {})}
+    if args and (
+        args[0] == "recalculate"
+        or (args[0] == "render" and len(args) > 1 and Path(args[1]).suffix.lower() != ".pdf")
+    ):
+        # The trusted host owns renderer provisioning. A confined document worker
+        # must consume the verified executable, never run Windows Installer.
+        environment["CLIO_DOCUMENT_SOFFICE"] = prepare_office_runtime()
+    environment["CLIO_DOCUMENT_CONFINED"] = "1"
     confined = sandbox.wrap_confined(
         command[0],
         command[1:],
@@ -439,8 +510,7 @@ def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) 
             [confined.command, *confined.args],
             cwd=cwd,
             env={
-                **os.environ,
-                **runtime.get("shell_environment", {}),
+                **environment,
                 **confined.env_overlay,
                 **{
                     key: value

@@ -22,7 +22,7 @@ The install script adds a `clio` command. It starts the CLIO backend when needed
 | `clio update` | Upgrades `clio-agent` to the latest release. Linux and macOS only. |
 | `clio doctor` | Checks the install: backend binary, terminal UI binary, the port, and the launcher (plus `curl` on macOS and Linux). Exits with an error if something required is missing. |
 | `clio sandbox status` | Shows whether the OS write fence is active. See [Permissions and sandbox](/docs/permissions/). |
-| `clio sandbox setup` | Sets up the OS write fence. Windows needs this once. |
+| `clio sandbox setup` | Prepares and verifies protected execution. Older Windows runtimes may request administrator approval for first-time setup. |
 | `clio report` | Prints versions, environment, health, and the last 40 lines of each log, for pasting into a bug report. |
 | `clio completion bash` or `zsh` | Prints a shell completion script. |
 | `clio uninstall [--purge] [--yes]` | Uninstalls CLIO. See [Uninstall](/docs/uninstall/). |

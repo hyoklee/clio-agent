@@ -44,6 +44,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, get_args
 
+from clio_agent.gact.message_marks import merge_session_metadata
 from clio_agent.gact.types import Session as _WireSession
 from clio_agent.platform_paths import atomic_write_text
 
@@ -488,8 +489,8 @@ class SessionStore:
         """Mutate a session in place.
 
         Any field left ``None`` is untouched. ``metadata_patch``
-        merges into the existing metadata (shallow) so callers can
-        stamp additional keys without clobbering the rest. The
+        merges into existing metadata; message marks merge per ID,
+        other keys shallowly, without clobbering the rest. The
         ``add_tokens_*`` / ``add_cost_usd`` params accumulate onto
         the session rollup — pass a turn's numbers after each
         forward() call. ``add_cost_usd=None`` (the default) means "no cost
@@ -550,7 +551,7 @@ class SessionStore:
             if agent is not None:
                 sess.agent = dict(agent)
             if metadata_patch is not None:
-                sess.metadata.update(metadata_patch)
+                sess.metadata = merge_session_metadata(sess.metadata, metadata_patch)
             if archived is not None:
                 sess.archived = bool(archived)
             now = _utcnow_iso()

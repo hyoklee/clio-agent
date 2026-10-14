@@ -1575,6 +1575,36 @@ def _mrtr_backend() -> FastMCP:
     return backend
 
 
+def test_question_anchor_precedes_live_publication(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A visible question cannot race an anchor write that has not committed yet."""
+    from clio_agent.gact.elicitation_bridge import _publish_question_created
+    from clio_agent.gact.types import UserQuestion
+
+    app = client.app  # type: ignore[attr-defined]
+    sid = _create_session(client)
+    question = UserQuestion(
+        id="q_publication", session_id=sid, prompt="Pick a color", created_at="t", updated_at="t"
+    )
+    original_update = app.state.sessions.update
+    anchor_writes: list[str] = []
+
+    def update(session_id: str, **kwargs: Any) -> Any:
+        if kwargs.get("metadata_patch", {}).get("pending_user_question_id") == question.id:
+            assert question.id not in app.state.user_questions
+            anchor_writes.append(session_id)
+        return original_update(session_id, **kwargs)
+
+    monkeypatch.setattr(app.state.sessions, "update", update)
+    _publish_question_created(app, question)
+    assert anchor_writes == [sid]
+    assert app.state.user_questions[question.id] == question
+    metadata = app.state.sessions.get(sid).metadata
+    assert metadata["pending_user_question_id"] == question.id
+    assert metadata["user_questions"][question.id]["status"] == "pending"
+
+
 def test_mrtr_input_request_lands_on_the_one_hitl_surface(client: TestClient) -> None:
     """A MODERN-era MRTR input request reaches the SAME question store + answer route
     as legacy back-channel elicitation (#1114): the tool blocks, a UserQuestion appears

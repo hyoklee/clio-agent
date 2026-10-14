@@ -42,12 +42,15 @@ from clio_agent.gact.catalog import (
     _tool_owner_for_catalog,
     _tool_tags_for_catalog,
     _tool_visible_to_for_catalog,
-    _truthy_command_field,
 )
 from clio_agent.gact.catalog_tool_schemas import builtin_tool_rows
 from clio_agent.gact.events import Event
 from clio_agent.gact.off_loop import emit_semantic_event_async, run_off_loop
 from clio_agent.gact.routes._body import json_body
+from clio_agent.gact.routes.catalog_command_args import (
+    _render_command_prompt,
+    _validate_command_arguments,
+)
 from clio_agent.gact.routes.catalog_runtime_tools import agent_runtime_tool_rows
 from clio_agent.gact.runtime.commands import (
     agent_allowed_command_ids,
@@ -341,82 +344,6 @@ def register_catalog_routes(app: FastAPI, deps: "GactDeps") -> None:
     # route and app.py's prompt-render-context closure share one source. The
     # prompt-render / argument-validation / audit helpers below are dispatch-
     # private and stay nested (they close over ``app``/``deps``).
-
-    def _render_command_prompt(
-        command_meta: Mapping[str, Any],
-        *,
-        user_input: str,
-        args: Any,
-        cmd_id: str,
-        agent_id: str,
-    ) -> str:
-        prompt_template = str(command_meta.get("prompt_template") or "")
-        if not prompt_template:
-            return user_input or str(command_meta.get("description") or cmd_id)
-        rendered = (
-            prompt_template.replace("{{input}}", user_input)
-            .replace("{{args}}", user_input)
-            .replace("$ARGUMENTS", user_input)
-            .replace("{{command}}", cmd_id)
-            .replace("{{agent_id}}", agent_id)
-        )
-        if isinstance(args, Mapping):
-            for key, value in args.items():
-                rendered = rendered.replace(f"{{{{args.{key}}}}}", str(value))
-        return rendered
-
-    def _command_required_argument_names(command_meta: Mapping[str, Any]) -> list[str]:
-        specs = command_meta.get("arguments") or []
-        if isinstance(specs, str):
-            return [specs] if specs.strip() else []
-        if not isinstance(specs, list):
-            return []
-        required: list[str] = []
-        for spec in specs:
-            if isinstance(spec, str) and spec.strip():
-                required.append(spec.strip())
-            elif isinstance(spec, Mapping) and _truthy_command_field(
-                spec.get("required"),
-                False,
-            ):
-                name = str(spec.get("name") or spec.get("id") or "").strip()
-                if name:
-                    required.append(name)
-        return required
-
-    def _validate_command_arguments(
-        command_meta: Mapping[str, Any],
-        *,
-        args: Any,
-        user_input: str,
-        cmd_id: str,
-    ) -> None:
-        required = _command_required_argument_names(command_meta)
-        if not required:
-            return
-        if not isinstance(args, Mapping):
-            if user_input:
-                return
-            missing = required
-        else:
-            missing = [name for name in required if args.get(name) in (None, "")]
-        if not missing:
-            return
-        raise HTTPException(
-            status_code=422,
-            detail=ErrorEnvelope(
-                error=ErrorInfo(
-                    error="invalid_arguments",
-                    message=f"command {cmd_id} is missing required arguments",
-                    details={
-                        "command": cmd_id,
-                        "missing": missing,
-                        "argument_hint": command_meta.get("argument_hint", ""),
-                    },
-                    recoverable=True,
-                )
-            ).model_dump(exclude_none=True),
-        )
 
     async def _command_audit_row(  # #1334: awaited; its semantic event is a store RPC
         *,
@@ -887,6 +814,11 @@ def register_catalog_routes(app: FastAPI, deps: "GactDeps") -> None:
                 payload=sys_msg.to_wire(),
             )
         )
+
+        if cmd_id == "/goal" and body_text.startswith("Goal started."):
+            from clio_agent.gact.goal_control import launch_pending_goal
+
+            await launch_pending_goal(app, sid)
 
         return {
             "command": cmd_id,

@@ -1,9 +1,4 @@
-"""Codex direct modalities: the Direct transport claims PDF input.
-
-The Direct transport delivers PDFs as Responses ``input_file`` parts, so a Codex
-selection's catalog rows and bound handshake report both answer "this model takes
-a PDF".
-"""
+"""Codex selections follow their reported modalities, including explicitly reported PDF."""
 
 from __future__ import annotations
 
@@ -39,15 +34,15 @@ def _clean_capability_store() -> Any:
     invalidation.clear_all()
 
 
-def _seed_direct_model_record() -> None:
-    """What the Direct handshake records from its overlay row (live list + PDF fact)."""
+def _seed_direct_model_record(modalities: tuple[str, ...]) -> None:
+    """Seed the modalities the backend actually reported for this model."""
 
     invalidation.record_model_capabilities(
         ModelCapabilities(
             model_key=_MODEL,
             context_max=Fact(value=272000, source="server_report", observed_at=_NOW),
             input_modalities=Fact(
-                value=modalities_from_capabilities(("text", "image", "pdf")),
+                value=modalities_from_capabilities(modalities),
                 source="server_report",
                 observed_at=_NOW,
             ),
@@ -77,14 +72,14 @@ def _row(modalities: list[str]) -> dict[str, Any]:
     }
 
 
-def _app(report: HandshakeReport | None = None) -> Any:
+def _app(modalities: tuple[str, ...], report: HandshakeReport | None = None) -> Any:
     catalog = {
         "providers": [
             {
                 "id": "codex",
                 "health": "ready",
                 "models": [
-                    _row(["image", "pdf", "text"]),
+                    _row(list(modalities)),
                 ],
             }
         ]
@@ -94,21 +89,23 @@ def _app(report: HandshakeReport | None = None) -> Any:
     )
 
 
-def test_catalog_rows_answer_for_a_codex_selection() -> None:
-    app = _app()
+@pytest.mark.parametrize("reported", [("text", "image"), ("text", "image", "pdf")])
+def test_catalog_rows_answer_for_a_codex_selection(reported: tuple[str, ...]) -> None:
+    app = _app(reported)
 
     rows = catalog_model_rows(app, ModelRef(provider_id="codex", model_id=_MODEL))
 
     assert [row["model_id"] for row in rows] == [_MODEL]
     assert "transport" not in rows[0]
     modalities = live_model_modalities(app, ModelRef(provider_id="codex", model_id=_MODEL))
-    assert modalities.modalities == frozenset({"text", "image", "pdf"})
+    assert modalities.modalities == frozenset(reported)
 
 
-def test_a_codex_selection_reads_the_direct_handshake_report() -> None:
+@pytest.mark.parametrize("reported", [("text", "image"), ("text", "image", "pdf")])
+def test_a_codex_selection_reads_the_direct_handshake_report(reported: tuple[str, ...]) -> None:
     """The bound codex handshake report is the Direct transport (codex://direct)."""
 
-    _seed_direct_model_record()
+    _seed_direct_model_record(reported)
     report = HandshakeReport(
         provider_id="codex",
         provider_kind="codex",
@@ -120,10 +117,12 @@ def test_a_codex_selection_reads_the_direct_handshake_report() -> None:
         models=(DiscoveredModel(id=_MODEL),),
     )
 
-    direct = live_model_modalities(_app(report), ModelRef(provider_id="codex", model_id=_MODEL))
+    direct = live_model_modalities(
+        _app(reported, report), ModelRef(provider_id="codex", model_id=_MODEL)
+    )
 
     assert direct.evidence == "discovery_overlay"
-    assert "pdf" in (direct.modalities or frozenset())
+    assert direct.modalities == frozenset(reported)
 
 
 def test_codex_picker_offers_off_only_when_the_model_lists_it() -> None:
@@ -167,3 +166,18 @@ def test_a_model_whose_template_has_no_thinking_is_not_offered_reasoning() -> No
 
     assert _supported("none") is False
     assert _supported("always_on") is True
+
+
+def test_an_on_off_model_is_offered_a_switch_not_an_effort_ladder() -> None:
+    """Live c14: Ollama qwen3:4b (think on/off) was offered off/low/medium/high (F039)."""
+
+    from clio_agent.gact.provider_catalog import ON_OFF_LEVEL, _reasoning_wire_block
+    from clio_agent.providers.capabilities.records import ThinkingSpec
+
+    thinking = SimpleNamespace(
+        spec=ThinkingSpec(mechanism="on_off"), control="think", known=True, decided_by="model"
+    )
+    block = _reasoning_wire_block(thinking, DiscoveredModel(id=_MODEL), dialect="ollama")
+    assert [x for x in block["levels"] if x != "off"] == [ON_OFF_LEVEL]
+    assert block["control"] == "toggle"
+    assert block["supported"] is True

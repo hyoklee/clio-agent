@@ -9,12 +9,10 @@ domain-tool budget (RULE 5), the same way ``load_skill`` and the child-delegatio
 * ``write_todos`` (#1067) — the execution-phase checklist (whole-list replacement);
 * ``cron_create`` / ``cron_list`` / ``cron_delete`` (#1081) — the model-callable scheduling
   triad (arm a recurring/one-shot future turn for this session; read back; cancel-both);
-* ``loop_wakeup`` (#1079) — the autonomous-loop self-pace control (reschedule the loop
-  after a delay, or stop; typed bounds + a bounded fallback enforce no-runaway);
-* ``goal_status`` (#1080) — the READ-ONLY goal readback (condition / iters / budget /
-  deterministic-gate met?). There is deliberately NO ``set_goal`` / ``goal_clear`` tool: a
-  goal is armed only by the user (/goal) or a declared skill-effect, never by the model
-  (a self-armed halt is the self-grading anti-pattern, ⚑ RULE 1).
+* ``set_loop`` / ``loop_wakeup`` — independent monitoring, automatic repetition,
+  optional human limits, rescheduling and stop;
+* ``set_goal`` / ``goal_status`` / ``wait_for`` — start an objective, inspect it, or
+  park on owned task completion. The independent judge alone declares completion.
 * ``recall_context`` (Phase 11b) -- read back earlier context, compacted steps included,
   byte-exact from clio-core;
 * ``draft_alternatives`` (Phase 9, tier-1 MAIN sessions only) — draft several answers
@@ -61,16 +59,21 @@ from clio_agent.gact.artifacts.proposals import build_create_artifact_tool
 from clio_agent.gact.autonomous_loop import build_loop_wakeup_tool
 from clio_agent.gact.cron_tools import build_cron_tools
 from clio_agent.gact.goal import build_goal_status_tool
+from clio_agent.gact.goal_control import build_set_goal_tool
+from clio_agent.gact.goal_wait import build_goal_wait_tool
+from clio_agent.gact.loop_control import build_set_loop_tool
 from clio_agent.gact.memory_tools import build_memory_tools
 from clio_agent.gact.plan_mode import build_plan_exit_tool
 from clio_agent.gact.recall_context_tool import build_recall_context_tool
 from clio_agent.gact.resource_tools import build_resource_tools
 from clio_agent.gact.storage.connect_tool import build_connected_data_connect_tool
+from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
 from clio_agent.gact.storage.setup_tool import (
     build_connected_data_open_tool,
     build_connected_data_status_tool,
     build_connected_data_write_tool,
 )
+from clio_agent.gact.task_tools import build_task_tools
 from clio_agent.gact.todos import build_write_todos_tool
 from clio_agent.gact.weather_tools import build_weather_forecast_tool
 from clio_agent.providers.model_discovery import build_refresh_provider_models_tool
@@ -110,11 +113,16 @@ def build_auto_react_tools(
     """
 
     tools = [
+        *build_task_tools(),
+        build_connected_data_download_tool(),
         build_create_artifact_tool(agent_def),
         build_plan_exit_tool(agent_def),
         build_write_todos_tool(agent_def),
         *build_cron_tools(),
         build_loop_wakeup_tool(),
+        build_set_loop_tool(),
+        build_set_goal_tool(),
+        build_goal_wait_tool(),
         build_goal_status_tool(),
         build_raise_alert_card_tool(agent_def),
         # The bounded read surface for uploaded workspace resources. Universal,
@@ -170,9 +178,6 @@ def build_auto_react_tools(
         tools.append(build_refresh_provider_models_tool())
         tools.append(build_connected_data_status_tool())
         tools.append(build_connected_data_connect_tool())
-        from clio_agent.gact.storage.github_tool import build_github_cli_tool
-
-        tools.append(build_github_cli_tool())
         tools.append(build_connected_data_open_tool())
         tools.append(build_connected_data_write_tool())
         tools.extend(build_memory_tools(agent_def))
@@ -184,4 +189,7 @@ def build_auto_react_tools(
         )
 
         tools.append(build_draft_alternatives_tool())
+    from clio_agent.gact.storage.knowledge_tools import build_knowledge_tools
+
+    tools.extend(build_knowledge_tools())
     return tools

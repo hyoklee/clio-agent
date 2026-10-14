@@ -83,7 +83,9 @@ def test_cleanup_stops_a_real_owned_tree_and_preserves_an_unrelated_process(tmp_
     code = (
         "import subprocess,sys,time; from pathlib import Path; "
         "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
-        "Path(sys.argv[1]).write_text(str(p.pid)); time.sleep(60)"
+        # File existence is the readiness signal: publish the complete PID atomically.
+        "marker=Path(sys.argv[1]); pending=marker.with_suffix('.tmp'); "
+        "pending.write_text(str(p.pid)); pending.replace(marker); time.sleep(60)"
     )
     parent = subprocess.Popen([sys.executable, "-c", code, str(marker)])
     unrelated = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
@@ -111,6 +113,8 @@ def test_smoke_requires_survival_and_always_cleans_up_and_redacts(
     candidate = backend(tmp_path)
     desktop = tmp_path / "desktop.exe"
     desktop.write_bytes(b"desktop fixture")
+    ticks = iter([100.0, 102.5])
+    monkeypatch.setattr(smoke.time, "perf_counter", lambda: next(ticks))
     native = Mock()
     native.pid = 321
     native.poll.return_value = None
@@ -135,6 +139,10 @@ def test_smoke_requires_survival_and_always_cleans_up_and_redacts(
 
     def response(request: object, **kwargs: object) -> io.BytesIO:
         requests.append(request)
+        if request.full_url.endswith("/v1/health"):
+            return io.BytesIO(
+                b'{"integrations":[{"name":"arc","status":"ready"},{"name":"clio_core_attach","status":"ready"}]}'
+            )
         return io.BytesIO(b'{"contract_version":"1"}')
 
     monkeypatch.setattr(smoke, "urlopen", response)
@@ -144,10 +152,40 @@ def test_smoke_requires_survival_and_always_cleans_up_and_redacts(
         with pytest.raises(RuntimeError, match="after backend readiness"):
             smoke.smoke(desktop, evidence, boot_log=native_log)
     else:
-        assert smoke.smoke(desktop, evidence, boot_log=native_log)["status"] == "passed"
+        result = smoke.smoke(desktop, evidence, boot_log=native_log)
+        assert result["status"] == "passed"
+        assert result["backend_ready_seconds"] == 2.5
+        assert result["survival_observation_seconds"] == 10
     assert requests[0].get_header("Authorization") == "Bearer private-test-token"  # type: ignore[attr-defined]
     assert (evidence / "desktop.log").read_text() == "[redacted]\n"
     assert "private-test-token" not in (evidence / "backend.json").read_text()
     assert (evidence / "boot.log").read_text() == "backend: [redacted]\n"
     cleanup.assert_called_once_with(process, [candidate])
     assert not (evidence / "receipt.json").exists(), "Only the successful caller writes a receipt"
+
+
+def test_readiness_rejects_api_success_with_failed_arc() -> None:
+    """A composer and HTTP 200 cannot qualify a broken packaged core."""
+    assert not smoke.healthy_arc({"integrations": []})
+    assert not smoke.healthy_arc(
+        {
+            "integrations": [
+                {"name": "arc", "status": "ready"},
+                {"name": "clio_core_attach", "status": "degraded", "required": False},
+            ]
+        }
+    )
+    with pytest.raises(ValueError, match="clio_core_daemon_version_unknown"):
+        smoke.healthy_arc(
+            {
+                "integrations": [
+                    {"name": "arc", "status": "ready"},
+                    {
+                        "name": "clio_core_attach",
+                        "status": "degraded",
+                        "required": True,
+                        "reason": "clio_core_daemon_version_unknown",
+                    },
+                ]
+            }
+        )

@@ -147,13 +147,18 @@ def read_steps(arc: Any, session: str, scope: str) -> list[Message]:
 # --------------------------------------------------------------------------- #
 # The step codec: typed parts <-> plane content (CLIO-owned, JSON)            #
 # --------------------------------------------------------------------------- #
-def thinking_to_record(part: ThinkingPart) -> dict[str, Any]:
-    """A thinking part as plane content, provider continuation state kept byte-exact."""
+def thinking_to_record(part: ThinkingPart, source: str = "") -> dict[str, Any]:
+    """A thinking part as plane content, provider continuation state kept byte-exact.
+
+    ``source`` (``provider_field`` / ``inline_tag``, see ``gact.reasoning_extract``) is
+    kept when known; :func:`thinking_from_record` ignores it.
+    """
     return {
         "text": part.text,
         "continuation": [
             {"provider": c.provider, "kind": c.kind, "data": c.data} for c in part.continuation
         ],
+        **({"source": source} if source else {}),
     }
 
 
@@ -319,9 +324,13 @@ def result_part(call_id: str, name: str, value: Any, is_error: bool) -> ToolResu
     content: tuple[Any, ...] = (
         (media,) if media is not None else (TextPart(text=_observation_text(value)),)
     )
-    if media is not None and isinstance(value, Mapping) and value.get("capture"):
-        # Pixels remain ephemeral provider media; their compact, exact provenance
-        # must also reach the model instead of being lost during hydration.
+    if (
+        media is not None
+        and isinstance(value, Mapping)
+        and (value.get("capture") or isinstance(media, DocumentPart))
+    ):
+        # Media remains ephemeral provider input; keep exact provenance beside it
+        # so the agent can locate a PDF even when native delivery is refused.
         content += (
             TextPart(
                 text=_observation_text(
@@ -443,8 +452,12 @@ class StepRecorder:
         )
 
         rows = list(model_context_messages(list(ledger)))
-        while rows and _field(rows[-1], "role") == "user":
-            rows.pop()  # this turn's own message is recorded by the loop itself
+        # The loop records this forward's question itself. Earlier unanswered
+        # questions (e.g. a branch/rewind at a user message) remain model context.
+        if self.turn_id:
+            rows = [row for row in rows if _field(row, "id") != self.turn_id]
+        elif rows and _field(rows[-1], "role") == "user":
+            rows.pop()  # standalone callers supply the current question at the tail
         from clio_agent.gact.agents.context_recovery import (
             context_identity,
             recorded_context,
@@ -557,17 +570,25 @@ class StepRecorder:
         thinking: Sequence[ThinkingPart],
         calls: Sequence[ToolCallPart],
         results: Mapping[str, tuple[Any, bool]],
+        thinking_source: str = "",
+        thinking_complete: bool = True,
     ) -> None:
-        """Write the step's segments and put ``react.step.completed`` on the highway."""
+        """Write the step's segments and put ``react.step.completed`` on the highway.
+
+        ``thinking_source`` labels the step's thinking (``provider_field`` /
+        ``inline_tag``); an inline block the reply never closed is marked
+        ``thinking_incomplete``.
+        """
         from clio_agent.gact.runtime.context_tokens import _arc_obs_value  # noqa: PLC0415
         from clio_agent.gact.runtime.globals import _emit_react_step_event  # noqa: PLC0415
 
-        self._write(
-            "thought",
-            {"text": text, "thinking": [thinking_to_record(t) for t in thinking]},
-            step,
-            span,
-        )
+        thought: dict[str, Any] = {
+            "text": text,
+            "thinking": [thinking_to_record(t, thinking_source) for t in thinking],
+        }
+        if not thinking_complete:
+            thought["thinking_incomplete"] = True
+        self._write("thought", thought, step, span)
         rows: list[dict[str, Any]] = []
         for call in calls:
             value, is_error = results.get(call.id, ("", False))

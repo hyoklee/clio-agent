@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import logging
 import os
 import shutil
 import tempfile
@@ -24,6 +26,7 @@ from clio_agent.platform_paths import win_extended_path
 from clio_agent.runtime.document_stack.process import (
     DocumentError,
     find_native,
+    inherit_parent_access,
     office_convert,
     run,
     scratch_root,
@@ -34,6 +37,7 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
 _RENDER_WORKSPACE: ContextVar[Path | None] = ContextVar("document_render_workspace", default=None)
+_LOGGER = logging.getLogger(__name__)
 
 
 class RenditionError(RuntimeError):
@@ -158,14 +162,12 @@ def _convert_to_pdf(source: Path, output_dir: Path) -> tuple[Path, str]:
             if not output.is_file():
                 raise RenditionError("pandoc completed without producing a PDF")
             return output, "pandoc+typst" if typst is not None else "pandoc"
-    soffice = _find_executable("soffice", "libreoffice")
-    if soffice is None:
-        from clio_agent.runtime.document_runtime import prepare_office_runtime
+    from clio_agent.runtime.document_runtime import prepare_office_runtime
 
-        try:
-            soffice = prepare_office_runtime()
-        except DocumentError as exc:
-            raise RenditionUnavailableError(str(exc)) from exc
+    try:
+        soffice = prepare_office_runtime()
+    except DocumentError as exc:
+        raise RenditionUnavailableError(str(exc)) from exc
     try:
         return office_convert(
             source,
@@ -224,6 +226,44 @@ def render_pdf(
         raise RenditionError(str(exc)) from exc
 
 
+def _prepared_pdf(workspace_root: Path, version: ArtifactVersion) -> tuple[Path, str] | None:
+    """Reuse a successful agent render only when both immutable checksums still match."""
+    if not version.sha256:
+        return None
+    output = (scratch_root(workspace_root, create=False) / "output").resolve()
+    if not output.is_relative_to(workspace_root):
+        raise RenditionError("Prepared document output escapes the active workspace")
+    # Only the helper's immediate run manifests are considered, never a recursive
+    # workspace search or an arbitrary same-name PDF beside the editable source.
+    for candidate in output.glob("*/manifest.json"):
+        try:
+            manifest_path = candidate.resolve(strict=True)
+            if not manifest_path.is_relative_to(output) or manifest_path.stat().st_size > 1_048_576:
+                continue
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if (
+                not isinstance(manifest, dict)
+                or manifest.get("action") != "render"
+                or manifest.get("status") != "complete"
+                or manifest.get("source_sha256") != version.sha256
+                or not isinstance(manifest.get("pdf"), str)
+                or not manifest.get("pdf_sha256")
+            ):
+                continue
+            pdf = Path(manifest["pdf"]).resolve(strict=True)
+            if (
+                not pdf.is_relative_to(manifest_path.parent)
+                or pdf.suffix.lower() != ".pdf"
+                or not pdf.is_file()
+                or sha256_file(pdf) != manifest["pdf_sha256"]
+            ):
+                continue
+            return pdf, manifest["pdf_sha256"]
+        except (OSError, ValueError, TypeError) as exc:
+            _LOGGER.debug("Ignoring unavailable prepared PDF manifest %s: %s", candidate, exc)
+    return None
+
+
 def _render_pdf(
     app: "FastAPI", session_id: str, record: ArtifactRecord, version: ArtifactVersion
 ) -> RenditionResult:
@@ -252,21 +292,32 @@ def _render_pdf(
         return RenditionResult(
             existing.record, existing.version, existing.converter, workspace_path=target
         )
-    # Each conversion owns a disposable run under workspace-local .tmp.
-    with tempfile.TemporaryDirectory(prefix="render-", dir=scratch_root(workspace_root)) as raw_tmp:
-        temporary_root = Path(raw_tmp)
-        source = _source_path(workspace_root, version, temporary_root, record.name)
-        token = _RENDER_WORKSPACE.set(workspace_root)
-        try:
+    prepared = _prepared_pdf(workspace_root, version)
+    if prepared is not None:
+        rendered, prepared_hash = prepared
+        _copy_preview(rendered, target, prepared_hash)
+        converter = "libreoffice (prepared document)"
+    else:
+        # Each conversion owns a disposable run under workspace-local .tmp.
+        with tempfile.TemporaryDirectory(
+            prefix="render-", dir=scratch_root(workspace_root)
+        ) as raw_tmp:
+            temporary_root = Path(raw_tmp)
+            # The host stages immutable bytes, then a different Windows sandbox user
+            # runs the converter. Python's private temporary ACL would exclude it.
+            inherit_parent_access(temporary_root)
+            source = _source_path(workspace_root, version, temporary_root, record.name)
+            token = _RENDER_WORKSPACE.set(workspace_root)
             try:
-                rendered, converter = _convert_to_pdf(source, temporary_root)
-            except (DocumentError, OSError) as exc:
-                raise RenditionError(str(exc)) from exc
-        finally:
-            _RENDER_WORKSPACE.reset(token)
-        if version.sha256 and sha256_file(source) != version.sha256:
-            raise RenditionError("source changed during PDF conversion")
-        _copy_preview(rendered, target)
+                try:
+                    rendered, converter = _convert_to_pdf(source, temporary_root)
+                except (DocumentError, OSError) as exc:
+                    raise RenditionError(str(exc)) from exc
+            finally:
+                _RENDER_WORKSPACE.reset(token)
+            if version.sha256 and sha256_file(source) != version.sha256:
+                raise RenditionError("source changed during PDF conversion")
+            _copy_preview(rendered, target)
     ingested = ingest_identity(target, workspace_root=workspace_root)
     output_name = f"{record.name}.v{version.version}.pdf"
     call_id = f"document-rendition:{version.artifact_id}:{ingested.evidence.sha256}"

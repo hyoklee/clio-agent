@@ -24,6 +24,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import dspy
+import pytest
 
 from clio_agent.gact import goal as goal_mod
 from clio_agent.gact import turn_finalize_goal
@@ -87,7 +88,7 @@ class _CodexShapedLM(dspy.BaseLM):
         self.async_calls += 1
         return _fake_response(
             "[[ ## met ## ]]\nTrue\n\n[[ ## reason ## ]]\nthe markers were printed\n\n"
-            "[[ ## completed ## ]]"
+            "[[ ## next_action ## ]]\ncontinue\n\n[[ ## progress ## ]]\nMarkers verified.\n\n[[ ## completed ## ]]"
         )
 
 
@@ -109,14 +110,64 @@ def test_codex_shaped_lm_judges_through_the_async_path(tmp_path: Path) -> None:
         assert not verdict.reason.startswith("judge unavailable"), verdict
         assert lm.async_calls == 1 and lm.sync_calls == 0
 
-    _in_ctx(body)
+    # This regression intentionally supplies a legacy BaseLM to the async judge.
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"Implementing custom LMs through BaseLM|Passing OpenAI-style message dictionaries",
+    ):
+        _in_ctx(body)
+
+
+def test_unreadable_evidence_pauses_instead_of_judging_an_empty_history(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """An unavailable conversation store must surface as an unavailable judge."""
+
+    def unavailable(app: Any, sid: str) -> str:
+        raise RuntimeError("conversation storage unavailable")
+
+    monkeypatch.setattr(goal_mod, "_build_transcript", unavailable)
+    verdict = asyncio.run(
+        goal_mod.run_llm_judge(_app(tmp_path), "session", {"condition": "Save the report"})
+    )
+    assert not verdict.available and not verdict.met
+
+
+@pytest.mark.parametrize("shutdown,user_stopped", [(True, False), (False, False), (True, True)])
+def test_shutdown_retains_goal_but_user_stop_and_work_failure_do_not_resume(
+    tmp_path: Path, monkeypatch: Any, shutdown: bool, user_stopped: bool
+) -> None:
+    """The real async finalizer distinguishes service exit from user cancellation."""
+    app = _app(tmp_path)
+    sid = _session(app)
+    arm_goal(app, sid, condition="Inspect the retained simulation outcome")
+    if user_stopped:
+        clear_goal(app, sid)
+    app.state.uvicorn_server = SimpleNamespace(should_exit=shutdown)
+    state = _turn_state()
+    state.app, state.sid = app, sid
+    state.error_info = {"error": "cancelled"}
+    monkeypatch.setattr(turn_finalize_goal, "finalize_turn", lambda *a, **kw: None)
+    monkeypatch.setattr(turn_finalize_goal, "_forward_executor", lambda _state: None)
+    asyncio.run(
+        turn_finalize_goal.finalize_turn_async(
+            state, None, drain_observed_tool_calls=lambda: [], update_retry_attempt=lambda *a: None
+        )
+    )
+    goal = goal_mod._get_goal(app, sid)
+    assert bool(goal["active"]) is (shutdown and not user_stopped)
+    assert goal.get("phase") == (
+        "stopped" if user_stopped else "recovering" if shutdown else "paused"
+    )
 
 
 def _turn_state() -> SimpleNamespace:
     """The minimal turn state ``finalize_turn_async`` reads (a top-level, non-child turn)."""
 
     app = SimpleNamespace(state=SimpleNamespace(sessions=SimpleNamespace(get=lambda _sid: None)))
-    return SimpleNamespace(app=app, sid="sess", turn_id="t", trace_id="tr")
+    return SimpleNamespace(
+        app=app, sid="sess", turn_id="t", trace_id="tr", user_msg=SimpleNamespace(metadata={})
+    )
 
 
 def test_finalize_turn_runs_off_the_loop(monkeypatch: Any) -> None:
@@ -135,7 +186,6 @@ def test_finalize_turn_runs_off_the_loop(monkeypatch: Any) -> None:
 
     monkeypatch.setattr(turn_finalize_goal, "finalize_turn", _parked_finalize)
     monkeypatch.setattr(turn_finalize_goal, "dispatch_goal_at_finalize", _goal)
-    monkeypatch.setattr(turn_finalize_goal, "compose_goal_loop_stop_at_finalize", lambda *a: False)
 
     async def exercise() -> None:
         task = asyncio.create_task(
@@ -176,14 +226,13 @@ def test_finalize_turn_async_runs_finalize_then_goal_then_compose(monkeypatch: A
 
     monkeypatch.setattr(turn_finalize_goal, "finalize_turn", _finalize)
     monkeypatch.setattr(turn_finalize_goal, "dispatch_goal_at_finalize", _goal)
-    monkeypatch.setattr(turn_finalize_goal, "compose_goal_loop_stop_at_finalize", _compose)
     state = _turn_state()
     asyncio.run(
         turn_finalize_goal.finalize_turn_async(
             state, None, drain_observed_tool_calls=lambda: [], update_retry_attempt=lambda *a: None
         )
     )
-    assert order == ["finalize", "goal", "compose"]
+    assert order == ["finalize", "goal"]
 
 
 def test_turn_orchestrator_awaits_the_async_finalize() -> None:

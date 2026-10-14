@@ -66,6 +66,11 @@ def _never_touch_the_real_machine(monkeypatch: pytest.MonkeyPatch) -> dict[str, 
 
     monkeypatch.setattr(sandbox_cli, "_elevated_codex_setup", _spy_elevate)
     monkeypatch.setattr(sandbox_cli, "grant_fleet_runtime_access", _spy_grant)
+    from clio_agent.runtime import codex_desktop_access
+
+    monkeypatch.setattr(
+        codex_desktop_access, "ensure_runtime_access", lambda **_kwargs: _spy_grant()
+    )
     monkeypatch.setattr(sandbox_codex, "write_codex_provision_marker", _spy_marker)
     return calls
 

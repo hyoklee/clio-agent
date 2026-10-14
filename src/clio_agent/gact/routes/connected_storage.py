@@ -47,6 +47,7 @@ from clio_agent.gact.storage.models import (
 from clio_agent.gact.storage.service import StorageService, provider_capabilities
 from clio_agent.gact.storage.sftp import SftpSource
 from clio_agent.gact.storage.ssh_target import SshTargetSource
+from clio_agent.gact.storage.task_adapter import validate_task_owner
 
 T = TypeVar("T")
 
@@ -58,6 +59,9 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         paths.user_config_dir() / "storage-auth" / "credentials.json",
     )
     app.state.connected_storage = service
+    from clio_agent.gact.routes.knowledge import register_knowledge_routes
+
+    register_knowledge_routes(app)
     controller_loop: asyncio.AbstractEventLoop | None = None
     source_changes = asyncio.Lock()
 
@@ -147,6 +151,10 @@ def register_connected_storage_routes(app: FastAPI) -> None:
 
         async with source_changes:
             return await run(update)
+
+    from clio_agent.gact.routes.storage_obsidian import register_storage_obsidian_routes
+
+    register_storage_obsidian_routes(app, service, run, change_access)
 
     def start_browser_auth(
         request: Request, record: SourceRecord, body: StartSignIn | None
@@ -248,6 +256,7 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         definitions = []
         for identifier, label, logo in [
             ("local", "Files on this CLIO", "folder"),
+            ("obsidian", "Obsidian", "obsidian"),
             ("sftp", "SSH / SFTP", "ssh"),
             ("google_drive", "Google Drive", "google-drive"),
             ("globus", "Globus", "globus"),
@@ -613,6 +622,7 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         async with source_changes:
             record = record_for(wid, source_id)
             try:
+                validate_task_owner(app, wid, body.session_id if body else "")
                 if getattr(app.state, "resource_store", None) is not None:
                     drafts().change(source_id, body.draft_id if body else "")
                 paths = body.paths if body else None
@@ -633,12 +643,17 @@ def register_connected_storage_routes(app: FastAPI) -> None:
                 operation = service.start_transfer(record, workspace_root(wid), paths)
             except ValueError as exc:
                 raise HTTPException(409, str(exc)) from exc
+        if body and body.session_id:
+            from clio_agent.gact.storage.task_adapter import storage_handle
+
+            storage_handle(app, body.session_id, operation, f"Download {record.source.label}")
+            operation = service.store.get("operation", operation.id, TransferOperation)
         return operation.model_dump()
 
-    @app.post("/v1/workspaces/{wid}/sources/{source_id}/link")
+    @app.post("/v1/workspaces/{wid}/sources/{source_id}/link", status_code=202)
     async def link(wid: str, source_id: str, body: DraftSelection | None = None) -> dict[str, Any]:
         """Link or explicitly refresh folder metadata through its fsspec backend."""
-        from clio_agent.gact.storage.linked import link_folder
+        from clio_agent.gact.storage.indexing import start_index
 
         def attach() -> SourceRecord:
             record = record_for(wid, source_id)
@@ -653,11 +668,19 @@ def register_connected_storage_routes(app: FastAPI) -> None:
                         raise PermissionError(options["reason"])
                     if body.access == "write_through" and not body.confirm_remote:
                         raise ValueError("Confirm that saving edits will update the originals")
-                record.link_access = body.access
+                service.set_link_access(record, body.access)
                 service.store.put("source", source_id, record)
-            return link_folder(service, record)
+            validate_task_owner(app, wid, body.session_id if body else "")
+            return record
 
-        return visible(await change_access(attach))
+        record = await change_access(attach)
+        operation = start_index(service, record)
+        if body and body.session_id:
+            from clio_agent.gact.storage.task_adapter import storage_handle
+
+            storage_handle(app, body.session_id, operation, f"Index {record.source.label}")
+            operation = service.store.get("operation", operation.id, TransferOperation)
+        return {**visible(record), "indexing_operation": operation.model_dump()}
 
     @app.post("/v1/workspaces/{wid}/sources/{source_id}/unlink")
     async def unlink(wid: str, source_id: str) -> dict[str, Any]:
@@ -698,6 +721,17 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         )
         if operation.source_id != source_id:
             raise HTTPException(404, "Transfer not found for this source")
+        if operation.task_handle and operation.owner_session_id:
+            from clio_agent.gact.task_controls import cancel_selected
+
+            outcome = await asyncio.to_thread(
+                cancel_selected, app, operation.owner_session_id, operation.task_handle
+            )
+            if outcome["errors"]:
+                raise HTTPException(409, outcome["errors"])
+            return service.store.get("operation", operation_id, TransferOperation).model_dump(
+                exclude={"native_request"}
+            )
         return (
             await run(lambda: service.store.update_operation(operation_id, cancel_requested=True))
         ).model_dump(exclude={"native_request"})

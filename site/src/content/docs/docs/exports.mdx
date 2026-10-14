@@ -1,8 +1,9 @@
 ---
-title: Exports and downloads
-description: Save a visual, send an interactive report, or export a conversation with its evidence and files.
+title: "Save and share your work"
+description: Download a file, export a report or share a conversation with its recorded evidence.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { Aside, Steps } from "@astrojs/starlight/components";
 import Capture from "../../../components/overview/Capture";
 import WidgetRecording from "../../../components/WidgetRecording.astro";
@@ -31,11 +32,7 @@ For the dashboard's exact buttons and actual output files,
 
 ## Export the conversation
 
-<Aside type="note" title="Development controls">
-  The named checkboxes and download controls pictured here are not included in
-  beta 5.2. Earlier builds call these scopes Transcript, Effects, and Full.
-  The recordings use the development build and fictional station data.
-</Aside>
+<PreviewGuide features="The named session-export checkboxes and download controls" />
 
 <Steps>
 
@@ -57,7 +54,7 @@ For the dashboard's exact buttons and actual output files,
 
 <WidgetRecording name="docs-session-export"
   title="Export the conversation. Open the saved review."
-  caption="The real session menu creates an HTML review of the fictional Best of N example. The downloaded file is then opened with networking disabled."
+  caption="Download an HTML review from the session menu, then open the saved conversation and activity in your browser."
   timingNote="Continuous recording; any accelerated preparation is labelled."
   pointerGuide />
 
@@ -83,7 +80,7 @@ Keep the extracted folder together: its file links depend on that structure.
 
 <Capture client:visible image={await captureImage(savedReview)}
   alt="Downloaded session review open in a browser with the recorded fictional bike-count conversation"
-  caption="The actual downloaded review opened offline. The conversation and recorded activity are retained; this is a saved investigation, not a connection to a live agent."
+  caption="The saved review opens offline with the conversation and recorded activity. Expand an activity row to inspect its inputs and results."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 | In the saved review | What to check |
@@ -110,4 +107,4 @@ automatically launch its associated application.
 
 If you are sharing one report instead of the investigation, follow
 [Dashboards](/docs/dashboards/#find-the-export-buttons). To inspect the evidence
-before exporting, open [Evidence and lineage](/docs/evidence/).
+before exporting, open [Check answers and sources](/docs/evidence/).

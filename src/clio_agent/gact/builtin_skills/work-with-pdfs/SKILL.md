@@ -24,6 +24,11 @@ If `view_pdf` is absent, the active model has no evidenced native PDF
 capability. Use the conversion + rendered-page + `view_image` workflow
 described in the rest of this skill instead.
 
+If a provider refuses a native PDF attachment, its successful preparation does
+not mean the model read it. Follow the recovery note, keep the source path and
+requested page range, and use bounded extraction and rendered-page inspection
+below. Do not repeat the same native attachment or abandon unrelated work.
+
 ## Resolve evidence, not accessibility
 
 Every PDF supplied to the turn has a usable path on the connected agent:
@@ -52,7 +57,7 @@ equations, scans, handwriting, or other visual evidence.
 ## Local conversion and page rendering
 
 Prefer the prepared document stack for local work. Call
-`prepare_execution_runtime` for the execution host's verified commands, packages,
+`prepare_document_runtime` for the execution host's verified commands, packages,
 fonts and output directory. It uses locked dependencies outside Clio's own Python
 environment. Keep source files and requested outputs inside the active workspace;
 use its returned `.tmp/` scratch directory for intermediate scripts and data.
@@ -69,7 +74,8 @@ output to check page count and requested content, then render and visually inspe
 material pages. Designate the requested final file with `create_artifact`. Do not
 claim form, signature or accessibility preservation from a successful rewrite.
 Name the published artifact in the final response; Clio shows its artifact card.
-Do not format local filesystem paths as Markdown links.
+Use the runtime's workspace-file or registered artifact/resource citation format
+for clickable references. Do not use browser-local `file://` links.
 
 When Docling's richer structural conversion is needed and the attachment has no
 usable structured derivative, the following existing helper remains available.

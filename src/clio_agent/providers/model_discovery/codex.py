@@ -8,11 +8,9 @@ behind it: a model the account cannot use never appears, and a new model
 appears as soon as the backend lists it for the Codex version CLIO ships.
 
 Each row carries only what the backend reported (id, name, context window,
-input modalities, reasoning efforts) plus ONE transport fact the list does not
-report: this transport delivers PDF attachments as Responses ``input_file``
-items, so ``pdf`` is added with its own evidence source
-(``codex_direct_input_file``). The output-token limit is not reported by the
-list and stays unknown rather than guessed.
+input modalities, reasoning efforts). Historical PDF canaries on other models
+do not establish native PDF preparation for every model or current backend.
+The output-token limit is not reported by the list and stays unknown.
 
 The result is recorded by the refresh overlay (the ONE model-catalog cache:
 TTL, kept last-good list, typed staleness), exactly like every other provider's
@@ -33,10 +31,6 @@ from clio_agent.providers.codex.model_list import (
 from clio_agent.providers.model_discovery.modality_evidence import modality_evidence
 from clio_agent.providers.model_discovery.overlay import CODEX_SOURCE, ProviderDiscoveryResult
 
-#: Modalities the Direct transport delivers beyond what the model list reports,
-#: each mapped to the modality-evidence source that proves it.
-DIRECT_TRANSPORT_MODALITIES: dict[str, str] = {"pdf": "codex_direct_input_file"}
-
 
 def _capability_row(model: DirectModel) -> dict[str, Any]:
     reported = list(model.input_modalities)
@@ -46,18 +40,13 @@ def _capability_row(model: DirectModel) -> dict[str, Any]:
             "capability_evidence": modality_evidence(
                 source="codex_direct_model_list",
                 reason="modality_unreported",
-                unevidenced=("image", *DIRECT_TRANSPORT_MODALITIES),
+                unevidenced=("image", "pdf"),
             ),
         }
-    added = {
-        modality: source
-        for modality, source in DIRECT_TRANSPORT_MODALITIES.items()
-        if modality not in reported
-    }
     return {
-        "capabilities": [*reported, *added],
+        "capabilities": reported,
         "capability_evidence": modality_evidence(
-            source="codex_direct_model_list", reason="modality_reported", added=added
+            source="codex_direct_model_list", reason="modality_reported"
         ),
     }
 
@@ -115,4 +104,4 @@ def discover_codex(
     )
 
 
-__all__ = ["DIRECT_TRANSPORT_MODALITIES", "discover_codex"]
+__all__ = ["discover_codex"]

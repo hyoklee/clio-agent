@@ -8,8 +8,8 @@ from typing import Any
 import pytest
 from fsspec import AbstractFileSystem
 
+from clio_agent.gact.storage.drive_filesystem import _ApprovedDrive, _DriveFile
 from clio_agent.gact.storage.globus_download import GlobusDownload
-from clio_agent.gact.storage.linked import _ApprovedDrive, _DriveFile
 from clio_agent.gact.storage.models import FileEntry
 from tests.test_gact.test_fsspec_backend_contracts import globus_backend  # noqa: F401
 
@@ -25,7 +25,7 @@ def test_globus_adapter_create_replace_delete_and_readonly(
     record = SimpleNamespace(linked_access="write_through", source=SimpleNamespace(root="/"))
     adapter.source = SimpleNamespace(
         record=record,
-        entries=lambda: [
+        entries=lambda *, progress=None, cancelled=None: [
             FileEntry(path=path.lstrip("/"), kind="file", size=len(data), revision=data.hex())
             for path, data in files.items()
         ],

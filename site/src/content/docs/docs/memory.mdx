@@ -1,6 +1,6 @@
 ---
-title: Memory and recall
-description: Find earlier conversation excerpts, understand where session summaries come from, and inspect context compaction.
+title: "What CLIO remembers"
+description: Find earlier decisions and understand what a conversation summary can leave out.
 ---
 
 import { Steps } from '@astrojs/starlight/components';
@@ -11,6 +11,9 @@ import search from '../../../assets/captures/docs-memory-search.png';
 Use memory to find an earlier decision or result and return to the conversation
 that recorded it. For example, search for **Fernhill** to find why a report says
 that a station was first recorded empty at 8:15.
+
+For the main search menu, highlighted passage navigation, and the Fleet-backed
+CLIO Search assistant, see [Search your work](/docs/search/).
 
 Memory retrieves what was recorded. Before reusing a finding, open its source
 message and check the dataset, interval and qualifications. [Evidence and
@@ -35,7 +38,7 @@ lineage](/docs/evidence/) explains how to inspect the files and actions behind i
 
 <Capture client:visible image={await captureImage(search)}
   alt="Memory settings with Fernhill entered, workspace recall unchecked, and a matching excerpt linked to its source message"
-  caption="Development UI: actual Memory search over retained fictional demo conversations, checked 10 October 2026. This detail shows the controls and first of four matches. Open returns to that recorded message; relevance 100% means the query term matched, not that the claim was verified."
+  caption="Open returns to the matching source message. Relevance 100% means the query term matched; it does not verify the claim."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 Search matches words in retained conversation text, recorded reasoning and
@@ -71,9 +74,6 @@ the fictional refinement session used in the [comparison guide](/docs/best-of-n/
 Its 12 retained messages produce three text excerpts from the last five
 messages, because two of those messages contain no qualifying text. The final
 excerpt retains the limitation about individual journeys.
-
-This result was read from the service with no model agent attached. It is a
-retrieval of the saved conversation, not a new inference run.
 
 </details>
 
@@ -126,26 +126,14 @@ to related sessions in the same workspace. **Global** recall refers to sessions
 in CLIO's global workspace; it does not mean every workspace on the computer.
 Read requests targeting another ordinary workspace are rejected.
 
-## What has been validated?
+## Check what recall can leave out
 
-The checks for these tools cover retrieval behavior and recorded boundaries:
-same-session search, explicit workspace scope, denial of another workspace,
-source identifiers, audit records and exclusion of rewound messages. The
-summary contract is also checked against retained messages: five recent
-messages, bounded excerpts, and no summarizer model call.
-
-A development check on 10 October 2026 also searched the retained fictional
-demo session through **Settings → Memory**, opened a result at its matching
-message, and read the same session through the summary route. The screenshots
-show that check. They do not demonstrate a newly generated compaction summary.
-
-Those checks do not measure whether a model remembers every important fact,
-whether a paraphrase finds the right conversation, or whether a recalled claim
-is scientifically correct. Keyword retrieval can miss synonyms; a recent-message
-overview can miss older decisions; model-written compaction can omit details.
+Keyword retrieval can miss synonyms; a recent-message overview can miss older
+decisions; model-written compaction can omit details. Open the original message
+and supporting files before relying on a recalled claim.
 
 <details>
-<summary>Implementation and validation references</summary>
+<summary>Implementation references</summary>
 
 - [Summary projection and memory routes](https://github.com/iowarp/clio-agent/blob/develop/src/clio_agent/gact/routes/memory.py): constructs the overview from retained messages and records policy decisions.
 - [Transcript search](https://github.com/iowarp/clio-agent/blob/develop/src/clio_agent/gact/runtime/memory_search.py): word matching, ranking and bounded excerpts.
@@ -154,7 +142,6 @@ overview can miss older decisions; model-written compaction can omit details.
 - [Compaction model selection](https://github.com/iowarp/clio-agent/blob/develop/src/clio_agent/gact/compaction_lm.py) and its [tests](https://github.com/iowarp/clio-agent/blob/develop/tests/test_gact/test_compaction_lm.py).
 
 The service checks the scope and intent supplied by the calling tool. These
-fields are not a separate human approval mechanism. Route tests use controlled
-fixtures; they are not a benchmark of recall quality or fresh model inference.
+fields are not a separate human approval mechanism.
 
 </details>

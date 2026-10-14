@@ -33,7 +33,13 @@ from clio_agent.gact.attention.lm_calls import LmCall, turn_calls
 from clio_agent.gact.attention.profiles import reduce_steps
 from clio_agent.gact.attention.reasons import AttentionUnavailable
 from clio_agent.gact.attention.rendered import find_rendered
-from clio_agent.gact.attention.selection import OutputSpan, locate_output, output_steps
+from clio_agent.gact.attention.selection import (
+    THINK_OPEN,
+    OutputSpan,
+    locate_output,
+    output_steps,
+    prompt_opens_thinking,
+)
 from clio_agent.gact.attention.store import AttentionStore
 from clio_agent.gact.attention.transcript_map import (
     anchor_texts,
@@ -85,7 +91,11 @@ def _selected_text(messages: list[Any], request: SelectionRequest) -> tuple[Any,
             "message_not_generated", f"{message.role} messages have no attention rows"
         )
     if request.field not in {"text", "thought", "input"}:
-        raise AttentionUnavailable("message_not_generated", "this field is not generated content")
+        raise AttentionUnavailable(
+            "field_not_supported",
+            f'field {request.field!r} is not an attention field; use field="text" for the '
+            'answer (or "thought" / "input")',
+        )
     for part in message.parts:
         if request.part_id and part.id != request.part_id:
             continue
@@ -168,7 +178,8 @@ def resolve_generated(
         raise AttentionUnavailable("lm_call_not_found", f"no lm.call for turn {message.turn_id}")
     if request.lm_call_id:
         candidates = [call for call in candidates if call.event_id == request.lm_call_id]
-    span = locate_output(candidates, part_text, start, end)
+    source = "reasoning" if getattr(part, "type", "") == "thinking" else "content"
+    span = locate_output(candidates, part_text, start, end, source)
     return GeneratedSelection(request, message, index, part, part_text, start, end, span)
 
 
@@ -202,12 +213,16 @@ def explain_selection(
     summary, renderer, encoded = capture.summary, capture.renderer, capture.encoded
     sections, sections_source = capture.sections, capture.sections_source
 
+    opened = prompt_opens_thinking(encoded.text)
     step_span = output_steps(
         renderer,
         call.content or "",
         span.out_lo,
         span.out_hi,
         summary.record,
+        reasoning=call.reasoning,
+        opened=opened,
+        source=span.source,
     )
     selected_steps = set(step_span.steps)
     for item in selected[1:]:
@@ -215,7 +230,14 @@ def explain_selection(
             raise AttentionUnavailable("selection_ambiguous", "one profile is required for a union")
         selected_steps.update(
             output_steps(
-                renderer, call.content or "", item.span.out_lo, item.span.out_hi, summary.record
+                renderer,
+                call.content or "",
+                item.span.out_lo,
+                item.span.out_hi,
+                summary.record,
+                reasoning=call.reasoning,
+                opened=opened,
+                source=item.span.source,
             ).steps
         )
     if len(selected_steps) > 4096:
@@ -351,7 +373,16 @@ def explain_selection(
             }
             for a, score, intensity in zip(anchors, block_scores, intensities, strict=True)
         ],
-        "tokens": _drilldown(renderer, call.content or "", steps, sections, encoded),
+        "tokens": _drilldown(
+            renderer,
+            (("" if opened else THINK_OPEN) + (call.reasoning or ""))
+            if span.source == "reasoning"
+            else call.content or "",
+            steps,
+            sections,
+            encoded,
+            content_offset=step_span.steps[0] - step_span.token_lo,
+        ),
     }
 
 
@@ -368,7 +399,9 @@ def _drilldown(
     steps: list[Any],
     sections: list[agg.Section],
     prompt: Encoded,
+    content_offset: int = 0,
 ) -> list[dict[str, Any]]:
+    """Per-step top prompt positions; ``content_offset`` = produced tokens before the content."""
     out_enc = renderer.encode(content)
     starts = [s.lo for s in sections]
     rows: list[dict[str, Any]] = []
@@ -391,7 +424,8 @@ def _drilldown(
                 }
             )
         tidx = step.token_index
-        a, b = out_enc.offsets[tidx] if 0 <= tidx < len(out_enc.offsets) else (0, 0)
+        cidx = tidx - content_offset
+        a, b = out_enc.offsets[cidx] if 0 <= cidx < len(out_enc.offsets) else (0, 0)
         rows.append(
             {
                 "step": step.step,

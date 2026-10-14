@@ -14,10 +14,14 @@ engine changes only the transport:
   tool list, an idle or aged socket) sends the full input, typed on the
   ``provider.stateful`` audit row. Outside a loop every call is a full send on a
   short-lived socket.
-* **One build per call.** The wire request is built once; the delta is a slice of its
+* **One build per attempt.** The wire request is built once; the delta is a slice of its
   input items. Whether the kept conversation continues is decided by the item count
   it was sent and a running sha256 over those items (never an element-wise compare
   of the message history).
+* **Recoverable file preparation.** A backend file-preparation refusal before any
+  model output retries once with an honest observation replacing the rejected
+  document. The agent can then extract text or inspect page images. Refused bytes
+  are not reattached by later steps; recorded context and source files stay intact.
 * **ARC ops reset typed.** The engine takes part in the per-forward scope registry
   (:func:`~clio_agent.providers.stateful_common.register_scope_registry`): an ARC op
   on a forward (compaction, delete) drops the conversations it drove, and the next
@@ -75,9 +79,21 @@ from clio_agent.providers.codex import constants as c
 from clio_agent.providers.codex.audit import (
     emit_call_started,
     emit_call_usage,
+    emit_completed_tool_call,
     emit_raw_event,
 )
+from clio_agent.providers.codex.audit import usage_row as _usage_row
 from clio_agent.providers.codex.errors import CodexPlanLimitError, is_usage_limit_text
+from clio_agent.providers.codex.file_inputs import (
+    DocumentInputRecovery,
+    FilePreparationUnsupportedError,
+    is_file_preparation_refusal,
+    report_file_recovery,
+)
+from clio_agent.providers.codex.request_options import check_media as _check_media
+from clio_agent.providers.codex.request_options import (
+    with_reasoning_summary as _with_reasoning_summary,
+)
 from clio_agent.providers.codex.stream_errors import (
     CallOutcome,
     CodexStreamDroppedError,
@@ -85,6 +101,7 @@ from clio_agent.providers.codex.stream_errors import (
     RetryLog,
     terminal_error,
 )
+from clio_agent.providers.codex.stream_tool_calls import ToolCallAssembler
 from clio_agent.providers.stateful_common import (
     active_stateful_scope,
     register_scope_registry,
@@ -260,6 +277,7 @@ class AsyncCodexDirectEngine:
         # ``http``: the operator chose stateless HTTP (``CLIO_CODEX_TRANSPORT=sse``,
         # e.g. behind a proxy that blocks WebSocket upgrades) -- no kept socket.
         self.http = http
+        self._file_inputs = DocumentInputRecovery()
 
     async def complete(self, request: Request) -> Response:
         """Run one call and return the assembled response."""
@@ -300,16 +318,33 @@ class AsyncCodexDirectEngine:
         try:
             _check_media(request)  # typed refusal of oversized attachments before any send
             request = _with_reasoning_summary(request)
-            if self.http:
-                await asyncio.to_thread(self._http, request, out)
-                return
-            await self._run(request, key, out)
+            request = self._file_inputs.prepare(request)
+            try:
+                await self._send(request, key, out)
+            except FilePreparationUnsupportedError:
+                # A changed input, once, before output; never replay model actions.
+                self._file_inputs.reject(request)
+                if key is not None:
+                    await _drop(key)
+                logger.warning(
+                    "codex native file refused reason=codex_file_preparation_unsupported"
+                )
+                report_file_recovery()
+                await self._send(self._file_inputs.prepare(request), key, out)
         except BaseException as exc:  # noqa: BLE001 - surfaced on the caller's loop
             if key is not None:
                 await _drop(key)
             out.put(exc)
         finally:
             out.put(_END)
+
+    async def _send(
+        self, request: Request, key: tuple[str, ...] | None, out: queue.SimpleQueue[Any]
+    ) -> None:
+        if self.http:
+            await asyncio.to_thread(self._http, request, out)
+        else:
+            await self._run(request, key, out)
 
     async def _run(
         self, request: Request, key: tuple[str, ...] | None, out: queue.SimpleQueue[Any]
@@ -361,12 +396,25 @@ class AsyncCodexDirectEngine:
         """One stateless HTTP call (lm15's own transport), events forwarded as they come."""
         from dspy.lm15 import RateLimitError  # noqa: PLC0415
 
+        output_started = False
         try:
-            for event in self.wire.stream(dataclasses.replace(request, model=self.model)):
+            for event in ToolCallAssembler().stream(
+                self.wire.stream(dataclasses.replace(request, model=self.model))
+            ):
+                if event.type == "error" and not output_started:
+                    if is_file_preparation_refusal(request, event.error.message or ""):
+                        raise FilePreparationUnsupportedError(event.error.message)
+                output_started |= event.type == "delta"
                 out.put(event)
         except RateLimitError as exc:
             if is_usage_limit_text(str(exc)):
                 raise CodexPlanLimitError(str(exc)) from exc
+            raise
+        except FilePreparationUnsupportedError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - translate only this explicit input refusal
+            if not output_started and is_file_preparation_refusal(request, str(exc)):
+                raise FilePreparationUnsupportedError(str(exc)) from exc
             raise
 
 
@@ -400,35 +448,6 @@ class CodexDirectEngine(AsyncCodexDirectEngine):
 
     def close(self) -> None:
         """Nothing to release per engine."""
-
-
-def _check_media(request: Request) -> None:
-    """Every inline image / document of the request within the native ceilings.
-
-    Raises:
-        NativeAttachmentTooLargeError: One attachment, or all of them together, too large.
-    """
-    from dspy.lm15 import DocumentPart, ImagePart  # noqa: PLC0415
-
-    from clio_agent.providers.native_attachment_bounds import (  # noqa: PLC0415
-        base64_byte_length,
-        check_block_bytes,
-        check_total_bytes,
-    )
-
-    total = 0
-    for message in request.messages:
-        for part in message.parts:
-            for media in (part, *getattr(part, "content", ())):
-                data = getattr(media, "data", None)
-                if isinstance(media, ImagePart | DocumentPart) and data:
-                    size = base64_byte_length(data)
-                    if isinstance(media, ImagePart):
-                        check_block_bytes("image", size, label=media.media_type)
-                    else:
-                        check_block_bytes("document", size, label=media.media_type)
-                    total += size
-    check_total_bytes(total)
 
 
 def default_wire() -> Any:
@@ -618,6 +637,9 @@ async def _exchange(
     streamed: list[bool] = []  # set once any event of the reply reached the caller
     try:
         return await _stream(wire, request, socket, frame, out, call_id, call_index, streamed)
+    except FilePreparationUnsupportedError:
+        await socket.close()
+        raise
     except websockets.ConnectionClosed as exc:
         if kept and not streamed:
             raise _ConnectionLost from exc
@@ -640,8 +662,10 @@ async def _stream(
 ) -> tuple[str, tuple[str, ...]]:
     """The body of :func:`_exchange`: send the frame and forward the reply's events."""
     first = True
+    output_started = False
     usage: Any = None
     calls: list[str] = []
+    tool_calls = ToolCallAssembler()
     await socket.send(json.dumps({"type": "response.create", **frame}))
     async for raw in socket:
         payload = json.loads(raw)
@@ -653,6 +677,8 @@ async def _stream(
         parsed: Any = None
         if kind in {"error", "response.failed"}:
             message = _error_message(payload)
+            if not output_started and is_file_preparation_refusal(request, message):
+                raise FilePreparationUnsupportedError(message)
             if is_usage_limit_text(message):
                 # The account's plan window is exhausted: terminal, never retried.
                 raise CodexPlanLimitError(message, code=_error_code(payload))
@@ -662,9 +688,13 @@ async def _stream(
             parsed = [failure]  # lm15's typed error (lm15 parses no response.failed)
         if kind == "response.output_item.done":
             calls.extend(c for c in _call_ids([payload.get("item")]) if c not in calls)
+            emit_completed_tool_call(
+                call_index=call_index, payload=payload, streamed_arguments=tool_calls.arguments
+            )
         if parsed is None:
-            parsed = wire.parse_stream_events(request, _WireEvent(event=kind, data=raw))
+            parsed = tool_calls.parse(wire, request, _WireEvent(event=kind, data=raw))
         for event in parsed:
+            output_started |= event.type == "delta"
             if first and event.type == "delta":
                 first = False
                 emit_raw_event(
@@ -701,36 +731,6 @@ def _next_call_index() -> int:
     with _CALL_INDEX_LOCK:
         _CALL_INDEX += 1
         return _CALL_INDEX
-
-
-def _usage_row(usage: Any) -> dict[str, int]:
-    """lm15 usage in the audit's ``usage_*`` keys (the Claude Code engine's names)."""
-    if usage is None:
-        return {}
-    fields = {
-        "input_tokens": usage.input_tokens,
-        "cached_input_tokens": usage.cache_read_tokens,
-        "output_tokens": usage.output_tokens,
-        "reasoning_output_tokens": usage.reasoning_tokens,
-    }
-    return {k: int(v) for k, v in fields.items() if v is not None}
-
-
-def _with_reasoning_summary(request: Request) -> Request:
-    """Ask Codex for its reasoning summary: the model's thinking is shown to the user.
-
-    With no effort set, only the summary is asked for (the backend keeps its own
-    default effort) -- through ``extensions``, since lm15's ``Reasoning`` needs one.
-    """
-    config = request.config
-    if config.reasoning is not None:
-        if config.reasoning.summary is not None:
-            return request
-        reasoning = dataclasses.replace(config.reasoning, summary="auto")
-        return dataclasses.replace(request, config=dataclasses.replace(config, reasoning=reasoning))
-    extensions = dict(config.extensions or {})
-    extensions.setdefault("reasoning", {"summary": "auto"})
-    return dataclasses.replace(request, config=dataclasses.replace(config, extensions=extensions))
 
 
 class _ContinuationLost(Exception):

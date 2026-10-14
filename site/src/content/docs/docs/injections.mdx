@@ -1,0 +1,111 @@
+---
+title: "Updates during a conversation"
+description: Understand reminders, background results and recovered context that appear while CLIO works.
+---
+
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Capture from '../../../components/overview/Capture';
+import { captureImage } from '../../../lib/captures';
+import collection from '../../../assets/captures/docs-injection-collection.png';
+import injection from '../../../assets/captures/docs-injection-collection-open.png';
+import goal from '../../../assets/captures/docs-injection-goal.png';
+import taskResult from '../../../assets/captures/docs-wait-all-result.png';
+import scheduled from '../../../assets/captures/docs-schedule-injection.png';
+
+<PreviewGuide features="The grouped update rows pictured here" />
+
+CLIO can receive an update while it is working: a background check finishes, a
+scheduled instruction becomes due, or an earlier decision is brought back into
+context. These updates appear in the activity record as **Injection** rows.
+Open one when you want to understand why the agent continued or changed direction.
+
+<Capture client:visible priority image={await captureImage(collection)}
+  alt="Activity collection labelled Received loop wake, ran commands, containing an Injection Loop wake row followed by Run"
+  caption="An injection belongs to the activity collection. Here, a loop wake supplies the instruction and the Run row records the command used to check the files."
+/>
+
+## Understand an update
+
+Expand the activity collection and find the syringe icon followed by
+**Injection** and its description. Open the row to read the supplied text. Use
+**Open exact details** for the recorded data when you need to inspect the full
+record.
+
+<Capture client:visible image={await captureImage(injection)}
+  alt="The same activity collection with Injection Loop wake expanded to show its instruction and Open exact details"
+  caption="Open Injection Loop wake to read what the agent received. Open exact details exposes the recorded data; expanding the row does not run the command again."
+/>
+
+An injection is not a message you typed or the agent's final answer. Its presence
+also does not mean the requested work succeeded. A background completion notice
+delivers an outcome for the agent to inspect; the task's actual result provides
+the evidence.
+
+## Common updates and what they mean
+
+| Type | Why CLIO supplies it |
+| --- | --- |
+| Background task completion; Results from background tasks | A previously started operation ended, or its retained result is being delivered. |
+| Todo list reminder | Keeps the current checklist available to the agent. |
+| Recovered conversation context; Summarization | Restores earlier context or carries a condensed record forward. |
+| Memory search results | Provides relevant retained information found through memory search. |
+| Plan reminder; Replanning suggestion | Supplies the current planning constraints or guidance for revising the approach. |
+| Goal judgment | Reports the goal check and guidance for continued work. |
+| Loop wake; Scheduled wake | Delivers an instruction from a monitoring loop or scheduled action. |
+| Repeated-failure warning | Calls attention to repeated unsuccessful operations. |
+| Large result saved to a file | Points to a saved result that is too large to keep inline. |
+| Path suggestion | Supplies a relevant file or folder location. |
+| Hook | Supplies context produced by a configured hook. |
+| Tool use | Supplies guidance about using the available tools. |
+| Drafting alternatives; Advice for this draft | Supplies instructions or feedback while generating and reviewing alternatives. |
+
+Not every conversation uses every type. Goals, loops, schedules, hooks, and
+connected tools determine which additions are relevant.
+
+## Example: a goal still needs work
+
+A **Goal judgment** can explain why work should continue. Read the reason before
+treating a finished turn as a finished assignment. Here,
+two files had confirmed saves and the third still needed to be saved.
+
+<Capture client:visible image={await captureImage(goal)}
+  alt="Expanded Goal judgment explaining that plan.md and results.md were saved but report.md still needed a successful save"
+  caption="The judgment names the missing deliverable and carries the goal's continuation instructions. It records the controller's guidance at that point in the workflow."
+/>
+
+## Example: a task returns while you read
+
+You ask CLIO to check several files. It delegates one check and continues with
+the others. When the delegated check ends, CLIO records a background completion
+injection. The parent reads the result and can incorporate it into its answer.
+
+Follow the task or child-agent details to inspect the returned check. If the
+result says verification is incomplete, the completion notice does not change
+that conclusion.
+
+<Capture client:visible image={await captureImage(taskResult)}
+  alt="Expanded Wait for all tasks showing one collected result and the child agent's calculation"
+  caption="Open the returned task result to read the check. Turn ended describes the child agent's status; the calculation beneath it is the result."
+/>
+
+## Example: a scheduled check begins
+
+You ask CLIO to inspect a job later. A **Scheduled wake** carries that saved
+instruction into the conversation when it is due. A **Loop wake** does the same
+for a repeated check. Open the injection to see the instruction, then inspect
+the following operations for what actually happened.
+
+The row records supplied context. To change or stop future scheduled work, use
+the controls in **Work**; collapsing an injection only changes its display.
+
+<Capture client:visible image={await captureImage(scheduled)}
+  alt="Scheduled wake expanded above the resulting saved report"
+  caption="Scheduled wake carries the saved instruction into the conversation. The following response and output show what happened after it arrived."
+/>
+
+<CardGrid>
+  <LinkCard title="Goals, loops and scheduled work" href="/docs/long-running-work/" description="Set up continued work and inspect its controls." />
+  <LinkCard title="Follow work in progress" href="/docs/following-work/" description="Find the operation and result behind a notification." />
+  <LinkCard title="What CLIO remembers" href="/docs/memory/" description="Inspect retained information used in a conversation." />
+</CardGrid>

@@ -1,7 +1,7 @@
 ---
 name: present-interactive-analysis
 title: Present Interactive Analysis
-description: Use for explorable answers, generated images and SVG figures, editable message drafts, and follow-ups about selected evidence. Show saved visual artifacts with the active A2UI catalog's Image component; load the catalog for exact shapes.
+description: Use for explorable answers, generated images and SVG figures, illustrated guides, image collections, video, editable message drafts, and follow-ups about selected evidence. Show registered media through the active A2UI catalog's Image component, Carousel and Video. Load this skill alongside the active catalog index, then batch any exact component schemas in one lookup.
 ---
 
 Use this skill when interaction or structure helps the person use the answer.
@@ -23,7 +23,7 @@ surface when the ask is to see, render, plot, or map something; reach for an
 artifact when the deliverable itself is a file the user asked to keep.
 When that deliverable is a generated visual artifact (PNG, JPEG, SVG, or
 another supported image), also display the registered file with the active
-catalog's Image component. The person should see the figure in the answer
+A2UI catalog's Image component. The person should see the figure in the answer
 and retain its downloadable file. Use the artifact reference, not a local
 filesystem path, a base64 copy, or an invented URL. Follow the catalog's
 supported media formats; report an unavailable image component explicitly.
@@ -39,6 +39,21 @@ you" for the ids your session can currently produce) and one component's exact
 schema with `load_skill("a2ui-catalog-<slug>", file="catalog.json#/components/<ExactComponentId>")`
 before producing it. Copy the complete key from the catalog index: for example,
 `catalog.json#/components/clio.chart.v1`, not a display label such as `Chart`.
+
+Load all needed exact component schemas together through `load_skill(..., files=[...])`.
+Avoid separate lookups for each component or schema definition.
+
+For a revision, use this tool sequence before the final answer:
+`inspect_a2ui_surface` → `update_a2ui_components` → `inspect_a2ui_surface`.
+For bound-data changes, use `update_a2ui_data_model` as the update step instead.
+Preserve the content the user did not ask to change: media references, child
+order, captions, source links, units, and version or availability labels.
+Replacing a Text label with a Button or another component must retain that
+label's qualifications in its visible child text or a connected Text component.
+Compare the final inspection's components with the earlier definition before
+claiming that content was preserved. Do not skip the final inspection because
+the update returned a ready surface: that confirms schema acceptance, not
+content preservation.
 
 When a user names a public data source, use an available fetch tool or a local
 shell HTTP request to obtain the data before deciding that access is unavailable.
@@ -94,15 +109,30 @@ Match the surface to the shape of the evidence, not to what looks impressive:
   representative subset, state the criterion, and let them refine it.
 - Many entities or grouped comparisons (one line per sample over time, spectra,
   distributions per group, a matrix of values) → the same `clio.chart.v1`
-  component. Use one of its **named presets** by filling in field names; don't
-  write a chart spec by hand unless no preset fits. That's longer, more likely to
-  fail, and still has to pass the catalog's spec guard.
+  component. Start with a named preset when it communicates the comparison well.
+  Use an authored spec when layering, direct labels, a reference line, a shared
+  scale or a deliberate facet layout makes the evidence easier to understand,
+  even if a preset could technically plot the rows. Keep the spec guarded and
+  the source data unchanged.
 - For anything non-trivial in size, pass a registered artifact reference instead
   of inlined rows. Let the server-side query filter, aggregate or downsample it
   (for example, a bounded number of points per entity) instead of trimming the
   data yourself.
 
 - A single observed value → one metric component per value.
+- A sequence of images, comparisons, or illustrated instructions → the catalog's
+  `Carousel` container. Use ordinary Image and Text components together for each
+  captioned slide; Video can be a slide or a standalone player. Keep media in
+  registered artifacts so every viewer can load them. A carousel is useful for
+  many kinds of content, not only setup guides.
+  For CLIO documentation, read the relevant guide and
+  `https://clio.iowarp.ai/media/guides.json` (or `/media/guides.json` on a supplied
+  documentation host). That index lists the guide's actual
+  image/video paths, section names, captions and available version labels.
+  Resolve relative paths against that host, obtain the matching files with an
+  available fetch or shell tool, then display their artifact references. Keep
+  the source-guide link and version qualification with the explanation. Do not
+  invent screenshots or treat viewing a slide as completing its instructions.
 - A requested illustration, photograph, or generated schematic the person
   should inspect alongside data → an Image in the same surface. Register the
   actual file first and use its artifact URL; keep a short description of what
@@ -197,6 +227,12 @@ repeating the original dashboard or the reference's technical payload.
 
 ## Composing surfaces
 
+For a report, first decide the reader's question, the supported finding, and
+what each view contributes. Load `create-dashboard` for a substantial saved
+report and its `references/report-design.md` for composition examples. Give
+colour, size and emphasis consistent jobs across related views. A collection
+of correctly plotted charts is not yet an explained report.
+
 Prefer one small surface at the step it explains. Reuse a stable semantic
 `surface_id` to update that view in place. Do not accumulate unrelated work into
 one final tabbed dashboard. Tabs are appropriate only when several views of the
@@ -216,8 +252,8 @@ should replace the earlier view so both versions do not compete in the chat.
 
 ## Custom charts with Altair
 
-The general chart component renders **Vega-Lite**. When no named preset fits
-(a layered overlay, a particular facet layout, a custom encoding), write the
+The general chart component renders **Vega-Lite**. When an authored view explains
+the result better (a layered overlay, direct labels, a facet layout), write the
 chart in Python with **Altair**, which produces Vega-Lite, and pass the
 exported spec to the component instead of writing Vega-Lite JSON by hand.
 

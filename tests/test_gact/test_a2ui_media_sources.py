@@ -68,6 +68,7 @@ def test_url_properties_are_read_from_the_catalog_schema() -> None:
         ("Video", "url"),
     ]
     assert ("Image", "url") in url_properties(workspace.file)
+    assert ("Video", "url") in url_properties(workspace.file)
     assert ("clio.artifact.v1", "uri") in url_properties(workspace.file)
 
 
@@ -160,6 +161,28 @@ def test_workspace_paths_and_references_carry_no_notice(tmp_path: Any, monkeypat
     )
     assert "external_urls" not in result
     assert "external_url_notice" not in result
+
+
+def test_carousel_exports_each_media_child_through_the_normal_boundary(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A captioned guide keeps ordinary image/video artifacts and its full definition."""
+    _app, _sid, root = _producer_session(tmp_path, monkeypatch)
+    (root / "step.png").write_bytes(PNG)
+    (root / "guide.mp4").write_bytes(b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 64)
+    result = build_create_a2ui_surface_tool()(
+        surface_id="guide",
+        components=[
+            {"id": "root", "component": "Carousel", "children": ["step", "video"]},
+            {"id": "step", "component": "Column", "children": ["image", "caption"]},
+            {"id": "image", "component": "Image", "url": "step.png", "fit": "contain"},
+            {"id": "caption", "component": "Text", "text": "Open the source message."},
+            {"id": "video", "component": "Video", "url": "guide.mp4"},
+        ],
+    )
+    assert result.get("ok") is not False, result
+    assert {row["component_id"] for row in result["exported_artifacts"]} == {"image", "video"}
+    assert "external_urls" not in result
 
 
 def test_an_insecure_http_url_is_refused_with_the_same_recovery(

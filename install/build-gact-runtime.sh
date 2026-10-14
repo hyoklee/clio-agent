@@ -13,7 +13,7 @@
 # The runtime self-describes via a generic manifest (<out>/runtime.json,
 # iowarp/gact-tui#311) so the desktop launcher needs zero knowledge of
 # what's inside:
-#   {"schema": 1, "exec": ["python/bin/python3.13", "-I", "-B", "-m", "clio_agent.gact", "--no-agent"]}
+#   {"schema": 1, "exec": ["python/bin/python3.14", "-I", "-B", "-m", "clio_agent.gact", "--no-agent"]}
 #
 # Console scripts are DELETED after install: their shims embed absolute
 # build paths and break on relocation — `-m clio_agent.gact` is the only
@@ -25,7 +25,7 @@
 #   CLIO_AGENT_SOURCE    local clio-agent checkout to install from instead
 #                        of the git ref (CI passes its own workspace so the
 #                        runtime is built from EXACTLY the released tree)
-#   CLIO_RUNTIME_PYTHON  python minor version (default: 3.13)
+#   CLIO_RUNTIME_PYTHON  python minor version (default: 3.14, standard GIL build)
 #
 # Usage:
 #   ./build-gact-runtime.sh <output-dir>
@@ -36,7 +36,7 @@ set -euo pipefail
 
 OUT="${1:?usage: build-gact-runtime.sh <output-dir>}"
 REF="${CLIO_REF:-develop}"
-PYVER="${CLIO_RUNTIME_PYTHON:-3.13}"
+PYVER="${CLIO_RUNTIME_PYTHON:-3.14}"
 REPO_URL="git+https://github.com/iowarp/clio-agent.git"
 
 dir_size_mb() {
@@ -63,7 +63,7 @@ STAGING="$OUT/.uv-python-staging"
 echo "[build-gact-runtime] installing standalone CPython $PYVER"
 uv python install "$PYVER" --install-dir "$STAGING"
 # The staging dir holds the real versioned dist plus a bare-minor alias
-# (cpython-3.13-... -> cpython-3.13.13-...). Copy the real one.
+# (cpython-<minor>-... -> cpython-<patch>-...). Copy the real one.
 DIST="$(find "$STAGING" -maxdepth 1 -type d -name "cpython-${PYVER}.[0-9]*" | head -1)"
 [ -n "$DIST" ] || { echo "build-gact-runtime: no cpython dist under $STAGING" >&2; exit 1; }
 cp -a "$DIST" "$OUT/python"
@@ -196,6 +196,12 @@ find "$OUT/python" -type f -name '*.exe' -delete
 # on them). PORTABLE: BSD find has no -xtype (the GNU-only sweep silently
 # no-opped on macOS — the exact silent-fallback class this repo bans).
 find "$OUT/python" -type l ! -exec test -e {} ';' -delete
+
+echo "[build-gact-runtime] preparing locked document wheels"
+DOCUMENT_STACK="$(find "$OUT/python" -path '*/site-packages/clio_agent/runtime/document_stack' -type d -print -quit)"
+test -n "$DOCUMENT_STACK"
+"$OUT/$PYBIN_REL" -I -B "$CHECKOUT/install/build_document_wheels.py" \
+  --stack "$DOCUMENT_STACK" --out "$OUT/document-wheels" --uv "$(command -v uv)"
 
 # Prepare the real startup import graph in the release image, not on the
 # user's first launch. Compiling the entire distribution is both wasteful and

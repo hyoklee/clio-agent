@@ -33,10 +33,11 @@ so node labels remain readable beside the reader.
 
 ## Validation
 
-- Backend: 40 connected-storage, linked-storage, knowledge, and sync tests passed.
+- Backend: 41 connected-storage, linked-storage, knowledge, and sync tests passed.
   Coverage includes folder-scoped indexing, unresolved outside links, capture and
-  edit confinement, private-root rejection, and the enclosing-vault sync path.
-- Ruff passed; mypy passed on both changed production modules.
+  edit confinement, private-root rejection, the enclosing-vault sync path, and
+  vault-root link resolution within the selected folder.
+- Ruff passed; mypy passed on all four changed production modules.
 - Frontend: 29 source-picker/workbench tests passed; the final graph layout passed
   the three workbench tests, TypeScript checking, and frontend lint.
 - Website: 30 unit tests passed; Astro check reported zero errors and warnings;

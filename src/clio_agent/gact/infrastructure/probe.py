@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from collections.abc import Awaitable, Callable
 
-import anyio
+from anyio.to_thread import run_sync
 
 from clio_agent.gact.infrastructure.models import (
     CommandResult,
@@ -22,6 +22,7 @@ from clio_agent.gact.infrastructure.runtime_probe import (
     local_runtime_facts,
     parse_probe,
 )
+from clio_agent.gact.infrastructure.terminal_output import structured_stdout
 from clio_agent.paths import user_data_dir
 
 CommandExecutor = Callable[[CommandSpec], Awaitable[CommandResult]]
@@ -71,6 +72,31 @@ def _command_available(program: str, args: list[str]) -> bool:
     return completed.returncode == 0
 
 
+#: PCI vendor of Intel GPUs and the 3D-controller class Intel Data Center GPUs
+#: (Max/Ponte Vecchio, Flex) report; integrated graphics report VGA (0x0300).
+INTEL_PCI_VENDOR = "0x8086"
+PCI_3D_CONTROLLER = "0x0380"
+
+
+def _intel_datacenter_gpu(drm: str = "/sys/class/drm") -> bool:
+    """Whether Linux sysfs lists an Intel Data Center GPU (the XPU runtimes' target)."""
+    try:
+        cards = [name for name in os.listdir(drm) if name.startswith("card") and "-" not in name]
+    except OSError:
+        return False
+    for card in cards:
+        try:
+            with open(os.path.join(drm, card, "device", "vendor"), encoding="ascii") as handle:
+                vendor = handle.read().strip().lower()
+            with open(os.path.join(drm, card, "device", "class"), encoding="ascii") as handle:
+                device_class = handle.read().strip().lower()
+        except OSError:
+            continue
+        if vendor == INTEL_PCI_VENDOR and device_class.startswith(PCI_3D_CONTROLLER):
+            return True
+    return False
+
+
 def _local_facts(target: InfrastructureTarget) -> TargetFacts:
     runtimes = local_runtime_facts(_resolve_command)
     docker = next(fact for fact in runtimes if fact.name == "docker")
@@ -82,6 +108,8 @@ def _local_facts(target: InfrastructureTarget) -> TargetFacts:
         accelerator = "nvidia"
     elif _command_available("rocminfo", ["--version"]):
         accelerator = "amd"
+    elif _intel_datacenter_gpu():
+        accelerator = "intel"
     return TargetFacts(
         target_id=target.id,
         label=target.label,
@@ -107,7 +135,7 @@ async def probe_target(
     """Inspect a target without inferring capabilities from its display name."""
 
     if target.kind == "local":
-        return await anyio.to_thread.run_sync(_local_facts, target)
+        return await run_sync(_local_facts, target)
     if target.kind == "direct":
         return TargetFacts(
             target_id=target.id,
@@ -155,6 +183,9 @@ async def probe_target(
                 "if nvgpu=$(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null) "
                 '&& [ -n "$nvgpu" ]; then gpu=nvidia; fi; '
                 'if [ "$gpu" = none ] && rocminfo 2>/dev/null | grep -q "Name:.*gfx"; then gpu=amd; fi; '
+                'if [ "$gpu" = none ]; then for c in /sys/class/drm/card*/device; do '
+                '[ "$(cat "$c/vendor" 2>/dev/null)" = 0x8086 ] && case "$(cat "$c/class" 2>/dev/null)" in '
+                "0x0380*) gpu=intel ;; esac; done; fi; "
                 "di=0; dr=0; uv=0; command -v docker >/dev/null 2>&1 && di=1; "
                 "docker info >/dev/null 2>&1 && dr=1; command -v uv >/dev/null 2>&1 && uv=1; "
                 'printf \'%s|%s|%s|%s|%s|%s\\n\' "$os" "$arch" "$gpu" "$di" "$dr" "$uv"; '
@@ -174,11 +205,13 @@ async def probe_target(
     result = await execute(spec)
     if result.exit_code != 0:
         raise RuntimeError(result.stderr.strip() or "Remote target inspection failed")
-    line = next((item.strip() for item in result.stdout.splitlines() if item.count("|") == 5), "")
+    # Desktop SSH uses a terminal transport; terminal display sequences are not host facts.
+    stdout = structured_stdout(result.stdout)
+    line = next((item.strip() for item in stdout.splitlines() if item.count("|") == 5), "")
     fields = line.split("|")
     if len(fields) != 6:
         raise RuntimeError("Remote target returned an invalid capability probe")
-    runtimes, identity, home, hostname = parse_probe(result.stdout)
+    runtimes, identity, home, hostname = parse_probe(stdout)
     return TargetFacts(
         target_id=target.id,
         label=target.label,
@@ -195,7 +228,7 @@ async def probe_target(
         agent_data_root=next(
             (
                 line.split("|", 1)[1]
-                for line in result.stdout.splitlines()
+                for line in stdout.splitlines()
                 if line.startswith("clio-agent-data|")
             ),
             "",

@@ -103,6 +103,7 @@ def test_provision_fresh_success_elevates_verifies_and_marks() -> None:
     spy = _SpyElevator(ok=True)
     written: list[tuple[str, object]] = []
     grants = [{"grant": "uv_tool_bin", "status": "granted"}]
+    progress: list[str] = []
     result = scli.provision_codex_windows(
         platform="win32",
         detection=_codex_ok(),
@@ -111,6 +112,7 @@ def test_provision_fresh_success_elevates_verifies_and_marks() -> None:
         verifier=lambda _b, _r, platform="win32": (True, sc.REASON_CODEX_ENFORCEMENT_VERIFIED),
         marker_writer=lambda v, **k: written.append((v, k.get("enforcement_verified"))),
         grantor=lambda: grants,  # fake fleet-runtime RX grants (never touch icacls)
+        progress=progress.append,
     )
     assert result.ok is True
     assert result.status == scli.OUTCOME_PROVISIONED
@@ -119,6 +121,12 @@ def test_provision_fresh_success_elevates_verifies_and_marks() -> None:
     assert written == [("0.145.0", True)]  # marker persisted: version + verified enforcement
     # The fleet-runtime grant reasons are recorded on the result (never a silent step).
     assert result.extra["fleet_runtime_grants"] == grants
+    assert progress == [
+        "Creating protected execution sandbox - Windows approval required...",
+        "Sandbox accounts created. Preparing runtime access...",
+        "Preparing protected access to CLIO's runtime packages...",
+        "Verifying protected execution...",
+    ]
 
 
 def test_provision_setup_failure_is_typed() -> None:
@@ -168,7 +176,7 @@ def test_provision_enforcement_unverified_is_honest_degrade() -> None:
 
 
 def test_fleet_grant_plan_builds_rx_argv_for_both_users() -> None:
-    """The plan emits ``(OI)(CI)(RX)`` ``/T`` per dir and a bare ``(RX)`` traverse for Temp."""
+    """The plan emits inherited RX per root and a bare RX traverse for Temp."""
     plan = scli.build_fleet_runtime_grant_plan(
         paths_override=[
             ("uv_tool_bin", "C:\\u\\bin", True),
@@ -178,11 +186,11 @@ def test_fleet_grant_plan_builds_rx_argv_for_both_users() -> None:
     assert [g.label for g in plan] == ["uv_tool_bin", "user_temp"]
     # Both codex restricted users are covered on every path.
     assert plan[0].users == scli.CODEX_SANDBOX_USERS
-    # A recursive-inherit dir grant → one icacls per user with (OI)(CI)(RX) + /T.
+    # Root inheritance reaches descendants without repeated explicit /T grants.
     argv = plan[0].icacls_argv()
     assert argv == [
-        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOffline:(OI)(CI)(RX)", "/T"],
-        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOnline:(OI)(CI)(RX)", "/T"],
+        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOffline:(OI)(CI)(RX)"],
+        ["icacls", "C:\\u\\bin", "/grant", "CodexSandboxOnline:(OI)(CI)(RX)"],
     ]
     # Temp is a bare (RX) traverse — no inheritance flags, no /T.
     temp_argv = plan[1].icacls_argv()

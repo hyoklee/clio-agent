@@ -26,6 +26,7 @@ from pydantic import BaseModel, Field
 from clio_agent import conf
 from clio_agent.gact.resource_custody import ResourceRecord, ResourceStore
 from clio_agent.gact.resource_processing_bounds import processing_event_bounds
+from clio_agent.platform_paths import win_extended_path
 
 _SAFE_DERIVATIVE_ID = re.compile(r"^[a-z0-9][a-z0-9._-]{0,127}$")
 _ALLOWED_NODE_COLLECTIONS = {"pages", "tables", "pictures", "texts"}
@@ -211,13 +212,14 @@ class ResourceProcessingStore:
         self._lock = threading.RLock()
 
     def _root(self, record: ResourceRecord) -> Path:
-        return (
+        root = (
             self.resources.root
             / record.workspace_id
             / record.id
             / f"v{record.revision}"
             / "processing"
         )
+        return Path(win_extended_path(root))
 
     def _state_path(self, record: ResourceRecord) -> Path:
         return self._root(record) / "processing.json"
@@ -245,14 +247,13 @@ class ResourceProcessingStore:
         and letting a background submit keep publishing lifecycle events for it.
         """
 
-        revision_root = (
-            self.resources.root / record.workspace_id / record.id / f"v{record.revision}"
-        )
+        root = self._root(record)
+        revision_root = root.parent
         if not revision_root.is_dir():
             raise ResourceCustodyGone(
                 f"resource custody is gone: {record.workspace_id}/{record.id}"
             )
-        return revision_root / "processing"
+        return root
 
     def save_state(self, record: ResourceRecord, state: ResourceProcessingRecord) -> None:
         with self._lock:

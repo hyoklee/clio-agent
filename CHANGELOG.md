@@ -4,7 +4,84 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
-## Unreleased
+## [0.9.5-beta.6] - 2026-10-14
+
+### Added
+
+- American Science Cloud MAG provider with project-specific model discovery,
+  unchanged gateway model IDs and Personal Access Token authentication.
+- ALCF Minerva and Tara using the existing shared Globus login. The model picker
+  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
+  while retaining separate server identities, model lists and status.
+- Global search across workspaces, Settings, Infrastructure and Runs, with
+  immediate keyboard focus, inline search model selection, guarded file handoff
+  and temporary read-only agent search.
+- Composable Carousel and Video views, documentation media guides and workflow
+  images with accessible enlargement controls.
+
+- Connect Obsidian vaults as knowledge sources, with a graph/files workbench,
+  note reader, immutable chat attachments, and capability-gated knowledge tools.
+  Local vaults default to read only; reviewed edits reuse the connected-source
+  write pipeline. Optional official Headless Sync runs separately from indexing
+  and note permissions, with private client setup on the CLIO host.
+
+### Fixed
+
+- Office binary transport, automatic PDF preview and retained conversion on
+  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
+- Sign-in listener continuity, steering transcript anchors, aligned todo controls
+  and one HTML Preview/Source/action toolbar.
+- Async native search tools and Fleet lease acquisition no longer block the
+  server event loop. Spill details retain the bounded prefix shown to the model.
+- Distinguish a gateway network-policy block from a rejected MAG API key.
+- Save long shell programs through builder files and retain required visual review
+  guidance for generated documents.
+
+- Resource derivative storage uses Windows extended paths throughout, so captured
+  resources remain readable under deep workspace and custody paths.
+- Windows protected execution prefers verified native MXC with bundled Codex
+  0.162.1, avoiding sandbox account creation, elevation and runtime ACL scans on
+  compatible devices. Filesystem exclusions and direct external-network denial
+  are checked before activation; unavailable MXC retains the elevated fallback.
+- The Windows installer explicitly requests protected execution setup. Legacy
+  account creation shows the approval stage and uses UAC once; normal startup
+  never creates accounts. Both accounts receive runtime access in one traversal.
+- Desktop startup checks and reuses successful sandbox runtime grants when the
+  directory identity and root permissions agree, instead of repeatedly scanning
+  unrelated global uv environments. Changed permissions still require setup.
+- Local deployment shows package progress and startup details, bounds an
+  unresponsive Desktop request, and separates package setup from service readiness.
+- Windows bundled runtime extraction uses bounded parallel file writes and
+  avoids repeated per-file directory and metadata work. Integrity checking,
+  staging, rollback and reuse of a prepared runtime remain in place.
+- Tool-linked harness notices now fold into the activity chain at their recorded
+  positions, with exact text still available. Turn-wide context stays separate,
+  and evidence links open Full activity without a repeated display-state loop.
+- Desktop release summaries bundle matching CLIO notes separately from the UI's
+  own version history, avoiding unrelated old release entries. Product labels,
+  clearer formatting and expandable details make both sources easier to read.
+
+### Changed
+
+- Use standard Python 3.14 with the GIL enabled for development, source installers,
+  bundled Desktop runtimes, and containers. Keep Python 3.12 and 3.13 compatibility
+  coverage, update msgspec for Python 3.14 annotation support, and update Uvicorn
+  to avoid the deprecated legacy WebSocket implementation. Fail Python 3.14 CI
+  tests on deprecation warnings.
+- Update clio-core to 2.3.1, including Windows sparse backing files and storage
+  correctness fixes.
+
+### Beta qualification
+
+- Released under explicit user approval without waiting for all GitHub checks or
+  remaining live acceptance. CI continues; pending and failing results remain
+  recorded separately from completed static and live verification.
+- MAG catalog access succeeded with the user's token on another Windows machine.
+  This machine is blocked by the gateway's current network restrictions; no MAG
+  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
+  user testing with the appropriate access.
+- Opt-in shared blueprint coordination needs a compatible Core package exposing
+  the merged conditional-write API. This beta does not publish or install Core.
 
 ## [0.9.5-beta.5.2] - 2026-10-08
 

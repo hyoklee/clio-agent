@@ -5,7 +5,7 @@ description: Create, edit and inspect Word documents and templates, preserving e
 
 # Work with Word documents
 
-Call `prepare_execution_runtime` before standalone document work. Its paths,
+Call `prepare_document_runtime` before standalone document work. Its paths,
 packages, fonts and execution-host facts describe this session; use its prepared
 `python_argv` command. A Python project may select a different environment when using
 `uv run`. Keep artifact scripts and additional dependencies in task-owned paths.
@@ -104,7 +104,8 @@ Clio's UI
 opens the saved PDF when the source artifact is selected; users can still download
 or edit the original. Check `pdf_previews` for conversion failures. A preview is
 not visual review. Name the published artifact in the final response; Clio shows
-its artifact card. Do not format local filesystem paths as Markdown links.
+its artifact card. Use the runtime's workspace-file or registered artifact/resource
+citation format for clickable references; do not use browser-local `file://` links.
 Publish and name the requested editable document. Keep PDFs made only for review
 or display as derivatives; do not separately register or list them as deliverables.
 Publish a separate PDF only when the user asked for that output. In `used`, cite

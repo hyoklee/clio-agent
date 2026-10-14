@@ -13,6 +13,7 @@ free when the audit is off.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from clio_agent.providers.claude_code_audit import (
@@ -23,6 +24,19 @@ from clio_agent.runtime.stream_audit import stream_audit, stream_audit_enabled
 
 _PROVIDER = "codex_direct"
 _TRANSPORT = "websocket"
+
+
+def usage_row(usage: Any) -> dict[str, int]:
+    """Normalize lm15 usage to the shared provider audit's token keys."""
+    if usage is None:
+        return {}
+    fields = {
+        "input_tokens": usage.input_tokens,
+        "cached_input_tokens": usage.cache_read_tokens,
+        "output_tokens": usage.output_tokens,
+        "reasoning_output_tokens": usage.reasoning_tokens,
+    }
+    return {key: int(value) for key, value in fields.items() if value is not None}
 
 
 def emit_call_started(*, call_id: str, call_index: int, model: str, prompt: str) -> None:
@@ -102,4 +116,75 @@ def emit_raw_event(
     )
 
 
-__all__ = ["emit_call_started", "emit_call_usage", "emit_raw_event"]
+def emit_tool_call(*, call_index: int, item: dict[str, Any]) -> None:
+    """Retain backend tool arguments on the opt-in audit without transport credentials."""
+    if not stream_audit_enabled():
+        return
+    session_id, turn_id, trace_id = active_gact_ids()
+    stream_audit(
+        "provider.tool_call",
+        provider=_PROVIDER,
+        session_id=session_id,
+        turn_id=turn_id,
+        trace_id=trace_id,
+        call_index=call_index,
+        call_id=item.get("call_id"),
+        tool_name=item.get("name"),
+        arguments=item.get("arguments"),
+    )
+
+
+def emit_tool_snapshot(
+    *, call_index: int, output_index: int, item: dict[str, Any], streamed_argument_chars: int
+) -> None:
+    """Audit completed argument shape without retaining argument values."""
+    if not stream_audit_enabled() or item.get("type") != "function_call":
+        return
+    raw = item.get("arguments")
+    try:
+        arguments = json.loads(raw) if isinstance(raw, str) else raw
+    except (ValueError, TypeError):
+        arguments = None
+    session_id, turn_id, trace_id = active_gact_ids()
+    stream_audit(
+        "provider.tool_call_snapshot",
+        provider=_PROVIDER,
+        session_id=session_id,
+        turn_id=turn_id,
+        trace_id=trace_id,
+        call_index=call_index,
+        output_index=output_index,
+        call_id=str(item.get("call_id") or ""),
+        tool_name=str(item.get("name") or ""),
+        argument_chars=len(raw) if isinstance(raw, str) else None,
+        argument_keys=sorted(arguments)[:25] if isinstance(arguments, dict) else [],
+        arguments_object=isinstance(arguments, dict),
+        streamed_argument_chars=streamed_argument_chars,
+    )
+
+
+def emit_completed_tool_call(
+    *, call_index: int, payload: dict[str, Any], streamed_arguments: dict[int, str]
+) -> None:
+    """Retain the opt-in completed call and its argument-shape diagnostic together."""
+    item = payload.get("item")
+    if not isinstance(item, dict) or item.get("type") != "function_call":
+        return
+    index = int(payload.get("output_index") or 0)
+    emit_tool_call(call_index=call_index, item=item)
+    emit_tool_snapshot(
+        call_index=call_index,
+        output_index=index,
+        item=item,
+        streamed_argument_chars=len(streamed_arguments.get(index, "")),
+    )
+
+
+__all__ = [
+    "emit_call_started",
+    "emit_call_usage",
+    "emit_raw_event",
+    "emit_tool_call",
+    "emit_completed_tool_call",
+    "emit_tool_snapshot",
+]

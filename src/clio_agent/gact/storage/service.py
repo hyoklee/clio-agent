@@ -8,7 +8,7 @@ import logging
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Callable, Iterator
+from typing import Callable, Iterator, Literal
 
 from clio_schemas.connected_resources import ConnectedSource, ResourceOwner, SourceCapabilities
 
@@ -36,6 +36,19 @@ def provider_capabilities(provider: str) -> SourceCapabilities:
         from clio_agent.gact.storage.github_source import GitHubSource
 
         return GitHubSource.capabilities
+    if provider == "obsidian":
+        return SourceCapabilities(
+            link_folder=True,
+            search=True,
+            revision_check=True,
+            conditional_write=True,
+            writable_folder=True,
+            note_read=True,
+            note_search=True,
+            note_relations=True,
+            note_write=True,
+            supported_modes=["read_only", "working_copy", "write_enabled"],
+        )
     return SourceCapabilities(
         link_folder=True,
         search=True,
@@ -53,6 +66,13 @@ class StorageService:
         self.store = SourceStore(root)
         self.auth = StorageAuth(credential_path)
         self.github = GitHubAccess()
+        from clio_agent.gact.storage.obsidian_account import ObsidianAccount
+        from clio_agent.gact.storage.obsidian_sync import ObsidianSync
+
+        self.obsidian_account = ObsidianAccount(
+            credential_path.parent / "obsidian", root.parent / "knowledge-vaults"
+        )
+        self.obsidian_sync = ObsidianSync(self.obsidian_account)
         # GACT currently authenticates one owner (loopback or the instance bearer).
         # Bind to that OS owner, not an ephemeral Desktop launch token or a
         # client-supplied username. Future multi-user auth supplies distinct subjects.
@@ -71,25 +91,51 @@ class StorageService:
                 if record.connected and workspace is not None and workspace.is_dir():
                     self.start_transfer(record, workspace)
 
+    def set_link_access(
+        self, record: SourceRecord, access: Literal["read_only", "publish_later", "write_through"]
+    ) -> None:
+        """Keep approved link access and advertised knowledge write capability in agreement."""
+        record.link_access = access
+        if record.source.source_kind == "knowledge":
+            record.source = record.source.model_copy(
+                update={
+                    "capabilities": record.source.capabilities.model_copy(
+                        update={"note_write": access != "read_only"}
+                    )
+                }
+            )
+
     async def shutdown(self) -> None:
         """Cooperatively stop local transfers and retain native jobs for later reconciliation."""
+        await asyncio.to_thread(self.obsidian_sync.shutdown)
         tasks = list(self.tasks.items())
+        interrupted = set()
         for identifier, task in tasks:
             operation = self.store.get("operation", identifier, TransferOperation)
             if operation.native_request:
                 task.cancel()
             else:
+                if not operation.cancel_requested:
+                    interrupted.add(identifier)
                 self.store.update_operation(identifier, cancel_requested=True)
         if tasks:
             _, pending = await asyncio.wait([task for _, task in tasks], timeout=10)
             for task in pending:
                 task.cancel()
             await asyncio.gather(*(task for _, task in tasks), return_exceptions=True)
+        for identifier in interrupted:
+            operation = self.store.get("operation", identifier, TransferOperation)
+            if operation.state == "cancelled":
+                self.store.update_operation(
+                    identifier,
+                    state="interrupted",
+                    error="Service stopped the local operation after cleanup",
+                )
 
     def create(
         self, workspace_id: str, body: CreateSource, workspace_root: Path | None = None
     ) -> SourceRecord:
-        """Register an explicitly selected source without materializing or writing data."""
+        """Register a selected source, creating owned empty storage only when requested."""
         record = self._prepare_source(workspace_id, body, workspace_root)
         self.store.put("source", record.source.id, record)
         return record
@@ -118,14 +164,29 @@ class StorageService:
             if body.mode not in capabilities.supported_modes:
                 raise ValueError("This SSH connection currently supports read-only transfers")
         root = body.root
+        if body.create_vault:
+            vault = self.store.root.parent / "knowledge-vaults" / uuid.uuid4().hex
+            vault.mkdir(parents=True, exist_ok=False)
+            (vault / ".obsidian").mkdir()
+            (vault / ".obsidian" / "app.json").write_text("{}\n", encoding="utf-8")
+            root = str(vault)
         if body.provider == "google_drive":
             root = drive_folder_id(root)
         if body.provider == "github":
             from clio_agent.gact.storage.linked import github_location
 
             github_location(root, body.configuration.github_ref)
-        if body.provider == "local":
-            adapter = LocalSource(root, writable=body.mode != "read_only")
+        if body.provider in {"local", "obsidian"}:
+            if body.provider == "obsidian":
+                from clio_agent.gact.storage.obsidian import ObsidianSource
+
+                adapter: LocalSource = ObsidianSource(
+                    root,
+                    writable=body.mode != "read_only",
+                    excluded=body.configuration.obsidian_excluded_folders,
+                )
+            else:
+                adapter = LocalSource(root, writable=body.mode != "read_only")
             capabilities, root = adapter.capabilities, str(adapter.root)
             protected = (self.store.root.resolve(), self.auth.private_root.resolve())
             if any(
@@ -141,7 +202,7 @@ class StorageService:
                 other = existing.source
                 if (
                     existing.connected
-                    and other.provider == "local"
+                    and other.provider in {"local", "obsidian"}
                     and ((body.mode == "write_enabled") != (other.mode == "write_enabled"))
                 ):
                     other_root = Path(other.root).resolve()
@@ -154,6 +215,10 @@ class StorageService:
         source = ConnectedSource(
             id="source_" + uuid.uuid4().hex,
             provider=body.provider,
+            source_kind="knowledge" if body.provider == "obsidian" else "files",
+            connection=body.configuration.obsidian_connection
+            if body.provider == "obsidian"
+            else "provider",
             label=body.label,
             owner=ResourceOwner(
                 clio_id=self.store.clio_id, host_id=body.configuration.target_id or "local"
@@ -215,6 +280,8 @@ class StorageService:
         self, record: SourceRecord, body: CreateSource, workspace_root: Path
     ) -> SourceRecord:
         """Edit setup in place and reevaluate access against the saved account's grants."""
+        if body.create_vault:
+            raise ValueError("Create a new source to create a new vault")
         self.require_idle(record)
         if body.provider != record.source.provider:
             raise ValueError("Connect a new source to use a different provider")
@@ -254,6 +321,7 @@ class StorageService:
     def remove(self, record: SourceRecord) -> None:
         """Forget a connection while retaining copies, manifests and original source data."""
         self.require_idle(record)
+        self.obsidian_sync.stop(record.source.id)
         self.auth.disconnect(record.source.id)
         record.connected = False
         record.removed = True
@@ -289,10 +357,16 @@ class StorageService:
     def adapter(self, record: SourceRecord) -> Iterator[SourceAdapter | GlobusSource]:
         """Open a private provider connection; never return its credentials to a caller."""
         source = record.source
-        if source.provider == "local":
-            adapter: SourceAdapter | GlobusSource = LocalSource(
-                source.root, writable=source.mode == "write_enabled"
+        if source.provider == "obsidian":
+            from clio_agent.gact.storage.obsidian import ObsidianSource
+
+            adapter: SourceAdapter | GlobusSource = ObsidianSource(
+                source.root,
+                writable=source.mode == "write_enabled",
+                excluded=record.configuration.obsidian_excluded_folders,
             )
+        elif source.provider == "local":
+            adapter = LocalSource(source.root, writable=source.mode == "write_enabled")
         elif source.provider == "sftp":
             if record.configuration.target_id:
                 if self.target_source is None:
@@ -387,7 +461,20 @@ class StorageService:
                 return True
 
         try:
-            while not await asyncio.to_thread(step):
+            while True:
+                worker = asyncio.create_task(asyncio.to_thread(step))
+                try:
+                    settled = await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    current = self.store.get("operation", operation.id, TransferOperation)
+                    if not current.native_request:
+                        self.store.update_operation(operation.id, cancel_requested=True)
+                    # asyncio cancellation cannot stop the provider's worker thread.
+                    # Keep custody until that thread and staging cleanup actually exit.
+                    await asyncio.gather(worker, return_exceptions=True)
+                    raise
+                if settled:
+                    break
                 await asyncio.sleep(5)
         except asyncio.CancelledError:
             # The provider job may still be running. Keep its immutable request
@@ -455,6 +542,7 @@ class StorageService:
                 raise ValueError(
                     "Cancel or finish the active transfer before disconnecting this source"
                 )
+        self.obsidian_sync.stop(record.source.id)
         self.auth.disconnect(record.source.id)
         record.connected = False
         self.store.put("source", record.source.id, record)

@@ -381,8 +381,50 @@ async def test_create_task_result_is_driven_to_the_real_result() -> None:
         set_task_record_store(None)
 
 
-async def test_cancelling_claim_cancels_and_settles_its_durable_task() -> None:
-    """A stopped foreground turn cannot leave a phantom working MCP task."""
+async def test_cancelling_during_persistence_preserves_work_without_starting_polling(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stop at the custody boundary, retaining the task without waiting for its result."""
+    store = _fresh_store()
+    session = ScriptedSession([])
+    extension = ClioTasksClientExtension(BackendIdentity(SERVER_A, {"transport": "test"}))
+    make_durable = extension._make_durable
+    persisted = asyncio.Event()
+    finish_persistence = asyncio.Event()
+
+    async def persist_then_pause(ctx: Any, key: TaskKey, result: Any, target: Any) -> None:
+        """Use real record persistence, then hold its acknowledgement for cancellation."""
+        await make_durable(ctx, key, result, target)
+        persisted.set()
+        await finish_persistence.wait()
+
+    monkeypatch.setattr(extension, "_make_durable", persist_then_pause)
+    set_task_record_store(store)
+    claim = asyncio.create_task(
+        extension._resolve_task(_create_result("task-stopped-at-custody"), _Ctx(session))
+    )
+    try:
+        await asyncio.wait_for(persisted.wait(), timeout=5)
+        claim.cancel()
+        finish_persistence.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(claim, timeout=5)
+        assert session.methods() == []
+        records = store.list()
+        assert len(records) == 1
+        assert records[0].status == "working"
+        assert not records[0].cancel_requested
+        assert records[0].lease_owner is None
+    finally:
+        finish_persistence.set()
+        if not claim.done():
+            claim.cancel()
+        await asyncio.gather(claim, return_exceptions=True)
+        set_task_record_store(None)
+
+
+async def test_cancelling_claim_preserves_accepted_work_and_releases_its_lease() -> None:
+    """Stopping a waiter never sends a task cancellation or invents terminal evidence."""
 
     class BlockingSession(ScriptedSession):
         """Hold the task poll open until the enclosing claim is cancelled."""
@@ -425,13 +467,15 @@ async def test_cancelling_claim_cancels_and_settles_its_durable_task() -> None:
         with pytest.raises(asyncio.CancelledError):
             await claim
 
-        assert session.methods() == ["tasks/get", "tasks/cancel"]
+        assert session.methods() == ["tasks/get"]
         records = store.list()
         assert len(records) == 1
         record = records[0]
         assert record.task_id == "task-cancelled-with-turn"
-        assert record.status == "cancelled"
-        assert record.effective_status == "cancelled"
+        assert record.status == "working"
+        assert record.effective_status == "working"
+        assert record.cancel_requested is False
+        assert record.lease_owner is None
     finally:
         set_task_record_store(None)
 
@@ -1026,7 +1070,8 @@ async def test_cancel_is_ack_only_and_emits_no_cancelled_notification() -> None:
     # later dismiss (run_registry.dismiss_run), never automatic at settle.
     cancelled = store.get(key)
     assert cancelled is not None
-    assert cancelled.status == "cancelled"
+    assert cancelled.status == "working"
+    assert cancelled.cancel_requested is True
 
 
 async def test_cancel_stamps_only_the_named_identity() -> None:
@@ -1044,10 +1089,12 @@ async def test_cancel_stamps_only_the_named_identity() -> None:
 
     stamped = store.get(a)
     assert stamped is not None
-    assert stamped.status == "cancelled"
+    assert stamped.status == "working"
+    assert stamped.cancel_requested is True
     untouched = store.get(b)
     assert untouched is not None
     assert untouched.status == "working"
+    assert untouched.cancel_requested is False
 
 
 def test_removed_task_methods_are_never_called() -> None:
@@ -1456,10 +1503,8 @@ async def test_the_real_poll_loop_leaves_a_clean_completion_effective_status_com
     assert settled.display_status == "completed"
 
 
-async def test_cancel_task_stamps_effective_status_cancelled_alongside_status() -> None:
-    """``cancel_task`` is ack-only (no later ``tasks/get`` to derive from) --
-    it stamps ``effective_status="cancelled"`` directly rather than leaving a
-    stale pre-cancel effective_status behind for ``display_status`` to read."""
+async def test_cancel_task_retains_effective_status_until_backend_settlement() -> None:
+    """An acknowledgement records intent; only backend settlement changes status."""
 
     class _AckSession:
         async def send_request(
@@ -1477,7 +1522,12 @@ async def test_cancel_task_stamps_effective_status_cancelled_alongside_status() 
 
     settled = store.get(key)
     assert settled is not None
-    assert settled.status == "cancelled"
-    assert settled.effective_status == "cancelled"
+    assert settled.status == "working"
+    assert settled.effective_status == "working"
+    assert settled.cancel_requested is True
     assert settled.effective_status_reason is None
-    assert settled.display_status == "cancelled"
+    assert settled.display_status == "working"
+    await resume_task(ScriptedSession([_task_payload(key.task_id, "cancelled")]), key, store=store)
+    terminal = store.get(key)
+    assert terminal is not None
+    assert terminal.status == terminal.effective_status == terminal.display_status == "cancelled"

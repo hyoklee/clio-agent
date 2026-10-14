@@ -40,38 +40,20 @@ from clio_agent.gact.diagnostics import (  # noqa: E402,F401
 
 _install_sigusr1_diagnostic()
 
-# numpy/pyarrow, on THIS thread (module import, i.e. whichever thread first
-# does `import clio_agent.gact.app` -- the main thread in every real entry
-# point and the overwhelming majority of tests), before ANYTHING else in the
-# process can race them. Root-caused (numpy-race follow-up to #1551): dspy's
-# own `dspy.utils.lazy_import._LazyModule._load()` calls
-# `spec.loader.exec_module(module)` directly on a brand-new module object,
-# bypassing Python's per-module import lock entirely. If numpy/pyarrow are
-# not ALREADY the real, fully-materialized module in `sys.modules` by the
-# time something calls `require("numpy")` (inside `import dspy`, which
-# `_construct_agent_async`'s executor thread runs off the main thread/event
-# loop), dspy inserts its own lazy PROXY into `sys.modules["numpy"]`; a
-# later *standard* `import numpy`, or pyarrow's C extension touching numpy,
-# both just find that proxy already "imported" and defer to its unlocked
-# `_load()`, which can then run concurrently with another thread doing the
-# same thing -- two independent executions of `numpy/__init__.py` mutating
-# numpy's C-level type registry at once (confirmed live via a
-# `sys.addaudithook` probe and a targeted repro: `ImportError:
-# numpy._core.multiarray failed to import` / `TypeError: data type 'bool'
-# not understood`, 15/15 runs with a naive ordering). Doing this inside
-# `build_app()` is NOT early enough -- a thread that started importing dspy
-# before `build_app()` was even called (observed: a prior test's still-
-# running agent-construction thread, since that executor is not joined
-# before its TestClient context exits) can still beat it there. Module
-# import time is the earliest point every caller (production entry point,
-# every test file importing `build_app`) shares, so it is the only point
-# that is not itself part of the race.
+# Materialize shared dependencies before any startup/provider worker imports DSPy.
+# Its lazy module loader publishes a replacement in sys.modules and executes it
+# under a private lock, outside Python's standard import lock. Other importers can
+# observe that partially initialized module. The numpy/pyarrow race corrupted
+# native types (#1551); cold live qualification also saw a missing openai.Omit.
+# Preloading the SDK here keeps LiteLLM from seeing its partial namespace. This
+# must happen at module import: build_app can race a prior app's startup worker.
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
 import numpy  # noqa: E402, F401
+import openai  # noqa: E402, F401
 import pyarrow  # noqa: E402, F401
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -866,10 +848,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         except (asyncio.CancelledError, Exception):  # noqa: BLE001,S110 - shutdown task drain; cancellation/errors ignored on teardown
             pass
 
-    # Now deterministically settle in-flight turns, while the bus / sessions / ARC
-    # they persist into are still alive (owner module does the cooperative-cancel +
-    # bounded-grace + typed-reason drain).
+    # Settle turns and task owners while their durable stores are still alive.
     await drain_app_turns(app, logger)
+    await server_boot.shutdown_tasks(app)
 
     # Desktop Quit must release the shared runtime before any later executor join can
     # block on a provider/tool worker.  The turn drain above is the safety boundary:
@@ -1008,7 +989,7 @@ async def _construct_agent_async(app: "FastAPI") -> None:
 
     if not await registry_boot.boot_fold_artifact_registry_offloop(app, loop):
         return  # wedged store — agent stays unready with a typed agent_init_error
-    agent_initialization.mark_agent_ready(app, agent)
+    agent_initialization.mark_agent_ready(app, agent, boot=True)
 
     # #972: enforce the CAS store byte budget across every workspace at boot (off-loop,
     # #1001 cadence — the registry is now folded, so the reachability scan is ready).
@@ -1430,7 +1411,7 @@ def build_app(
     from clio_agent.gact.scheduler import ScheduleStore as _SchedStore
 
     app.state.schedules = _SchedStore(
-        path=(sessions_path.parent / "schedules.json") if sessions_path is not None else None
+        path=session_store_path.with_name("schedules.json") if session_store_path else None
     )
     initialize_session_defaults(app, sessions_path)
     app.state.scheduler_task = None

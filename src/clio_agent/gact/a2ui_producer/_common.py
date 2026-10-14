@@ -139,7 +139,7 @@ def component_tree_error(components: list[dict[str, Any]]) -> str | None:
         return (
             f'Components {", ".join(unattached)} are not reachable from id="root" '
             "and will not render. Put their ids in a root Row, Column, Grid, "
-            "Frame, or Tabs layout."
+            "Frame, Tabs, or Carousel layout."
         )
     return None
 

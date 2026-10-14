@@ -69,7 +69,8 @@ def test_todos_show_the_actual_status_transition() -> None:
             ]
         },
     )
-    assert view["summary"] == "1 task changed"
+    assert view["action"] == "Update Todos"
+    assert view["summary"] == "1 todo changed"
     assert view["blocks"] == [
         {
             "id": "todo-0",

@@ -150,44 +150,51 @@ typed, model-actionable errors at the tool boundary on every platform. Beneath
 them, the **OS write fence** (`runtime/sandbox.py`, campaign #974) confines
 every process the agent spawns so a child cannot write outside its territory
 even if it bypasses the tool boundary (`> /etc/x`, a subprocess `open().write`).
-The fence is `@anthropic-ai/sandbox-runtime` (`srt`); the advisory `allowed_roots`
-and the fence `write_roots` derive from one shared source so they cannot drift.
+The primary fence is the Codex sandbox; Linux can fall back to Landlock.
+The advisory `allowed_roots` and fence `write_roots` share the same territory
+resolver. Windows uses verified native MXC when available or the legacy
+restricted-account backend. A runtime upgrade invalidates version-specific proof.
 
-The two layers are complementary, not redundant: on the advisory floor (no
-fence — an HPC login node, a host without `srt`) an out-of-root write succeeds
-and is recorded as a provenance `gap`; under an active fence the same write is
-DENIED at the OS (`EROFS`/`EACCES` on Linux/macOS, `WinError 5 /
-ERROR_ACCESS_DENIED` on Windows) and minted as a typed `policy_violation`
-attributed to the child, path, and call window. Every degradation is labeled —
-no fence is ever *silently* absent.
+### Windows preparation and progress
 
-### Windows setup (one-time UAC)
+The backend prepares Windows protection off the event loop before constructing
+its agent and tool fleet, including developer and headless launches. Startup
+qualifies native MXC or checks existing restricted accounts without requesting
+UAC. Packaged installation and explicit **Set up protected execution** can request
+administrator approval for first-time legacy account creation. Missing or failed
+verification stays degraded; protection is never inferred from account presence.
 
-srt is the Windows fence path (no native restricted-token implementation is
-built). Unlike Linux/macOS — where the fence activates automatically per
-process — Windows needs a **one-time, self-elevating, idempotent** provisioning
-step that creates the `srt-sandbox` principal + WFP filters:
+Startup, installer, button and CLI call the same provisioning engine. Its shared
+runtime-access cache checks directory identity and the root ACL before reuse;
+changed roots are repaired with one traversal for both restricted users. Allowing
+UAC does not force a fresh native probe. A failed access grant is unsuccessful
+for every entry point.
+
+Open **Infrastructure > CLIO hosts > Protected execution**, or run:
 
 ```powershell
-clio sandbox setup      # ONE UAC prompt; per-session use afterward is unprivileged
-clio sandbox status     # mechanism + typed reason + next action (no elevation)
+clio sandbox setup
+clio sandbox status
 ```
 
-`setup` self-elevates exactly once. A re-run detects the already-provisioned
-state and no-ops with **zero prompts** (safe to run twice). Preconditions are
-typed and guided: if `srt` or Node.js (>= 20.11) is missing, `setup`/`status`
-print the exact install pointer (`npm install -g @anthropic-ai/sandbox-runtime`)
-rather than a raw error. Enterprise policy that blocks elevation leaves the
-advisory floor in place, honestly labeled. `clio sandbox` is reachable from both
-the `clio-agent` console entry point and the desktop `clio` launcher.
+The service retains the current setup step, start time, elapsed time and outcome
+in `GET /v1/system/sandbox`'s `setup_progress`. The UI follows progress across route
+changes. A successful setup after MCP processes already connected reports that a
+restart is required; an HTTP timeout does not imply the setup worker stopped.
+
+**Bypass checks** changes action approvals only. Connected-source exclusions
+(`runtime/storage_access.py`) refuse shell/MCP spawning when the active fence
+cannot protect source credentials or read-only source roots. The advisory floor
+is therefore not an unconditional permission to spawn arbitrary processes.
 
 ### Network chokepoint + deny mode (#978/#979)
 
 Child egress defaults to **ALLOW + RECORD**: every spawned child routes through one
 clio-owned CONNECT-only proxy (`runtime/net_chokepoint.py`), and each connection is
 recorded as a trace-only `net.egress` event and joined into provenance as a
-`used web:<domain>@<time>` ingest edge. On an srt tier the OS fence FORCES children
-through the proxy (`proxy-enforced`); on Landlock/floor tiers egress is proxy-ENV
+`used web:<domain>@<time>` ingest edge. On the legacy Codex tier the OS fence forces external traffic
+through the proxy; native MXC records external proxy enforcement and direct host
+loopback separately; on Landlock/floor tiers egress is proxy-ENV
 cooperation only (`env-cooperative`, raw sockets bypass) — the per-edge label never
 claims enforcement the tier can't provide.
 

@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 const guides = [
-	{ link: 'Best of N guide', route: '/docs/best-of-n/', title: 'Compare and refine answers' },
-	{ link: 'Dashboard guide', route: '/docs/dashboards/', title: 'Dashboards' },
-	{ link: 'Exports and downloads guide', route: '/docs/exports/', title: 'Exports and downloads' },
+	{ link: 'Best of N guide', route: '/docs/best-of-n/', title: 'Compare alternative answers' },
+	{ link: 'Dashboard guide', route: '/docs/dashboards/', title: 'Explore charts and dashboards' },
+	{ link: 'Exports and downloads guide', route: '/docs/exports/', title: 'Save and share your work' },
 ];
 
 for (const theme of ['light', 'dark']) {
@@ -71,14 +71,21 @@ test('capture waits for its handlers before accepting the first click', async ({
 	}
 });
 
-test('the beginner path puts files before dashboards and alternatives under Go further', async ({ page }) => {
+test('the docs group data, results and technical reference around reader tasks', async ({ page }) => {
 	await page.goto('/docs/dashboards/');
 	const sidebar = page.locator('#starlight__sidebar');
-	const order = await sidebar.locator('a').evaluateAll((links) => links.map((link) => link.getAttribute('href')));
-	const basic = ['/docs/sessions/', '/docs/working-with-files/', '/docs/dashboards/', '/docs/exports/', '/docs/evidence/', '/docs/memory/'];
-	for (let i = 1; i < basic.length; i++) expect(order.indexOf(basic[i])).toBeGreaterThan(order.indexOf(basic[i - 1]));
-	const advanced = sidebar.locator('details').filter({ has: page.locator('summary', { hasText: 'Go further' }) });
-	await expect(advanced.getByRole('link', { name: 'Compare and refine answers', exact: true })).toBeVisible();
+	const groups = await sidebar.locator('summary').allTextContents();
+	expect(groups.map((label) => label.trim())).toEqual([
+		'Get started', 'Bring your data', 'Work with CLIO', 'Review and share results',
+		'Find and revisit work', 'Worked examples', 'Customize CLIO', 'Help and privacy', 'Technical reference',
+	]);
+	const results = sidebar.locator('details').filter({ has: page.locator('summary', { hasText: 'Review and share results' }) });
+	await expect(results.getByRole('link', { name: 'Compare alternative answers', exact: true })).toBeVisible();
+	await expect(results.getByRole('link', { name: 'Save and share your work', exact: true })).toBeVisible();
+	const reference = sidebar.locator('details').filter({ has: page.locator('summary', { hasText: 'Technical reference' }) });
+	await expect(reference).not.toHaveAttribute('open');
+	await reference.locator('summary').click();
+	await expect(reference.getByRole('link', { name: 'Server and terminal setup', exact: true })).toBeVisible();
 });
 
 test('task guides include playable short recordings, captions, and actual output downloads', async ({ page }) => {
@@ -106,15 +113,17 @@ test('task guides include playable short recordings, captions, and actual output
 test('memory and evidence are separate guides and existing bookmarks redirect', async ({ page }) => {
 	await page.goto('/docs/memory-and-evidence/');
 	await expect(page).toHaveURL(/\/docs\/evidence\/$/);
-	await expect(page.getByRole('heading', { level: 1, name: 'Evidence and lineage' })).toBeVisible();
+	await expect(page.getByRole('heading', { level: 1, name: 'Check answers and sources' })).toBeVisible();
 	const sidebar = page.locator('#starlight__sidebar');
-	await sidebar.getByRole('link', { name: 'Memory and recall', exact: true }).click();
-	await expect(page.getByRole('heading', { level: 1, name: 'Memory and recall' })).toBeVisible();
-	await expect(sidebar.getByRole('link', { name: 'Evidence and lineage', exact: true })).toBeVisible();
+	await sidebar.locator('summary').filter({ hasText: 'Find and revisit work' }).click();
+	await sidebar.getByRole('link', { name: 'What CLIO remembers', exact: true }).click();
+	await expect(page.getByRole('heading', { level: 1, name: 'What CLIO remembers' })).toBeVisible();
+	await sidebar.locator('summary').filter({ hasText: 'Review and share results' }).click();
+	await expect(sidebar.getByRole('link', { name: 'Check answers and sources', exact: true })).toBeVisible();
 	const image = page.getByRole('button', { name: /^View larger:/ });
 	await image.scrollIntoViewIfNeeded();
 	await image.click();
-	await expect(page.getByRole('dialog')).toContainText('first of four matches');
+	await expect(page.getByRole('dialog')).toContainText('Open returns to the matching source message.');
 	await page.keyboard.press('Escape');
 	await page.getByText('Inspect an actual returned overview', { exact: true }).click();
 	const resultLink = page.getByRole('link', { name: 'recorded tool result', exact: true });

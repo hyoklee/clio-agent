@@ -24,7 +24,7 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 		await enlarge.click();
 		const dialog = page.getByRole('dialog');
 		await expect(dialog).toBeVisible();
-		await expect(dialog).toContainText('Synthetic worked example');
+		await expect(dialog).toContainText('The report distinguishes dock counts from trips');
 		const bounds = await dialog.boundingBox();
 		const viewport = page.viewportSize()!;
 		expect(bounds!.x).toBeGreaterThanOrEqual(0);
@@ -52,7 +52,7 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 		await reportEnlarge.click();
 		await expect(dialog).toBeVisible();
 		await expect(dialog.getByRole('img')).toHaveAttribute('alt', /complete five-station table/);
-		await expect(dialog).toContainText('not a new model run');
+		await expect(dialog).toContainText('A shared selection connects the views.');
 		await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeInViewport();
 		await page.screenshot({ path: test.info().outputPath(`report-dialog-${width}.png`) });
 		await page.keyboard.press('Escape');
@@ -60,7 +60,7 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 		await showcase.getByRole('tab', { name:'Files',exact:true }).click();
 		await showcase.getByRole('link', { name: 'Explore file workflows' }).click();
 		await expect(page).toHaveURL(/\/docs\/examples\/reports-and-slides\/$/);
-		await expect(page.getByRole('heading', { name: 'Report and presentation example', exact: true })).toBeInViewport();
+		await expect(page.getByRole('heading', { name: 'Create a report and presentation', exact: true })).toBeInViewport();
 		await expect(page.getByRole('main').locator('video')).toHaveCount(4);
 		for (const name of ['files-sensor-word-generation', 'files-sensor-slide-generation']) {
 			await expect(page.locator(`video:has(source[src="/media/${name}.mp4"])`)).toBeVisible();
@@ -83,7 +83,7 @@ test('product showcase supports keyboard selection and usable image dialogs on d
 		await page.screenshot({ path: test.info().outputPath(`word-guide-${width}.png`) });
 		await page.getByRole('main').locator('video').nth(1).scrollIntoViewIfNeeded();
 		await page.screenshot({ path: test.info().outputPath(`slides-guide-${width}.png`) });
-		await page.getByRole('main').getByRole('link', { name: 'Working with files', exact: true }).click();
+		await page.getByRole('main').getByRole('link', { name: 'Open and edit documents', exact: true }).click();
 		await expect(page).toHaveURL(/\/docs\/working-with-files\/$/);
 		await expect(page.getByRole('main')).not.toContainText('OPAL');
 		await expect(page.getByRole('main').locator('video')).toHaveCount(1);
@@ -105,12 +105,12 @@ test('the evidence guide explains current controls and exposes artifact lineage'
 
 test('docs reveal the current guide group and distinguish account sign-in from workspace datasets', async ({ page }) => {
 	await page.goto('/docs/');
-	const filesGroup = page.locator('#starlight__sidebar details').filter({ has: page.getByRole('link', { name: 'Connect sources', exact: true, includeHidden: true }) }).last();
+	const filesGroup = page.locator('#starlight__sidebar details').filter({ has: page.getByRole('link', { name: 'Connect a data source', exact: true, includeHidden: true }) });
 	await expect(filesGroup).not.toHaveAttribute('open', '');
 	await page.getByRole('navigation', { name: 'Choose a CLIO guide' }).getByRole('link', { name: /Bring your data/ }).click();
 	await expect(page).toHaveURL(/\/docs\/files\//);
 	await expect(filesGroup).toHaveAttribute('open', '');
-	await filesGroup.getByRole('link', { name: 'Connect sources', exact: true }).click();
+	await filesGroup.getByRole('link', { name: 'Connect a data source', exact: true }).click();
 	await expect(page.getByRole('main')).toContainText('Signing in does not attach a dataset');
 	await expect(page.getByRole('main')).toContainText('Files → Sources');
 });

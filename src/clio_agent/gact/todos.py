@@ -237,7 +237,7 @@ def build_write_todos_tool(agent_def: Any) -> Any:
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
     def write_todos(todos: list) -> str:
-        """Record your task checklist for a multi-step job (execution phase only).
+        """Record your todo checklist for a multi-step job (execution phase only).
 
         Pass the COMPLETE list every call — this REPLACES the whole list (there is no per-item
         update). Each todo is ``{"content": <str>, "status": "pending"|"in_progress"|"completed"}``.
@@ -249,6 +249,9 @@ def build_write_todos_tool(agent_def: Any) -> Any:
           honest — only mark in_progress what is actually being worked.
         - blocked work is NOT completed: leave a blocked item pending or in_progress and note the
           blocker in its content; never mark it completed to move on.
+        - Preserve the requested outcome when revising a todo. A failed attempt does not satisfy
+          the original requirement: do not replace "render and review" with "attempt rendering"
+          and mark it completed. Keep the requirement and blocker visible unless the user waives it.
         - Reconcile before finishing: no todo should be left pending/in_progress when the task is
           done — the final list should reflect reality.
         - Issue exactly ONE write_todos per step with the full list; two in one step is rejected.
@@ -275,7 +278,7 @@ def build_write_todos_tool(agent_def: Any) -> Any:
         presentation="todos",
         domain="planning",
         desc=write_todos.__doc__,
-        title="Update tasks",
+        title="Update Todos",
         args={
             "todos": {
                 "type": "array",

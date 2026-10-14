@@ -50,13 +50,29 @@ def reconcile_connected_storage(app: FastAPI) -> None:
     storage = getattr(app.state, "connected_storage", None)
     if storage is not None:
         storage.reconcile({row.id: Path(row.root_path) for row in app.state.workspaces.list()})
+    from clio_agent.gact.task_recovery import start_task_recovery
+
+    start_task_recovery(app)
 
 
 async def shutdown_connected_storage(app: FastAPI) -> None:
     """Drain trusted source operations before the server tears down its runtime."""
     storage = getattr(app.state, "connected_storage", None)
+    from clio_agent.gact.task_supervisor import task_supervisor
+
+    task_supervisor(app).closing = True
     if storage is not None:
         await storage.shutdown()
+        from clio_agent.gact.storage.task_adapter import recover_storage_handles
+
+        recover_storage_handles(app)
+
+
+async def shutdown_tasks(app: FastAPI) -> None:
+    """Settle supervised tasks before the application's sessions and bus close."""
+    from clio_agent.gact.task_supervisor import task_supervisor
+
+    await task_supervisor(app).shutdown()
 
 
 def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:
@@ -176,6 +192,9 @@ async def process_arc_off_loop(app: "FastAPI") -> Any:
         The ``ARCMemory`` stored on ``app.state.arc``; ``None`` in the loud History mode
         (:mod:`clio_agent.arc.history_mode`), decided once and cached like an ARC.
     """
+    from clio_agent.gact.sandbox_setup import prepare_sandbox_before_tools  # noqa: PLC0415
+
+    await prepare_sandbox_before_tools(app)
     arc = getattr(app.state, "arc", None)
     if arc is not None:
         return arc
@@ -197,6 +216,9 @@ def start(app: "FastAPI") -> None:
     from clio_agent.gact import provider_support_boot  # noqa: PLC0415
 
     provider_support_boot.start(app)  # recorded provider support a runtime change removed
+    from clio_agent.gact import search_bootstrap  # noqa: PLC0415
+
+    search_bootstrap.start(app)  # first-run private SearXNG (search.backend=local_searxng)
     from clio_agent.gact.routes import health_boot  # noqa: PLC0415 - routes import this module
     from clio_agent.gact.routes.system import collect_health_report  # noqa: PLC0415
 

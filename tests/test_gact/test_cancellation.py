@@ -214,8 +214,6 @@ def test_cancel_before_turn_skips_agent_forward(
     by the LATER turn-boundary check in ``turn.py`` (after the whole prologue had
     already run, per #1339's Bug 2); provider work is skipped either way."""
 
-    import time as _time
-
     from clio_agent.gact import turn as turn_module
 
     original_make_turn_cancel_event = turn_module.make_turn_cancel_event
@@ -230,30 +228,26 @@ def test_cancel_before_turn_skips_agent_forward(
     app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
     with TestClient(app) as client:
         sid = client.post("/v1/sessions", json={"title": "cancel before forward"}).json()["id"]
+        before_turn = app.state.bus.latest_event_id(sid)
         response = client.post(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "do not forward"}]},
         )
         assert response.status_code == 200
 
-        deadline = _time.monotonic() + 3.0
-        assistant = None
-        while _time.monotonic() < deadline:
-            messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-            assistant = next(
-                (
-                    message
-                    for message in messages
-                    if message["role"] == "assistant"
-                    and message.get("error_info", {}).get("error")
-                    == "turn_cancelled_during_prologue"
-                ),
-                None,
-            )
-            if assistant is not None:
-                break
-            _time.sleep(0.05)
-
+        # Finalization persists the error before publishing its terminal status.
+        # Wait for that signal instead of racing a loaded runner with a 3 s poll.
+        assert wait_for_terminal_status(app.state.bus, sid, after_event_id=before_turn) == "error"
+        messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        assistant = next(
+            (
+                message
+                for message in messages
+                if message["role"] == "assistant"
+                and message.get("error_info", {}).get("error") == "turn_cancelled_during_prologue"
+            ),
+            None,
+        )
         assert assistant is not None, "prologue-boundary cancellation did not settle"
         assert agent.calls == 0
         assert assistant["error_info"]["details"]["reason"] == "turn_cancelled_during_prologue"

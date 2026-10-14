@@ -1,0 +1,194 @@
+---
+title: "Try another approach"
+description: Keep the original conversation while exploring another direction, or rewind with care.
+---
+
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
+import { Steps } from "@astrojs/starlight/components";
+import Capture from "../../../components/overview/Capture";
+import { captureImage } from "../../../lib/captures";
+import menu from "../../../assets/captures/docs-conversation-menu.png";
+import branchControl from "../../../assets/captures/docs-conversation-branch-control.png";
+import branchResult from "../../../assets/captures/docs-conversation-branch-result.png";
+import rewindConfirm from "../../../assets/captures/docs-conversation-rewind-confirm.png";
+import rewindResult from "../../../assets/captures/docs-conversation-rewind-result.png";
+import forkCheckpoint from "../../../assets/captures/docs-fork-checkpoint.png";
+import familyGantt from "../../../assets/captures/docs-conversation-family-gantt.png";
+import relationships from "../../../assets/captures/docs-conversation-relationships.png";
+import outputLineage from "../../../assets/captures/docs-conversation-output-lineage.png";
+
+
+<PreviewGuide features="The conversation-family and rewind controls pictured here" />
+
+**Branch** when you want to compare approaches and keep both conversations.
+**Rewind** when you want to remove later messages from the current conversation
+and continue from an earlier point.
+
+| Your intention | Choose | What happens |
+|---|---|---|
+| Try an alternative from an earlier answer | **Branch from here** below that message | A new conversation copies the history through that message, including it. The original remains available. |
+| Continue a copy of the entire conversation | **… → Branch into a new session** in the session header | A new conversation copies the current history through its end. |
+| Replace the later direction of this conversation | **Rewind to here** below a message | After confirmation, later messages leave this conversation and its working context. The selected message stays. |
+
+## Branch to compare an approach
+
+Suppose your readings are **10, 12, and 14**. Their mean is **12**. Later you
+exclude the flagged reading 14, giving a mean of **11**. To compare that filter
+with an offset applied to all three readings, branch from the original answer.
+
+<Steps>
+
+1. Find the original answer. Under it, point to the branching icon labelled
+   **Branch from here**, then select it. You can also branch from a user message.
+
+2. CLIO opens the new branch. Its copied conversation ends at the selected
+   message; the later filter is absent. Send your alternative request here.
+
+3. Use the back arrow labelled **Return to parent conversation** beside the
+   branch title to return. Reopen either conversation from the workspace sidebar.
+   Rename branches to describe the alternatives you are comparing.
+
+</Steps>
+
+<Capture client:visible image={await captureImage(branchControl)}
+  alt="Branch from here tooltip under the original calibration answer, before the later filtering request"
+  caption="Choose the message that should be the end of the copied history. The selected message is included."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+In the branch, asking for **+2 on every original reading** produces a mean of
+**14**. Returning to the parent retains its filter and mean of **11**. Messages
+sent in either conversation do not join the other. You can branch again from an
+existing branch.
+
+<Capture client:visible image={await captureImage(branchResult)}
+  alt="The separate branch answers Mean 14 after applying a plus two offset to all three original readings"
+  caption="The new branch has its own composer and continuation. The parent keeps its separate calculation."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+To copy the conversation through its current end instead, open **…** beside the
+session title and choose **Branch into a new session**.
+
+<Capture client:visible image={await captureImage(menu)}
+  alt="Session header menu with Branch into a new session"
+  caption="The header action copies the entire current conversation; the action beneath a message copies only through that point."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+## See where the branch begins
+
+**The old conversation stays visible in the child.** A **Branched here** marker
+appears after the last copied message. Above it is the copied history; below it
+is this branch's independent continuation. Select the source title on the marker
+to return to the parent conversation at that message.
+
+<Capture client:visible image={await captureImage(forkCheckpoint)}
+  alt="Copied offset calculation followed by a Branched here marker linked to Offset comparison, then Offset sensitivity's independent request and mean of 17"
+  caption="The branch checkpoint separates copied history from new work. It survives reload and a later rewind of the parent."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+The marker records the source at the time of branching. If the parent later
+rewinds past that message, the child keeps its copied history and marker; the
+source link still opens the parent, whose transcript may no longer contain that
+message. Older branches without a saved checkpoint do not get a guessed marker.
+
+## Find and compare related conversations
+
+Open **Evidence layout → Open full details → Gantt**. The **Relationships ⇄**
+button swaps between recorded timing and the conversation graph. It stays in
+the chart header, beside the selected conversation's inspector. Your selection
+stays with you when you switch views or resize the window.
+
+<Capture client:visible image={await captureImage(relationships)}
+  alt="Relationships view with Calibration baseline branching into Offset comparison and Flagged reading comparison, and Offset comparison branching again into Offset sensitivity"
+  caption="Select a node to preview its actual history and continuation. Solid links identify user forks; dashed links identify parent-owned subagents."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+**A user branch is another conversation you control.** A delegated agent is
+work owned by its parent agent. Its distinct label and dashed relationship show
+that ownership; displaying it here does not allow users to branch that agent.
+The inspector shows a short extract from the actual transcript: copied history,
+the saved fork point, and the latest continuation. **Full conversation history**
+or **Open conversation** takes you to the complete conversation and its composer.
+**Open subagent** opens the parent-owned work with its existing controls.
+
+<Capture client:visible image={await captureImage(familyGantt)}
+  alt="Conversation family Gantt with five named conversations and subagents, role-labelled links, recorded response bars, and an aligned transcript inspector"
+  caption="Linked titles distinguish conversations, user forks and subagents. Solid fork links and dashed delegation links attach to recorded activity; short bars keep their full timing in the tooltip."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+Select a Gantt **title** to open that conversation directly. Select a **bar** to
+inspect its conversation without leaving the chart. Use **Fit** after zooming.
+**Execution details** shows the current conversation's latest execution and
+individual tools; **Family** returns to this comparison.
+Conversation lifetime is not drawn as continuous work. Missing or partial timing
+records are labelled, and an older branch without a saved origin has no invented
+creation diamond. An empty new branch has a start milestone until it records a
+response.
+
+### Follow a branch's output into artifact lineage
+
+In either family view, select a conversation, then choose a file under **Outputs**.
+Open its **Lineage** tab to see recorded inputs and producing actions. The inspector
+loads only the selected conversation's outputs; copied input files are not listed
+as newly produced outputs.
+
+<Capture client:visible image={await captureImage(outputLineage)}
+  alt="The offset branch's artifact Lineage tab connects calibration-baseline.md through its producing action to calibration-offset.md"
+  caption="Conversation relationships explain which discussion explored an alternative. Artifact lineage explains the declared inputs and versions behind its output."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+In the family views, the nested branch changes the offset to +5 (mean **17**);
+the sibling excludes the flagged reading (mean **11**). Open each conversation
+to inspect its method and result.
+
+## Rewind and continue from an earlier point
+
+In the parent conversation, return to the original mean of **12** if you want
+to discard the later filtering discussion.
+
+<Steps>
+
+1. Under the message to keep, select **Rewind to here**.
+
+2. Read **Rewind this conversation?** Choose **Cancel** to keep the current
+   history, or **Remove later messages** to proceed. The selected message remains.
+
+3. Send your next request. CLIO uses the retained conversation. In this example,
+   asking for the current method returns all three readings and a mean of **12**.
+
+</Steps>
+
+<Capture client:visible image={await captureImage(rewindConfirm)}
+  alt="Rewind confirmation states that the selected message stays and existing files and artifacts are kept, with Cancel and Remove later messages buttons"
+  caption="Rewind requires confirmation. Cancel leaves the conversation unchanged."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+<Capture client:visible image={await captureImage(rewindResult)}
+  alt="After rewind, the conversation continues using the original readings and answers Mean 12"
+  caption="After rewind, the next answer uses the original readings and mean of 12. The later filter has left the working context."
+  sizes="(min-width: 50rem) 46rem, 100vw" />
+
+Rewinding a parent does not rewind an existing branch. Repeated rewinds work on
+the history that remains. A user message can be the endpoint too: its text is
+retained for your next request, but selecting rewind does not itself generate a
+new answer. Wait for the current response to finish, or stop it, before rewinding.
+The service rejects rewind while that conversation is running or awaiting a
+permission decision.
+
+## What happens to files and settings?
+
+**A branch shares the workspace.** It copies the conversation's current file
+references and settings, including model selection, execution mode, confirmation
+policy and effort. Later conversation changes are independent. The files on disk
+are shared: a change to a shared file can affect both conversations. Branching
+from an old message does not recover old file contents or the settings from that
+earlier time.
+
+**Rewind changes the conversation and its working context.** It does not restore
+files, reverse completed tool actions, remove created artifacts, or restore old
+settings and attachments. Completed saved views may remain available after their
+producing messages are removed. Rewind is not an erasure of the underlying audit
+record. It also does not erase separately saved [memory](/docs/memory/).
+
+If you may need the later discussion, **branch or [export it](/docs/exports/)
+before rewinding**. There is no restore-later-messages action. Make separate file
+copies or use version control when comparing changes to the data itself.

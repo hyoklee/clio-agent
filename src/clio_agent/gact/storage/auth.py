@@ -125,6 +125,8 @@ class StorageAuth:
 
     def connected(self, record: SourceRecord) -> bool:
         """Report usable account access and any source-specific consent still needed."""
+        if record.source.provider in {"local", "obsidian"}:
+            return record.connected
         if record.source.provider == "sftp":
             with self._lock:
                 sftp_entry = self._sftp_credentials.get(record.source.id)

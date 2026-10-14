@@ -598,7 +598,12 @@ def test_native_question_deadline_atomically_expires_and_releases_root(tmp_path)
 
     arm_ask_user_deadline(app, row)
     deadline = time.monotonic() + 2.0
-    while app.state.user_questions[row.id].status == "pending" and time.monotonic() < deadline:
+    # Expiration publishes the question state before the separate session-store update.
+    # Observe the complete asynchronous transition, retaining both final assertions.
+    while time.monotonic() < deadline and (
+        app.state.user_questions[row.id].status == "pending"
+        or app.state.sessions.get(root.id).status == "waiting_user"
+    ):
         time.sleep(0.01)
 
     assert app.state.user_questions[row.id].status == "expired"
@@ -612,9 +617,10 @@ def test_mcp_task_request_id_correlates_hyphenated_task_exactly(tmp_path) -> Non
     del root
     resolve_store(None).put(
         TaskRecord(
-            key=TaskKey(server_id="srv", session_id=child, task_id="abc-def"),
+            key=TaskKey(server_id="earthscope", session_id=child, task_id="abc-def"),
             tool="earthscope_query",
             status="input_required",
+            invocation_id="call_7",
         )
     )
     invocation = MCPInvocationContext(
@@ -627,10 +633,12 @@ def test_mcp_task_request_id_correlates_hyphenated_task_exactly(tmp_path) -> Non
     correlated = invocation_with_request_correlation(
         invocation,
         SimpleNamespace(request_id="task-abc-def-output_format"),
+        app=app,
     )
 
     assert correlated.task_id == "abc-def"
     assert correlated.input_key == "output_format"
+    assert correlated.task_key == TaskKey("earthscope", child, "abc-def")
 
 
 def test_child_a2ui_interaction_routes_to_owning_surface(tmp_path, monkeypatch) -> None:

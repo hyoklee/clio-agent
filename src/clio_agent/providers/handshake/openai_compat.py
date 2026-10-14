@@ -25,6 +25,7 @@ step then resolves ``context_max`` through the community-catalog cascade
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from datetime import datetime, timezone
 from typing import Any
@@ -130,7 +131,28 @@ class OpenAICompatHandshake(ProviderHandshake):
         path = provider.key_check_path if provider is not None else None
         return f"{ctx.api_base.rstrip('/')}{path}" if path else None
 
-    def _rejected(self, status: int, headers: dict[str, str]) -> ConnectivityResult:
+    def _auth_denied(self, response: Any, headers: dict[str, str]) -> ConnectivityResult:
+        """Distinguish an upstream access-policy page from a rejected API key."""
+        status = response.status_code
+        if (
+            status == 403
+            and "text/html" in response.headers.get("content-type", "").lower()
+            and re.search(
+                r"<title\b[^>]*>[^<]*cloudflare access[^<]*</title\s*>",
+                response.text[:8192],
+                re.IGNORECASE,
+            )
+        ):
+            return ConnectivityResult(
+                connectivity=ConnectivityState.UNREACHABLE,
+                auth=AuthState.DEFERRED,
+                error=(
+                    "provider_access_blocked: Cloudflare Access blocked this connection "
+                    "(HTTP 403). Ask the provider administrator to check your network "
+                    "and access policy. Your API key could not be verified."
+                ),
+                error_code="provider_access_blocked",
+            )
         return ConnectivityResult(
             connectivity=ConnectivityState.OK,
             auth=AuthState.REJECTED,
@@ -144,9 +166,9 @@ class OpenAICompatHandshake(ProviderHandshake):
     ) -> ConnectivityResult | None:
         """Prove the key against ``key_check_path``; ``None`` when it is accepted.
 
-        A 401/403 is a rejected key. Any other failure means the key could not
-        be proven either way: reported as ``DEFERRED`` with the typed reason,
-        never as a silent pass.
+        A provider 401/403 is a rejected key; an upstream access-policy page
+        leaves it unverified. Any other failure is ``DEFERRED`` with its typed
+        reason, never a silent pass.
         """
         url = self._key_check_url(ctx)
         if url is None:
@@ -161,7 +183,7 @@ class OpenAICompatHandshake(ProviderHandshake):
                 auth_header=headers,
             )
         if response.status_code in (401, 403):
-            return self._rejected(response.status_code, headers)
+            return self._auth_denied(response, headers)
         if response.status_code >= 400:
             return ConnectivityResult(
                 connectivity=ConnectivityState.OK,
@@ -186,7 +208,8 @@ class OpenAICompatHandshake(ProviderHandshake):
         """Probe ``GET {api_base}/models`` with the provider's auth header.
 
         - missing-but-required key -> ``(SKIPPED, MISSING)`` (don't waste a call);
-        - HTTP 401/403 -> ``(OK, REJECTED)`` (reachable, credential refused);
+        - provider HTTP 401/403 -> ``(OK, REJECTED)`` (credential refused);
+        - Cloudflare Access denial -> ``(UNREACHABLE, DEFERRED)`` (unverified);
         - any transport error -> ``(UNREACHABLE, ...)``;
         - otherwise -> ``(OK, OK)`` (or ``NOT_REQUIRED`` for keyless local kinds),
           carrying the resolved ``auth_header`` forward for later phases.
@@ -218,7 +241,7 @@ class OpenAICompatHandshake(ProviderHandshake):
             )
         status = response.status_code
         if status in (401, 403):
-            return self._rejected(status, headers)
+            return self._auth_denied(response, headers)
         if self._requires_key(ctx) and status < 400:
             key_check = await self._check_key(client, ctx, headers)
             if key_check is not None:
@@ -327,7 +350,9 @@ class OpenAICompatHandshake(ProviderHandshake):
                 props or {}, provider_id=ctx.provider_id, api_base=ctx.api_base, model_id=model_id
             )
             model_key = deployment.model_key.value or model_id
-            model = llama_cpp_dialect.build_model_capabilities(model_key, {"data": [raw]}, model_id)
+            model = llama_cpp_dialect.build_model_capabilities(
+                model_key, {"data": [raw]}, model_id, props
+            )
         elif dialect in cloud_dialect.CLOUD_DIALECTS:
             deployment = cloud_dialect.build_deployment_capabilities(
                 ctx.provider_id, ctx.api_base, model_id
@@ -384,16 +409,27 @@ class OpenAICompatHandshake(ProviderHandshake):
             return model
         from dataclasses import replace  # noqa: PLC0415
 
-        from clio_agent.providers.handshake.sources import lookup_native_context  # noqa: PLC0415
+        from clio_agent.providers.handshake.sources import (  # noqa: PLC0415
+            SOURCE_DB,
+            db,
+            lookup_native_context_with_source,
+        )
 
-        native_context_max = lookup_native_context(model_id)
+        native_context_max, source = lookup_native_context_with_source(model_id)
         if native_context_max is None:
+            return model
+        served = deployment.context_served.value
+        if source == SOURCE_DB and isinstance(served, int) and served > native_context_max:
+            # The live server serves more than this install once recorded as the
+            # model's ceiling, so that record is stale (F016): purge it rather
+            # than cap the served window with it.
+            db.forget_context(model_id, superseded_by=served, provider="vllm")
             return model
         return replace(
             model,
             context_max=Fact(
                 value=native_context_max,
-                source="litellm",
+                source="db" if source == SOURCE_DB else "litellm",
                 observed_at=_now_iso(),
                 detail="offline catalog lookup (no network), compared against the served window",
             ),

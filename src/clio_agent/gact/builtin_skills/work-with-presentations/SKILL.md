@@ -5,10 +5,18 @@ description: Create, edit and inspect editable PowerPoint presentations, includi
 
 # Work with presentations
 
-Call `prepare_execution_runtime` and use its execution-host commands and library
+Call `prepare_document_runtime` and use its execution-host commands and library
 inventory. Execute Python builders with `python_argv` (uv selects the prepared
 Python), and JavaScript builders with `javascript.script_argv` (pnpm executes
-managed Node). Create slides with `python-pptx` in the prepared Python environment,
+managed Node). Save the builder as a `.py` or `.mjs` file before execution, then
+append that file path to the supplied argument array. Use an available tool that
+actually writes the file, or create/append it with small UTF-8 shell writes (about
+1-2 KB per call on Windows). A single large here-string piped to `Set-Content`
+still exceeds launcher limits before it can save the file. Do not embed a whole
+deck builder in one command, even below the shell tool's advertised input budget;
+do not retry that form after a command-length error. Keep the saved builder for
+inspection and revision, and publish it separately only if source was requested.
+Create slides with `python-pptx` in the prepared Python environment,
 or `pptxgenjs` when JavaScript is ready. Store JavaScript builders in the returned
 JavaScript workspace so both CommonJS and ES module imports resolve. A working
 Node executable alone does not make packages available to scripts stored elsewhere.
@@ -93,11 +101,17 @@ review limitation. Successful generation, shape-bound checks and text extraction
 do not establish visual quality. Designate the requested editable `.pptx` with
 `create_artifact(path=output_path, kind="report", pdf_preview=true)`.
 Name the published artifact in the final response; Clio shows its artifact card.
-Do not format local filesystem paths as Markdown links.
+Use the runtime's workspace-file or registered artifact/resource citation format
+for clickable references. Do not use browser-local `file://` links.
 This registers the editable deck with a version-bound PDF preview for Clio's
 viewer. Before claiming a preview is available, confirm a successful entry in
 the publication result's `pdf_previews`; correct a missing or failed binding.
 A saved preview is not visual review.
+Keep requested rendering and visual review incomplete until the slide images have
+actually been inspected. A failed render is a blocker: do not replace that todo
+with "attempt rendering" and mark it complete, or remove the requirement. Preserve
+the original obligation, report the specific failure and continue independent
+work while it is unresolved. Only the user can waive requested review.
 A separately registered review PDF does not bind to the editable deck. Keep
 `pdf_preview=true` on the source call, or on its batch item, when a preview is
 requested; the publication workflow creates that relationship.

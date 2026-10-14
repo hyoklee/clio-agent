@@ -91,8 +91,11 @@ RESERVED_CLIENT_METADATA_KEYS: frozenset[str] = frozenset(
         "goal_iters",  # goal.py (P4)
         "goal_reason",  # goal.py (P4)
         "mid_turn_steer",  # loop_inbox.py — mid-turn steer marker
+        "steer_delivery",  # steer_delivery.py — recorded iteration boundary
         "scheduled",  # app.py — scheduler-fired turn marker
         "schedule_id",  # app.py — scheduler-fired turn id
+        "loop_id",  # scheduler_runtime.py — monitoring wake identity
+        "task_completion_wake",  # task_completion_wake.py — accepted task delivery
         "synthetic",  # compaction/catalog — server-synthesized message marker
     }
 )

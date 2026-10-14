@@ -163,9 +163,11 @@ def test_progress_window_restarts_on_every_watcher_signal() -> None:
     window = 0.2
     total = 1.6  # eight windows of continuous, honest watcher progress
     stop = threading.Event()
+    # The heartbeat and assertion must share an origin: the worker can start
+    # before Thread.start() returns to the caller.
+    deadline = time.monotonic() + total
 
     def _heartbeat() -> None:
-        deadline = time.monotonic() + total
         while time.monotonic() < deadline and not stop.is_set():
             time.sleep(window / 4)
             signal_clearance(app, "sess_parent")
@@ -174,14 +176,15 @@ def test_progress_window_restarts_on_every_watcher_signal() -> None:
 
     beat = threading.Thread(target=_heartbeat)
     beat.start()
-    started = time.monotonic()
     try:
         reason = wait_for_spotter_clearance(app, "sess_parent", progress_timeout_s=window)
+        cleared_at = time.monotonic()
     finally:
         stop.set()
         beat.join(timeout=10.0)
     assert reason == CLEARANCE_GRANTED
-    assert time.monotonic() - started >= total  # it really did wait out the work
+    # Cleanup must not make an early clearance look like it waited out the work.
+    assert cleared_at >= deadline
 
 
 def test_a_buffered_coalesced_wake_also_holds_clearance() -> None:
@@ -258,8 +261,7 @@ def test_clearance_events_are_released_when_the_watcher_disarms(tmp_path: Path) 
 
 
 def test_cancelling_a_spotter_session_denies_later_mutations_typed(tmp_path: Path) -> None:
-    """``POST /cancel`` cascades to the standing watcher; the session still
-    advertises spotter-ai, so every later mutating call must DENY, not clear."""
+    """Explicitly cancelling the watcher denies later mutations while spotter-ai stays selected."""
 
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
@@ -268,7 +270,10 @@ def test_cancelling_a_spotter_session_denies_later_mutations_typed(tmp_path: Pat
         ).json()["id"]
         task = app.state.agent_task_registry.for_parent(sid)[0]
 
-        assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
+        cancelled = client.post(
+            f"/v1/sessions/{sid}/async-tasks/cancel", json={"tasks": task.task_id}
+        )
+        assert cancelled.status_code == 200 and not cancelled.json()["errors"]
         assert app.state.agent_task_registry.get(task.task_id).is_terminal
         assert app.state.sessions.get(sid).approval_mode == "spotter-ai"
 

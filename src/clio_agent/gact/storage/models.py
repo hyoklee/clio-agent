@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from clio_schemas.connected_resources import AccessMode, ConnectedSource
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
 
 def now() -> str:
@@ -32,6 +32,9 @@ class SourceConfiguration(StorageModel):
     destination_collection_root: str = ""
     destination_local_root: str = ""
     github_ref: str = ""
+    obsidian_connection: Literal["local_vault", "headless_sync"] = "local_vault"
+    obsidian_excluded_folders: list[str] = Field(default_factory=list)
+    obsidian_sync_mode: Literal["pull-only", "bidirectional"] = "pull-only"
 
 
 class SftpCredentials(StorageModel):
@@ -45,12 +48,25 @@ class SftpCredentials(StorageModel):
 class CreateSource(StorageModel):
     """Approve one source on the connected CLIO for one workspace."""
 
-    provider: Literal["local", "sftp", "google_drive", "globus", "github"]
-    root: str = Field(min_length=1, max_length=4096)
+    provider: Literal["local", "sftp", "google_drive", "globus", "github", "obsidian"]
+    root: str = Field(default="", max_length=4096)
+    create_vault: bool = False
     label: str = Field(min_length=1, max_length=120)
     mode: AccessMode = "read_only"
     configuration: SourceConfiguration = Field(default_factory=SourceConfiguration)
     sftp_credentials: SftpCredentials | None = Field(default=None, exclude=True, repr=False)
+
+    @model_validator(mode="after")
+    def validate_vault_creation(self) -> CreateSource:
+        """Create only a new CLIO-owned vault; existing sources require an explicit root."""
+        if self.create_vault:
+            if self.provider != "obsidian" or self.root:
+                raise ValueError("New vaults use Obsidian semantics and CLIO-managed storage")
+            if self.configuration.obsidian_connection != "local_vault":
+                raise ValueError("Create a local vault or select a remote Sync vault")
+        elif not self.root.strip():
+            raise ValueError("Choose a source folder")
+        return self
 
 
 class SourceRecord(StorageModel):
@@ -162,7 +178,7 @@ class TransferOperation(StorageModel):
 
     id: str
     source_id: str
-    kind: Literal["materialize", "refresh", "apply", "native_transfer"]
+    kind: Literal["materialize", "refresh", "apply", "native_transfer", "indexing"]
     state: Literal["queued", "running", "completed", "failed", "cancelled", "interrupted"] = (
         "queued"
     )
@@ -176,6 +192,13 @@ class TransferOperation(StorageModel):
     applied_paths: list[str] = Field(default_factory=list)
     created_at: str = Field(default_factory=now)
     updated_at: str = Field(default_factory=now)
+    task_handle: str = ""
+    owner_session_id: str = ""
+    description: str = ""
+    invocation_id: str = ""
+    entries_done: int = 0
+    manifest_id: str | None = None
+    index_signature: str = ""
 
 
 class ReviewedChange(StorageModel):

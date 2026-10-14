@@ -16,15 +16,29 @@ import platform
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import Context, FastMCP
+from pydantic import Field
 
 from clio_agent import conf
 from clio_agent.runtime import trace
+from clio_agent.tools.builtin_annotations import (
+    _BASH_ANNOTATIONS,
+)
+from clio_agent.tools.builtin_annotations import (
+    SHELL_TOOL_ANNOTATIONS as SHELL_TOOL_ANNOTATIONS,
+)
 from clio_agent.tools.file_policy import FileAccessPolicy, FilePolicyError
+from clio_agent.tools.servers.shell_commands import (
+    SCRIPT_FILE_GUIDANCE,
+    command_length_error,
+    is_command_length_exception,
+    windows_launch_error,
+)
 from clio_agent.tools.servers.shell_output import (
     StreamCapture,
     compose_output_fields,
@@ -48,16 +62,7 @@ logger = logging.getLogger(__name__)
 # and openWorldHint=True. This projects to NO catalog read/write tag (effectful/
 # unclassifiable) — preserving the pre-#1061 "no read tag => never read-only, and
 # not an fs-write the auto-edits mode may auto-approve" classification.
-_BASH_ANNOTATIONS: dict[str, Any] = {
-    "readOnlyHint": False,
-    "destructiveHint": True,
-    "openWorldHint": True,
-}
 
-#: Namespaced tool name → declared annotations for the shell built-ins. Exported
-#: so :mod:`clio_agent.tools.catalog` projects read/write tags from the SAME
-#: mapping the decorator declares.
-SHELL_TOOL_ANNOTATIONS: dict[str, dict[str, Any]] = {"shell_bash": _BASH_ANNOTATIONS}
 
 # POSIX text utilities the model tends to reach for (and improvises `wsl bash -c`
 # to get on Windows, booting a resident VM — iowarp/clio-agent#898). Their real
@@ -100,11 +105,10 @@ def resolve_shell_limits() -> ShellLimits:
     Defaults, and why:
 
     * ``shell_max_command_chars`` 16,000 (was 4,000, which rejected ordinary
-      heredoc profiling scripts). On Windows the command rides the PowerShell /
-      cmd command line, which CreateProcess caps at 32,767 characters; 16,000
-      stays under that even if quoting doubled every character, and covers a
-      ~200-line inline script. Past it, the rejection tells the model to write
-      the script to a file and run the file.
+      heredoc profiling scripts). This is the CLIO input budget; Windows launchers
+      can reject smaller commands, particularly cmd/.cmd/.bat at 8,191 characters.
+      Quoting and wrapper arguments also count. Programs belong in workspace
+      script files; the native launch string is checked separately.
     * ``shell_default_output_bytes`` 8,192 per stream (was 16,384). The result
       must fit the downstream 12,000-character tool-result bounds or it gets
       rewrapped into a truncated JSON-in-JSON preview (#887); 16 KiB made that
@@ -341,9 +345,9 @@ def _limits_text(limits: ShellLimits) -> str:
     """Model-facing statement of the effective limits and the spill behaviour."""
 
     return (
-        f"Limits: the command may be up to {limits.max_command_chars} characters; for a "
-        "longer script, write it to a file in the workspace first and run that file (for "
-        "example `uv run python analysis.py`). stdout and stderr each return inline up to "
+        f"Limits: CLIO accepts up to {limits.max_command_chars} command characters, but native "
+        "shells/launchers can impose smaller bounds, even below this budget. "
+        f"{SCRIPT_FILE_GUIDANCE} stdout and stderr each return inline up to "
         f"max_output_bytes (default {limits.default_output_bytes}, at most "
         f"{limits.max_output_bytes}) and the whole result stays under "
         f"{limits.result_chars} characters. Output beyond that is not lost: the complete "
@@ -365,6 +369,15 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
     :data:`_SHELL_LIMITS`), never hand-written numbers (#1487).
     """
     limits_text = _limits_text(limits or _SHELL_LIMITS)
+    task_text = (
+        "By default background=false waits for command completion. Set background=true to "
+        "return a durable Shell task handle as soon as the command starts, before completion. "
+        "Continue independent work; use query_tasks, observe_tasks, wait_tasks, get_task_result "
+        "or cancel_tasks with the handle. Results arrive at the next model iteration or wake "
+        "you when idle. Conversation Stop leaves accepted background work running. A positive "
+        "timeout_s remains an execution limit. Set timeout_s=0 for no per-command deadline; "
+        "omitting it uses the configured default. An operator ceiling may still apply. "
+    )
     tools = ", ".join(_POSIX_TEXT_TOOLS)
     tools_line = (
         f"POSIX text tools ({tools}) ARE available on this host's PATH."
@@ -396,7 +409,7 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
             "spawns no VM. The working directory must be inside CLIO_ALLOWED_ROOTS. "
             "A command can retrieve public HTTPS data when network policy permits; "
             "inspect its returned status and output before concluding access failed. "
-            f"The command runs until it exits unless you pass timeout_s. {limits_text}"
+            f"{task_text}{limits_text}"
         )
     return (
         f"Run ONE local shell command on a {facts.system_label} host and return stdout, "
@@ -408,7 +421,7 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
         "CLIO_ALLOWED_ROOTS. "
         "A command can retrieve public HTTPS data when network policy permits; "
         "inspect its returned status and output before concluding access failed. "
-        f"The command runs until it exits unless you pass timeout_s. {limits_text}"
+        f"{task_text}{limits_text}"
     )
 
 
@@ -436,6 +449,21 @@ def _kill_process_tree(pid: int) -> None:
     psutil.wait_procs(victims, timeout=5)
 
 
+def _log_shell_phase(
+    call_id: str, phase: str, started: float, *, outcome: str = "completed"
+) -> float:
+    """Log wall time for one call stage without adding command contents to diagnostics."""
+    finished = time.perf_counter()
+    logger.info(
+        "shell_phase call=%s phase=%s outcome=%s elapsed_ms=%.3f",
+        call_id,
+        phase,
+        outcome,
+        (finished - started) * 1000,
+    )
+    return finished
+
+
 @shell_server.tool(description=_SHELL_TOOL_DESCRIPTION, annotations=_BASH_ANNOTATIONS)
 async def bash(
     ctx: Context,
@@ -443,6 +471,12 @@ async def bash(
     cwd: str | None = None,
     timeout_s: float = _DEFAULT_TIMEOUT_S,
     max_output_bytes: int = _SHELL_LIMITS.default_output_bytes,
+    background: Annotated[
+        bool,
+        Field(
+            description="True returns a durable task handle before completion; false waits for exit."
+        ),
+    ] = False,
 ) -> dict[str, Any]:
     """Run one local shell command and return stdout, stderr, and exit code.
 
@@ -452,8 +486,8 @@ async def bash(
     ``timeout_s`` is positive (or an operator ceiling applies) and the working
     directory must be inside ``CLIO_ALLOWED_ROOTS``. Output that does not fit the
     result budget is spilled in full under Agent-managed ``tool-output/`` state and excerpted
-    (:mod:`clio_agent.tools.servers.shell_output`). A cancelled turn or a
-    timeout kills the command's whole process tree.
+    (:mod:`clio_agent.tools.servers.shell_output`). Foreground turn cancellation
+    kills its process tree. Accepted background tasks require explicit cancellation.
     """
 
     if not isinstance(command, str) or not command.strip():
@@ -462,22 +496,30 @@ async def bash(
             "command must be a non-empty string.",
             details={"field": "command"},
         )
+    background_app, background_sid = None, ""
+    if background:
+        from clio_agent.gact import context as task_context
+
+        background_app, background_sid = task_context.active_app(), task_context.active_session_id()
+        if background_app is None or not background_sid:
+            return _error(
+                "background_unavailable",
+                "Background shell requires an application-owned conversation",
+            )
+        from clio_agent.tools.task_call_context import require_admission
+
+        try:
+            require_admission(background_app, background_sid)
+        except RuntimeError as exc:
+            return _error("task_admission_closed", str(exc))
     command = command.strip()
     max_chars = _SHELL_LIMITS.max_command_chars
     if len(command) > max_chars:
-        next_action = (
-            "Split the script into shorter shell calls that write a file inside the workspace, "
-            "then run that file with a short command (for example `uv run python analysis.py`). "
-            "fs_propose_edit only stages a reviewable diff; it does not write the file."
-        )
-        return _error(
-            "command_too_long",
-            f"command is {len(command)} characters; the limit is {max_chars}. {next_action}",
-            details={
-                "received_chars": len(command),
-                "max_chars": max_chars,
-                "next_action": next_action,
-            },
+        return command_length_error(
+            command,
+            f"command is {len(command)} characters; the limit is {max_chars}.",
+            bound="clio_input",
+            max_chars=max_chars,
         )
     try:
         timeout = float(timeout_s)
@@ -501,6 +543,8 @@ async def bash(
             f"max_output_bytes must be > 0 and <= {ceiling_bytes}.",
             details={"received": max_output_bytes, "max_output_bytes": ceiling_bytes},
         )
+    call_id = new_call_id()
+    phase_started = time.perf_counter()
     try:
         safe_cwd = _resolve_cwd(cwd)
         from clio_agent.runtime.execution_environment import shell_environment
@@ -508,9 +552,12 @@ async def bash(
         prepared = shell_environment(_spill_root(safe_cwd))
         argv = _shell_argv(command, prepared_environment=prepared)
     except FilePolicyError as exc:
+        _log_shell_phase(call_id, "environment", phase_started, outcome="denied")
         return exc.to_result()
     except Exception as exc:  # noqa: BLE001
+        _log_shell_phase(call_id, "environment", phase_started, outcome="failed")
         return _error("shell_unavailable", str(exc))
+    phase_started = _log_shell_phase(call_id, "environment", phase_started)
 
     # #975: route the shell subprocess through the single confinement composer with the
     # per-invocation `shell` profile (write territory computed from THIS command's cwd).
@@ -518,17 +565,25 @@ async def bash(
     # the shell seam carries no pdeathsig today, so it stays off here.
     from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
-    confined = sandbox.wrap_confined(
-        argv[0],
-        argv[1:],
-        write_roots=sandbox.effective_write_roots(
-            sandbox.PROFILE_SHELL, workspace_root=str(safe_cwd)
-        ),
-        net_policy=sandbox.NET_ALLOW_RECORD,
-        profile=sandbox.PROFILE_SHELL,
-        pdeathsig=False,
-    )
+    try:
+        confined = sandbox.wrap_confined(
+            argv[0],
+            argv[1:],
+            write_roots=sandbox.effective_write_roots(
+                sandbox.PROFILE_SHELL, workspace_root=str(safe_cwd)
+            ),
+            net_policy=sandbox.NET_ALLOW_RECORD,
+            profile=sandbox.PROFILE_SHELL,
+            pdeathsig=False,
+            cwd=safe_cwd,
+        )
+    except Exception:
+        _log_shell_phase(call_id, "confinement", phase_started, outcome="failed")
+        raise
+    phase_started = _log_shell_phase(call_id, "confinement", phase_started)
     run_argv = [confined.command, *confined.args]
+    if os.name == "nt" and (launch_error := windows_launch_error(run_argv, command)):
+        return launch_error
     run_env = {**os.environ, **prepared, "PYTHONUTF8": "1", **confined.env_overlay}
     # Prepared scratch is already inside this workspace's writable territory.
     run_env.update({key: prepared[key] for key in ("TEMP", "TMP", "TMPDIR") if key in prepared})
@@ -539,28 +594,8 @@ async def bash(
     # or an explicit command subdirectory. The existing write fence still applies.
     run_env["CLIO_AGENT_WORKSPACE_STATE_DIR"] = str(workspace_state_dir(_spill_root(safe_cwd)))
 
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *run_argv,
-            cwd=str(safe_cwd),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            env=run_env,
-            **confined.popen_kwargs,
-            # Give the child an immediately-EOF stdin. Without this the spawned
-            # shell inherits clio-agent's own stdin (a pipe the parent holds open
-            # and never closes), and PowerShell/cmd block at startup waiting on
-            # that stream — every command then hits the timeout with empty output.
-            stdin=subprocess.DEVNULL,
-        )
-    except Exception as exc:  # noqa: BLE001
-        return _error("execution_failed", str(exc), details={"command": command})
-
-    assert process.stdout is not None
-    assert process.stderr is not None
     spill_root = _spill_root(safe_cwd)
     spill_dir = spill_directory(spill_root, session_id=active_session_id())
-    call_id = new_call_id()
     captures = [
         StreamCapture(
             name,
@@ -569,6 +604,52 @@ async def bash(
         )
         for name in ("stdout", "stderr")
     ]
+    try:
+        from clio_agent.runtime.task_process_tree import task_spawn_options
+
+        process_options = (
+            task_spawn_options(confined.popen_kwargs) if background else confined.popen_kwargs
+        )
+        spawn = asyncio.create_subprocess_exec(
+            *run_argv,
+            cwd=str(safe_cwd),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            env=run_env,
+            **process_options,
+            # Give the child an immediately-EOF stdin. Without this the spawned
+            # shell inherits clio-agent's own stdin (a pipe the parent holds open
+            # and never closes), and PowerShell/cmd block at startup waiting on
+            # that stream — every command then hits the timeout with empty output.
+            stdin=subprocess.DEVNULL,
+        )
+        if background:
+            from clio_agent.gact.task_shell_owner import spawn_owned_shell
+            from clio_agent.tools.task_call_context import TASK_CALL
+
+            accepted = await spawn_owned_shell(
+                background_app,
+                background_sid,
+                spawn,
+                captures,
+                command=command,
+                cwd=safe_cwd,
+                spill_root=spill_root,
+                timeout=timeout,
+                invocation_id=TASK_CALL.get().invocation_id,
+            )
+            _log_shell_phase(call_id, "process_start", phase_started, outcome="accepted")
+            return accepted
+        process = await spawn
+    except Exception as exc:  # noqa: BLE001
+        _log_shell_phase(call_id, "process_start", phase_started, outcome="failed")
+        if is_command_length_exception(exc):
+            return command_length_error(command, str(exc), bound="native_spawn")
+        return _error("execution_failed", str(exc), details={"command": command})
+    phase_started = _log_shell_phase(call_id, "process_start", phase_started)
+
+    assert process.stdout is not None
+    assert process.stderr is not None
     readers = [
         asyncio.create_task(read_process_stream(pipe, capture=capture, ctx=ctx))
         for pipe, capture in zip((process.stdout, process.stderr), captures, strict=True)
@@ -581,10 +662,15 @@ async def bash(
         await asyncio.to_thread(_kill_process_tree, process.pid)
         await process.wait()
     except asyncio.CancelledError:
+        _log_shell_phase(call_id, "child_lifetime", phase_started, outcome="cancelled")
         # The turn was cancelled (the human stopped it): never orphan the command.
         _kill_process_tree(process.pid)
         raise
+    phase_started = _log_shell_phase(
+        call_id, "child_lifetime", phase_started, outcome="timed_out" if timed_out else "completed"
+    )
     await asyncio.gather(*readers)
+    _log_shell_phase(call_id, "output_drain", phase_started)
     base = {
         "command": command,
         "cwd": str(safe_cwd),

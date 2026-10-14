@@ -10,6 +10,7 @@ import mark from '../../assets/brand/clio-mark.svg';
 import { release } from '../../lib/release';
 
 const isSplash = Astro.locals.starlightRoute.entry.data.template === 'splash';
+const docsPage = Astro.url.pathname.startsWith('/docs');
 
 const columns = [
 	{
@@ -17,8 +18,8 @@ const columns = [
 		links: [
 			{ label: 'Download', href: '/#download' },
 			{ label: 'Docs', href: '/docs/' },
-			{ label: 'Tutorials', href: '/tutorials/' },
-			{ label: 'Release notes', href: release.notesUrl },
+			docsPage ? { label: 'Worked examples', href: '/docs/examples/' } : { label: 'Tutorials', href: '/tutorials/' },
+			{ label: 'Release notes', href: docsPage ? 'https://github.com/iowarp/clio-agent/releases' : release.notesUrl },
 		],
 	},
 	{

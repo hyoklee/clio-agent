@@ -22,9 +22,9 @@ import truststore
 from filelock import FileLock
 
 if TYPE_CHECKING or __package__:
-    from .process import DocumentError, run
+    from .process import DocumentError, inherit_parent_access, run
 else:
-    from process import DocumentError, run
+    from process import DocumentError, inherit_parent_access, run
 
 VERSION = "26.2.6"
 # Published by The Document Foundation at each download URL's .sha256 endpoint.
@@ -208,6 +208,7 @@ def ensure_office(root: Path) -> str:
     with FileLock(str(root.parent / f"{root.name}.lock"), timeout=600):
         existing = executable(root)
         if existing:
+            inherit_parent_access(root)
             run([str(existing), "--version"], cwd=root, timeout=30)
             return str(existing)
         url, name, checksum = asset()
@@ -224,10 +225,12 @@ def ensure_office(root: Path) -> str:
             partial.replace(archive)
         with tempfile.TemporaryDirectory(prefix="office-extract-", dir=root.parent) as temporary:
             staging = Path(temporary)
+            inherit_parent_access(staging)
             image = staging / "image"
             image.mkdir()
             try:
                 _extract(archive, image)
+                inherit_parent_access(image)
                 candidate = executable(image)
                 if candidate is None:
                     raise DocumentError("LibreOffice image contains no supported executable")

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastmcp import Client
@@ -111,12 +113,13 @@ def _parse_result(result: object) -> dict:
 
 @pytest.mark.asyncio
 async def test_shell_bash_runs_simple_command(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     """The shell tool should execute a bounded command and return output."""
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("CLIO_ALLOWED_ROOTS", str(tmp_path))
+    caplog.set_level(logging.INFO, logger="clio_agent.tools.servers.shell_server")
     conf.reload()
     if os.name == "nt":
         command = f"& '{sys.executable}' -c \"import os; print('CLIO_SHELL_OK'); print(os.environ.get('PYTHONUTF8'))\""
@@ -137,6 +140,17 @@ async def test_shell_bash_runs_simple_command(
     assert data["timed_out"] is False
     assert data["stdout"].strip().splitlines() == ["CLIO_SHELL_OK", "1"]
     assert data["stderr"] == ""
+    stages = [record for record in caplog.records if record.msg.startswith("shell_phase ")]
+    assert [record.args[1] for record in stages] == [
+        "environment",
+        "confinement",
+        "process_start",
+        "child_lifetime",
+        "output_drain",
+    ]
+    assert len({record.args[0] for record in stages}) == 1
+    assert all(record.args[2] == "completed" and record.args[3] >= 0 for record in stages)
+    assert all(command not in record.getMessage() for record in stages)
 
 
 @pytest.mark.asyncio
@@ -174,6 +188,40 @@ async def test_shell_bash_pins_default_cwd_to_active_workspace_root(
     assert Path(data["stdout"].strip()).resolve() == workspace_root.resolve()
     assert Path(data["cwd"]).resolve() == workspace_root.resolve()
     assert Path(data["cwd"]).resolve() != boot_time_cwd.resolve()
+
+
+@pytest.mark.asyncio
+async def test_shell_bash_passes_requested_cwd_to_fence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fence and process use the same validated cwd, including a subdirectory."""
+    from clio_agent.runtime import sandbox
+
+    workspace = tmp_path / "workspace"
+    directory = workspace / "nested"
+    directory.mkdir(parents=True)
+    (directory / "input.txt").write_text("requested-directory", encoding="utf8")
+    monkeypatch.setenv("CLIO_ALLOWED_ROOTS", str(workspace))
+    original = sandbox.wrap_confined
+    observed: list[dict[str, Any]] = []
+
+    def capture(*args: Any, **kwargs: Any) -> sandbox.ConfinedSpawn:
+        observed.append(kwargs)
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(sandbox, "wrap_confined", capture)
+    if os.name == "nt":
+        command = "Get-Content -Raw input.txt"
+    else:
+        command = "cat input.txt"
+    with tool_workspace_context(str(workspace)):
+        async with Client(shell_server) as client:
+            result = await client.call_tool("bash", {"command": command, "cwd": str(directory)})
+    data = _parse_result(result)
+    assert data["exit_code"] == 0 and data["stdout"].strip() == "requested-directory"
+    assert len(observed) == 1
+    assert observed[0]["cwd"] == directory.resolve()
+    assert directory.resolve() in observed[0]["write_roots"]
 
 
 def test_tool_session_context_resolves_the_real_session_workspace_root(

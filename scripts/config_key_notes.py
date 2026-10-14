@@ -24,7 +24,7 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
     ),
     (
         "Agents, workflows and scheduling",
-        ("agents", "agent_tasks", "workflows", "goal", "scheduler", "variants"),
+        ("agents", "agent_tasks", "workflows", "goal", "scheduler", "variants", "fleet"),
         "Child-agent concurrency, declared-workflow step liveness, goal judging and the cron "
         "scheduler.",
     ),
@@ -57,6 +57,12 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
         ("tools",),
         "File-policy sandboxing, shell execution bounds and the MCP tool fleet's "
         "discovery/cache/timeouts.",
+    ),
+    (
+        "Web search",
+        ("search",),
+        "Which backend serves the web_search tool (CLIO's private SearXNG by default, a CLIO Web "
+        "Search gateway, or none) and the private SearXNG's engine policy.",
     ),
     (
         "Relay",
@@ -536,8 +542,18 @@ KEY_NOTES: dict[str, str] = {
         "sessions warm at the cost of memory."
     ),
     "goal.judge_model": (
-        "Model id for the separate cheap LLM-judge that evaluates an armed goal condition; set a "
-        "small/cheap model to keep judging inexpensive."
+        "Legacy goal judge model override on the caller provider; Fleet goals selection takes "
+        "precedence, including an explicit null to inherit the conversation model."
+    ),
+    "fleet.judges": (
+        "Independent judge choices keyed by goals, variants and permissions. Each value is "
+        "null to inherit the conversation model, or a provider_id/model_id mapping; the "
+        "CLIO_FLEET_JUDGES environment value uses JSON. Settings Fleet writes this mapping."
+    ),
+    "fleet.search": (
+        "Provider and model for the read-only CLIO Search assistant, as a provider_id/model_id "
+        "mapping. Null inherits the current conversation model, then service defaults. "
+        "CLIO_FLEET_SEARCH accepts JSON. Settings Fleet writes this choice independently of judges."
     ),
     "hooks.allow_managed_only": (
         "Lockdown flag dropping every non-managed (user/project) hook source, keeping only "
@@ -660,6 +676,11 @@ KEY_NOTES: dict[str, str] = {
         'Selects the Codex transport; "websocket" (default, with delta continuation) or "sse" '
         "to force the stateless HTTP transport."
     ),
+    "lm.context_sizing_strategy": (
+        "Default Fit-to-GPU strategy that sizes a CLIO-managed model server's context (vLLM, "
+        "llama.cpp, Ollama) from the model's KV cost and the GPU's free memory; set to a "
+        "registered research strategy id to change how contexts are fitted."
+    ),
     "lm.context_window": (
         "Override the effective context window (tokens); 0 auto-derives from the "
         "handshake-discovered served window, set >0 to assert a larger window than the provider "
@@ -722,6 +743,12 @@ KEY_NOTES: dict[str, str] = {
     "lm.top_p": (
         "Sets the OpenAI-standard top-p sampling parameter; tune for reasoning models needing "
         "fuller sampling than the temp-0 default."
+    ),
+    "paths.default_workspace": (
+        "Absolute directory a fresh install's default workspace (ws_default) is rooted at, "
+        "created if missing; unset uses the server's working directory at first start. It only "
+        "seeds: an existing ws_default keeps its root (repoint it with PATCH "
+        "/v1/workspaces/ws_default or the Workspaces page)."
     ),
     "paths.model_catalog": (
         "Overrides the file path for the discovered-model catalog cache; set to relocate it off "
@@ -1124,7 +1151,7 @@ KEY_NOTES: dict[str, str] = {
     ),
     "scheduler.max_lifetime_s": (
         'Seconds after creation a recurring schedule with no explicit "until" is auto-retired; '
-        "raise to let schedules run longer unattended."
+        "zero (the default) means unlimited; set a positive deployment lifetime explicitly."
     ),
     "scheduler.max_retries": (
         "Consecutive failed fires tolerated before a schedule is disabled with a typed reason; "
@@ -1137,6 +1164,44 @@ KEY_NOTES: dict[str, str] = {
     "scheduler.timezone": (
         "Default timezone schedules resolve their cron expression's wall-clock fire times in; set "
         "to change the default zone new schedules use."
+    ),
+    "search.backend": (
+        "Which service answers the agent's web_search tool: local_searxng (CLIO's private "
+        "SearXNG, installed on first use), clio_web_search (a gateway at "
+        "search.clio_web_search.url) or none (search off; the tool reports how to enable it)."
+    ),
+    "search.clio_web_search.url": (
+        "CLIO Web Search gateway URL used when search.backend is clio_web_search; point it at "
+        "another machine to send search traffic from that machine's address."
+    ),
+    "search.local_searxng.auto_install": (
+        "Whether the server installs and starts the private SearXNG at boot when it is the "
+        "backend and was never installed (or is installed but not running); off leaves it to "
+        "Infrastructure."
+    ),
+    "search.searxng.engines": (
+        "SearXNG engines CLIO enables (comma-separated names from SearXNG's settings.yml); "
+        "Chinese-jurisdiction engines listed here stay off unless also opted in."
+    ),
+    "search.searxng.language": (
+        "Default search language of the private SearXNG (a SearXNG locale such as en, or auto)."
+    ),
+    "search.searxng.max_results": (
+        "Most results CLIO's direct search path returns per query (1-50)."
+    ),
+    "search.searxng.opt_in_engines": (
+        "Explicit opt-in for engines that are off by policy (baidu, sogou, 360search, chinaso, "
+        "quark, ...); each one named here is enabled."
+    ),
+    "search.searxng.port": (
+        "Loopback port of the private SearXNG; change it when another program already uses it."
+    ),
+    "search.searxng.request_timeout_s": (
+        "Seconds SearXNG waits for each upstream engine (1-60); raise on slow or proxied "
+        "egress such as HPC login nodes."
+    ),
+    "search.searxng.safe_search": (
+        "SearXNG safe-search level: 0 off, 1 moderate (default), 2 strict."
     ),
     "spotter.clearance_progress_timeout_s": (
         "No-progress window (seconds) between observable SPOTTER watcher signals before a "

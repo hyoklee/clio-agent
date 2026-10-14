@@ -381,19 +381,27 @@ class ProviderHandshake(abc.ABC):
         """The Hugging Face layer for this deployment, or ``None``.
 
         Bound to the Hub repo the endpoint actually serves: ``model_key`` when
-        it has the ``org/name`` shape, else ``wire_id`` when that does.
+        it has the ``org/name`` shape, else ``wire_id`` when that does; else a local
+        snapshot directory either one names (read from disk).
         """
         from clio_agent.providers.capabilities.hf_repo import (  # noqa: PLC0415
             HfRepoCatalogSource,
             is_repo_id,
         )
+        from clio_agent.providers.capabilities.local_snapshot import (  # noqa: PLC0415
+            LocalSnapshotSource,
+            is_local_snapshot,
+        )
 
-        repo_id = next((c for c in (model_key, wire_id) if is_repo_id(c)), None)
-        if repo_id is None:
-            return None
         if self._endpoint_dialect(ctx) not in _HF_REPO_DIALECTS:
             return None
-        return HfRepoCatalogSource(repo_id=repo_id)
+        repo_id = next((c for c in (model_key, wire_id) if is_repo_id(c)), None)
+        if repo_id is not None:
+            return HfRepoCatalogSource(repo_id=repo_id)
+        # A server launched on a downloaded snapshot serves it by path: read the
+        # files it loaded instead of skipping the layer (F016/F017).
+        snapshot = next((c for c in (model_key, wire_id) if is_local_snapshot(c)), None)
+        return LocalSnapshotSource(snapshot) if snapshot is not None else None
 
     def _endpoint_dialect(self, ctx: HandshakeContext) -> str:
         """This endpoint's recorded dialect ("" before its record exists)."""
@@ -438,7 +446,10 @@ class ProviderHandshake(abc.ABC):
             ctx.provider_kind, litellm_prefix, ctx.provider_id
         )
         server_version, fingerprint = await self._dialect_endpoint_fingerprint(client, ctx, dialect)
-        caps = capability_endpoint.build_endpoint_capabilities(
+        # LiteLLM loads its provider catalogs lazily; importing those and resolving
+        # parameters must not stall startup health or the model-picker requests.
+        caps = await asyncio.to_thread(
+            capability_endpoint.build_endpoint_capabilities,
             ctx.provider_id,
             ctx.api_base,
             dialect,
@@ -540,7 +551,13 @@ class ProviderHandshake(abc.ABC):
             write=self.timeout_connect * scale,
             pool=self.timeout_connect * scale,
         )
-        return httpx.AsyncClient(timeout=timeout, headers=self._client_headers(ctx))
+        # Client construction loads system certificate stores synchronously.
+        # A catalog opens several clients at once; on Windows doing this on
+        # the loop stalls unrelated health and workspace requests for seconds.
+        # Connections are still opened/used/closed on the calling event loop.
+        return await asyncio.to_thread(
+            httpx.AsyncClient, timeout=timeout, headers=self._client_headers(ctx)
+        )
 
     async def _close_client(self, client: Any) -> None:
         try:
