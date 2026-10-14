@@ -311,9 +311,10 @@ async def test_native_tools_read_real_sources_and_global_search_omits_ephemeral_
             read = await read_tool.acall(workspace_id=workspace.id, path="notes.txt")
             return found, read
 
-        # Match ClioReAct's worker loop: observation persists Core-backed evidence
-        # and must not run on the registered request/test event loop.
-        found, read = await asyncio.to_thread(lambda: asyncio.run(read_sources()))
+        # Run the production lifespan so its actual server loop is registered;
+        # the guard remains strict without a lifespan, even on worker loops.
+        with TestClient(app):
+            found, read = await asyncio.to_thread(lambda: asyncio.run(read_sources()))
         assert found["hits"][0]["session_id"] == session.id
         assert read["text"] == "Evidence from the file"
     finally:
