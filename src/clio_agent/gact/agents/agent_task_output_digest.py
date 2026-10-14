@@ -35,7 +35,6 @@ through the parent at all -- lives in the sibling owner module
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 #: Typed reason on the digest envelope's ``_clio.reason`` (mirrors

@@ -53,7 +53,6 @@ import hashlib
 import json
 import logging
 import queue
-from clio_agent.providers.stream_queue import AsyncStreamQueue, StreamProducer, StreamSink
 import threading
 import time
 import uuid
@@ -90,11 +89,24 @@ from clio_agent.providers.codex.stream_errors import (
     terminal_error,
 )
 from clio_agent.providers.codex.stream_tool_calls import ToolCallAssembler
+from clio_agent.providers.codex.wire_validation import (
+    _check_media as _check_media,
+)
+from clio_agent.providers.codex.wire_validation import (
+    _error_code as _error_code,
+)
+from clio_agent.providers.codex.wire_validation import (
+    _error_message as _error_message,
+)
+from clio_agent.providers.codex.wire_validation import (
+    _with_reasoning_summary as _with_reasoning_summary,
+)
 from clio_agent.providers.stateful_common import (
     active_stateful_scope,
     register_scope_registry,
     stateful_reset_payload,
 )
+from clio_agent.providers.stream_queue import AsyncStreamQueue, StreamProducer, StreamSink
 
 __all__ = [
     "AsyncCodexDirectEngine",
@@ -259,8 +271,14 @@ class AsyncCodexDirectEngine:
     supports_function_calling = True
     supports_reasoning = True
 
-    def __init__(self, model: str, *, wire: Any | None = None, http: bool = False,
-                 http_wire: Any | None = None) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        wire: Any | None = None,
+        http: bool = False,
+        http_wire: Any | None = None,
+    ) -> None:
         self.model = model
         self.wire = wire or default_wire()
         # ``http``: the operator chose stateless HTTP (``CLIO_CODEX_TRANSPORT=sse``,
@@ -269,11 +287,18 @@ class AsyncCodexDirectEngine:
         self.http_wire = http_wire
         if http and http_wire is None:
             if wire is not None:
-                raise ValueError("A custom HTTP wire requires its explicit asynchronous counterpart")
+                raise ValueError(
+                    "A custom HTTP wire requires its explicit asynchronous counterpart"
+                )
             from dspy.lm15 import AsyncOpenAICodexLM
-            self.http_wire = AsyncOpenAICodexLM(api_key=self.wire.api_key,
-                account_id=self.wire.account_id, base_url=self.wire.base_url,
-                originator=self.wire.originator, client_version=self.wire.client_version)
+
+            self.http_wire = AsyncOpenAICodexLM(
+                api_key=self.wire.api_key,
+                account_id=self.wire.account_id,
+                base_url=self.wire.base_url,
+                originator=self.wire.originator,
+                client_version=self.wire.client_version,
+            )
 
     async def complete(self, request: Request) -> Response:
         """Run one call and return the assembled response."""
@@ -308,9 +333,7 @@ class AsyncCodexDirectEngine:
     async def aclose(self) -> None:
         """Nothing to release per engine: sockets belong to their conversations."""
 
-    async def _call(
-        self, request: Request, key: tuple[str, ...] | None, out: StreamSink
-    ) -> None:
+    async def _call(self, request: Request, key: tuple[str, ...] | None, out: StreamSink) -> None:
         try:
             _check_media(request)  # typed refusal of oversized attachments before any send
             request = _with_reasoning_summary(request)
@@ -325,9 +348,7 @@ class AsyncCodexDirectEngine:
         finally:
             out.put(_END)
 
-    async def _run(
-        self, request: Request, key: tuple[str, ...] | None, out: StreamSink
-    ) -> None:
+    async def _run(self, request: Request, key: tuple[str, ...] | None, out: StreamSink) -> None:
         # The backend takes the bare model id, whatever the dspy.LM model string is.
         request = dataclasses.replace(request, model=self.model)
         prepared = prepare_request(self.wire, request)
@@ -375,10 +396,14 @@ class AsyncCodexDirectEngine:
         """One stateless HTTP call (lm15's own transport), events forwarded as they come."""
         from dspy.lm15 import RateLimitError  # noqa: PLC0415
 
+        wire = self.http_wire
+        if wire is None:
+            raise RuntimeError("The Codex HTTP transport was not initialized")
         try:
             assembler = ToolCallAssembler()
-            async with contextlib.aclosing(self.http_wire.stream(
-                dataclasses.replace(request, model=self.model))) as events:
+            async with contextlib.aclosing(
+                wire.stream(dataclasses.replace(request, model=self.model))
+            ) as events:
                 async for event in events:
                     for assembled in assembler.stream((event,)):
                         out.put(assembled)
@@ -418,35 +443,6 @@ class CodexDirectEngine(AsyncCodexDirectEngine):
 
     def close(self) -> None:
         """Nothing to release per engine."""
-
-
-def _check_media(request: Request) -> None:
-    """Every inline image / document of the request within the native ceilings.
-
-    Raises:
-        NativeAttachmentTooLargeError: One attachment, or all of them together, too large.
-    """
-    from dspy.lm15 import DocumentPart, ImagePart  # noqa: PLC0415
-
-    from clio_agent.providers.native_attachment_bounds import (  # noqa: PLC0415
-        base64_byte_length,
-        check_block_bytes,
-        check_total_bytes,
-    )
-
-    total = 0
-    for message in request.messages:
-        for part in message.parts:
-            for media in (part, *getattr(part, "content", ())):
-                data = getattr(media, "data", None)
-                if isinstance(media, ImagePart | DocumentPart) and data:
-                    size = base64_byte_length(data)
-                    if isinstance(media, ImagePart):
-                        check_block_bytes("image", size, label=media.media_type)
-                    else:
-                        check_block_bytes("document", size, label=media.media_type)
-                    total += size
-    check_total_bytes(total)
 
 
 def default_wire() -> Any:
@@ -736,39 +732,12 @@ def _usage_row(usage: Any) -> dict[str, int]:
     return {k: int(v) for k, v in fields.items() if v is not None}
 
 
-def _with_reasoning_summary(request: Request) -> Request:
-    """Ask Codex for its reasoning summary: the model's thinking is shown to the user.
-
-    With no effort set, only the summary is asked for (the backend keeps its own
-    default effort) -- through ``extensions``, since lm15's ``Reasoning`` needs one.
-    """
-    config = request.config
-    if config.reasoning is not None:
-        if config.reasoning.summary is not None:
-            return request
-        reasoning = dataclasses.replace(config.reasoning, summary="auto")
-        return dataclasses.replace(request, config=dataclasses.replace(config, reasoning=reasoning))
-    extensions = dict(config.extensions or {})
-    extensions.setdefault("reasoning", {"summary": "auto"})
-    return dataclasses.replace(request, config=dataclasses.replace(config, extensions=extensions))
-
-
 class _ContinuationLost(Exception):
     """The backend no longer holds ``previous_response_id`` (before any event)."""
 
 
 class _ConnectionLost(Exception):
     """A kept WebSocket closed before any event of the reply was forwarded."""
-
-
-def _error_message(payload: dict[str, Any]) -> str:
-    error = payload.get("error") or (payload.get("response") or {}).get("error") or {}
-    return str(error.get("message") or "") if isinstance(error, dict) else ""
-
-
-def _error_code(payload: dict[str, Any]) -> str:
-    error = payload.get("error") or (payload.get("response") or {}).get("error") or {}
-    return str(error.get("code") or "") if isinstance(error, dict) else ""
 
 
 async def _drop(key: tuple[str, ...]) -> None:

@@ -15,8 +15,6 @@ _CANCELLATION_POLL_SECONDS = 0.05
 _MCP_WIRE_CANCELLATION_SETTLE_SECONDS = 1.0
 
 
-
-
 def _tool_cancellation_error(
     tool: str,
     stage: str,
@@ -128,3 +126,12 @@ def _run_foreground_coroutine(
                 continue
             cancel()
             raise TimeoutError(f"{action} timed out after {timeout:g}s") from exc
+
+
+def inline_timeout(executor: Any, tool: str, arguments: dict[str, Any]) -> float | None:
+    """Keep finite CLI call budgets; product task owners govern post-acceptance lifetime."""
+    from clio_agent.tools.task_call_context import application_loop
+
+    if application_loop() is not None:
+        return None
+    return executor._timeout_budget_for_call(tool, arguments).seconds

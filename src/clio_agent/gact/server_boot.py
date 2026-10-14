@@ -44,14 +44,6 @@ async def prune_orphans_and_cache(app: FastAPI) -> None:
     await boot_prune_off_loop()
 
 
-
-
-
-
-
-
-
-
 def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:
     """Refresh provider discovery off the request path when enabled for this server."""
     if not getattr(app.state, "refresh_provider_catalog_on_startup", False):

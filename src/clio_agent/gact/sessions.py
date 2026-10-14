@@ -461,6 +461,7 @@ class SessionStore:
         edit_mode: Optional[str] = None,
         routing_mode: Optional[str] = None,
         approval_mode: Optional[str] = None,
+        approval_profile: Optional[str] = None,
         model: Optional[dict[str, str]] = None,
         agent: Optional[dict[str, str]] = None,
         metadata_patch: Optional[dict[str, Any]] = None,
@@ -483,6 +484,10 @@ class SessionStore:
             sess = self._sessions.get(sid)
             if sess is None:
                 return None
+            if approval_profile is not None:
+                if approval_profile and approval_profile not in _SERVER_PROFILES:
+                    raise ValueError("Unknown server-owned approval profile")
+                sess.approval_profile = approval_profile
             if title is not None:
                 sess.title = title
             if status is not None:

@@ -283,8 +283,6 @@ def _session_results(app: "FastAPI", workspace_id: str) -> list[dict[str, Any]]:
     return results
 
 
-
-
 async def search_workspace_references(
     app: "FastAPI",
     workspace_id: str,
@@ -367,6 +365,41 @@ async def search_workspace_references(
         counts[kind] = count + 1
         bounded.append(row)
     return bounded
+
+
+def _agent_run_results(app: "FastAPI", workspace_id: str) -> list[dict[str, Any]]:
+    """Discover the authenticated human's assignments using passive Core indexes."""
+    from clio_agent.gact.task_access import TaskAccess, TaskCaller
+
+    history = app.state.task_history
+    access = TaskAccess(history, TaskCaller("", app.state.human_principal, human_action=True))
+    results: list[dict[str, Any]] = []
+    handles = history.task_handles(human_id=access.caller.human_id)
+    handles.intersection_update(
+        history.task_handles(kind="Session") | history.task_handles(kind="Subagent")
+    )
+    for handle in handles:
+        task = access.require(handle, "read")
+        owner = app.state.sessions.get(task.owner.session_id)
+        if owner is None or owner.workspace_id != workspace_id:
+            continue
+        results.append(
+            _reference_result(
+                kind="agent_run",
+                ref_id=task.handle,
+                label=task.label,
+                detail=f"{task.kind} — {task.status}",
+                media_type="application/vnd.clio.agent-run-summary+json",
+                revision=task.updated_at,
+                navigation={
+                    "workspace_id": workspace_id,
+                    "task_id": task.handle,
+                    "session_id": task.owner.session_id,
+                    "route": "/v1/tasks/{handle}",
+                },
+            )
+        )
+    return results
 
 
 def _collect_reference_results(

@@ -6,8 +6,8 @@ import asyncio
 import json
 import logging
 import threading
-from functools import partial
 from collections.abc import Mapping
+from functools import partial
 from typing import Any
 
 from clio_agent.gact import context as _ctx
@@ -38,16 +38,18 @@ async def _call_enabled_external_mcp_tool(
         gate = app.state.make_permission_gate()
     from clio_agent.gact.tool_dispatch import run_owned_callable
 
-    decision = await run_owned_callable(partial(_invoke_permission_gate,
-        gate,
-        observer_name,
-        dict(tool_args),
-        _external_mcp_permission_context(tool_annotations),
-    ))
+    decision = await run_owned_callable(
+        partial(
+            _invoke_permission_gate,
+            gate,
+            observer_name,
+            dict(tool_args),
+            _external_mcp_permission_context(tool_annotations),
+        )
+    )
     if decision != "allow":
         raise PermissionError(f"tool call {observer_name!r} denied by permission gate")
 
-    from clio_agent.tools.mcp_runtime import make_mcp_client
     from clio_agent.gact.mcp_apps import call_tool_result_to_observer  # noqa: PLC0415
     from clio_agent.tools.execution import notify_tool_observer  # noqa: PLC0415
     from clio_agent.tools.mcp_config import (  # noqa: PLC0415
@@ -55,6 +57,7 @@ async def _call_enabled_external_mcp_tool(
         transport_from_spec,
     )
     from clio_agent.tools.mcp_errors import typed_mcp_call_error  # noqa: PLC0415
+    from clio_agent.tools.mcp_runtime import make_mcp_client
 
     spec = info.get("spec", {})
     try:
@@ -78,9 +81,13 @@ async def _call_enabled_external_mcp_tool(
         )
         try:
             import hashlib
-            auth_scope = hashlib.sha256(json.dumps(dict(spec), sort_keys=True, default=str).encode()).hexdigest()
-            result = await app.state.external_tasks.call(server_id, client_ctx, tool_name,
-                dict(tool_args), auth_scope=auth_scope)
+
+            auth_scope = hashlib.sha256(
+                json.dumps(dict(spec), sort_keys=True, default=str).encode()
+            ).hexdigest()
+            result = await app.state.external_tasks.call(
+                server_id, client_ctx, tool_name, dict(tool_args), auth_scope=auth_scope
+            )
         finally:
             TASK_CALL.reset(token)
     except Exception as raw_exc:  # noqa: BLE001

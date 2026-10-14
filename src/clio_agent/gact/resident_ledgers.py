@@ -738,11 +738,8 @@ def _record_resident_audit(app: "FastAPI", payload: dict[str, Any]) -> None:
 def build_resident_ledger_set(app: "FastAPI") -> ResidentLedgerSet:
     """Construct the app's resident transcript set from its message store.
 
-    Wires the active-session pin (bus subscribers + running/​waiting sessions), the
-    typed audit sink, and the lazy stale-handoff reconcile sweep (D1: a session
-    whose child completed BEFORE the terminal-transition writeback existed keeps a
-    ``delegate.started`` part stuck "running" forever — see
-    :func:`clio_agent.gact.background_exit.sweep_stale_handoff_parts`). Requires
+    Wires the active-session pin, typed audit sink and projection eviction.
+    Assignment state is read from Core; loading a transcript never changes it. Requires
     ``app.state.transcript_index`` to be set (the ``messages/`` store, or the session
     registry with ``transcript.file`` off -- :mod:`clio_agent.gact.transcript_file`).
     """
@@ -757,7 +754,6 @@ def build_resident_ledger_set(app: "FastAPI") -> ResidentLedgerSet:
         is_active=lambda sid: _session_is_active(app, sid),
         audit=lambda payload: _record_resident_audit(app, payload),
         materialize=lambda sid: materialize_ledger(app, sid),
-        on_rehydrate=lambda sid, rows: sweep_stale_handoff_parts(app, sid, rows),
         # S8 review round (issue #1374, focused re-review item 3): A2UIStore's
         # per-session projection cache holds every surface's full message
         # list -- the SAME bytes this set's max_bytes cap governs -- so it

@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-import dspy
 import pydantic
-from dspy.lm15 import ToolCallPart
 
 from clio_agent.gact.agents.dspy_native_tool import ClioNativeTool
 
@@ -54,8 +52,12 @@ def submit_tool(signature: Any) -> ClioNativeTool:
             validated[name] = pydantic.TypeAdapter(field.annotation).validate_python(value)
         return SubmittedOutputs(validated, disposition)
 
-    return ClioNativeTool(submit, name="submit", args=schemas,
-        desc="Return the declared outputs and yield or complete this assignment. Yield when awaiting background work or answers.")
+    return ClioNativeTool(
+        submit,
+        name="submit",
+        args=schemas,
+        desc="Return the declared outputs and yield or complete this assignment. Yield when awaiting background work or answers.",
+    )
 
 
 def tool_names(tools: Iterable[Any]) -> list[str]:

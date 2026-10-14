@@ -456,8 +456,9 @@ def _render_task(step: WorkflowStep, request: str) -> str:
     return task
 
 
-async def run_declared_workflow(app: Any, caller: Any, agent_def: "AgentDef",
-                                request: str, invocation_id: str) -> dict[str, Any]:
+async def run_declared_workflow(
+    app: Any, caller: Any, agent_def: "AgentDef", request: str, invocation_id: str
+) -> dict[str, Any]:
     """Run declared steps using ordinary child assignments and shared waits.
 
     The owning assignment references the execution's provenance and checkpoints.
@@ -485,14 +486,29 @@ async def run_declared_workflow(app: Any, caller: Any, agent_def: "AgentDef",
                 raise ValueError("Workflow execution requires an active assignment")
             app.state.conversations.require_admission(owner)
             details = AssignmentDetails.model_validate(history.read_content(owner.details))
-            existing = history.read_content(details.workflow) if details.workflow is not None else None
-            if existing is not None and (not existing.get("complete") or existing.get("invocation_id") == invocation_id):
+            existing = (
+                history.read_content(details.workflow) if details.workflow is not None else None
+            )
+            if existing is not None and (
+                not existing.get("complete") or existing.get("invocation_id") == invocation_id
+            ):
                 if existing["declaration"] != digest or existing["request"] != request:
-                    raise ValueError("An unfinished declared workflow has different inputs; inspect its children first")
+                    raise ValueError(
+                        "An unfinished declared workflow has different inputs; inspect its children first"
+                    )
                 return owner.handle, dict(existing)
-            return owner.handle, {"id": "workflow_" + hashlib.sha256((owner.handle + "\0" + invocation_id).encode()).hexdigest(),
-                "root_session": caller.session_id, "root_handle": owner.handle, "invocation_id": invocation_id,
-                "declaration": digest, "request": request, "steps": {}, "state": {}, "complete": False}
+            return owner.handle, {
+                "id": "workflow_"
+                + hashlib.sha256((owner.handle + "\0" + invocation_id).encode()).hexdigest(),
+                "root_session": caller.session_id,
+                "root_handle": owner.handle,
+                "invocation_id": invocation_id,
+                "declaration": digest,
+                "request": request,
+                "steps": {},
+                "state": {},
+                "complete": False,
+            }
 
     owner_handle, execution = await asyncio.to_thread(load)
 
@@ -502,12 +518,23 @@ async def run_declared_workflow(app: Any, caller: Any, agent_def: "AgentDef",
             app.state.conversations.require_admission(owner)
             details = AssignmentDetails.model_validate(history.read_content(owner.details))
             checkpoint = history.write_content(caller.session_id, execution)
-            reference = history.write_content(caller.session_id,
-                details.model_copy(update={"workflow": checkpoint, "workflow_id": execution["id"]}).model_dump(mode="json"))
-            history.record_snapshot(owner.model_copy(update={"details": reference, "updated_at": now()}),
-                observation_id=uuid4().hex)
-            app.state.sessions.update(caller.session_id, metadata_patch={"workflow_id": execution["id"],
-                "workflow_root_session": caller.session_id})
+            reference = history.write_content(
+                caller.session_id,
+                details.model_copy(
+                    update={"workflow": checkpoint, "workflow_id": execution["id"]}
+                ).model_dump(mode="json"),
+            )
+            history.record_snapshot(
+                owner.model_copy(update={"details": reference, "updated_at": now()}),
+                observation_id=uuid4().hex,
+            )
+            app.state.sessions.update(
+                caller.session_id,
+                metadata_patch={
+                    "workflow_id": execution["id"],
+                    "workflow_root_session": caller.session_id,
+                },
+            )
 
     await asyncio.to_thread(save)
     completed: set[str] = set()
@@ -515,24 +542,52 @@ async def run_declared_workflow(app: Any, caller: Any, agent_def: "AgentDef",
     for step in workflow.steps:
         gate = evaluate_step_gate(step, execution["state"], completed)
         if not gate.satisfied:
-            return {"workflow_id": execution["id"], "status": STALL_PREDICATE_UNSATISFIED,
-                "step": step.id, "predicate": gate.predicate, "observed": gate.observed, "outcomes": outcomes}
+            return {
+                "workflow_id": execution["id"],
+                "status": STALL_PREDICATE_UNSATISFIED,
+                "step": step.id,
+                "predicate": gate.predicate,
+                "observed": gate.observed,
+                "outcomes": outcomes,
+            }
         row = execution["steps"].get(step.id)
         if row is None:
-            spawned = await app.state.conversations.spawn(caller, _render_task(step, request), step.child,
-                execution["id"] + ":" + step.id, workflow_id=execution["id"], workflow_step=step.id)
+            spawned = await app.state.conversations.spawn(
+                caller,
+                _render_task(step, request),
+                step.child,
+                execution["id"] + ":" + step.id,
+                workflow_id=execution["id"],
+                workflow_step=step.id,
+            )
             row = {"handle": spawned["handle"], "session": spawned["session_id"]}
             execution["steps"][step.id] = row
             await asyncio.to_thread(save)
-        waited = await app.state.task_operations.wait(caller, row["handle"], "all", step.timeout_s or None)
+        waited = await app.state.task_operations.wait(
+            caller, row["handle"], "all", step.timeout_s or None
+        )
         outcomes.extend(waited["outcomes"])
         if waited["pending"]:
-            return {"workflow_id": execution["id"], "status": "task_state_uncertain" if not waited["timed_out"] else STALL_STEP_TIMEOUT,
-                "step": step.id, "pending": waited["pending"], "outcomes": outcomes}
+            return {
+                "workflow_id": execution["id"],
+                "status": "task_state_uncertain" if not waited["timed_out"] else STALL_STEP_TIMEOUT,
+                "step": step.id,
+                "pending": waited["pending"],
+                "outcomes": outcomes,
+            }
         child = await asyncio.to_thread(history.task_snapshot, row["handle"])
         if child is None or child.status != "completed":
-            return {"workflow_id": execution["id"], "status": STALL_CHILD_FAILED, "step": step.id, "outcomes": outcomes}
-        result = await asyncio.to_thread(history.read_content, child.result) if child.result is not None else {}
+            return {
+                "workflow_id": execution["id"],
+                "status": STALL_CHILD_FAILED,
+                "step": step.id,
+                "outcomes": outcomes,
+            }
+        result = (
+            await asyncio.to_thread(history.read_content, child.result)
+            if child.result is not None
+            else {}
+        )
         state = result.get("workflow_state", {}) if isinstance(result, dict) else {}
         if not isinstance(state, Mapping):
             raise ValueError("Child workflow_state must be a mapping")
@@ -541,5 +596,10 @@ async def run_declared_workflow(app: Any, caller: Any, agent_def: "AgentDef",
         await asyncio.to_thread(save)
     execution["complete"] = True
     await asyncio.to_thread(save)
-    return {"workflow_id": execution["id"], "root_handle": owner_handle, "status": "completed",
-        "workflow_state": execution["state"], "outcomes": outcomes}
+    return {
+        "workflow_id": execution["id"],
+        "root_handle": owner_handle,
+        "status": "completed",
+        "workflow_state": execution["state"],
+        "outcomes": outcomes,
+    }

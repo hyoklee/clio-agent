@@ -110,6 +110,10 @@ REMOVED_MODULES = frozenset(
         "clio_agent.gact.routes.session_questions",
         "clio_agent.gact.routes.message_intents",
         "clio_agent.gact.agent_elicitation_dispatch",
+        "clio_agent.gact.agent_elicitation_answer_inline",
+        "clio_agent.gact.agent_elicitation_activity",
+        "clio_agent.gact.elicitation_bridge",
+        "clio_agent.gact.elicitation_correlation",
     ]
 )
 REMOVED_NAMES = frozenset(

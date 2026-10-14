@@ -51,7 +51,6 @@ from clio_agent.gact.delegation import (
 )
 from clio_agent.gact.events import Event, EventBus, _publish_transcript_event
 from clio_agent.gact.evidence import _propose_edit_diffs_from_pred
-from clio_agent.gact.session_store import _append_session_message, _replace_session_messages
 from clio_agent.gact.messaging import (
     _agent_accepts_images,
     _image_part_summaries,
@@ -75,6 +74,7 @@ from clio_agent.gact.runtime.globals import (
     _UnsupportedSessionAgent,
 )
 from clio_agent.gact.runtime.retention import enforce_dict_bound
+from clio_agent.gact.session_store import _append_session_message, _replace_session_messages
 from clio_agent.gact.skills import SkillNotDelegatableError
 from clio_agent.gact.stream_failures import forward_error_info
 from clio_agent.gact.streaming import _extract_tools_called, _pop_stream_fallback
@@ -439,7 +439,6 @@ async def _run_turn_in_background(
         # stages content only; the Core recipient-input boundary acknowledges it
         # immediately before each model call, including subsequent iterations.
 
-
         # #767 Phase B Slice 5: agent resolve -> module build -> streamed/sync
         # forward -> expert-pack delegation settle lives in ``turn_forward.py``.
         # It sets state.active_agent_id / invocation_agent_id (IN PLACE, TRICKY
@@ -635,7 +634,9 @@ async def _run_turn_in_background(
     from clio_agent.gact.conversations import ConversationOutcome
 
     return ConversationOutcome(
-        outputs=_prediction_summary(state.pred) if state.pred is not None else {"answer": state.answer_text},
+        outputs=_prediction_summary(state.pred)
+        if state.pred is not None
+        else {"answer": state.answer_text},
         disposition=getattr(state.pred, "assignment_disposition", None),
         context=getattr(state.pred, "clio_context_boundary", None),
         error=state.error_info.model_dump(mode="json") if state.error_info is not None else None,
@@ -696,8 +697,12 @@ def _start_background_user_turn(
         if automatic_injection is not None:
             message_role = "system"
         if message_role == "system":
+            from clio_agent.gact.providers.config import _model_ref_dict
+
             model_metadata = (
-                retained_model if retained_model is not None else retained_model_metadata(app, sid)
+                retained_model
+                if retained_model is not None
+                else {"model": _model_ref_dict(sess.model)}
             )
             user_metadata = {**model_metadata, **user_metadata}
         record_context_reference_deliveries(user_metadata, user_parts)
@@ -740,18 +745,42 @@ def _start_background_user_turn(
             _replace_session_messages(app, sid, rows)
         else:
             _append_session_message(app, sid, user_msg)
-        content = owner.history.write_content(sid, {"message_id": user_msg.id, "text": user_text,
-            "agent_id": turn_agent_id, "metadata": user_metadata,
-            **({"queue_context": mailbox_item.content.model_dump(mode="json")} if mailbox_item is not None else {})})
+        content = owner.history.write_content(
+            sid,
+            {
+                "message_id": user_msg.id,
+                "text": user_text,
+                "agent_id": turn_agent_id,
+                "metadata": user_metadata,
+                **(
+                    {"queue_context": mailbox_item.content.model_dump(mode="json")}
+                    if mailbox_item is not None
+                    else {}
+                ),
+            },
+        )
         if mailbox_item is None:
-            owner.history.record_mail(MailItem(id=user_msg.id, recipient_session=sid,
-                sender_human=owner.caller(sid).human_id if message_role == "user" else None,
-                kind="human" if message_role == "user" else "hook", content=content,
-                created_at=user_msg.created_at))
+            owner.history.record_mail(
+                MailItem(
+                    id=user_msg.id,
+                    recipient_session=sid,
+                    sender_human=owner.caller(sid).human_id if message_role == "user" else None,
+                    kind="human" if message_role == "user" else "hook",
+                    content=content,
+                    created_at=user_msg.created_at,
+                )
+            )
         else:
-            owner.history.update_mail(mailbox_item.model_copy(update={"content": content,
-                "delivery": "eligible", "revision": mailbox_item.revision + 1}),
-                expected_revision=mailbox_item.revision)
+            owner.history.update_mail(
+                mailbox_item.model_copy(
+                    update={
+                        "content": content,
+                        "delivery": "eligible",
+                        "revision": mailbox_item.revision + 1,
+                    }
+                ),
+                expected_revision=mailbox_item.revision,
+            )
         app.state.bus.publish(
             Event(
                 type="message.created",

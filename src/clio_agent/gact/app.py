@@ -593,7 +593,6 @@ from clio_agent.gact.turn import (  # noqa: E402,F401
     _start_background_user_turn,
 )
 from clio_agent.gact.turn_runner import (  # noqa: E402
-    drain_app_turns,
     install_turn_runner,
 )
 
@@ -788,10 +787,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     provider_catalog_task = server_boot.start_provider_catalog(app)
 
-
     await asyncio.shield(app.state.task_runtime_start)
     yield
-
 
     # Agent construction runs on an executor thread. Cancelling its asyncio task
     # does not stop that thread, and Python waits for executor workers at process

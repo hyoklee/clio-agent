@@ -6,7 +6,7 @@ import asyncio
 from contextlib import AsyncExitStack
 from typing import Any
 
-from clio_agent.arc.task_types import SubmissionContext, TaskSnapshot
+from clio_agent.arc.task_types import AssignmentDetails, SubmissionContext, TaskSnapshot
 from clio_agent.gact.builtin_boundary import BuiltinBoundary
 from clio_agent.gact.conversations import ConversationOutcome, Conversations, ConversationSegment
 from clio_agent.gact.core_recovery import CoreRecovery
@@ -212,6 +212,23 @@ async def start(app: Any) -> None:
                     raise ValueError("Retained human input belongs to another session or role")
                 return recovered, agent
             stamp = now()
+            assignment_details = (
+                AssignmentDetails.model_validate(history.read_content(segment.assignment.details))
+                if segment.assignment.details is not None
+                else AssignmentDetails()
+            )
+            producer_metadata: dict[str, Any] = {}
+            if isinstance(original, dict) and segment.trigger.kind in {
+                "approval",
+                "hook",
+                "goal",
+                "loop",
+                "schedule",
+            }:
+                raw_metadata = original.get("metadata", {})
+                if not isinstance(raw_metadata, dict):
+                    raise ValueError("Trusted continuation metadata is malformed")
+                producer_metadata = raw_metadata
             return Message(
                 id=segment.turn_id,
                 turn_id=segment.turn_id,
@@ -220,7 +237,12 @@ async def start(app: Any) -> None:
                 created_at=stamp,
                 updated_at=stamp,
                 parts=[Part(id=segment.turn_id + ":continuation", type="text", text=segment.text)],
-                metadata={"system_injection": True, "assignment_handle": segment.assignment.handle},
+                metadata={
+                    "system_injection": True,
+                    "assignment_handle": segment.assignment.handle,
+                    "parent_turn_id": assignment_details.parent_turn_id,
+                    **producer_metadata,
+                },
             ), agent
 
         message, agent = await asyncio.to_thread(prepare)
@@ -250,6 +272,54 @@ async def start(app: Any) -> None:
     )
     app.state.conversations = conversations
     app.state.task_operations = TaskOperations(history, cancel_owner)
+
+    def task_changed(task: TaskSnapshot) -> None:
+        from clio_agent.gact.events import Event
+
+        if task.kind in {"Session", "Subagent"} and (
+            task.terminal_at is not None or task.activity == "yielded"
+        ):
+            session = session_store.get(task.owner.session_id)
+            parent_id = (
+                session.metadata.get("spotter_parent_session") if session is not None else None
+            )
+            if parent_id:
+                from clio_agent.gact.spotter_clearance import signal_clearance
+
+                conversations.runner.run_when_released(
+                    task.owner.session_id, lambda: signal_clearance(app, str(parent_id))
+                )
+        recipients = {task.owner.session_id}
+        parent = task.owner.parent_handle
+        seen: set[str] = set()
+        while parent is not None and parent not in seen:
+            seen.add(parent)
+            ancestor = history.task_snapshot(parent)
+            if ancestor is None:
+                break
+            recipients.add(ancestor.owner.session_id)
+            parent = ancestor.owner.parent_handle
+        for subscription in history.subscriptions(task.handle):
+            access = TaskAccess(
+                history, TaskCaller(subscription.recipient_session, task.owner.human_id)
+            )
+            if subscription.enabled and {"read", "observe"} <= access.rights(task):
+                recipients.add(subscription.recipient_session)
+        for sid in recipients:
+            # A refresh hint contains no output or description. API reads authorize again.
+            app.state.bus.publish(
+                Event(
+                    type="task.updated",
+                    session_id=sid,
+                    payload={
+                        "handle": task.handle,
+                        "kind": task.kind,
+                        "revision": history.revision,
+                    },
+                )
+            )
+
+    history.observation_committed = task_changed
     stack = AsyncExitStack()
     app.state.task_resource_stack = stack
     try:
@@ -267,8 +337,7 @@ async def start(app: Any) -> None:
         await conversations.restore()
         await asyncio.to_thread(app.state.questions.restore)
         await app.state.question_events.restore()
-        for sid in await asyncio.to_thread(history.pending_sessions):
-            conversations.runner.signal(sid)
+        conversations.signal_pending()
     except BaseException:
         await stack.aclose()
         raise
@@ -296,3 +365,6 @@ async def close(app: Any) -> None:
     recovery = getattr(app.state, "task_recovery", None)
     if recovery is not None:
         await recovery.drain()
+    history = getattr(app.state, "task_history", None)
+    if history is not None:
+        history.observation_committed = None

@@ -307,6 +307,18 @@ def _question_upsert(event: Event, payload: dict[str, Any], session: Any) -> _Pr
     return _Projection("question.upserted", payload, entity_id)
 
 
+def _task_path(payload: dict[str, Any]) -> list[str]:
+    """Project confirmed ancestry; legacy events without Core retain their own ID."""
+    from clio_agent.gact.context import active_app
+
+    handle = str(payload.get("handle") or payload.get("task_id") or "")
+    history = getattr(getattr(active_app(), "state", None), "task_history", None)
+    path: list[str] = []
+    while handle and handle not in path:
+        path.append(handle)
+        task = history.task_snapshot(handle) if history is not None else None
+        handle = task.owner.parent_handle or "" if task is not None else ""
+    return list(reversed(path))
 
 
 def _subagent_upsert(event: Event, payload: dict[str, Any], session: Any) -> _Projection:

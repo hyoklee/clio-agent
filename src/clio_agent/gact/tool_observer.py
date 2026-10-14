@@ -19,7 +19,6 @@ from clio_agent.gact.artifacts.ingest_edges import join_call_to_serving_child
 from clio_agent.gact.artifacts.observer_provenance import tool_provenance_metadata
 from clio_agent.gact.artifacts.provenance_presentation import with_provenance_blocks
 from clio_agent.gact.delegation import _expert_handoff_fields
-from clio_agent.gact.elicitation_correlation import close_invocation, open_invocation
 from clio_agent.gact.events import Event
 from clio_agent.gact.evidence import _bounded_tool_call_result
 from clio_agent.gact.permission_gate import (
@@ -55,7 +54,6 @@ logger = logging.getLogger(__name__)
 # record opened at ``started`` and closed at ``completed``.
 _OBSERVER_CALL_IDS = threading.local()
 _OBSERVER_CALL_T0 = threading.local()
-_OBSERVER_ELICIT_REC = threading.local()
 
 
 from clio_agent.gact.tool_event_identity import (
@@ -655,11 +653,6 @@ def _make_tool_observer(app: "FastAPI"):
             # Per-thread call_id/t0 so completion reuses the id + computes duration.
             _OBSERVER_CALL_IDS.value = call_id
             _OBSERVER_CALL_T0.value = time.time()
-            # P1.3 #1113: open the correlation record for THIS call (call task) so a
-            # mid-call elicitation resolves at the receive loop.
-            _OBSERVER_ELICIT_REC.value = open_invocation(
-                app, session_id=sid, tool_name=name, invocation_id=call_id
-            )
             observer_handle = progress_registry.started(call_id, sid)
             from clio_agent.gact.presentation_observer import starting_presentation
 
@@ -751,7 +744,6 @@ def _make_tool_observer(app: "FastAPI"):
             )
             return observer_handle
         elif phase == "completed":
-            close_invocation(getattr(_OBSERVER_ELICIT_REC, "value", None))  # P1.3 #1113
             call_id = getattr(_OBSERVER_CALL_IDS, "value", "") or ""
             terminal_output = progress_registry.completed(call_id)
             t0 = getattr(_OBSERVER_CALL_T0, "value", None)

@@ -3,7 +3,6 @@ title: Session coordination
 description: Durable session run handles, authorized peer observation and independent completion notifications.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
 import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
 
 <TasksGuideNav active="coordination" />
@@ -12,12 +11,6 @@ Consider two sessions: one acquires data while another evaluates the current
 analysis. Shared task handles let authorized peers observe progress, wait for the
 required outcome, exchange feedback and continue without a human copying messages
 between them.
-
-<Aside type="note" title="Development build; qualification has limits">
-  This guide describes the native-task replacement on the integrated feature
-  branch. Its fresh model, workflow and UI qualification is still pending.
-  Earlier development results do not qualify the replacement.
-</Aside>
 
 ## One human owner, several cooperating sessions
 
@@ -90,13 +83,15 @@ The scheduler adapter must distinguish job submission from job completion. The
 workflow also needs explicit outcomes for partial failure, interruption and
 cancellation; a finished submission command cannot stand in for them.
 
-## What has been demonstrated
+## Earlier development evidence
 
 Five actual Codex/Luna cycles used independent root sessions with distinct
 activated blueprints. They covered busy and idle messages, attributed replies,
 mixed session/shell observation and any/all waits, independent completion and
 failure delivery, Stop independence and denied peer cancellation. The runs used
-the isolated Linux Core 2.3.1/Python 3.14 candidate and the Codex WebSocket route.
+the earlier isolated Linux Core 2.3.1/Python 3.14 candidate and the Codex WebSocket
+route. They exercised the predecessor, not the native-task replacement described
+by this guide.
 
 These were separate single-expert blueprints, not a distributed workflow graph
 or Slurm job integration. Claude, alternate inference routes, SSE transport and

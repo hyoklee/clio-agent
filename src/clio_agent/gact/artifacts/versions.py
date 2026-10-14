@@ -524,6 +524,25 @@ def _session_workspace(app: "FastAPI", session_id: str) -> Optional[str]:
     return str(getattr(session, "workspace_id", "") or "") or None
 
 
+def _workspace_single_writer(app: "FastAPI", workspace_id: str, session_id: str) -> bool:
+    """Conservatively exclude concurrent session and accepted background writers."""
+    history = getattr(app.state, "task_history", None)
+    if not workspace_id or history is None or history.requires_recovery:
+        return False
+    runner = app.state.turn_runner
+    for handle in history.task_handles(active_only=True):
+        task = history.task_snapshot(handle)
+        if task is None or task.kind == "Question":
+            continue
+        if task.kind in {"Session", "Subagent"}:
+            if task.owner.session_id == session_id or not runner.busy(task.owner.session_id):
+                continue
+        # Background work in this same session can also change its workspace.
+        # Without an exclusive native execution proof, attribution stays a gap.
+        other_workspace = _session_workspace(app, task.owner.session_id)
+        if other_workspace is None or other_workspace == workspace_id:
+            return False
+    return True
 
 
 def workspace_lease_clean(app: "FastAPI", workspace_id: str, *, session_id: str = "") -> bool:

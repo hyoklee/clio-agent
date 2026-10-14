@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import logging
+from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import uuid4
 
@@ -35,6 +38,9 @@ TASK_TOOL_NAMES = frozenset(
 TASK_COMPATIBILITY_ALIASES = frozenset(
     {"wait_agent_tasks", "observe_agent_tasks", "cancel_agent_tasks"}
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def _runtime() -> tuple[Any, Any]:
@@ -151,6 +157,14 @@ def build_task_tools() -> list[Any]:
             resolved = app.state.task_history.resolve_handle(target)
             task = app.state.task_history.task_snapshot(resolved) if resolved is not None else None
             recipient = task.owner.session_id if task is not None else target
+            access = TaskAccess(app.state.task_history, caller)
+            try:
+                if task is not None:
+                    access.require(task.handle, "message")
+                elif not access.session_message_right(recipient):
+                    raise ValueError("Message recipient is unavailable")
+            except ValueError:
+                raise ValueError("Message recipient is unavailable") from None
             if app.state.sessions.get(recipient) is None:
                 raise ValueError("Message recipient is unavailable")
             mail = app.state.conversations.mail.peer(
@@ -248,6 +262,11 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
         kind: str = "freeform",
         options: list[dict[str, Any]] | None = None,
         allow_freeform: bool = True,
+        surface_id: str = "",
+        answer_action: str = "question.submit",
+        reason: str = "",
+        expiresInSeconds: int = 0,  # noqa: N803 - released parameter
+        allowFreeform: bool | None = None,  # noqa: N803 - released parameter
     ) -> dict[str, Any]:
         app, caller = _runtime()
 
@@ -258,12 +277,59 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
                 if parent is None:
                     raise ValueError("Question requires a confirmed parent assignment")
                 app.state.conversations.require_admission(parent)
+                if surface_id:
+                    surface = app.state.a2ui_store.get(caller.session_id, surface_id)
+                    if surface is None or surface.state == "deleted":
+                        raise ValueError("surface_id must name an existing surface in this session")
+                if expiresInSeconds < 0:
+                    raise ValueError("Question expiry must be nonnegative")
+                invocation = TASK_CALL.get().invocation_id or uuid4().hex
+                handle = (
+                    "task_"
+                    + hashlib.sha256(
+                        (caller.session_id + "\0question\0" + invocation).encode()
+                    ).hexdigest()
+                )
+                previous = history.task_snapshot(handle)
+                if previous is not None and (
+                    previous.kind != "Question" or previous.owner.session_id != caller.session_id
+                ):
+                    raise ValueError("Question identity was reused")
+                old_definition = (
+                    QuestionDefinition.model_validate(history.read_content(previous.details))
+                    if previous is not None and previous.details is not None
+                    else None
+                )
+                expiry = (
+                    old_definition.expires_at
+                    if old_definition is not None
+                    else (
+                        datetime.now(timezone.utc) + timedelta(seconds=expiresInSeconds)
+                    ).isoformat()
+                    if expiresInSeconds > 0
+                    else None
+                )
                 definition = QuestionDefinition.model_validate(
                     {
                         "prompt": question,
                         "kind": kind,
                         "options": options or (),
-                        "allow_freeform": allow_freeform,
+                        "allow_freeform": allow_freeform
+                        if allowFreeform is None
+                        else allowFreeform,
+                        "expires_at": expiry,
+                        "metadata": {
+                            **({"reason": reason} if reason else {}),
+                            **(
+                                {
+                                    "a2ui_surface_id": surface_id,
+                                    "a2ui_answer_action": answer_action.strip()
+                                    or "question.submit",
+                                }
+                                if surface_id
+                                else {}
+                            ),
+                        },
                     }
                 )
                 current = app.state.questions.create(
@@ -274,10 +340,12 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
                         parent_handle=parent.handle,
                     ),
                     definition,
-                    invocation_id=TASK_CALL.get().invocation_id or uuid4().hex,
+                    invocation_id=invocation,
+                    handle=handle,
                 )
                 return {
                     "handle": current.handle,
+                    "question_id": current.handle,
                     "kind": "Question",
                     "status": current.status,
                     "accepted": True,
@@ -301,8 +369,30 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
                 "default": None,
             },
             "allow_freeform": {"type": "boolean", "default": True},
+            "surface_id": {
+                "type": "string",
+                "default": "",
+                "description": "Existing visual surface in this session.",
+            },
+            "answer_action": {
+                "type": "string",
+                "default": "question.submit",
+                "description": "The action that submits this visual answer.",
+            },
+            "reason": {"type": "string", "default": ""},
+            "expiresInSeconds": {
+                "type": "integer",
+                "minimum": 0,
+                "default": 0,
+                "description": "Explicit Question expiry; zero leaves it open.",
+            },
+            "allowFreeform": {
+                "anyOf": [{"type": "boolean"}, {"type": "null"}],
+                "default": None,
+                "description": "Released alias for allow_freeform; retained for one compatibility cycle.",
+            },
         },
-        "Post a durable Question and return its handle immediately. Continue independent work; wait_tasks(handle) explicitly waits for the answer. Stop leaves it open; cancel_tasks dismisses it.",
+        "Post a durable Question and return its handle immediately. Continue independent work; wait_tasks(handle) explicitly waits for the answer. Stop leaves it open; cancel_tasks dismisses it. For visual context, create a surface first and pass surface_id. Only answer_action submits its answer; other controls remain ordinary feedback.",
     )
 
 
@@ -392,6 +482,10 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
                     )
                 )
             except Exception as error:
+                logger.exception(
+                    "Task boundary reason=group_member_control_failed error_type=%s",
+                    type(error).__name__,
+                )
                 outcomes.append({"index": index, "error": str(error)})
         return {"outcomes": outcomes}
 

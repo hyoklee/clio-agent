@@ -33,8 +33,8 @@ from clio_agent.tools.builtin_annotations import (
 )
 from clio_agent.tools.file_policy import FileAccessPolicy, FilePolicyError
 from clio_agent.tools.servers.shell_output import (
-    StreamCapture,
     ProgressReporter,
+    StreamCapture,
     compose_output_fields,
     read_process_stream,
     shell_result_char_budget,

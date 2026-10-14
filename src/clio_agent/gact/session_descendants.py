@@ -80,8 +80,9 @@ def _session_store_index(app: "FastAPI") -> dict[str, list[str]]:
     return index
 
 
-def descendant_walk(app: "FastAPI", root_session_id: str, *,
-                    max_depth: int = _DEFAULT_DESCENDANT_DEPTH) -> tuple[list[SessionDescendant], bool]:
+def descendant_walk(
+    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+) -> tuple[list[SessionDescendant], bool]:
     """Read delegated Core lineage and independent session-fork topology."""
     history = app.state.task_history
     children = _session_store_index(app)
@@ -105,12 +106,17 @@ def descendant_walk(app: "FastAPI", root_session_id: str, *,
                 continue
             visited.add(child)
             handle = delegated.get((parent, child), "")
-            rows.append(SessionDescendant(child, parent, depth + 1,
-                AGENT_TASK_ATTRIBUTION if handle else SESSION_FORK_ATTRIBUTION, handle))
+            rows.append(
+                SessionDescendant(
+                    child,
+                    parent,
+                    depth + 1,
+                    AGENT_TASK_ATTRIBUTION if handle else SESSION_FORK_ATTRIBUTION,
+                    handle,
+                )
+            )
             pending.append((child, depth + 1))
     return rows, truncated
-
-
 
 
 def descendant_sessions(

@@ -13,7 +13,6 @@ def _task_id_for_owner(app: "FastAPI", owner: str) -> str:
     return assignment.handle if assignment is not None else ""
 
 
-
 def _surface_actions(surface: Mapping[str, Any]) -> list[str]:
     """Return every action name a folded surface's messages declare.
 

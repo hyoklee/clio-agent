@@ -244,15 +244,13 @@ def _clearance_state(app: "FastAPI", parent_session_id: str) -> tuple[str, bool]
     task = next(iter(_live_watcher_tasks(app, parent_session_id)), None)
     if task is None:
         return CLEARANCE_WATCHER_UNAVAILABLE, False
-    if task.live_state == "error":
+    if task.status in {"failed", "interrupted", "task_state_uncertain"}:
         return CLEARANCE_WATCHER_FAILED, False
     runner = getattr(app.state, "turn_runner", None)
-    if runner is not None and runner.busy(task.child_session_id):
+    if runner is not None and runner.busy(task.owner.session_id):
         return CLEARANCE_GRANTED, True
 
-
-    mail, results = pending_session_inputs(app, task.child_session_id)
-    return CLEARANCE_GRANTED, bool(mail or results)
+    return CLEARANCE_GRANTED, bool(app.state.task_history.pending_mail(task.owner.session_id))
 
 
 def _record_denial(parent_session_id: str, reason: str, *, window_s: float) -> str:

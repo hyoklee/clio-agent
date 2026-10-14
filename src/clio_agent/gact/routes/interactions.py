@@ -10,11 +10,13 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from starlette.concurrency import run_in_threadpool
 
 from clio_agent import conf
-from clio_agent.errors import ClioError
+from clio_agent.arc.task_types import QuestionReply
 from clio_agent.gact.a2ui_actions.record import last_action_wire
+from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.permission_delivery import attended_session_id
 from clio_agent.gact.permission_gate import GRANTOR_USER, resolve_permission
+from clio_agent.gact.question_surface import answer_question, question_row
 from clio_agent.gact.routes.interaction_surface_projection import (
     _latest_action_record as _latest_action_record,
 )
@@ -27,8 +29,8 @@ from clio_agent.gact.routes.interaction_surface_projection import (
 from clio_agent.gact.routes.plan_interactions import is_plan_exit_question, plan_exit_payload
 from clio_agent.gact.routes.session_question_helpers import question_surface_ids
 from clio_agent.gact.session_descendants import descendant_session_ids
+from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.types import (
-    AnswerUserQuestionRequest,
     ErrorEnvelope,
     ErrorInfo,
     PendingInteraction,
@@ -36,10 +38,6 @@ from clio_agent.gact.types import (
     RespondInteractionRequest,
     UserQuestion,
 )
-from clio_agent.arc.task_types import QuestionReply
-from clio_agent.gact.question_surface import answer_question, question_row
-from clio_agent.gact.task_access import TaskAccess, TaskCaller
-from clio_agent.gact.human_controls import intervene
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
@@ -108,12 +106,6 @@ def _session_scope(app: FastAPI, root_session_id: str, include_children: bool) -
             if attended_session_id(app, child) == attended
         )
     return scope
-
-
-
-
-
-
 
 
 def _stamp_request_sequence(rows: list[PendingInteraction]) -> list[PendingInteraction]:
@@ -259,8 +251,6 @@ def _a2ui_interactions(
     return rows, list(quarantined)
 
 
-
-
 def interactions_projection_limit() -> int:
     """Maximum interaction rows one projection returns, newest first.
 
@@ -300,35 +290,60 @@ def _question_from_interaction_id(app: FastAPI, identity: str) -> UserQuestion |
         return None
     handle = identity.removeprefix("question:")
     task = app.state.task_history.task_snapshot(handle)
-    return question_row(app, handle) if task is not None and task.kind == "Question" and task.details else None
+    return (
+        question_row(app, handle)
+        if task is not None and task.kind == "Question" and task.details
+        else None
+    )
 
 
 def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingInteraction:
     """Render a common Question through the shipped interaction contract."""
-    return PendingInteraction(id="question:" + question.id, kind="question",
-        owner_session_id=question.owner_session_id, attended_session_id=question.attended_session_id,
-        task_id=question.task_handle or question.id, status=question.status,
+    return PendingInteraction(
+        id="question:" + question.id,
+        kind="question",
+        owner_session_id=question.owner_session_id,
+        attended_session_id=question.attended_session_id,
+        task_id=question.task_handle or question.id,
+        status=question.status,
         title="Review the plan" if is_plan_exit_question(question) else "Question",
-        prompt=question.prompt, requires_human_response=question.status == "pending",
-        audience=question.audience, routing_state=question.agent_elicitation_routing,
+        prompt=question.prompt,
+        requires_human_response=question.status == "pending",
+        audience=question.audience,
+        routing_state=question.agent_elicitation_routing,
         answered_by=question.answered_by,
-        source=PendingInteractionSource(protocol="mcp" if question.source.startswith("mcp") else "native",
-            tool_name=question.source, invocation_id=str(question.metadata.get("invocation_id") or "")),
-        created_at=question.created_at, revision=question.updated_at,
-        payload={"question_id": question.id, "question_kind": question.kind,
+        source=PendingInteractionSource(
+            protocol="mcp" if question.source.startswith("mcp") else "native",
+            tool_name=question.source,
+            invocation_id=str(question.metadata.get("invocation_id") or ""),
+            surface_id=str(question.metadata.get("a2ui_surface_id") or ""),
+        ),
+        created_at=question.created_at,
+        revision=question.updated_at,
+        payload={
+            "question_id": question.id,
+            "question_kind": question.kind,
             "options": [option.model_dump() for option in question.options],
-            "allow_freeform": question.allow_freeform, "answer": question.answer,
-            "selected_options": question.selected_options, "metadata": question.metadata,
+            "allow_freeform": question.allow_freeform,
+            "answer": question.answer,
+            "selected_options": question.selected_options,
+            "metadata": question.metadata,
             "answer_metadata": question.answer_metadata,
             **(question.metadata.get("elicitation") or {}),
-            **(plan_exit_payload(question) if is_plan_exit_question(question) else {})},
-        actions=["answer", "cancel"] if question.status == "pending" else [])
+            **(plan_exit_payload(question) if is_plan_exit_question(question) else {}),
+        },
+        actions=["answer", "cancel"] if question.status == "pending" else [],
+    )
 
 
-def project_pending_interactions(app: FastAPI, root_session_id: str, *,
-                                 include_children: bool = False,
-                                 include_recent_resolved: bool = False,
-                                 resolved_limit: int = 20) -> InteractionProjection:
+def project_pending_interactions(
+    app: FastAPI,
+    root_session_id: str,
+    *,
+    include_children: bool = False,
+    include_recent_resolved: bool = False,
+    resolved_limit: int = 20,
+) -> InteractionProjection:
     """Combine presentation kinds; Question lifecycle stays in the common Core row."""
     history = app.state.task_history
     caller = TaskCaller(root_session_id, app.state.human_principal, human_action=True)
@@ -336,11 +351,18 @@ def project_pending_interactions(app: FastAPI, root_session_id: str, *,
     owners = _session_scope(app, root_session_id, include_children)
     handles = set().union(*(history.session_handles(owner) for owner in owners))
     handles.intersection_update(history.task_handles(kind="Question", human_id=caller.human_id))
-    pending, resolved, degradations = [], [], []
+    pending: list[PendingInteraction] = []
+    resolved: list[PendingInteraction] = []
+    degradations: list[dict[str, str]] = []
     for handle in handles:
         task = access.require(handle, "read")
         if task.details is None:
-            degradations.append({"reason": "question_content_unconfirmed", "owner_session_id": task.owner.session_id})
+            degradations.append(
+                {
+                    "reason": "question_content_unconfirmed",
+                    "owner_session_id": task.owner.session_id,
+                }
+            )
             continue
         row = _question_interaction(app, question_row(app, handle))
         (pending if row.status == "pending" else resolved).append(row)
@@ -364,8 +386,6 @@ def project_pending_interactions(app: FastAPI, root_session_id: str, *,
     return InteractionProjection(_stamp_request_sequence(pending), degradations)
 
 
-
-
 def _interaction_wire(row: PendingInteraction) -> dict[str, Any]:
     """Serialize a projection while retaining required fields with defaults."""
 
@@ -376,8 +396,25 @@ def _interaction_wire(row: PendingInteraction) -> dict[str, Any]:
     return wire
 
 
-
-
+def recorded_session_interactions(app: FastAPI, session_id: str) -> list[dict[str, Any]]:
+    """Export retained interactions without the live UI's count or recency limit."""
+    history = app.state.task_history
+    caller = TaskCaller(session_id, app.state.human_principal, human_action=True)
+    access = TaskAccess(history, caller)
+    rows = [
+        _question_interaction(app, question_row(app, handle))
+        for handle in history.session_handles(session_id)
+        if (task := access.require(handle, "read")).kind == "Question" and task.details is not None
+    ]
+    rows.extend(
+        _permission_interaction(app, permission)
+        for permission in app.state.permissions.values()
+        if str(permission.get("session_id") or "") == session_id
+    )
+    surfaces, _ = _a2ui_interactions(app, session_id)
+    rows.extend(surfaces)
+    rows.sort(key=lambda row: (row.created_at, row.id))
+    return [_interaction_wire(row) for row in _stamp_request_sequence(rows)]
 
 
 def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
@@ -453,11 +490,14 @@ def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
             if action == "cancel":
                 await intervene(app, question.id, "cancel")
             elif action == "answer":
-                await run_in_threadpool(answer_question, app,
+                await run_in_threadpool(
+                    answer_question,
+                    app,
                     TaskCaller(root_session_id, app.state.human_principal, human_action=True),
-                    question.id, QuestionReply(
+                    question.id,
+                    QuestionReply(
                         answer=request.answer,
-                        selected_options=request.selected_options,
+                        selected_options=tuple(request.selected_options),
                         # User-submitted form fields remain an exact field map.
                         # Ownership and correlation stay on the authoritative
                         # question/interaction instead of overwriting equally
@@ -485,7 +525,7 @@ def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
             # defer may carry the modify/synthesize the approval decides. Dropping it
             # here made the normalized responder a strictly weaker door for the same
             # decision — an approve-with-modified-args arrived as a plain allow.
-            updated = await run_off_loop(
+            updated_permission = await run_off_loop(
                 lambda: resolve_permission(
                     app,
                     permission_id,
@@ -494,9 +534,11 @@ def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
                     intercept=_permission_intercept(request.metadata),
                 )
             )
-            if updated is None:
+            if updated_permission is None:
                 raise _error(409, "interaction_resolved", "interaction is already resolved")
-            return {"interaction": _interaction_wire(_permission_interaction(app, updated))}
+            return {
+                "interaction": _interaction_wire(_permission_interaction(app, updated_permission))
+            }
 
         for owner in scope:
             prefix = f"a2ui:{owner}:"

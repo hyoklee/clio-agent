@@ -15,6 +15,7 @@ session's log. In the loud History mode the plane is the in-memory History plane
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
 from typing import Any, Literal
@@ -302,3 +303,8 @@ def preference_records(app: Any, session_id: str) -> list[PreferenceRecord]:
             )
         )
     return records
+
+
+def new_variants_id() -> str:
+    """A fresh, stable id for one run."""
+    return f"var_{uuid.uuid4().hex[:16]}"

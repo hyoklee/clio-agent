@@ -129,7 +129,6 @@ class MCPInvocationContext:
     # older foreground-elicitation callers retain the same construction shape.
     task_id: str | None = None
     input_key: str | None = None
-    task_key: TaskKey | None = None
 
 
 @runtime_checkable

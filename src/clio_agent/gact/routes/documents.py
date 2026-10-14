@@ -1,7 +1,6 @@
 """Document artifact manifests, reviews, renditions, and editor adapters."""
 
 from __future__ import annotations
-from clio_agent.gact.session_input import accept_session_input
 
 import asyncio
 import json
@@ -57,6 +56,7 @@ from clio_agent.gact.documents.store import (
     WorkingCopyLeaseError,
     get_document_store,
 )
+from clio_agent.gact.session_input import accept_session_input
 from clio_agent.gact.types import Part
 
 if TYPE_CHECKING:
@@ -233,16 +233,21 @@ def _dispatch_review(
     prompt = _review_prompt(review)
     part = _review_part(review)
     try:
-        message_id = accept_session_input(
+        from clio_agent.gact.message_submission import accept_message
+        from clio_agent.gact.parts import Part
+        from clio_agent.gact.types import PostMessageRequest
+
+        response, _ = accept_message(
             app,
+            deps,
             review.session_id,
-            prompt,
-            {"artifact_review_id": review.id},
-            steer_message_id="review_" + review.id,
-            steer_created_at=_now_iso(),
-            steer_parts=[part],
-            source_kind="human",
+            PostMessageRequest(
+                parts=[Part(id="review-prompt-" + review.id, type="text", text=prompt), part],
+                metadata={"artifact_review_id": review.id},
+                client_message_id="review_" + review.id,
+            ),
         )
+        message_id = response.message_id
     except Exception as exc:  # noqa: BLE001 - persist dispatch failure for recovery
         failed = store.update_review(review.id, status="failed", error=str(exc))
         _emit_review(app, failed, "document.review.dispatched")
@@ -278,7 +283,7 @@ def _dispatch_checkpoint(
         app,
         working_copy.session_id,
         text,
-        {
+        metadata={
             "document_working_copy_id": working_copy.id,
             "coalesce_key": f"document-save:{working_copy.id}",
         },

@@ -12,6 +12,7 @@ _UNSUCCESSFUL = {"failed", "error", "cancelled", "interrupted", "denied"}
 def wait_start_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
     """Describe an active wait using authorized task kinds, before a result exists."""
     from clio_agent.gact.context import active_app, active_session_id
+    from clio_agent.gact.task_access import TaskAccess
 
     if args.get("timeout_s") == 0:
         return {"summary": "Checking task status", "blocks": []}
@@ -24,10 +25,12 @@ def wait_start_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
     kinds = []
     for handle in handles:
         try:
-            row = resolve_task(app, sid, handle, scope=str(args.get("scope") or "authorized"))
+            row = TaskAccess(app.state.task_history, app.state.conversations.caller(sid)).require(
+                handle, "observe"
+            )
         except ValueError:
             return {"summary": "Waiting for tasks", "blocks": []}
-        kinds.append(row["task_kind"])
+        kinds.append(row.kind)
     return {
         "summary": "Waiting for your answer"
         if kinds and set(kinds) == {"Question"}
@@ -54,8 +57,10 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
     if isinstance(requested, str):
         requested = [requested]
     pending = [handle for handle in result.get("pending", []) if isinstance(handle, str)]
-    rows = [row for row in result.get("results", []) if isinstance(row, Mapping)]
-    errors = [row for row in result.get("errors", []) if isinstance(row, Mapping)]
+    outcomes = result.get("outcomes", result.get("results", []))
+    rows = [row for row in outcomes if isinstance(row, Mapping) and not row.get("error")]
+    errors = [row for row in outcomes if isinstance(row, Mapping) and row.get("error")]
+    errors.extend(row for row in result.get("errors", []) if isinstance(row, Mapping))
     handles = list(
         dict.fromkeys(
             [handle for handle in requested if isinstance(handle, str)]
@@ -96,8 +101,8 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
         elif row is not None:
             status = str(row.get("status") or "")
             label = (
-                "Turn ended"
-                if row.get("kind") == "Subagent" and status == "completed"
+                "Assignment complete"
+                if row.get("kind") in {"Session", "Subagent"} and status == "completed"
                 else status.capitalize() or "Result collected"
             )
             value = row.get("result")
@@ -107,6 +112,12 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
                 status=status,
                 result_kind="completion",
             )
+            if status == "task_state_uncertain":
+                block.update(
+                    label=f"{handle}: State uncertain",
+                    text="Execution state could not be confirmed. Inspect this task and its effects before retrying.",
+                    result_kind="snapshot",
+                )
             if status in _UNSUCCESSFUL:
                 block["severity"] = "error"
         elif handle in pending:

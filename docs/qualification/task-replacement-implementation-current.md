@@ -1,5 +1,21 @@
 # Replacement construction checkpoint
 
+## October 14 initial implementation candidate
+
+The review-10 corrections are implemented in source. This is the next initial implementation candidate for independent review, not runtime acceptance or a release candidate. Astra and actual Claude have not reviewed this corrected tuple yet. Their earlier verdict on core 98a7a5ee was NO-GO.
+
+The corrected source restores normal-turn, spotter, context-reference, MCP input-helper, producer and visual Question callers through the existing owners. It removes the old elicitation bridge/correlation/inline-answer authorities. Root and child assignments still use Conversations; native execution stays in FastMCP/Docket; Core remains the observation, mailbox and recipient-input authority. Cohesive owner algorithms were split into smaller modules without new stores, schedulers or lifecycle decisions. Legacy cluster-operator discovery was retired rather than converted into another relay implementation.
+
+Source checks: full production-tree Ruff lint and formatting pass; scoped Mypy passes on 138 changed/new production files; application-module import passes without starting lifespan; all nine source guards pass; whitespace passes. The file-size and hidden-swallow baselines were lowered only. Native transport construction now passes observer arguments to its explicit top-level session class. Ordinary and queued human-message acceptance again plans resource deliveries using the retained resource algorithm, and document reviews use the same human-message acceptance path.
+
+GACT source tuple: ce99316446848ddd269b1bf782ff2c87cc9db14a. Marketplace source tuple: 9257bba5953b012ba796299df4c633e698dbaddc. GACT scoped Oxlint, Prettier, six guards and TypeScript pass; no new build or rendered UI acceptance is claimed. Core records these feature pointers. The corrected production source is held fixed for the next independent reviews; test construction follows as a batch, with cases subsequently run individually/sequentially using one worker.
+
+Fresh replacement runtime acceptance remains unverified. Q1-Q9, R1-R6, migration/recovery/capacity, actual models, external input/reconnect and real-service desktop/phone media still require the finite ledger's proofs. Earlier-engine runs and the failed/interrupted previous regression batches do not qualify this candidate. The full production-tree Mypy check is being recorded separately from the passing scoped check.
+
+The persistent implementation/review goal remains active. Tasks are excluded from the separate human release. No merge, tag, release, installed update, authentication/default change or release-branch edit has occurred. Protected human design files retain their recorded hashes and remain unstaged.
+
+Owned cleanup exceptions remain in task-replacement-cleanup-receipts.json. Rejected/manual-only paths are not reused or retried. No product qualification service/model/controller is running; static check processes are finite and tracked. Independent review processes will receive fresh owned, bounded state with explicit cleanup receipts.
+
 ## October 14 correction candidate
 
 Both independent reviews of core `9b0a91ecc4b6ea2be014dca3fa7f9de32d4f3c70` / GACT `f1b099cdf479a4e2516391a525efeba17799cd65` returned **no-go**. Their receipts are `task-replacement-initial-review-astra-8.md` and `task-replacement-initial-review-claude-8.json`. Claude reviewed runtime and grant bindings, not the complete UI. Neither review qualifies runtime behavior.

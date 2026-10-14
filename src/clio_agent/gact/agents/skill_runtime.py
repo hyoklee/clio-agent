@@ -690,9 +690,7 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
                 f"skill {wanted!r} is not a declared child-task skill; "
                 f"available: {sorted(spawnable)}"
             )
-        return await apply_spawn_skill_effect(
-            ref, agent_id=agent_id, task=str(task or "")
-        )
+        return await apply_spawn_skill_effect(ref, agent_id=agent_id, task=str(task or ""))
 
     return native_tool(
         spawn_skill_task,

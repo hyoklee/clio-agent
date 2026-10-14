@@ -380,7 +380,7 @@ def suspend_turn_defer(
     app.state.sessions.update(
         sid,
         status="waiting_user",
-        metadata_patch={"pending_defer_permission_id": pid},
+        metadata_patch={"pending_defer_permission_id": pid, "execution_gate": pid},
     )
     _publish_pending(app, sid, row)
     if hasattr(app.state, "bus"):
@@ -400,40 +400,108 @@ def suspend_turn_defer(
 
 
 def resume_turn_defer(app: "FastAPI", row: Mapping[str, Any], action: str) -> None:
-    """Resume a turn-ending defer after an out-of-band resolve (called from resolve_permission).
+    """Record a resolved hook's input before releasing its admission gate."""
+    import asyncio
 
-    Dispatches on the deferred ``hook_event``:
-
-    * **UserPromptSubmit** — ``allow`` re-drives the ORIGINAL prompt as a NEW turn
-      (carrying :data:`HOOK_DEFER_RESUME_META` so the UserPromptSubmit hook does not
-      re-defer the just-approved prompt — the once-gate); ``deny`` rejects the prompt
-      and returns the session to ``idle`` with a typed reason (no turn runs).
-    * **Stop** — ``allow`` accepts completion: the turn is done, the session returns to
-      ``idle`` (no re-drive); ``deny`` re-drives ONE more turn carrying the deny reason
-      as "why you are not done" feedback (the bounded Stop-loop seam).
-
-    Rides ``start_background_user_turn`` / the loop-inbox fold (no held thread, no new
-    store). Guarded — a resume must never raise into the resolve path.
-    """
-
-    sid = str(row.get("session_id") or "")
-    if not sid:
+    sid, pid = str(row.get("session_id") or ""), str(row.get("id") or "")
+    if not sid or not pid:
         return
-    _clear_pending_meta(app, sid, str(row.get("id") or ""))
-    app.state.sessions.update(sid, metadata_patch={"pending_defer_permission_id": ""})
+    owner = app.state.conversations
     approved = action in {"allow", "allow_session", "allow_workspace"}
     hook_event = str(row.get("hook_event") or "")
-    try:
+
+    def release() -> None:
+        _clear_pending_meta(app, sid, pid)
+        current = app.state.sessions.get(sid)
+        if current is not None and current.metadata.get("pending_defer_permission_id") == pid:
+            patch: dict[str, Any] = {"pending_defer_permission_id": ""}
+            if current.metadata.get("execution_gate") == pid:
+                patch["execution_gate"] = ""
+            app.state.sessions.update(sid, metadata_patch=patch)
+        owner.runner.signal(sid)
+
+    def stage() -> None:
         if hook_event == "Stop":
-            _resume_stop_defer(app, sid, row, approved)
+            _resume_stop_defer(app, sid, row)
         else:
             _resume_user_prompt_defer(app, sid, row, approved)
-    except Exception as exc:  # noqa: BLE001 - a resume must never break the resolve path
-        logger.warning(
-            "hook defer resume failed reason=defer_resume_error hook_event=%s sid=%s err=%r",
-            hook_event,
+        release()
+
+    if hook_event == "Stop" and approved:
+        assignment = owner.history.latest_assignment(sid)
+        if assignment is None:
+            raise ValueError("Deferred assignment is unavailable")
+
+        async def finish() -> None:
+            await owner.complete_deferred(sid, assignment.handle)
+            await asyncio.to_thread(release)
+
+        async def accept_completion() -> None:
+            try:
+                await finish()
+            except Exception:
+                if not owner.history.requires_recovery:
+                    raise
+                owner.recovery.defer("hook-completion:" + pid, finish)
+
+        def register() -> None:
+            identity = "hook-completion:" + pid
+            if identity not in owner._controls:
+                owner.retain_control(identity, asyncio.create_task(accept_completion()))
+
+        owner._loop.call_soon_threadsafe(register)
+        return
+    try:
+        stage()
+    except Exception:
+        if not owner.history.requires_recovery:
+            raise
+
+        async def retry() -> None:
+            await asyncio.to_thread(stage)
+
+        owner._loop.call_soon_threadsafe(owner.recovery.defer, "hook-resume:" + pid, retry)
+
+
+def _stage_resume_turn(
+    app: "FastAPI",
+    sid: str,
+    session: Any,
+    text: str,
+    metadata: dict[str, Any],
+    *,
+    event: str,
+    question_id: str,
+) -> None:
+    """Persist resolved hook feedback; only TurnRunner admits its continuation."""
+    from clio_agent.arc.task_types import MailItem
+
+    if session is None:
+        raise ValueError("Deferred session is unavailable")
+    history = app.state.task_history
+    with history._lock:
+        content = history.write_content(
             sid,
-            exc,
+            {
+                "text": text,
+                "metadata": {**metadata, "question_id": question_id, "hook_event": event},
+            },
+        )
+        identity = "hook-resume:" + question_id
+        previous = history._mail.get(sid, {}).get(identity)
+        if previous is not None:
+            if previous.content != content:
+                raise ValueError("Deferred hook input identity was reused")
+            return
+        permission = app.state.permissions.get(question_id, {})
+        history.record_mail(
+            MailItem(
+                id=identity,
+                recipient_session=sid,
+                kind="approval",
+                content=content,
+                created_at=str(permission.get("created_at") or _now_iso()),
+            )
         )
 
 
@@ -470,25 +538,9 @@ def _resume_user_prompt_defer(
     )
 
 
-def _resume_stop_defer(app: "FastAPI", sid: str, row: Mapping[str, Any], approved: bool) -> None:
+def _resume_stop_defer(app: "FastAPI", sid: str, row: Mapping[str, Any]) -> None:
+    """Queue a denied Stop as feedback through the regular model-input boundary."""
     session = app.state.sessions.get(sid)
-    if approved:
-        # Completion accepted: the turn's answer stands, release the session.
-        app.state.sessions.update(sid, status="idle")
-        app.state.bus.publish(
-            Event(
-                type="session.status_changed",
-                session_id=sid,
-                payload={
-                    "session_id": sid,
-                    "status": "idle",
-                    "prev_status": "waiting_user",
-                    "reason": "stop_defer_approved",
-                },
-            )
-        )
-        return
-    # Not done: re-drive ONE more turn with the deny reason as feedback.
     feedback = str(row.get("resume_text") or row.get("defer_reason") or "").strip() or (
         "A Stop hook reported the task is not complete; continue working."
     )

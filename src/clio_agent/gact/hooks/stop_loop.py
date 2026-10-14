@@ -30,7 +30,6 @@ orchestrator that fires the hooks, persists the counters, and enqueues the re-dr
 """
 
 from __future__ import annotations
-from clio_agent.gact.session_input import accept_session_input
 
 import logging
 from collections.abc import Mapping
@@ -40,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 from clio_agent.gact.hooks.dispatcher import dispatch_stop, get_global_dispatcher
 from clio_agent.gact.hooks.events import STOP
 from clio_agent.gact.hooks.wire import HookOutcome, record_hook_reason
+from clio_agent.gact.session_input import accept_session_input
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -214,7 +214,6 @@ def _loop_limits() -> dict[str, int]:
 
 def _enqueue_redrive(app: "FastAPI", session_id: str, result: StopLoopResult) -> None:
     """Confirm an attributed hook continuation before hinting shared admission."""
-
 
     text = (result.reason or "").strip()
     if result.additional_context.strip():

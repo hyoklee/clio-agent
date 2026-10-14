@@ -10,7 +10,10 @@ from clio_agent.gact.storage.models import SourceRecord
 
 def source_submission_identity(record: SourceRecord) -> dict[str, Any]:
     """Capture provider, owner and resolved configuration for execution custody."""
-    return {"provider": record.source.provider, "source_id": record.source.id,
+    return {
+        "provider": record.source.provider,
+        "source_id": record.source.id,
         "revision": record.configuration.github_ref,
         "configuration_digest": argument_digest(record.configuration.model_dump(mode="json")),
-        "owner": record.source.owner.model_dump(mode="json")}
+        "owner": record.source.owner.model_dump(mode="json"),
+    }

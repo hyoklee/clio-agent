@@ -52,7 +52,9 @@ class TaskAccess:
                     matches = task.handle == grant.target_handle
                 elif grant.target_scope == "tree":
                     if grant.target_session not in self._target_trees:
-                        self._target_trees[grant.target_session] = self.history.tree_handles(grant.target_session)
+                        self._target_trees[grant.target_session] = self.history.tree_handles(
+                            grant.target_session
+                        )
                     matches = task.handle in self._target_trees[grant.target_session]
                 else:
                     matches = task.owner.session_id == grant.target_session
@@ -77,11 +79,17 @@ class TaskAccess:
         if self.history.requires_recovery:
             return False
         for grant in self._grants:
-            if grant.revoked_at is not None or grant.target_handle is not None or "message" not in grant.rights:
+            if (
+                grant.revoked_at is not None
+                or grant.target_handle is not None
+                or "message" not in grant.rights
+            ):
                 continue
             if grant.target_session == task.owner.session_id:
                 return True
-            if grant.target_scope == "tree" and task.handle in self.history.tree_handles(grant.target_session):
+            if grant.target_scope == "tree" and task.handle in self.history.tree_handles(
+                grant.target_session
+            ):
                 return True
         return False
 
@@ -99,7 +107,11 @@ class TaskAccess:
         if self.history.requires_recovery:
             return sessions
         for grant in self._grants:
-            if grant.revoked_at is not None or grant.target_handle is not None or right not in grant.rights:
+            if (
+                grant.revoked_at is not None
+                or grant.target_handle is not None
+                or right not in grant.rights
+            ):
                 continue
             sessions.add(grant.target_session)
             if grant.target_scope == "tree":
@@ -116,7 +128,9 @@ class TaskAccess:
         handles = set(self._tree)
         if scope == "authorized":
             for grant in self.history.coordination_grants(self.caller.session_id):
-                if grant.revoked_at is not None or not {"read", "observe"}.intersection(grant.rights):
+                if grant.revoked_at is not None or not {"read", "observe"}.intersection(
+                    grant.rights
+                ):
                     continue
                 if grant.target_handle:
                     handles.add(grant.target_handle)
@@ -131,21 +145,41 @@ class TaskAccess:
         rights = self.rights(task)
         if "read" in rights:
             result = task.model_dump(mode="json")
-            required = {"observe": "observe", "wait": "observe", "get_result": "read",
-                        "cancel": "control", "pause": "control", "resume": "control",
-                        "restart": "control", "message": "message", "answer": "control"}
-            result["supported_actions"] = [action for action in task.supported_actions
-                                           if required.get(action, "read") in rights]
+            required = {
+                "observe": "observe",
+                "wait": "observe",
+                "get_result": "read",
+                "cancel": "control",
+                "pause": "control",
+                "resume": "control",
+                "restart": "control",
+                "message": "message",
+                "answer": "control",
+            }
+            result["supported_actions"] = [
+                action
+                for action in task.supported_actions
+                if required.get(action, "read") in rights
+            ]
             return result
         if "observe" not in rights:
             raise ValueError("Task is unavailable for this operation")
         return {
-            "handle": task.handle, "kind": task.kind, "status": task.status,
-            "raw_status": task.raw_status, "activity": task.activity,
-            "progress": {"completed": task.progress.completed, "total": task.progress.total,
-                         "unit": task.progress.unit},
-            "created_at": task.created_at, "updated_at": task.updated_at,
-            "terminal_at": task.terminal_at, "settlement": task.settlement,
-            "recording": task.recording, "connection_freshness": task.connection_freshness,
+            "handle": task.handle,
+            "kind": task.kind,
+            "status": task.status,
+            "raw_status": task.raw_status,
+            "activity": task.activity,
+            "progress": {
+                "completed": task.progress.completed,
+                "total": task.progress.total,
+                "unit": task.progress.unit,
+            },
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+            "terminal_at": task.terminal_at,
+            "settlement": task.settlement,
+            "recording": task.recording,
+            "connection_freshness": task.connection_freshness,
             "supported_actions": ["observe", "wait"],
         }

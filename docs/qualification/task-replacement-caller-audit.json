@@ -1,0 +1,7 @@
+{
+  "base": "98a7a5ee78b04254a9853932a0c167d095ccff81",
+  "scope": "source-only caller audit; module imports include tuple-defined constants and intentional dynamic exports",
+  "modules_examined": 1135,
+  "unresolved_imports": [],
+  "runtime_acceptance": false
+}

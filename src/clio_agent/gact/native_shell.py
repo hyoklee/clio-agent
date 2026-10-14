@@ -8,8 +8,8 @@ from fastmcp import Context
 from fastmcp.utilities.tasks import TaskConfig
 
 from clio_agent.arc.task_types import SubmissionContext
-from clio_agent.gact.native_work import NativeWork, WorkEvidence
 from clio_agent.gact.native_progress import NativeProgress
+from clio_agent.gact.native_work import NativeWork, WorkEvidence
 from clio_agent.tools.native_roots import NativeRoot
 from clio_agent.tools.servers.shell_server import (
     _BASH_ANNOTATIONS,
@@ -40,7 +40,12 @@ def register_native_shell(root: NativeRoot, work: NativeWork) -> None:
     ) -> dict[str, Any]:
         async def body(submission: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:
             return await execute_shell(
-                NativeProgress(submission, work, ctx), command, cwd, timeout_s, max_output_bytes, cleanup=evidence
+                NativeProgress(submission, work, ctx),
+                command,
+                cwd,
+                timeout_s,
+                max_output_bytes,
+                cleanup=evidence,
             )
 
         return await work.run(

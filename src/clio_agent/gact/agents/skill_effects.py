@@ -757,6 +757,7 @@ async def apply_spawn_skill_effect(ref: "SkillRef", *, agent_id: str, task: str)
     """Launch a declared skill through the shared conversation assignment owner."""
     import asyncio
     from uuid import uuid4
+
     from clio_agent.tools.task_call_context import TASK_CALL
 
     effect = parse_skill_effect(ref.meta)
@@ -767,7 +768,11 @@ async def apply_spawn_skill_effect(ref: "SkillRef", *, agent_id: str, task: str)
         raise SkillEffectError("Skill requires an active conversation", reason="no_active_session")
     body = await asyncio.to_thread(read_skill_body, ref)
     caller = app.state.conversations.caller(sid)
-    spawned = await app.state.conversations.spawn(caller, task, effect.agent or agent_id,
+    spawned = await app.state.conversations.spawn(
+        caller,
+        task,
+        effect.agent or agent_id,
         TASK_CALL.get().invocation_id or uuid4().hex,
-        launch_context={"skill_id": ref.id, "instructions": body})
+        launch_context={"skill_id": ref.id, "instructions": body},
+    )
     return {**spawned, "skill_effect": effect.kind, "skill_id": ref.id}

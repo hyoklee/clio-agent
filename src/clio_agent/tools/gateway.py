@@ -372,10 +372,6 @@ def list_builtin_tool_definitions() -> dict[str, Any]:
     return tools
 
 
-
-
-
-
 def list_tool_definitions(gw: FastMCP) -> dict[str, Any]:
     """One transient SEQUENTIAL listing pass: ``{tool_name: MCPTool}``.
 

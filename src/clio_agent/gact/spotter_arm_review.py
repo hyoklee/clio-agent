@@ -15,12 +15,13 @@ from clio_agent.runtime import trace
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from clio_agent.arc.task_types import TaskSnapshot
     from clio_agent.gact.types import Session
 
 logger = logging.getLogger(__name__)
 
 
-def wake_on_arm(app: "FastAPI", session: "Session", task: "AgentTask") -> None:
+def wake_on_arm(app: "FastAPI", session: "Session", task: "TaskSnapshot") -> None:
     """Review what already happened when a user arms SPOTTER mid-session.
 
     A user typically switches to SPOTTER review because they noticed something in
@@ -47,12 +48,12 @@ def wake_on_arm(app: "FastAPI", session: "Session", task: "AgentTask") -> None:
     # A wake before that would fail the check turn (no tool executor), so build
     # the host from the watched session's own model first, as a message would.
     import asyncio  # noqa: PLC0415
-    from types import SimpleNamespace  # noqa: PLC0415
 
     from clio_agent.gact.session_host_agent import ensure_host_agent  # noqa: PLC0415
+    from clio_agent.gact.types import PostMessageRequest
 
-    async def _build_then_wake() -> None:
-        await ensure_host_agent(app, session.id, SimpleNamespace(model=None))  # type: ignore[arg-type]
+    async def _build_then_wake() -> bool:
+        await ensure_host_agent(app, session.id, PostMessageRequest(text=""))
         if getattr(app.state, "agent", None) is None:
             logger.warning(
                 "spotter_wake_on_arm_skipped reason=host_agent_unavailable session=%s",
@@ -63,12 +64,8 @@ def wake_on_arm(app: "FastAPI", session: "Session", task: "AgentTask") -> None:
                 "spotter_wake_on_arm_skipped reason=host_agent_unavailable session=%s",
                 session.id,
             )
-            return
-        spotter_watcher._push_wake(app, session.id, task, wake_text)
+            return False
+        return True
 
-    try:
-        asyncio.get_running_loop().create_task(_build_then_wake())
-    except RuntimeError:
-        loop = getattr(app.state, "mcp_app_loop", None)
-        if loop is not None:
-            asyncio.run_coroutine_threadsafe(_build_then_wake(), loop)
+    if asyncio.run_coroutine_threadsafe(_build_then_wake(), app.state.conversations._loop).result():
+        spotter_watcher._push_wake(app, session.id, task, wake_text)

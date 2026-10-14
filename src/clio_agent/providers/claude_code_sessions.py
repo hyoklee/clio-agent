@@ -64,7 +64,6 @@ import asyncio
 import atexit
 import contextlib
 import logging
-import queue
 import threading
 import time
 from collections.abc import AsyncGenerator, Callable
@@ -507,6 +506,7 @@ class _StreamClientEntry:
         self._ensure_loop()
         self._mark_busy()
         from clio_agent.providers.stream_queue import AsyncStreamQueue, StreamProducer
+
         chunks: AsyncStreamQueue[tuple[Any, Any]] = AsyncStreamQueue()
         # Captured in the CALLER's context -- the owner-loop pump has no access
         # to either contextvar once scheduled cross-thread (#993 / #901).

@@ -236,7 +236,10 @@ def _plan(app: Any, sid: str, scope: str, open_turn: str) -> _ScopePlan | None:
         return None
     try:
         from clio_agent.gact.agents.context_reader import model_context_segments
-        rendered = model_context_segments(replaced, getattr(app.state, "task_history", None), sid, scope)
+
+        rendered = model_context_segments(
+            replaced, getattr(app.state, "task_history", None), sid, scope
+        )
         lines = [line for m in fold_steps(rendered) for line in _message_lines(m)]
     except ContextFoldError as exc:
         raise CompactionError(409, exc.reason, str(exc), dict(exc.details or {})) from exc

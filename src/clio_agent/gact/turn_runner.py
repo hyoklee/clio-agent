@@ -6,15 +6,14 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Awaitable, Callable, Coroutine, Iterator
-from contextlib import contextmanager
+from collections.abc import Awaitable, Callable, Coroutine
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.turn_revision_gate import TurnRevisionGate
 
 if TYPE_CHECKING:
-    from fastapi import FastAPI
+    pass
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +111,7 @@ class TurnRunner:
                             continue
                         return  # policy-vetoed input stays pending; no spin
                     turn_id, coroutine = admitted
-                    if resources.stop.is_set():
+                    if resources.stop.is_set() or self._closing:
                         coroutine.close()
                         return
                     resources.handle = TurnHandle(sid, turn_id, resources.handle.started_at)
@@ -122,17 +121,28 @@ class TurnRunner:
                     except asyncio.CancelledError:
                         resources.stop.set()
                         await self._retire(resources)
-                        if asyncio.current_task().cancelling():
+                        pump = asyncio.current_task()
+                        if pump is not None and pump.cancelling():
                             raise
                     except Exception:
                         logger.exception("Conversation segment failed session=%s", sid)
                     await self._retire(resources)
+                except Exception:
+                    logger.exception(
+                        "Conversation admission failed; input remains pending session=%s", sid
+                    )
+                    return
                 finally:
                     await self._retire(resources)
+                    if resources.thread is not None:
+                        from clio_agent.providers.session_lifecycle import release_session_resources
+
+                        await asyncio.to_thread(release_session_resources, sid)
                     with self._lock:
                         if self._turns.get(sid) is resources:
                             self._turns.pop(sid)
-                    for callback in self._released.pop(sid, []):
+                        callbacks = self._released.pop(sid, [])
+                    for callback in callbacks:
                         callback()
                 # Admission and busy-to-idle are serialized by this same pump.
                 # An eligible closing-turn arrival is considered even without a
@@ -150,7 +160,10 @@ class TurnRunner:
             resources = self._turns.get(sid)
             if resources is None or (resources.thread is not None and resources.thread.is_alive()):
                 raise TurnAdmissionError(sid)
+            if self._closing or resources.stop.is_set():
+                raise asyncio.CancelledError
         import contextvars
+
         context = contextvars.copy_context()
         result: asyncio.Future[Any] = loop.create_future()
 
@@ -166,13 +179,19 @@ class TurnRunner:
             try:
                 value = context.run(function)
             except BaseException as error:
+                logger.exception(
+                    "Task boundary reason=session_worker_failed error_type=%s", type(error).__name__
+                )
                 loop.call_soon_threadsafe(complete, None, error)
             else:
                 loop.call_soon_threadsafe(complete, value, None)
 
         thread = threading.Thread(target=execute, name="clio-session-" + sid)
-        resources.thread = thread
-        thread.start()
+        with self._lock:
+            if self._closing or resources.stop.is_set() or self._turns.get(sid) is not resources:
+                raise asyncio.CancelledError
+            resources.thread = thread
+            thread.start()
 
         async def exited() -> None:
             # Python has no asynchronous Thread.join. Check actual retirement
@@ -199,10 +218,10 @@ class TurnRunner:
             try:
                 await asyncio.shield(resources.worker_exit)
                 return
-            except asyncio.CancelledError:
+            except asyncio.CancelledError as error:
                 resources.stop.set()
                 if resources.worker_exit.cancelled():
-                    raise RuntimeError("Session worker retirement monitor was cancelled")
+                    raise RuntimeError("Session worker retirement monitor was cancelled") from error
 
     def busy(self, sid: str) -> bool:
         """Reservation spans the whole segment, including waits and worker retirement."""
@@ -225,10 +244,17 @@ class TurnRunner:
 
     def run_when_released(self, sid: str, callback: Callable[[], None]) -> None:
         """Publish passive idle status only after the session's real worker exits."""
-        if self.busy(sid):
-            self._released.setdefault(sid, []).append(callback)
-        else:
-            callback()
+        with self._lock:
+            if sid in self._turns:
+                self._released.setdefault(sid, []).append(callback)
+                return
+        callback()
+
+    def _request_stop(self, resources: _TurnResources) -> None:
+        """Signal the same cooperative stop for a selected turn or shutdown."""
+        resources.stop.set()
+        if self._loop is not None and resources.task is not None and not resources.task.done():
+            self._loop.call_soon_threadsafe(resources.task.cancel)
 
     async def stop(self, sid: str) -> None:
         """Stop the model segment and its waiters, preserving accepted background work."""
@@ -236,10 +262,9 @@ class TurnRunner:
             resources = self._turns.get(sid)
             if resources is None:
                 return
-            resources.stop.set()
+            self._request_stop(resources)
             task = resources.task
         if task is not None and not task.done():
-            task.cancel()
             owner = getattr(self.app.state, "conversations", None)
             if owner is not None:
                 await owner.stopping(sid)
@@ -251,17 +276,27 @@ class TurnRunner:
                         break
         await self._retire(resources)
 
+    def close_admission(self) -> None:
+        """Close the actual reservation gate before asynchronous shutdown work."""
+        with self._lock:
+            self._closing = True
+            for resources in self._turns.values():
+                self._request_stop(resources)
+
     async def drain(self) -> None:
         """Close admission and await actual worker exit; there is no shutdown deadline."""
-        self._closing = True
+        self.close_admission()
         for sid in tuple(self._turns):
             await self.stop(sid)
         if self._pumps:
-            await asyncio.shield(asyncio.gather(*tuple(self._pumps.values()), return_exceptions=True))
+            await asyncio.shield(
+                asyncio.gather(*tuple(self._pumps.values()), return_exceptions=True)
+            )
 
 
 def install_turn_runner(app: Any) -> TurnRunner:
     """Install admission before startup; the real Core owner binds before readiness."""
+
     async def admit(sid: str) -> tuple[str, Coroutine[Any, Any, Any]] | None:
         owner = getattr(app.state, "conversations", None)
         return await owner._admit(sid) if owner is not None else None

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -10,7 +11,7 @@ from typing import Iterator, TypeVar
 
 from pydantic import BaseModel
 
-from clio_agent.gact.storage.models import SourceRecord, TransferOperation, now
+from clio_agent.gact.storage.models import TransferOperation, now
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -27,7 +28,9 @@ class SourceStore:
                 "CREATE TABLE IF NOT EXISTS records (kind TEXT, id TEXT, body TEXT NOT NULL, PRIMARY KEY(kind,id))"
             )
             db.execute("CREATE TABLE IF NOT EXISTS identity (id TEXT PRIMARY KEY)")
-            db.execute("CREATE INDEX IF NOT EXISTS source_operations ON records(json_extract(body, '$.source_id')) WHERE kind='operation'")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS source_operations ON records(json_extract(body, '$.source_id')) WHERE kind='operation'"
+            )
             identity = db.execute("SELECT id FROM identity").fetchone()
             self.clio_id = identity[0] if identity else "clio_" + uuid.uuid4().hex
             if identity is None:
@@ -73,10 +76,13 @@ class SourceStore:
             ).fetchall()
         return [model.model_validate_json(row[0]) for row in rows]
 
-    def operations_for_source(self, source_id: str) -> list[TransferOperation]:
+    def operations_for_source(self, source_id: str) -> builtins.list[TransferOperation]:
         """Read one source's retained workload metadata through its existing database index."""
         with self.transaction() as db:
-            rows = db.execute("SELECT body FROM records WHERE kind='operation' AND json_extract(body, '$.source_id')=? ORDER BY rowid", (source_id,)).fetchall()
+            rows = db.execute(
+                "SELECT body FROM records WHERE kind='operation' AND json_extract(body, '$.source_id')=? ORDER BY rowid",
+                (source_id,),
+            ).fetchall()
         return [TransferOperation.model_validate_json(row[0]) for row in rows]
 
     def update_operation(self, identifier: str, **changes: object) -> TransferOperation:

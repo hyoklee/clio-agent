@@ -8,9 +8,7 @@ This concern owns the ``/v1/sessions`` lifecycle and scoped ask/retry protocol:
 * Compaction appends one evidence-preserving checkpoint (``gact.compaction``); the
   visible transcript is retained in full, only the MODEL-facing context shrinks.
 * Cancel cooperatively stops an in-flight turn and publishes its status.
-* Ask-user and retry own question resumption and recorded source-message attempts.
-Fork, question-answer, and retry share ``deps.start_background_user_turn``. Shared
-cross-concern helpers travel on :class:`GactDeps`; private helpers stay here.
+Shared route dependencies travel on :class:`GactDeps`.
 """
 
 from __future__ import annotations
@@ -208,10 +206,18 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             summary=f"delete session {sid}",
             reason="user_requested_session_delete",
         )
-        active = app.state.task_history.tree_handles(sid) & app.state.task_history.task_handles(active_only=True)
+        active = app.state.task_history.tree_handles(sid) & app.state.task_history.task_handles(
+            active_only=True
+        )
         if active or app.state.turn_runner.busy(sid):
-            raise HTTPException(status_code=409, detail={"error": "session_has_active_work",
-                "message": "Cancel and settle active work before deleting this session.", "handles": sorted(active)})
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "session_has_active_work",
+                    "message": "Cancel and settle active work before deleting this session.",
+                    "handles": sorted(active),
+                },
+            )
         # P4.1 #1079 cancel-both: a deleted session must not orphan its loop wakeup.
         stop_session_loop(app, sid)
         stop_session_goal(app, sid)  # P4.2 #1080: abandon any active goal (goal_abandoned)
@@ -847,16 +853,10 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
 
     @app.post("/v1/sessions/{sid}/cancel")
     async def cancel_session(sid: str) -> Response:
-        """Best-effort cancel of an in-flight turn on this session.
+        """Request Stop; keep the session reserved until its worker actually retires.
 
-        The agent loop and sync MCP bridge observe a scoped cancellation checker between
-        planner/expert/tool boundaries and return early with ``error_info.error ==
-        "cancelled"`` when possible; the endpoint flips the flag + publishes a
-        ``session.cancelled`` event so live SSE subscribers see the transition immediately.
-        If the turn is already blocked inside executor-thread provider/tool work, cancelling
-        the asyncio Task settles the GACT envelope as cancelled but cannot kill the Python
-        thread — the status event marks this best-effort. Returns 204 whether or not a turn
-        was running (the TUI fires this speculatively on Esc/Ctrl+C).
+        Accepted background work continues. Shared task cancellation is separate.
+        Return 204 even when the session is already idle.
         """
         await cancel_session_state_async(app, deps, sid)
         return Response(status_code=204)

@@ -1,4 +1,6 @@
 ---
+import { Aside } from '@astrojs/starlight/components';
+
 const { active } = Astro.props as { active: string };
 const sections = [
   ['overview', 'Background work', '/docs/tasks/'],
@@ -12,6 +14,11 @@ const sections = [
 <nav class="widget-section-tabs" aria-label="Tasks and coordination guides">
   {sections.map(([id, label, href]) => <a href={href} aria-current={active === id ? 'page' : undefined}>{label}</a>)}
 </nav>
+<Aside type="note" title="Development preview">
+  These guides describe the native-task replacement being qualified. Images and
+  recorded runs show its predecessor and do not qualify this replacement. Fresh
+  model, service and UI acceptance is pending.
+</Aside>
 <style>
   nav { flex-wrap: wrap; overflow-x: visible; }
   nav a { padding: .5rem .7rem; }

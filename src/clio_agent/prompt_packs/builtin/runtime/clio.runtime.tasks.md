@@ -98,8 +98,9 @@ an explicit resubmission creates a new linked handle.
 send_agent_message addresses an exact authorized session or agent handle discovered
 through session search/summary or task query. Busy recipients receive mail before
 their next iteration; idle recipients wake; paused recipients retain it. Respect
-sender attribution and reply only when needed, using source_session_id and the
-original message ID. Avoid automatic reply loops. A completed assignment receives
+sender attribution and reply only when needed. Set target to the exact sender
+session shown in the notice and reply_to to its notification ID. Avoid automatic
+reply loops. A completed assignment receives
 a linked continuation in the same session rather than reopening its old handle.
 
 Human steering, pause, resume, cancellation and restart of your owned work produce

@@ -30,9 +30,11 @@ class CoreRecovery:
 
     def _request_recovery(self) -> None:
         """Arm the existing recovery worker for every failed confirmed writer path."""
+
         def register() -> None:
             if "core-writer" not in self._pending:
                 self.defer("core-writer", self._recording_confirmed)
+
         self._loop.call_soon_threadsafe(register)
 
     async def _recording_confirmed(self) -> bool:
@@ -60,7 +62,9 @@ class CoreRecovery:
         while self._pending:
             await asyncio.sleep(delay)
             try:
-                await asyncio.to_thread(self.history.arc._store.exists, INDEX_KIND, "__recovery_probe__")
+                await asyncio.to_thread(
+                    self.history.arc._store.exists, INDEX_KIND, "__recovery_probe__"
+                )
                 if self.history.requires_recovery:
                     await asyncio.to_thread(self.history.restore)
                     if self.on_ready is not None:
@@ -69,13 +73,24 @@ class CoreRecovery:
                     try:
                         confirmed = await action()
                     except Exception as error:
-                        logger.warning("Owner recovery pending id=%s error=%s", identity, type(error).__name__)
+                        logger.exception(
+                            "Task boundary reason=owner_recovery_pending error_type=%s",
+                            type(error).__name__,
+                        )
+                        logger.warning(
+                            "Owner recovery pending id=%s error=%s", identity, type(error).__name__
+                        )
                         continue
                     if confirmed is not False and self._pending.get(identity) is action:
                         self._pending.pop(identity)
                 delay = min(delay * 2, 30.0) if self._pending else 1.0
             except Exception as error:
-                logger.warning("Core recovery pending=%d error=%s", len(self._pending), type(error).__name__)
+                logger.exception(
+                    "Task boundary reason=core_recovery_pending error_type=%s", type(error).__name__
+                )
+                logger.warning(
+                    "Core recovery pending=%d error=%s", len(self._pending), type(error).__name__
+                )
                 delay = min(delay * 2, 30.0)
         if self.on_ready is not None:
             await self.on_ready()

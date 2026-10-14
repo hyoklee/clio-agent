@@ -40,7 +40,7 @@ settle with the actual cause.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable
 
 from clio_agent.gact.enrichment import (
     _context_file_turn_provenance,
@@ -48,7 +48,6 @@ from clio_agent.gact.enrichment import (
     enrich_turn_context,
 )
 from clio_agent.gact.events import _publish_transcript_event
-from clio_agent.gact.off_loop import schedule_off_loop
 from clio_agent.gact.part_atom_minter import open_turn_minter
 from clio_agent.gact.plan_mode import plan_mode_reminder
 from clio_agent.gact.replanning import replan_suggestion
@@ -63,11 +62,9 @@ from clio_agent.gact.turn_state import (
     PROLOGUE_COMPLETED,
     PROLOGUE_FAILED,
     PROLOGUE_RUNNING,
-    DeferredTranscriptJob,
     TurnCancelledDuringPrologue,
 )
 from clio_agent.gact.turn_watchdog import cancel_requested
-from clio_agent.runtime.stream_audit import stream_audit
 
 if TYPE_CHECKING:
     from clio_agent.gact.turn_state import TurnState
@@ -110,8 +107,6 @@ def _prepare_turn_off_loop_steps(
     job = state.transcript_job.take() if state.transcript_job is not None else None
     if job is not None:
         job()
-
-
 
     _check_not_cancelled(state)
     _emit_semantic_event(

@@ -25,6 +25,7 @@ from clio_agent.tools import foreground_cancellation as foreground_cancel
 from clio_agent.tools import injections, task_descriptions, tool_presentation
 from clio_agent.tools import task_call_context as task_calls
 from clio_agent.tools.mcp_executor import (
+    SYNC_TOOL_RESULT_GRACE_SECONDS,
     AsyncMCPToolExecutor,
     ClientFactory,
     MCPClientProtocol,
@@ -350,9 +351,6 @@ def tool_failure_limit() -> int:
         default=3,
         cast=conf.as_int,
     )
-
-
-SYNC_TOOL_RESULT_GRACE_SECONDS = 1.0
 
 
 class RepeatedToolFailureError(RuntimeError):
@@ -752,14 +750,13 @@ class SyncMCPToolExecutor(SyncNamespacePreparationMixin):
             tool_observer, name, effective_args, observer_handle
         )
 
-        timeout, native_call = foreground_cancel.call_limits(
-            self._async_executor, name, effective_args
-        )
+        app_loop = task_calls.application_loop()
+        timeout = foreground_cancel.inline_timeout(self._async_executor, name, effective_args)
         task_call_token = task_calls.begin_invocation()
         try:
             with commitment_activity.track(timeout is None):
                 outcome = foreground_cancel._run_foreground_coroutine(
-                    self._loop,
+                    app_loop or self._loop,
                     self._async_executor.call_tool_result(
                         name,
                         effective_args,
@@ -768,7 +765,7 @@ class SyncMCPToolExecutor(SyncNamespacePreparationMixin):
                     timeout=(None if timeout is None else timeout + SYNC_TOOL_RESULT_GRACE_SECONDS),
                     action=f"MCP tool {name!r}",
                     cancellation_checker=cancellation_checker,
-                    wait_for_settlement=native_call,
+                    wait_for_settlement=app_loop is not None,
                     cancellation_error=lambda wire_settled: (
                         foreground_cancel._tool_cancellation_error(
                             name,
@@ -778,9 +775,11 @@ class SyncMCPToolExecutor(SyncNamespacePreparationMixin):
                     ),
                 )
         except Exception as exc:
-            if isinstance(
-                exc, TimeoutError
-            ) and not self._async_executor._tool_timeout_is_retry_safe(name):
+            if (
+                timeout is not None
+                and isinstance(exc, TimeoutError)
+                and not self._async_executor._tool_timeout_is_retry_safe(name)
+            ):
                 uncertain = self._async_executor.mark_uncertain_mutating_timeout(
                     name, effective_args, cast(float, timeout)
                 )

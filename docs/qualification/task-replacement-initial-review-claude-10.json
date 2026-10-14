@@ -1,0 +1,60 @@
+{
+  "candidate": "98a7a5ee",
+  "gact": "f1b099cdf479a4e2516391a525efeba17799cd65",
+  "custody": {
+    "candidate": "98a7a5ee",
+    "gact": "f1b099cdf479a4e2516391a525efeba17799cd65",
+    "status": "ended",
+    "helper_pid": 52104,
+    "ports": [],
+    "product_services": [],
+    "root": "D:\\Temp\\clio-task-implementation-review-98a7a5ee-c10",
+    "auth_sha256_before": "f23ef1364c7e9c4619afd2d70c2dd305ac6a62112e5cd75c7f908dede6e2fa50",
+    "created_at": "2026-10-14T07:51:35.818622-05:00",
+    "diagnostic_limit_s": 1200,
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob"
+    ],
+    "pid": 35120,
+    "started_at": "2026-10-14T07:51:35.826687-05:00",
+    "exit_code": 0,
+    "ended_at": "2026-10-14T08:07:05.334751-05:00",
+    "events": 833,
+    "has_result": true,
+    "auth_sha256_after": "f23ef1364c7e9c4619afd2d70c2dd305ac6a62112e5cd75c7f908dede6e2fa50"
+  },
+  "text": "# Source review of the R2 initial task replacement (core `98a7a5ee`, GACT `f1b099cd`)\n\n**Verdict: NO-GO for qualification.** The task core is largely sound, and most of the review9 corrections hold in source. But the replacement leaves dangling references to definitions that were removed and never rebuilt. Several sit on paths that every turn, every tool call or the scheduler takes. I read source only and ran nothing. Each \"undefined\" finding below comes from a definition search that found no `def` anywhere in `src/`.\n\n## Review9 corrections: rechecked\n\nThese are fixed in source:\n- **Workflow metadata:** `conversations.py:1204-1210` now uses `metadata_patch`.\n- **Linux process identity:** `native_identity.py:15-54` reads `/proc` start ticks and boot ID.\n- **Wait and observe:** aliases resolve first, and uncertainty is keyed off status (`task_operations.py:208-218`, `244-248`).\n- **Admission race:** the external MCP check now runs under the history lock (`external_tasks.py:350-352`).\n- **Native cancel:** cancel is re-delivered after restore (`native_tools.py:331-335`), and a withdrawn body settles as `never_started` (`935-937`).\n- **Subtree cancel:** parent retirement runs concurrently with member cancels, with retries (`conversations.py:1410-1448`).\n- **Shutdown order:** native cancellation starts before the conversation drain (`task_runtime.py:277-296`).\n- **Input lookup:** external input lookup is serialized and ignores unrelated unconfirmed siblings.\n\nAn external MCP cancel always ends as permanent `task_state_uncertain` (`external_tasks.py:623-635`). That means `_cancel_subtree` (`conversations.py:1467-1478`) and restart (`1295-1300`) never finish for such a member. I count this as the Astra-adjudicated design, not a defect. The only exit is a human force-close.\n\n## P1: blocks Q1–Q9 at runtime\n\n1. **Every turn without a per-message reasoning effort fails.** `turn_reasoning.py:145` calls `_parent_turn_reasoning`, which is undefined. It is reached from `turn_forward.py:285`.\n2. **Every turn finalization fails.** `turn_finalize.py:350-354` imports `append_turn_child_resource_links`, which is only named in `artifacts/wire.py:325` `__all__`, never defined.\n3. **Every child-session turn finalization fails.** `turn_finalize.py:573` calls `spotter_watcher.on_turn_finalized`, which calls the undefined `_live_watcher_tasks` (`spotter_watcher.py:454`).\n   - Also undefined in that module: `_push_wake`, `_arm_watcher`, `disarm_spotter_watcher` and `_set_live_state`.\n   - `spotter_clearance.py:128,242` and `spotter_arm_review.py:43,67` import or call these too. So does `tool_observer.py:875`, for spotter-ai sessions.\n   - Spotter was never rebuilt on assignments and mailbox producers.\n4. **Every configured or external MCP tool call fails.** `tools/execution.py:755` calls `foreground_cancel.call_limits`, which was deleted. Line 763 also passes `progress_handler=`, which `AsyncMCPToolExecutor.call_tool_result` (`mcp_executor.py:371`) does not accept. This blocks inline MCP (Q1), mixed kinds (Q2) and external MCP (Q6).\n5. **The scheduler dies on its first tick.** `scheduler_runtime.py:208-210` imports `maintain_goal_controls`, which `goal_control.py` does not define. `ImportError` is not caught by `except (OSError, RuntimeError)` at line 211. No schedules, loops or goal maintenance can run. `launch_pending_goal` is also missing (`routes/catalog.py:819`, `routes/work_controls.py:34`).\n\n## P2: missing required implementation\n\n- **Work rows go stale.** The web UI refetches `async-processes` only on `agent.task.*`, `mcp.task.*`, `run.*`, `subagent.*` events or `message.completed` (`use-session-live-stream.ts:270-274`, `391-396`). Core publishes none of those; only Question events exist (`question_events.py:33-36`). Stopping, pending cancellation and lost-visibility states do not update live. `protocol/v3/event.py:338` `_task_path` is also undefined.\n- **`ask_user` dropped `surface_id`.** `task_declarations.py:246-287` accepts only question, kind, options and allow_freeform. The marketplace instructions call `ask_user(..., surface_id=...)` (earthscope-single-agent, factorio-flat abaqus catalog). `question_surface_ids` (`session_question_helpers.py:92-95`) is never populated, so an A2UI action cannot resolve a Question.\n- **Task routes turn domain `ValueError` into HTTP 500.** Affected: `tasks.py:260` (control), `308` (answer: bad option, expired, ValidationError), `316` (cancel Question) and `386` (revoke \"Grant unavailable\"). No `ValueError` handler exists in `error_middleware.py`.\n- **Agent-ready redrive is broken.** `agent_initialization.py:83` calls undefined `redrive_pending_completion_wakes`, so input parked during agent init is not signalled. `:113` calls undefined `refuse_parked_inputs`, which masks the original init failure.\n- **Other undefined helpers:**\n\n  | Location | Undefined name |\n  |---|---|\n  | `action_cards.py:288` | `_calling_task` (breaks `raise_alert_card`) |\n  | `context_references.py:643` | `_resolve_agent_run` |\n  | `context_reference_search.py:400` | `_agent_run_results` |\n  | `artifacts/versions.py:552` | `_workspace_single_writer` (breaks `workspace_lease_clean`) |\n  | `native_presenters_tasks.py:144,153,176,179,276,284` | `_child_session`, `_child_name` |\n\n  The task presenters also read old result shapes (`results`, `task_id`, `new_events`).\n- **Elicitation answers reach the model.** `QuestionCommands.answer` publishes a `question_answer` notice to the owner (`task_publication.py:24-35`). External elicitation Questions are created with that owner (`external_tasks.py:763-768`). Form answers meant for the server therefore enter model context. I'm moderately confident; it deserves a decision.\n- **No caller for provider session release.** `providers/session_lifecycle.py:119` `release_session_resources` has no caller left, so Claude child resources are likely not retired when an assignment ends.\n\n## P3\n\n- `observe(notify=...)` aborts the whole call when one handle is unauthorized (`task_operations.py:279`, `397-401`).\n- `send_agent_message` reveals whether a session exists before authorization (`task_declarations.py:151-155`).\n- `TurnRunner._pump` has no handler for an `admit` exception (`turn_runner.py:109`). A successor for a child whose parent is cancelled raises through `conversations.py:430-436,478`, and the human message route returns 500 (`message_submission.py:566`).\n- Agent-audience elicitation is inert. `agent_elicitation.py` `__all__` names `on_question_published`, `_run_agent_answer_turn` and `_spawn_agent_answer_turn`, none of which exist.\n- The prompt `clio.runtime.tasks.md` mentions `source_session_id`, but `send_agent_message` takes `reply_to`.\n- **Site and marketplace:**\n  - `subagents.mdx:75-79` keeps relay-placement text.\n  - `session-coordination.mdx:93-104` presents pre-replacement runs as evidence. Only that page has the disclaimer.\n  - The `cluster-operator` pack still grants `relay_*` and `jarvis_*` tools, and its README names deleted modules.\n  - The factorio-flat evaluator expects a `question_id` from `ask_user`.\n\n## Your required properties (source structure only)\n\n- **ask_user:**\n  - `ask_user` returns a Question handle immediately (`task_declarations.py:246-287`).\n  - `wait_tasks` is the shared wait.\n  - Stop leaves the Question open.\n  - Delivery is at the next iteration (`clio_react.py:400-416,437,467`) or on idle wake (`TurnRunner._pump`).\n  - P1 items 1–2 block all of this at runtime.\n- **Sessions as tasks:** Session handles support authorized messaging (`session_mail.py:220-297`), grants, observe, wait and subscriptions with separate receipts (`task_publication.py`). They also work in workflows (`workflows.py:459-545`). P1 items 1–3 block turns that would exercise these.\n- **External acknowledgement vs physical proof:** these stay separate (`external_tasks.py:618`, `native_tools.py:890-893`).\n- **Exactly-once effects:** not required, and not claimed.\n\n## Coverage limits\n\n- I did not read: `task_history.py` internals, `native_work.py`, `native_storage.py`/Globus, `variant_drafts.py`, the TUI/desktop and Go code, most GACT web components, site components and screenshot provenance, or about 8 route files that the glob truncated.\n- Not rechecked:\n  - the migration per-row guard\n  - replay wake-hint coalescing\n  - Globus transient status handling\n  - draft Question deadline retention\n- I did **not** run an exhaustive undefined-name scan. I searched only for names in the plan's removal lists and for importers of removed modules. More dangling references likely exist, so the P1 and P2 lists are a lower bound.\n- Old tests and comments were not counted as evidence. No live, model, UI or CI acceptance is claimed.\n\nI wrote nothing to disk, including the plan file, and `ExitPlanMode` is not available in this session.",
+  "is_error": false,
+  "model_usage": {
+    "claude-sonnet-5-5": {
+      "inputTokens": 194,
+      "outputTokens": 77329,
+      "cacheReadInputTokens": 24347548,
+      "cacheCreationInputTokens": 417709,
+      "webSearchRequests": 0,
+      "costUSD": 4.879268799999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "thinkingTokens": 46681,
+      "canonicalModel": "claude-sonnet-5-5",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "stderr": "",
+  "cleanup": {
+    "process_absent": true,
+    "status": "human_manual_only",
+    "reparse_points": 0,
+    "root_absence_verified": false,
+    "root": "D:/Temp/clio-task-implementation-review-98a7a5ee-c10",
+    "directories": 6,
+    "rejection": "blocked by policy",
+    "logical_bytes": 8728,
+    "instruction": "Never retry or bypass this exact removal, and do not execute its review.py again.",
+    "files": 6,
+    "removal_executed": false
+  }
+}

@@ -1,78 +1,21 @@
-"""Spotter-ai approval-mode standing watcher: arm/disarm + push-wake (server-half).
+"""SPOTTER producers over Core mail and ordinary conversation assignments.
 
-``spotter-ai`` is a session ``approval_mode`` (#1034 axis) that behaves exactly
-like ``ask`` at the permission gate (see
-:func:`clio_agent.gact.permission_gate.default_decision`) but additionally ARMS
-a dedicated watcher child session that observes the parent session's workload
-and may raise an ``action_card`` part into the parent's transcript via the
-auto-attached ``raise_alert_card`` native tool
-(:func:`clio_agent.gact.action_cards.build_raise_alert_card_tool`).
-
-Owner design ruling (verbatim intent): "the agent should wait, until an input;
-the agent session should be there sitting, awaiting data, and data should be
-pushed into it." **No timers anywhere.** This module implements the STANDING
-PUSH-WAKE shape:
-
-* :func:`ensure_spotter_watcher` — idempotent ARM: mints the watcher's child
-  session + a STANDING :class:`~clio_agent.gact.agent_tasks.AgentTask` via
-  ``turn_spawn.TaskSpec(start_turn=False)`` — the record transitions straight
-  to ``status=STATUS_RUNNING`` (never terminal while armed; DISARM is the only
-  path out) with ``live_state="waiting"``, but **no turn is ever started at
-  arm time**. Called after a session TRANSITIONS into ``spotter-ai`` mode
-  (never on an unrelated PATCH to an already-armed session — see
-  :func:`sync_watcher_for_mode`).
-* :func:`wake_on_parent_activity` / :func:`on_turn_finalized` — real parent
-  activity pushes a factual wake through the loop inbox. An idle watcher starts
-  a check turn immediately; a busy watcher retains at most one coalesced wake.
-  Finalizing the watcher's own check returns its standing task to ``waiting``.
-  The first check always follows real parent activity, after workspace tools
-  have warmed, so no timer-based cold-start workaround is needed.
-* :func:`disarm_spotter_watcher` — targeted cancel of the parent's live watcher
-  task(s) ONLY (never the parent's other children) via the existing targeted
-  per-task cancel primitive (:func:`clio_agent.gact.turn_spawn.cancel_agent_task`),
-  which is ALREADY correct for a standing task unchanged: it transitions
-  ``status`` RUNNING -> CANCELLED (terminal) and cooperatively/hard-cancels any
-  in-flight check turn (a no-op when the watcher is idle/"waiting", since there
-  is nothing in flight to cancel). Called after a session is PATCHED AWAY FROM
-  ``spotter-ai`` mode.
-
-``sync_watcher_for_mode`` is wired at the route level (``gact/routes/sessions.py``)
-after ``sessions.create`` / ``sessions.update`` return. ``wake_on_parent_activity``
-is wired at the tool-observer's ``tool.call.completed`` seam
-(``gact/tool_observer.py``); ``on_turn_finalized`` is wired at the turn-finalize
-seam (``gact/turn_finalize.py``'s ``finalize_turn``, right after its
-``session.status_changed`` publish, alongside the existing P2.3/P4.x
-``dispatch_*_at_finalize`` hooks it mirrors).
-
-No silent fallback: every arm/disarm/wake/coalesce/no-op path logs a typed,
-greppable line (``spotter_watcher_armed`` / ``spotter_watcher_disarmed
-reason=...`` / ``spotter_watcher_skip reason=...`` / ``spotter_watcher_arm_failed
-reason=...`` / ``spotter_wake_started`` / ``spotter_wake_enqueued`` /
-``spotter_wake_coalesced reason=...``) through both the module logger and
-:mod:`clio_agent.runtime.trace`.
-
-Arming is GATED before it happens: :func:`sync_watcher_for_mode` refuses a
-transition into ``spotter-ai`` whose watcher could never execute (typed
-``spotter_watcher_arm_refused reason=...``, HTTP 422). That static
-arm-time check lives in its own owner module,
-:mod:`clio_agent.gact.spotter_arming`.
-
-The PROTECTED-PARENT half of the barrier — the clearance event this module
-signals, the typed fail-closed reasons, and the per-exchange progress wait a
-mutating tool call performs — lives in its own owner module,
-:mod:`clio_agent.gact.spotter_clearance`.
+Arming creates an idle child assignment. Activity persists a coalesced factual
+mail item; TurnRunner alone decides whether to inject or admit execution.
+Conversation observations supply status, failure and physical retirement.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
-from dataclasses import replace
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
+from clio_agent.arc.task_types import MailItem, TaskSnapshot
+from clio_agent.gact.native_work import now
 from clio_agent.gact.spotter_clearance import release_clearance_event, signal_clearance
-from clio_agent.runtime import trace
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -80,43 +23,10 @@ if TYPE_CHECKING:
     from clio_agent.gact.types import Session
 
 logger = logging.getLogger(__name__)
-
-#: The approval mode this module arms/disarms against.
 SPOTTER_APPROVAL_MODE = "spotter-ai"
-
-#: The display run-label stamped on the watcher's AgentTask (turn_spawn.py
-#: TaskSpec.run_label), so the tray reads a named surveillance task rather
-#: than an ensemble run (e.g. "spotter_watcher #1").
 WATCHER_RUN_LABEL = "SPOTTER AI"
-
-#: The requesting expert attributed for the watcher spawn. The watcher is
-#: armed by the SESSION transitioning into spotter-ai mode (a route-level
-#: decision), not by a declared parent expert delegating to it, so it is
-#: attributed to "main" like other session-level (non-expert-declared) spawns.
-_WATCHER_REQUESTING_EXPERT_ID = "main"
-
-#: The loop-inbox coalesce key every spotter wake shares, so a burst of parent
-#: tool completions during one running check turn collapses onto AT MOST ONE
-#: buffered wake (see ``Core-backed mailbox coalescing``).
-_WAKE_COALESCE_KEY = "spotter_wake"
-
-#: Turn-final wake payload (#1218 e): the parent session's OWN turn just ended
-#: (the ``turn.completed`` half of the push, vs. a specific tool completing).
-#: FACTS ONLY — no directive ("check the store...", "act per your
-#: instructions..."); the watcher's OWN prompt owns what to do about it.
-_WAKE_TURN_FINAL_TEXT = (
-    "Watched session activity: the session's turn completed. "
-    "The provenance store may have new entries."
-)
-
-#: Coalesced-burst wake payload (#1218 e): several parent activities collapsed
-#: onto the ONE buffered wake behind an already-running check turn (never more
-#: than one queued — see :func:`_push_wake`). A deliberately generic summary
-#: since no single tool/outcome is representative of the whole burst.
-_WAKE_COALESCED_TEXT = (
-    "Watched session activity: multiple tool calls completed. "
-    "The provenance store may have new entries."
-)
+_WAKE_TURN_FINAL_TEXT = "Watched session activity: the session's turn completed. The provenance store may have new entries."
+_WAKE_COALESCED_TEXT = "Watched session activity: multiple tool calls completed. The provenance store may have new entries."
 
 
 def _structural_item_identity(value: Any) -> str:
@@ -168,25 +78,6 @@ def _tool_outcome_fact(structured_result: Any) -> str:
     return ""
 
 
-def on_turn_runner_idle(app: "FastAPI", session_id: str) -> None:
-    """Wake a clearance waiter after the watcher slot is actually released."""
-
-    session = app.state.sessions.get(session_id)
-    parent_id = str(getattr(session, "parent_session_id", "") or "") if session else ""
-    if not parent_id:
-        return
-    task = next(
-        (
-            item
-            for item in _live_watcher_tasks(app, parent_id)
-            if item.child_session_id == session_id
-        ),
-        None,
-    )
-    if task is not None:
-        signal_clearance(app, parent_id)
-
-
 def _wake_text(*, tool_name: str = "", tool_ok: bool = True, tool_result: Any = None) -> str:
     """Compose the fact-carrying wake payload for ONE (non-coalesced) push
     (#1218 e). ``tool_name`` empty means the PARENT's own turn just finished
@@ -236,64 +127,6 @@ def _watcher_expert_id() -> str:
         default="spotter_watcher",
         cast=conf.as_str,
     )
-
-
-
-
-
-
-
-
-def ensure_spotter_watcher(app: "FastAPI", session: "Session") -> Optional["AgentTask"]:
-    """Idempotently ARM the standing spotter watcher for ``session``.
-
-    A no-op (returns ``None``) unless ``session.approval_mode == "spotter-ai"``.
-    When armed, mints the watcher child session + a STANDING AgentTask (see
-    :func:`_arm_watcher` / the module docstring) bound to the watcher's OWN
-    Agent Blueprint via ``session_scope_metadata`` (P2.4 #1122's spawn-binding
-    seam, :func:`clio_agent.gact.spawn_context.resolve_spawn_bindings`)
-    regardless of the parent's own active blueprint.
-
-    Idempotent: if a NON-TERMINAL (i.e. still-armed) watcher task already
-    exists for this parent, that task is returned unchanged and no second arm
-    happens.
-
-    Never raises: a mint failure is caught, logged with a typed
-    ``spotter_watcher_arm_failed`` reason, and returns ``None`` — the caller (a
-    session create/patch route) must never fail the HTTP request because the
-    watcher could not be armed.
-
-    Args:
-        app: The GACT app (agent-task registry + spawn substrate on ``app.state``).
-        session: The just-created-or-patched session, already persisted with its
-            resolved ``approval_mode``.
-
-    Returns:
-        The watcher's :class:`~clio_agent.gact.agent_tasks.AgentTask` (freshly
-        armed, or the already-armed one), or ``None`` when not in spotter-ai
-        mode or arming failed.
-    """
-
-    if str(getattr(session, "approval_mode", "") or "") != SPOTTER_APPROVAL_MODE:
-        return None
-
-    session_id = session.id
-    existing = next(iter(_live_watcher_tasks(app, session_id)), None)
-    if existing is not None:
-        logger.info(
-            "spotter_watcher_skip reason=already_running session=%s task=%s",
-            session_id,
-            existing.task_id,
-        )
-        trace.event(
-            "SPOTTER",
-            "spotter_watcher_skip reason=already_running session=%s task=%s",
-            session_id,
-            existing.task_id,
-        )
-        return existing
-
-    return _arm_watcher(app, session)
 
 
 def sync_watcher_for_mode(
@@ -359,11 +192,116 @@ def sync_watcher_for_mode(
         disarm_spotter_watcher(app, session)
 
 
+def _live_watcher_tasks(app: "FastAPI", parent_session_id: str) -> list[TaskSnapshot]:
+    """Resolve armed watcher addresses from Core's resource index."""
+    history = getattr(app.state, "task_history", None)
+    if history is None:
+        return []
+    sessions = {
+        task.owner.session_id
+        for handle in history.resource_handles("spotter:" + parent_session_id)
+        if (task := history.task_snapshot(handle)) is not None and task.kind == "Subagent"
+    }
+    return [
+        task
+        for sid in sorted(sessions)
+        if (task := history.latest_assignment(sid)) is not None
+        and task.cancellation_requested_at is None
+        and task.status != "cancelled"
+    ]
 
 
-# --------------------------------------------------------------------------- #
-# Push-wake: real PARENT activity wakes the armed watcher. No timers.
-# --------------------------------------------------------------------------- #
+def ensure_spotter_watcher(app: "FastAPI", session: "Session") -> TaskSnapshot | None:
+    """Arm one idle watcher through Conversations, without launching a check."""
+    if session.approval_mode != SPOTTER_APPROVAL_MODE:
+        return None
+    history, owner = app.state.task_history, app.state.conversations
+    with history._lock:
+        existing = _live_watcher_tasks(app, session.id)
+        if existing:
+            return existing[0]
+        parent = history.latest_assignment(session.id)
+        if parent is None or parent.terminal_at is not None:
+            parent = owner._new_assignment(
+                session.id,
+                "Work in this session with SPOTTER review enabled.",
+                owner.caller(session.id).human_id,
+                predecessor=parent,
+                invocation_id="spotter-arm:" + uuid4().hex,
+            )
+        from clio_agent.gact.spawn_context import resolve_installed_blueprint_target
+
+        root, scope, _ = resolve_installed_blueprint_target(
+            app, _watcher_blueprint_id(), workspace_id=session.workspace_id
+        )
+        invocation = "spotter:" + parent.handle
+    # Route callers run this finite adapter off the application loop.
+    receipt = asyncio.run_coroutine_threadsafe(
+        owner.spawn(
+            owner.caller(session.id),
+            "Observe the owning session when workload evidence arrives and raise factual review findings.",
+            root,
+            invocation,
+            target_scope=scope,
+            resource_id="spotter:" + session.id,
+            session_metadata={"spotter_parent_session": session.id},
+            approval_profile="spotter-watcher",
+            start=False,
+        ),
+        owner._loop,
+    ).result()
+    task = history.task_snapshot(receipt["handle"])
+    if task is None:
+        raise RuntimeError("Watcher acceptance was not recorded")
+    app.state.sessions.update(task.owner.session_id, title=WATCHER_RUN_LABEL)
+    signal_clearance(app, session.id)
+    return task
+
+
+def _push_wake(app: "FastAPI", parent_id: str, task: TaskSnapshot, text: str) -> None:
+    """Persist factual input; coalesce only not-yet-committed watcher activity."""
+    history = app.state.task_history
+    with history._lock:
+        app.state.conversations.require_admission(task)
+        pending = next(
+            (
+                item
+                for item in history.pending_mail(task.owner.session_id)
+                if item.kind == "spotter" and item.sender_session == parent_id
+            ),
+            None,
+        )
+        content = history.write_content(
+            task.owner.session_id, {"text": _WAKE_COALESCED_TEXT if pending is not None else text}
+        )
+        if pending is None:
+            history.record_mail(
+                MailItem(
+                    id="spotter:" + uuid4().hex,
+                    recipient_session=task.owner.session_id,
+                    sender_session=parent_id,
+                    kind="spotter",
+                    content=content,
+                    created_at=now(),
+                    handle=task.handle,
+                )
+            )
+        else:
+            history.update_mail(
+                pending.model_copy(update={"content": content, "revision": pending.revision + 1}),
+                expected_revision=pending.revision,
+            )
+    signal_clearance(app, parent_id)
+
+
+def disarm_spotter_watcher(app: "FastAPI", session: "Session") -> None:
+    """Request targeted cancellation from the real conversation owner."""
+    owner = app.state.conversations
+    for task in _live_watcher_tasks(app, session.id):
+        asyncio.run_coroutine_threadsafe(
+            owner.cancel(owner.caller(session.id), task.handle), owner._loop
+        ).result()
+    release_clearance_event(app, session.id)
 
 
 def wake_on_parent_activity(
@@ -374,114 +312,33 @@ def wake_on_parent_activity(
     ok: bool = True,
     result: Any = None,
 ) -> None:
-    """Push-wake hook: PARENT session activity wakes its armed watcher.
-
-    Owner design: "mode is standing intent; data should be PUSHED into it."
-    Wired at the tool-observer's ``tool.call.completed`` seam
-    (``gact/tool_observer.py``) so every completed tool call on a spotter-ai
-    session's own turn(s) is a wake trigger — this is the ``tool.call.completed``
-    half of the push; :func:`on_turn_finalized` covers ``turn.completed``.
-
-    A cheap no-op unless ``parent_session_id`` is genuinely in spotter-ai mode
-    with a LIVE (armed) watcher — the common case for every OTHER session's
-    tool calls in the whole system.
-
-    Args:
-        app: The GACT app.
-        parent_session_id: The protected (spotter-ai) session whose activity
-            is pushing this wake.
-        tool_name: The tool that just completed on ``parent_session_id`` — the
-            ``tool.call.completed`` caller's fact (#1218 e). Empty (the
-            default) means this is a ``turn.completed`` push instead
-            (:func:`on_turn_finalized`'s own-branch call), which carries no
-            single tool to name.
-        ok: Whether ``tool_name`` completed successfully. Ignored when
-            ``tool_name`` is empty.
-        result: The tool's own typed result (its ``structuredContent`` when
-            available) — read STRUCTURALLY for a short fact (see
-            :func:`_tool_outcome_fact`), never re-narrated. Ignored when
-            ``tool_name`` is empty.
-    """
-
+    """Publish parent activity without introducing another admission policy."""
     session = app.state.sessions.get(parent_session_id)
     if session is None or session.approval_mode != SPOTTER_APPROVAL_MODE:
         return
-    task = next(iter(_live_watcher_tasks(app, parent_session_id)), None)
-    if task is None:
-        return
-    wake_text = _wake_text(tool_name=tool_name, tool_ok=ok, tool_result=result)
-    _push_wake(app, parent_session_id, task, wake_text)
-
-
+    tasks = _live_watcher_tasks(app, parent_session_id)
+    if tasks:
+        _push_wake(
+            app,
+            parent_session_id,
+            tasks[0],
+            _wake_text(tool_name=tool_name, tool_ok=ok, tool_result=result),
+        )
 
 
 def on_turn_finalized(app: "FastAPI", session_id: str) -> None:
-    """Turn-finalize hook: fires for EVERY session's turn ending — cheap no-op
-    checks when neither case applies (the overwhelming common case).
-
-    Two DISTINCT things a finalizing turn can mean here:
-
-    * ``session_id`` is a spotter-ai PARENT with a live watcher: its turn
-      finishing is parent activity too (the ``turn.completed`` half of the
-      push; :func:`wake_on_parent_activity` covers ``tool.call.completed``) —
-      push a wake.
-    * ``session_id`` IS a watcher's OWN child session (a live standing task
-      whose ``child_session_id`` matches): its CHECK turn (or a direct
-      "Discuss" user turn — both are ordinary turns on this session) just
-      ended — inspect its authoritative final assistant message. A successful
-      check returns to ``"waiting"``; a typed failure remains armed but enters
-      ``live_state="error"`` and blocks protected mutations until a later
-      successful recovery check. Never a ``status`` transition; disarm stays
-      the only path to terminal.
-
-    A session is never both (the watcher's own session keeps the public
-    ``approval_mode="ask"`` and carries only the server-owned narrow
-    ``approval_profile="spotter-watcher"`` — it is never itself armed into
-    spotter-ai; see the self-wake guard test), so these are mutually exclusive
-    branches.
-    """
-
+    """Publish parent evidence; child settlement remains conversation-owned."""
     session = app.state.sessions.get(session_id)
     if session is None:
         return
     if session.approval_mode == SPOTTER_APPROVAL_MODE:
         wake_on_parent_activity(app, session_id)
-        return
-    parent_id = str(getattr(session, "parent_session_id", "") or "")
-    if not parent_id:
-        return
-    task = next(
-        (t for t in _live_watcher_tasks(app, parent_id) if t.child_session_id == session_id),
-        None,
-    )
-    if task is None:
-        return
-    messages = app.state.messages.get(session_id, []) or []
-    latest_turn_id = task.child_turn_id
-    finals = [
-        message
-        for message in messages
-        if getattr(message, "role", "") == "assistant"
-        and not (getattr(message, "metadata", {}) or {}).get("live")
-        and (not latest_turn_id or str(getattr(message, "turn_id", "") or "") == latest_turn_id)
-    ]
-    final = finals[-1] if finals else None
-    error_info = getattr(final, "error_info", None) if final is not None else None
-    if latest_turn_id and (final is None or error_info is not None):
-        from clio_agent.gact.turn_spawn_failures import (  # noqa: PLC0415
-            child_task_error_reason,
-        )
+    elif session.metadata.get("spotter_parent_session"):
+        signal_clearance(app, str(session.metadata["spotter_parent_session"]))
 
-        reason = child_task_error_reason(error_info)
-        updated = _set_live_state(app, task.task_id, "error", error_reason=reason)
-        event_name = "spotter_watcher_check_turn_failed"
-    else:
-        reason = ""
-        updated = _set_live_state(app, task.task_id, "waiting")
-        event_name = "spotter_watcher_check_turn_ended"
-    if updated is not None:
-        signal_clearance(app, parent_id)
-        detail = f" reason={reason}" if reason else ""
-        message = f"{event_name}{detail} session=%s watcher=%s task=%s"
-        logger.info(message, parent_id, session_id, task.task_id)
-        trace.event("SPOTTER", message, parent_id, session_id, task.task_id)
+
+def on_turn_runner_idle(app: "FastAPI", session_id: str) -> None:
+    """Signal clearance only after the actual session worker has retired."""
+    session = app.state.sessions.get(session_id)
+    if session is not None and session.metadata.get("spotter_parent_session"):
+        signal_clearance(app, str(session.metadata["spotter_parent_session"]))

@@ -72,10 +72,12 @@ iteration; an idle parent can wake for it. A held parent retains it until resume
 The notice explains the action and outcome, including a successor handle when
 one was created. Agent messages retain their own sender identity.
 
-## Placement limits
+## Execution owners
 
-The reviewed lifecycle controls apply to local subagents. Remote relay pause,
-retained-context restart and peer addressing remain unsupported; CLIO refuses
-them explicitly rather than showing a local hold as a successful remote pause.
+Root and child assignments use CLIO's conversation engine. External computation,
+including a separately configured relay server, uses ordinary MCP tooling and
+the server's native task identity. This replacement removes the special relay
+placement and lifecycle paths; it does not convert old placement configuration
+or claim relay-specific qualification.
 
 See [Messages and feedback](/docs/tasks/messages/) for steering and peer discovery.

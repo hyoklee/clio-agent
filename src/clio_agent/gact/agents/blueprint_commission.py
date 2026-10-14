@@ -38,5 +38,3 @@ def resolve_commission_target(
             f"blueprint {target_id!r} has root {child_id!r}, not requested expert {requested_agent!r}",
         )
     return child_id, scope, display_name, target_id
-
-

@@ -3,32 +3,43 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import threading
 from collections.abc import Coroutine
-from concurrent.futures import Future, TimeoutError as FutureTimeout
+from concurrent.futures import Future
+from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Any
 
+logger = logging.getLogger(__name__)
 
-async def run_owned_callable(function: Any, *, captured: Any = None,
-                              name: str = "clio-tool") -> Any:
+
+async def run_owned_callable(
+    function: Any, *, captured: Any = None, name: str = "clio-tool"
+) -> Any:
     """Run a potentially waiting tool in its own thread and join actual retirement."""
     import contextvars
 
     loop = asyncio.get_running_loop()
     caller = captured if captured is not None else contextvars.copy_context()
     result: asyncio.Future[Any] = loop.create_future()
+
     def complete(value: Any, error: BaseException | None) -> None:
         if error is None:
             result.set_result(value)
         else:
             result.set_exception(error)
+
     def execute() -> None:
         try:
             value = caller.run(function)
         except BaseException as error:
+            logger.exception(
+                "Task boundary reason=tool_worker_failed error_type=%s", type(error).__name__
+            )
             loop.call_soon_threadsafe(complete, None, error)
         else:
             loop.call_soon_threadsafe(complete, value, None)
+
     worker = threading.Thread(target=execute, name=name)
     worker.start()
     stopped = False
@@ -54,6 +65,7 @@ def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, An
     result: Future[Any] = Future()
     running: asyncio.Task[Any] | None = None
     entered = False
+
     async def run() -> Any:
         nonlocal entered
         entered = True
@@ -65,6 +77,9 @@ def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, An
         try:
             value = task.result()
         except BaseException as error:
+            logger.exception(
+                "Task boundary reason=tool_dispatch_failed error_type=%s", type(error).__name__
+            )
             result.set_exception(error)
         else:
             result.set_result(value)
@@ -95,11 +110,11 @@ def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, An
                 stopped = True
                 cancellation.set()
                 loop.call_soon_threadsafe(cancel)
-        except BaseException:
+        except BaseException as error:
             # ConcurrentFuture.cancel() acknowledges cancellation before the
             # application coroutine unwinds. Its actual exit is the boundary.
             while not retired.wait(0.1):
                 pass
             if stopped:
-                raise _turn_cancelled()
+                raise _turn_cancelled() from error
             raise

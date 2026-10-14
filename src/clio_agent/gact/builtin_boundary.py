@@ -5,11 +5,10 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import copy
+import functools
 import hashlib
 import inspect
-import functools
 import json
-import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 from uuid import uuid4
@@ -19,7 +18,12 @@ from fastmcp.tools import Tool, ToolResult
 from jsonschema import Draft202012Validator
 from pydantic import PrivateAttr
 
-from clio_agent.arc.task_types import BackendReference, SubmissionContext, TaskOwner, argument_digest
+from clio_agent.arc.task_types import (
+    BackendReference,
+    SubmissionContext,
+    TaskOwner,
+    argument_digest,
+)
 from clio_agent.gact import context
 from clio_agent.gact.tool_observation import CollectedTaskResult
 from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot
@@ -47,9 +51,15 @@ class BuiltinTool(Tool):
         supplied = dict(arguments)
         reference = supplied.pop("_clio_submission")
         invocation = self._boundary.invocations.get(reference)
-        if invocation is None or invocation.claimed or invocation.submission.tool != self._public_name:
+        if (
+            invocation is None
+            or invocation.claimed
+            or invocation.submission.tool != self._public_name
+        ):
             raise PermissionError("Unknown or mismatched built-in invocation")
-        saved = await asyncio.to_thread(self._boundary.app.state.task_history.submission_context, reference)
+        saved = await asyncio.to_thread(
+            self._boundary.app.state.task_history.submission_context, reference
+        )
         if saved != invocation.submission or saved.argument_digest != argument_digest(supplied):
             raise PermissionError("Built-in arguments differ from trusted request context")
         await asyncio.to_thread(self._boundary.authorize, saved)
@@ -99,14 +109,25 @@ class BuiltinBoundary:
         """A synchronous short invocation owns its thread until actual exit."""
         from clio_agent.gact.tool_dispatch import run_owned_callable
 
-        return await run_owned_callable(functools.partial(invocation.function, **arguments),
-            captured=invocation.context, name="clio-builtin-" + invocation.submission.tool)
+        return await run_owned_callable(
+            functools.partial(invocation.function, **arguments),
+            captured=invocation.context,
+            name="clio-builtin-" + invocation.submission.tool,
+        )
 
-    async def call(self, tool: Any, arguments: dict[str, Any], captured: contextvars.Context) -> Any:
+    async def call(
+        self, tool: Any, arguments: dict[str, Any], captured: contextvars.Context
+    ) -> Any:
         """Validate public input, persist trusted context, and call the registered MCP tool."""
         if self._closing or "_clio_submission" in arguments:
             raise ValueError("Built-in admission is closed or contains an internal argument")
-        if tool.name in {"shell_bash", "bash", "connected_data_download", "connected_data_connect", "connected_data_index"}:
+        if tool.name in {
+            "shell_bash",
+            "bash",
+            "connected_data_download",
+            "connected_data_connect",
+            "connected_data_index",
+        }:
             return await self.native_call(tool.name, arguments, captured)
         schema = copy.deepcopy(tool.format_as_litellm_function_call()["function"]["parameters"])
         schema["additionalProperties"] = False
@@ -120,17 +141,36 @@ class BuiltinBoundary:
         reference = uuid4().hex
         call = captured.run(TASK_CALL.get)
         from clio_agent.gact.agents.tool_instrumentation import READ_ONLY_ATTR
-        submission = SubmissionContext(reference=reference, handle=assignment.handle,
-            owner=TaskOwner(human_id=assignment.owner.human_id, session_id=sid,
-                assignment_id=assignment.handle, parent_handle=assignment.handle),
-            invocation_id=call.invocation_id or reference, tool=tool.name,
-            argument_digest=argument_digest(arguments), arguments=arguments,
-            workspace=workspace.root_path, permissions=permission_snapshot(self.app, sid),
-            confinement={}, attribution={"agent": captured.run(context.active_react_scope),
-                "read_only": bool(getattr(tool.func, READ_ONLY_ATTR, False))},
-            execution_limits={}, backend=BackendReference(owner="conversation", server="clio-builtins"))
+
+        submission = SubmissionContext(
+            reference=reference,
+            handle=assignment.handle,
+            owner=TaskOwner(
+                human_id=assignment.owner.human_id,
+                session_id=sid,
+                assignment_id=assignment.handle,
+                parent_handle=assignment.handle,
+            ),
+            invocation_id=call.invocation_id or reference,
+            tool=tool.name,
+            argument_digest=argument_digest(arguments),
+            arguments=arguments,
+            workspace=workspace.root_path,
+            permissions=permission_snapshot(self.app, sid),
+            confinement={},
+            attribution={
+                "agent": captured.run(context.active_react_scope),
+                "read_only": bool(getattr(tool.func, READ_ONLY_ATTR, False)),
+            },
+            execution_limits={},
+            backend=BackendReference(owner="conversation", server="clio-builtins"),
+        )
         await asyncio.to_thread(self.app.state.task_history.record_submission, submission)
-        identity = tool.name + ":" + hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+        identity = (
+            tool.name
+            + ":"
+            + hashlib.sha256(json.dumps(schema, sort_keys=True).encode()).hexdigest()
+        )
         registered = self._registrations.get(identity)
         if registered is None:
             registered = "builtin_" + hashlib.sha256(identity.encode()).hexdigest()[:32]
@@ -144,31 +184,45 @@ class BuiltinBoundary:
         self.invocations[reference] = invocation
         try:
             try:
-                reply = await self.client.call_tool(registered, {**arguments, "_clio_submission": reference})
-            except BaseException:
+                reply = await self.client.call_tool(
+                    registered, {**arguments, "_clio_submission": reference}
+                )
+            except BaseException as error:
                 if invocation.error is not None:
-                    raise invocation.error
+                    raise invocation.error from error
                 raise
-            value = reply.structured_content
+            value: Any = reply.structured_content
             if value is None:
                 value = "\n".join(item.text for item in reply.content if hasattr(item, "text"))
-            return CollectedTaskResult(value, invocation.notifications) if invocation.notifications else value
+            if invocation.notifications:
+                if not isinstance(value, dict):
+                    raise TypeError("A collected task observation must contain an object")
+                return CollectedTaskResult(value, invocation.notifications)
+            return value
         finally:
             self.invocations.pop(reference, None)
 
-    async def native_call(self, name: str, arguments: dict[str, Any], captured: contextvars.Context) -> Any:
+    async def native_call(
+        self, name: str, arguments: dict[str, Any], captured: contextvars.Context
+    ) -> Any:
         """Route task-capable built-ins to their own native root without a gateway queue."""
-        from clio_agent.tools.task_call_context import safe_description
         from clio_agent.gact.permission_gate import _invoke_permission_gate
         from clio_agent.gact.tool_dispatch import run_owned_callable
+        from clio_agent.tools.task_call_context import safe_description
 
         public = dict(arguments)
         description = public.pop("_clio_task_description", None) or safe_description(name, public)
         if not isinstance(description, str) or len(description) > 2000:
             raise ValueError("Task description must be a string of at most 2000 characters")
-        gate = getattr(self.app.state, "pending_permission_gate", None) or self.app.state.make_permission_gate()
-        decision = await run_owned_callable(functools.partial(_invoke_permission_gate, gate, name, public,
-            {"kind": "native"}), captured=captured.copy(), name="clio-permission-" + name)
+        gate = (
+            getattr(self.app.state, "pending_permission_gate", None)
+            or self.app.state.make_permission_gate()
+        )
+        decision = await run_owned_callable(
+            functools.partial(_invoke_permission_gate, gate, name, public, {"kind": "native"}),
+            captured=captured.copy(),
+            name="clio-permission-" + name,
+        )
         if decision != "allow":
             raise PermissionError("Task submission was not approved")
         sid = captured.run(context.active_session_id)
@@ -177,26 +231,52 @@ class BuiltinBoundary:
             raise ValueError("Task submission requires a confirmed assignment")
         session = self.app.state.sessions.get(sid)
         workspace = self.app.state.workspaces.get(session.workspace_id)
-        root, kind, tool = (("shell", "Shell", "bash") if name in {"bash", "shell_bash"} else
-            ("storage", "Download", name) if name == "connected_data_download" else ("storage", "Indexing", name))
+        root, kind, tool = (
+            ("shell", "Shell", "bash")
+            if name in {"bash", "shell_bash"}
+            else ("storage", "Download", name)
+            if name == "connected_data_download"
+            else ("storage", "Indexing", name)
+        )
         call = captured.run(TASK_CALL.get)
-        attribution = {"agent": captured.run(context.active_react_scope)}
+        attribution: dict[str, Any] = {"agent": captured.run(context.active_react_scope)}
         if root == "storage" and "source_id" in public:
             from clio_agent.gact.native_storage import source_submission_identity
-            record = await asyncio.to_thread(self.app.state.connected_storage.get,
-                session.workspace_id, public["source_id"])
+
+            record = await asyncio.to_thread(
+                self.app.state.connected_storage.get, session.workspace_id, public["source_id"]
+            )
             attribution["source_identity"] = source_submission_identity(record)
-        value = await self.app.state.native_tools.submit(root, tool, public, kind=kind,
-            owner=TaskOwner(human_id=assignment.owner.human_id, session_id=sid,
-                assignment_id=assignment.handle, parent_handle=assignment.handle),
-            invocation_id=call.invocation_id or uuid4().hex, workspace=workspace.root_path,
-            permissions=permission_snapshot(self.app, sid), confinement={},
-            attribution=attribution, execution_limits={},
-            description=description, background=bool(public.get("background", False)) if kind == "Shell" else True)
-        if kind == "Shell" and not public.get("background", False) and value.get("pending") is False:
+        value = await self.app.state.native_tools.submit(
+            root,
+            tool,
+            public,
+            kind=kind,
+            owner=TaskOwner(
+                human_id=assignment.owner.human_id,
+                session_id=sid,
+                assignment_id=assignment.handle,
+                parent_handle=assignment.handle,
+            ),
+            invocation_id=call.invocation_id or uuid4().hex,
+            workspace=workspace.root_path,
+            permissions=permission_snapshot(self.app, sid),
+            confinement={},
+            attribution=attribution,
+            execution_limits={},
+            description=description,
+            background=bool(public.get("background", False)) if kind == "Shell" else True,
+        )
+        if (
+            kind == "Shell"
+            and not public.get("background", False)
+            and value.get("pending") is False
+        ):
             from clio_agent.gact.task_declarations import _collected
-            return await asyncio.to_thread(_collected, self.app,
-                self.app.state.conversations.caller(sid), value)
+
+            return await asyncio.to_thread(
+                _collected, self.app, self.app.state.conversations.caller(sid), value
+            )
         return value
 
     def bind(self, tool: Any) -> Any:
@@ -206,12 +286,16 @@ class BuiltinBoundary:
         from clio_agent.gact.tool_dispatch import call_on_application
 
         original = copy.copy(tool)
+
         @functools.wraps(tool.func)
         def invoke(**arguments: Any) -> Any:
             if self._loop is None:
                 raise RuntimeError("Built-in MCP transport is not ready")
-            return call_on_application(self._loop, self.call(original, arguments, contextvars.copy_context()))
-        invoke._clio_mcp_bound = True
+            return call_on_application(
+                self._loop, self.call(original, arguments, contextvars.copy_context())
+            )
+
+        invoke.__dict__["_clio_mcp_bound"] = True
         wrapped = copy.copy(tool)
         wrapped.func = invoke
         return wrapped

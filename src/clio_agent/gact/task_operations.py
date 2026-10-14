@@ -6,6 +6,7 @@ import asyncio
 import base64
 import hashlib
 import json
+import logging
 import math
 import re
 from collections.abc import Awaitable, Callable
@@ -19,6 +20,9 @@ from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 
 CancelOwner = Callable[[TaskSnapshot, TaskCaller], Awaitable[dict[str, Any]]]
+
+
+logger = logging.getLogger(__name__)
 
 
 def _handles(tasks: str | list[str]) -> tuple[str, ...]:
@@ -266,7 +270,10 @@ class TaskOperations:
         timeout, previous = _timeout(timeout_s), _decode(cursor)
         if previous and previous.get("recipient") != caller.session_id:
             raise ValueError("Observation cursor belongs to another recipient")
-        expression = re.compile(pattern) if pattern is not None else None
+        try:
+            expression = re.compile(pattern) if pattern is not None else None
+        except re.error as error:
+            raise ValueError("Observation pattern is invalid") from error
         deadline = None if timeout is None else asyncio.get_running_loop().time() + timeout
         changed, loop = asyncio.Event(), asyncio.get_running_loop()
 
@@ -275,11 +282,16 @@ class TaskOperations:
 
         remove = self.history.listen(wake, handles=handles, recipient_session=caller.session_id)
         try:
+            subscription_errors = []
             if notify is not None:
-                await asyncio.to_thread(self._subscribe, caller, handles, notify)
+                subscription_errors = await asyncio.to_thread(
+                    self._subscribe, caller, handles, notify
+                )
             while True:
                 changed.clear()
                 result = await asyncio.to_thread(self._observations, caller, handles, previous)
+                if subscription_errors:
+                    result["subscription_errors"] = subscription_errors
                 if (
                     expression is None
                     or result["any_settled"]
@@ -294,6 +306,11 @@ class TaskOperations:
                 except TimeoutError:
                     return {
                         **await asyncio.to_thread(self._observations, caller, handles, previous),
+                        **(
+                            {"subscription_errors": subscription_errors}
+                            if subscription_errors
+                            else {}
+                        ),
                         "timed_out": True,
                     }
         finally:
@@ -394,12 +411,19 @@ class TaskOperations:
                 ),
             }
 
-    def _subscribe(self, caller: TaskCaller, handles: tuple[str, ...], enabled: bool) -> None:
+    def _subscribe(
+        self, caller: TaskCaller, handles: tuple[str, ...], enabled: bool
+    ) -> list[dict[str, str]]:
+        errors: list[dict[str, str]] = []
         access = TaskAccess(self.history, caller)
         with self.history._lock:
             for handle in handles:
-                current = access.require(handle, "observe")
-                access.require(handle, "read")
+                try:
+                    current = access.require(handle, "observe")
+                    access.require(handle, "read")
+                except ValueError:
+                    errors.append({"handle": handle, "error": "task_unavailable"})
+                    continue
                 previous = next(
                     (
                         subscription
@@ -432,6 +456,7 @@ class TaskOperations:
                             "question_answer",
                         }:
                             self.history.withdraw_mail(caller.session_id, item.id)
+        return errors
 
     async def cancel(self, caller: TaskCaller, tasks: str | list[str]) -> dict[str, Any]:
         """Authorize and independently request each task's owner to cancel it."""
@@ -443,5 +468,9 @@ class TaskOperations:
                 )
                 outcomes.append(await self.cancel_owner(current, caller))
             except Exception as error:
+                logger.exception(
+                    "Task boundary reason=task_member_control_failed error_type=%s",
+                    type(error).__name__,
+                )
                 outcomes.append({"handle": handle, "error": str(error)})
         return {"outcomes": outcomes}

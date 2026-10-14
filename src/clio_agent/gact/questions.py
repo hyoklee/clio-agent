@@ -2,16 +2,24 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 import hashlib
+from collections.abc import Callable
 from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
 from jsonschema import Draft202012Validator
+from jsonschema.exceptions import ValidationError as SchemaValidationError
 from referencing import Registry
 
 from clio_agent.arc.task_types import (
-    BackendReference, QuestionDefinition, QuestionReply, QuestionOption, TaskOwner, TaskSnapshot,
+    BackendReference,
+    QuestionDefinition,
+    QuestionOption,
+    QuestionReply,
+    TaskOwner,
+    TaskSnapshot,
+    question_surface_resource,
 )
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_publication import publish_task_notice
@@ -33,31 +41,94 @@ class QuestionCommands:
         self.history = history
         self.on_change: Callable[[TaskSnapshot], None] | None = None
 
-    def create(self, owner: TaskOwner, definition: QuestionDefinition, *,
-               invocation_id: str, handle: str | None = None) -> TaskSnapshot:
+    def create(
+        self,
+        owner: TaskOwner,
+        definition: QuestionDefinition,
+        *,
+        invocation_id: str,
+        handle: str | None = None,
+    ) -> TaskSnapshot:
         """Confirm one Question identity and post it through the sole Question owner."""
         definition = self._normalize(definition)
         self.validate_definition(definition)
         if definition.expires_at is not None:
             self._deadline(definition)
         with self.history._lock:
-            identity, stamp = handle or "task_" + hashlib.sha256((owner.session_id + "\0question\0" + invocation_id).encode()).hexdigest(), _now()
+            identity, stamp = (
+                handle
+                or "task_"
+                + hashlib.sha256(
+                    (owner.session_id + "\0question\0" + invocation_id).encode()
+                ).hexdigest(),
+                _now(),
+            )
             previous = self.history.task_snapshot(identity)
             if previous is not None:
-                if previous.owner == owner and previous.invocation_id == invocation_id and previous.details is None and not previous.raw_status:
+                if (
+                    previous.owner == owner
+                    and previous.invocation_id == invocation_id
+                    and previous.details is None
+                    and not previous.raw_status
+                ):
                     return self.post(previous, definition)
-                if (previous.owner != owner or previous.invocation_id != invocation_id
-                        or previous.details is None or self._definition(previous) != definition):
-                    raise ValueError("Question invocation identity was reused with different content")
+                if (
+                    previous.owner != owner
+                    or previous.invocation_id != invocation_id
+                    or previous.details is None
+                    or self._definition(previous) != definition
+                ):
+                    raise ValueError(
+                        "Question invocation identity was reused with different content"
+                    )
                 return previous if previous.raw_status else self.post(previous, definition)
-            content = self.history.write_content(owner.session_id, definition.model_dump(mode="json"))
-            accepted = TaskSnapshot(handle=identity, kind="Question", label=definition.prompt[:100],
-                description=definition.prompt, description_missing=False, owner=owner,
-                invocation_id=invocation_id, tool=definition.source,
+            surface = str(definition.metadata.get("a2ui_surface_id") or "")
+            resource = question_surface_resource(owner.session_id, surface) if surface else None
+            if resource is not None and any(
+                (task := self.history.task_snapshot(candidate)) is not None
+                and task.terminal_at is None
+                for candidate in self.history.resource_handles(resource)
+            ):
+                raise ValueError("This surface already belongs to an open Question")
+            content = self.history.write_content(
+                owner.session_id, definition.model_dump(mode="json")
+            )
+            accepted = TaskSnapshot(
+                handle=identity,
+                kind="Question",
+                label=definition.prompt[:100],
+                description=definition.prompt,
+                description_missing=False,
+                owner=owner,
+                invocation_id=invocation_id,
+                tool=definition.source,
                 backend=BackendReference(owner="question", server="clio", task_id=identity),
-                created_at=stamp, updated_at=stamp, details=content)
+                created_at=stamp,
+                updated_at=stamp,
+                details=content,
+                resource_id=resource,
+            )
             self.history.record_snapshot(accepted, observation_id=uuid4().hex)
             return self.post(accepted, definition)
+
+    def visual_question(
+        self, session_id: str, surface_id: str, action_name: str
+    ) -> TaskSnapshot | None:
+        """Resolve only the named answer action on one session-owned visual surface."""
+        with self.history._lock:
+            candidates = []
+            for handle in self.history.resource_handles(
+                question_surface_resource(session_id, surface_id)
+            ):
+                current = self.history.task_snapshot(handle)
+                if current is None or current.kind != "Question" or current.terminal_at is not None:
+                    continue
+                definition = self._definition(current)
+                if definition.metadata.get("a2ui_answer_action", "question.submit") == action_name:
+                    candidates.append(current)
+            if len(candidates) > 1:
+                raise ValueError("Visual Question identity is ambiguous")
+            return candidates[0] if candidates else None
 
     @staticmethod
     def validate_definition(definition: QuestionDefinition) -> None:
@@ -84,16 +155,25 @@ class QuestionCommands:
     @staticmethod
     def _normalize(definition: QuestionDefinition) -> QuestionDefinition:
         if definition.kind == "confirmation" and not definition.options:
-            return definition.model_copy(update={"options": (
-                QuestionOption(label="Yes", value="yes"), QuestionOption(label="No", value="no"))})
+            return definition.model_copy(
+                update={
+                    "options": (
+                        QuestionOption(label="Yes", value="yes"),
+                        QuestionOption(label="No", value="no"),
+                    )
+                }
+            )
         return definition
 
     def post(self, accepted: TaskSnapshot, definition: QuestionDefinition) -> TaskSnapshot:
         """Post content under the already persisted public handle and return immediately."""
         with self.history._lock:
             current = self._question(accepted.handle)
-            if (current.model_dump(exclude={"description_reference"}) != accepted.model_dump(exclude={"description_reference"})
-                    or current.raw_status):
+            if (
+                current.model_dump(exclude={"description_reference"})
+                != accepted.model_dump(exclude={"description_reference"})
+                or current.raw_status
+            ):
                 raise ValueError("Question was already posted or its acceptance changed")
             definition = self._normalize(definition)
             self.validate_definition(definition)
@@ -117,13 +197,46 @@ class QuestionCommands:
                 self.on_change(posted)
             return posted
 
+    def annotate(self, handle: str, metadata: dict[str, Any]) -> TaskSnapshot:
+        """Record trusted routing facts without replacing a Question's input contract."""
+        with self.history._lock:
+            current = self._question(handle)
+            if current.raw_status != "pending":
+                return current
+            definition = self._definition(current)
+            for key in ("elicitation_helper", "elicitation_helper_context"):
+                if (
+                    key in definition.metadata
+                    and key in metadata
+                    and definition.metadata[key] != metadata[key]
+                ):
+                    raise ValueError("An elicitation helper binding cannot change")
+            updated = QuestionDefinition.model_validate(
+                {
+                    **definition.model_dump(mode="json"),
+                    "metadata": {**definition.metadata, **metadata},
+                }
+            )
+            reference = self.history.write_content(
+                current.owner.session_id, updated.model_dump(mode="json")
+            )
+            observed = current.model_copy(update={"details": reference, "updated_at": _now()})
+            self.history.record_snapshot(observed, observation_id=uuid4().hex)
+            if self.on_change is not None:
+                self.on_change(observed)
+            return observed
+
     def answer(self, handle: str, reply: QuestionReply) -> TaskSnapshot:
         """Confirm one validated answer; a concurrent answer/cancel cannot overwrite it."""
         with self.history._lock:
             current = self._question(handle)
             if current.raw_status != "pending":
-                if (current.raw_status == "answered" and current.result is not None
-                    and self.history.read_content(current.result) == reply.model_dump(mode="json")):
+                if (
+                    current.raw_status == "answered"
+                    and current.result is not None
+                    and QuestionReply.model_validate(self.history.read_content(current.result))
+                    == reply
+                ):
                     publish_task_notice(self.history, current)
                     return current
                 raise ValueError("Question is no longer awaiting an answer")
@@ -139,21 +252,36 @@ class QuestionCommands:
                 raise ValueError("Answer names an option that was not offered")
             if definition.kind != "multi_choice" and len(reply.selected_options) > 1:
                 raise ValueError("Question accepts only one selected option")
-            if reply.action == "accept" and not definition.allow_freeform and not reply.selected_options:
+            if (
+                reply.action == "accept"
+                and not definition.allow_freeform
+                and not reply.selected_options
+            ):
                 raise ValueError("Question requires an offered option")
+            elicitation = definition.metadata.get("elicitation")
+            empty_protocol_answer = definition.source == "mcp_elicitation" and (
+                definition.requested_schema is not None
+                or isinstance(elicitation, dict)
+                and elicitation.get("mode") == "url"
+            )
             if (
                 not reply.answer
                 and not reply.selected_options
                 and not reply.parts
                 and not reply.metadata
                 and reply.action == "accept"
-                and not (definition.source == "mcp_elicitation" and definition.metadata.get("elicitation", {}).get("mode") == "url")
+                and not empty_protocol_answer
             ):
                 raise ValueError("Question answer is empty")
             if definition.requested_schema is not None and reply.action == "accept":
-                Draft202012Validator(definition.requested_schema, registry=Registry()).validate(
-                    reply.metadata
-                )
+                try:
+                    Draft202012Validator(definition.requested_schema, registry=Registry()).validate(
+                        reply.metadata
+                    )
+                except SchemaValidationError as error:
+                    raise ValueError(
+                        "The answer does not match the requested form schema"
+                    ) from error
             result = self.history.write_content(
                 current.owner.session_id, reply.model_dump(mode="json")
             )

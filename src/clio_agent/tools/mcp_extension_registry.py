@@ -146,8 +146,6 @@ class ExtensionsDeclaration:
     entries: tuple[MCPExtensionDeclaration, ...]
 
 
-
-
 def _build_ui(client_cls: Any, target: Any) -> MCPExtensionDeclaration:  # noqa: ARG001 - uniform entry signature
     """Registry entry #2: the MCP Apps ``ui`` capability ad (#1283 letter (d)).
 

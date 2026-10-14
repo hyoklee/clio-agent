@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import hashlib
+import logging
 from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from functools import partial
@@ -33,8 +34,9 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
     argument_digest,
 )
+from clio_agent.gact import native_task_recovery, native_task_settlement
 from clio_agent.gact.core_recovery import CoreRecovery
-from clio_agent.gact.native_identity import local_runtime_gone, local_runtime_identity
+from clio_agent.gact.native_identity import local_runtime_identity
 from clio_agent.gact.native_shell import register_native_shell
 from clio_agent.gact.native_work import SUBMISSION_ARGUMENT, NativeWork, SubmissionAuthorizer, now
 from clio_agent.gact.task_history import TaskHistory
@@ -46,11 +48,12 @@ from clio_agent.tools.task_client import (
     TaskAwareClient,
     TaskSubmission,
     own_native_runtime,
-    restore_native_call,
     submission_failure,
 )
-from clio_agent.tools.task_receipt import AcceptedTaskResult, accepted_result, validate_terminal
+from clio_agent.tools.task_receipt import AcceptedTaskResult, accepted_result
 from clio_agent.tools.task_transport import TaskObservationTransport
+
+logger = logging.getLogger(__name__)
 
 
 class NativeTools:
@@ -190,6 +193,10 @@ class NativeTools:
             try:
                 await self.cancel(handle)
             except Exception as error:
+                logger.exception(
+                    "Task boundary reason=native_shutdown_settlement_failed error_type=%s",
+                    type(error).__name__,
+                )
                 await self._record_or_defer(
                     "native-shutdown:" + handle, partial(self._uncertain, handle, str(error))
                 )
@@ -213,126 +220,8 @@ class NativeTools:
         return result
 
     async def restore(self) -> None:
-        """Reattach persistent native identities; never replay a recorded submission."""
-        handles = await asyncio.to_thread(self.history.task_handles, active_only=True)
-        for handle in handles:
-            current = await asyncio.to_thread(self._current, handle)
-            if current.submission is None:
-                continue
-            submission = SubmissionContext.model_validate(
-                await asyncio.to_thread(self.history.read_content, current.submission)
-            )
-            if submission.backend.owner != "native":
-                continue
-            root = next(
-                (
-                    kind
-                    for kind in self.roots
-                    if submission.backend.server == self.backends[kind].server
-                ),
-                None,
-            )
-            if root is None:
-                await self._record_or_defer(
-                    "native-recovery:" + handle,
-                    partial(self._uncertain, handle, "Original native root is unavailable"),
-                )
-                continue
-            if self.roots[root].settings.url.startswith("memory://"):
-                if root == "storage" and self.provider_recovery is not None:
-                    if await self.provider_recovery(current, submission):
-                        continue
-
-                def interrupted(handle: str = handle) -> None:
-                    with self.history._lock:
-                        task = self._current(handle)
-                        result = self.history.write_content(
-                            task.owner.session_id,
-                            {
-                                "error": "native_runtime_interrupted",
-                                "effects": "uncertain",
-                                "message": "The previous memory-backed runtime is gone. Inspect effects before deliberately retrying.",
-                                "resubmitted": False,
-                                "backend": task.backend.model_dump(mode="json")
-                                if task.backend
-                                else None,
-                            },
-                        )
-                        stamp = now()
-                        observed = task.model_copy(
-                            update={
-                                "status": "interrupted",
-                                "activity": "",
-                                "connection_freshness": "lost",
-                                "settlement": "unknown",
-                                "result": result,
-                                "terminal_at": stamp,
-                                "updated_at": stamp,
-                                "supported_actions": ("get_result",),
-                            }
-                        )
-                        self.history.record_snapshot(observed, observation_id=uuid4().hex)
-                        publish_task_notice(self.history, observed)
-
-                await self._record_or_defer("native-recovery:" + handle, interrupted)
-                continue
-            if current.backend is None or not current.backend.task_id:
-                await self._record_or_defer(
-                    "native-recovery:" + handle,
-                    partial(
-                        self._uncertain,
-                        handle,
-                        "Original acceptance identity is unknown; no operation was replayed.",
-                    ),
-                )
-                continue
-            if submission.backend != self.backends[root]:
-                await self._record_or_defer(
-                    "native-recovery:" + handle,
-                    partial(
-                        self._uncertain,
-                        handle,
-                        "Native backend configuration changed; original work was not resubmitted.",
-                    ),
-                )
-                continue
-
-            def lost_attempts(handle: str = handle) -> None:
-                for attempt in self.history.native_attempts(handle):
-                    if attempt.cleanup_state == "pending":
-                        self.history.record_attempt(
-                            attempt.model_copy(update={"cleanup_state": "unknown"})
-                        )
-
-            await asyncio.to_thread(lost_attempts)
-            binding = TaskSubmission(
-                handle,
-                submission.tool,
-                current.submission,
-                submission.tool_version,
-                submission.output_schema,
-                argument_digest(
-                    {**submission.arguments, SUBMISSION_ARGUMENT: submission.reference}
-                ),
-            )
-            accepted = restore_native_call(
-                self.clients[root],
-                binding,
-                task_id=current.backend.task_id,
-                status=current.raw_status,
-                created_at=current.created_at,
-                updated_at=current.updated_at,
-            )
-            self._calls[handle] = accepted
-            self._identities[(root, accepted.task.task_id)] = accepted
-            driver = asyncio.create_task(self._drive(accepted))
-            self._drivers[handle] = driver
-            driver.add_done_callback(partial(self._driver_retired, handle))
-            if current.cancellation_requested_at is not None:
-                self._control_holds.add(handle)
-                self.recovery.defer(
-                    "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
-                )
+        "Reattach persistent native identities; never replay a recorded submission."
+        return await native_task_recovery.restore(self)
 
     async def submit(
         self,
@@ -462,6 +351,9 @@ class NativeTools:
                 await self._stop_foreground(handle)
             raise
         except Exception as error:
+            logger.exception(
+                "Task boundary reason=native_submission_failed error_type=%s", type(error).__name__
+            )
             # A lost reply is not a safe-to-retry rejection. Preserve the public
             # handle and last confirmed custody even if recording is unavailable.
             reason = str(error)
@@ -496,116 +388,11 @@ class NativeTools:
     async def continue_provider(
         self, current: TaskSnapshot, original: SubmissionContext, continuation: ProviderContinuation
     ) -> dict[str, Any]:
-        """Create one host-only local leg for verified provider work after process loss."""
-        if self._closing or not await asyncio.to_thread(local_runtime_gone, original.local_runtime):
-            raise ValueError("Previous local runtime loss is not confirmed")
-        if (
-            current.submission != continuation.previous_submission
-            or current.backend != continuation.previous_backend
-        ):
-            raise ValueError("Provider continuation custody changed")
-        if original.provider_continuation is not None and (
-            current.backend is None or not current.backend.task_id
-        ):
-            raise ValueError(
-                "Earlier continuation acceptance is unresolved; inspect instead of submitting another leg"
-            )
-        root: NativeRootKind = "storage"
-        component = await self.roots[root].server.get_tool("connected_data_continue")
-        if component is None:
-            raise ValueError("Native provider continuation is unavailable")
-        reference = uuid4().hex
-        wire = coerce_task_arguments(
-            component,
-            {"operation_id": continuation.operation_id, SUBMISSION_ARGUMENT: reference},
-            strict=True,
-        )
-        public = {key: value for key, value in wire.items() if key != SUBMISSION_ARGUMENT}
-        context = original.model_copy(
-            update={
-                "reference": reference,
-                "tool": "connected_data_continue",
-                "arguments": public,
-                "argument_digest": argument_digest(public),
-                "tool_version": component.version,
-                "output_schema": component.output_schema,
-                "backend": self.backends[root],
-                "provider_continuation": continuation,
-                "local_runtime": await asyncio.to_thread(local_runtime_identity),
-            }
-        )
-
-        def confirm() -> CoreReference:
-            with self.history._lock:
-                latest = self._current(current.handle)
-                if latest.terminal_at is not None:
-                    raise ValueError("Provider work changed before continuation reservation")
-                if latest.submission != continuation.previous_submission:
-                    if (
-                        latest.submission is None
-                        or latest.backend is not None
-                        or SubmissionContext.model_validate(
-                            self.history.read_content(latest.submission)
-                        )
-                        != context
-                    ):
-                        raise ValueError(
-                            "A different provider continuation already owns acceptance custody"
-                        )
-                    self.authorize(context)
-                    return latest.submission
-                self.authorize(context)
-                content = self.history.record_submission(context)
-                self.history.record_snapshot(
-                    latest.model_copy(
-                        update={
-                            "submission": content,
-                            "backend": None,
-                            "connection_freshness": "unknown",
-                            "activity": "submitting",
-                            "backend_observation": None,
-                            "updated_at": now(),
-                        }
-                    ),
-                    observation_id=uuid4().hex,
-                )
-                return content
-
-        dispatched = False
-
-        async def attempt() -> dict[str, Any]:
-            nonlocal dispatched
-            content = await asyncio.to_thread(confirm)
-            dispatched = True  # from here, lost acceptance is never retried
-            return await self._invoke(root, context, content, wire, background=True)
-
-        async def retry_reservation() -> bool:
-            if not dispatched:
-                await attempt()
-            return True
-
-        try:
-            return await attempt()
-        except Exception:
-            if not dispatched and self.history.requires_recovery:
-                self.recovery.defer("provider-reservation:" + current.handle, retry_reservation)
-            raise
+        "Create one host-only local leg for verified provider work after process loss."
+        return await native_task_recovery.continue_provider(self, current, original, continuation)
 
     async def _stop_foreground(self, handle: str) -> None:
-        async def settle() -> None:
-            await self.cancel(handle)
-            await self.await_settlement(handle, allow_uncertainty=False)
-
-        cleanup = asyncio.create_task(settle())
-        while True:
-            try:
-                await asyncio.shield(cleanup)
-                return
-            except asyncio.CancelledError:
-                if cleanup.cancelled():
-                    raise RuntimeError(
-                        "Foreground physical-settlement owner was cancelled"
-                    ) from None
+        return await native_task_settlement._stop_foreground(self, handle)
 
     def _confirm(self, context: SubmissionContext, kind: TaskKind, description: str) -> Any:
         with self.history._lock:
@@ -745,6 +532,9 @@ class NativeTools:
         try:
             await accepted.task.result()  # the sole SDK polling/input driver
         except Exception as error:
+            logger.exception(
+                "Task boundary reason=native_observation_failed error_type=%s", type(error).__name__
+            )
             handle, reason = accepted.submission.handle, str(error)
             await self._record_or_defer(
                 "native-uncertain:" + handle, lambda: self._uncertain(handle, reason, lost=True)
@@ -851,248 +641,23 @@ class NativeTools:
         await self._record_or_defer("native-settlement:" + handle, settle, handle=handle)
 
     def _settle(self, current: TaskSnapshot, accepted: AcceptedNativeCall | None) -> None:
-        with self.history._lock:
-            current = self._current(current.handle)
-            if current.terminal_at is not None:
-                publish_task_notice(self.history, current)
-                return
-            attempts = self.history.native_attempts(current.handle)
-            if (
-                current.submission is not None
-                and current.backend_observation is not None
-                and current.backend is not None
-            ):
-                context = SubmissionContext.model_validate(
-                    self.history.read_content(current.submission)
-                )
-                continuation = context.provider_continuation
-                raw = self.history.read_content(current.backend_observation)
-                current_leg = [
-                    attempt
-                    for attempt in attempts
-                    if attempt.backend.task_id == current.backend.task_id
-                ]
-                if (
-                    continuation is not None
-                    and isinstance(raw, dict)
-                    and raw.get("status") in {"completed", "failed", "cancelled"}
-                    and all(attempt.finished_at is not None for attempt in current_leg)
-                ):
-                    for attempt in attempts:
-                        if (
-                            attempt.incarnation in continuation.previous_incarnations
-                            and attempt.cleanup_state == "pending"
-                        ):
-                            self.history.record_attempt(
-                                attempt.model_copy(update={"cleanup_state": "unknown"})
-                            )
-                    attempts = self.history.native_attempts(current.handle)
-            if any(attempt.cleanup_state == "unknown" for attempt in attempts):
-                self._uncertain(current.handle, "Physical settlement is unconfirmed")
-                return
-            if any(attempt.cleanup_state == "pending" for attempt in attempts):
-                return
-            if current.backend_observation is None:
-                return
-            reply = ClientGetTaskResult.model_validate(
-                self.history.read_content(current.backend_observation)
-            )
-            if reply.status not in {"completed", "failed", "cancelled"}:
-                return
-            status = reply.status
-            if accepted is None:
-                return  # acceptance custody will install its captured contract
-            try:
-                validate_terminal(accepted.submission.output_schema, reply)
-            except ValueError as error:
-                status = "failed"
-                current = current.model_copy(
-                    update={
-                        "progress": current.progress.model_copy(
-                            update={"message": "Backend result contract failure: " + str(error)}
-                        )
-                    }
-                )
-            if reply.result is not None:
-                result = reply.result
-                structured = result.get("structuredContent") or {}
-                if (
-                    isinstance(structured, dict)
-                    and structured.get("state") == "cancelled"
-                    and current.cancellation_requested_at
-                ):
-                    status = "cancelled"
-                elif result.get("isError") or (
-                    isinstance(structured, dict)
-                    and (
-                        structured.get("error")
-                        or structured.get("timed_out")
-                        or structured.get("state") in {"failed", "interrupted", "cancelled"}
-                        or structured.get("exit_code") not in {None, 0}
-                    )
-                ):
-                    status = "failed"
-            withdrawn = current.cancellation_requested_at is not None and not attempts
-            if withdrawn:
-                status = "cancelled"
-            stamp = now()
-            settled = current.model_copy(
-                update={
-                    "status": status,
-                    "activity": "",
-                    "settlement": "never_started" if withdrawn or not attempts else "confirmed",
-                    "terminal_at": stamp,
-                    "updated_at": stamp,
-                    "result": current.backend_observation,
-                    "supported_actions": ("get_result",),
-                }
-            )
-            self.history.record_snapshot(settled, observation_id=uuid4().hex)
-            publish_task_notice(self.history, settled)
+        return native_task_settlement._settle(self, current, accepted)
 
     async def cancel(self, handle: str) -> dict[str, Any]:
-        """Close owned admission before native cancellation; acknowledgement is not settlement."""
-        current = await asyncio.to_thread(self._current, handle)
-        if current.terminal_at is not None:
-            return {"handle": handle, "cancellation_requested": False, "status": current.status}
-
-        def intent() -> None:
-            with self.history._lock:
-                current = self._current(handle)
-                if current.terminal_at is None and current.cancellation_requested_at is None:
-                    self.history.record_snapshot(
-                        current.model_copy(
-                            update={
-                                "cancellation_requested_at": now(),
-                                "activity": "cancelling",
-                                "updated_at": now(),
-                            }
-                        ),
-                        observation_id=uuid4().hex,
-                    )
-
-        self._control_holds.add(handle)
-        await self._record_or_defer("native-cancel:" + handle, intent)
-        provider_owned = False
-        if self.provider_cancel is not None:
-            try:
-                provider_owned = await self.provider_cancel(current)
-            except Exception as error:
-
-                async def retry_provider_cancel() -> None:
-                    await self.cancel(handle)
-
-                self.recovery.defer("provider-cancel-delivery:" + handle, retry_provider_cancel)
-                reason = str(error)
-                await self._record_or_defer(
-                    "provider-cancel-attention:" + handle,
-                    lambda: self._uncertain(
-                        handle, "Provider cancellation delivery is unconfirmed: " + reason
-                    ),
-                )
-                return {"handle": handle, "cancellation_requested": True, "settlement": "unknown"}
-        if provider_owned:
-            live_leg = handle in self._calls
-            recover_provider = self.provider_recovery
-            if not live_leg and recover_provider is not None:
-
-                async def reconnect_cancel() -> bool:
-                    latest = await asyncio.to_thread(self._current, handle)
-                    if latest.terminal_at is not None or handle in self._calls:
-                        return True
-                    if latest.submission is None:
-                        return False
-                    context = SubmissionContext.model_validate(
-                        await asyncio.to_thread(self.history.read_content, latest.submission)
-                    )
-                    return await recover_provider(latest, context)
-
-                self.recovery.defer("provider-cancel-reconnect:" + handle, reconnect_cancel)
-            return {
-                "handle": handle,
-                "cancellation_requested": True,
-                "settlement": "cleanup_pending" if live_leg else "unknown",
-                "recording": "unconfirmed"
-                if "native-cancel:" + handle in self.recovery.pending
-                else "confirmed",
-            }
-        accepted = self._calls.get(handle)
-        if accepted is None:
-            self.recovery.defer(
-                "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
-            )
-            await self._record_or_defer(
-                "native-cancel-unknown:" + handle,
-                lambda: self._uncertain(
-                    handle,
-                    "Cancellation admission is closed, but backend acceptance remains uncertain.",
-                ),
-            )
-            return {"handle": handle, "cancellation_requested": True, "settlement": "unknown"}
-
-        try:
-            if not await self._deliver_cancel(handle):
-                self.recovery.defer(
-                    "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
-                )
-        except Exception as error:
-            self.recovery.defer(
-                "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
-            )
-            reason = str(error)
-            await self._record_or_defer(
-                "native-cancel-attention:" + handle,
-                lambda: self._uncertain(handle, "Cancellation delivery is unconfirmed: " + reason),
-            )
-        return {
-            "handle": handle,
-            "cancellation_requested": True,
-            "recording": "unconfirmed"
-            if "native-cancel:" + handle in self.recovery.pending
-            else "confirmed",
-        }
+        "Close owned admission before native cancellation; acknowledgement is not settlement."
+        return await native_task_settlement.cancel(self, handle)
 
     async def _deliver_cancel(self, handle: str) -> bool:
-        """Retry cancellation only against this submission's adopted native identity."""
-        current = await asyncio.to_thread(self._current, handle)
-        if current.terminal_at is not None:
-            return True
-        bound = self._calls.get(handle)
-        if bound is None or current.submission != bound.submission.context:
-            return False
-        if current.backend is not None and current.backend.task_id != bound.task.task_id:
-            return False
-        await bound.task.cancel()
-        return True
+        "Retry cancellation only against this submission's adopted native identity."
+        return await native_task_settlement._deliver_cancel(self, handle)
 
     async def await_settlement(
         self, handle: str, *, allow_uncertainty: bool = True
     ) -> TaskSnapshot:
-        """Wait on confirmed owner changes; caller cancellation cannot stop native work."""
-        changed, loop = asyncio.Event(), asyncio.get_running_loop()
-
-        def wake(_revision: int) -> None:
-            loop.call_soon_threadsafe(changed.set)
-
-        remove = self.history.listen(wake, handles=(handle,))
-        try:
-            while True:
-                changed.clear()
-                current = await asyncio.to_thread(self._current, handle)
-                if current.terminal_at is not None:
-                    return current
-                if not allow_uncertainty and current.cancellation_requested_at is not None:
-                    attempts = await asyncio.to_thread(self.history.native_attempts, handle)
-                    if attempts and all(
-                        attempt.cleanup_state in {"confirmed", "never_started"}
-                        for attempt in attempts
-                    ):
-                        return current  # physical settlement can be known while the result stays uncertain
-                if allow_uncertainty and current.status == "task_state_uncertain":
-                    return current
-                await changed.wait()
-        finally:
-            remove()
+        "Wait on confirmed owner changes; caller cancellation cannot stop native work."
+        return await native_task_settlement.await_settlement(
+            self, handle, allow_uncertainty=allow_uncertainty
+        )
 
     async def _record_or_defer(
         self, identity: str, operation: Callable[[], None], *, handle: str | None = None

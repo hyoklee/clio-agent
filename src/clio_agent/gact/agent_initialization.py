@@ -79,12 +79,13 @@ def mark_agent_ready(app: Any, agent: Any, *, boot: bool = False) -> None:
         boot_handshake.schedule(app, agent)
 
     def drain() -> None:
-
-        redrive_pending_completion_wakes(app)
+        owner = getattr(app.state, "conversations", None)
+        if owner is not None:
+            owner.signal_pending()
 
     loop = getattr(app.state, "mcp_app_loop", None)
     if loop is not None and loop.is_running():
-        loop.call_soon(drain)
+        loop.call_soon_threadsafe(drain)
     else:
         drain()
 
@@ -110,9 +111,8 @@ def record_init_failure(app: Any, exc: BaseException, *, stage: str) -> None:
         flush=True,
     )
     app.state.agent_init_error = repr(exc)
-    refuse_parked_inputs(app, stage=stage, detail=repr(exc))
-
-
+    # The readiness gate retains Core mail. An initialization failure cannot
+    # withdraw or acknowledge already accepted human/task input.
 
 
 def update_provider_profile(app: Any, agent: Any) -> None:

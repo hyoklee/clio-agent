@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
 from clio_agent.arc.task_types import TaskSnapshot
 from clio_agent.gact.events import Event
 from clio_agent.gact.question_surface import question_view
+
+logger = logging.getLogger(__name__)
 
 
 class QuestionEvents:
@@ -30,7 +33,9 @@ class QuestionEvents:
         timer = self._timers.pop(task.handle, None)
         if timer is not None:
             timer.cancel()
-        event_type = "user_question.created" if task.raw_status == "pending" else "user_question.updated"
+        event_type = (
+            "user_question.created" if task.raw_status == "pending" else "user_question.updated"
+        )
         owner, attended = row["session_id"], row["attended_session_id"]
         for sid in dict.fromkeys((owner, attended)):
             self.app.state.bus.publish(Event(type=event_type, session_id=sid, payload=row))
@@ -41,25 +46,35 @@ class QuestionEvents:
 
     def _expired(self, handle: str) -> None:
         self._timers.pop(handle, None)
+
         async def expire() -> None:
             try:
                 await asyncio.to_thread(self.app.state.questions.expire, handle)
-            except Exception:
+            except Exception as error:
+                logger.exception(
+                    "Task boundary reason=question_expiry_recording_unconfirmed error_type=%s",
+                    type(error).__name__,
+                )
+
                 async def recover() -> None:
                     await asyncio.to_thread(self.app.state.questions.expire, handle)
+
                 self.app.state.task_recovery.defer("question-expiry:" + handle, recover)
+
         task = asyncio.create_task(expire())
         self._active.add(task)
         task.add_done_callback(self._active.discard)
 
     async def restore(self) -> None:
         """Rebuild only active presentation/deadline hints from confirmed Core indexes."""
+
         def replay() -> None:
             history = self.app.state.task_history
             for handle in history.task_handles(kind="Question", active_only=True):
                 task = history.task_snapshot(handle)
                 if task is not None and task.details is not None:
                     self.changed(task)
+
         await asyncio.to_thread(replay)
 
     async def close(self) -> None:

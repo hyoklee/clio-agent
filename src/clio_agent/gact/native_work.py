@@ -7,6 +7,7 @@ agent delivery. Durable state lives exclusively in the common Core history.
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,6 +30,9 @@ from clio_agent.tools.task_client import native_execution_identity
 SUBMISSION_ARGUMENT = "_clio_submission"
 SubmissionAuthorizer = Callable[[SubmissionContext], None]
 CleanupObserver = Callable[[str], Awaitable[None]]
+
+
+logger = logging.getLogger(__name__)
 
 
 def now() -> str:
@@ -145,7 +149,11 @@ class NativeWork:
 
                 try:
                     await record()
-                except Exception:
+                except Exception as error:
+                    logger.exception(
+                        "Task boundary reason=native_cleanup_recording_unconfirmed error_type=%s",
+                        type(error).__name__,
+                    )
                     self.recovery.defer("native-cleanup:" + admitted.incarnation, record)
                     return
 

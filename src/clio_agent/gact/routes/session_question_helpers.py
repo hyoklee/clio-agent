@@ -64,10 +64,6 @@ def question_already_resolved(sid: str, question_id: str) -> HTTPException:
     )
 
 
-
-
-
-
 def normalize_question_options(req: CreateUserQuestionRequest) -> list[UserQuestionOption]:
     """Give a confirmation question its implied yes/no options."""
 
@@ -85,11 +81,18 @@ def pending_user_questions(app: "FastAPI", sid: str) -> list[UserQuestion]:
 
     history = app.state.task_history
     handles = history.session_handles(sid) & history.task_handles(kind="Question", active_only=True)
-    return [question_row(app, handle) for handle in handles
-            if history.task_snapshot(handle).raw_status == "pending"]
+    return [
+        question_row(app, handle)
+        for handle in handles
+        if history.task_snapshot(handle).raw_status == "pending"
+    ]
 
 
 def question_surface_ids(app: "FastAPI", sid: str) -> set[str]:
     """Identify question-owned presentation surfaces without another question store."""
-    return {str(row.metadata[key]) for row in pending_user_questions(app, sid)
-            for key in ("surface_id", "a2ui_surface_id") if row.metadata.get(key)}
+    return {
+        str(row.metadata[key])
+        for row in pending_user_questions(app, sid)
+        for key in ("surface_id", "a2ui_surface_id")
+        if row.metadata.get(key)
+    }

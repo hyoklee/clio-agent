@@ -500,18 +500,18 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     if not isinstance(pending, Mapping) or not pending or pending.get("surfaced"):
         return False
 
+    from clio_agent.arc.task_types import QuestionDefinition, QuestionOption, TaskOwner
     from clio_agent.gact.enrichment import _finalize_context_frame  # noqa: PLC0415
     from clio_agent.gact.events import Event  # noqa: PLC0415
     from clio_agent.gact.paused_transcript import persist_paused_transcript  # noqa: PLC0415
     from clio_agent.gact.plan_reuse import save_approved_plan  # noqa: PLC0415
+    from clio_agent.gact.question_surface import question_row
     from clio_agent.gact.runtime.globals import (  # noqa: PLC0415
         _emit_semantic_event,
         _new_question_id,
     )
     from clio_agent.gact.turn_stream import settle_turn_transcript  # noqa: PLC0415
     from clio_agent.gact.types import UserQuestion  # noqa: PLC0415
-    from clio_agent.arc.task_types import QuestionDefinition, TaskOwner
-    from clio_agent.gact.question_surface import question_row
 
     plan_file = str(pending.get("plan_file") or recorded_plan_file(session) or "")
     summary = str(pending.get("summary") or "")
@@ -568,12 +568,27 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
         if assignment is None:
             raise ValueError("Plan approval requires its owning assignment")
         app.state.conversations.require_admission(assignment)
-        app.state.questions.create(TaskOwner(human_id=assignment.owner.human_id,
-            session_id=state.sid, assignment_id=assignment.handle, parent_handle=assignment.handle),
-            QuestionDefinition(prompt=question.prompt, kind=question.kind,
-                options=[option.model_dump() for option in question.options],
-                allow_freeform=True, source="plan_exit", metadata=question.metadata),
-            invocation_id=state.turn_id + ":plan_exit", handle=question.id)
+        app.state.questions.create(
+            TaskOwner(
+                human_id=assignment.owner.human_id,
+                session_id=state.sid,
+                assignment_id=assignment.handle,
+                parent_handle=assignment.handle,
+            ),
+            QuestionDefinition(
+                prompt=question.prompt,
+                kind=question.kind,
+                options=tuple(
+                    QuestionOption.model_validate(option.model_dump())
+                    for option in question.options
+                ),
+                allow_freeform=True,
+                source="plan_exit",
+                metadata=question.metadata,
+            ),
+            invocation_id=state.turn_id + ":plan_exit",
+            handle=question.id,
+        )
     question = question_row(app, question.id)
     updated = app.state.sessions.update(
         state.sid,

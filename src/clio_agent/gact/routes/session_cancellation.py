@@ -12,9 +12,10 @@ from clio_agent.gact.human_controls import intervene
 async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str, Any]:
     """Show Stopping until the session's actual worker retires; leave tasks running."""
     from fastapi import HTTPException
+
     from clio_agent.gact.autonomous_loop import stop_session_loop
-    from clio_agent.gact.goal import stop_session_goal
     from clio_agent.gact.composer_runtime import stop_session_composer_autostart
+    from clio_agent.gact.goal import stop_session_goal
 
     session = app.state.sessions.get(sid)
     if session is None:
@@ -27,8 +28,9 @@ async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str,
         return {"session_id": sid, "status": "idle", "accepted_tasks_continue": True}
     effect = await intervene(app, assignment.handle, "stop")
     await asyncio.to_thread(app.state.sessions.update, sid, status=effect["status"])
-    app.state.bus.publish(Event(type="session.status_changed", session_id=sid,
-        payload={"session_id": sid, **effect}))
+    app.state.bus.publish(
+        Event(type="session.status_changed", session_id=sid, payload={"session_id": sid, **effect})
+    )
     return {"session_id": sid, **effect}
 
 

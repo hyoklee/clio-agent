@@ -110,7 +110,7 @@ def expire_goal_budget(app: Any, sid: str, goal: Mapping[str, Any]) -> bool:
 def reconcile_autonomous_controls(app: Any) -> None:
     """Keep durable waiting wakeups; stop interrupted work instead of replaying effects."""
     from clio_agent.gact.autonomous_loop import _get_loop, end_loop
-    from clio_agent.gact.goal import GoalDecision, _enqueue_goal_redrive, _get_goal, _put_goal
+    from clio_agent.gact.goal import _get_goal, _put_goal, waiting_on_tasks
 
     for session in app.state.sessions.list():
         loop = _get_loop(app, session.id)
@@ -133,16 +133,5 @@ def reconcile_autonomous_controls(app: Any) -> None:
                 continue
             goal.update(phase="recovering", waiting_tasks=[])
             _put_goal(app, session.id, goal)
-            _enqueue_goal_redrive(
-                app,
-                session.id,
-                GoalDecision(
-                    outcome="redrive",
-                    reason="goal_recovered",
-                    new_state=goal,
-                    guidance="The service restarted. Inspect retained task results and workspace state first. "
-                    "Do not resubmit accepted operations or assume interrupted effects were undone. "
-                    "Replan from the evidence before continuing.",
-                ),
-                goal,
-            )
+            # The conversation owner recovers interrupted segments and Core
+            # pending input. Restart alone cannot manufacture another turn.

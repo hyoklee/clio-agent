@@ -48,8 +48,6 @@ def permission_snapshot(app: Any, sid: str) -> dict[str, Any]:
     )
 
 
-
-
 def begin_backend_call(
     executor: Any, name: str, args: dict[str, Any]
 ) -> tuple[dict[str, Any], Token[TaskCall]]:

@@ -8,7 +8,6 @@ second activity store.
 
 from __future__ import annotations
 
-from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.session_descendants import _DEFAULT_DESCENDANT_DEPTH, descendant_walk
@@ -47,10 +46,15 @@ def _task_index(app: "FastAPI", root_session_id: str) -> dict[str, dict[str, Any
         if task is None or task.kind != "Subagent":
             continue
         session = app.state.sessions.get(task.owner.session_id)
-        rows[handle] = {"task_id": handle, "child_session_id": task.owner.session_id,
+        rows[handle] = {
+            "task_id": handle,
+            "child_session_id": task.owner.session_id,
             "agent_ref": {"expert_id": session.agent.id if session is not None else ""},
-            "run_label": task.label, "status": task.status,
-            "created_at": task.created_at, "updated_at": task.updated_at}
+            "run_label": task.label,
+            "status": task.status,
+            "created_at": task.created_at,
+            "updated_at": task.updated_at,
+        }
     return rows
 
 
@@ -259,8 +263,6 @@ def project_child_execution(
 def _session_label(app: "FastAPI", session_id: str) -> str:
     session = app.state.sessions.get(session_id)
     return str(getattr(session, "title", "") or session_id)
-
-
 
 
 def _entity_node(

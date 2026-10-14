@@ -2,27 +2,17 @@
 
 from __future__ import annotations
 
-from functools import partial
 from typing import Any
 
 from clio_agent.tools.execution import create_sync_tool_executor
 from clio_agent.tools.gateway import namespace_proxies
 
 
-def correlated_execution_client_factory() -> Any:
-    """Build clients carrying CLIO's correlated elicitation handlers."""
-
-    from clio_agent.gact.elicitation_correlation import (
-        correlated_capabilities,
-        make_correlated_handlers,
-    )
+def execution_client_factory() -> Any:
+    """Return the normal SDK factory; product task/input owners bind execution."""
     from clio_agent.tools.mcp_runtime import make_mcp_client
 
-    return partial(
-        make_mcp_client,
-        handlers=make_correlated_handlers(),
-        capabilities=correlated_capabilities(),
-    )
+    return make_mcp_client
 
 
 def refresh_declared_mcp_servers(agent: Any) -> Any:
@@ -35,7 +25,7 @@ def refresh_declared_mcp_servers(agent: Any) -> Any:
             preloaded_tools=agent._tool_definitions,
             namespace_servers=namespace_proxies(gateway),
             server_id="gateway:default",
-            client_factory=correlated_execution_client_factory(),
+            client_factory=execution_client_factory(),
         )
         replaced = agent.tool_executor
         agent._mcp_configuration_revision = getattr(agent, "_mcp_configuration_revision", 0) + 1

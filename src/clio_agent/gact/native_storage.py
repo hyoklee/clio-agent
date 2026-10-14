@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -29,6 +30,9 @@ from clio_agent.tools.native_roots import NativeRoot
 
 if TYPE_CHECKING:
     from clio_agent.gact.native_tools import NativeTools
+
+
+logger = logging.getLogger(__name__)
 
 
 def register_native_storage(
@@ -334,6 +338,10 @@ def register_native_storage(
             if continuation is None:
                 return "provider-reservation:" + task.handle in native.recovery.pending
         except Exception as error:
+            logger.exception(
+                "Task boundary reason=provider_reattachment_failed error_type=%s",
+                type(error).__name__,
+            )
             reason = str(error)
             native.recovery.defer("provider-reattach:" + task.handle, reattach)
             await native._record_or_defer(
@@ -390,7 +398,11 @@ def register_native_storage(
 
                 try:
                     record()
-                except Exception:
+                except Exception as error:
+                    logger.exception(
+                        "Task boundary reason=download_progress_recording_unconfirmed error_type=%s",
+                        type(error).__name__,
+                    )
 
                     async def retry() -> None:
                         await asyncio.to_thread(record)
@@ -479,7 +491,11 @@ def register_native_storage(
 
             try:
                 record()
-            except Exception:
+            except Exception as error:
+                logger.exception(
+                    "Task boundary reason=indexing_progress_recording_unconfirmed error_type=%s",
+                    type(error).__name__,
+                )
 
                 async def retry() -> None:
                     await asyncio.to_thread(record)

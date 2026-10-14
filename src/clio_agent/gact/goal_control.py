@@ -2,21 +2,40 @@
 
 from __future__ import annotations
 
+import asyncio
+
 
 def build_goal_wait_tool() -> Any:
     """Declare goal dependencies without leaving a dormant assignment's worker parked."""
-    from clio_agent.gact.agents.tool_instrumentation import native_tool
     from clio_agent.gact import context
+    from clio_agent.gact.agents.tool_instrumentation import native_tool
 
     def wait_for(tasks: str | list[str], return_when: str = "all") -> dict[str, Any]:
         app = context.active_app()
-        return app.state.conversations.set_dependencies(context.active_session_id(), tasks, return_when)
+        if app is None:
+            raise ValueError("Goal dependencies require an active product conversation")
+        return app.state.conversations.set_dependencies(
+            context.active_session_id(), tasks, return_when
+        )
 
-    return native_tool(wait_for, name="wait_for", args={
-        "tasks": {"anyOf": [{"type": "string"}, {"type": "array", "items": {"type": "string"}, "minItems": 1}]},
-        "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"}},
+    return native_tool(
+        wait_for,
+        name="wait_for",
+        args={
+            "tasks": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                ]
+            },
+            "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"},
+        },
         desc="Declare the current goal's any/all task dependencies, then yield. Partial results remain queued until this condition; human feedback and Question answers still arrive. Use wait_tasks for an explicit active wait.",
-        presentation="wait", title="Await goal dependencies", domain="goals")
+        presentation="wait",
+        title="Await goal dependencies",
+        domain="goals",
+    )
+
 
 from typing import Any
 
@@ -27,15 +46,34 @@ from clio_agent.gact.goal import GoalDecision, GoalError, _enqueue_goal_redrive,
 def start_goal(app: Any, sid: str, *, condition: str, **limits: Any) -> dict[str, Any]:
     """Set a goal and queue its first turn when the conversation is idle."""
     result = arm_goal(app, sid, condition=condition, **limits)
-    runner = getattr(app.state, "turn_runner", None)
-    if runner is None or not runner.busy(sid):
-        goal = _get_goal(app, sid)
-        _enqueue_goal_redrive(
-            app, sid, GoalDecision(outcome="redrive", reason="goal_started", new_state=goal), goal
-        )
+    goal = _get_goal(app, sid)
+    _enqueue_goal_redrive(
+        app, sid, GoalDecision(outcome="redrive", reason="goal_started", new_state=goal), goal
+    )
     return result
 
 
+async def launch_pending_goal(app: Any, sid: str) -> None:
+    """Prepare the selected model and signal accepted Core input without spawning a turn."""
+    from clio_agent.gact.session_host_agent import ensure_host_agent
+    from clio_agent.gact.types import PostMessageRequest
+
+    await ensure_host_agent(app, sid, PostMessageRequest(text="Continue the active goal"))
+    app.state.conversations.signal_pending()
+
+
+async def maintain_goal_controls(app: Any) -> None:
+    """Keep explicit goal budgets, leaving recovery and admission with the conversation owner."""
+    from clio_agent.gact.autonomy_guard import expire_goal_budget
+
+    def maintain() -> None:
+        for session in app.state.sessions.list():
+            goal = _get_goal(app, session.id)
+            if goal.get("active"):
+                expire_goal_budget(app, session.id, goal)
+
+    await asyncio.to_thread(maintain)
+    app.state.conversations.signal_pending()
 
 
 def pause_failed_goal(app: Any, sid: str, reason: str) -> None:
@@ -60,8 +98,6 @@ def retain_shutdown_goal(app: Any, sid: str) -> None:
         if goal.get("active") and not goal.get("cleared"):
             goal.update(phase="recovering", clear_reason="goal_server_interrupted")
             _put_goal(app, sid, goal)
-
-
 
 
 def build_set_goal_tool() -> Any:

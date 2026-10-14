@@ -263,6 +263,78 @@ def append_turn_resource_links(
         )
 
 
+def append_turn_child_resource_links(
+    app: "FastAPI", sid: str, turn_id: str, transcript: Any, *, agent_id: str = ""
+) -> None:
+    """Project deliverables from authorized delegations originating in this turn.
+
+    Core supplies immutable assignment lineage. This only appends resource links;
+    it neither settles children nor reconstructs their execution history.
+    """
+    from clio_agent.arc.task_types import AssignmentDetails
+    from clio_agent.gact.artifacts.presentation import child_response_owners, response_deliverables
+    from clio_agent.gact.artifacts.registry import get_registry
+    from clio_agent.gact.runtime.globals import _new_part_id
+    from clio_agent.gact.task_access import TaskAccess
+
+    history = app.state.task_history
+    access = TaskAccess(history, app.state.conversations.caller(sid))
+    sessions: set[str] = set()
+    for handle in history.tree_handles(sid):
+        child = access.require(handle, "read")
+        parent = (
+            history.task_snapshot(child.owner.parent_handle) if child.owner.parent_handle else None
+        )
+        if (
+            child.kind != "Subagent"
+            or parent is None
+            or parent.owner.session_id != sid
+            or child.details is None
+        ):
+            continue
+        details = AssignmentDetails.model_validate(history.read_content(child.details))
+        if details.parent_turn_id != turn_id:
+            continue
+        for descendant in history.tree_handles(child.owner.session_id):
+            task = access.require(descendant, "read")
+            if task.kind in {"Session", "Subagent"}:
+                sessions.add(task.owner.session_id)
+    if not sessions:
+        return
+    already = {
+        str(part.metadata.get("artifact_id") or "")
+        for part in transcript.snapshot()
+        if part.type == "resource_link"
+    }
+    published = child_response_owners(app, sessions)
+    entries: list[dict[str, Any]] = [
+        {
+            "workspace_id": record.workspace_id,
+            "name": record.name,
+            "version": version,
+            "purpose": "deliverable" if version.artifact_id in published else None,
+            "response_session_id": published.get(version.artifact_id),
+        }
+        for record in get_registry(app).all_records()
+        for version in record.versions
+        if (
+            str(version.producer.get("session_id") or "") in sessions
+            or version.artifact_id in published
+        )
+        and version.artifact_id not in already
+    ]
+    entries.sort(key=lambda entry: entry["version"].created_at or "")
+    for entry in response_deliverables(entries):
+        transcript.append_part(
+            resource_link_part(
+                entry["workspace_id"],
+                entry["name"],
+                entry["version"],
+                part_id=_new_part_id(),
+                agent_id=agent_id,
+            ),
+            stream_source="batch",
+        )
 
 
 def create_artifact_summary_message(outcomes: "Sequence[ProposalOutcome]") -> str:

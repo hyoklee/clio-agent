@@ -44,9 +44,13 @@ from clio_agent.gact.storage.models import (
     SourceRecord,
 )
 from clio_agent.gact.storage.service import StorageService, provider_capabilities
-from clio_agent.gact.storage.task_controls import source_operation_views, submit_source_action, validate_task_owner
 from clio_agent.gact.storage.sftp import SftpSource
 from clio_agent.gact.storage.ssh_target import SshTargetSource
+from clio_agent.gact.storage.task_controls import (
+    source_operation_views,
+    submit_source_action,
+    validate_task_owner,
+)
 
 T = TypeVar("T")
 

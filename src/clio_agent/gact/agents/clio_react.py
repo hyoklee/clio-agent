@@ -604,12 +604,20 @@ class _Loop:
 
     def _prediction(self, outputs: dict[str, Any], reason: str) -> dspy.Prediction:
         # The agent's messages are what clio-core holds for its scope: one source.
-        prediction = dspy.Prediction(**outputs, messages=self._context(), termination_reason=reason,
-            assignment_disposition=getattr(outputs, "assignment_disposition", None))
+        prediction = dspy.Prediction(
+            **outputs,
+            messages=self._context(),
+            termination_reason=reason,
+            assignment_disposition=getattr(outputs, "assignment_disposition", None),
+        )
         from clio_agent.arc.task_types import ContextBoundary
+
         view = self.recorder.arc.context_view(self.recorder.session, self.recorder.scope)
-        prediction.clio_context_boundary = ContextBoundary(session_id=self.recorder.session,
-            scope=self.recorder.scope, logical_time=max((row.logical_time for row in view.segments), default=0))
+        prediction.clio_context_boundary = ContextBoundary(
+            session_id=self.recorder.session,
+            scope=self.recorder.scope,
+            logical_time=max((row.logical_time for row in view.segments), default=0),
+        )
         return prediction
 
 
@@ -656,8 +664,14 @@ def _call_lm(lm: Any, request: Request) -> Response:
                 group.start_soon(watch_cancel)
                 try:
                     with dspy.context(send_stream=send):
-                        owner = getattr(getattr(_ctx.active_app(), "state", None), "conversations", None)
-                        slot = owner.inference_slot(session_id) if owner is not None else contextlib.nullcontext()
+                        owner = getattr(
+                            getattr(_ctx.active_app(), "state", None), "conversations", None
+                        )
+                        slot = (
+                            owner.inference_slot(session_id)
+                            if owner is not None
+                            else contextlib.nullcontext()
+                        )
                         async with slot:
                             response = await lm.acall(request)
                 finally:

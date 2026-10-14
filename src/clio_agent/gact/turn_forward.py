@@ -26,8 +26,6 @@ cooperative-cancel + no-progress watchdog is reached through
 
 from __future__ import annotations
 
-import asyncio
-import contextvars
 from functools import partial
 from typing import TYPE_CHECKING, Any, Callable, cast
 
@@ -47,7 +45,7 @@ from clio_agent.gact.catalog import _builtin_main_agent
 from clio_agent.gact.evidence import _dynamic_agent_runtime_provenance
 from clio_agent.gact.messaging import _prediction_summary
 from clio_agent.gact.native_model_inputs import native_input_kwargs
-from clio_agent.gact.off_loop import emit_semantic_event_async, run_off_loop
+from clio_agent.gact.off_loop import emit_semantic_event_async
 from clio_agent.gact.providers.auth import _refresh_argonne_lm_token
 from clio_agent.gact.runtime import bringup_timing
 from clio_agent.gact.runtime.globals import (
@@ -82,11 +80,20 @@ async def _run_module(state: "TurnState", module: Any, cancel: Callable[[], bool
 
     def forward() -> Any:
         with cancellation_checker(cancel), _tool_session_context(state.sid, lease_fleet=False):
-            kwargs = {"question": state.enriched_text, "session_id": state.sid,
-                      "session_mode": state.sess.mode, "session_edit_mode": state.sess.edit_mode,
-                      "cancel_requested": cancel,
-                      **native_input_kwargs(state.app, state.sid, module,
-                          images=state.native_images, files=state.native_files)}
+            kwargs = {
+                "question": state.enriched_text,
+                "session_id": state.sid,
+                "session_mode": state.sess.mode,
+                "session_edit_mode": state.sess.edit_mode,
+                "cancel_requested": cancel,
+                **native_input_kwargs(
+                    state.app,
+                    state.sid,
+                    module,
+                    images=state.native_images,
+                    files=state.native_files,
+                ),
+            }
             return module(**kwargs)
 
     return await state.app.state.turn_runner.run_sync(state.sid, forward)
@@ -96,12 +103,6 @@ async def forward_turn(state: "TurnState") -> Any:
     """Retain the workspace lease for this segment; no whole-turn executor pool."""
     async with _async_tool_session_context(state.sid):
         return await _forward_turn_leased(state)
-
-
-
-
-
-
 
 
 def _apply_turn_model_selection(state: "TurnState", agent_def: "AgentDef") -> "AgentDef":
@@ -131,8 +132,6 @@ def _apply_turn_model_selection(state: "TurnState", agent_def: "AgentDef") -> "A
             "metadata": metadata,
         }
     )
-
-
 
 
 async def _forward_turn_leased(state: "TurnState") -> Any:
@@ -245,7 +244,6 @@ async def _forward_turn_leased(state: "TurnState") -> Any:
     # #1227 D2: re-discover the relay catalog once its TTL has elapsed instead
     # of trusting the boot-time snapshot forever -- a no-op read on every turn
     # until the TTL fires, so this is not a per-turn relay round trip.
-
 
     if (
         run_builtin_main

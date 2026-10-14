@@ -141,5 +141,56 @@
     "files": 11,
     "process_absent": true,
     "rejection": "blocked by policy"
+  },
+  "test_scratch_90a7db56": {
+    "status": "human_manual_only",
+    "reparse_points": 0,
+    "process_absent": true,
+    "root_absence_verified": false,
+    "observed_at": "2026-10-14T12:53:44.0766953Z",
+    "rejection": "blocked by policy",
+    "files": 1,
+    "removal_executed": false,
+    "instruction": "Never retry or bypass removal of this exact root; absence proof only after human state change.",
+    "logical_bytes": 8035,
+    "root": "D:/Temp/clio-r2-regressions-90a7db56"
+  },
+  "test_runtime_t10_r2": {
+    "status": "human_manual_only",
+    "private_core_parent": 19296,
+    "files": 132,
+    "logical_bytes": 1463087499,
+    "reparse_detail": "Non-directory private AF_UNIX IPC endpoint clio_22881.ipc; no link target",
+    "root": "D:/t10-r2",
+    "observed_at": "2026-10-14T12:58:52.8527101Z",
+    "core_forced_closed_after_expiry": true,
+    "root_absence_verified": false,
+    "reparse_points": 1,
+    "pids_absent": [
+      55548,
+      65472,
+      54924,
+      18588,
+      19296,
+      24272,
+      45136
+    ],
+    "private_core_pid": 24272,
+    "removal_executed": false,
+    "rejection": "blocked by policy",
+    "instruction": "Never retry or bypass removal, and never reuse D:/t10-r2 as a test runtime root: test reapers could retry rejected cleanup. Root absence proof only after human state change."
+  },
+  "review_cache_c10": {
+    "process_absent": true,
+    "status": "human_manual_only",
+    "reparse_points": 0,
+    "root_absence_verified": false,
+    "root": "D:/Temp/clio-task-implementation-review-98a7a5ee-c10",
+    "directories": 6,
+    "rejection": "blocked by policy",
+    "logical_bytes": 8728,
+    "instruction": "Never retry or bypass this exact removal, and do not execute its review.py again.",
+    "files": 6,
+    "removal_executed": false
   }
 }

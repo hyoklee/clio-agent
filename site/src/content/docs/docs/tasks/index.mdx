@@ -3,17 +3,12 @@ title: Background work
 description: Keep working while tools and subagents run, follow their progress, and receive their results automatically.
 ---
 
-import { Aside, CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
 import TasksPreview from '../../../../components/TasksPreview.astro';
 import GuideScreenshot from '../../../../components/GuideScreenshot.astro';
 
 <TasksGuideNav active="overview" />
-
-<Aside type="note" title="Development feature">
-  The native-task replacement is being qualified. The current screenshots show
-  its predecessor; fresh real-service captures and model acceptance are pending.
-</Aside>
 
 Ask CLIO to start a long operation and continue with something else. When the
 operation accepts background execution, the agent receives a **task handle**

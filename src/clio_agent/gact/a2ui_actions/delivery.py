@@ -8,11 +8,12 @@ from typing import TYPE_CHECKING, Any, Mapping
 
 from fastapi import HTTPException
 
-from clio_agent.arc.task_types import MailItem, QuestionReply
+from clio_agent.arc.task_types import MailItem, QuestionDefinition, QuestionReply
 from clio_agent.errors import ClioError
 from clio_agent.gact.a2ui_actions.record import ActionRecord, fail_and_publish, persist_transition
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import RecordingUnconfirmed
+from clio_agent.gact.task_publication import task_owner_recipient
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -43,38 +44,63 @@ async def deliver_to_agent(
     history = app.state.task_history
     identity = "a2ui:" + record.id
     question_answered = False
+    question_handle: str | None = None
 
     def accept() -> None:
-        nonlocal question_answered
+        nonlocal question_answered, question_handle
         with history._lock:
             if record.session_id != session_id or app.state.sessions.get(session_id) is None:
                 raise ValueError("A2UI action owner is unavailable")
             question = record.correlation.get("question_id")
-            if question:
-                from clio_agent.gact.question_surface import answer_question, question_view
+            if question and record.kind == "action":
+                from clio_agent.gact.question_surface import answer_question
 
                 task = history.task_snapshot(question)
                 if (
                     task is None
                     or task.kind != "Question"
-                    or question_view(app, task)["attended_session_id"] != session_id
+                    or task.owner.session_id != session_id
+                    or task.details is None
                 ):
                     raise HTTPException(409, "A2UI action does not address this session's Question")
+                definition = QuestionDefinition.model_validate(history.read_content(task.details))
+                if definition.metadata.get("a2ui_surface_id") != record.surface_id:
+                    raise HTTPException(409, "A2UI action does not address this Question's surface")
+                if record.action_name == definition.metadata.get(
+                    "a2ui_answer_action", "question.submit"
+                ):
+                    question_handle = task.handle
+                else:
+                    question = None  # Other visual controls remain ordinary queued feedback.
+            if question_handle is not None:
                 reply = QuestionReply.model_validate(
                     {
                         "answer": context.get("answer", ""),
                         "selected_options": context.get("selected_options", ()),
+                        "source_action": {
+                            "session_id": session_id,
+                            "surface_id": record.surface_id,
+                            "action_id": record.id,
+                        },
+                        "responder_human": app.state.human_principal,
                         "metadata": {
-                            key: value
-                            for key, value in context.items()
-                            if key not in {"answer", "selected_options", "question_id"}
+                            **(
+                                {"a2ui_client_data_model": record.client_data_model}
+                                if record.client_data_model is not None
+                                else {}
+                            ),
+                            **{
+                                key: value
+                                for key, value in context.items()
+                                if key not in {"answer", "selected_options", "question_id"}
+                            },
                         },
                     }
                 )
                 answer_question(
                     app,
                     TaskCaller(session_id, app.state.human_principal, human_action=True),
-                    question,
+                    question_handle,
                     reply,
                 )
                 question_answered = True
@@ -124,8 +150,16 @@ async def deliver_to_agent(
 
     def project() -> ActionRecord:
         committed = identity in history.acknowledged_notifications(session_id)
+        if question_handle is not None:
+            task = history.task_snapshot(question_handle)
+            recipient = task_owner_recipient(history, task) if task is not None else None
+            committed = (
+                recipient is not None
+                and f"outcome:{question_handle}:{recipient}"
+                in history.acknowledged_notifications(recipient)
+            )
         observed = record.transition(
-            state="consumed" if question_answered or committed else "delivered",
+            state="consumed" if committed else "delivered",
             delivery="resolve_question" if question_answered else "steer",
             narration=narration,
         )
@@ -143,7 +177,7 @@ async def deliver_to_agent(
 
         app.state.task_recovery.defer("a2ui-projection:" + record.id, retry_projection)
         return record.transition(
-            state="consumed" if question_answered else "delivered",
+            state="delivered",
             delivery="resolve_question" if question_answered else "steer",
             narration=narration,
         )

@@ -44,7 +44,6 @@ from clio_agent.gact.runtime.memory_search import (
 )
 from clio_agent.gact.runtime.retention import enforce_list_bound, ledger_guard
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo, MemorySearchResponse
-from clio_agent.gact.workspace_scope import GLOBAL_WORKSPACE_ID
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
@@ -116,25 +115,41 @@ def _memory_tool_audit(
 
 
 def _memory_tool_policy(
-    app: FastAPI, *, session_id: str, target_session_id: str, body: Mapping[str, Any],
+    app: FastAPI,
+    *,
+    session_id: str,
+    target_session_id: str,
+    body: Mapping[str, Any],
 ) -> dict[str, Any]:
     """Authorize retained session content through human/configuration Core relationships."""
     from clio_agent.gact.task_access import TaskAccess
 
     active = app.state.sessions.get(session_id)
     if active is None:
-        raise _memory_tool_error(status_code=404, error="not_found", message="Session unavailable",
-            details={}, recoverable=False)
+        raise _memory_tool_error(
+            status_code=404,
+            error="not_found",
+            message="Session unavailable",
+            details={},
+            recoverable=False,
+        )
     caller = app.state.conversations.caller(session_id)
-    allowed = target_session_id in TaskAccess(app.state.task_history, caller).session_candidates("read")
+    allowed = target_session_id in TaskAccess(app.state.task_history, caller).session_candidates(
+        "read"
+    )
     target = app.state.sessions.get(target_session_id) if allowed else None
     allowed = allowed and target is not None
-    return {"allowed": allowed, "decision": "allow_core_relationship" if allowed else "deny_session_unavailable",
+    return {
+        "allowed": allowed,
+        "decision": "allow_core_relationship" if allowed else "deny_session_unavailable",
         "scope": "session" if session_id == target_session_id else "authorized",
-        "active_session": active, "target_session": target,
+        "active_session": active,
+        "target_session": target,
         "workspace_id": active.workspace_id,
         "target_workspace_id": target.workspace_id if target is not None else "",
-        "user_intent": str(body.get("user_intent") or body.get("reason") or "")}
+        "user_intent": str(body.get("user_intent") or body.get("reason") or ""),
+    }
+
 
 def _raise_memory_policy_denied(
     app: FastAPI,
@@ -355,9 +370,12 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
         caller_map = caller if isinstance(caller, Mapping) else {}
         user_intent = str(body.get("user_intent") or body.get("reason") or "").strip()
         from clio_agent.gact.runtime.memory_search import agent_memory_search
+
         active_workspace = active.workspace_id
         caller_map = {"agent_id": active.agent.id}
-        response = await run_off_loop(agent_memory_search, app, sid, query=query, scope=scope, limit=limit)
+        response = await run_off_loop(
+            lambda: agent_memory_search(app, sid, query=query, scope=scope, limit=limit)
+        )
         policy_decision = response.metadata["policy_decision"]
         policy_scope = response.metadata["policy_scope"]
         audit = _memory_tool_audit(

@@ -6,19 +6,13 @@ may read legacy claimed/consumed states without inventing Core acknowledgements.
 
 from __future__ import annotations
 
-import json
 import logging
-import threading
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Literal, Optional, TypeVar
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, Field
 
-from clio_agent.gact.types import Message, MessageBehavior, ModelRef, Part, PostMessageResponse
-from clio_agent.platform_paths import atomic_write_text
+from clio_agent.gact.types import MessageBehavior, ModelRef, Part
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T")

@@ -13,7 +13,9 @@ T = TypeVar("T")
 class StreamProducer:
     """One provider coroutine's actual retirement, independent of cancellation acknowledgement."""
 
-    def __init__(self, owner: asyncio.AbstractEventLoop, producer: Callable[[], Awaitable[None]]) -> None:
+    def __init__(
+        self, owner: asyncio.AbstractEventLoop, producer: Callable[[], Awaitable[None]]
+    ) -> None:
         self._consumer = asyncio.get_running_loop()
         self._owner = owner
         self._retired: asyncio.Future[None] = self._consumer.create_future()
@@ -33,10 +35,12 @@ class StreamProducer:
         def start() -> None:
             async def run() -> None:
                 await producer()
+
             self._task = owner.create_task(run())
             self._task.add_done_callback(completed)
             if self._cancel.is_set():
                 self._task.cancel()
+
         owner.call_soon_threadsafe(start)
 
     def done(self) -> bool:
@@ -46,9 +50,11 @@ class StreamProducer:
     def cancel(self) -> None:
         """Request cancellation even if the owner has not entered the coroutine yet."""
         self._cancel.set()
+
         def request() -> None:
             if self._task is not None and not self._task.done():
                 self._task.cancel()
+
         self._owner.call_soon_threadsafe(request)
 
     async def retire(self) -> None:

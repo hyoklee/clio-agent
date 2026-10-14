@@ -141,9 +141,6 @@ def tool_call_metadata_resolver(
     return TOOL_CALL_METADATA_RESOLVERS.get(str(name or ""))
 
 
-
-
-
 # create_artifact's own ``content`` (+ batch ``artifacts[].content``) is a
 # model-authored DELIVERABLE, not call evidence — the minted artifact file +
 # its resource_link chip is already the durable copy. Scoped strictly to the
@@ -323,7 +320,7 @@ def native_tool(
     setattr(func, DOMAIN_ATTR, _validated_domain(domain, tool_name=name))
     setattr(func, READ_ONLY_ATTR, bool(read_only))
     tool = _clio_native_tool_class()(func=func, name=name, desc=desc, args=args)
-    setattr(func, "_clio_builtin", True)
+    func.__dict__["_clio_builtin"] = True
     return tool
 
 

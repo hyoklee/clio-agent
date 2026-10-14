@@ -48,8 +48,15 @@ PLAN_ACL_PLAN_FILE_PRIORITY = 70
 #: ``web_fetch`` (read external context). Reads are already fast-allowed by
 #: :func:`grant_resolver.is_read_only`. Only ``plan_exit`` gets the unconditional anti-lockout allow
 #: (F1 #1057 B5); a user ``deny`` on ``ask_user``/``web_fetch`` is honoured.
-_TASK_CONTROLS: tuple[str, ...] = ("observe_tasks", "send_agent_message", "spawn_agent_task",
-    "pause_agent", "resume_agent", "restart_agent", "cancel_tasks")
+_TASK_CONTROLS: tuple[str, ...] = (
+    "observe_tasks",
+    "send_agent_message",
+    "spawn_agent_task",
+    "pause_agent",
+    "resume_agent",
+    "restart_agent",
+    "cancel_tasks",
+)
 PLAN_ACL_PLAN_TOOLS: tuple[str, ...] = ("plan_exit", "ask_user", "web_fetch", *_TASK_CONTROLS)
 
 #: The registered-publication tool Architect mode ALLOWS despite the @40 deny-everything default.

@@ -5,9 +5,6 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from clio_agent.gact.runtime.memory_search import _memory_search_response
-from clio_agent.gact.workspace_scope import GLOBAL_WORKSPACE_ID
-
 
 def _active() -> tuple[Any, str, Any]:
     from clio_agent.gact import context  # noqa: PLC0415
@@ -35,11 +32,15 @@ def _session_address(app: Any, session_id: str) -> dict[str, Any]:
     if session_id not in access.session_candidates("read"):
         raise ValueError("Session is unavailable for this operation")
     task = app.state.task_history.latest_assignment(session_id)
-    return {"session_id": session_id, "task_handle": task.handle if task else None,
-        "kind": task.kind if task else "Session", "status": task.status if task else "unassigned",
+    return {
+        "session_id": session_id,
+        "task_handle": task.handle if task else None,
+        "kind": task.kind if task else "Session",
+        "status": task.status if task else "unassigned",
         "activity": task.activity if task else "idle",
         "supported_actions": access.view(task)["supported_actions"] if task else [],
-        "message_target": session_id if access.session_message_right(session_id) else None}
+        "message_target": session_id if access.session_message_right(session_id) else None,
+    }
 
 
 def _search_result(
@@ -49,7 +50,7 @@ def _search_result(
     limit: int,
     user_intent: str,
 ) -> dict[str, Any]:
-    from clio_agent.gact.routes.memory import _memory_tool_audit, _raise_memory_policy_denied
+    from clio_agent.gact.routes.memory import _memory_tool_audit
 
     app, session_id, active = _active()
     normalized_scope = scope.strip() or "session"
@@ -59,7 +60,10 @@ def _search_result(
     caller = _caller(agent_def)
 
     from clio_agent.gact.runtime.memory_search import agent_memory_search
-    response = agent_memory_search(app, session_id, query=query, scope=normalized_scope, limit=bounded_limit)
+
+    response = agent_memory_search(
+        app, session_id, query=query, scope=normalized_scope, limit=bounded_limit
+    )
     policy_decision = response.metadata["policy_decision"]
     policy_scope = response.metadata["policy_scope"]
     audit = _memory_tool_audit(

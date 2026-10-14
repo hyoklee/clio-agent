@@ -40,6 +40,7 @@ and the session's own STATE — never on the action's name or its prose.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Mapping
 
 from fastapi import HTTPException
@@ -329,6 +330,14 @@ async def dispatch_action(
     )
 
     correlation_fields = dict(correlation or {})
+    if destination not in {"permission", "run", "client"} and not correlation_fields.get(
+        "question_id"
+    ):
+        question = await asyncio.to_thread(
+            app.state.questions.visual_question, sid, surface_id, name
+        )
+        if question is not None:
+            correlation_fields["question_id"] = question.handle
     record = ActionRecord(
         id=new_record_id(),
         session_id=sid,

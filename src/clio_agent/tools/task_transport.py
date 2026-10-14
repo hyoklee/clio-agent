@@ -118,14 +118,13 @@ class TaskObservationTransport(ClientTransport):
             # before tools/call; compatible explicit compositions can be added
             # with their pinned upgrade contracts when a product route needs one.
             raise ValueError("Task observation requires the standard SDK session class")
-        observer, guard = self.observer, self.update_guard
-
-        class BoundObservedSession(ObservedTaskSession):
-            def __init__(self, *args: Any, **kwargs: Any) -> None:
-                super().__init__(*args, task_observer=observer, update_guard=guard, **kwargs)
-
         async with self.original.connect_session(
-            transport_options=replace(options, session_class=BoundObservedSession), **session_kwargs
+            transport_options=replace(options, session_class=ObservedTaskSession),
+            **{
+                **session_kwargs,
+                "task_observer": self.observer,
+                "update_guard": self.update_guard,
+            },
         ) as session:
             yield session
 

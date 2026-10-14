@@ -660,8 +660,6 @@ PENDING_TASK_NOTIFICATION_MARKER = "## Background task results"
 _MAX_NOTIFY_BLOCKS = 8
 
 
-
-
 def _context_file_turn_provenance(app: "FastAPI", sid: str, *, status: str) -> dict[str, Any]:
     """Return non-secret provenance for context files attached to this turn."""
 

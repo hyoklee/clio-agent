@@ -110,7 +110,6 @@ def register_permissions_routes(app: FastAPI, deps: "GactDeps") -> None:
 
     # ---- /v1/questions (unscoped attention lane) ----------------------
 
-
     @app.post("/v1/permissions/{pid}")
     async def respond_permission(pid: str, request: Request) -> Response:
         """Resolve a pending permission. Body: ``{action}`` where

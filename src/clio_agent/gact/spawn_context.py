@@ -39,9 +39,7 @@ def resolve_installed_blueprint_target(
         None,
     )
     if definition is None:
-        raise ValueError(
-            f"installed blueprint not found: {target_id!r}"
-        )
+        raise ValueError(f"installed blueprint not found: {target_id!r}")
     if not definition.enabled or definition.validation_errors:
         raise ValueError(
             f"installed blueprint is disabled or invalid: {target_id!r}",
@@ -76,5 +74,3 @@ def resolve_installed_blueprint_target(
         "expert_pack_id": "",
     }
     return root_id, scope, display_name
-
-

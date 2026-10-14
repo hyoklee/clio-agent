@@ -271,7 +271,9 @@ class AssignmentDetails(TaskRecord):
     """Conversation-owned finite assignment and fixed context, without copied history."""
 
     predecessor: str | None = None
+    parent_turn_id: str | None = None
     context: ContextBoundary | None = None
+    last_output: CoreReference | None = None
     disposition: Literal["yield", "complete"] = "yield"
     dependencies: tuple[str, ...] = ()
     return_when: Literal["any", "all"] = "all"
@@ -303,6 +305,14 @@ class QuestionDefinition(TaskRecord):
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
+class QuestionAnswerAction(TaskRecord):
+    """Stable reference to the human action whose answer entered model context."""
+
+    session_id: str
+    surface_id: str
+    action_id: str
+
+
 class QuestionReply(TaskRecord):
     """Stored answer, with the existing composer attachment/reference payload."""
 
@@ -312,4 +322,10 @@ class QuestionReply(TaskRecord):
     parts: tuple[dict[str, JsonValue], ...] = ()
     responder_human: str | None = None
     responder_session: str | None = None
+    source_action: QuestionAnswerAction | None = None
     action: Literal["accept", "decline", "cancel"] = "accept"
+
+
+def question_surface_resource(session_id: str, surface_id: str) -> str:
+    """Key a visual Question's existing Core resource index without collisions."""
+    return "question-surface:" + json.dumps([session_id, surface_id], separators=(",", ":"))

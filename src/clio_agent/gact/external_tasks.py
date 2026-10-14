@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
+from collections.abc import Awaitable, Callable
 from contextlib import AsyncExitStack
 from contextvars import ContextVar
 from dataclasses import dataclass, field
@@ -19,15 +21,13 @@ from fastmcp_tasks.client_models import ClientCreateTaskResult, ClientGetTaskRes
 
 from clio_agent.arc.task_types import (
     BackendReference,
-    QuestionDefinition,
-    QuestionReply,
     SubmissionContext,
     TaskOwner,
     TaskProgress,
     TaskSnapshot,
     argument_digest,
 )
-from clio_agent.gact import context
+from clio_agent.gact import context, external_task_inputs
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot, safe_description
@@ -37,8 +37,10 @@ from clio_agent.tools.task_client import (
     TaskSubmission,
     submission_failure,
 )
-from clio_agent.tools.task_receipt import accepted_result, validate_terminal
+from clio_agent.tools.task_receipt import accepted_result
 from clio_agent.tools.task_transport import TaskObservationTransport
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -254,6 +256,10 @@ class ExternalTasks:
                         True  # the SDK observer now owns visibility, including reconnect failures
                     )
                 except Exception as error:
+                    logger.exception(
+                        "Task boundary reason=external_reconnection_failed error_type=%s",
+                        type(error).__name__,
+                    )
                     reason = str(error)
                     await self._record_or_defer(
                         "external-recovery-attention:" + handle,
@@ -303,6 +309,8 @@ class ExternalTasks:
         arguments: dict[str, Any],
         *,
         auth_scope: str,
+        progress_handler: Callable[[float, float | None, str | None], Awaitable[None]]
+        | None = None,
     ) -> Any:
         """Confirm custody before one SDK tools/call; uncertain replies are never replayed."""
         if self._closing:
@@ -380,6 +388,16 @@ class ExternalTasks:
             submission.argument_digest,
         )
 
+        async def report_progress(
+            progress: float, total: float | None, message: str | None
+        ) -> None:
+            await self._record_or_defer(
+                "external-progress:" + handle,
+                partial(self._record_progress, handle, progress, total, message),
+            )
+            if progress_handler is not None and not self.history.requires_recovery:
+                await progress_handler(progress, total, message)
+
         async def submit() -> Any:
             token = host.inline.set(submission)
             try:
@@ -387,7 +405,9 @@ class ExternalTasks:
                 if client is None:
                     raise ValueError("External task transport is unavailable before submission")
                 with client.submission(binding):
-                    return await client.call_tool(name, public, raise_on_error=False)
+                    return await client.call_tool(
+                        name, public, raise_on_error=False, progress_handler=report_progress
+                    )
             finally:
                 host.inline.reset(token)
 
@@ -402,6 +422,10 @@ class ExternalTasks:
                 if rpc.cancelled():
                     raise
             except Exception as error:
+                logger.exception(
+                    "Task boundary reason=external_submission_failed error_type=%s",
+                    type(error).__name__,
+                )
                 reason = str(error)
                 failure = submission_failure(error)
                 if failure == "rejected":
@@ -479,6 +503,10 @@ class ExternalTasks:
             try:
                 await call.task.result()  # SDK alone owns polling and input re-entry
             except Exception as error:
+                logger.exception(
+                    "Task boundary reason=external_observation_failed error_type=%s",
+                    type(error).__name__,
+                )
                 reason = str(error)
                 await self._record_or_defer(
                     "external-attention:" + call.submission.handle,
@@ -560,6 +588,10 @@ class ExternalTasks:
             try:
                 await accepted.task.cancel()
             except Exception as error:
+                logger.exception(
+                    "Task boundary reason=external_cancellation_failed error_type=%s",
+                    type(error).__name__,
+                )
                 reason = str(error)
                 await self._record_or_defer(
                     "external-cancel-attention:" + current.handle,
@@ -574,236 +606,10 @@ class ExternalTasks:
     def _record_reply(
         self, host: ExternalConnection, accepted: AcceptedNativeCall, reply: ClientGetTaskResult
     ) -> None:
-        with self.history._lock:
-            current = self.history.task_snapshot(accepted.submission.handle)
-            if current.terminal_at is not None:
-                return
-            details = self._details(current)
-            requests = details.setdefault("requests", {})
-            for key, value in (reply.input_requests or {}).items():
-                if key in requests and requests[key] != value:
-                    raise ValueError("Server reused an input key with changed content")
-                requests[key] = value
-            detail_ref = (
-                self.history.write_content(current.owner.session_id, details)
-                if reply.input_requests
-                else current.details
-            )
-            updates = {
-                "raw_status": reply.status,
-                "updated_at": now(),
-                "connection_freshness": "fresh",
-                "details": detail_ref,
-                "attention_episode": None,
-                "progress": TaskProgress(message=reply.status_message or ""),
-                "status": "input_required" if reply.status == "input_required" else "running",
-                "activity": "waiting_for_input"
-                if reply.status == "input_required"
-                else "executing",
-            }
-            if reply.status in {"completed", "failed", "cancelled"}:
-                result = self.history.write_content(
-                    current.owner.session_id, reply.model_dump(mode="json")
-                )
-                status = "failed" if reply.result and reply.result.get("isError") else reply.status
-                try:
-                    validate_terminal(accepted.submission.output_schema, reply)
-                except ValueError as error:
-                    status = "failed"
-                    updates["progress"] = TaskProgress(message=str(error))
-                updates.update(
-                    status=status,
-                    activity="",
-                    terminal_at=now(),
-                    settlement="external_acknowledged",
-                    result=result,
-                    backend_observation=result,
-                    supported_actions=("get_result",),
-                )
-                if current.cancellation_requested_at is not None:
-                    updates.update(
-                        status="task_state_uncertain",
-                        activity="cancelling",
-                        terminal_at=None,
-                        settlement="unknown",
-                        result=None,
-                        attention_episode=current.attention_episode or uuid4().hex,
-                        progress=TaskProgress(
-                            message="The server reported a terminal state; cancellation cleanup is unverified."
-                        ),
-                        supported_actions=("observe", "wait", "cancel", "get_result"),
-                    )
-            observed = current.model_copy(update=updates)
-            self.history.record_snapshot(observed, observation_id=uuid4().hex)
-            publish_task_notice(
-                self.history,
-                observed,
-                episode=(observed.attention_episode or "")
-                if observed.status == "task_state_uncertain"
-                else "",
-            )
-            if observed.terminal_at is not None:
-                for key in details.get("requests", {}):
-                    question = (
-                        "task_" + hashlib.sha256((current.handle + "\0" + key).encode()).hexdigest()
-                    )
-                    pending = self.history.task_snapshot(question)
-                    if pending is not None and pending.terminal_at is None:
-                        self.app.state.questions.cancel(question)
+        return external_task_inputs._record_reply(self, host, accepted, reply)
 
     async def _input(self, host: ExternalConnection, params: Any, request: Any) -> Any:
-        def resolve_locked() -> tuple[TaskSnapshot, str, dict[str, Any]]:
-            candidates = []
-            payload = params.model_dump(mode="json", by_alias=True, exclude_none=True)
-            for task_id, call in host.calls.items():
-                current = self.history.task_snapshot(call.submission.handle)
-                if current is None or current.backend != host.backend.model_copy(
-                    update={"task_id": task_id}
-                ):
-                    continue
-                for key, raw in self._details(current).get("requests", {}).items():
-                    if (
-                        str(request.request_id) == f"task-{task_id}-{key}"
-                        and raw.get("params") == payload
-                    ):
-                        candidates.append((current, key, raw))
-            inline = host.inline.get()
-            if not candidates and inline is not None:
-                current = self.history.task_snapshot(inline.handle)
-                if current is None:
-                    raise ValueError("Inline input has no confirmed invocation")
-                key = "inline:" + str(request.request_id)
-                details = self._details(current)
-                raw = {"method": "elicitation/create", "params": payload}
-                saved = details.setdefault("requests", {}).get(key)
-                if saved is not None and saved != raw:
-                    raise ValueError("Inline input identity was reused with changed content")
-                details["requests"][key] = raw
-                reference = self.history.write_content(current.owner.session_id, details)
-                self.history.record_snapshot(
-                    current.model_copy(update={"details": reference, "updated_at": now()}),
-                    observation_id=uuid4().hex,
-                )
-                return current, key, raw
-            if len(candidates) != 1:
-                raise ValueError("MCP input identity/payload is absent or ambiguous")
-            return candidates[0]
-
-        def resolve() -> tuple[TaskSnapshot, str, dict[str, Any]]:
-            with self.history._lock:
-                return resolve_locked()
-
-        task, key, raw = await asyncio.to_thread(resolve)
-
-        def question() -> tuple[str, Any | None]:
-            with self.history._lock:
-                current = self.history.task_snapshot(task.handle)
-                details = self._details(current)
-                if key in details.get("answers", {}):
-                    return "", details["answers"][key]
-                qid = "task_" + hashlib.sha256((task.handle + "\0" + key).encode()).hexdigest()
-                pending = self.history.task_snapshot(qid)
-                if pending is None or not pending.raw_status:
-                    from clio_agent.gact.elicitation_config import trusted_origins
-                    from clio_agent.gact.elicitation_schema import (
-                        build_form_metadata,
-                        build_url_metadata,
-                        check_url_trust,
-                        translate_form_schema,
-                    )
-
-                    mode = getattr(params, "mode", "form")
-                    correlation = {
-                        "request_id": request.request_id,
-                        "namespace": host.backend.server,
-                        "tool_name": task.tool,
-                        "invocation_id": task.invocation_id,
-                        "forwarded_from_session": task.owner.session_id,
-                        "task_id": task.backend.task_id if task.backend else None,
-                        "input_key": key,
-                    }
-                    if mode == "url":
-                        problem = check_url_trust(params.url, trusted_origins())
-                        metadata = build_url_metadata(params.url, **correlation)
-                        definition = QuestionDefinition.model_validate(
-                            {
-                                "prompt": params.message,
-                                "source": "mcp_elicitation",
-                                "metadata": metadata,
-                            }
-                        )
-                    else:
-                        translated = translate_form_schema(params.requested_schema)
-                        problem = translated.degrade
-                        metadata = build_form_metadata(translated, **correlation)
-                        definition = QuestionDefinition.model_validate(
-                            {
-                                "prompt": params.message,
-                                "kind": translated.kind,
-                                "options": [
-                                    option.model_dump(mode="json") for option in translated.options
-                                ],
-                                "requested_schema": params.requested_schema,
-                                "source": "mcp_elicitation",
-                                "metadata": metadata,
-                            }
-                        )
-                    if problem:
-                        value = mcp_types.ElicitResult(action="decline").model_dump(
-                            mode="json", by_alias=True, exclude_none=True
-                        )
-                        details.setdefault("answers", {})[key] = value
-                        details.setdefault("declined_inputs", {})[key] = problem
-                        reference = self.history.write_content(task.owner.session_id, details)
-                        self.history.record_snapshot(
-                            current.model_copy(update={"details": reference, "updated_at": now()}),
-                            observation_id=uuid4().hex,
-                        )
-                        return "", value
-                    self.app.state.questions.create(
-                        task.owner.model_copy(update={"parent_handle": task.handle}),
-                        definition,
-                        invocation_id=task.invocation_id,
-                        handle=qid,
-                    )
-                return qid, None
-
-        qid, previous = await asyncio.to_thread(question)
-        if previous is not None:
-            return mcp_types.ElicitResult.model_validate(previous)
-        await self.app.state.task_operations.wait(
-            self.app.state.conversations.caller(task.owner.session_id), qid
-        )
-
-        def answer() -> Any:
-            with self.history._lock:
-                q = self.history.task_snapshot(qid)
-                if q.status == "completed":
-                    reply = QuestionReply.model_validate(self.history.read_content(q.result))
-                    value = mcp_types.ElicitResult.model_validate(
-                        {
-                            "action": reply.action,
-                            "content": reply.metadata
-                            if reply.action == "accept"
-                            and getattr(params, "mode", "form") == "form"
-                            else None,
-                        }
-                    )
-                else:
-                    value = mcp_types.ElicitResult(action="cancel")
-                current = self.history.task_snapshot(task.handle)
-                details = self._details(current)
-                details.setdefault("answers", {})[key] = value.model_dump(
-                    mode="json", by_alias=True, exclude_none=True
-                )
-                reference = self.history.write_content(task.owner.session_id, details)
-                self.history.record_snapshot(
-                    current.model_copy(update={"details": reference, "updated_at": now()}),
-                    observation_id=uuid4().hex,
-                )
-                return value
-
-        return await asyncio.to_thread(answer)
+        return await external_task_inputs._input(self, host, params, request)
 
     def _task(self, host: ExternalConnection, task_id: str) -> TaskSnapshot:
         call = host.calls.get(task_id)
@@ -836,6 +642,23 @@ class ExternalTasks:
             )
             self.history.record_snapshot(observed, observation_id=uuid4().hex)
             publish_task_notice(self.history, observed, episode=observed.attention_episode)
+
+    def _record_progress(
+        self, handle: str, done: float, total: float | None, message: str | None
+    ) -> None:
+        """Persist this invocation's progress; progress alone cannot wake a model."""
+        with self.history._lock:
+            current = self.history.task_snapshot(handle)
+            if current is None or current.terminal_at is not None:
+                return
+            progress = current.progress.model_copy(
+                update={"completed": done, "total": total, "message": message or ""}
+            )
+            progress = TaskProgress.model_validate(progress.model_dump())
+            self.history.record_snapshot(
+                current.model_copy(update={"progress": progress, "updated_at": now()}),
+                observation_id=uuid4().hex,
+            )
 
     def _inline_result(self, handle: str, reply: Any) -> None:
         with self.history._lock:

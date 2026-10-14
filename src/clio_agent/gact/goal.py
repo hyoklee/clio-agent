@@ -499,10 +499,14 @@ def _enqueue_goal_redrive(app: Any, session_id: str, decision: Any, goal: dict[s
 
     goal_id = str(goal.get("goal_id", ""))
     iteration = int(decision.new_state.get("iters_elapsed", 0))
-    accept_session_input(app, session_id,
+    accept_session_input(
+        app,
+        session_id,
         f"Continue the active goal: {goal.get('condition', '')}\n{decision.guidance}",
         metadata={"goal_id": goal_id, "goal_continuation": True},
-        steer_message_id=f"goal:{goal_id}:{iteration}", source="goal")
+        steer_message_id=f"goal:{goal_id}:{iteration}",
+        source="goal",
+    )
 
 
 def waiting_on_tasks(app: Any, sid: str, goal: dict[str, Any]) -> bool:

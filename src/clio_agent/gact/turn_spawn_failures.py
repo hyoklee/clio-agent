@@ -18,12 +18,11 @@ def _error_field(error_info: Any, field: str, default: Any = None) -> Any:
 
 
 def child_task_error_reason(error_info: Any) -> str:
-    """Project a child turn's typed cause onto the AgentTask vocabulary."""
-
+    """Preserve the child's typed cause without an execution-state vocabulary."""
 
     details = _error_field(error_info, "details", {})
     declared = str(details.get("reason") or "") if isinstance(details, dict) else ""
-    return declared if declared in ERROR_REASONS else "agent_error"
+    return declared or "agent_error"
 
 
 def child_task_failure_result(

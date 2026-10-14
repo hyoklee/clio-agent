@@ -12,8 +12,9 @@ The model-facing DELIVERY of an admitted part lives in its own owner module,
 from __future__ import annotations
 
 import asyncio
+import json
 import os
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -204,19 +205,30 @@ def _session_summary(app: "FastAPI", session: _WorkspaceSession) -> dict[str, An
     }
 
 
-def _agent_run_summary(task: Any) -> dict[str, Any]:
-    result = task.result if isinstance(task.result, Mapping) else {}
+def _agent_run_summary(app: "FastAPI", task: Any) -> dict[str, Any]:
+    result = app.state.task_history.read_content(task.result) if task.result is not None else None
+    parent = (
+        app.state.task_history.task_snapshot(task.owner.parent_handle)
+        if task.owner.parent_handle
+        else None
+    )
     return {
-        "task_id": task.task_id,
-        "parent_session_id": task.parent_session_id,
-        "child_session_id": task.child_session_id,
+        "task_id": task.handle,
+        "parent_session_id": parent.owner.session_id if parent is not None else None,
+        "child_session_id": task.owner.session_id,
         "status": task.status,
-        "expert_id": str((task.agent_ref or {}).get("expert_id") or ""),
-        "error_reason": _summary_excerpt(str(task.error_reason or "")),
-        "answer_excerpt": _summary_excerpt(str(result.get("answer_excerpt") or "")),
+        "description": _summary_excerpt(
+            task.description or "Description unavailable for this older task"
+        ),
+        "result_excerpt": _summary_excerpt(
+            result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+        ),
+        "result_reference": task.result.model_dump(mode="json")
+        if task.result is not None
+        else None,
         "updated_at": task.updated_at,
         "provenance": {
-            "source": "agent_task_repository",
+            "source": "core_task_history",
             "bounded": True,
             "excerpt_char_limit": summary_excerpt_chars(),
         },
@@ -468,6 +480,56 @@ def _resolve_session(app: "FastAPI", workspace_id: str, part: Part) -> tuple[Par
     return resolved, metadata
 
 
+def _resolve_agent_run(
+    app: "FastAPI", workspace_id: str, part: Part
+) -> tuple[Part, dict[str, Any]]:
+    """Resolve a human-selected historical assignment without retargeting its handle."""
+    from clio_agent.gact.task_access import TaskAccess, TaskCaller
+
+    try:
+        task = TaskAccess(
+            app.state.task_history, TaskCaller("", app.state.human_principal, human_action=True)
+        ).require(part.ref_id, "read")
+        owner = app.state.sessions.get(task.owner.session_id)
+        if (
+            task.kind not in {"Session", "Subagent"}
+            or owner is None
+            or owner.workspace_id != workspace_id
+        ):
+            raise ValueError("Assignment unavailable")
+    except ValueError as error:
+        raise _failure(
+            status_code=404,
+            error="context_ref_inaccessible",
+            message="agent run reference is missing or outside the active workspace",
+            ref_kind="agent_run",
+            ref_id=part.ref_id,
+            workspace_id=workspace_id,
+        ) from error
+    summary = _agent_run_summary(app, task)
+    metadata = {
+        "kind": "agent_run",
+        "ref_id": task.handle,
+        "workspace_id": workspace_id,
+        "requested_revision": part.revision,
+        "resolved_revision": task.updated_at,
+        "media_type": "application/vnd.clio.agent-run-summary+json",
+        "navigation": {
+            "workspace_id": workspace_id,
+            "task_id": task.handle,
+            "session_id": task.owner.session_id,
+        },
+        "delivery": {"mode": "task_summary", "summary": summary},
+        "provenance": summary["provenance"],
+    }
+    return part.model_copy(
+        update={
+            "ref_id": task.handle,
+            "label": task.label,
+            "revision": task.updated_at,
+            "metadata": {**dict(part.metadata), "context_reference": metadata},
+        }
+    ), metadata
 
 
 def _resolve_evidence_snapshot(

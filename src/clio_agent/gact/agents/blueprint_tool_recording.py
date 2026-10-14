@@ -10,7 +10,7 @@ from clio_agent.gact.agents import skill_runtime as _skill_runtime
 from clio_agent.tools.result_errors import structured_tool_result_error
 
 if TYPE_CHECKING:
-    from clio_agent.gact.agents.types import AgentDef
+    from clio_agent.gact.types import AgentDef
 
 
 def recorded_load_skill_tool(agent_def: AgentDef, skill_rt: Any) -> Any:

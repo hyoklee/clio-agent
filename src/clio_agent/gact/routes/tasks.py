@@ -136,37 +136,49 @@ def register_task_routes(app: FastAPI) -> None:
         agent: str | None = None,
         active_only: bool = False,
     ) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            app.state.task_operations.query,
-            await asyncio.to_thread(caller, sid),
-            kind=kind,
-            status=status,
-            cursor=cursor,
-            limit=limit,
-            scope=scope,
-            handle=handle,
-            tool=tool,
-            agent=agent,
-            active_only=active_only,
-        )
+        try:
+            return await asyncio.to_thread(
+                app.state.task_operations.query,
+                await asyncio.to_thread(caller, sid),
+                kind=kind,
+                status=status,
+                cursor=cursor,
+                limit=limit,
+                scope=scope,
+                handle=handle,
+                tool=tool,
+                agent=agent,
+                active_only=active_only,
+            )
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
 
     @app.post("/v1/sessions/{sid}/tasks/observe")
     async def observe(sid: str, body: ObserveRequest) -> dict[str, Any]:
-        return await app.state.task_operations.observe(
-            await asyncio.to_thread(caller, sid), **body.model_dump()
-        )
+        try:
+            return await app.state.task_operations.observe(
+                await asyncio.to_thread(caller, sid), **body.model_dump()
+            )
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
 
     @app.post("/v1/sessions/{sid}/tasks/wait")
     async def wait(sid: str, body: WaitRequest) -> dict[str, Any]:
-        return await app.state.task_operations.wait(
-            await asyncio.to_thread(caller, sid), **body.model_dump()
-        )
+        try:
+            return await app.state.task_operations.wait(
+                await asyncio.to_thread(caller, sid), **body.model_dump()
+            )
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
 
     @app.get("/v1/sessions/{sid}/tasks/{handle}/result")
     async def result(sid: str, handle: str) -> dict[str, Any]:
-        return await asyncio.to_thread(
-            app.state.task_operations.result, await asyncio.to_thread(caller, sid), handle
-        )
+        try:
+            return await asyncio.to_thread(
+                app.state.task_operations.result, await asyncio.to_thread(caller, sid), handle
+            )
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
 
     @app.get("/v1/sessions/{sid}/tasks/mailbox")
     async def mailbox(sid: str) -> dict[str, Any]:
@@ -256,10 +268,16 @@ def register_task_routes(app: FastAPI) -> None:
         sid: str, handle: str, action: Literal["pause", "resume", "restart"]
     ) -> dict[str, Any]:
         identity = await asyncio.to_thread(caller, sid)
-        task = await asyncio.to_thread(
-            TaskAccess(app.state.task_history, identity).require, handle, "control"
-        )
-        effect = await intervene(app, task.handle, action)
+        try:
+            task = await asyncio.to_thread(
+                TaskAccess(app.state.task_history, identity).require, handle, "control"
+            )
+        except ValueError as error:
+            raise HTTPException(404, "Task is unavailable") from error
+        try:
+            effect = await intervene(app, task.handle, action)
+        except ValueError as error:
+            raise HTTPException(400, str(error)) from error
         return {
             **effect,
             "session_id": task.owner.session_id,
@@ -305,17 +323,40 @@ def register_task_routes(app: FastAPI) -> None:
     async def answer(sid: str, handle: str, body: AnswerRequest) -> dict[str, Any]:
         def apply() -> dict[str, Any]:
             reply = QuestionReply(**body.model_dump(), responder_human=app.state.human_principal)
-            current = answer_question(app, caller(sid), handle, reply)
+            try:
+                authorized = TaskAccess(app.state.task_history, caller(sid)).require(
+                    handle, "control"
+                )
+                if authorized.kind != "Question":
+                    raise ValueError("Question unavailable")
+            except ValueError as error:
+                raise HTTPException(404, "Question is unavailable") from error
+            try:
+                current = answer_question(app, caller(sid), authorized.handle, reply)
+            except ValueError as error:
+                latest = app.state.task_history.task_snapshot(authorized.handle)
+                raise HTTPException(
+                    409 if latest is not None and latest.terminal_at is not None else 400,
+                    "Question answer was not accepted: " + str(error),
+                ) from error
             return question_view(app, current)
 
         return await asyncio.to_thread(apply)
 
     @app.post("/v1/sessions/{sid}/questions/{handle}/cancel")
     async def cancel_question(sid: str, handle: str) -> dict[str, Any]:
-        await asyncio.to_thread(caller, sid)
-        await intervene(app, handle, "cancel")
+        identity = await asyncio.to_thread(caller, sid)
+        try:
+            current = await asyncio.to_thread(
+                TaskAccess(app.state.task_history, identity).require, handle, "control"
+            )
+            if current.kind != "Question":
+                raise ValueError("Question unavailable")
+        except ValueError as error:
+            raise HTTPException(404, "Question is unavailable") from error
+        await intervene(app, current.handle, "cancel")
         return await asyncio.to_thread(
-            lambda: question_view(app, app.state.task_history.task_snapshot(handle))
+            lambda: question_view(app, app.state.task_history.task_snapshot(current.handle))
         )
 
     def authenticated_human(request: Request) -> None:
@@ -383,7 +424,7 @@ def register_task_routes(app: FastAPI) -> None:
                 None,
             )
             if row is None or row.granting_human != app.state.human_principal:
-                raise ValueError("Grant unavailable")
+                raise HTTPException(404, "Grant is unavailable")
             revoked = (
                 row if row.revoked_at is not None else row.model_copy(update={"revoked_at": now()})
             )

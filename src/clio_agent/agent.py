@@ -22,7 +22,6 @@ Usage:
 import json
 import threading
 import time
-from collections.abc import Mapping
 from contextlib import contextmanager
 from typing import Any, Callable, Dict, List
 
@@ -48,7 +47,7 @@ from clio_agent.errors import (
     RoutingError,
 )
 from clio_agent.gact.mcp_gateway_refresh import (
-    correlated_execution_client_factory as _correlated_execution_client_factory,
+    execution_client_factory as _execution_client_factory,
 )
 from clio_agent.gact.mcp_gateway_refresh import (
     refresh_declared_mcp_servers as _refresh_declared_mcp_servers,
@@ -242,7 +241,7 @@ class ClioAgent(dspy.Module):
             preloaded_tools=self._tool_definitions,
             namespace_servers=namespace_proxies(self._tool_gateway),
             server_id="gateway:default",
-            client_factory=_correlated_execution_client_factory(),
+            client_factory=_execution_client_factory(),
         )
         # Cache of workspace root -> sync tool executor (lazy, one per workspace).
         # Guarded by _workspace_executor_lock (shared with the #933 reaper);
@@ -311,23 +310,8 @@ class ClioAgent(dspy.Module):
         # and rejected every declared child before inference.
         pack_servers = self._discover_pack_servers(blueprint_id, cwd=cwd)
         specs = load_agent_mcp_servers(pack_servers=pack_servers)
-        # #1113: wire the receive-loop elicitation handler onto every declared-server
-        # backend so a mid-tool-call elicitation reaches the HITL surface. The hook is
-        # app-agnostic (it resolves its invocation from the correlation record the tool
-        # observer opens), so binding it once on the shared gateway is safe. Capabilities
-        # are declared at the served granularity (form always; url only with a configured
-        # trust list) so the advertised envelope never offers a mode that always fails.
-        from clio_agent.gact.elicitation_correlation import (  # noqa: PLC0415
-            correlated_capabilities,
-            make_correlated_handlers,
-        )
-
-        tool_gateway = build_gateway(
-            specs,
-            cwd=cwd,
-            handlers=make_correlated_handlers(),
-            capabilities=correlated_capabilities(),
-        )
+        # Product execution uses application-owned SDK clients and input binding.
+        tool_gateway = build_gateway(specs, cwd=cwd)
         if not set_catalog:
             return tool_gateway
         experts = self._discover_pack_experts()
@@ -577,7 +561,7 @@ class ClioAgent(dspy.Module):
                     preloaded_tools=preloaded,
                     namespace_servers=namespace_proxies(gateway),
                     server_id=f"gateway:{root}",
-                    client_factory=_correlated_execution_client_factory(),
+                    client_factory=_execution_client_factory(),
                 )
                 # Stamps (ids/epoch/specs) live with the merge owner module.
                 # #1281 F5: direct-client factories are NOT re-stamped here --

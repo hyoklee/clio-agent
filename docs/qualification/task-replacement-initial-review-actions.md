@@ -1,5 +1,35 @@
 # Initial implementation review actions
 
+## Correction candidate after review 10
+
+These are source corrections awaiting independent acceptance and fresh behavior evidence:
+
+| Finding | Existing owner correction | Required evidence |
+| --- | --- | --- |
+| Shutdown admission and in-flight reservation | Close TurnRunner admission before the first shutdown await; serialize physical thread start and retirement | Shutdown/arrival and Stop/retirement races |
+| Revocation does not wake indefinite waits | Core grant observations signal recipient listeners; shared controls recheck rights | Revoke while waiting and before injection |
+| Visual Question contract/correlation | Restore surface/action fields, canonical aliases and UI question correlation through QuestionCommands | Actual visual answer/cancel and legacy alias behavior |
+| A2UI consumes before input commitment | Project delivery acknowledgement from the confirmed recipient-input record, including recovery repair | Paused answer and input-commit crash recovery |
+| Missing production callers and old elicitation owners | Rebuild spotter, references, producer/finalization and one tool-less MCP answer helper through Conversations/Core | Normal turns, helper/human races and caller gates |
+| Task updates/status mismatch in UI | Core-committed task event invalidates session state; preserve Stopping/uncertainty and physical cancellation states | Real service desktop/phone controls |
+| Broad source validation gaps | Full production Ruff/format, lowered guard baselines, coherent resource planning and actual default native Client | Fresh tests and SDK upgrade contracts |
+
+The helper's fixed Question association and the catalog retirement follow the focused Astra decisions. Neither focused decision accepts the entire implementation. No behavioral gate is marked passed from these changes.
+
+
+## Focused catalog adjudication after review 10
+
+Astra's read-only turn `01a13b2c-afe4-7cb0-83ff-67be6ed3ab22` confirmed retirement
+of the legacy `cluster-operator/AGENT.md` as the narrower R2 correction. Discovery
+requires that filename; a README warning or unsupported `enabled: false` field
+would not disable the old executable grants. The manifest is deleted with Git
+recovery, without an archive or a replacement relay implementation. Workload
+skills remain explicitly historical reference. The shipped-pack inventory follows
+the actual retirement. This changes discovery after normal refresh at the new
+marketplace revision; it neither uninstalls existing snapshots nor converts their
+configuration. It creates no relay qualification gate. This focused decision is
+not acceptance of the complete implementation.
+
 ## Review of 9b0a91ec / f1b099cd
 
 Astra and actual Claude independently returned no-go. The next correction candidate uses the existing owners rather than adding another task layer. Source corrections are present; the new regression batch remains unexecuted and these rows are not acceptance passes.

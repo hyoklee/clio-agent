@@ -27,7 +27,6 @@ turn that goes silent for the whole window is wedged and aborted (see
 from __future__ import annotations
 
 import asyncio
-import threading
 import time
 from typing import TYPE_CHECKING, Any
 
