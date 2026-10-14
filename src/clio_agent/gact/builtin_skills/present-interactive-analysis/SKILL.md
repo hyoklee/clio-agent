@@ -1,7 +1,7 @@
 ---
 name: present-interactive-analysis
 title: Present Interactive Analysis
-description: Use for explorable answers, generated images, illustrated guides, image collections, video, editable message drafts, and follow-ups about selected evidence. Show registered media with the active A2UI catalog; load it for exact shapes.
+description: Use for explorable answers, generated images and SVG figures, illustrated guides, image collections, video, editable message drafts, and follow-ups about selected evidence. Show registered media with the active A2UI catalog; load it for exact shapes.
 ---
 
 Use this skill when interaction or structure helps the person use the answer.
@@ -23,7 +23,7 @@ surface when the ask is to see, render, plot, or map something; reach for an
 artifact when the deliverable itself is a file the user asked to keep.
 When that deliverable is a generated visual artifact (PNG, JPEG, SVG, or
 another supported image), also display the registered file with the active
-catalog's Image component. The person should see the figure in the answer
+A2UI catalog's Image component. The person should see the figure in the answer
 and retain its downloadable file. Use the artifact reference, not a local
 filesystem path, a base64 copy, or an invented URL. Follow the catalog's
 supported media formats; report an unavailable image component explicitly.
