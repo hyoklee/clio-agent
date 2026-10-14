@@ -61,7 +61,6 @@ async def test_mag_discovers_project_models_with_bearer_pat(mag_provider: Provid
         provider_kind=mag_provider.provider_kind,
         api_base=mag_provider.api_base,
         api_key="unit-mag-pat",
-        requires_api_key=True,
         allow_external_sources=False,
     )
     handshake = get_handshake_for(mag_provider.provider_kind, mag_provider)
@@ -90,7 +89,6 @@ async def test_mag_rejected_pat_is_not_reported_as_authenticated(
         provider_kind=mag_provider.provider_kind,
         api_base=mag_provider.api_base,
         api_key="unit-invalid-pat",
-        requires_api_key=True,
         allow_external_sources=False,
     )
     handshake = get_handshake_for(mag_provider.provider_kind, mag_provider)
