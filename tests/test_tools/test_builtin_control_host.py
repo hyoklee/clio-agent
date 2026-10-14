@@ -15,6 +15,7 @@ from clio_agent.arc.task_types import SubmissionContext
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
 from clio_agent.gact.builtin_boundary import BuiltinBoundary
+from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 

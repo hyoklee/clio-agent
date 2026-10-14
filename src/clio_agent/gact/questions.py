@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import Any
@@ -135,6 +136,10 @@ class QuestionCommands:
         """Reject unanswerable content before a submission header is accepted."""
         if not definition.prompt.strip():
             raise ValueError("Question prompt cannot be empty")
+        if definition.source == "ask_user" and re.search(
+            r"\[\[\s*##\s*[A-Za-z_][\w-]*\s*##", definition.prompt
+        ):
+            raise ValueError("Question contains an internal parser marker; submit a clean question")
         if definition.requested_schema is not None:
             Draft202012Validator.check_schema(definition.requested_schema)
         if definition.kind != "freeform" and not definition.options:
@@ -154,6 +159,8 @@ class QuestionCommands:
 
     @staticmethod
     def _normalize(definition: QuestionDefinition) -> QuestionDefinition:
+        if definition.source == "ask_user":
+            definition = definition.model_copy(update={"prompt": definition.prompt.strip()})
         if definition.kind == "confirmation" and not definition.options:
             return definition.model_copy(
                 update={

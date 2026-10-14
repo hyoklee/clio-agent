@@ -15,11 +15,13 @@
     "tests/test_core/test_errors.py": "Retire only TestMCPCallTimeoutBackstopErrorMRO (three tests of the deleted whole-call deadline driver/error). Preserve all unrelated error formatting, MRO and protocol-refusal tests; submission/health/explicit execution limits remain required in native-boundary acceptance.",
     "tests/test_gact/test_agent_task_artifacts.py": "Preserve both independent artifact hashing/content/parent-use cases; replace deleted AgentTask fixture with data-only test input. Unexecuted.",
     "tests/test_gact/test_agent_task_output_digest.py": "Preserve eleven independent output bound/reference formatting cases; retired getter/registry scenarios replaced by real Core getter/collection coverage in test_task_output_compatibility. Digest formatting cases remain unexecuted.",
-    "tests/test_gact/test_agent_task_input_refs.py": "Replace registry/private resolver tests with public Core evidence-selection cases: optional empty selection, exact order/dedup, failed partial results, unknown/foreign/running/mixed-invalid/malformed references, quoted untrusted content. Remove the unused old delimiter formatter; it has no production callers. Other commitment/pagination/authorization lessons are tested in test_assignment_evidence_contracts. New selection cases unexecuted."
+    "tests/test_gact/test_agent_task_input_refs.py": "Replace registry/private resolver tests with public Core evidence-selection cases: optional empty selection, exact order/dedup, failed partial results, unknown/foreign/running/mixed-invalid/malformed references, quoted untrusted content. Remove the unused old delimiter formatter; it has no production callers. Other commitment/pagination/authorization lessons are tested in test_assignment_evidence_contracts. New selection cases unexecuted.",
+    "tests/test_gact/test_ask_user_tool_validation.py": "Preserve both released input-safeguard lessons through actual short FastMCP calls and QuestionCommands: parser residue is rejected before Question acceptance, and clean text posts an immediate open Question handle. The retained validator is in the sole Question owner, limited to ask_user content. New cases unexecuted.",
+    "tests/test_tools/test_mcp_backend_identity.py": "Replace removed ClioTasksClientExtension/transport-hash assertions with actual SDK wrapper custody and real same-named FastMCP connection identities across configured servers/auth scopes. No old extension or transport registry restored. New cases unexecuted."
   },
-  "remaining_files_with_missing_imports": 44,
-  "remaining_tests_in_affected_files": 893,
+  "remaining_files_with_missing_imports": 42,
+  "remaining_tests_in_affected_files": 889,
   "required_behavior": "Every retired architecture-coupled scenario remains mapped to R2 ledger; preserve independent algorithm checks; no old authority restored",
   "compatibility_evidence": "task-replacement-regressions-ad560ef2.json: busy snapshot/rendered overflow pass, initial observation fixture failure; task-replacement-regressions-7768ec40.json:13 affected compatibility cases pass individually/sequentially/no skips, all runtime roots absent",
-  "source_review": "Astra review of committed ad560ef2 in progress; public-wrapper and initial evidence persistence defects remain actionable"
+  "source_review": "Astra15 accepts the other seven corrections; one pattern cursor/budget finding corrected locally and awaiting re-review"
 }

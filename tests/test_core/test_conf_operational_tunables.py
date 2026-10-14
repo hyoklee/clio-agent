@@ -23,6 +23,7 @@ import pytest
 
 from clio_agent import conf
 from tests._config_layer import set_config
+from tests.test_arc.conftest import core_arc as core_arc
 
 
 @pytest.fixture(autouse=True)

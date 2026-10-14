@@ -119,6 +119,52 @@ async def test_pattern_matches_logical_output_across_a_remaining_page_budget(
         sum(len(chunk["output"]) for row in result["tasks"] for chunk in row.get("output", [])) <= 7
     )
     assert "search_start_cursor" in result
+    resumed = await operations.observe(
+        caller,
+        [first.handle, second.handle],
+        result["cursor"],
+        pattern="READY",
+        timeout_s=0,
+    )
+    assert resumed["timed_out"] is True
+    assert not any(
+        "pattern_match" in chunk for row in resumed["tasks"] for chunk in row.get("output", [])
+    )
+    await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_truncated_match_continuation_keeps_budget_and_does_not_repeat_the_match(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _app, owner, root = await create_environment(arc, tmp_path)
+    monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "7")
+    task = await asyncio.to_thread(running_shell, owner.history, root, "shell")
+    task = await asyncio.to_thread(append_output, owner.history, task, "BBB")
+    task = await asyncio.to_thread(append_output, owner.history, task, "A" * 9)
+    operations, caller = (
+        TaskOperations(owner.history, forbidden_cancel),
+        TaskCaller(root.owner.session_id, "human"),
+    )
+    first = await operations.observe(caller, task.handle, pattern="A+", timeout_s=0)
+    assert first["tasks"][0]["output"][0]["output"] == "A" * 7
+    assert first["tasks"][0]["output"][0]["pattern_match"]["excerpt_truncated"] is True
+    second = await operations.observe(
+        caller, task.handle, first["cursor"], pattern="A+", timeout_s=0
+    )
+    assert second["timed_out"] is True
+    assert [chunk["output"] for row in second["tasks"] for chunk in row.get("output", [])] == [
+        "BBB"
+    ]
+    for page in (first, second):
+        assert (
+            sum(len(chunk["output"]) for row in page["tasks"] for chunk in row.get("output", []))
+            <= 7
+        )
+    original = await operations.observe(caller, task.handle)
+    assert original["tasks"][0]["output"][0]["output"] == "A" * 7
     await owner.recovery.drain()
 
 

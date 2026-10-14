@@ -21,8 +21,8 @@ from clio_agent.gact import context as ctx
 from clio_agent.gact.agents.clio_react_record import fold_steps, read_steps
 
 
-@pytest.fixture
-def arc() -> Iterator[ARCMemory]:
+@pytest.fixture(name="arc")
+def core_arc() -> Iterator[ARCMemory]:
     """A fresh ARCMemory on clio-core (the only store), in this test's namespace."""
     from clio_agent.arc.storage import make_arc_store
 

@@ -70,6 +70,8 @@ def output_page(
             raise ValueError("Output offset is outside its chunk")
         end = len(encoded) if budget is None else min(len(encoded), offset + budget - used)
         partial = offset > 0 or end < len(encoded)
+        charged = end - offset
+        matched = False
         chunk: dict[str, Any] = {
             "reference": reference.model_dump(mode="json"),
             "chunk_id": value["chunk_id"],
@@ -83,6 +85,7 @@ def output_page(
             # Pagination does not split the logical chunk already validated above.
             match = next((m for m in pattern.finditer(encoded) if m.end() > offset), None)
             if match is not None:
+                matched = True
                 displayed_end = (
                     match.end()
                     if budget is None
@@ -99,14 +102,18 @@ def output_page(
                         "excerpt_truncated": displayed_end < match.end(),
                     },
                 )
+                charged = displayed_end - match.start()
+                end = match.end()  # A filtered search reports this match once, including its span.
         chunks.append(chunk)
-        used += end - offset
+        used += charged
         if end < len(encoded):
             offset = end
             break
         older = value.get("previous")
         reference = CoreReference.model_validate(older) if older is not None else None
         offset = 0
+        if matched:
+            break
     if reference is None or reference.content_id == stop:
         state = {"completed": anchor}
     else:

@@ -180,3 +180,22 @@ live/model, CI or resource-growth acceptance is inferred from these passes.
 The eight reviewer regressions and additional evidence-selection/inference-budget
 migrations are authored as a batch but unexecuted. Actual Claude Code review
 still requires repaired host login; no credentials were copied or overwritten.
+
+
+Astra15 found one remaining P2: pattern excerpts and cursor/budget advancement
+used different ranges. The correction charges the actual excerpt, advances
+through the confirmed match, and stops that search page after the match. Prior
+filtered bytes remain readable through search_start_cursor. Fresh continuation
+coverage follows both READY and a truncated nine-character match with an older
+chunk, checking no repeated match and the aggregate budget.
+
+Eleven focused cases passed on000355ef before the newly migrated Core-folder
+inference-budget case failed at fixture discovery (its body did not execute).
+The second parameter was not run. The single real-Core ARC fixture now has an
+explicit public fixture name and can be reused outside test_arc without duplicate
+implementations. The failure receipt is retained; D:/tr2-1014-b7 is absent.
+
+The remaining-test audit additionally found the released ask_user parser-residue
+validator had been dropped with its old owner. Its algorithm is restored in the
+sole QuestionCommands input-validation path, with actual FastMCP-boundary tests;
+this is no global model recovery rule or alternate question owner.

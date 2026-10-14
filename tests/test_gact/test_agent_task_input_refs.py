@@ -13,6 +13,7 @@ from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.assignment_evidence import render_delegation, select_assignment_evidence
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskCaller
+from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_arc.test_assignment_evidence_contracts import evidence_children
 
 
