@@ -247,6 +247,7 @@ def test_failed_helper_exit_retains_manifest_result(
         return json.dumps({"status": "failed", "manifest": "output/manifest.json"})
 
     monkeypatch.setattr(runtime, "_run", run)
+    monkeypatch.setattr(runtime, "prepare_office_runtime", lambda: "prepared-soffice")
     monkeypatch.setattr(
         sandbox,
         "wrap_confined",
@@ -265,3 +266,5 @@ def test_failed_helper_exit_retains_manifest_result(
     assert result["status"] == "failed"
     assert seen["accepted_exit_codes"] == (0, 1)
     assert seen["env"]["TEMP"] == str(tmp_path / ".tmp")
+    assert seen["env"]["CLIO_DOCUMENT_SOFFICE"] == "prepared-soffice"
+    assert seen["env"]["CLIO_DOCUMENT_CONFINED"] == "1"

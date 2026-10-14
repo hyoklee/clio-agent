@@ -37,6 +37,9 @@ def test_word_inspection_keeps_body_order_and_original(helper: ModuleType, tmp_p
     document.save(source)
     original = source.read_bytes()
     result = helper.prepare(source, tmp_path / "output")
+    from clio_agent.runtime.document_stack.process import _windows_dacl_protected
+
+    assert not _windows_dacl_protected(Path(result["run_directory"]))
     content = _content(result)
     assert [block["type"] for block in content["blocks"]] == ["paragraph", "table", "paragraph"]
     assert content["blocks"][1]["rows"][0][1] == "table value"
