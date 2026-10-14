@@ -118,3 +118,39 @@ structured-answer-and-resumption video is still outside this capture's evidence.
 
 docs-child-tab.png is an untouched full WorkspacePage browser capture against the test-only HTTP fixture. Ordinary activation opens the child in the workspace tab system; Shift-click and Shift+Enter select the central conversation. No live agent/model run is represented. Source captures, geometry receipts and authoring evidence: D:/Libraries/Videos/clio_recordings/2026-10-13-child-tab-navigation/.
 
+
+
+## Obsidian vault setup — 13 October 2026
+
+The knowledge-source guide adds four production-browser captures: creating a
+new vault, attaching an existing Markdown folder, the Obsidian row in Data
+sources, and the installed official Sync client ready for sign-in. They use
+light mode at two device pixels per CSS pixel, with fictional names and notes.
+CLIO created the new vault through its actual connection form; the folder
+picker attached a normal Markdown folder read only without adding `.obsidian`.
+No remote Sync account was used in these captures.
+
+The four graph, file-list, and tool images retain the fictional notebook captures
+from 11 October. The tool image is that recorded actual Codex/Luna turn, not a
+new model run. `knowledge-source-manifest.json` records all eight image hashes,
+source revisions, and the unchanged example ZIP. Originals, conversion code,
+rendered-page review, and verification receipts are archived under
+`D:/Libraries/Videos/clio_recordings/2026-10-13-obsidian-managed-vaults/`.
+The personal-vault acceptance capture and file manifests remain private and are
+excluded from the website and public capture archive.
+
+## Knowledge source actions and provider information — 13 October 2026
+
+The Settings, new-vault, existing-folder, and Sync captures were refreshed after
+adding explicit New vault and Connect actions. A fifth capture shows the shared
+provider info icon, with the knowledge graph explained before the optional
+Obsidian app and paid Sync service. The other four fictional notebook captures
+remain unchanged. The current manifest records nine image hashes.
+
+Live checks used Settings to create an empty vault and connect a fictional
+Markdown folder read only, then opened their source-named graph tabs. Provider
+info was checked on hover, keyboard focus, and touch; Settings and the connection
+flow were reviewed at 390px. The final media comes from the production build,
+with untouched originals and checks archived at
+`D:/Libraries/Videos/clio_recordings/2026-10-13-knowledge-source-actions/`.
+Authenticated remote Sync was not exercised. No personal vault data appears.
