@@ -1,7 +1,7 @@
 ---
 name: present-interactive-analysis
 title: Present Interactive Analysis
-description: Use for explorable answers, generated images and SVG figures, illustrated guides, image collections, video, editable message drafts, and follow-ups about selected evidence. Show registered media through the active A2UI catalog's Image component, Carousel and Video; load the catalog for exact shapes.
+description: Use for explorable answers, generated images and SVG figures, illustrated guides, image collections, video, editable message drafts, and follow-ups about selected evidence. Show registered media through the active A2UI catalog's Image component, Carousel and Video. Load this skill alongside the active catalog index, then batch any exact component schemas in one lookup.
 ---
 
 Use this skill when interaction or structure helps the person use the answer.
@@ -40,14 +40,19 @@ schema with `load_skill("a2ui-catalog-<slug>", file="catalog.json#/components/<E
 before producing it. Copy the complete key from the catalog index: for example,
 `catalog.json#/components/clio.chart.v1`, not a display label such as `Chart`.
 
-When revising a surface, inspect its current components first.
+Load all needed exact component schemas together through `load_skill(..., files=[...])`.
+Avoid separate lookups for each component or schema definition.
+
+For a revision, use this tool sequence before the final answer:
+`inspect_a2ui_surface` → `update_a2ui_surface` → `inspect_a2ui_surface`.
 Preserve the content the user did not ask to change: media references, child
 order, captions, source links, units, and version or availability labels.
 Replacing a Text label with a Button or another component must retain that
 label's qualifications in its visible child text or a connected Text component.
-After the update, inspect the surface again and compare the revised components
-with the earlier definition before claiming that content was preserved. A ready
-surface confirms schema acceptance; it does not establish content preservation.
+Compare the final inspection's components with the earlier definition before
+claiming that content was preserved. Do not skip the final inspection because
+the update returned a ready surface: that confirms schema acceptance, not
+content preservation.
 
 When a user names a public data source, use an available fetch tool or a local
 shell HTTP request to obtain the data before deciding that access is unavailable.
