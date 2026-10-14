@@ -469,7 +469,8 @@ async def test_automatic_queue_preflight_stop_retains_unassigned_work(
         await released.wait()
         await asyncio.gather(*tuple(owner._controls.values()))
         assert outcomes == [{"queued_message_id": item.id, "status": "pending", "suspended": True}]
-        assert history.latest_assignment(sid) is None and queued(app, sid) == [item]
+        assert history.latest_assignment(sid) is None
+        assert await asyncio.to_thread(queued, app, sid) == [item]
         assert app.state.sessions.get(sid).status == "idle"
         automatic = item.model_copy(update={"delivery": "eligible", "automatic_promotion": True})
         assert not owner.eligible(sid, automatic)
