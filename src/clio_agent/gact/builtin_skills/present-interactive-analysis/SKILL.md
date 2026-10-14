@@ -40,6 +40,15 @@ schema with `load_skill("a2ui-catalog-<slug>", file="catalog.json#/components/<E
 before producing it. Copy the complete key from the catalog index: for example,
 `catalog.json#/components/clio.chart.v1`, not a display label such as `Chart`.
 
+When revising a surface, inspect its current components first.
+Preserve the content the user did not ask to change: media references, child
+order, captions, source links, units, and version or availability labels.
+Replacing a Text label with a Button or another component must retain that
+label's qualifications in its visible child text or a connected Text component.
+After the update, inspect the surface again and compare the revised components
+with the earlier definition before claiming that content was preserved. A ready
+surface confirms schema acceptance; it does not establish content preservation.
+
 When a user names a public data source, use an available fetch tool or a local
 shell HTTP request to obtain the data before deciding that access is unavailable.
 Check the returned status and data shape; a shell request may need the person's
@@ -234,13 +243,6 @@ the producer names unattached ids so you can repair the tree.
 For a correction in a later turn, call `inspect_a2ui_surface` to find the
 existing id and current components, then update that surface. A correction
 should replace the earlier view so both versions do not compete in the chat.
-Preserve the content the user did not ask to change: media references, child
-order, captions, source links, units, and version or availability labels.
-Replacing a Text label with a Button or another component must retain that
-label's qualifications in its visible child text or a connected Text component.
-After the update, inspect the surface again and compare the revised components
-with the earlier definition before claiming that content was preserved. A ready
-surface confirms schema acceptance; it does not establish content preservation.
 
 ## Custom charts with Altair
 
