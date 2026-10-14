@@ -10,6 +10,7 @@ never drift from what the validator actually enforces.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import clio_schemas
@@ -147,3 +148,25 @@ def test_catalog_skill_index_line_carries_description_then_signature() -> None:
 
     assert "- `clio.map.v1` — Interactive points, ordered trajectories, or GeoJSON geometry" in body
     assert "`points[] | dataUri + latitudeField/longitudeField/labelField" in body
+
+
+def test_bounded_catalog_preview_exposes_lookups_before_long_guidance() -> None:
+    from clio_agent.gact.a2ui_catalogs.builtin import load_builtin_catalogs
+    from clio_agent.gact.a2ui_catalogs.skills import generate_catalog_skill_body
+
+    for entry in load_builtin_catalogs():
+        instructions = entry.instructions + "\n" + "Extended producer guidance.\n" * 1000
+        extended = replace(
+            entry, instructions=instructions, checksum=entry.checksum + "-long-guidance"
+        )
+        body = generate_catalog_skill_body(extended)
+        preview = body[:12000]
+
+        assert 'file="catalog.json#/components/<Name>"' in preview
+        assert '"catalog.json#/functions/<Name>"' in preview
+        assert "ONE call with files=" in preview
+        assert "Each returned schema includes its referenced $defs" in preview
+        assert "- `openUrl()" in preview
+        for component in ("Image", "Video", "Text", "Button"):
+            assert f"- `{component}`" in preview
+        assert instructions.strip() in body
