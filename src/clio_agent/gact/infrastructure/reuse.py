@@ -299,7 +299,8 @@ def uv_environment_reuse(environment: Path, profile: str) -> str:
         return ""
     identity = uv_environment_identity(environment, profile)
     marker = venv / ".clio-environment"
-    if not check_marker(marker, identity, required=[venv / "bin" / "python"]):
+    interpreter = venv / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+    if not check_marker(marker, identity, required=[interpreter]):
         return ""
     recorded = read_marker(marker)
     return line(

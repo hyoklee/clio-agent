@@ -10,6 +10,22 @@ on:
   workflow_dispatch: {}
 
 jobs:
+  native-service-lifecycle:
+    name: native service lifecycle (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      PYTHONPATH: ${{ github.workspace }}/src
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Exercise real owned workers without application or Core builds
+        run: uv run --no-project --with pytest --with pytest-asyncio --with pytest-timeout --managed-python --python 3.14 python -m pytest --confcutdir=tests/test_native_services tests/test_native_services -q -rs
+
   filesystem-contract:
     runs-on: ubuntu-latest
     timeout-minutes: 5

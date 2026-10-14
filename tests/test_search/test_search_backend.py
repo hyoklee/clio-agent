@@ -197,6 +197,8 @@ def test_direct_search_uses_the_json_api_and_caps_results(listener: int) -> None
     assert seen[0].url.path == "/search"
     assert params["format"] == "json" and params["safesearch"] == "2"
     assert params["language"] == "de"
+    assert params["engines"] == ",".join(settings.engines)
+    assert "arxiv" in params["engines"] and "crossref" in params["engines"]
 
 
 def test_direct_search_through_the_gateway() -> None:
@@ -207,6 +209,7 @@ def test_direct_search_through_the_gateway() -> None:
     )
     assert answer["backend"] == "clio_web_search" and answer["count"] == 1
     assert str(seen[0].url).startswith("http://gw:8089/search?")
+    assert "engines" not in seen[0].url.params  # Remote gateway policy remains its own.
 
 
 def test_a_failing_backend_is_a_typed_unavailable_error(listener: int) -> None:

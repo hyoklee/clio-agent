@@ -91,12 +91,21 @@ a command-line argument.
 
 ### Platforms
 
-Linux is supported and live-tested. macOS uses the same POSIX supervisor and is
-offered, but is not live-tested. Windows is not offered yet: CLIO's native
-service supervisor is POSIX-only (use `clio_web_search` there). The launcher is
-ready for it: SearXNG's `searx/valkeydb.py` does a bare `import pwd`, and on
-Windows CLIO's launcher installs a CLIO-owned `pwd` stand-in (`clio_pwd_shim.py`)
-before SearXNG is imported, instead of modifying SearXNG.
+Linux is supported and live-tested. macOS uses the POSIX supervisor and is
+offered, but is not live-tested. Windows x64 uses a private uv-managed Python
+environment, a cross-process file lock and a per-launch Job Object. The
+controller records the actual worker's creation identity before allowing it to
+spawn children. Stop and unexpected worker termination reap its owned process
+tree; uninstall keeps logs and verification evidence. Microsoft Store Python's
+activation broker cannot provide that process-tree guarantee and is not used.
+
+On Windows CLIO's launcher installs a CLIO-owned `pwd` stand-in
+(`clio_pwd_shim.py`) before SearXNG's bare `import pwd`, without modifying
+SearXNG. Isolated Windows verification exercised real installation, JSON
+readiness, a query with actual results, stop and restart. Native searches name
+every configured engine explicitly, including scholarly categories; they do
+not rely on SearXNG's default general category. External engines may still
+report rate limits or CAPTCHAs, which remain visible in the search result.
 
 ## Licensing
 

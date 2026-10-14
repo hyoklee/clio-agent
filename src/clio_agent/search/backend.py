@@ -204,6 +204,7 @@ class SearxngJsonBackend(SearchBackend):
             "q": text,
             "format": "json",
             "safesearch": self.settings.safe_search,
+            **self.engine_parameters(),
         }
         if self.settings.language and self.settings.language != "auto":
             params["language"] = self.settings.language
@@ -242,6 +243,10 @@ class SearxngJsonBackend(SearchBackend):
     def _loopback(self) -> bool:
         return urlsplit(self.base_url()).hostname in {"127.0.0.1", "localhost", "::1"}
 
+    def engine_parameters(self) -> dict[str, str]:
+        """Remote gateways retain their own engine and category policy."""
+        return {}
+
     def _fix(self) -> str:
         return "Check the backend's logs, or choose another search.backend."
 
@@ -250,6 +255,10 @@ class LocalSearxngBackend(SearxngJsonBackend):
     """CLIO's managed SearXNG on this computer's loopback."""
 
     name = "local_searxng"
+
+    def engine_parameters(self) -> dict[str, str]:
+        """Search every explicitly configured engine, including scholarly categories."""
+        return {"engines": ",".join(self.settings.engines)}
 
     def base_url(self) -> str:
         for resolver in _LOCAL_ENDPOINT:

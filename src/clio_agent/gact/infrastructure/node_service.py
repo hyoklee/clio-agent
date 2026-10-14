@@ -1,4 +1,4 @@
-"""Standalone Linux supervisor for an owned native service and its installation.
+"""Standalone supervisor for an owned native service and its installation.
 
 The controller sends a server-generated manifest over stdin. No credential is
 written to the manifest or returned in a receipt. Detached workers survive an
@@ -16,7 +16,6 @@ import signal
 import socket
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 import uuid
@@ -32,18 +31,20 @@ MARKER = "CLIO_SERVICE_OBSERVATION "
 LOG_GENERATIONS = 3
 #: Files a service definition may never write over.
 PROTECTED_FILES = frozenset(
-    {"owner.json", "receipt.json", "manifest.json", "controller.py", ".lock"}
+    {
+        "owner.json",
+        "receipt.json",
+        "manifest.json",
+        "controller.py",
+        "clio_native_platform.py",
+        ".lock",
+    }
 )
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
     """Publish a private receipt atomically on its owning filesystem."""
-    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False) as writer:
-        temporary = Path(writer.name)
-        json.dump(value, writer)
-        writer.flush()
-        os.fsync(writer.fileno())
-    temporary.replace(path)
+    platform_helper().write_json(path, value)
 
 
 def _has_proc() -> bool:
@@ -51,13 +52,25 @@ def _has_proc() -> bool:
     return Path("/proc/self/stat").exists()
 
 
+def platform_helper() -> Any:
+    """The standard-library platform helper shipped beside this controller."""
+    with suppress(ImportError):
+        return importlib.import_module("clio_native_platform")
+    return importlib.import_module("clio_agent.gact.infrastructure.native_service_platform")
+
+
+environment_python = platform_helper().python_path
+
+
 def identity(pid: int) -> str:
     """Return the exact live process identity, excluding zombies.
 
     Linux: boot id + start tick from /proc. A POSIX host without /proc (macOS, BSD): ``ps``'s start
-    time, which with the PID names one process (F010 / DIRECTIVES 11). This supervisor is
-    POSIX-only (process groups, fcntl); Windows native services use their own launcher.
+    time, which with the PID names one process (F010 / DIRECTIVES 11). Windows uses
+    creation FILETIME; its workers and descendants belong to a per-launch Job Object.
     """
+    if os.name == "nt":
+        return platform_helper().identity(pid)
     if _has_proc():
         try:
             stat = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
@@ -112,10 +125,7 @@ def checked_root(raw: str) -> Path:
 @contextmanager
 def locked(root: Path) -> Iterator[None]:
     """Serialize lifecycle decisions across clients and detached workers."""
-    import fcntl
-
-    with (root / ".lock").open("a") as stream:
-        fcntl.flock(stream, fcntl.LOCK_EX)
+    with platform_helper().locked(root):
         yield
 
 
@@ -128,6 +138,7 @@ def owner(root: Path, expected: str) -> None:
         "controller.py",
         "clio_reuse.py",
         "clio_process_group.py",
+        "clio_native_platform.py",
         "launch.py",
         ".lock",
         "environment",
@@ -143,7 +154,7 @@ def owner(root: Path, expected: str) -> None:
         "images.json",
         "evidence/verification.json",
     ):
-        if (root / relative).is_symlink():
+        if platform_helper().is_link(root / relative):
             raise ValueError("A native service ownership path was replaced by a symlink")
     marker = json.loads((root / "owner.json").read_text())
     host = socket.gethostname()
@@ -170,7 +181,7 @@ def prepare(root: Path, expected: str) -> None:
                 {"owner": expected, "host": socket.gethostname(), "root": str(root)},
             )
         owner(root, expected)
-        root.chmod(0o700)
+        platform_helper().protect_root(root)
 
 
 def hook(root: Path, action: str, *, timeout: int = 90) -> None:
@@ -323,8 +334,7 @@ def observation(root: Path, *, health: bool = True, key: str = "") -> dict[str, 
         "definition_version": receipt.get("definition_version", "1"),
         "configuration_revision": receipt.get("configuration_revision", ""),
         "phase": phase,
-        "installed": bool(receipt.get("installed"))
-        and (root / "environment/.venv/bin/python").is_file(),
+        "installed": bool(receipt.get("installed")) and environment_python(root).is_file(),
         "running": live and phase == "running",
         "serving": serving,
         "worker_alive": live,
@@ -342,21 +352,10 @@ def observation(root: Path, *, health: bool = True, key: str = "") -> dict[str, 
 def stop(root: Path) -> None:
     """Stop only the exact owned process group and confirm termination."""
     receipt = read_receipt(root)
-    if alive(receipt):
-        pid = receipt["pid"]
-        if os.getpgid(pid) != pid:
-            raise ValueError("Recorded native service is not its own process group")
-        os.killpg(pid, signal.SIGTERM)
-        deadline = time.monotonic() + 10
-        while alive(receipt) and time.monotonic() < deadline:
-            time.sleep(0.1)
-        if alive(receipt):
-            os.killpg(pid, signal.SIGKILL)
-            deadline = time.monotonic() + 5
-            while alive(receipt) and time.monotonic() < deadline:
-                time.sleep(0.1)
-        if alive(receipt):
-            raise RuntimeError("Native service did not stop; its data was retained")
+    if alive(receipt) and sys.platform == "win32":
+        platform_helper().stop(receipt)
+    elif alive(receipt):
+        platform_helper().stop_posix(receipt, alive)
     hook(root, "stop")
     receipt.update(
         phase="not_installed" if receipt["phase"] == "not_installed" else "stopped",
@@ -379,6 +378,7 @@ def launch(root: Path, request: dict[str, Any]) -> None:
             return
         raise ValueError("Stop the current operation before changing native service configuration")
     if action == "start":
+        platform_helper().validate_interpreter(root)
         if (
             not observation(root, health=False)["installed"]
             or current.get("configuration_revision") != revision
@@ -418,6 +418,8 @@ def launch(root: Path, request: dict[str, Any]) -> None:
         (root / "clio_reuse.py").write_text(request["reuse_helper"], encoding="utf-8")
     if request.get("process_group_helper"):
         (root / "clio_process_group.py").write_text(request["process_group_helper"], "utf-8")
+    if request.get("platform_helper"):
+        (root / "clio_native_platform.py").write_text(request["platform_helper"], "utf-8")
     for name in ("logs", "evidence", "cache", "tmp"):
         (root / name).mkdir(exist_ok=True)
     # Per-launch, non-secret files (a router's model list): not part of the revision.
@@ -455,25 +457,33 @@ def launch(root: Path, request: dict[str, Any]) -> None:
     }
     with (root / "logs/supervisor.log").open("a") as logs:
         process = subprocess.Popen(
-            [sys.executable, str(root / "controller.py"), "worker", str(root), action, generation],
+            [
+                sys.executable,
+                str(root / "controller.py"),
+                "worker",
+                str(root),
+                action,
+                generation,
+            ],
             stdin=subprocess.DEVNULL,
             stdout=logs,
             stderr=logs,
             env=env,
-            start_new_session=True,
+            start_new_session=os.name != "nt",
+            # Leave CLIO's server job, then establish the worker's own durable job.
+            creationflags=0x01000008 if os.name == "nt" else 0,
             close_fds=True,
         )
-    receipt.update(pid=process.pid, process_identity=identity(process.pid))
+    if os.name == "nt":
+        receipt.update(platform_helper().await_worker(root, generation))
+    else:
+        receipt.update(pid=process.pid, process_identity=identity(process.pid))
     if not receipt["process_identity"]:
         raise RuntimeError("Native worker failed to establish its process identity")
     write_json(root / "receipt.json", receipt)
 
 
-def with_host_setup(setup: str, command: list[str]) -> list[str]:
-    """``command`` after the host setup lines (``module load ...``) in a login shell; fails on error."""
-    if not setup.strip():
-        return command
-    return ["bash", "--login", "-c", f'set -e\n{setup}\nexec "$@"', "bash", *command]
+with_host_setup = platform_helper().with_host_setup
 
 
 def worker_environment(
@@ -491,9 +501,11 @@ def worker_environment(
         UV_CACHE_DIR=str(root / "cache/uv"),
         UV_PYTHON_INSTALL_DIR=str(root / "cache/python"),
         TMPDIR=str(root / "tmp"),
+        TEMP=str(root / "tmp"),
+        TMP=str(root / "tmp"),
         HF_HOME=str(root / "cache/huggingface"),
         PATH=os.pathsep.join(
-            item for item in (str(root / "environment/.venv/bin"), env.get("PATH", "")) if item
+            item for item in (str(environment_python(root).parent), env.get("PATH", "")) if item
         ),
     )
     return env
@@ -514,29 +526,14 @@ def process_group_helper() -> Any:
     return importlib.import_module("clio_agent.gact.infrastructure.process_group")
 
 
-def copy_output(stream: Any, output: Any, secrets: list[str]) -> None:
-    """Copy the server's merged output into its log with credentials redacted."""
-    for line in stream:
-        for value in secrets:
-            line = line.replace(value, "[redacted]")
-        output.write(line)
-        output.flush()
-
-
-def rotate_log(log: Path, keep: int = LOG_GENERATIONS) -> None:
-    """Shift a non-empty log to ``.1`` (up to ``.keep``): a failed start's log is evidence (F008)."""
-    if not log.is_file() or log.stat().st_size == 0:
-        return
-    log.with_name(f"{log.name}.{keep}").unlink(missing_ok=True)
-    for index in range(keep - 1, 0, -1):
-        older = log.with_name(f"{log.name}.{index}")
-        if older.is_file():
-            older.replace(log.with_name(f"{log.name}.{index + 1}"))
-    log.replace(log.with_name(f"{log.name}.1"))
+copy_output = platform_helper().copy_output
+rotate_log = platform_helper().rotate_log
 
 
 def worker(root: Path, action: str, generation: str) -> None:
     """Run the pinned installer or server while retaining bounded, sanitized logs."""
+    if os.name == "nt":
+        platform_helper().bind_worker(generation, root)
     # Wait for the parent to commit the receipt under the same lifecycle lock.
     with locked(root):
         receipt = read_receipt(root)
@@ -583,11 +580,12 @@ def worker(root: Path, action: str, generation: str) -> None:
             str(root / "environment"),
             "--python",
             "3.12",
+            *(["--managed-python"] if os.name == "nt" else []),
             *(["--refresh"] if env.get("CLIO_FROM_SCRATCH") == "1" else []),
         ]
     else:
         command = [
-            str(root / "environment/.venv/bin/python"),
+            str(environment_python(root)),
             str(root / "launch.py"),
             *manifest["arguments"],
         ]
@@ -625,7 +623,9 @@ def worker(root: Path, action: str, generation: str) -> None:
                 )
                 pump.start()
                 code = process.wait()
-                if not stopping and getattr(os, "getpgrp", None) and os.getpgrp() == os.getpid():
+                if os.name == "nt":
+                    platform_helper().release_children()
+                if sys.platform != "win32" and not stopping and os.getpgrp() == os.getpid():
                     process_group_helper().release_group(identity)
                 pump.join(timeout=10)
                 if code == 0 and helper is not None and not reused:
@@ -637,7 +637,7 @@ def worker(root: Path, action: str, generation: str) -> None:
                     if post.parent != root or post.is_symlink():
                         raise ValueError("Invalid post-install hook")
                     code = subprocess.run(
-                        [str(root / "environment/.venv/bin/python"), str(post), "install"],
+                        [str(environment_python(root)), str(post), "install"],
                         cwd=root,
                         env=env,
                         stdout=output,
@@ -747,7 +747,7 @@ def control(request: dict[str, Any]) -> dict[str, Any]:
             # Invalidate the previous result before attempting a fresh verification.
             write_json(root / "evidence/verification.json", {})
             process = subprocess.run(
-                [str(root / "environment/.venv/bin/python"), str(verify)],
+                [str(environment_python(root)), str(verify)],
                 cwd=root,
                 capture_output=True,
                 text=True,
@@ -761,7 +761,7 @@ def control(request: dict[str, Any]) -> dict[str, Any]:
                         if value:
                             diagnostics = diagnostics.replace(str(value), "[redacted]")
                 (root / "logs/verification.log").write_text(diagnostics)
-                raise RuntimeError("Provenance write/readback failed; inspect verification logs")
+                raise RuntimeError("Service verification failed; inspect verification logs")
             evidence = json.loads(process.stdout)
             evidence.update(
                 configuration_revision=receipt["configuration_revision"],

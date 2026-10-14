@@ -322,7 +322,7 @@ def test_sign_in_completion_retires_every_alcf_entry(
         again = client.get("/v1/provider-catalog")
 
     assert catalog.status_code == 200
-    assert sorted(probed) == ["argonne_metis", "argonne_sophia"]
+    assert sorted(probed) == ["argonne_metis", "argonne_minerva", "argonne_sophia", "argonne_tara"]
     assert again.json() == catalog.json()
 
 
