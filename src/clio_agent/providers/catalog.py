@@ -395,6 +395,26 @@ PROVIDERS: tuple[Provider, ...] = (
         auth_label="Globus Auth",
         strip_openai_prefix=False,
     ),
+    *(
+        Provider(
+            id=f"argonne_{cluster}",
+            label=f"ALCF {cluster.title()}",
+            description=(
+                f"Argonne's {cluster.title()} inference gateway. Uses the same "
+                "Globus inference sign-in as Sophia and Metis. Models and "
+                "deployment capabilities are discovered from this cluster."
+            ),
+            provider_kind="argonne",
+            litellm_prefix="hosted_vllm",
+            api_base=f"https://inference-api.alcf.anl.gov/resource_server/{cluster}/api/v1",
+            suggested_model="",
+            requires_api_key=False,
+            auth_method="oauth",
+            auth_label="Globus Auth",
+            strip_openai_prefix=False,
+        )
+        for cluster in ("minerva", "tara")
+    ),
     Provider(
         id="vllm",
         label="vLLM",
