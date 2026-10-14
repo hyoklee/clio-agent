@@ -32,11 +32,20 @@ def _load(name: str) -> Any:
 
 
 class FakeResponse:
-    """A minimal stand-in for ``httpx.Response`` (status + JSON body)."""
+    """A minimal stand-in for ``httpx.Response`` (status, headers and body)."""
 
-    def __init__(self, status_code: int, payload: Any) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        payload: Any,
+        *,
+        content_type: str = "application/json",
+        text: str = "",
+    ) -> None:
         self.status_code = status_code
         self._payload = payload
+        self.headers = {"content-type": content_type}
+        self.text = text
 
     def json(self) -> Any:
         return self._payload
@@ -171,6 +180,69 @@ async def test_http_401_is_reachable_but_rejected() -> None:
     assert conn.error_code == "api_key_rejected"
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("key_check", [False, True])
+async def test_cloudflare_access_block_stops_before_model_discovery(key_check: bool) -> None:
+    """An access-policy page cannot prove a PAT invalid or trigger more requests."""
+    ctx = _openrouter_ctx("unit-private-pat") if key_check else _ctx(api_key="unit-private-pat")
+    url = f"{ctx.api_base}/models"
+    denied_url = f"{ctx.api_base}/key" if key_check else url
+    client = FakeAsyncClient(
+        routes={
+            url: FakeResponse(200, {"data": [{"id": "m"}]}),
+            denied_url: FakeResponse(
+                403,
+                None,
+                content_type="text/html; charset=utf-8",
+                text=(
+                    "<!doctype html><title>Error ・ Cloudflare Access</title>"
+                    "<p>Forbidden. unit-private-pat. Your IP address: 192.0.2.1</p>"
+                ),
+            ),
+        }
+    )
+    handshake = OpenAICompatHandshake(provider=object())
+    handshake._open_client = _const_client(client)  # type: ignore[method-assign]
+
+    report = await handshake.handshake(ctx)
+
+    assert not report.ok
+    assert report.connectivity is ConnectivityState.UNREACHABLE
+    assert report.auth is AuthState.DEFERRED
+    assert report.error_code == "provider_access_blocked"
+    assert report.error is not None
+    assert "Cloudflare Access blocked this connection (HTTP 403)" in report.error
+    assert "Your API key could not be verified" in report.error
+    assert "unit-private-pat" not in report.error
+    assert "192.0.2.1" not in report.error
+    assert report.models == ()
+    expected_urls = [url, denied_url] if key_check else [url]
+    assert client.calls == [
+        (value, {"Authorization": "Bearer unit-private-pat"}) for value in expected_urls
+    ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("content_type", "text"),
+    [
+        ("application/json", '{"error": "Cloudflare Access refused key"}'),
+        ("text/html", "<title>Other gateway</title><p>Cloudflare Access</p>"),
+    ],
+)
+async def test_other_forbidden_responses_remain_rejected(content_type: str, text: str) -> None:
+    """Only the evidenced access-layer signature changes the credential verdict."""
+    ctx = _ctx()
+    client = FakeAsyncClient(
+        routes={
+            f"{ctx.api_base}/models": FakeResponse(403, {}, content_type=content_type, text=text)
+        }
+    )
+    conn = await OpenAICompatHandshake(provider=object()).check_connectivity(client, ctx)
+    assert conn.auth is AuthState.REJECTED
+    assert conn.error_code == "api_key_rejected"
+
+
 def _openrouter_ctx(api_key: str) -> HandshakeContext:
     return HandshakeContext(
         provider_id="openrouter",
@@ -234,6 +306,7 @@ async def test_an_unavailable_key_check_is_a_typed_deferred_never_a_pass() -> No
     conn = await handshake.check_connectivity(client, _openrouter_ctx("sk-or-v1-real"))
 
     assert conn.auth is AuthState.DEFERRED
+    assert conn.error is not None
     assert conn.error.startswith("key_check_unavailable")
 
 
@@ -492,10 +565,7 @@ async def test_a_rejected_key_ends_the_handshake_before_model_discovery() -> Non
     )
     handshake = OpenAICompatHandshake(provider=object())
 
-    async def _client(_ctx: HandshakeContext) -> FakeAsyncClient:
-        return client
-
-    handshake._open_client = _client  # type: ignore[method-assign]
+    handshake._open_client = _const_client(client)  # type: ignore[method-assign]
     report = await handshake.handshake(_openrouter_ctx("sk-or-v1-fake"))
 
     assert report.auth is AuthState.REJECTED

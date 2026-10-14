@@ -239,6 +239,25 @@ PROVIDERS: tuple[Provider, ...] = (
         key_check_path="/key",
     ),
     Provider(
+        id="amsc_mag",
+        label="AmSC Model Access Gateway",
+        description=(
+            "American Science Cloud's Model Access Gateway for Genesis Mission "
+            "projects. Connect with a myAmSC Personal Access Token (AMSC_TOKEN). "
+            "Available models come from your project allocation. MAG model "
+            "modifiers pass through unchanged, for example gpt-6-luna:high@openai "
+            "or claude-sonnet@amazon."
+        ),
+        provider_kind="openai",
+        litellm_prefix="openai",
+        api_base="https://mag.genesis.americansciencecloud.org/v1",
+        # The authenticated model list is project-specific; never compile one in.
+        suggested_model="",
+        api_key_env="AMSC_TOKEN",
+        auth_label="myAmSC Personal Access Token",
+        # /models authenticates the PAT; the standard handshake handles rejection.
+    ),
+    Provider(
         id="codex",
         label="Codex",
         description=(
@@ -375,6 +394,26 @@ PROVIDERS: tuple[Provider, ...] = (
         auth_method="oauth",
         auth_label="Globus Auth",
         strip_openai_prefix=False,
+    ),
+    *(
+        Provider(
+            id=f"argonne_{cluster}",
+            label=f"ALCF {cluster.title()}",
+            description=(
+                f"Argonne's {cluster.title()} inference gateway. Uses the same "
+                "Globus inference sign-in as Sophia and Metis. Models and "
+                "deployment capabilities are discovered from this cluster."
+            ),
+            provider_kind="argonne",
+            litellm_prefix="hosted_vllm",
+            api_base=f"https://inference-api.alcf.anl.gov/resource_server/{cluster}/api/v1",
+            suggested_model="",
+            requires_api_key=False,
+            auth_method="oauth",
+            auth_label="Globus Auth",
+            strip_openai_prefix=False,
+        )
+        for cluster in ("minerva", "tara")
     ),
     Provider(
         id="vllm",

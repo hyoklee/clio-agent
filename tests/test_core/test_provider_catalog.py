@@ -141,6 +141,24 @@ class TestLookups:
     def test_kind_default_returns_none_for_unknown_kind(self) -> None:
         assert kind_default("does-not-exist") is None
 
+    @pytest.mark.parametrize("cluster", ["minerva", "tara"])
+    def test_additional_alcf_clusters_share_auth_and_preserve_live_model_ids(
+        self, cluster: str
+    ) -> None:
+        provider = get_provider(f"argonne_{cluster}")
+        assert provider is not None
+        assert provider.label == f"ALCF {cluster.title()}"
+        assert provider.provider_kind == "argonne"
+        assert provider.auth_method == "oauth"
+        assert provider.auth_label == "Globus Auth"
+        assert provider.requires_api_key is False
+        assert provider.api_base == (
+            f"https://inference-api.alcf.anl.gov/resource_server/{cluster}/api/v1"
+        )
+        assert provider.suggested_model == ""
+        assert provider.strip_openai_prefix is False
+        assert provider.is_kind_default is False
+
 
 # ---------------------------------------------------------------------
 # derived legacy views
@@ -185,6 +203,7 @@ class TestDerivedViews:
             "openai": "OPENAI_API_KEY",
             "anthropic": "ANTHROPIC_API_KEY",
             "openrouter": "OPENROUTER_API_KEY",
+            "amsc_mag": "AMSC_TOKEN",
             "azure_openai": "AZURE_API_KEY",
             "gemini": "GOOGLE_API_KEY",
             "nvidia_nim": "NVIDIA_NIM_API_KEY",

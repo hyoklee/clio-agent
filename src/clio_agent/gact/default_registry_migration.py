@@ -116,8 +116,12 @@ def _read_state(install_root: Path) -> dict[str, Any]:
 
 
 def _write_state(install_root: Path, state: dict[str, Any]) -> None:
-    install_root.mkdir(parents=True, exist_ok=True)
-    sync_marker_path(install_root).write_text(json.dumps(state, indent=2) + "\n", encoding="utf-8")
+    from clio_agent.gact.blueprint_coordination import blueprint_write_roots, check_registry_claim
+    from clio_agent.gact.blueprint_ledgers import write_json_atomic
+
+    with blueprint_write_roots(install_root):
+        check_registry_claim(install_root)
+        write_json_atomic(sync_marker_path(install_root), state)
 
 
 def recorded_sync_version(install_root: Path) -> str:
@@ -162,10 +166,10 @@ def _record(reason: str, **fields: Any) -> None:
 
 @contextlib.contextmanager
 def registry_install_lock(install_root: Path) -> Iterator[bool]:
-    """Try to take the cross-process registry lock without waiting.
+    """Try the filesystem guard and any enrolled Core ownership without waiting.
 
-    Yields ``True`` when held (released on exit), ``False`` when another
-    process holds it -- the caller skips this time instead of blocking.
+    Yields ``True`` when held, ``False`` when another writer or retained recovery
+    receipt blocks it. Enrolled roots never fall back to filesystem-only mode.
     """
 
     install_root.mkdir(parents=True, exist_ok=True)
@@ -176,7 +180,10 @@ def registry_install_lock(install_root: Path) -> Iterator[bool]:
         yield False
         return
     try:
-        yield True
+        from clio_agent.gact.blueprint_coordination import core_registry_claim
+
+        with core_registry_claim(install_root) as held:
+            yield held
     finally:
         lock.release()
 
@@ -332,39 +339,53 @@ def replace_pack_atomically(
         _write_install_metadata,
         parse_agent_blueprint_root,
     )
+    from clio_agent.gact.blueprint_coordination import blueprint_write_roots, check_registry_claim
 
-    staging_root = install_root.parent / STAGING_DIR_NAME
-    staging_root.mkdir(parents=True, exist_ok=True)
-    token = uuid.uuid4().hex[:8]  # short: the staged tree is the deepest path written
-    staged = staging_root / f"{pack_id}.new-{token}"
-    backup = staging_root / f"{pack_id}.old-{token}"
-    final = install_root / pack_id
-    try:
-        copy_blueprint_tree(candidate, staged)
-        parsed = parse_agent_blueprint_root(staged, scope=str(metadata.get("scope") or "install"))
-        if not parsed.enabled:
-            raise ValueError("staged blueprint is invalid: " + "; ".join(parsed.validation_errors))
-        retained = (
-            {"retained_previous_revision": str(backup)} if keep_backup and final.exists() else {}
-        )
-        _write_install_metadata(
-            staged, {**metadata, **retained, "checksum": _tree_checksum(staged)}
-        )
-        if final.exists():
-            rename_extended(final, backup)
+    with blueprint_write_roots(install_root):
+        check_registry_claim(install_root)
+        staging_root = install_root.parent / STAGING_DIR_NAME
+        staging_root.mkdir(parents=True, exist_ok=True)
+        token = uuid.uuid4().hex[:8]  # short: the staged tree is the deepest path written
+        staged = staging_root / f"{pack_id}.new-{token}"
+        backup = staging_root / f"{pack_id}.old-{token}"
+        final = install_root / pack_id
         try:
-            rename_extended(staged, final)
-        except BaseException:
-            if backup.exists() and not final.exists():
-                rename_extended(backup, final)
-            raise
-    finally:
-        rmtree_extended(staged, ignore_errors=True)
-    if backup.exists() and not keep_backup:
-        try:
-            rmtree_extended(backup)
-        except OSError as exc:
-            logger.warning("default_registry_backup_not_removed path=%s error=%r", backup, exc)
+            copy_blueprint_tree(candidate, staged)
+            parsed = parse_agent_blueprint_root(
+                staged, scope=str(metadata.get("scope") or "install")
+            )
+            if not parsed.enabled:
+                raise ValueError(
+                    "staged blueprint is invalid: " + "; ".join(parsed.validation_errors)
+                )
+            retained = (
+                {"retained_previous_revision": str(backup)}
+                if keep_backup and final.exists()
+                else {}
+            )
+            _write_install_metadata(
+                staged, {**metadata, **retained, "checksum": _tree_checksum(staged)}
+            )
+            if final.exists():
+                check_registry_claim(install_root)
+                rename_extended(final, backup)
+            try:
+                check_registry_claim(install_root)
+                rename_extended(staged, final)
+            except BaseException:
+                if backup.exists() and not final.exists():
+                    check_registry_claim(install_root)
+                    rename_extended(backup, final)
+                raise
+        finally:
+            check_registry_claim(install_root)
+            rmtree_extended(staged, ignore_errors=True)
+        if backup.exists() and not keep_backup:
+            try:
+                check_registry_claim(install_root)
+                rmtree_extended(backup)
+            except OSError as exc:
+                logger.warning("default_registry_backup_not_removed path=%s error=%r", backup, exc)
 
 
 def _resync(

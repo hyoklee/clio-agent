@@ -37,7 +37,7 @@ import contextvars
 import json
 import uuid
 from collections.abc import Callable, Mapping
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Iterator, Optional
 
@@ -115,7 +115,7 @@ _ACTIVE_BLUEPRINT_TOOL_ROWS = _CompatVar(
 
 
 @contextmanager
-def _tool_session_context(sid: str) -> Iterator[None]:
+def _tool_session_context(sid: str, *, lease_fleet: bool = True) -> Iterator[None]:
     """Bind the tool session id + workspace root + active blueprint for the turn.
 
     The four tool-runtime hooks are resolved per tool call by the installed
@@ -158,7 +158,7 @@ def _tool_session_context(sid: str) -> Iterator[None]:
     try:
         if workspace_root and callable(lease):
             with (
-                lease(workspace_root),
+                lease(workspace_root) if lease_fleet else nullcontext(),
                 tool_workspace_context(workspace_root),
                 tool_blueprint_context(blueprint_id, blueprint_path),
             ):

@@ -188,7 +188,11 @@ async def forward_turn(state: "TurnState") -> Any:
         # Pin that fleet across initial construction, every delegated child, parent
         # resumes, and the gaps between them; otherwise the idle reaper can close a
         # still-referenced executor during a long multi-expert turn.
-        with _tool_session_context(state.sid):
+        from clio_agent.gact.runtime.async_tool_session import (  # noqa: PLC0415
+            async_tool_session_context,
+        )
+
+        async with async_tool_session_context(state.sid):
             return await _forward_turn_leased(state)
 
 
