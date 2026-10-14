@@ -9,6 +9,8 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, NoReturn
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 import pytest
 
@@ -60,6 +62,46 @@ def test_confined_converter_cannot_start_an_installer(
     monkeypatch.setattr(office, "ensure_office", forbidden)
     with pytest.raises(process.DocumentError, match="repair renderer access on the CLIO host"):
         process.office_convert(tmp_path / "deck.pptx", tmp_path / "out", "pdf")
+
+
+def test_host_created_office_profile_is_accessible_to_its_confined_executor(tmp_path: Path) -> None:
+    source = tmp_path / "deck.pptx"
+    source.write_bytes(b"immutable deck")
+    output = tmp_path / "out"
+
+    def execute(command: list[str], cwd: Path) -> None:
+        profile_url = command[1].split("=", 1)[1]
+        profile = Path(url2pathname(urlparse(profile_url).path))
+        assert not process._windows_dacl_protected(profile.parent)
+        assert (profile / "registrymodifications.xcu").is_file()
+        assert cwd == output
+        (cwd / "deck.pdf").write_bytes(b"%PDF-1.7\npreview")
+
+    pdf = process.office_convert(
+        source, output, "pdf", execute=execute, executable_path="soffice", workspace=tmp_path
+    )
+    assert pdf.read_bytes() == b"%PDF-1.7\npreview"
+    assert source.read_bytes() == b"immutable deck"
+    assert not list(process.scratch_root(tmp_path).iterdir())
+
+
+@pytest.mark.parametrize("managed", [False, True])
+def test_discovered_managed_renderer_still_receives_host_access_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, managed: bool
+) -> None:
+    root = tmp_path / "managed-office"
+    native = str(root / "program" / "soffice") if managed else str(tmp_path / "system-soffice")
+    calls: list[Path] = []
+
+    def prepare(path: Path) -> str:
+        calls.append(path)
+        return native
+
+    monkeypatch.setattr(document_runtime, "office_runtime_root", lambda: root)
+    monkeypatch.setattr(process, "find_native", lambda name: native)
+    monkeypatch.setattr(office, "ensure_office", prepare)
+    assert document_runtime.prepare_office_runtime() == native
+    assert calls == ([root] if managed else [])
 
 
 @pytest.mark.parametrize(

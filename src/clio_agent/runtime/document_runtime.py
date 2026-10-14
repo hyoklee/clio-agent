@@ -475,7 +475,12 @@ def prepare_office_runtime() -> str:
     from clio_agent.runtime.document_stack.office import ensure_office
     from clio_agent.runtime.document_stack.process import find_native
 
-    return find_native("soffice") or ensure_office(office_runtime_root())
+    managed_root = office_runtime_root()
+    native = find_native("soffice")
+    if native and not Path(native).resolve().is_relative_to(managed_root.resolve()):
+        return native
+    # A discovered managed executable still needs its host-side access repair.
+    return ensure_office(managed_root)
 
 
 def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) -> dict[str, Any]:

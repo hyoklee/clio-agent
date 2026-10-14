@@ -15,6 +15,7 @@ from clio_agent.gact.artifacts.designation_tool import build_create_artifact_too
 from clio_agent.gact.catalog import _builtin_main_agent
 from clio_agent.gact.documents import renditions
 from clio_agent.gact.documents.profiles import document_format
+from clio_agent.runtime.document_stack.process import _windows_dacl_protected
 from tests.test_gact.test_document_artifacts import _pin, _workspace_session
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
@@ -83,6 +84,7 @@ def test_pdf_preview_is_persisted_reused_and_bound_to_immutable_source(
     def convert(path: Path, output: Path) -> tuple[Path, str]:
         assert path.is_relative_to(root / ".tmp")
         assert output.is_relative_to(root / ".tmp")
+        assert not _windows_dacl_protected(output)
         seen.append(path.read_bytes())
         pdf = output / "report.pdf"
         pdf.write_bytes(b"%PDF-1.7\n" + path.read_bytes())

@@ -40,7 +40,11 @@ with that mode excludes the host reader. See
   Inspect one root; repair only when protected. Preserve existing explicit ACEs,
   avoid `/T` and repeated recursive grant passes, and keep the write fence active.
 - Create run directories with the output parent's existing Windows ACL from the
-  start. POSIX retains mode 0700; private disposable Office profiles remain private.
+  start. POSIX retains mode 0700. Profiles created inside a worker stay private;
+  host-created preview staging and Office profiles inherit their parent's grants
+  before the confined executor uses them. These repairs touch each new root only.
+- Route artifact PDF previews through the same host-side Office preparation,
+  including access repair when the managed executable was already discovered.
 - Include `visual_review: "not performed"` in initial/failure manifests. Rendering
   alone still does not assert review.
 - Preserve the requested outcome in shared todo guidance and the presentation

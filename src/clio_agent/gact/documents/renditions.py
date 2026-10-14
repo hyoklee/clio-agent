@@ -24,6 +24,7 @@ from clio_agent.platform_paths import win_extended_path
 from clio_agent.runtime.document_stack.process import (
     DocumentError,
     find_native,
+    inherit_parent_access,
     office_convert,
     run,
     scratch_root,
@@ -158,14 +159,12 @@ def _convert_to_pdf(source: Path, output_dir: Path) -> tuple[Path, str]:
             if not output.is_file():
                 raise RenditionError("pandoc completed without producing a PDF")
             return output, "pandoc+typst" if typst is not None else "pandoc"
-    soffice = _find_executable("soffice", "libreoffice")
-    if soffice is None:
-        from clio_agent.runtime.document_runtime import prepare_office_runtime
+    from clio_agent.runtime.document_runtime import prepare_office_runtime
 
-        try:
-            soffice = prepare_office_runtime()
-        except DocumentError as exc:
-            raise RenditionUnavailableError(str(exc)) from exc
+    try:
+        soffice = prepare_office_runtime()
+    except DocumentError as exc:
+        raise RenditionUnavailableError(str(exc)) from exc
     try:
         return office_convert(
             source,
@@ -255,6 +254,9 @@ def _render_pdf(
     # Each conversion owns a disposable run under workspace-local .tmp.
     with tempfile.TemporaryDirectory(prefix="render-", dir=scratch_root(workspace_root)) as raw_tmp:
         temporary_root = Path(raw_tmp)
+        # The host stages immutable bytes, then a different Windows sandbox user
+        # runs the converter. Python's private temporary ACL would exclude it.
+        inherit_parent_access(temporary_root)
         source = _source_path(workspace_root, version, temporary_root, record.name)
         token = _RENDER_WORKSPACE.set(workspace_root)
         try:

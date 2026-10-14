@@ -212,6 +212,10 @@ def office_convert(
         profile_root = Path(os.environ.get("CLIO_DOCUMENT_SHORT_TEMP", tempfile.gettempdir()))
     temporary = tempfile.TemporaryDirectory(prefix="lo-", dir=profile_root)
     try:
+        if execute is not None:
+            # A host-created profile must be reachable by the confined executor.
+            # Profiles created inside the worker keep their private ACL instead.
+            inherit_parent_access(Path(temporary.name))
         profile = Path(temporary.name).resolve() / "profile"
         profile.mkdir()
         (profile / "registrymodifications.xcu").write_text(
