@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from clio_agent.gact.turn_state import TurnState
 
 
-def persist_paused_transcript(state: "TurnState") -> str:
+def persist_paused_transcript(state: "TurnState") -> str | None:
     """Save existing parts verbatim, without fabricating an answer or completing work.
 
     Input-required turns bypass normal finalization. Close and persist their
@@ -43,13 +43,13 @@ def persist_paused_transcript(state: "TurnState") -> str:
         stop_reason="waiting_user",
         metadata=state.assistant_metadata,
     )
-    persist_finalized_message(
+    confirmed = persist_finalized_message(
         state.app,
         state.sid,
         message,
         after_confirmed=lambda: publish_paused_transcript(state, message),
     )
-    return message.id
+    return message.id if confirmed else None
 
 
 def publish_paused_transcript(state: "TurnState", message: Message) -> None:

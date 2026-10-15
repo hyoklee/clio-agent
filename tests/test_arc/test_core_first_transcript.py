@@ -358,6 +358,8 @@ async def test_final_recording_boundary_retains_original_confirmation_and_public
     sid = root.owner.session_id
     install(app, tmp_path)
     message = retained(sid, "original-boundary-output", 10, role="assistant")
+    for name in ("live_assistant_message_ids", "live_assistant_parts", "live_assistant_part_keys"):
+        setattr(app.state, name, {sid: message.id if name.endswith("ids") else ["old content"]})
     publications: list[str] = []
     failed = False
 
@@ -394,6 +396,15 @@ async def test_final_recording_boundary_retains_original_confirmation_and_public
         assert await asyncio.to_thread(assemble_session_messages, arc, sid) == (
             [] if withdraw else [message]
         )
+        if withdraw:
+            assert all(
+                sid not in getattr(app.state, name)
+                for name in (
+                    "live_assistant_message_ids",
+                    "live_assistant_parts",
+                    "live_assistant_part_keys",
+                )
+            )
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

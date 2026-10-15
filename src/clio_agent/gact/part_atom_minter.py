@@ -408,7 +408,7 @@ def transcript_sink(app: Any, session_id: str) -> Callable[[str, dict[str, Any],
 
 def persist_finalized_message(
     app: Any, session_id: str, message: Any, *, after_confirmed: Callable[[], None] | None = None
-) -> None:
+) -> bool:
     """Retain one confirmation/publication handoff for the immutable final output."""
     from clio_agent.errors import ClioError
     from clio_agent.gact.transcript_projection import canonical_log_arc
@@ -436,6 +436,21 @@ def persist_finalized_message(
         recording = record_message(arc, session_id, frozen, expected_visibility=expected)
         close_turn_minter(app, session_id)
         if recording == "withdrawn":
+            # Retirement is independent of publication, including when Stop
+            # already cancelled the waiter. Never clear a successor's live slot.
+            live_ids = getattr(app.state, "live_assistant_message_ids", {})
+            if live_ids.get(session_id) == frozen.id:
+                for name in (
+                    "live_assistant_message_ids",
+                    "live_assistant_parts",
+                    "live_assistant_part_keys",
+                ):
+                    getattr(app.state, name, {}).pop(session_id, None)
+            registry = getattr(app.state, "turn_transcripts", None)
+            transcript = registry.get(session_id) if registry is not None else None
+            if registry is not None and transcript is not None and transcript.message_id == frozen.id:
+                transcript.abandon()
+                registry.close(session_id)
             return False
         project_message(app, session_id, frozen, newly_recorded=recording == "recorded")
         record_state_merge_best_effort(arc, session_id, frozen)
@@ -454,6 +469,7 @@ def persist_finalized_message(
             pending = TranscriptRecordingPending(frozen, confirm, error)
             pending.after_confirmed = after_confirmed
             raise pending from error
+    return confirmed
 
 
 def failed_finalize_identity(app: Any, session_id: str) -> tuple[str, list[Any]]:

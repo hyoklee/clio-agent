@@ -81,7 +81,7 @@ def finalize_turn(
     *,
     drain_observed_tool_calls: "Callable[[list[dict[str, Any]]], list[dict[str, Any]]]",
     update_retry_attempt: "Callable[..., None]",
-) -> None:
+) -> bool:
     """Assemble the original assistant output, then record it before publication.
 
     Provider execution is already finished. Recording retry must never repeat
@@ -401,7 +401,7 @@ def finalize_turn(
     if state.assistant_metadata:
         completed_payload["metadata"] = state.assistant_metadata
     state.app.state.turn_transcripts.close(state.sid)
-    persist_finalized_message(
+    return persist_finalized_message(
         state.app,
         state.sid,
         assistant_msg,

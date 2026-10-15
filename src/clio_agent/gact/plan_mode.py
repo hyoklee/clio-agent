@@ -581,6 +581,11 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
 
         recording.after_confirmed = publish
         raise
+    if assistant_message_id is None:
+        from clio_agent.gact.turn_stream import settle_turn_transcript
+
+        settle_turn_transcript(state)
+        return True  # Withdrawn output cannot publish an approval.
     complete_plan_exit_pause(
         state,
         pending,

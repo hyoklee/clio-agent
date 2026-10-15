@@ -6,6 +6,7 @@ from typing import Any
 
 from clio_agent.arc.task_types import QuestionDefinition, QuestionReply, TaskSnapshot
 from clio_agent.gact.permission_delivery import attended_session_id
+from clio_agent.gact.questions import ObsoleteQuestionGate
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.types import UserQuestion
 
@@ -23,7 +24,7 @@ def prepare_question_gate(app: Any, task: TaskSnapshot, definition: QuestionDefi
     else:
         return
     if not valid:
-        raise ValueError("Approval no longer addresses its owning assignment/input")
+        raise ObsoleteQuestionGate("Approval no longer addresses its owning assignment/input")
 
 
 def release_cancelled_assignment_gate(app: Any, assignment: TaskSnapshot) -> None:
@@ -265,6 +266,25 @@ def resolve_plan_question(app: Any, task: TaskSnapshot) -> None:
     from clio_agent.gact.routes.plan_interactions import is_plan_exit_question
 
     if task.terminal_at is None:
+        return
+    outcome = app.state.task_history.read_content(task.result) if task.result is not None else None
+    if isinstance(outcome, dict) and outcome.get("reason") == "obsolete_gate":
+        # Rebuilding a closed stale header cannot replay approval or touch a successor's gate.
+        session = app.state.sessions.get(task.owner.session_id)
+        if session is not None and session.metadata.get("execution_gate") == task.handle:
+            app.state.sessions.update(
+                session.id,
+                status="idle" if session.status == "waiting_user" else None,
+                metadata_patch={
+                    key: ""
+                    for key in (
+                        "execution_gate",
+                        "pending_user_question_id",
+                        "pending_defer_permission_id",
+                    )
+                    if session.metadata.get(key) == task.handle
+                },
+            )
         return
     if task.tool == "hook_defer":
         from clio_agent.gact.hooks.turn_approval import resolve

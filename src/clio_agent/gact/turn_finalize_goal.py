@@ -54,13 +54,16 @@ async def finalize_turn_async(
     from clio_agent.gact.turn_stream import settle_turn_transcript
 
     try:
-        await join_off_loop(
+        confirmed = await join_off_loop(
             finalize_turn,
             state,
             pred,
             drain_observed_tool_calls=drain_observed_tool_calls,
             update_retry_attempt=update_retry_attempt,
         )
+        if not confirmed:
+            await join_off_loop(settle_turn_transcript, state)
+            return  # Match deferred withdrawal: no goal/hook continuation.
     except TranscriptRecordingPending as pending:
         if not await resume_recording(state.app, pending):
             await join_off_loop(settle_turn_transcript, state)

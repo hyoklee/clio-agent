@@ -20,6 +20,70 @@ from tests.test_arc.test_core_first_transcript import install
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["goal", "plan"])
+async def test_withdrawn_output_retires_without_goal_execution_or_plan_approval(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """The callers must distinguish withdrawal from successful publication."""
+    from clio_agent.gact import turn_finalize_goal
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    retired: list[str] = []
+    state: Any = SimpleNamespace(
+        app=app,
+        sid=sid,
+        user_msg=retained(sid, "request", 10),
+        error_info=None,
+        turn_id="withdrawn-turn",
+        trace_id="withdrawn-trace",
+    )
+    monkeypatch.setattr(
+        "clio_agent.gact.turn_stream.settle_turn_transcript", lambda item: retired.append(item.sid)
+    )
+
+    def forbidden(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("Withdrawn output cannot drive further execution")
+
+    try:
+        if path == "goal":
+            monkeypatch.setattr(
+                turn_finalize_goal, "finalize_turn", lambda *_args, **_kwargs: False
+            )
+            monkeypatch.setattr(turn_finalize_goal, "dispatch_goal_at_finalize", forbidden)
+            monkeypatch.setattr("clio_agent.gact.autonomy_output.observe_control_output", forbidden)
+            await turn_finalize_goal.finalize_turn_async(
+                state,
+                None,
+                drain_observed_tool_calls=lambda rows: rows,
+                update_retry_attempt=lambda *_args, **_kwargs: None,
+            )
+        else:
+            plan = tmp_path / "review.md"
+            plan.write_text("# Plan\nInspect the owned inputs.\n", encoding="utf-8")
+            await asyncio.to_thread(
+                app.state.sessions.update,
+                sid,
+                mode="plan",
+                metadata_patch={
+                    "pending_plan_exit": {"summary": "Inspect inputs", "plan_file": str(plan)}
+                },
+            )
+            monkeypatch.setattr(
+                "clio_agent.gact.plan_reuse.save_approved_plan", lambda *_args, **_kwargs: ""
+            )
+            monkeypatch.setattr(
+                "clio_agent.gact.paused_transcript.persist_paused_transcript", lambda _state: None
+            )
+            monkeypatch.setattr(app.state.questions, "create", forbidden)
+            assert await asyncio.to_thread(plan_mode.maybe_pause_for_plan_exit, state)
+        assert retired == [sid]
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
 async def test_stop_of_plan_recording_wait_does_not_enter_normal_finalization(
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

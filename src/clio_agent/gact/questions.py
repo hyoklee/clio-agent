@@ -31,6 +31,10 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+class ObsoleteQuestionGate(ValueError):
+    """A confirmed approval no longer addresses its original assignment or input."""
+
+
 class QuestionCommands:
     """The sole owner of Question post/answer/cancel decisions.
 
@@ -165,7 +169,10 @@ class QuestionCommands:
             for handle in self.history.task_handles(kind="Question", active_only=True):
                 current = self.history.task_snapshot(handle)
                 if current is not None and not current.raw_status and current.details is not None:
-                    self.post(current, self._definition(current))
+                    try:
+                        self.post(current, self._definition(current))
+                    except ObsoleteQuestionGate:
+                        self._close(current, "cancelled", reason="obsolete_gate")
 
     @staticmethod
     def _normalize(definition: QuestionDefinition) -> QuestionDefinition:
@@ -393,9 +400,13 @@ class QuestionCommands:
                 return self._close(current, "expired")
             return current
 
-    def _close(self, current: TaskSnapshot, status: str) -> TaskSnapshot:
+    def _close(
+        self, current: TaskSnapshot, status: str, *, reason: str | None = None
+    ) -> TaskSnapshot:
         stamp = _now()
-        result = self.history.write_content(current.owner.session_id, {"status": status})
+        result = self.history.write_content(
+            current.owner.session_id, {"status": status, **({"reason": reason} if reason else {})}
+        )
         closed = current.model_copy(
             update={
                 "raw_status": status,
