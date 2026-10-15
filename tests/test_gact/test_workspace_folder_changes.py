@@ -198,3 +198,77 @@ def test_primary_change_retires_old_and_destination_fleets(tmp_path: Path) -> No
     )
     assert response.status_code == 200
     assert [call.args for call in restart.call_args_list] == [(str(original),), (str(destination),)]
+
+
+@pytest.mark.parametrize("kind_dispatch", [True, False])
+def test_workspace_folder_changes_publish_real_boundary_records(
+    tmp_path: Path, kind_dispatch: bool
+) -> None:
+    """HTTP folder mutations must finish their real ARC-to-UI boundary writes."""
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    client = TestClient(app)
+    original, destination, additional = (tmp_path / name for name in ("old", "new", "extra"))
+    wid = client.post(
+        "/v1/workspaces", json={"name": "research", "root_path": str(original)}
+    ).json()["id"]
+    sid = client.post("/v1/sessions", json={"workspace_id": wid}).json()["id"]
+    grant_body = (
+        {"kind": "fs_root", "pattern": str(additional)}
+        if kind_dispatch
+        else {"root": str(additional)}
+    )
+    assert client.post(f"/v1/workspaces/{wid}/grants", json=grant_body).status_code == 200
+    assert (
+        client.patch(f"/v1/workspaces/{wid}", json={"root_path": str(destination)}).status_code
+        == 200
+    )
+    assert (
+        client.delete(
+            f"/v1/workspaces/{wid}/grants", params={"kind": "fs_root", "pattern": str(additional)}
+        ).status_code
+        == 200
+    )
+    recorded = [
+        (row.payload["event_type"], row.payload["payload"]["pattern"])
+        for row in app.state.bus._history.get(sid, [])
+        if row.type == "semantic.event" and row.payload["event_type"].startswith("boundary.")
+    ]
+    assert recorded == [
+        ("boundary.granted", str(additional.resolve())),
+        ("boundary.revoked", str(original)),
+        ("boundary.granted", str(destination)),
+        ("boundary.revoked", str(additional.resolve())),
+    ]
+
+
+def test_revocation_keeps_another_workspace_owner_at_the_same_primary(tmp_path: Path) -> None:
+    """A shared-root registry entry stays while any workspace still owns its grant."""
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    primary, additional = tmp_path / "primary", tmp_path / "additional"
+    first = app.state.workspaces.create(name="first", root_path=str(primary))
+    second = app.state.workspaces.create(name="second", root_path=str(primary))
+    grants.apply_root_grant(app, first.id, str(additional))
+    grants.apply_root_grant(app, second.id, str(additional))
+    response = TestClient(app).delete(
+        f"/v1/workspaces/{first.id}/grants",
+        params={"kind": "fs_root", "pattern": str(additional)},
+    )
+    assert response.status_code == 200
+    assert response.json()["grant"]["revoked"] is True
+    assert app.state.workspaces.get(first.id).config[grants.GRANTED_ROOTS_CONFIG_KEY] == []
+    assert app.state.workspaces.get(second.id).config[grants.GRANTED_ROOTS_CONFIG_KEY] == [
+        str(additional.resolve())
+    ]
+    assert sandbox_roots.granted_write_roots(str(primary)) == (additional.resolve(),)
+    repeated = TestClient(app).delete(
+        f"/v1/workspaces/{first.id}/grants",
+        params={"kind": "fs_root", "pattern": str(additional)},
+    )
+    assert repeated.status_code == 200 and repeated.json()["grant"]["revoked"] is False
+    assert sandbox_roots.granted_write_roots(str(primary)) == (additional.resolve(),)
+    last_owner = TestClient(app).delete(
+        f"/v1/workspaces/{second.id}/grants",
+        params={"kind": "fs_root", "pattern": str(additional)},
+    )
+    assert last_owner.status_code == 200 and last_owner.json()["grant"]["revoked"] is True
+    assert sandbox_roots.granted_write_roots(str(primary)) == ()

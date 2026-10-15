@@ -92,6 +92,9 @@ tool processes keep their sandbox until they finish and restart; new processes
 use the updated boundary. The OS sandbox controls writes, while file-tool policy
 also checks reads. A permitted folder is not a read-only source connection.
 
+Workspaces using the same primary folder share its file-tool boundary. Removing
+an additional grant from one keeps any grant still held by the other.
+
 ### Other file-policy settings
 
 File tools can only reach certain folders. By default these are:
