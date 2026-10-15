@@ -105,7 +105,7 @@ async def create_environment(
         ), root
 
     app, root = await asyncio.to_thread(records)
-    app.state.arc, app.state.bus = arc, EventBus()
+    app.state.arc, app.state.bus, app.state.messages = arc, EventBus(), {}
     app.state.semantic_event_sink = SemanticEventSink(
         bus=app.state.bus, trace_backend=NoopSemanticTraceBackend()
     )
@@ -395,6 +395,7 @@ async def test_busy_typed_inputs_preserve_media_and_order_through_core_recovery(
             content = history.write_content(
                 sid,
                 {
+                    "message_id": message.id,
                     "text": text,
                     "model_text": text,
                     "message": message.model_dump(mode="json"),
@@ -569,7 +570,11 @@ async def test_busy_evidence_uses_accepted_snapshot_and_rechecks_current_access(
             updated_at=now(),
             parts=parts,
         )
-        payload = {"text": "Review the evidence", "message": message.model_dump(mode="json")}
+        payload = {
+            "message_id": message.id,
+            "text": "Review the evidence",
+            "message": message.model_dump(mode="json"),
+        }
         app.state.context_frames[sid][0]["items"] = [{"source_id": "changed-source"}]
         rendered = queued_user_input(app, sid, payload)
         assert "as-of snapshot; current state has moved" in rendered["text"]

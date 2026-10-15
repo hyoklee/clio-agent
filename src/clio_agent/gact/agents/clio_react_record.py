@@ -387,7 +387,7 @@ class StepRecorder:
 
         app = context.active_app()
         owner = getattr(getattr(app, "state", None), "conversations", None)
-        if owner is None:
+        if app is None or owner is None:
             return
         assignment = context.active_assignment_handle()
         if not assignment:
@@ -467,6 +467,9 @@ class StepRecorder:
         if identity and human_head:
             rendered[identity] = human_head
         staged = owner.mail.bound_rendered(staged, rendered)
+        from clio_agent.gact.session_store import project_accepted_mail_messages
+
+        project_accepted_mail_messages(app, owner.history, self.session, staged.items)
         references = tuple(
             owner.history.write_content(self.session, rendered[item.id])
             for item in staged.items

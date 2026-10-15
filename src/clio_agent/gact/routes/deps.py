@@ -331,7 +331,6 @@ class _StartBackgroundUserTurn(Protocol):
         turn_agent_id: str = ...,
         user_msg_id: str = ...,
         user_created_at: str = ...,
-        replace_existing_user_message: bool = ...,
         supersedes_input: str = ...,
     ) -> "Message": ...
 

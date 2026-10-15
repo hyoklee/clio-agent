@@ -580,3 +580,19 @@ repair with the existing Core acceptance writer. `task-replacement-r46-impact.md
 records source impact, required rechecks, Core binding warnings and exact new
 manual-only cleanup roots. Required review, CI, F03 and the remaining live matrix
 stay outstanding. No old execution authority is restored.
+
+## R46 review and R47 transcript-owner replacement
+
+Both R46 reviewers found whole-view repair unsafe against output finalization;
+the Core task-writer lock alone was insufficient. Their source verdict and
+exclusions are in `task-replacement-reviews-r46.md`. Astra's independent ownership
+trace recommended an atomic exact-message splice preserving the raw lane, rather
+than locks on all producers or boundary-only repair.
+
+`task-replacement-r47-impact.md` documents the replacement in the existing
+transcript owner, shared placement, input-commit integration, removed legacy
+whole-view acceptance option and failure semantics. Scoped static checks and
+unchanged guards pass; new regressions are constructed, unexecuted. R47 still
+requires independent source review and affected actual-model verification. No
+test or source verdict is counted as qualification. Required CI, F03, remaining
+Q/R rows and the newly manual-only cleanup roots remain outstanding.

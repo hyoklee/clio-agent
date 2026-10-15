@@ -48,7 +48,7 @@ from clio_agent.gact.runtime.globals import (
     _UnsupportedSessionAgent,
 )
 from clio_agent.gact.runtime.retention import enforce_dict_bound
-from clio_agent.gact.session_store import _append_session_message, _replace_session_messages
+from clio_agent.gact.session_store import _append_session_message
 from clio_agent.gact.skills import SkillNotDelegatableError
 from clio_agent.gact.stream_failures import forward_error_info
 from clio_agent.gact.streaming import _extract_tools_called, _pop_stream_fallback
@@ -631,7 +631,6 @@ def _start_background_user_turn(
     turn_agent_id: str = "",
     user_msg_id: str = "",
     user_created_at: str = "",
-    replace_existing_user_message: bool = False,
     message_role: Literal["user", "system"] = "user",
     retained_model: Optional[dict[str, Any]] = None,
     mailbox_item: Any = None,
@@ -761,14 +760,7 @@ def _start_background_user_turn(
         # Core mail is authoritative. A failure before its commit must not leave
         # a conflicting transcript row; a later projection failure is recoverable
         # from the confirmed message body through startup/segment preparation.
-        if replace_existing_user_message:
-            rows = list(app.state.messages.get(sid, []))
-            rows = [user_msg if row.id == user_msg.id else row for row in rows]
-            if not any(row.id == user_msg.id for row in rows):
-                rows.append(user_msg)
-            _replace_session_messages(app, sid, rows)
-        else:
-            _append_session_message(app, sid, user_msg)
+        _append_session_message(app, sid, user_msg)
         app.state.bus.publish(
             Event(
                 type="message.created",

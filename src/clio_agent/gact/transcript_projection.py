@@ -61,8 +61,10 @@ from typing import TYPE_CHECKING, Any, Optional
 from clio_agent.arc.lane_chunking import lane_has_segments, lane_segments
 from clio_agent.arc.lane_generations import current_base, erase_lane, replace_lane
 from clio_agent.errors import ClioError
+from clio_agent.gact.messages import retained_message_position
 from clio_agent.gact.part_atoms import (
     MESSAGE_PART_SCOPE,
+    append_part_atom,
     build_message_part_atoms,
     fully_retracted,
     group_atoms_in_order,
@@ -236,6 +238,107 @@ def assemble_session_messages(arc: Any, session_id: str) -> list[Message]:
     # equally-frozen value).
     materialize_state_merge_projection(arc, session_id, messages)
     return messages
+
+
+def ensure_accepted_message(app: "FastAPI", session_id: str, message: Message) -> None:
+    """Splice only an accepted human message into the current raw lane, preserving live atoms.
+
+    The existing lane lock and generation writer confirm the canonical change.
+    Unrelated partial messages, envelopes, retractions and their relative order
+    remain verbatim. Cache presence never substitutes for durable confirmation.
+    """
+    if message.session_id != session_id or message.role != "user":
+        raise ValueError("Accepted message belongs to another session or role")
+    arc = _arc(app)
+    if arc is not None:
+        store = arc._segments
+        with store._lock_for(session_id, MESSAGE_PART_SCOPE):
+            base = current_base(store, session_id, MESSAGE_PART_SCOPE)
+            atoms = [
+                segment.content
+                for segment in lane_segments(store, session_id, base, include_tombstoned=False)
+            ]
+            groups = group_atoms_in_order(atoms)
+            retracted = retracted_part_ids(atoms)
+            if any(part.id and part.id in retracted for part in message.parts):
+                raise ValueError("Accepted message contains retracted parts")
+            matches = [group for group in groups if group[0].get("message_id") == message.id]
+            if len(matches) > 1:
+                raise ValueError("Accepted message identity is ambiguous in the transcript")
+            current = matches[0] if matches else []
+            complete = (
+                bool(current)
+                and Message.model_validate(reproduce_message_wire(current, retracted)) == message
+            )
+            if not complete:
+                envelope = message.model_dump(exclude={"parts"})
+                for atom in current:
+                    if atom.get("atom_role") == "retract":
+                        raise ValueError("Accepted message was retracted")
+                    header = atom.get("message")
+                    stub = atom.get("message_stub")
+                    if isinstance(header, dict) and header != envelope:
+                        raise ValueError("Accepted message envelope conflicts with retained input")
+                    if isinstance(stub, dict) and any(
+                        key in stub and stub[key] != getattr(message, key)
+                        for key in ("id", "session_id", "turn_id", "created_at", "role")
+                    ):
+                        raise ValueError("Accepted message stub conflicts with retained input")
+                    part = atom.get("part")
+                    index = atom.get("part_index")
+                    if part is not None and (
+                        not isinstance(index, int)
+                        or index < 0
+                        or index >= len(message.parts)
+                        or part != message.parts[index].model_dump()
+                    ):
+                        raise ValueError("Accepted message part conflicts with retained input")
+                if current:
+                    position = next(index for index, atom in enumerate(atoms) if atom is current[0])
+                else:
+                    group_position = retained_message_position(
+                        (str(group[0].get("created_at") or "") for group in groups),
+                        message.created_at,
+                    )
+                    position = (
+                        next(
+                            index
+                            for index, atom in enumerate(atoms)
+                            if atom is groups[group_position][0]
+                        )
+                        if group_position < len(groups)
+                        else len(atoms)
+                    )
+                removed = {id(atom) for atom in current}
+                replacement = build_message_part_atoms(message)
+                merged = [
+                    *atoms[:position],
+                    *replacement,
+                    *(atom for atom in atoms[position:] if id(atom) not in removed),
+                ]
+
+                def write(lane: str) -> None:
+                    for atom in merged:
+                        append_part_atom(store, session_id, atom, lane=lane)
+
+                replace_lane(store, session_id, MESSAGE_PART_SCOPE, write)
+    copy = getattr(app.state, "message_store", None)
+    if copy is not None:
+        copy.ensure_message(session_id, message)
+    rows = app.state.messages.setdefault(session_id, [])
+    existing = [row for row in rows if row.id == message.id]
+    if existing:
+        if len(existing) != 1 or existing[0] != message:
+            raise ValueError("Accepted message conflicts with the resident transcript")
+        return
+    rows.insert(
+        retained_message_position((row.created_at for row in rows), message.created_at), message
+    )
+    from clio_agent.gact.session_store import _metrics_counters
+
+    counters = _metrics_counters(app)
+    if counters is not None:
+        counters.add_message(session_id, message)
 
 
 def has_atoms(arc: Any, session_id: str) -> bool:

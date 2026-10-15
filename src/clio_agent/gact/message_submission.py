@@ -599,6 +599,11 @@ def accept_message(
                 idempotent_replay=True,
                 task_handle=original_handle,
             ), 200
+        if previous is not None:
+            raise HTTPException(
+                status_code=409,
+                detail="Message identity belongs to retained history without a confirmed acceptance",
+            )
         parts, deliveries = _plan_resource_parts(
             app, workspace_id=session.workspace_id, message_id=identity, parts=parts, model=selected
         )
@@ -628,7 +633,6 @@ def accept_message(
             metadata=metadata,
             turn_agent_id=req.extract_agent_id(),
             user_msg_id=identity,
-            replace_existing_user_message=previous is not None,
         )
         _commit_resource_deliveries(app, sid, deliveries)
         return PostMessageResponse(

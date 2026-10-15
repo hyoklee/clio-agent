@@ -1,0 +1,17 @@
+{
+  "revision": "R47",
+  "parent": "1914da40c3f2c8bf4a0774acf7d8ce6249bcc0bf",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "execution_root": "D:/Libraries/Documents/projects/clio-agent-task-qualification",
+  "ruff_and_format": {"unique_files": 9, "status": "passed"},
+  "linux_mypy": {"unique_files": 9, "status": "passed", "follow_imports": "silent", "check_untyped_defs": true},
+  "removal_guard": {"violations": 0, "status": "passed"},
+  "size_guard": {"new_file_limit": 800, "status": "passed", "baselines_changed": false},
+  "class_guard": {"status": "passed"},
+  "hidden_swallows_guard": {"count": 480, "files": 200, "status": "passed"},
+  "behavioral_regressions": "constructed, unexecuted on R47",
+  "live_qualification": "pending; previous actual-model receipts apply to their frozen revisions only",
+  "ci": "pending",
+  "installed_state": "unchanged"
+}

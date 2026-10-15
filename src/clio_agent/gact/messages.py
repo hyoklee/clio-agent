@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 import threading
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
@@ -25,6 +25,16 @@ class LedgerReadError(OSError):
     would make ``GET /messages`` serve ``[]`` for a session whose full ledger is
     intact on disk (#889 no-silent-fallback; design ``unified-arc-highway.md`` §3.3).
     """
+
+
+def retained_message_position(timestamps: Iterable[str], created_at: str) -> int:
+    """Insert before the first later message, preserving existing order and equal-time ties."""
+    position = 0
+    for timestamp in timestamps:
+        if timestamp > created_at:
+            return position
+        position += 1
+    return position
 
 
 class MessageStore:
@@ -147,6 +157,24 @@ class MessageStore:
             existing = self._load_file(self._session_file(session_id))
             existing.extend(messages)
             self._flush_locked(session_id, existing)
+
+    def ensure_message(self, session_id: str, message: Message) -> bool:
+        """Insert an exact retained message idempotently without replacing concurrent appends."""
+        if self._path is None:
+            return False
+        with self._lock:
+            rows = self._load_file(self._session_file(session_id))
+            matches = [row for row in rows if row.id == message.id]
+            if matches:
+                if len(matches) != 1 or matches[0] != message:
+                    raise ValueError("Retained message conflicts with the persisted transcript")
+                return False
+            rows.insert(
+                retained_message_position((row.created_at for row in rows), message.created_at),
+                message,
+            )
+            self._flush_locked(session_id, rows)
+            return True
 
     def replace_session(self, session_id: str, messages: list[Message]) -> None:
         """Replace a session ledger with the supplied chronological messages."""

@@ -77,6 +77,7 @@ def project_accepted_mail_messages(
 ) -> None:
     """Repair selected accepted input through the transcript owner, without acknowledgement."""
     from clio_agent.gact.storage.drafts import retain_message_sources
+    from clio_agent.gact.transcript_projection import ensure_accepted_message
     from clio_agent.gact.types import Message
 
     # Online repair and human acceptance must not replace each other's transcript rows.
@@ -111,19 +112,9 @@ def project_accepted_mail_messages(
             accepted[message.id] = message
         if not accepted:
             return
-        existing = list(app.state.messages.get(sid, []))
-        if any(
-            message.id in accepted and (message.role != "user" or message.session_id != sid)
-            for message in existing
-        ):
-            raise ValueError("Pending feedback conflicts with an existing transcript identity")
-        known = {message.id for message in existing}
-        missing = [message for identity, message in accepted.items() if identity not in known]
-        if missing:
-            merged = sorted([*existing, *missing], key=lambda message: message.created_at)
-            _replace_session_messages(app, sid, merged)
-            for message in missing:
-                retain_message_sources(app, message)
+        for message in sorted(accepted.values(), key=lambda row: row.created_at):
+            ensure_accepted_message(app, sid, message)
+            retain_message_sources(app, message)
 
 
 def _append_session_message(
