@@ -18,6 +18,7 @@ from typing import Any, Literal, Optional
 from clio_agent import conf
 from clio_agent.gact.autonomy_limits import normalize_limits, parse_limit_options
 from clio_agent.gact.goal_evidence import _build_transcript as _build_transcript
+from clio_agent.gact.goal_steering import pending_steer
 from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.work_state import work_record_patch
 from clio_agent.lm.resources import async_model_resources
@@ -549,7 +550,15 @@ def _settle_goal_decision(
         if turn_id and goal.get("last_evaluated_turn_id") == turn_id:
             return None
         elapsed_s, tokens_spent = _budget_spent(app, session_id, goal)
-        decision = evaluate_goal(goal, llm=llm, elapsed_s=elapsed_s, tokens_spent=tokens_spent)
+        limit = evaluate_goal(
+            goal, llm=GoalJudgement(met=False), elapsed_s=elapsed_s, tokens_spent=tokens_spent
+        )
+        if pending_steer(app, session_id):
+            if limit.reason not in {"goal_budget", "goal_max_iters"}:
+                return None
+            decision = limit
+        else:
+            decision = evaluate_goal(goal, llm=llm, elapsed_s=elapsed_s, tokens_spent=tokens_spent)
         decision.new_state["judge_reason"] = llm.reason
         decision.new_state["last_evaluated_turn_id"] = turn_id
         _put_goal(app, session_id, decision.new_state)
@@ -594,9 +603,15 @@ async def dispatch_goal_at_finalize(
         preflight = evaluate_goal(
             goal, llm=GoalJudgement(met=False), elapsed_s=elapsed_s, tokens_spent=tokens_spent
         )
+        if pending_steer(app, session_id) and preflight.reason not in {
+            "goal_budget",
+            "goal_max_iters",
+        }:
+            return None
         llm = (
             GoalJudgement(met=False, reason="The goal limit was reached before judging.")
             if preflight.reason == "goal_budget"
+            or (preflight.reason == "goal_max_iters" and pending_steer(app, session_id))
             else await run_llm_judge(app, session_id, goal)
         )
         current = _get_goal(app, session_id)

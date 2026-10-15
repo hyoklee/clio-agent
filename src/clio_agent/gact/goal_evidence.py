@@ -6,6 +6,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from clio_agent.gact.goal_steering import ordered_evidence
+
 
 def bounded_inputs(value: Any) -> str:
     """Preserve relevant inputs while redacting structured credentials and large data."""
@@ -73,14 +75,13 @@ def _build_transcript(app: Any, sid: str, *, max_messages: int = 40) -> str:
         return ""
     messages = store.get(sid, [])
     lines: list[str] = []
-    for message in sorted(messages, key=lambda row: str(getattr(row, "created_at", "")))[
-        -max_messages:
-    ]:
+    recent = sorted(messages, key=lambda row: str(getattr(row, "created_at", "")))[-max_messages:]
+    for message, parts in ordered_evidence(recent):
         role = str(getattr(message, "role", "") or "")
         turn_id = _bounded_judge_fact(getattr(message, "turn_id", ""), limit=120) or "unassigned"
         message_id = _bounded_judge_fact(getattr(message, "id", ""), limit=120) or "unassigned"
         lines.append(f"--- {role} turn {turn_id}; message {message_id} ---")
-        for part in getattr(message, "parts", []) or []:
+        for part in parts:
             part_type = str(getattr(part, "type", ""))
             if part_type == "text":
                 text = str(getattr(part, "text", "") or "").strip()

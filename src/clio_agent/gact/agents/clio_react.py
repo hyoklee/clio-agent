@@ -452,6 +452,16 @@ class _Loop:
                 # before closing the turn, even if that call chose no tools.
                 return None
             return self._end({"answer": text}, "direct_response", self.step + 1)
+        arrived = self._take_arrivals()
+        if any(source == "steer" for source, _ in arrived):
+            # Already streamed prose precedes the newly delivered human message.
+            # These calls were proposals, not executions: replan before opening
+            # tool spans or recording calls that never ran.
+            if text or thinking:
+                self._record(text, thinking, [], {}, origin)
+            self.recorder.arrivals(arrived, max(self.step, 0))
+            _log.info("Tool proposal superseded by steer at step=%s", self.step)
+            return None
         thought_token = _ctx.set_step_thought(text, "".join(t.text for t in thinking))
         try:
             self.recorder.step_open(self.step, self.span, text, calls)
@@ -461,6 +471,8 @@ class _Loop:
             _ctx.reset(thought_token)
         results = {c.id: (o.value, o.is_error) for c, o in zip(calls, outcomes, strict=True)}
         self._record(text, thinking, calls, results, origin)
+        if arrived:
+            self.recorder.arrivals(arrived, max(self.step, 0))
         for outcome in outcomes:
             if outcome.escalate is not None:
                 raise outcome.escalate
@@ -488,16 +500,20 @@ class _Loop:
 
     def _arrivals(self) -> bool:
         """Take in what arrived since the last step (user steers, finished children)."""
+        arrived = self._take_arrivals()
+        if arrived:
+            self.recorder.arrivals(arrived, max(self.step, 0))
+        return bool(arrived)
+
+    def _take_arrivals(self) -> list[tuple[str, str]]:
+        """Drain once; the caller records delivery in causal model-context order."""
         from clio_agent.gact import context as _ctx  # noqa: PLC0415
 
         state = getattr(_ctx.active_app(), "state", None)
         drain = getattr(state, "pending_loop_inbox_drain", None)
         if drain is None:
-            return False
-        arrived = drain()
-        if arrived:
-            self.recorder.arrivals(arrived, max(self.step, 0))
-        return bool(arrived)
+            return []
+        return drain()
 
     def _context(self) -> list[Message]:
         return self.recorder.read_steps()
