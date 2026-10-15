@@ -164,7 +164,7 @@ async def retire_connection(
                 if current is None or (
                     current.terminal_at is None
                     and not (
-                        current.raw_status in {"completed", "failed", "cancelled"}
+                        current.raw_status in {"inline", "completed", "failed", "cancelled"}
                         and current.backend_observation is not None
                     )
                 ):

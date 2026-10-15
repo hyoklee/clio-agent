@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 import time
 from pathlib import Path
@@ -15,13 +16,48 @@ from clio_agent.gact.app import build_app
 from clio_agent.gact.storage.models import FileEntry, TransferOperation
 from clio_agent.platform_paths import win_extended_path
 
+pytestmark = pytest.mark.usefixtures("host_agent_executor")
+
+
+def _storage_result(client: TestClient, sid: str, handle: str) -> dict[str, Any]:
+    """Read the bounded public result pages, then decode the stored native result."""
+    endpoint = f"/v1/sessions/{sid}/tasks/{handle}/result"
+    deadline = time.monotonic() + 10
+    while True:
+        response = client.get(endpoint)
+        assert response.status_code == 200, response.text
+        page = response.json()
+        if not page["pending"]:
+            break
+        assert time.monotonic() < deadline, page
+        time.sleep(0.01)
+    assert page["status"] == "completed", page
+    if page.get("fragments_require_concatenation"):
+        reference, parts = page["result_reference"], [page["result"]["preview"]]
+        while page["next_cursor"]:
+            previous_offset = page["next_offset"]
+            response = client.get(endpoint, params={"cursor": page["next_cursor"]})
+            assert response.status_code == 200, response.text
+            page = response.json()
+            assert page["result_reference"] == reference and page["offset"] == previous_offset
+            parts.append(page["result"]["preview"])
+        raw = json.loads("".join(parts))
+    else:
+        raw = page["result"]
+    assert raw["result"]["isError"] is False, raw
+    value = raw["result"]["structuredContent"]
+    assert isinstance(value, dict)
+    return value
+
 
 @pytest.mark.parametrize("action,kind", [("link", "Indexing"), ("transfer", "Download")])
+@pytest.mark.timeout(120)  # Actual Core and native storage lifespans must settle.
 def test_storage_http_ack_contains_persisted_queryable_handle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, action: str, kind: str
 ) -> None:
     """Join the actual 202 response, owner ledger, shared query and terminal result."""
     monkeypatch.setenv("CLIO_AGENT_HOME", str(tmp_path / "agent"))
+    monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "512")
     upstream, workspace = tmp_path / "upstream", tmp_path / "workspace"
     upstream.mkdir()
     workspace.mkdir()
@@ -49,39 +85,38 @@ def test_storage_http_ack_contains_persisted_queryable_handle(
         operation = receipt["indexing_operation"] if action == "link" else receipt
         handle = operation["task_handle"]
         assert isinstance(handle, str) and handle.startswith("task_")
-        persisted = app.state.core_task_journal.get(handle)
-        assert persisted["handle"] == handle and persisted["session_id"] == sid
-        assert persisted["recording"] == "confirmed"
-        snapshot = client.get(f"/v1/sessions/{sid}/async-tasks", params={"handle": handle})
+        persisted = app.state.task_history.task_snapshot(handle)
+        assert persisted is not None and persisted.handle == handle
+        assert persisted.owner.session_id == sid and persisted.recording == "confirmed"
+        assert persisted.submission is not None
+        snapshot = client.get(f"/v1/sessions/{sid}/tasks/query", params={"handle": handle})
         assert snapshot.status_code == 200, snapshot.text
         task = snapshot.json()["tasks"]
-        assert len(task) == 1 and task[0]["task_kind"] == kind
+        assert len(task) == 1 and task[0]["kind"] == kind
         assert task[0]["owner"]["session_id"] == sid
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            result = client.get(f"/v1/sessions/{sid}/async-tasks/{handle}/result")
-            if result.json().get("status") == "completed":
-                break
-            time.sleep(0.01)
-        else:
-            pytest.fail("Actual storage owner did not complete")
-        assert result.status_code == 200, result.text
-        assert result.json()["result"]["operation"]["task_handle"] == handle
+        result = _storage_result(client, sid, handle)
+        assert result["operation_id"] == handle and result["state"] == "completed"
         resource_operation = app.state.connected_storage.store.get(
             "operation", operation["id"], TransferOperation
         )
         assert (
-            resource_operation.task_handle == handle and resource_operation.owner_session_id == sid
+            resource_operation.id == handle and resource_operation.source_id == source.json()["id"]
         )
+        assert persisted.resource_id == source.json()["id"]
         if kind == "Download":
-            local = Path(result.json()["result"]["source"]["local_path"]) / "payload.txt"
+            record = app.state.connected_storage.get(wid, source.json()["id"])
+            assert record.source.local_path is not None
+            local = Path(record.source.local_path) / "payload.txt"
             actual = Path(win_extended_path(local)).read_bytes()
             assert actual == payload
             assert hashlib.sha256(actual).digest() == hashlib.sha256(payload).digest()
+            assert result["bytes_done"] == result["bytes_total"] == len(payload)
+            assert result["hashes"]["payload.txt"] == hashlib.sha256(payload).hexdigest()
         else:
-            assert result.json()["result"]["operation"]["entries_done"] == 1
+            assert result["entries"] == resource_operation.entries_done == 1
 
 
+@pytest.mark.timeout(120)  # Held actual enumeration and queued cancellation require cleanup.
 def test_queued_storage_is_visible_and_cancellable_before_worker_start(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -110,10 +145,13 @@ def test_queued_storage_is_visible_and_cancellable_before_worker_start(
         ).json()["id"]
         sid = client.post("/v1/sessions", json={"workspace_id": wid}).json()["id"]
         prefixes = []
-        for label in ("Blocking index", "Queued download"):
+        for index, label in enumerate(("Blocking index", "Queued download")):
+            source_root = upstream / str(index)
+            source_root.mkdir()
+            (source_root / "input.txt").write_text("owned input", encoding="utf-8")
             source = client.post(
                 f"/v1/workspaces/{wid}/sources",
-                json={"provider": "local", "root": str(upstream), "label": label},
+                json={"provider": "local", "root": str(source_root), "label": label},
             )
             assert source.status_code == 201, source.text
             prefixes.append(f"/v1/workspaces/{wid}/sources/{source.json()['id']}")
@@ -123,9 +161,9 @@ def test_queued_storage_is_visible_and_cancellable_before_worker_start(
             assert entered.wait(5)
             queued = client.post(prefixes[1] + "/transfer", json={"session_id": sid})
             assert queued.status_code == 202, queued.text
-            handle = queued.json()["handle"]
-            journal = app.state.core_task_journal
-            assert journal.get(handle)["attempts"] == {}
+            handle = queued.json()["task_handle"]
+            history = app.state.task_history
+            assert history.native_attempts(handle) == ()
             with pytest.raises(KeyError):
                 app.state.connected_storage.store.get("operation", handle, TransferOperation)
             visible = client.get(prefixes[1] + "/operations").json()["operations"]
@@ -134,10 +172,11 @@ def test_queued_storage_is_visible_and_cancellable_before_worker_start(
             assert cancelled.status_code == 200, cancelled.text
             assert cancelled.json()["cancel_requested"]
             deadline = time.monotonic() + 5
-            while journal.get(handle)["effective_status"] != "cancelled":
-                assert time.monotonic() < deadline, journal.get(handle)
+            while (current := history.task_snapshot(handle)) is None or current.terminal_at is None:
+                assert time.monotonic() < deadline, current
                 time.sleep(0.01)
-            assert journal.get(handle)["attempts"] == {}
+            assert current.status == "cancelled" and current.settlement == "never_started"
+            assert history.native_attempts(handle) == ()
             with pytest.raises(KeyError):
                 app.state.connected_storage.store.get("operation", handle, TransferOperation)
         finally:

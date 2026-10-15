@@ -47,8 +47,9 @@ server.run(transport="stdio", show_banner=False)
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(120)  # Real subprocess transports must close and their processes retire.
+@pytest.mark.parametrize("cancel_before_reply", [False, True])
 async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_processes(
-    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancel_before_reply: bool
 ) -> None:
     """Two actual stdio callbacks lose caller ContextVars without losing owner attribution."""
     app, conversations, root = await create_environment(arc, tmp_path)
@@ -152,6 +153,10 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
                 history.task_snapshot, question.owner.parent_handle
             )
             assert invocation is not None
+            if cancel_before_reply:
+                acknowledgement = await external.cancel(invocation.handle)
+                assert acknowledgement["cancellation_requested"] is True
+                assert acknowledgement["settlement"] == "unknown"
             value = "answer-" + invocation.invocation_id.removeprefix("legacy-")
             await asyncio.to_thread(
                 app.state.questions.answer,
@@ -168,8 +173,14 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
             invocation = await asyncio.to_thread(
                 history.task_snapshot, question.owner.parent_handle
             )
-            assert invocation is not None and invocation.status == "completed"
-            assert invocation.raw_status == "inline" and invocation.result is not None
+            assert invocation is not None and invocation.raw_status == "inline"
+            assert invocation.backend_observation is not None
+            if cancel_before_reply:
+                assert invocation.status == "task_state_uncertain"
+                assert invocation.terminal_at is None and invocation.result is None
+                assert invocation.cancellation_requested_at is not None
+            else:
+                assert invocation.status == "completed" and invocation.result is not None
             answered = await asyncio.to_thread(history.task_snapshot, question.handle)
             assert answered is not None and answered.status == "completed"
         if external._retiring:

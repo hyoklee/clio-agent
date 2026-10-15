@@ -45,3 +45,22 @@ down from 41 under the expanded audit. These four files now have no identified
 retired imports; this does not claim complete collection or runtime acceptance.
 The remaining coupled cases are unfinished. Behavioral execution stays deferred
 until initial implementation and bulk regression construction are complete.
+
+## R41 continuation
+
+Three metadata cases in test_tool_instrumentation.py now exercise the current
+canonical declarations, workflow row and complete native/Question/task title set;
+no live agent/old spawn executor is installed to inspect metadata. Legacy default
+catalog entries are explicitly rejected. Generic instrumentation cases remain.
+
+test_storage_http_task_ack.py now joins actual native REST acceptance with the
+confirmed Core snapshot, canonical query and complete paged terminal result.
+Real bytes/hashes, manifest counts and never-started queued cancellation remain
+required. TransferOperation retains workload metadata; ownership and attempts are
+checked in the common Core record rather than recreated in a resource mirror.
+
+The broader R40 AST audit additionally checks removed names and state attributes:
+51 candidate files / 327 findings across 1,094 test files. That audit is advisory,
+not a deletion list or collection proof; some findings require domain ownership
+classification. It exposes 15 files the import-only audit could not detect. Two
+candidates are migrated above. More coupled cases remain; none were executed.

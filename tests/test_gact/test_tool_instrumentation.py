@@ -26,6 +26,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import dspy
 import pytest
@@ -948,72 +949,56 @@ def test_auto_react_tools_carry_their_declared_presentation() -> None:
         assert declared_tool_title(name) == title, name
 
 
-def test_spawn_runtime_tools_declare_handoff_for_spawn_and_row_for_collectors(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """spawn/fan-out present as their expert_handoff part (declared handoff);
-    the collectors + observe/message are real rows with curated titles."""
-
-    from clio_agent.gact.agents import spawn_runtime
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    monkeypatch.setattr(
-        "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
-        lambda a, pid, session_id="": {"child_a"},
+def test_shared_task_tools_declare_rows_without_legacy_default_controls() -> None:
+    """Actual declarations expose every mixed control with a readable operation row."""
+    from clio_agent.gact.task_declarations import (
+        TASK_COMPATIBILITY_ALIASES,
+        build_spawn_runtime_tools,
+        build_task_tools,
     )
-    with TestClient(app), _gact_app_context(app), _tool_session_context("sess_x"):
-        tools = spawn_runtime.build_spawn_runtime_tools(
-            SimpleNamespace(),
-            SimpleNamespace(
-                id="main",
-                metadata={"agent_blueprint_id": "bp"},
-                tools=["wait_agent_tasks", "observe_agent_tasks", "get_agent_task_output"],
-            ),
-        )
+
+    tools = build_spawn_runtime_tools(None, SimpleNamespace(fanout={})) + build_task_tools()
     instrument_tools(tools)
     expected = {
-        "spawn_agent_task": ("handoff", "Spawn Agent"),
-        "spawn_agents_parallel": ("handoff", "Spawn Agents"),
-        "wait_agent_tasks": ("row", "Wait"),
-        "observe_agent_tasks": ("row", "Observe"),
-        "get_agent_task_output": ("row", "Collect"),
-        "message_agent": ("row", "Message Agent"),
-        "pause_agent": ("row", "Pause Agent"),
-        "resume_agent": ("row", "Resume Agent"),
-        "restart_agent": ("row", "Restart Agent"),
+        "spawn_agent_task": "Spawn agent task",
+        "spawn_agents_parallel": "Spawn agents parallel",
+        "query_tasks": "Query tasks",
+        "observe_tasks": "Observe tasks",
+        "wait_tasks": "Wait tasks",
+        "cancel_tasks": "Cancel tasks",
+        "get_task_result": "Get task result",
+        "send_agent_message": "Send agent message",
+        "pause_agent": "Pause agent",
+        "resume_agent": "Resume agent",
+        "restart_agent": "Restart agent",
     }
-    assert {t.name for t in tools} == set(expected)
-    for name, (representation, title) in expected.items():
-        assert declared_tool_representation(name) == representation, name
+    assert {tool.name for tool in tools} == set(expected)
+    assert not set(expected) & TASK_COMPATIBILITY_ALIASES
+    for name, title in expected.items():
+        assert declared_tool_representation(name) == "row", name
         assert declared_tool_title(name) == title, name
 
 
-def test_declared_workflow_keeps_a_tool_row_around_its_child_handoffs(
-    tmp_path: Path, monkeypatch
-) -> None:
+def test_declared_workflow_keeps_a_tool_row_around_its_child_operations() -> None:
     """A compound workflow owns one visible operation boundary around its stages."""
+    from clio_agent.gact.task_declarations import build_spawn_runtime_tools
 
-    from clio_agent.gact.agents import spawn_runtime
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    monkeypatch.setattr(
-        "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
-        lambda a, pid, session_id="": {"child_a"},
-    )
     agent = SimpleNamespace(
         id="main",
-        tools=[],
+        fanout={},
         metadata={
-            "agent_blueprint_id": "bp",
-            "workflow": {"steps": [{"id": "inspect", "child": "child_a", "task": "Inspect"}]},
+            "workflow": {"steps": [{"id": "inspect", "child": "child_a", "task": "Inspect"}]}
         },
     )
-    with TestClient(app), _gact_app_context(app), _tool_session_context("sess_x"):
-        tools = spawn_runtime.build_spawn_runtime_tools(SimpleNamespace(), agent)
+    tools = build_spawn_runtime_tools(None, agent)
     instrument_tools(tools)
-
+    assert {tool.name for tool in tools} == {
+        "spawn_agent_task",
+        "spawn_agents_parallel",
+        "run_workflow",
+    }
     assert declared_tool_representation("run_workflow") == "row"
-    assert declared_tool_title("run_workflow") == "Run Workflow"
+    assert declared_tool_title("run_workflow") == "Run workflow"
 
 
 def test_invalid_representation_is_a_typed_error() -> None:
@@ -1041,8 +1026,9 @@ def test_invalid_domain_is_a_typed_error() -> None:
     def f() -> str:
         return ""
 
+    invalid_domain: Any = "nonexistent"
     with pytest.raises(ValueError, match="unknown domain"):
-        native_tool(f, name="f", presentation="text", desc="", args={}, domain="nonexistent")
+        native_tool(f, name="f", presentation="text", desc="", args={}, domain=invalid_domain)
 
 
 # --------------------------------------------------------------------------- #
@@ -1066,39 +1052,24 @@ def test_title_sanitization_strips_controls_and_clamps() -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_no_registered_native_title_contains_a_paren(tmp_path: Path, monkeypatch) -> None:
-    """Sweeps every curated native/auto/spawn-runtime title through the real
-    builder functions (not a source-grep) and asserts none carries parens.
-
-    Sabotage baseline: before the 2026-08-06 rename this failed on
-    ``spawn_agent_task``/``wait_agent_tasks``/
-    ``spawn_agents_parallel``/``run_workflow``/``create_artifact``/
-    ``observe_agent_tasks``/``message_agent``/``plan_exit``/``goal_status``/
-    ``load_skill``/``cron_create``/``cron_list``/``cron_delete`` — every one
-    of them baked a ``verb(object)`` shape into the title."""
-
-    from clio_agent.gact.agents import spawn_runtime
+def test_no_registered_native_title_contains_a_paren() -> None:
+    """Sweep real native, shared-task, Question and skill declarations."""
     from clio_agent.gact.agents.auto_tools import build_auto_react_tools
     from clio_agent.gact.agents.skill_runtime import SkillRuntime, build_load_skill_tool
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    monkeypatch.setattr(
-        "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
-        lambda a, pid, session_id="": {"child_a"},
+    from clio_agent.gact.task_declarations import (
+        build_ask_user_tool,
+        build_spawn_runtime_tools,
+        build_task_tools,
     )
-    tools = build_auto_react_tools(SimpleNamespace(id="tester"))
-    tools.append(build_load_skill_tool(SimpleNamespace(id="tester"), SkillRuntime()))
-    with TestClient(app), _gact_app_context(app), _tool_session_context("sess_x"):
-        tools += spawn_runtime.build_spawn_runtime_tools(
-            SimpleNamespace(),
-            SimpleNamespace(
-                id="main",
-                metadata={"agent_blueprint_id": "bp"},
-                tools=["wait_agent_tasks", "observe_agent_tasks", "get_agent_task_output"],
-            ),
-        )
+    from clio_agent.gact.types import AgentDef
+
+    agent = AgentDef(id="tester", title="Test agent")
+    tools = build_auto_react_tools(agent)
+    tools.append(build_load_skill_tool(agent, SkillRuntime()))
+    tools.append(build_ask_user_tool(agent))
+    tools += build_spawn_runtime_tools(None, agent) + build_task_tools()
     instrument_tools(tools)
-    assert len(tools) >= 12, "expected the full curated native/auto/spawn-runtime set"
+    assert len(tools) >= 12, "expected the full curated native, Question and task set"
     for tool in tools:
         title = declared_tool_title(tool.name)
         assert "(" not in title and ")" not in title, (tool.name, title)

@@ -125,7 +125,9 @@ async def start(app: Any) -> None:
                 "status": settled.status,
                 "settlement": settled.settlement,
             }
-        if current.backend is not None and current.backend.owner == "native":
+        if current.kind in {"Shell", "Download", "Indexing"} or (
+            current.backend is not None and current.backend.owner == "native"
+        ):
             return await app.state.native_tools.cancel(current.handle)
         return await app.state.external_tasks.cancel(current.handle)
 
