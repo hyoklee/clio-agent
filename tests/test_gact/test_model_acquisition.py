@@ -236,6 +236,8 @@ def test_http_reconciles_original_root_and_targets_retry_and_cancel(
 
     async def execute(target_id: str, spec: CommandSpec) -> CommandResult:
         body = json.loads(spec.stdin)
+        assert len(" ".join(spec.args)) < 1000
+        assert body["_node_program"] == Path(node_models.__file__).read_text(encoding="utf-8")
         calls.append((target_id, body))
         assert app.state.infrastructure_store.model_roots(target_id) == ["/data/original"]
         if body["action"] == "list":
@@ -561,7 +563,7 @@ def test_missing_receipt_never_calls_a_finished_download_interrupted(
 
 
 def _hub_snapshot(hub: Path, repository: str, revision: str, files: dict[str, bytes]) -> Path:
-    """Lay out one revision the way huggingface_hub's cache does (snapshot -> blob links)."""
+    """Lay out Hub snapshots, including Windows' regular-file mode without symlink privilege."""
     repo = hub / ("models--" + repository.replace("/", "--"))
     (repo / "blobs").mkdir(parents=True, exist_ok=True)
     (repo / "refs").mkdir(exist_ok=True)
@@ -572,7 +574,10 @@ def _hub_snapshot(hub: Path, repository: str, revision: str, files: dict[str, by
         blob.write_bytes(data)
         link = snapshot / name
         link.parent.mkdir(parents=True, exist_ok=True)
-        link.symlink_to(os.path.relpath(blob, link.parent))
+        if sys.platform == "win32":
+            link.write_bytes(data)
+        else:
+            link.symlink_to(os.path.relpath(blob, link.parent))
     return snapshot
 
 
@@ -594,13 +599,23 @@ def test_hub_cache_snapshots_are_listed_as_ready_revisions(tmp_path: Path) -> No
     ModelAcquisition.model_validate({**row, "target_id": "t", "storage_root": str(tmp_path)})
 
 
-def test_hub_cache_unfinished_revision_is_never_ready(tmp_path: Path) -> None:
+def test_hub_cache_unfinished_revision_is_never_ready(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     snapshot = _hub_snapshot(tmp_path, "org/model", "b" * 40, {"config.json": b"{}"})
     (snapshot.parent.parent / "blobs" / "deadbeef.incomplete").write_bytes(b"")
     (row,) = node_models.hub_snapshots(tmp_path)
     assert (row["state"], row["error_code"]) == ("interrupted", "hf_cache_incomplete")
     (snapshot.parent.parent / "blobs" / "deadbeef.incomplete").unlink()
-    (snapshot / "gone.bin").symlink_to("../../blobs/missing")
+    gone = snapshot / "gone.bin"
+    if sys.platform == "win32":
+        # Windows' ordinary-file cache cannot create a dangling symlink without
+        # elevation. Exercise a file disappearing after enumeration instead.
+        gone.write_bytes(b"missing")
+        exists = Path.exists
+        monkeypatch.setattr(Path, "exists", lambda path: False if path == gone else exists(path))
+    else:
+        gone.symlink_to("../../blobs/missing")
     assert node_models.hub_snapshots(tmp_path)[0]["state"] == "interrupted"
 
 
