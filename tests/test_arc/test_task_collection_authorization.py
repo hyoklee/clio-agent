@@ -304,7 +304,9 @@ async def test_delayed_mixed_collection_rechecks_peer_without_subscription(
                     )
                     recorder.commit_input(1)
                     assert not owner.history.committed_observations(sid, "main")
-                    assert all(handle not in str(recorder.read_steps()) for handle in handles)
+                    messages = str(recorder.read_steps())
+                    assert handles[0] in messages  # Independent owner delivery remains eligible.
+                    assert handles[1] not in messages
                     owner.history.record_mail(
                         MailItem(
                             id="later-feedback",
@@ -321,7 +323,9 @@ async def test_delayed_mixed_collection_rechecks_peer_without_subscription(
                     assert "later-feedback" in owner.history.acknowledged_notifications(sid)
                     assert "Continue independently" in str(recorder.read_steps())
                     assert not owner.history.committed_observations(sid, "main")
-                    assert all(handle not in str(recorder.read_steps()) for handle in handles)
+                    messages = str(recorder.read_steps())
+                    assert handles[0] in messages
+                    assert handles[1] not in messages
                     if with_human:
                         assert "human-feedback" in owner.history.acknowledged_notifications(sid)
                 else:
