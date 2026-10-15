@@ -407,7 +407,12 @@ def transcript_sink(app: Any, session_id: str) -> Callable[[str, dict[str, Any],
 
 
 def persist_finalized_message(
-    app: Any, session_id: str, message: Any, *, after_confirmed: Callable[[], None] | None = None
+    app: Any,
+    session_id: str,
+    message: Any,
+    *,
+    after_confirmed: Callable[[], None] | None = None,
+    after_withdrawn: Callable[[], None] | None = None,
 ) -> bool:
     """Retain one confirmation/publication handoff for the immutable final output."""
     from clio_agent.errors import ClioError
@@ -448,9 +453,15 @@ def persist_finalized_message(
                     getattr(app.state, name, {}).pop(session_id, None)
             registry = getattr(app.state, "turn_transcripts", None)
             transcript = registry.get(session_id) if registry is not None else None
-            if registry is not None and transcript is not None and transcript.message_id == frozen.id:
+            if (
+                registry is not None
+                and transcript is not None
+                and transcript.message_id == frozen.id
+            ):
                 transcript.abandon()
                 registry.close(session_id)
+            if after_withdrawn is not None:
+                after_withdrawn()
             return False
         project_message(app, session_id, frozen, newly_recorded=recording == "recorded")
         record_state_merge_best_effort(arc, session_id, frozen)

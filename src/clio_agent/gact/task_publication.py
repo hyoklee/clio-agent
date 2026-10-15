@@ -149,6 +149,18 @@ def publish_task_notice(
                 },
             )
         for recipient, notice_id in recipients.items():
+            outcome = (
+                history.read_content(current.result)
+                if current.kind == "Question" and current.result is not None
+                else None
+            )
+            control_only = (
+                isinstance(outcome, dict)
+                and outcome.get("reason") == "obsolete_gate"
+                or current.kind == "Question"
+                and current.tool == "hook_defer"
+                and recipient == owner_recipient
+            )
             # Publication retries reuse the recipient's confirmed content/reference.
             if history.mail_item(recipient, notice_id) is not None:
                 continue
@@ -161,16 +173,8 @@ def publish_task_notice(
                     created_at=stamp,
                     handle=current.handle,
                     episode=episode or None,
-                    delivery="held"
-                    if current.kind == "Question"
-                    and current.tool == "hook_defer"
-                    and recipient == owner_recipient
-                    else "eligible",
-                    held_reason="control_only"
-                    if current.kind == "Question"
-                    and current.tool == "hook_defer"
-                    and recipient == owner_recipient
-                    else "",
+                    delivery="held" if control_only else "eligible",
+                    held_reason="control_only" if control_only else "",
                 )
             )
 

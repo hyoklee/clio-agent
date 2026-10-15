@@ -37,7 +37,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -476,7 +476,9 @@ def _plan_exit_prompt(summary: str, plan_file: str, recommended: str, risk_notes
     return "\n".join(lines)
 
 
-def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
+def maybe_pause_for_plan_exit(
+    state: "TurnState", *, update_retry_attempt: Callable[..., None] | None = None
+) -> bool:
     """Surface a pending ``plan_exit`` as an approval question + yield the turn (P1.4 #1066).
 
     The post-forward seam, called from ``turn.py`` right after ``maybe_pause_for_user`` (the same
@@ -561,8 +563,20 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     )
     from clio_agent.gact.transcript_recording import TranscriptRecordingPending, publication_step
 
+    def withdrawn() -> None:
+        from clio_agent.gact.turn_finalize import settle_withdrawn_turn
+
+        history = app.state.task_history
+        with history.serialized():
+            current = app.state.sessions.get(state.sid)
+            if current is not None and current.metadata.get(_PLAN_EXIT_PENDING_KEY) == pending:
+                app.state.sessions.update(state.sid, metadata_patch={_PLAN_EXIT_PENDING_KEY: {}})
+        settle_withdrawn_turn(
+            app, state.sid, state.turn_cancel_event, update_retry_attempt=update_retry_attempt
+        )
+
     try:
-        assistant_message_id = persist_paused_transcript(state)
+        assistant_message_id = persist_paused_transcript(state, after_withdrawn=withdrawn)
     except TranscriptRecordingPending as recording:
         first_publication = recording.after_confirmed
         retained_message_id = recording.message.id

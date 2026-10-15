@@ -1,7 +1,7 @@
 """Persist observed assistant activity at an input-required turn boundary."""
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from clio_agent.gact import session_warmup
 from clio_agent.gact.events import Event, _publish_transcript_event
@@ -13,7 +13,9 @@ if TYPE_CHECKING:
     from clio_agent.gact.turn_state import TurnState
 
 
-def persist_paused_transcript(state: "TurnState") -> str | None:
+def persist_paused_transcript(
+    state: "TurnState", *, after_withdrawn: Callable[[], None] | None = None
+) -> str | None:
     """Save existing parts verbatim, without fabricating an answer or completing work.
 
     Input-required turns bypass normal finalization. Close and persist their
@@ -48,6 +50,7 @@ def persist_paused_transcript(state: "TurnState") -> str | None:
         state.sid,
         message,
         after_confirmed=lambda: publish_paused_transcript(state, message),
+        after_withdrawn=after_withdrawn,
     )
     return message.id if confirmed else None
 

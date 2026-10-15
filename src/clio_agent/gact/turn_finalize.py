@@ -408,7 +408,25 @@ def finalize_turn(
         after_confirmed=lambda: publish_finalized_turn(
             state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
         ),
+        after_withdrawn=lambda: settle_withdrawn_turn(
+            state.app, state.sid, state.turn_cancel_event, update_retry_attempt=update_retry_attempt
+        ),
     )
+
+
+def settle_withdrawn_turn(
+    app: Any,
+    sid: str,
+    turn_cancel_event: threading.Event,
+    *,
+    update_retry_attempt: Callable[..., None] | None = None,
+) -> None:
+    """Retire a withdrawn turn's projections without publishing its discarded output."""
+    if update_retry_attempt is not None:
+        update_retry_attempt("cancelled", metadata_patch={"reason": "transcript_withdrawn"})
+    publish_turn_settled_status(app, sid, "idle", payload_extra={"reason": "transcript_withdrawn"})
+    if app.state.cancel_events.get(sid) is turn_cancel_event:
+        app.state.cancel_events.pop(sid, None)
 
 
 def publish_finalized_turn(
@@ -682,6 +700,9 @@ def settle_failed_finalize(
             trace_id=trace_id,
             turn_cancel_event=turn_cancel_event,
             update_retry_attempt=update_retry_attempt,
+        ),
+        after_withdrawn=lambda: settle_withdrawn_turn(
+            app, sid, turn_cancel_event, update_retry_attempt=update_retry_attempt
         ),
     )
 

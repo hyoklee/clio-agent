@@ -358,6 +358,11 @@ async def test_final_recording_boundary_retains_original_confirmation_and_public
     sid = root.owner.session_id
     install(app, tmp_path)
     message = retained(sid, "original-boundary-output", 10, role="assistant")
+    from clio_agent.gact.turn_finalize import settle_withdrawn_turn
+
+    stop = threading.Event()
+    app.state.cancel_events = {sid: stop}
+    retry_states: list[str] = []
     for name in ("live_assistant_message_ids", "live_assistant_parts", "live_assistant_part_keys"):
         setattr(app.state, name, {sid: message.id if name.endswith("ids") else ["old content"]})
     publications: list[str] = []
@@ -382,14 +387,30 @@ async def test_final_recording_boundary_retains_original_confirmation_and_public
     monkeypatch.setattr(transcript_recording, "visibility_epoch", unavailable_epoch)
 
     def prepare() -> TranscriptRecordingPending:
+        app.state.sessions.update(sid, status="running")
+
+        def update_retry(status: str, **_kwargs: Any) -> None:
+            retry_states.append(status)
+
         with pytest.raises(TranscriptRecordingPending) as caught:
-            persist_finalized_message(app, sid, message, after_confirmed=publish)
+            persist_finalized_message(
+                app,
+                sid,
+                message,
+                after_confirmed=publish,
+                after_withdrawn=lambda: settle_withdrawn_turn(
+                    app, sid, stop, update_retry_attempt=update_retry
+                ),
+            )
         return caught.value
 
     try:
         pending = await asyncio.to_thread(prepare)
         assert pending.message == message and pending.after_confirmed is publish
         if withdraw:
+            assert retry_states == ["cancelled"]
+            assert app.state.sessions.get(sid).status == "idle"
+            assert sid not in app.state.cancel_events
             await asyncio.to_thread(session_store._delete_session_messages, app, sid)
         assert await transcript_recording.resume_recording(app, pending) is not withdraw
         assert publications == ([] if withdraw else [message.id])

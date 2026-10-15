@@ -31,6 +31,7 @@ async def test_withdrawn_output_retires_without_goal_execution_or_plan_approval(
     app, owner, root = await create_environment(arc, tmp_path)
     sid = root.owner.session_id
     app.state.questions = QuestionCommands(owner.history)
+    app.state.cancel_events = {}
     retired: list[str] = []
     state: Any = SimpleNamespace(
         app=app,
@@ -39,6 +40,7 @@ async def test_withdrawn_output_retires_without_goal_execution_or_plan_approval(
         error_info=None,
         turn_id="withdrawn-turn",
         trace_id="withdrawn-trace",
+        turn_cancel_event=threading.Event(),
     )
     monkeypatch.setattr(
         "clio_agent.gact.turn_stream.settle_turn_transcript", lambda item: retired.append(item.sid)
@@ -67,6 +69,7 @@ async def test_withdrawn_output_retires_without_goal_execution_or_plan_approval(
                 app.state.sessions.update,
                 sid,
                 mode="plan",
+                status="running",
                 metadata_patch={
                     "pending_plan_exit": {"summary": "Inspect inputs", "plan_file": str(plan)}
                 },
@@ -74,11 +77,17 @@ async def test_withdrawn_output_retires_without_goal_execution_or_plan_approval(
             monkeypatch.setattr(
                 "clio_agent.gact.plan_reuse.save_approved_plan", lambda *_args, **_kwargs: ""
             )
+
+            def withdraw_output(_state: Any, *, after_withdrawn: Any) -> None:
+                after_withdrawn()
+
             monkeypatch.setattr(
-                "clio_agent.gact.paused_transcript.persist_paused_transcript", lambda _state: None
+                "clio_agent.gact.paused_transcript.persist_paused_transcript", withdraw_output
             )
             monkeypatch.setattr(app.state.questions, "create", forbidden)
             assert await asyncio.to_thread(plan_mode.maybe_pause_for_plan_exit, state)
+            assert app.state.sessions.get(sid).metadata["pending_plan_exit"] == {}
+            assert app.state.sessions.get(sid).status == "idle"
         assert retired == [sid]
     finally:
         await owner.shutdown()
@@ -104,7 +113,7 @@ async def test_stop_of_plan_recording_wait_does_not_enter_normal_finalization(
     pending = TranscriptRecordingPending(message, confirm, OSError("Core unavailable"))
     pending.after_confirmed = lambda: publications.append(message.id)
 
-    def pause(_state: Any) -> bool:
+    def pause(_state: Any, **_kwargs: Any) -> bool:
         raise pending
 
     async def off_loop(_state: Any, action: Any) -> Any:

@@ -135,7 +135,10 @@ async def _apply_turn_prediction(
     from clio_agent.gact.transcript_recording import TranscriptRecordingPending, resume_recording
 
     try:
-        if await _run_turn_setup_off_loop(state, lambda: maybe_pause_for_plan_exit(state)):
+        if await _run_turn_setup_off_loop(
+            state,
+            lambda: maybe_pause_for_plan_exit(state, update_retry_attempt=update_retry_attempt),
+        ):
             return False
     except TranscriptRecordingPending as pending:
         try:

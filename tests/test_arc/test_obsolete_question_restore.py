@@ -56,6 +56,11 @@ async def test_restore_closes_obsolete_approval_header_and_preserves_other_quest
         commands.before_post = lambda task, definition: prepare_question_gate(app, task, definition)
         commands.restore()
         first_mail = owner.history.pending_mail(root.owner.session_id)
+        obsolete_mail = [item for item in first_mail if item.handle == "obsolete-approval"]
+        assert len(obsolete_mail) == 1
+        assert (
+            obsolete_mail[0].delivery == "held" and obsolete_mail[0].held_reason == "control_only"
+        )
         commands.restore()
         closed = owner.history.task_snapshot("obsolete-approval")
         assert closed is not None and closed.raw_status == "cancelled" and closed.terminal_at
