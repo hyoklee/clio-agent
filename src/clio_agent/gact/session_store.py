@@ -79,47 +79,51 @@ def project_accepted_mail_messages(
     from clio_agent.gact.storage.drafts import retain_message_sources
     from clio_agent.gact.types import Message
 
-    if app.state.sessions.get(sid) is None:
-        return
-    accepted: dict[str, Message] = {}
-    for item in items:
-        if item.kind not in {"human", "composer"}:
-            continue
-        if item.recipient_session != sid:
-            raise ValueError("Accepted feedback belongs to another recipient")
-        if history.mail_withdrawn(sid, item.id):
-            continue
-        content = history.read_content(item.content)
-        if not isinstance(content, dict) or "message" not in content:
-            continue
-        message = Message.model_validate(content["message"])
-        if (
-            not message.id
-            or message.session_id != sid
-            or message.role != "user"
-            or content.get("message_id") != message.id
-            or not item.sender_human
+    # Online repair and human acceptance must not replace each other's transcript rows.
+    with history.serialized():
+        if app.state.sessions.get(sid) is None:
+            return
+        accepted: dict[str, Message] = {}
+        for item in items:
+            if item.kind not in {"human", "composer"}:
+                continue
+            if item.recipient_session != sid:
+                raise ValueError("Accepted feedback belongs to another recipient")
+            if history.mail_withdrawn(sid, item.id):
+                continue
+            content = history.read_content(item.content)
+            if not isinstance(content, dict) or "message" not in content:
+                continue
+            message = Message.model_validate(content["message"])
+            if (
+                not message.id
+                or message.session_id != sid
+                or message.role != "user"
+                or content.get("message_id") != message.id
+                or not item.sender_human
+            ):
+                raise ValueError("Pending feedback transcript identity differs from its Core owner")
+            previous = accepted.get(message.id)
+            if previous is not None and previous != message:
+                raise ValueError(
+                    "Pending feedback reused a transcript identity with changed content"
+                )
+            accepted[message.id] = message
+        if not accepted:
+            return
+        existing = list(app.state.messages.get(sid, []))
+        if any(
+            message.id in accepted and (message.role != "user" or message.session_id != sid)
+            for message in existing
         ):
-            raise ValueError("Pending feedback transcript identity differs from its Core owner")
-        previous = accepted.get(message.id)
-        if previous is not None and previous != message:
-            raise ValueError("Pending feedback reused a transcript identity with changed content")
-        accepted[message.id] = message
-    if not accepted:
-        return
-    existing = list(app.state.messages.get(sid, []))
-    if any(
-        message.id in accepted and (message.role != "user" or message.session_id != sid)
-        for message in existing
-    ):
-        raise ValueError("Pending feedback conflicts with an existing transcript identity")
-    known = {message.id for message in existing}
-    missing = [message for identity, message in accepted.items() if identity not in known]
-    if missing:
-        merged = sorted([*existing, *missing], key=lambda message: message.created_at)
-        _replace_session_messages(app, sid, merged)
-        for message in missing:
-            retain_message_sources(app, message)
+            raise ValueError("Pending feedback conflicts with an existing transcript identity")
+        known = {message.id for message in existing}
+        missing = [message for identity, message in accepted.items() if identity not in known]
+        if missing:
+            merged = sorted([*existing, *missing], key=lambda message: message.created_at)
+            _replace_session_messages(app, sid, merged)
+            for message in missing:
+                retain_message_sources(app, message)
 
 
 def _append_session_message(

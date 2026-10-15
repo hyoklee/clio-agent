@@ -567,3 +567,16 @@ ran. Registered processes/private listeners are absent.
 owners and the required affected live rechecks. New regression cases remain
 unexecuted; source correction/review and regression assurance cannot replace live
 qualification. Full Q1–Q9/R1–R6, CI and final accepted review remain outstanding.
+
+## R45 live recheck and R46 writer correction
+
+Frozen R45 `0abc21d9` supplied actual Codex/Luna idle/post-Stop Question delivery
+and unassisted normal shutdown evidence. `task-replacement-r45-live.json` records
+the bounded proof and its exclusions. This is not full or five-repeat acceptance.
+Three separate focused regressions passed; those provide assurance only.
+
+Astra identified an online-repair lost-update race; R46 serializes the existing
+repair with the existing Core acceptance writer. `task-replacement-r46-impact.md`
+records source impact, required rechecks, Core binding warnings and exact new
+manual-only cleanup roots. Required review, CI, F03 and the remaining live matrix
+stay outstanding. No old execution authority is restored.
