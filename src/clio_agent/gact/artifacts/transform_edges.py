@@ -275,7 +275,22 @@ def detect_used_edges(
             # CWD (finding [4] — the tool subprocess reads it inside the workspace).
             if not candidate.is_absolute():
                 candidate = root / raw
+            from clio_agent.runtime.workspace_folders import resolve_folder_location
+
+            candidate = resolve_folder_location(root, candidate) or candidate
             contained = _contained(candidate, root)
+            if (
+                contained
+                and not candidate.resolve().is_relative_to(root)
+                and not allow_external_inputs
+            ):
+                from clio_agent.runtime.sandbox_roots import granted_write_roots
+
+                if any(
+                    candidate.resolve().is_relative_to(folder)
+                    for folder in granted_write_roots(str(root))
+                ):
+                    continue  # a failed call does not establish consumption of a granted input
         except (TypeError, ValueError, OSError):
             # An over-long / malformed value is never a workspace path (defensive).
             continue
@@ -367,14 +382,20 @@ def detect_used_edges(
             # it stays the external leaf below (matching the arg channel's semantics,
             # and ``_script_instrument`` skips a hashless edge anyway). A non-SCRIPT
             # suffix (plain data/report input) also falls through unchanged.
-            if kind_for_path(resolved) is ArtifactKind.SCRIPT and evidence.sha256:
+            granted_input = not candidate.resolve().is_relative_to(root) and (
+                arg_name in external_file_input_args(tool_name)
+                and external_file_arg_was_consumed(tool_name, candidate)
+            )
+            if (
+                kind_for_path(resolved) is ArtifactKind.SCRIPT or granted_input
+            ) and evidence.sha256:
                 outcome = mint_artifact_outcome(
                     app,
                     sid,
                     name=Path(resolved).name,
                     workspace_id=workspace_id,
                     evidence=evidence,
-                    kind=ArtifactKind.SCRIPT,
+                    kind=kind_for_path(resolved),
                     mechanism=Mechanism.TOOL_SCHEMA,
                     producing=False,
                     path=resolved,
@@ -392,7 +413,7 @@ def detect_used_edges(
                     # basis stays visible (never invented — arrives as "" only
                     # when the caller genuinely has no call to attribute).
                     producer={
-                        "designation": "used-script",
+                        "designation": "used-granted-file" if granted_input else "used-script",
                         "session_id": sid,
                         "tool": tool_name,
                         "call_id": call_id,
