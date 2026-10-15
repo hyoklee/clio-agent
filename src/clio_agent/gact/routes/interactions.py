@@ -21,6 +21,9 @@ from clio_agent.gact.routes.interaction_surface_projection import (
     _latest_action_record as _latest_action_record,
 )
 from clio_agent.gact.routes.interaction_surface_projection import (
+    _question_correlation as _question_correlation,
+)
+from clio_agent.gact.routes.interaction_surface_projection import (
     _surface_actions as _surface_actions,
 )
 from clio_agent.gact.routes.interaction_surface_projection import (
@@ -107,40 +110,6 @@ def _session_scope(app: FastAPI, root_session_id: str, include_children: bool) -
             if attended_session_id(app, child) == attended
         )
     return scope
-
-
-def _question_correlation(app: FastAPI, question: UserQuestion) -> dict[str, str]:
-    metadata = question.metadata if isinstance(question.metadata, Mapping) else {}
-    elicitation = metadata.get("elicitation")
-    elicitation = elicitation if isinstance(elicitation, Mapping) else {}
-    child = app.state.user_questions.get(str(metadata.get("forwarded_from_question") or ""))
-    child_meta = child.metadata if isinstance(getattr(child, "metadata", None), Mapping) else {}
-    child_elicitation = child_meta.get("elicitation")
-    child_elicitation = child_elicitation if isinstance(child_elicitation, Mapping) else {}
-    return {
-        "tool_name": str(
-            metadata.get("tool_name")
-            or elicitation.get("tool_name")
-            or child_meta.get("tool_name")
-            or child_elicitation.get("tool_name")
-            or ""
-        ),
-        "invocation_id": str(
-            metadata.get("invocation_id")
-            or elicitation.get("invocation_id")
-            or child_meta.get("invocation_id")
-            or child_elicitation.get("invocation_id")
-            or ""
-        ),
-        "task_id": str(
-            metadata.get("task_id")
-            or elicitation.get("task_id")
-            or child_meta.get("task_id")
-            or child_elicitation.get("task_id")
-            or ""
-        ),
-        "input_key": str(elicitation.get("input_key") or child_elicitation.get("input_key") or ""),
-    }
 
 
 def _agent_answer_task_projection(app: FastAPI, value: object) -> dict[str, Any] | None:
