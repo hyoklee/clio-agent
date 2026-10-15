@@ -20,8 +20,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock
 
-import pytest
-
 from clio_agent.errors import MCP_PROTOCOL_DOWNGRADED_TO_LEGACY
 from clio_agent.gact.mcp_connection_observability import emit_downgrade_events_for_executor
 from clio_agent.gact.routes.mcp_rows import handshake_server_row
@@ -186,52 +184,3 @@ def test_emit_downgrade_events_is_a_noop_without_a_session_or_executor():
     emit_downgrade_events_for_executor(MagicMock(), "sid", None)  # no executor
     emit_downgrade_events_for_executor(MagicMock(), "sid", object())  # no namespaces()
     # None of the above should raise.
-
-
-@pytest.mark.asyncio
-async def test_relay_transport_client_classifies_under_relay_server_id(monkeypatch):
-    """tools/relay_transport.py's direct connect (#1201 bypass site) is
-    classified under the fixed 'relay' server id. httpx.AsyncClient is real
-    (harmless to construct/close without ever issuing a request); only the
-    MCP client factory is faked, to avoid a real network connect."""
-    from clio_agent.tools.mcp_connection_era import instrument_client_era, latest_mcp_connection_era
-    from clio_agent.tools.relay_transport import RelayTransportClient
-
-    class _FakeMcpClient:
-        protocol_version = "2026-07-28"
-
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *exc):
-            return None
-
-    def fake_make_mcp_client(target, **kwargs):
-        assert kwargs.get("server_id") == "relay"
-        return instrument_client_era(_FakeMcpClient(), server_id=kwargs["server_id"])
-
-    monkeypatch.setattr("clio_agent.tools.relay_transport.make_mcp_client", fake_make_mcp_client)
-
-    async def fake_probe_console_sse_capability(http_client):
-        # clio-relay#221/#259: __aenter__ now also probes GET /healthz for the
-        # console-SSE capability flag -- faked here too so this test's "no real
-        # request" invariant (see the class docstring above) still holds against
-        # the unreachable https://relay.example host below.
-        return False
-
-    monkeypatch.setattr(
-        "clio_agent.tools.relay_transport.probe_console_sse_capability",
-        fake_probe_console_sse_capability,
-    )
-
-    client = RelayTransportClient(
-        mcp_url="https://relay.example/mcp",
-        http_base_url="https://relay.example",
-        api_token="tok",
-    )
-    async with client:
-        pass
-
-    era = latest_mcp_connection_era("relay")
-    assert era is not None
-    assert era.era == "modern"

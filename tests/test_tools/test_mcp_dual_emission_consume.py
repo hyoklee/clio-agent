@@ -1,32 +1,9 @@
-"""P5 wire-semantics: dual-emission twin consumption (#832 clean-stream rule).
+"""MCP result single-emission contracts with historic nested payload shapes.
 
-Live diagnosis (a UI agent against the running gact server, p5run2 fixture):
-``relay_wait``'s stored ``tool_result`` part carried the SAME ~39KB payload
-THREE times --
-
-1. ``structured_content`` -- the real nested object. Correct, the one true
-   emission.
-2. ``content_blocks[0].text`` -- the ENTIRE ``structured_content`` object
-   re-``JSON.stringify``'d into one flat text block. This is FastMCP's own
-   ``ToolResult`` auto-fill (a ``structured_content``-only construction backs
-   ``content`` with the same object, JSON-stringified) riding untouched
-   through ``tools/mcp_results.py::call_tool_result_to_observer`` -- the ONE
-   seam every downstream reader (wire bus event, ledger, durable trace, the
-   ``tool_result`` Part's own ``content_blocks`` field) inherits from.
-3. ``structured_content.result.content[0].text`` -- ONE HOP INSIDE the
-   payload, the relay door's own MCP response carries the standard MCP dual
-   emission (``content[].text`` stringified fallback beside a
-   ``structuredContent`` object), and ``tools/remote_mcp.py``'s
-   ``_task_result_as_job_wire`` passed it through untouched into what gact
-   stores.
-
-The fix is ONE shared, conservative (parse-and-compare) twin detector in
-``tools/mcp_results.py``, applied at both seams:
-``call_tool_result_to_observer`` (top level, #2) and
-``consume_dual_emission_twin`` (nested mappings, #3, used by
-``_task_result_as_job_wire``). This module pins single-emission with
-failing-first tests built from that live fixture shape, plus the negative:
-genuinely distinct text survives untouched.
+Keep the common parse-and-compare twin detector, negative distinct-content
+cases, and real FastMCP inline calls. The removed relay federation and
+serve-owned wait adapter are not execution paths of the replacement.
+Generic native/external task identity and acceptance are qualified separately.
 """
 
 from __future__ import annotations
@@ -34,21 +11,16 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import pytest
 from fastmcp import FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
-from mcp.types import Tool as McpTool
 
 from clio_agent.tools.execution import SyncMCPToolExecutor
-from clio_agent.tools.gateway import build_gateway
 from clio_agent.tools.mcp_results import (
     call_tool_result_to_observer,
     consume_dual_emission_twin,
     content_blocks_for_wire,
 )
-from clio_agent.tools.relay_transport import RelayRemoteMcpCatalog
-from clio_agent.tools.remote_mcp import RemoteMcpFederation
 
 # --------------------------------------------------------------------------- #
 # Fixture shape lifted from the live diagnosis (run2/J-43-row7-expanded.json: #
@@ -275,91 +247,3 @@ def test_structured_content_twin_plus_distinct_block_keeps_only_distinct() -> No
     assert content_blocks_for_wire(observed) == [
         {"type": "text", "text": "a genuinely distinct note"}
     ]
-
-
-# --------------------------------------------------------------------------- #
-# Full pipeline: relay_wait's serve-owned resolution end to end, matching the #
-# live fixture shape exactly -- three redundant copies collapse to one true   #
-# structured_content, with no twin anywhere (top level or nested).            #
-# --------------------------------------------------------------------------- #
-
-
-class _ResolvedTask:
-    """Terminal ClientGetTaskResult stand-in (mirrors
-    tests/test_tools/test_remote_mcp_federation.py's ``_ResolvedTask``)."""
-
-    def __init__(self, *, status: str, result: Any) -> None:
-        self.status = status
-        self.result = result
-        self.error = None
-
-
-class _ServeOwnedRelayClient:
-    """Fake relay whose transport resolves one job through a persisted record,
-    carrying the relay door's own dual-emitted result (#3)."""
-
-    def __init__(self, job_id: str, result: Any) -> None:
-        self._job_id = job_id
-        self._result = result
-        self.catalog = RelayRemoteMcpCatalog(
-            revision="a" * 64,
-            tools={},
-            follow_tools={
-                "relay_wait": McpTool(
-                    name="relay_wait",
-                    inputSchema={
-                        "type": "object",
-                        "properties": {"job_id": {"type": "string"}},
-                        "required": ["job_id"],
-                    },
-                    outputSchema={"type": "object"},
-                )
-            },
-        )
-
-    async def __aenter__(self) -> "_ServeOwnedRelayClient":
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        return None
-
-    async def discover_remote_mcp(self) -> RelayRemoteMcpCatalog:
-        return self.catalog
-
-    async def wait_for_submitted_job(
-        self, job_id: str, *, timeout_seconds: Any = None
-    ) -> _ResolvedTask | None:
-        if job_id != self._job_id:
-            return None
-        return _ResolvedTask(status="completed", result=self._result)
-
-
-@pytest.mark.asyncio
-async def test_relay_wait_end_to_end_collapses_three_copies_to_one() -> None:
-    """FAILING-FIRST acceptance: the exact live-fixture shape (relay_wait on a
-    serve-owned job, the relay door's own dual emission nested inside) must
-    reach the stored tool_result part with ONE true structured_content copy --
-    no top-level content_blocks twin (#2), no nested result.content twin (#3)."""
-
-    job_id = "job_e886ccc32e0d4d6e8b29c59d529b94c4"
-    relay = _ServeOwnedRelayClient(job_id, _relay_door_result())
-    federation = await RemoteMcpFederation.discover(lambda: relay)
-    gateway = build_gateway({}, remote_mcp_federation=federation)
-
-    with SyncMCPToolExecutor(gateway, timeout=5.0) as executor:
-        raw_result = executor.call_tool_result("relay_wait", {"job_id": job_id})
-
-    observed = call_tool_result_to_observer(raw_result)
-
-    # #2: the top-level content_blocks carry no re-stringified copy of the
-    # whole structured_content payload.
-    assert content_blocks_for_wire(observed) is None
-    assert observed["content"] == []
-
-    # The one true structured_content, and #3: the nested relay-door result
-    # inside it carries no redundant content[0].text twin either.
-    structured = observed["structuredContent"]
-    assert structured["job"] == {"job_id": job_id, "state": "succeeded", "terminal": True}
-    assert structured["resolved_via"] == "serve_task_record"
-    assert "content" not in structured["result"]
-    assert structured["result"]["structuredContent"] == _RELAY_DOOR_STRUCTURED

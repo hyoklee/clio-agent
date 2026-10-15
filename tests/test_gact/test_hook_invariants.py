@@ -24,7 +24,6 @@ from pathlib import Path
 
 import pytest
 
-from clio_agent.gact.agent_mailbox import pending_mail, retained_mail
 from clio_agent.gact.app import _make_permission_gate, _tool_session_context, build_app
 from clio_agent.gact.hooks import (
     PRE_TOOL_USE,
@@ -412,9 +411,14 @@ def test_stop_loop_always_blocks_redrives_to_cap_then_settles(
         assert capped_at == 3, "the 4th firing (count==cap) trips the cap"
         caps = [r for r in hook_reasons()[baseline:] if r["reason"] == "stop_loop_cap"]
         assert caps and caps[-1]["scope"] == "global"
-        # Every re-drive is retained; inspecting pending input never consumes it.
-        assert len(retained_mail(app, sess.id)) == 3
-        assert len(pending_mail(app, sess.id)) == 3
+        # The confirmed Core mailbox retains each redrive; reads do not commit
+        # model input or acknowledge any of these accepted notifications.
+        history = app.state.task_history
+        pending = history.pending_mail(sess.id)
+        assert len(pending) == 3
+        assert all(history.mail_item(sess.id, item.id) == item for item in pending)
+        assert history.pending_mail(sess.id) == pending
+        assert not history.acknowledged_notifications(sess.id)
         # Counters reset after the cap so a fresh sequence starts clean.
         assert read_stop_loop_state(app.state.sessions.get(sess.id))["count"] == 0
     finally:
@@ -512,7 +516,8 @@ def test_stop_loop_infra_failure_never_fail_closes_into_a_redrive(
         crashed = [r for r in hook_reasons()[baseline:] if r["reason"] == "hook_crashed"]
         assert any(r.get("hook_id") == "crasher" for r in crashed)
         # No re-drive was enqueued.
-        assert not retained_mail(app, sess.id)
+        assert not app.state.task_history.pending_mail(sess.id)
+        assert not app.state.task_history.acknowledged_notifications(sess.id)
     finally:
         install_global_dispatcher(None)
 
