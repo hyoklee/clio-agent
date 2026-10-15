@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 from functools import partial
 from typing import TYPE_CHECKING
@@ -20,12 +21,14 @@ from clio_agent.arc.task_types import (
 from clio_agent.errors import ClioError
 from clio_agent.gact import conversation_controls
 from clio_agent.gact.native_work import now
+from clio_agent.gact.session_input import input_delivery, withdraw_assignment_input
 from clio_agent.gact.session_mail import StagedInput
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import RecordingUnconfirmed
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 
 if TYPE_CHECKING:
+    from clio_agent.gact.conversation_assignments import ConversationSegment
     from clio_agent.gact.conversations import (
         Conversations,
     )
@@ -340,3 +343,75 @@ def arm_deadline(self: Conversations, handle: str, deadline: str | None) -> None
     self._deadlines[handle] = self._loop.call_later(
         max(0.0, (expires - datetime.now(timezone.utc)).total_seconds()), elapsed
     )
+
+
+async def _confirm_segment_write(action: Callable[[], None]) -> None:
+    """Retain a finite Core write through Stop before reconciling segment retirement."""
+    recording = asyncio.create_task(asyncio.to_thread(action))
+    interrupted = False
+    while not recording.done():
+        try:
+            await asyncio.shield(recording)
+        except asyncio.CancelledError:
+            interrupted = True
+    recording.result()
+    if interrupted:
+        raise asyncio.CancelledError
+
+
+async def _retired_segment(
+    self: Conversations, segment: ConversationSegment, *, stopped: bool
+) -> None:
+    """Reconcile Stop once, after physical retirement and before slot release."""
+    if not stopped:
+        return
+    sid, handle = segment.session_id, segment.assignment.handle
+    identity = "stop:" + segment.turn_id
+    self._model_recording.setdefault(sid, set()).add(identity)
+
+    def record() -> None:
+        with self.history.serialized():
+            current = self.history.task_snapshot(handle)
+            latest = self.history.latest_assignment(sid)
+            if current is None or latest is None or latest.handle != handle:
+                return
+            if current.cancellation_requested_at is not None:
+                withdraw_assignment_input(self.history, sid, handle)
+            elif not self._closing and not self.model_paused(sid):
+                pending = self.history.mail_item(sid, segment.trigger.id)
+                if (
+                    pending == segment.trigger
+                    and pending.delivery == "eligible"
+                    and pending.id not in self.history.acknowledged_notifications(sid)
+                    and not self.history.mail_withdrawn(sid, pending.id)
+                ):
+                    self.history.update_mail(
+                        input_delivery(pending, held=True, reason="stopped_before_input_commit"),
+                        expected_revision=pending.revision,
+                    )
+            if current.terminal_at is None:
+                self.history.record_snapshot(
+                    current.model_copy(
+                        update={
+                            "activity": "cancelling"
+                            if current.cancellation_requested_at
+                            else "interrupted"
+                            if self._closing
+                            else "paused"
+                            if self.model_paused(sid)
+                            else "stopped",
+                            "updated_at": now(),
+                        }
+                    ),
+                    observation_id=uuid4().hex,
+                )
+
+    async def confirm() -> None:
+        await _confirm_segment_write(record)
+        self._recording_confirmed(sid, identity)
+
+    try:
+        await confirm()
+    except Exception:
+        logger.exception("Stopped input recording remains unconfirmed session=%s", sid)
+        self.recovery.defer("conversation-stopped:" + handle + ":" + segment.turn_id, confirm)

@@ -15,6 +15,7 @@ from clio_agent import conf
 from clio_agent.arc.task_types import (
     AssignmentDetails,
     CoreReference,
+    MailAdmission,
     MailItem,
     TaskProgress,
     TaskSnapshot,
@@ -26,8 +27,10 @@ from clio_agent.gact import (
     conversation_recovery,
 )
 from clio_agent.gact.conversation_assignments import ConversationOutcome, ConversationSegment
+from clio_agent.gact.conversation_recovery import _confirm_segment_write
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_work import now
+from clio_agent.gact.session_input import input_delivery
 from clio_agent.gact.session_mail import SessionMail, StagedInput
 from clio_agent.gact.sessions import Session as StoredSession
 from clio_agent.gact.sessions import SessionStore
@@ -76,6 +79,7 @@ class Conversations:
         self._controls: dict[str, asyncio.Task[None]] = {}
         self._cancel_watches: dict[str, Callable[[], None]] = {}
         self._control_holds: set[str] = set()
+        self._model_recording: dict[str, set[str]] = {}
         self._paused: dict[str, str] = {}
         self._inference: dict[int, asyncio.Semaphore] = {}
         self._fanout_inference: dict[str, _InferenceGroup] = {}
@@ -141,8 +145,6 @@ class Conversations:
 
         task.add_done_callback(retired)
 
-    _control_outcome = conversation_controls._control_outcome
-
     _restore_input_projections = conversation_recovery._restore_input_projections
 
     restore = conversation_recovery.restore
@@ -151,7 +153,7 @@ class Conversations:
 
     def eligible(self, sid: str, item: MailItem) -> bool:
         """One admission/injection policy; producers do not independently spawn turns."""
-        if self._restoring:
+        if self._restoring or self._model_recording.get(sid):
             return False
         session = self.sessions.get(sid)
         if session is None or self.model_paused(sid):
@@ -169,8 +171,8 @@ class Conversations:
         assignment = self.history.latest_assignment(sid)
         if assignment is not None and assignment.cancellation_requested_at is None:
             for handle in self.history.task_handles(
-                kind="Question", active_only=True
-            ) & self.history.session_handles(sid):
+                kind="Question", active_only=True, session_id=sid
+            ):
                 question = self.history.task_snapshot(handle)
                 if (
                     question is not None
@@ -255,30 +257,32 @@ class Conversations:
     async def _admit(self, sid: str) -> tuple[str, Any] | None:
         def select() -> ConversationSegment | None:
             with self.history.serialized():
-                if self._closing or self.history.requires_recovery:
-                    return None
-                if self.runner.stop_requested(sid):
+                if (
+                    self._closing
+                    or self.history.requires_recovery
+                    or self._model_recording.get(sid)
+                ):
                     return None
                 if self.execution_gate(sid) is not None:
                     return None
                 caller = self.caller(sid)
-                pending = self.history.pending_mail(sid)
-                if any(
-                    item.delivery == "eligible" and self.eligible(sid, item) for item in pending
-                ):
-                    for item in pending:
+                # Trusted retry withdrawal precedes releasing the stopped trigger.
+                staged = self.mail.stage(caller)
+                if staged.items:
+                    for item in self.history.pending_mail(sid):
                         if (
                             item.delivery == "held"
                             and item.held_reason == "stopped_before_input_commit"
                         ):
+                            source = (
+                                self.history.task_snapshot(item.admission.assignment_id)
+                                if item.admission is not None
+                                else None
+                            )
+                            if source is not None and source.cancellation_requested_at is not None:
+                                continue
                             self.history.update_mail(
-                                item.model_copy(
-                                    update={
-                                        "delivery": "eligible",
-                                        "held_reason": "",
-                                        "revision": item.revision + 1,
-                                    }
-                                ),
+                                input_delivery(item, held=False),
                                 expected_revision=item.revision,
                             )
                 staged = self.mail.stage(caller)
@@ -317,6 +321,20 @@ class Conversations:
                 if assignment.cancellation_requested_at is not None:
                     return None
                 turn_id = "turn_" + uuid4().hex
+                trigger = self.history.update_mail(
+                    trigger.model_copy(
+                        update={
+                            "revision": trigger.revision + 1,
+                            "admission": MailAdmission(
+                                assignment_id=assignment.handle,
+                                turn_id=turn_id,
+                                input_revision=trigger.revision + 1,
+                                content=trigger.content,
+                            ),
+                        }
+                    ),
+                    expected_revision=trigger.revision,
+                )
                 details = (
                     AssignmentDetails.model_validate(self.history.read_content(assignment.details))
                     if assignment.details
@@ -351,7 +369,14 @@ class Conversations:
 
             await asyncio.to_thread(prepare_queue)
             segment = await asyncio.to_thread(select)
-        return (segment.turn_id, self._run(segment)) if segment is not None else None
+        if segment is None:
+            return None
+
+        async def retired(stopped: bool) -> None:
+            await self._retired_segment(segment, stopped=stopped)
+
+        self.runner.bind_retirement(sid, segment.turn_id, retired)
+        return segment.turn_id, self._run(segment)
 
     def caller(self, sid: str) -> TaskCaller:
         """Resolve agent identity from the controlled session/assignment, never model fields."""
@@ -649,7 +674,7 @@ class Conversations:
                     observation_id=uuid4().hex,
                 )
 
-        await asyncio.to_thread(activity, "busy")
+        await _confirm_segment_write(lambda: activity("busy"))
         context.set_turn_identity(
             app=self.app,
             session_id=sid,
@@ -666,56 +691,6 @@ class Conversations:
             outcome = await self.run_segment(segment)
             if self.runner.cancellation(sid).is_set():
                 raise asyncio.CancelledError
-        except asyncio.CancelledError:
-
-            def stopped() -> None:
-                with self.history.serialized():
-                    activity(
-                        "interrupted"
-                        if self._closing
-                        else "paused"
-                        if self.model_paused(sid)
-                        else "stopped"
-                    )
-                    if not self._closing and not self.model_paused(sid):
-                        pending = self.history.mail_item(sid, segment.trigger.id)
-                        if (
-                            pending == segment.trigger
-                            and pending.delivery == "eligible"
-                            and pending.id not in self.history.acknowledged_notifications(sid)
-                            and not self.history.mail_withdrawn(sid, pending.id)
-                        ):
-                            current = self.history.task_snapshot(handle)
-                            reason = (
-                                "cancelled_before_input_commit"
-                                if current is not None and current.cancellation_requested_at
-                                else "stopped_before_input_commit"
-                            )
-                            self.history.update_mail(
-                                pending.model_copy(
-                                    update={
-                                        "delivery": "held",
-                                        "held_reason": reason,
-                                        "revision": pending.revision + 1,
-                                    }
-                                ),
-                                expected_revision=pending.revision,
-                            )
-
-            async def record_stop() -> None:
-                await asyncio.to_thread(stopped)
-
-            try:
-                await record_stop()
-            except Exception as error:
-                logger.exception(
-                    "Task boundary reason=stopped_recording_unconfirmed error_type=%s",
-                    type(error).__name__,
-                )
-                self.recovery.defer(
-                    "conversation-stopped:" + handle + ":" + segment.turn_id, record_stop
-                )
-            raise
         except Exception as error:
             logger.exception(
                 "Task boundary reason=assignment_execution_failed error_type=%s",
@@ -726,17 +701,29 @@ class Conversations:
             )
 
         async def finish() -> None:
-            await asyncio.to_thread(
-                conversation_assignments._finish_segment, self, segment, outcome
+            await _confirm_segment_write(
+                lambda: conversation_assignments._finish_segment(self, segment, outcome)
             )
-            self.runner.signal(sid)
+            self._recording_confirmed(sid, "finish:" + segment.turn_id)
 
         try:
             await finish()
         except Exception:
             if not self.history.requires_recovery:
                 raise
+            self._model_recording.setdefault(sid, set()).add("finish:" + segment.turn_id)
             self.recovery.defer("conversation-finish:" + handle + ":" + segment.turn_id, finish)
+
+    def _recording_confirmed(self, sid: str, identity: str) -> None:
+        pending = self._model_recording.get(sid)
+        if pending is not None:
+            pending.discard(identity)
+            if not pending:
+                self._model_recording.pop(sid)
+        if not self._closing:
+            self.runner.signal(sid)
+
+    _retired_segment = conversation_recovery._retired_segment
 
     complete_deferred = conversation_assignments.complete_deferred
 

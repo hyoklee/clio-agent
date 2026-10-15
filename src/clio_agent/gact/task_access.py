@@ -59,6 +59,8 @@ class TaskAccess:
         """Scope a narrow indexed candidate without turning it into a whole-tree query."""
         if scope not in {"tree", "authorized"}:
             raise ValueError("Task scope must be tree or authorized")
+        if self.caller.human_action and not self.caller.session_id and scope == "authorized":
+            return task.owner.human_id == self.caller.human_id
         if self._in_session_tree(task, self.caller.session_id):
             return True
         return (
@@ -157,6 +159,8 @@ class TaskAccess:
                 if (task := self.history.task_snapshot(handle)) is not None
                 and self.in_scope(task, scope)
             }
+        if self.caller.human_action and not self.caller.session_id and scope == "authorized":
+            return self.history.task_handles(human_id=self.caller.human_id)
         handles = set(self._tree)
         if scope == "authorized":
             for grant in self.history.coordination_grants(self.caller.session_id):

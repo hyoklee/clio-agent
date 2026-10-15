@@ -14,6 +14,7 @@ from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import (
     AssignmentDetails,
     MailItem,
+    MailKind,
     QuestionDefinition,
     QuestionReply,
     TaskAlias,
@@ -56,6 +57,8 @@ async def test_spawn_strategy_is_validated_before_child_creation_and_immutable(
         caller, "Original child assignment", "writer", "good", strategy=strategy
     )
     child = app.state.sessions.get(accepted["session_id"])
+    queued = owner.history.task_snapshot(accepted["handle"])
+    assert queued is not None and queued.activity == "queued"
     assert child is not None and child.metadata["variant_strategy"]["judge"] == "user"
     assert child.metadata["variant_strategy"]["reward"]["instructions"] == "Clear answer"
     assert (
@@ -518,13 +521,16 @@ async def test_dependency_aliases_are_canonical_and_cannot_name_the_active_assig
         history.record_alias(
             TaskAlias(alias="old-root", handle=root.handle, source_identity="legacy-root")
         )
-        result = owner.set_dependencies(root.owner.session_id, ["old-dependency", child.handle])
+        result = owner.set_dependencies(
+            root.owner.session_id, ["old-dependency", child.handle], "all"
+        )
         assert result["dependencies"] == [child.handle]
         saved = history.task_snapshot(root.handle)
+        assert saved is not None and saved.details is not None
         details = AssignmentDetails.model_validate(history.read_content(saved.details))
         assert details.dependencies == (child.handle,)
         with pytest.raises(ValueError, match="cannot wait for itself"):
-            owner.set_dependencies(root.owner.session_id, "old-root")
+            owner.set_dependencies(root.owner.session_id, "old-root", "all")
         assert history.task_snapshot(root.handle) == saved
 
     try:
@@ -543,7 +549,11 @@ async def test_explicit_message_deletion_withdraws_only_uncommitted_human_inputs
 
     def exercise() -> None:
         history, sid = owner.history, root.owner.session_id
-        for identity, kind in [("deleted-human", "human"), ("kept-task", "task_result")]:
+        inputs: list[tuple[str, MailKind]] = [
+            ("deleted-human", "human"),
+            ("kept-task", "task_result"),
+        ]
+        for identity, kind in inputs:
             content = history.write_content(sid, identity)
             history.record_mail(
                 MailItem(

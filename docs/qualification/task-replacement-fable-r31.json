@@ -1,0 +1,229 @@
+{
+  "status": "completed",
+  "snapshot": {
+    "created_at": "2026-10-15T04:26:28.097903+00:00",
+    "heads": {
+      "core": "3d929627c2207b5e9c14bf525f9474f5059d34b8",
+      "external/gact-tui/": "30df56ed9556a99fbac6a4984374adbfd46d82eb",
+      "external/clio-agent-marketplace/": "9257bba5953b012ba796299df4c633e698dbaddc"
+    },
+    "source": "committed source; no earlier review reports or correction packets supplied",
+    "file_count": 4720,
+    "bytes": 41768291,
+    "omitted_binary_files": [
+      "site/src/assets/brand/clio-mark.png",
+      "site/src/assets/captures/current-dashboard.png",
+      "site/src/assets/captures/current-data.png",
+      "site/src/assets/captures/current-lineage.png",
+      "site/src/assets/captures/current-report.png",
+      "site/src/assets/captures/docs-best-of-n.png",
+      "site/src/assets/captures/docs-child-followup.png",
+      "site/src/assets/captures/docs-child-tab.png",
+      "site/src/assets/captures/docs-compact-work.png",
+      "site/src/assets/captures/docs-conversation-branch-control.png",
+      "site/src/assets/captures/docs-conversation-branch-result.png",
+      "site/src/assets/captures/docs-conversation-family-gantt.png",
+      "site/src/assets/captures/docs-conversation-menu.png",
+      "site/src/assets/captures/docs-conversation-output-lineage.png",
+      "site/src/assets/captures/docs-conversation-relationships.png",
+      "site/src/assets/captures/docs-conversation-rewind-confirm.png",
+      "site/src/assets/captures/docs-conversation-rewind-result.png",
+      "site/src/assets/captures/docs-dashboard-export-menu.png",
+      "site/src/assets/captures/docs-dashboard-export.png",
+      "site/src/assets/captures/docs-fleet-judges.png",
+      "site/src/assets/captures/docs-fork-checkpoint.png",
+      "site/src/assets/captures/docs-goal-completed.png",
+      "site/src/assets/captures/docs-goal-injections.png",
+      "site/src/assets/captures/docs-injection-collection-open.png",
+      "site/src/assets/captures/docs-injection-collection.png",
+      "site/src/assets/captures/docs-injection-detail.png",
+      "site/src/assets/captures/docs-injection-goal.png",
+      "site/src/assets/captures/docs-loop-completed.png",
+      "site/src/assets/captures/docs-loop-human-question.png",
+      "site/src/assets/captures/docs-loop-injections.png",
+      "site/src/assets/captures/docs-loop-setup.png",
+      "site/src/assets/captures/docs-marked-messages.png",
+      "site/src/assets/captures/docs-memory-search.png",
+      "site/src/assets/captures/docs-message-preview.png",
+      "site/src/assets/captures/docs-open-questions.png",
+      "site/src/assets/captures/docs-panel-evidence.png",
+      "site/src/assets/captures/docs-panel-file-preview.png",
+      "site/src/assets/captures/docs-question-choice.png",
+      "site/src/assets/captures/docs-question-confirmation.png",
+      "site/src/assets/captures/docs-question-text.png",
+      "site/src/assets/captures/docs-question-visual-controls.png",
+      "site/src/assets/captures/docs-refinement-revised.png",
+      "site/src/assets/captures/docs-refinement.png",
+      "site/src/assets/captures/docs-schedule-injection.png",
+      "site/src/assets/captures/docs-session-export-menu.png",
+      "site/src/assets/captures/docs-session-export-zip.png",
+      "site/src/assets/captures/docs-session-review.png",
+      "site/src/assets/captures/docs-todos-completed.png",
+      "site/src/assets/captures/docs-todos-current.png",
+      "site/src/assets/captures/docs-tool-call.png",
+      "site/src/assets/captures/docs-tool-collapsed.png",
+      "site/src/assets/captures/docs-tool-command-output.png",
+      "site/src/assets/captures/docs-visual-question.png",
+      "site/src/assets/captures/docs-wait-all-result.png",
+      "site/src/assets/captures/docs-work-goal.png",
+      "site/src/assets/captures/docs-work-questions-todos.png",
+      "site/src/assets/captures/tasks/question-answer-phone.png",
+      "site/src/assets/captures/tasks/question-cancel-confirmation-desktop.png",
+      "site/src/assets/captures/tasks/question-wait-desktop.png",
+      "tests/fixtures/attention/earthscope_9478ecf2.json.gz",
+      "tests/fixtures/attention/vllm-attn-9e11e1571c5f/chatcmpl-9478ecf2002ea26e-9b6ebc3a_g0.safetensors",
+      "tests/fixtures/recorded_catalogs/models-dev.json.gz",
+      "external/gact-tui/web/src/test-fixtures/mesh/bricks.glb",
+      "external/gact-tui/web/src/test-fixtures/mesh/surface.glb",
+      "external/gact-tui/web/tests/fixtures/document-preview/docx.pdf",
+      "external/gact-tui/web/tests/fixtures/document-preview/pptx.pdf",
+      "external/gact-tui/web/tests/fixtures/document-preview/synthetic.docx",
+      "external/gact-tui/web/tests/fixtures/document-preview/synthetic.pptx",
+      "external/gact-tui/web/tests/fixtures/document-preview/synthetic.xlsx",
+      "external/gact-tui/web/tests/fixtures/document-preview/xlsx.pdf",
+      "external/gact-tui/web/tests/fixtures/gallery-sample.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/summarization-disclosure-collapsed-chromium-linux.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/summarization-disclosure-collapsed-chromium-win32.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-desktop-dark-chromium-linux.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-desktop-dark-chromium-win32.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-mobile-light-reduced-chromium-linux.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-mobile-light-reduced-chromium-win32.png"
+    ],
+    "file_hash_count": 4720,
+    "file_hash_manifest_sha256": "c3d34d320aaee58eb7f31dcc67b0a5eddcb00bfbb5f061f980e53f1030eb537d"
+  },
+  "prompt": "Please independently review CLIO's task implementation at core 3d929627c2207b5e9c14bf525f9474f5059d34b8, GACT 30df56ed9556a99fbac6a4984374adbfd46d82eb and marketplace 9257bba5953b012ba796299df4c633e698dbaddc against docs/design/task-replacement-plan.md and docs/qualification/task-replacement-acceptance.md. Include session/task addressing and intersession/workflow observation, waiting and messaging, and asynchronous Questions collected through shared waits.\n\nThis is a read-only implementation review. Inspect the actual source and regression cases for correctness, unnecessary complexity and remaining competing ownership; report concrete findings with source locations and give separate architecture/source and qualification verdicts. Do not edit files, run tests, start services or launch models/product qualification. Static checks have run; fresh behavior and live acceptance are still pending.",
+  "remote_root": "/home/jcernuda/.cache/clio-task-review-3d929627-fable-r31",
+  "root": "/home/jcernuda/.cache/clio-task-review-3d929627-fable-r31",
+  "created_at": "2026-10-15T04:26:35.526833+00:00",
+  "controller_pid": 368643,
+  "session_persistence": false,
+  "model_requested": "fable",
+  "source": {
+    "created_at": "2026-10-15T04:26:28.097903+00:00",
+    "heads": {
+      "core": "3d929627c2207b5e9c14bf525f9474f5059d34b8",
+      "external/gact-tui/": "30df56ed9556a99fbac6a4984374adbfd46d82eb",
+      "external/clio-agent-marketplace/": "9257bba5953b012ba796299df4c633e698dbaddc"
+    },
+    "source": "committed source; no earlier review reports or correction packets supplied",
+    "file_count": 4720,
+    "bytes": 41768291,
+    "file_hash_count": 4720,
+    "file_hash_manifest_sha256": "c3d34d320aaee58eb7f31dcc67b0a5eddcb00bfbb5f061f980e53f1030eb537d"
+  },
+  "files": 4721,
+  "cli_pid": 368796,
+  "exit_code": 0,
+  "stderr": "",
+  "result": {
+    "duration_api_ms": 748544,
+    "stop_reason": "end_turn",
+    "session_id": "00b35b96-7a0e-47b2-8d22-f0bf1f1d892b",
+    "total_cost_usd": 13.53244625,
+    "usage": {
+      "input_tokens": 514,
+      "cache_creation_input_tokens": 501465,
+      "cache_read_input_tokens": 3941225,
+      "output_tokens": 50254,
+      "output_tokens_details": {
+        "thinking_tokens": 30707
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 501465,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 32,
+          "output_tokens": 5591,
+          "cache_read_input_tokens": 499749,
+          "cache_creation_input_tokens": 4825,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 4825
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    },
+    "modelUsage": {
+      "claude-fable-5-1": {
+        "inputTokens": 514,
+        "outputTokens": 50254,
+        "cacheReadInputTokens": 3941225,
+        "cacheCreationInputTokens": 501465,
+        "webSearchRequests": 0,
+        "costUSD": 13.53244625,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 30707,
+        "canonicalModel": "claude-fable-5-1",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "permission_denials": [],
+    "terminal_reason": "completed",
+    "fast_mode_state": "off",
+    "fast_mode_disabled_reason": "sdk_opt_in_required",
+    "subagent_stats": {
+      "spawned": 0,
+      "requested": {
+        "background": 0,
+        "foreground": 0,
+        "unset": 0
+      },
+      "started_in_background": 0,
+      "max_depth": 0,
+      "spawned_by_subagents": 0,
+      "completed": 0,
+      "failed": 0,
+      "killed": {
+        "parent": 0,
+        "user": 0,
+        "system": 0
+      },
+      "refused": {
+        "depth_limit": 0,
+        "concurrency_limit": 0,
+        "budget": 0
+      },
+      "by_type": {}
+    },
+    "safety_stops": 0,
+    "is_error": false,
+    "num_turns": 147,
+    "subtype": "success",
+    "api_error_status": null,
+    "result": "## Verdicts\n\n**Architecture/source: conditional NO-GO.** The core replacement is coherent and single-owner. One writer, one admission path, one Question owner, one notice path and one cancel dispatcher are all present and consistent. Two concrete defects block approval: the GACT Runs page targets routes core no longer serves, and Stop-held or cancel-held human inputs have an incomplete lifecycle with no regression coverage.\n\n**Qualification: NO-GO.** Every ledger row from F01 through Z05 remains blocked or unexecuted. Nothing I inspected changes that. The Runs page defect would fail U01 and Q9 on first live contact.\n\nCaveats on what I could inspect:\n- The package has no git metadata, so I cannot confirm it matches core 3d929627 or GACT 30df56ed. The owner file names the core revision; I took GACT identity from the user statement.\n- The marketplace submodule at 9257bba is absent from the package. D01's marketplace prompt review could not be performed. The core prompt pack and tool descriptions were reviewed.\n\n## Findings\n\n**1. GACT Runs page depends on routes that do not exist in core. Blocking.**\n`external/gact-tui/web/src/routes/runs-page.tsx:268-277` loads rows through `repository.runs` and `repository.relayStatus`. Those call `GET /v1/runs` at `packages/core/src/v3/repository.ts:285-293` and `GET /v1/relay/status` at `repository.ts:352-359`. A search of `src/clio_agent` finds no route for either path, consistent with the plan's removal of `run_registry`, `routes/agent_tasks` and relay routes. The executions tab therefore renders the error branch at `runs-page.tsx:512` against the replacement service. `repository.ts:562-569` also posts to `/v1/agent-tasks/{id}/cancel`, which core does not register; it is unused by the web app, so it is dead code rather than a live break. The relay settings, infrastructure and managed-services components still call relay routes. The plan allows absent relay runtime but requires documented unavailable visibility, not request failures. This is the same class as the R26 \"missing alias\" finding.\n\n**2. Held human inputs after Stop or cancel have no complete lifecycle and no tests. Medium.**\n`conversations.py:680-703` holds the uncommitted trigger as `stopped_before_input_commit` or `cancelled_before_input_commit`. The only release is `conversations.py:266-283`, which re-promotes stopped items solely when another eligible item arrives, and never re-promotes cancelled ones. Retry supersession at `turn.py:655-666` and `session_input.py:30` recognises only `hook_blocked` and `execution_failed_before_input_commit`, so a Stop followed by a retry of the same message delivers both copies in the next segment. A cancelled-before-commit input stays pending indefinitely, visible only through the mailbox route. No test in `tests/` references either reason. M07 says undelivered input is withdrawn or deliverable, not retained in limbo. This needs a decision and regression cases, not necessarily new machinery.\n\n**3. Fresh assignments display as yielded. Low.**\n`conversation_assignments.py:166` creates assignments with activity `idle`. `routes/tasks.py:76` and the UI decoder at `packages/core/src/v3/schemas.ts:139` map idle to yielded. A child that has never run shows \"The assignment is still open\" text in `task-activity-row.tsx:118-122`. Queued would be honest.\n\n**4. Subscriber authorization impersonates the owner's human. Low.**\n`task_publication.py:53-58` and `task_runtime.py:354-356` build the subscriber's caller with the task owner's human id. `session_mail.py:296-301` derives the sender's human from its own assignment. Harmless under one principal, but the two derivations disagree and the first would leak under multiple humans.\n\n**5. Reads publish owner notices. Low, ownership smell.**\n`task_declarations.py:67-70` calls `publish_task_notice` for every finished handle on `wait_tasks` and `get_task_result`, including when the caller is only a grant holder. It is idempotent and never acknowledges, but a peer read becomes a writer of the owner's mail.\n\n**6. Unnecessary complexity.**\n- `task_declarations.py:290-300` re-derives the Question handle and re-checks the prior snapshot that `questions.py:60-86` already handles.\n- `task_operations.py:331` duplicates the cursor recipient check in `task_observations.py:29-34`.\n- `task_declarations.py:163-170` authorizes a peer message, then `session_mail.py:339-350` authorizes it again.\n- `routes/tasks.py:220` reaches into `SessionMail._authorized`.\n- `task_history.py:413` imports a token estimator from the ReAct recorder into the Core writer.\n- The replay snapshot and rollback boilerplate in `task_history_projection.py:171-273` manages about thirty parallel dicts by hand. A single state object would shrink it and remove a class of partial-rollback bugs.\n\n**7. Competing ownership: none found in the reviewed scope.**\nMail producers across `human_controls`, `session_input`, `turn`, `routes/mailbox`, `a2ui_actions/delivery`, `spotter_watcher`, `conversation_*`, `session_mail` and migration all persist and signal only. Admission is exclusively `TurnRunner` driven by `Conversations._admit`. Goal waits record dependencies through `conversations.set_dependencies` at `goal_control.py:17`. The only loops are CoreRecovery backoff and the post-result thread-exit check in `turn_runner.py:199-201`, which R26 accepted. Native and external owner loops were not reviewed in depth here.\n\n## Conformance confirmed in the focus areas\n\n- Addressing: tree rights are lineage based at `task_access.py:37-47`; children get no ancestor or sibling rights; the delegation-reply grant at `conversation_assignments.py:515-529` is message-only; historical exact grants do not retarget successors per `task_access.py:98-119`.\n- Waiting: atomic snapshot, register and recheck with handle and recipient listeners at `task_operations.py:237-254`; revocation wakes waiters; the any-wait error contract is preserved; agents cannot wait on their own active assignment while humans can.\n- Messaging: pending-only peer cap counts staged peers only; human input and results are exempt; busy arrivals enter the next iteration through the same pump.\n- Questions: posting is immediate with no worker; Stop leaves the Question open; expiry is arbitrated under the writer lock and re-armed on restore by `question_events.py:125-150`; collection through shared waits uses the durable observation and re-authorizes every member at commit per R27 and R28.\n- Workflows: checkpoints go through the confirmed writer; a historical invocation cannot advance a retry; step children carry accumulated state through the committed launch context.\n\n## Regression coverage\n\nFresh suites under `tests/test_arc/` cover the writer, collection authorization, conversation owner, workflow checkpoints, Question resolution, hook approvals, route aliases and migration. Gaps I found: no cases for finding 2, no UI test exercising the Runs page against actual service routes, and no route test for the bearer-gated grant endpoints or the mailbox projection. Static checks have run; no test was executed in this review.",
+    "ttft_ms": 5347,
+    "type": "result",
+    "duration_ms": 750269,
+    "uuid": "a37d2cf6-1900-4bcd-b37d-c8f7609518df",
+    "ttft_stream_ms": 3137,
+    "time_to_request_ms": 800,
+    "first_content_frame_ms": 3137,
+    "queued_turn_count": 0,
+    "result_index": 0
+  },
+  "model_identities": [
+    "claude-fable-5-1"
+  ],
+  "cli_settled": true,
+  "ended_at": "2026-10-15T04:39:08.208954+00:00",
+  "root_absent": true,
+  "remote_receipt_sha256": "bd5af9a82ce1b6371aa158e09894da1ac894cc7ba21679d0faa17f8a63ee699b",
+  "retrieved_at": "2026-10-15T04:44:05.400748+00:00",
+  "remote_receipt_cleanup": {
+    "remote_receipt_absent": true
+  }
+}

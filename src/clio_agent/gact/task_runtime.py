@@ -22,6 +22,7 @@ from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_operations import TaskOperations
+from clio_agent.gact.task_publication import subscription_caller
 
 logger = logging.getLogger(__name__)
 
@@ -351,9 +352,10 @@ async def start(app: Any) -> None:
             recipients.add(ancestor.owner.session_id)
             parent = ancestor.owner.parent_handle
         for subscription in history.subscriptions(task.handle):
-            access = TaskAccess(
-                history, TaskCaller(subscription.recipient_session, task.owner.human_id)
-            )
+            caller = subscription_caller(history, subscription)
+            if caller is None:
+                continue
+            access = TaskAccess(history, caller)
             if subscription.enabled and {"read", "observe"} <= access.rights(task):
                 recipients.add(subscription.recipient_session)
         for sid in recipients:

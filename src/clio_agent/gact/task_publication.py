@@ -2,15 +2,28 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from clio_agent.arc.task_types import (
     MailItem,
     MailKind,
     QuestionDefinition,
     QuestionReply,
     TaskSnapshot,
+    TaskSubscription,
 )
+from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
+
+
+def subscription_caller(history: TaskHistory, subscription: TaskSubscription) -> TaskCaller | None:
+    """Use accepted recipient identity, with only a verified legacy assignment fallback."""
+    human = subscription.recipient_human
+    if human is None:
+        assignment = history.latest_assignment(subscription.recipient_session)
+        human = assignment.owner.human_id if assignment is not None else None
+    return TaskCaller(subscription.recipient_session, human) if human else None
 
 
 def task_owner_recipient(history: TaskHistory, current: TaskSnapshot) -> str | None:
@@ -50,12 +63,10 @@ def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode:
         for subscription in history.subscriptions(current.handle):
             if not subscription.enabled:
                 continue
-            access = TaskAccess(
-                history,
-                TaskCaller(
-                    session_id=subscription.recipient_session, human_id=current.owner.human_id
-                ),
-            )
+            caller = subscription_caller(history, subscription)
+            if caller is None:
+                continue
+            access = TaskAccess(history, caller)
             if {"read", "observe"} <= access.rights(current):
                 if subscription.recipient_session != owner_recipient:
                     recipients[subscription.recipient_session] = (
@@ -155,3 +166,39 @@ def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode:
                     else "",
                 )
             )
+
+
+def publish_control_outcome(
+    history: TaskHistory,
+    caller: TaskCaller,
+    task: TaskSnapshot,
+    action: str,
+    outcome: dict[str, Any],
+    identity: str,
+) -> None:
+    """Relay an observed control outcome to the owning parent through Core mail."""
+    recipient = task_owner_recipient(history, task)
+    if recipient is None or history.mail_item(recipient, identity) is not None:
+        return
+    content = history.write_content(
+        recipient,
+        {
+            "action": action,
+            "handle": task.handle,
+            "outcome": outcome,
+            "actor_human": caller.human_id if caller.human_action else None,
+            "actor_session": None if caller.human_action else caller.session_id,
+        },
+    )
+    history.record_mail(
+        MailItem(
+            id=identity,
+            recipient_session=recipient,
+            sender_human=caller.human_id if caller.human_action else None,
+            sender_session=None if caller.human_action else caller.session_id,
+            kind="control",
+            content=content,
+            handle=task.handle,
+            created_at=now(),
+        )
+    )

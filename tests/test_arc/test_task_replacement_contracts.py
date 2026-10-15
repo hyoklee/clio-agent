@@ -38,6 +38,7 @@ def record_task(
     *,
     session: str = "owner",
     description: str = "Original assignment",
+    human: str = "human",
 ) -> TaskSnapshot:
     """Publish a workload owner's observation through the production Core writer."""
     task = TaskSnapshot(
@@ -45,9 +46,7 @@ def record_task(
         kind="Shell",
         tool="bash",
         label="Command",
-        owner=TaskOwner(
-            human_id="human", session_id=session, assignment_id="assignment_" + session
-        ),
+        owner=TaskOwner(human_id=human, session_id=session, assignment_id="assignment_" + session),
         invocation_id=handle,
         created_at=STAMP,
         updated_at=STAMP,
@@ -214,7 +213,11 @@ async def test_any_wait_reports_member_error_and_leaves_valid_work_pending(arc: 
         "timed_out": False,
     }
     current = await asyncio.to_thread(history.task_snapshot, running.handle)
-    assert current.status == "running" and current.cancellation_requested_at is None
+    assert (
+        current is not None
+        and current.status == "running"
+        and current.cancellation_requested_at is None
+    )
 
 
 @pytest.mark.asyncio

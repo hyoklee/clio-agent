@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from collections.abc import Coroutine
+from threading import Thread
 from types import SimpleNamespace
 from typing import Any
 
@@ -70,11 +71,11 @@ async def test_stop_holds_ownership_through_actual_thread_teardown(
 ) -> None:
     loop = asyncio.get_running_loop()
     teardown_entered, teardown_release = asyncio.Event(), threading.Event()
-    original_thread = threading.Thread
     requested = True
     workers: list[threading.Thread] = []
+    retirements: list[bool] = []
 
-    class HeldTeardownThread(original_thread):
+    class HeldTeardownThread(Thread):
         """Exercise a real thread whose function has returned but teardown has not."""
 
         def run(self) -> None:
@@ -98,6 +99,13 @@ async def test_stop_holds_ownership_through_actual_thread_teardown(
         if not requested:
             return None
         requested = False
+
+        async def before_release(stopped: bool) -> None:
+            assert runner.busy("primary")
+            assert all(not worker.is_alive() for worker in workers)
+            retirements.append(stopped)
+
+        runner.bind_retirement("primary", "turn", before_release)
         return "turn", segment()
 
     runner = TurnRunner(SimpleNamespace(state=SimpleNamespace()), admit)
@@ -112,10 +120,12 @@ async def test_stop_holds_ownership_through_actual_thread_teardown(
         assert not stop.done()
         assert runner.busy("primary")
         assert len(workers) == 1 and workers[0].is_alive()
+        assert not retirements
         teardown_release.set()
         await asyncio.wait_for(stop, 2)
         assert not workers[0].is_alive()
         assert not runner.busy("primary")
+        assert retirements == [True]
     finally:
         teardown_release.set()
         if stop is not None:

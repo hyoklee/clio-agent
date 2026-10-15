@@ -651,18 +651,13 @@ def _start_background_user_turn(
     # This finite request boundary persists input only. TurnRunner owns the
     # decision to inject it into a busy segment or admit an idle session.
     with owner.history.serialized():
-        superseded = owner.history.mail_item(sid, supersedes_input) if supersedes_input else None
-        retry_binding = (
-            {
-                "id": superseded.id,
-                "revision": superseded.revision,
-                "content": superseded.content.model_dump(mode="json"),
-            }
-            if superseded is not None
-            and superseded.kind in {"human", "composer"}
-            and superseded.delivery == "held"
-            and superseded.held_reason in {"hook_blocked", "execution_failed_before_input_commit"}
-            else None
+        from clio_agent.gact.session_input import capture_retry_input
+
+        retry_binding = capture_retry_input(
+            owner.history,
+            sid,
+            supersedes_input,
+            stopping=app.state.turn_runner.stop_requested(sid),
         )
         now = time.time()
         user_metadata = dict(metadata or {})

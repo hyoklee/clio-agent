@@ -64,6 +64,9 @@ class SessionMail:
 
         with self.history.serialized():
             access = TaskAccess(self.history, caller)
+            for item in self.history.pending_mail(caller.session_id):
+                if item.delivery == "eligible" and self.eligible(caller.session_id, item):
+                    apply_retry_supersession(self.history, item)
             items: list[MailItem] = []
             injections: list[tuple[str, MailText]] = []
             budget = conf.resolve(
@@ -76,7 +79,6 @@ class SessionMail:
             for item in self.history.pending_mail(caller.session_id):
                 if item.delivery != "eligible" or not self.eligible(caller.session_id, item):
                     continue
-                apply_retry_supersession(self.history, item)
                 if not self._authorized(item, access):
                     continue
                 if item.handle is not None and item.kind in {

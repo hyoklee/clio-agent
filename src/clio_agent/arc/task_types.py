@@ -329,6 +329,15 @@ class NativeAttempt(TaskRecord):
     cleanup_state: Literal["pending", "never_started", "confirmed", "unknown"] = "pending"
 
 
+class MailAdmission(TaskRecord):
+    """Exact uncommitted input selected for one assignment segment."""
+
+    assignment_id: str
+    turn_id: str
+    input_revision: int = Field(ge=1)
+    content: CoreReference
+
+
 class MailItem(TaskRecord):
     """An attributed session input; acceptance does not acknowledge delivery."""
 
@@ -347,6 +356,7 @@ class MailItem(TaskRecord):
     approval_question: str | None = None
     queued_order: int | None = None
     automatic_promotion: bool = False
+    admission: MailAdmission | None = None
 
 
 class ContextBoundary(TaskRecord):
@@ -395,6 +405,7 @@ class TaskSubscription(TaskRecord):
 
     handle: str
     recipient_session: str
+    recipient_human: str | None = None
     enabled: bool
     updated_at: str
     generation: int = Field(default=1, ge=1)

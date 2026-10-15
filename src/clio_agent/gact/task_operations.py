@@ -83,6 +83,8 @@ class TaskOperations:
             "active_only": active_only,
             "scope": scope,
             "recipient": caller.session_id,
+            "human": caller.human_id,
+            "human_action": caller.human_action,
         }
         signature = hashlib.sha256(json.dumps(filters, sort_keys=True).encode()).hexdigest()
         position = _decode(cursor)
@@ -315,21 +317,9 @@ class TaskOperations:
     ) -> dict[str, Any]:
         """Read available changes immediately, or explicitly await output/settlement."""
         handles = await asyncio.to_thread(self._canonical_observed, caller, _handles(tasks))
-        if self.refresh_owner is not None:
-            for handle in handles:
-                try:
-                    task = await asyncio.to_thread(
-                        TaskAccess(self.history, caller).require, handle, "observe"
-                    )
-                except ValueError:
-                    continue
-                if task.terminal_at is None and task.status == "task_state_uncertain":
-                    self.refresh_owner(task)
         timeout, previous = _timeout(timeout_s), _decode(cursor)
         search_start = _cursor(previous) if previous else None
         scanned_pages = 0
-        if previous and previous.get("recipient") != caller.session_id:
-            raise ValueError("Observation cursor belongs to another recipient")
         try:
             expression = re.compile(pattern) if pattern is not None else None
         except re.error as error:
@@ -342,22 +332,38 @@ class TaskOperations:
 
         remove = self.history.listen(wake, handles=handles, recipient_session=caller.session_id)
         try:
+            initial: dict[str, Any] | None = await asyncio.to_thread(
+                self._observations, caller, handles, previous, row_limit, include_state, expression
+            )
+            if self.refresh_owner is not None:
+                for handle in handles:
+                    try:
+                        task = await asyncio.to_thread(
+                            TaskAccess(self.history, caller).require, handle, "observe"
+                        )
+                    except ValueError:
+                        continue
+                    if task.terminal_at is None and task.status == "task_state_uncertain":
+                        self.refresh_owner(task)
             subscription_errors = []
             if notify is not None:
                 subscription_errors = await asyncio.to_thread(
                     self._subscribe, caller, handles, notify
                 )
             while True:
-                changed.clear()
-                result = await asyncio.to_thread(
-                    self._observations,
-                    caller,
-                    handles,
-                    previous,
-                    row_limit,
-                    include_state,
-                    expression,
-                )
+                if initial is not None:
+                    result, initial = initial, None
+                else:
+                    changed.clear()
+                    result = await asyncio.to_thread(
+                        self._observations,
+                        caller,
+                        handles,
+                        previous,
+                        row_limit,
+                        include_state,
+                        expression,
+                    )
                 if expression is not None:
                     result.update(search_start_cursor=search_start, scanned_pages=scanned_pages)
                 if subscription_errors:
@@ -440,15 +446,23 @@ class TaskOperations:
                     ),
                     None,
                 )
-                if previous is not None and previous.enabled == enabled:
+                if previous is not None and previous.recipient_human not in {None, caller.human_id}:
+                    errors.append({"handle": handle, "error": "task_unavailable"})
+                    continue
+                if (
+                    previous is not None
+                    and previous.enabled == enabled
+                    and previous.recipient_human == caller.human_id
+                ):
                     continue
                 generation = previous.generation if previous is not None else 1
-                if enabled and previous is not None:
+                if enabled and previous is not None and not previous.enabled:
                     generation += 1
                 self.history.record_subscription(
                     TaskSubscription(
                         handle=current.handle,
                         recipient_session=caller.session_id,
+                        recipient_human=caller.human_id,
                         enabled=enabled,
                         updated_at=now(),
                         generation=generation,

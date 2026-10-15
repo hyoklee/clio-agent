@@ -16,50 +16,15 @@ from clio_agent.arc.task_types import (
     argument_digest,
 )
 from clio_agent.gact.native_work import now
+from clio_agent.gact.session_input import withdraw_assignment_input
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
-from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
+from clio_agent.gact.task_publication import publish_control_outcome, publish_task_notice
 
 if TYPE_CHECKING:
     from clio_agent.gact.conversations import Conversations
 
 
 logger = logging.getLogger(__name__)
-
-
-def _control_outcome(
-    self: Conversations,
-    caller: TaskCaller,
-    task: TaskSnapshot,
-    action: str,
-    outcome: dict[str, Any],
-    identity: str,
-) -> None:
-    """Relay an observed control outcome to the owning parent through Core mail."""
-    recipient = task_owner_recipient(self.history, task)
-    if recipient is None or self.history.mail_item(recipient, identity) is not None:
-        return
-    content = self.history.write_content(
-        recipient,
-        {
-            "action": action,
-            "handle": task.handle,
-            "outcome": outcome,
-            "actor_human": caller.human_id if caller.human_action else None,
-            "actor_session": None if caller.human_action else caller.session_id,
-        },
-    )
-    self.history.record_mail(
-        MailItem(
-            id=identity,
-            recipient_session=recipient,
-            sender_human=caller.human_id if caller.human_action else None,
-            sender_session=None if caller.human_action else caller.session_id,
-            kind="control",
-            content=content,
-            handle=task.handle,
-            created_at=now(),
-        )
-    )
 
 
 async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
@@ -119,8 +84,13 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
                         ),
                         observation_id=uuid4().hex,
                     )
-                    self._control_outcome(
-                        caller, latest, "pause", {"status": "paused"}, "pause-outcome:" + token
+                    publish_control_outcome(
+                        self.history,
+                        caller,
+                        latest,
+                        "pause",
+                        {"status": "paused"},
+                        "pause-outcome:" + token,
                     )
 
         async def confirm() -> None:
@@ -185,7 +155,11 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
         raise ValueError("Resume requires the current uncancelled assignment")
     if session is None:
         raise ValueError("Resume session is unavailable")
-    if not self.model_paused(sid):
+    if (
+        not self.model_paused(sid)
+        and current.activity not in {"stopped", "stopping"}
+        and not self.runner.stop_requested(sid)
+    ):
         return {"handle": handle, "resumed": False, "already_running": True}
     paused_assignment = session.metadata.get("agent_paused_assignment")
     if paused_assignment and paused_assignment != handle:
@@ -208,9 +182,20 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
         ):
             raise ValueError("Resume no longer addresses the current uncancelled assignment")
         session = self.sessions.get(sid)
-        if session is None or not self.model_paused(sid):
+        if session is None:
             return
-        token = self._pause_tokens.get(sid) or session.metadata.get("agent_pause_token") or "legacy"
+        if (
+            not self.model_paused(sid)
+            and current.activity not in {"stopped", "stopping"}
+            and not self.runner.stop_requested(sid)
+        ):
+            return
+        reservation = self.runner.handle(sid)
+        token = (
+            self._pause_tokens.get(sid)
+            or session.metadata.get("agent_pause_token")
+            or ("stop:" + reservation.turn_id if reservation is not None else current.updated_at)
+        )
         if current is not None and current.terminal_at is None:
             self.history.record_snapshot(
                 current.model_copy(
@@ -428,7 +413,8 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
                         handle=task.handle,
                     )
                 )
-                self._control_outcome(
+                publish_control_outcome(
+                    self.history,
                     caller,
                     previous,
                     "restart",
@@ -452,7 +438,8 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
 
             async def report() -> None:
                 await asyncio.to_thread(
-                    self._control_outcome,
+                    publish_control_outcome,
+                    self.history,
                     caller,
                     current,
                     "restart",
@@ -728,16 +715,15 @@ async def _cancel_subtree(
         def clear_pause(current: TaskSnapshot) -> None:
             latest = self.history.latest_assignment(current.owner.session_id)
             session = self.sessions.get(current.owner.session_id)
-            if (
-                latest is not None
-                and latest.handle == current.handle
-                and session is not None
-                and session.metadata.get("agent_paused_assignment", current.handle)
-                == current.handle
-            ):
+            if latest is not None and latest.handle == current.handle and session is not None:
                 from clio_agent.gact.question_surface import release_cancelled_assignment_gate
 
                 release_cancelled_assignment_gate(self.app, current)
+                if (
+                    session.metadata.get("agent_paused_assignment", current.handle)
+                    != current.handle
+                ):
+                    return
                 self.sessions.update(
                     current.owner.session_id,
                     metadata_patch={
@@ -755,6 +741,10 @@ async def _cancel_subtree(
                 current = self.history.task_snapshot(assignment.handle)
                 if current is None:
                     return
+                if current.terminal_at is None or current.status == "cancelled":
+                    withdraw_assignment_input(
+                        self.history, current.owner.session_id, current.handle
+                    )
                 if current.terminal_at is not None:
                     if current.status == "cancelled":
                         clear_pause(current)

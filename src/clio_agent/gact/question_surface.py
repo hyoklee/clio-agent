@@ -145,6 +145,24 @@ def render_answer_input(app: Any, caller: TaskCaller, handle: str, text: str) ->
     return {**rendered, "source": "question_answer", "actor": "algorithm"}
 
 
+def render_collected_answers(
+    app: Any, caller: TaskCaller, handles: tuple[str, ...]
+) -> tuple[dict[str, Any], ...]:
+    """Reconstruct native answer parts from authorized, immutable collected results."""
+    rendered = []
+    history = app.state.task_history
+    for handle in dict.fromkeys(handles):
+        task = TaskAccess(history, caller).require(handle, "read")
+        if task.kind != "Question" or task.raw_status != "answered" or task.result is None:
+            continue
+        reply = QuestionReply.model_validate(history.read_content(task.result))
+        if reply.parts:
+            rendered.append(
+                render_answer_input(app, caller, handle, f"Collected answer attachments: {handle}")
+            )
+    return tuple(rendered)
+
+
 def answer_question(
     app: Any, caller: TaskCaller, handle: str, reply: QuestionReply
 ) -> TaskSnapshot:

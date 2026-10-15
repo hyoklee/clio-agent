@@ -595,24 +595,26 @@ class TaskHistory:
             return set(self._session_tasks.get(session_id, set()))
 
     def task_handles(
-        self, *, kind: str | None = None, human_id: str | None = None, active_only: bool = False
+        self,
+        *,
+        kind: str | None = None,
+        human_id: str | None = None,
+        session_id: str | None = None,
+        active_only: bool = False,
     ) -> set[str]:
         """Read passive Core indexes; callers authorize before disclosing selected rows."""
         with self._lock:
-            selections: list[set[str]] = []
-            if kind is not None:
-                selections.append(self._kind_tasks.get(kind, set()))
-            if human_id is not None:
-                selections.append(self._human_tasks.get(human_id, set()))
+            indexes = (
+                (kind, self._kind_tasks),
+                (human_id, self._human_tasks),
+                (session_id, self._session_tasks),
+            )
+            selections = [index.get(key, set()) for key, index in indexes if key is not None]
             if active_only:
                 selections.append(self._active_tasks)
             if not selections:
                 return set(self._tasks)
-            smallest = min(selections, key=len)
-            result = smallest.copy()
-            for selection in selections:
-                result.intersection_update(selection)
-            return result
+            return set.intersection(*sorted(selections, key=len))
 
     def resource_handles(self, resource_id: str) -> set[str]:
         """Read owner-published resource associations from a passive Core index."""

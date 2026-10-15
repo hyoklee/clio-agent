@@ -289,3 +289,23 @@ receipts. No guard, assertion, timeout or resource budget was weakened. Final
 source checks and independent implementation reviews remain required. Legacy
 test migration, CI, F03, Q1–Q9 and R1–R6 remain outstanding; no live-model/product
 qualification service, release or installed-state change occurred in this packet.
+
+## R32 construction: retirement, input recovery and common Runs
+
+Independent R31 source reviews remain NO-GO until the new candidate is reviewed.
+Corrections and a complete focused regression batch are constructed in the existing
+owners; the replacement map is `docs/design/task-replacement-r32-corrections.md`.
+No new execution registry, scheduler or delivery acknowledgement was introduced.
+Core input ownership now survives Stop/retirement for exact cancellation and
+trusted retry. Question media recovery and frozen completion gate repair use the
+existing recipient-input and Question boundaries. Runs lists shared task snapshots,
+including cross-session pagination and supported controls; removed relay APIs are
+not restored.
+
+Test state and native Core deployment are restricted to the owned D: repository.
+The early launcher contains dependency-import writes and inherited Core settings;
+cleanup requires verified process identity and retirement. No pytest, model,
+native Core or browser qualification ran during this construction packet.
+Source formatting/lint, Linux-target Mypy and the six frontend guards pass.
+TypeScript, focused execution, refreshed reviews, CI, F03 and Q1–Q9/R1–R6 remain
+pending. Constructed tests and earlier component evidence are not final acceptance.

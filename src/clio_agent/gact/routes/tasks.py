@@ -127,6 +127,8 @@ def register_task_routes(app: FastAPI) -> None:
     """Register canonical controls plus pure compatibility projections."""
 
     def caller(sid: str) -> TaskCaller:
+        if not sid:
+            return TaskCaller("", app.state.human_principal, human_action=True)
         session = app.state.sessions.get(sid)
         if session is None:
             raise HTTPException(status_code=404, detail="Session unavailable")
@@ -169,6 +171,18 @@ def register_task_routes(app: FastAPI) -> None:
             )
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
+
+    @app.get("/v1/tasks/query")
+    async def all_tasks(
+        kind: str | None = None,
+        active_only: bool = False,
+        cursor: str | None = None,
+        limit: int = 50,
+    ) -> dict[str, Any]:
+        """Page the authenticated human's indexed work across sessions without joins."""
+        return await tasks(
+            "", kind=kind, active_only=active_only, cursor=cursor, limit=limit, scope="authorized"
+        )
 
     @app.post("/v1/sessions/{sid}/tasks/observe")
     async def observe(sid: str, body: ObserveRequest) -> dict[str, Any]:

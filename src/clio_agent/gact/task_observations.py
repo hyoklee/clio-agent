@@ -11,7 +11,7 @@ from clio_agent import conf
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_cursors import encode_cursor
 from clio_agent.gact.task_history import TaskHistory
-from clio_agent.gact.task_output_pages import output_page, workflow_state
+from clio_agent.gact.task_output_pages import output_page, validate_output_cursor, workflow_state
 
 
 def read_observations(
@@ -33,8 +33,18 @@ def read_observations(
     ):
         raise ValueError("Observation cursor belongs to a different read or history epoch")
     access = TaskAccess(history, caller)
+    if not isinstance(previous.get("positions", {}), dict) or not isinstance(
+        previous.get("outputs", {}), dict
+    ):
+        raise ValueError("Observation cursor maps are malformed")
     positions = dict(previous.get("positions", {}))
     outputs = dict(previous.get("outputs", {}))
+    if any(
+        key not in handles or not isinstance(value, str) for key, value in positions.items()
+    ) or any(key not in handles for key in outputs):
+        raise ValueError("Observation cursor contains an invalid task position")
+    for output in outputs.values():
+        validate_output_cursor(output)
     rows: list[dict[str, Any]] = []
     settled, any_settled, has_more = True, False, False
     bound = conf.resolve(

@@ -21,6 +21,7 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
 )
 from clio_agent.gact.native_work import now
+from clio_agent.gact.session_input import input_delivery
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_publication import publish_task_notice
 
@@ -163,7 +164,7 @@ def _new_assignment(
         backend=BackendReference(owner="conversation", server="clio", session=sid, task_id=handle),
         raw_status="active",
         status="active",
-        activity="idle",
+        activity="queued",
         details=details,
         resource_id=predecessor.resource_id if predecessor is not None else None,
         supported_actions=(
@@ -240,13 +241,7 @@ def _finish_segment(
             and not self.history.mail_withdrawn(segment.session_id, attempted.id)
         ):
             self.history.update_mail(
-                attempted.model_copy(
-                    update={
-                        "delivery": "held",
-                        "held_reason": reason,
-                        "revision": attempted.revision + 1,
-                    }
-                ),
+                input_delivery(attempted, held=True, reason=reason),
                 expected_revision=attempted.revision,
             )
         dependencies = [self.history.task_snapshot(handle) for handle in details.dependencies]

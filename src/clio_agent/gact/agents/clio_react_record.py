@@ -401,29 +401,24 @@ class StepRecorder:
             if trigger is not None and trigger.kind in {"human", "composer"}
             else None
         )
-        import hashlib
-
-        from clio_agent.arc.task_types import CoreReference
         from clio_agent.gact.session_mail import StagedInput
-        from clio_agent.gact.task_history import _encoded
 
         segments = self.arc.context_view(self.session, self.scope).segments
-        acknowledged = owner.history.acknowledged_notifications(self.session)
-        observation = next(
-            (
-                row
-                for row in reversed(segments)
-                if row.kind == "observation"
-                and set(row.content.get("notification_ids", ())) - acknowledged
-            ),
-            None,
-        )
-        collecting = (
-            tuple(observation.content.get("notification_ids", ()))
-            if observation is not None
-            else ()
-        )
-        collected = (*collecting, identity) if identity and human_head else collecting
+        committed = owner.history.committed_observations(self.session, self.scope)
+        for row in segments:
+            if (
+                row.kind == "observation"
+                and (row.content.get("notification_ids") or row.content.get("task_read_handles"))
+                and str(row.id) not in committed
+            ):
+                self._commit_collection(
+                    str(row.id),
+                    row.content,
+                    tuple(row.content.get("notification_ids", ())),
+                    str(row.content["call_id"]),
+                )
+        segments = self.arc.context_view(self.session, self.scope).segments
+        collected = (identity,) if identity and human_head else ()
         staged = (
             StagedInput((), ())
             if context.current().react_run >= 0
@@ -479,15 +474,6 @@ class StepRecorder:
             boundary=boundary,
             turn_id=self.turn_id,
             rendered_content=references,
-            tool_observation=CoreReference(
-                session_id=self.session,
-                scope=self.scope,
-                content_id=str(observation.id),
-                sha256=hashlib.sha256(_encoded(observation.content)).hexdigest(),
-            )
-            if observation is not None
-            and set(collecting).intersection(item.id for item in staged.items)
-            else None,
         )
         for source, text in staged.injections:
             if source != "steer":
@@ -683,15 +669,28 @@ class StepRecorder:
         caller = owner.caller(self.session)
         with owner.history.serialized():
             staged = owner.mail.collection(caller, notifications)
-            from clio_agent.gact.question_surface import render_answer_input
+            from clio_agent.gact.question_surface import render_collected_answers
 
-            rendered = tuple(
-                owner.history.write_content(
-                    self.session,
-                    render_answer_input(app, caller, item.handle, str(content.get("text", ""))),
+            handles = content.get("task_read_handles", ())
+            if not isinstance(handles, (tuple, list)) or any(
+                not isinstance(handle, str) for handle in handles
+            ):
+                raise ValueError("Collected task read identities are malformed")
+            handles = tuple(
+                dict.fromkeys(
+                    (
+                        *handles,
+                        *(
+                            item.handle
+                            for item in staged.items
+                            if item.kind == "question_answer" and item.handle
+                        ),
+                    )
                 )
-                for item in staged.items
-                if item.kind == "question_answer" and item.handle is not None
+            )
+            rendered = tuple(
+                owner.history.write_content(self.session, value)
+                for value in render_collected_answers(app, caller, handles)
             )
             segments = self.arc.context_view(self.session, self.scope).segments
             owner.mail.commit(

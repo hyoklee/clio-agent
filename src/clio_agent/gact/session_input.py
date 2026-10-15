@@ -5,9 +5,44 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from clio_agent.arc.task_types import MailItem, MailKind
+from clio_agent.arc.task_types import MailAdmission, MailItem, MailKind
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_history import TaskHistory
+
+
+def capture_retry_input(
+    history: TaskHistory,
+    session_id: str,
+    identity: str,
+    *,
+    stopping: bool,
+) -> dict[str, Any] | None:
+    """Capture exact input identity at the trusted human request boundary."""
+    with history.serialized():
+        source = history.mail_item(session_id, identity) if identity else None
+        if source is None or source.kind not in {"human", "composer"}:
+            return None
+        admission = source.admission
+        current_admission = (
+            admission is not None
+            and admission.input_revision == source.revision
+            and admission.content == source.content
+        )
+        held = source.delivery == "held" and source.held_reason in {
+            "hook_blocked",
+            "execution_failed_before_input_commit",
+            "stopped_before_input_commit",
+        }
+        if not held and not (stopping and source.delivery == "eligible" and current_admission):
+            return None
+        return {
+            "id": source.id,
+            "revision": source.revision,
+            "content": source.content.model_dump(mode="json"),
+            "admission": admission.model_dump(mode="json")
+            if current_admission and admission
+            else None,
+        }
 
 
 def apply_retry_supersession(history: TaskHistory, item: MailItem) -> None:
@@ -23,17 +58,77 @@ def apply_retry_supersession(history: TaskHistory, item: MailItem) -> None:
         if not isinstance(identity, str) or identity == item.id:
             raise ValueError("Retry input binding is malformed")
         source = history.mail_item(item.recipient_session, identity)
+        captured_admission = binding.get("admission")
+        same_admission = False
+        if source is not None and captured_admission is not None:
+            accepted = MailAdmission.model_validate(captured_admission)
+            current = source.admission
+            same_admission = (
+                current is not None
+                and current.assignment_id == accepted.assignment_id
+                and current.turn_id == accepted.turn_id
+                and current.content == accepted.content == source.content
+                and current.input_revision == source.revision
+                and accepted.input_revision == binding.get("revision")
+                and (
+                    source.delivery == "eligible"
+                    or source.delivery == "held"
+                    and source.held_reason == "stopped_before_input_commit"
+                )
+            )
         if (
             source is not None
             and source.kind in {"human", "composer"}
-            and source.delivery == "held"
-            and source.held_reason in {"hook_blocked", "execution_failed_before_input_commit"}
-            and source.revision == binding.get("revision")
+            and (
+                same_admission
+                or source.delivery == "held"
+                and source.held_reason
+                in {
+                    "hook_blocked",
+                    "execution_failed_before_input_commit",
+                    "stopped_before_input_commit",
+                }
+                and source.revision == binding.get("revision")
+            )
             and source.content.model_dump(mode="json") == binding.get("content")
             and source.id not in history.acknowledged_notifications(item.recipient_session)
             and not history.mail_withdrawn(item.recipient_session, source.id)
         ):
             history.withdraw_mail(item.recipient_session, source.id)
+
+
+def input_delivery(item: MailItem, *, held: bool, reason: str = "") -> MailItem:
+    """Preserve exact admission through an owner-only Stop hold/release transition."""
+    revision = item.revision + 1
+    admission = item.admission
+    if (
+        admission is not None
+        and admission.input_revision == item.revision
+        and admission.content == item.content
+    ):
+        admission = admission.model_copy(update={"input_revision": revision})
+    return item.model_copy(
+        update={
+            "delivery": "held" if held else "eligible",
+            "held_reason": reason if held else "",
+            "revision": revision,
+            "admission": admission,
+        }
+    )
+
+
+def withdraw_assignment_input(history: TaskHistory, session_id: str, handle: str) -> None:
+    """Withdraw only exact, uncommitted admitted inputs of the cancelled assignment."""
+    with history.serialized():
+        for item in history.pending_mail(session_id):
+            admission = item.admission
+            if (item.kind in {"delegation", "control"} and item.handle == handle) or (
+                admission is not None
+                and admission.assignment_id == handle
+                and admission.input_revision == item.revision
+                and admission.content == item.content
+            ):
+                history.withdraw_mail(session_id, item.id)
 
 
 def withdraw_message_inputs(app: Any, session_id: str, message_ids: list[str]) -> None:

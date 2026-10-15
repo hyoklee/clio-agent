@@ -19,7 +19,7 @@ from clio_agent.arc.task_types import (
 from clio_agent.gact import context
 from clio_agent.gact.conversation_assignments import ConversationOutcome
 from clio_agent.gact.permission_delivery import publish_permission_event
-from clio_agent.gact.session_input import accept_session_input
+from clio_agent.gact.session_input import accept_session_input, input_delivery
 
 SOURCE = "hook_defer"
 
@@ -113,17 +113,36 @@ def suspend(
         )
         if origin is not None and origin.delivery == "eligible":
             history.update_mail(
-                origin.model_copy(
-                    update={
-                        "delivery": "held",
-                        "held_reason": "hook_deferred",
-                        "revision": origin.revision + 1,
-                    }
-                ),
+                input_delivery(origin, held=True, reason="hook_deferred"),
                 expected_revision=origin.revision,
             )
         restore_gate(app, question)
         return question.handle
+
+
+def _completion_applied(app: Any, captured: HookApproval, session_id: str) -> bool:
+    """Recognize only this frozen approval's exact completion on its original handle."""
+    completion = captured.completion
+    current = app.state.task_history.task_snapshot(captured.assignment)
+    if (
+        captured.event != "Stop"
+        or completion is None
+        or current is None
+        or current.owner.session_id != session_id
+        or current.terminal_at is None
+        or current.cancellation_requested_at is not None
+        or current.status != ("failed" if completion.failed else "completed")
+        or current.result != completion.result
+        or current.details is None
+    ):
+        return False
+    details = AssignmentDetails.model_validate(app.state.task_history.read_content(current.details))
+    return (
+        details.context_epoch == captured.context_epoch
+        and details.disposition == "complete"
+        and details.last_output == completion.result
+        and (completion.context is None or details.context == completion.context)
+    )
 
 
 def restore_gate(app: Any, task: TaskSnapshot) -> bool:
@@ -132,6 +151,16 @@ def restore_gate(app: Any, task: TaskSnapshot) -> bool:
     with history.serialized():
         session = app.state.sessions.get(task.owner.session_id)
         current = history.latest_assignment(task.owner.session_id)
+        frozen = app.state.questions.resolution(task.handle)
+        if (
+            session is not None
+            and session.metadata.get("execution_gate") == task.handle
+            and frozen is not None
+            and frozen.get("approved") is True
+            and frozen.get("binding") == captured.model_dump(mode="json")
+            and _completion_applied(app, captured, task.owner.session_id)
+        ):
+            return True  # Repair gate release without reopening or retargeting a completed run.
         if session is None or current is None or current.handle != captured.assignment:
             return False
         if current.terminal_at is not None or current.cancellation_requested_at is not None:
@@ -153,13 +182,7 @@ def restore_gate(app: Any, task: TaskSnapshot) -> bool:
             allowed = (
                 captured.origin,
                 *(
-                    captured.origin.model_copy(
-                        update={
-                            "delivery": "held",
-                            "held_reason": reason,
-                            "revision": captured.origin.revision + 1,
-                        }
-                    )
+                    input_delivery(captured.origin, held=True, reason=reason)
                     for reason in ("hook_deferred", "execution_failed_before_input_commit")
                 ),
             )
@@ -310,6 +333,9 @@ def resolve(app: Any, task: TaskSnapshot) -> None:
             owner.runner.signal(sid)
 
         if captured.event == "Stop" and frozen["approved"]:
+            if _completion_applied(app, captured, sid):
+                release()
+                return
 
             async def complete() -> None:
                 if captured.completion is None:
@@ -370,13 +396,10 @@ def resolve(app: Any, task: TaskSnapshot) -> None:
                 raise ValueError("Hook approval input changed after capture")
             else:
                 history.update_mail(
-                    current.model_copy(
-                        update={
-                            "approval_question": task.handle if frozen["approved"] else None,
-                            "delivery": "eligible" if frozen["approved"] else "held",
-                            "held_reason": "" if frozen["approved"] else "hook_blocked",
-                            "revision": current.revision + 1,
-                        }
+                    input_delivery(
+                        current, held=not frozen["approved"], reason="hook_blocked"
+                    ).model_copy(
+                        update={"approval_question": task.handle if frozen["approved"] else None}
                     ),
                     expected_revision=current.revision,
                 )

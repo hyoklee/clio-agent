@@ -55,6 +55,7 @@ class _TurnResources:
     task: asyncio.Task[Any] | None = None
     thread: threading.Thread | None = None
     worker_exit: asyncio.Task[None] | None = None
+    before_release: Callable[[bool], Awaitable[None]] | None = None
 
 
 AdmitSegment = Callable[[str], Awaitable[tuple[str, Coroutine[Any, Any, Any]] | None]]
@@ -113,7 +114,7 @@ class TurnRunner:
                     turn_id, coroutine = admitted
                     if resources.stop.is_set() or self._closing:
                         coroutine.close()
-                        return
+                        continue  # Retirement holds this trigger; buffered work is rechecked next.
                     resources.handle = TurnHandle(sid, turn_id, resources.handle.started_at)
                     resources.task = asyncio.create_task(self.revision_gate.run(coroutine))
                     try:
@@ -134,16 +135,31 @@ class TurnRunner:
                     return
                 finally:
                     await self._retire(resources)
-                    if resources.thread is not None:
-                        from clio_agent.providers.session_lifecycle import release_session_resources
+                    try:
+                        if resources.before_release is not None:
+                            reconcile, resources.before_release = resources.before_release, None
+                            recording = asyncio.ensure_future(reconcile(resources.stop.is_set()))
+                            while not recording.done():
+                                try:
+                                    await asyncio.shield(recording)
+                                except asyncio.CancelledError:
+                                    resources.stop.set()
+                            recording.result()
+                    finally:
+                        try:
+                            if resources.thread is not None:
+                                from clio_agent.providers.session_lifecycle import (
+                                    release_session_resources,
+                                )
 
-                        await asyncio.to_thread(release_session_resources, sid)
-                    with self._lock:
-                        if self._turns.get(sid) is resources:
-                            self._turns.pop(sid)
-                        callbacks = self._released.pop(sid, [])
-                    for callback in callbacks:
-                        callback()
+                                await asyncio.to_thread(release_session_resources, sid)
+                        finally:
+                            with self._lock:
+                                if self._turns.get(sid) is resources:
+                                    self._turns.pop(sid)
+                                callbacks = self._released.pop(sid, [])
+                            for callback in callbacks:
+                                callback()
                 # Admission and busy-to-idle are serialized by this same pump.
                 # An eligible closing-turn arrival is considered even without a
                 # later user request. The engine returns None for every veto.
@@ -228,6 +244,17 @@ class TurnRunner:
         """Reservation spans the whole segment, including waits and worker retirement."""
         with self._lock:
             return sid in self._turns
+
+    def bind_retirement(
+        self, sid: str, turn_id: str, callback: Callable[[bool], Awaitable[None]]
+    ) -> None:
+        """Bind owner reconciliation before an admitted coroutine can be discarded."""
+        with self._lock:
+            resources = self._turns.get(sid)
+            if resources is None or resources.before_release is not None:
+                raise TurnAdmissionError(sid)
+            resources.handle = TurnHandle(sid, turn_id, resources.handle.started_at)
+            resources.before_release = callback
 
     def handle(self, sid: str) -> TurnHandle | None:
         """Return the live segment identity without loading task history."""

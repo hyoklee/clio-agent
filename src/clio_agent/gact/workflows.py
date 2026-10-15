@@ -463,6 +463,15 @@ def _render_task(step: WorkflowStep, request: str) -> str:
     return task
 
 
+def _step_references(workflow: DeclaredWorkflow, execution: dict[str, Any]) -> list[dict[str, Any]]:
+    """Expose ordered provenance from the runner's existing confirmed execution."""
+    rows = execution["steps"]
+    return [
+        {"step_id": step.id, "child": step.child, "task_id": rows.get(step.id, {}).get("handle")}
+        for step in workflow.steps
+    ]
+
+
 def repair_workflow_reference(app: Any, root_handle: str) -> None:
     """Repair only owner projections from already confirmed checkpoint provenance."""
     from uuid import uuid4
@@ -621,6 +630,7 @@ async def run_declared_workflow(
             "workflow_state": execution["state"],
             "outcomes": recorded_outcomes,
             "replayed": True,
+            "steps": _step_references(workflow, execution),
         }
 
     def save() -> None:
@@ -684,6 +694,7 @@ async def run_declared_workflow(
                     "status": STALL_PREDICATE_UNSATISFIED,
                     "step": step.id,
                     "predicate": gate.predicate,
+                    "steps": _step_references(workflow, execution),
                     "observed": gate.observed,
                     "outcomes": outcomes,
                 }
@@ -716,6 +727,7 @@ async def run_declared_workflow(
                 "status": "task_state_uncertain" if not waited["timed_out"] else STALL_STEP_TIMEOUT,
                 "step": step.id,
                 "pending": waited["pending"],
+                "steps": _step_references(workflow, execution),
                 "outcomes": outcomes,
             }
         child = await asyncio.to_thread(history.task_snapshot, row["handle"])
@@ -757,6 +769,7 @@ async def run_declared_workflow(
                 if deadline_exceeded
                 else STALL_CHILD_FAILED,
                 "step": step.id,
+                "steps": _step_references(workflow, execution),
                 "outcomes": outcomes,
             }
         result = (
@@ -780,5 +793,6 @@ async def run_declared_workflow(
         "root_handle": owner_handle,
         "status": "completed",
         "workflow_state": execution["state"],
+        "steps": _step_references(workflow, execution),
         "outcomes": outcomes,
     }

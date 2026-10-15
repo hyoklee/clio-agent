@@ -10,6 +10,24 @@ from clio_agent.arc.task_types import AssignmentDetails, CoreReference, TaskSnap
 from clio_agent.gact.task_history import TaskHistory, output_scope
 
 
+def validate_output_cursor(state: Any) -> None:
+    """Reject malformed continuation data before any subscription can be changed."""
+    if not isinstance(state, dict) or (
+        state.get("completed") is not None and not isinstance(state["completed"], str)
+    ):
+        raise ValueError("Malformed output continuation")
+    pending = state.get("pending")
+    if pending is not None:
+        if not isinstance(pending, dict) or "reference" not in pending or "anchor" not in pending:
+            raise ValueError("Malformed output continuation")
+        CoreReference.model_validate(pending["reference"])
+        if pending["anchor"] is not None and not isinstance(pending["anchor"], str):
+            raise ValueError("Malformed output anchor")
+        offset = pending.get("offset", 0)
+        if type(offset) is not int or offset < 0:
+            raise ValueError("Malformed output offset")
+
+
 def output_page(
     history: TaskHistory,
     task: TaskSnapshot,
@@ -19,19 +37,16 @@ def output_page(
 ) -> tuple[list[dict[str, Any]], dict[str, Any], int, bool]:
     """Read newest chunks first, retaining omitted bytes and a fixed backlog anchor."""
     state = dict(previous or {})
+    validate_output_cursor(state)
     latest = task.progress.output
     latest_id = latest.content_id if latest is not None else None
     pending = state.get("pending")
-    if pending is not None and not isinstance(pending, dict):
-        raise ValueError("Malformed output continuation")
     if pending is None and latest_id == state.get("completed"):
         return [], state, 0, False
     reference = CoreReference.model_validate(pending["reference"]) if pending else latest
     anchor = pending["anchor"] if pending else latest_id
     stop = state.get("completed")
     offset = pending.get("offset", 0) if pending else 0
-    if type(offset) is not int or offset < 0:
-        raise ValueError("Malformed output offset")
     chunks: list[dict[str, Any]] = []
     used = 0
     while reference is not None and reference.content_id != stop:

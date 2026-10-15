@@ -33,6 +33,7 @@ import re
 import shutil
 import socket
 import stat
+import sys
 import time
 import uuid
 from collections.abc import MutableMapping
@@ -328,7 +329,7 @@ def eagerly_attach_private_daemon() -> bool:
 def _commit_charge_line() -> str:
     """This machine's commit charge (Windows), the resource a daemon start exhausts."""
 
-    if os.name != "nt":
+    if sys.platform != "win32":
         return ""
     import ctypes  # noqa: PLC0415
     from ctypes import wintypes  # noqa: PLC0415
@@ -348,7 +349,7 @@ def _commit_charge_line() -> str:
 
     status = _MemoryStatus()
     status.dwLength = ctypes.sizeof(_MemoryStatus)
-    if not getattr(ctypes, "windll").kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
         return "commit charge: unavailable (GlobalMemoryStatusEx failed)"
     limit = status.ullTotalPageFile / 2**30
     used = (status.ullTotalPageFile - status.ullAvailPageFile) / 2**30

@@ -485,9 +485,11 @@ async def test_stop_preserves_the_open_question_and_its_existing_input_hold(
         if admitted:
             return None
         admitted = True
-        return "attempt", owner._run(
-            ConversationSegment(sid, root, "attempt", original, "Inspect image")
+        segment = ConversationSegment(sid, root, "attempt", original, "Inspect image")
+        owner.runner.bind_retirement(
+            sid, "attempt", lambda stopped: owner._retired_segment(segment, stopped=stopped)
         )
+        return "attempt", owner._run(segment)
 
     owner.run_segment = interrupted
     owner.runner.admit = admit
@@ -525,6 +527,7 @@ async def test_deferred_completion_rechecks_context_after_retirement(
             ),
         )
         current = owner.history.task_snapshot(root.handle)
+        assert current is not None
         owner.history.record_snapshot(
             current.model_copy(
                 update={
@@ -555,7 +558,8 @@ async def test_deferred_completion_rechecks_context_after_retirement(
         callbacks[0]()
         with pytest.raises(ValueError, match="context changed"):
             await finishing
-        assert owner.history.task_snapshot(root.handle).terminal_at is None
+        current = owner.history.task_snapshot(root.handle)
+        assert current is not None and current.terminal_at is None
     finally:
         if not finishing.done():
             finishing.cancel()
