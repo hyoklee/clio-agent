@@ -41,6 +41,10 @@ from clio_agent.gact.routes.workspace_file_read import readable_workspace_file
 from clio_agent.gact.routes.workspace_grant_delete import register_workspace_grant_delete_route
 from clio_agent.gact.routes.workspace_root_materialization import materialize_workspace_root
 from clio_agent.gact.routes.workspace_warmup import register_workspace_warmup_route
+from clio_agent.gact.runtime.workspace_root_change import (
+    rebind_workspace_root_grants,
+    require_idle_workspace,
+)
 from clio_agent.gact.types import (
     CreateWorkspaceRequest,
     ErrorEnvelope,
@@ -326,12 +330,25 @@ def register_workspaces_routes(app: FastAPI, deps: "GactDeps") -> None:
             metadata = body.get("config")
         # Capture the prior root so a root_path change emits an honest revoked→granted pair.
         prior = app.state.workspaces.get(wid)
-        prior_root = str(getattr(prior, "root_path", "") or "") if prior is not None else ""
+        if prior is None:
+            raise HTTPException(
+                status_code=404,
+                detail=ErrorEnvelope(
+                    error=ErrorInfo(
+                        error="not_found",
+                        message=f"workspace not found: {wid}",
+                        details={"workspace_id": wid},
+                        recoverable=False,
+                    )
+                ).model_dump(exclude_none=True),
+            )
+        prior_root = prior.root_path
         new_root = root_path.strip() if isinstance(root_path, str) and root_path.strip() else None
         # Repointing a root carries the same guarantee create does: the pinned root
         # exists on disk before the workspace advertises it (and before the boundary
         # event below records a grant over it).
         if new_root is not None and new_root != prior_root:
+            require_idle_workspace(app, wid)
             materialize_workspace_root(new_root)
         # Route the mutation through the store so it serialises under the
         # WorkspaceStore lock (no torn write / flush racing a concurrent
@@ -363,6 +380,7 @@ def register_workspaces_routes(app: FastAPI, deps: "GactDeps") -> None:
         # B5 #979.2: a root_path change is an effective write-territory boundary change —
         # emit revoked(old)→granted(new) so the mutation is on the record, not silent.
         if new_root is not None and new_root != prior_root:
+            rebind_workspace_root_grants(app, ws, prior_root)
             if prior_root:
                 _emit_boundary_root(app, wid, prior_root, grantor=_GRANTOR_USER, revoked=True)
             _emit_boundary_root(app, wid, new_root, grantor=_GRANTOR_USER)
