@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -30,7 +31,9 @@ from clio_agent.gact.protocol.constants import A2UI_V091
 from clio_agent.gact.protocol.v3.message import transcript_entities
 from clio_agent.gact.types import Message
 
-pytestmark = mark.usefixtures("native_builtin_lifespan")
+from .task_records import hold_model_segment
+
+pytestmark = mark.usefixtures("native_builtin_lifespan", "a2ui_session_lifespan")
 
 HEADERS = {
     "X-GACT-Version": "0.3",
@@ -1791,8 +1794,9 @@ def _agent_submit(
     }
 
 
-def test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight(
+def test_agent_submit_remains_core_pending_while_real_runner_is_busy(
     tmp_path: Path,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
@@ -1803,8 +1807,8 @@ def test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight(
     )
     # A cancel flips the projected status while the turn keeps running, which is
     # exactly the window a status-based gate lets a second turn through.
+    hold_model_segment(app, sid, monkeypatch)
     app.state.sessions.update(sid, status="cancelled")
-    app.state.in_flight_turns[sid] = _LiveTurn()
     staged_users_before = sum(message.role == "user" for message in app.state.messages.get(sid, []))
 
     response = client.post(
@@ -1820,10 +1824,10 @@ def test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight(
         sum(message.role == "user" for message in app.state.messages.get(sid, []))
         == staged_users_before
     )
-    from clio_agent.gact.agent_mailbox import pending_mail
-
-    [queued] = pending_mail(app, sid)
-    assert queued["metadata"]["a2ui_action_context"] == {
+    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "a2ui"]
+    queued = app.state.task_history.read_content(notice.content)
+    action_data = json.loads(queued["text"].rsplit("\n\nA2UI action data:\n", 1)[1])
+    assert action_data["context"] == {
         "text": "continue the analysis",
         "selected_station_ids": ["SGPS"],
     }

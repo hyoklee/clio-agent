@@ -16,8 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, mark
 
+from clio_agent.arc.task_types import ContextBoundary
 from clio_agent.gact.a2ui_actions.record import mark_a2ui_action_consumed
 from clio_agent.gact.app import build_app
 from clio_agent.gact.events import Event
@@ -26,8 +27,10 @@ from clio_agent.gact.routes.interactions import project_pending_interactions
 from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui
 from clio_agent.gact.types import Message, Part
 
+from .task_records import hold_model_segment, record_assignment_fixture
 from .test_a2ui_v3 import HEADERS, WORKSPACE_CATALOG_ID, _create_message, _session_client
-from .test_loop_inbox_1036 import _active_turn
+
+pytestmark = mark.usefixtures("a2ui_session_lifespan")
 
 
 def _stub_spawn(app: Any, monkeypatch: MonkeyPatch) -> list[Any]:
@@ -131,7 +134,7 @@ def test_two_distinct_timestamps_create_two_records(
 # --------------------------------------------------------------------------- #
 
 
-def test_running_session_steers_and_the_drain_consumes_the_record(
+def test_running_feedback_is_consumed_only_after_core_input_commit(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
@@ -140,11 +143,7 @@ def test_running_session_steers_and_the_drain_consumes_the_record(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
 
-    class _LiveTurn:
-        def done(self) -> bool:
-            return False
-
-    app.state.in_flight_turns[sid] = _LiveTurn()
+    hold_model_segment(app, sid, monkeypatch)
     action = _event("earthscope.stations.selected", "surface_1", {"x": 1}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -158,10 +157,18 @@ def test_running_session_steers_and_the_drain_consumes_the_record(
     [record] = surface.actions
     assert record["state"] == "delivered"
 
-    with _active_turn(app, sid):
-        from clio_agent.gact.loop_inbox import drain_active_session_inbox  # noqa: PLC0415
-
-        drain_active_session_inbox(app)
+    history, owner = app.state.task_history, app.state.conversations
+    assignment = history.latest_assignment(sid) or record_assignment_fixture(app, sid)
+    caller = owner.caller(sid)
+    staged = owner.mail.stage(caller)
+    assert staged.items and surface.actions[0]["state"] == "delivered"
+    owner.mail.commit(
+        caller,
+        staged,
+        assignment_id=assignment.handle,
+        iteration_id="a2ui-feedback",
+        boundary=ContextBoundary(session_id=sid, scope="main", logical_time=0),
+    )
 
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None

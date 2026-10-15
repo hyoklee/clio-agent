@@ -28,16 +28,35 @@ the opted-in domain-tool fixture dispatches through the current MCP boundary.
 It creates passive test assignments, without starting a model worker.
 
 Collection succeeded for 211 cases in the eight affected test modules. Collection
-does not mean execution. Two focused feedback cases passed individually after
-correcting absent-lifespan setup. The remaining focused cases are pending.
-An earlier setup failure referenced a deleted bridge; it is retained in the
-bounded receipts rather than counted as a pass. Production source has not been
-modified during this batch.
+does not mean execution. Nineteen selected cases passed individually and
+sequentially with one worker: three busy-feedback cases, four pack/action/Question
+cases, five card cases, five artifact-writer cases and two provider-bind cases.
+The busy cases use actual Core admission and occupied TurnRunner slots; only
+model execution is held in tests. Card fixtures include the production
+delegation's message-only return grant. The Question case uses the sole Core
+Question owner and preserves selected context, action identity and human
+attribution. No model-inference qualification is claimed for these tests.
+
+The old idle-producer `delivery=start` expectation is replaced with queued
+steering plus an exact Core admission/turn/content/revision assertion. TurnRunner
+alone decides admission. Failed legacy fixture arrangements remain recorded in
+earlier receipts; they are not counted as passes. Scoped Ruff/format checks pass
+for all ten changed test files, and Mypy passes for the shared assignment/context
+fixture. Production source, dependency files and submodule pins have not changed
+since the accepted review.
+
+The refreshed AST inventory still finds 29 files with removed-module or missing
+test-helper references, including relative imports. This is a minimum inventory;
+obsolete runtime-field arrangements also need migration. The regression suite is
+not yet coherent or CI-qualified. Its remaining work is separate from the
+reviewers' accepted production-source verdict.
 
 Bounded D execution-repository receipts are under `.pytest-runtime/static/`:
 `r56-reviewed-source.json`, `implementation-deadline-current.json`,
 `r57-current-retired-bindings.json`, `r57-test-migration.json`,
-`r58-test-migration.json` and the subsequent focused-batch receipt.
+`r58-test-migration.json`, `r60-test-migration.json`, `r61-test-migration.json`,
+`r62-test-migration.json`, `r63-provider-setup-migration.json`,
+`r60-retired-test-bindings.json` and `r63-migration-custody.json`.
 
 ## Qualification still required
 
@@ -52,7 +71,7 @@ Shell, Download and Indexing use one FastMCP/Docket execution family. Their
 bytes, hashes, manifests and process cleanup still need workload-specific proof.
 Relay has no special execution path or qualification gate in this replacement.
 Installed Desktop, authentication, defaults and released pins are preserved.
-No merge, tag, release, publication dispatch or installation has occurred.
+No target-branch merge, tag, release, publication dispatch or installation has occurred.
 
 ## Owned state
 
@@ -64,3 +83,8 @@ remain human-manual-only: no retry, bypass, delegation, move, parent deletion,
 reuse or mutation. Audits and rejection receipts preserve the actual outcome;
 no absence or recovered-free-space claim is made. Earlier protected boundaries
 remain unchanged.
+
+The R61/R62/R63 case receipts record process identities and disposable-root
+settlement. All recorded matching processes have exited and all tracked runtime
+roots were absent after their cases. The rejected roots were not retried,
+re-audited or reused during this migration batch.

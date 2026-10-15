@@ -29,11 +29,11 @@ root on Windows) and ``tests/test_gact/test_a2ui_actions.py``'s
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
 import threading
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -42,16 +42,15 @@ from clio_schemas.a2ui.v0_9_1.capabilities import A2UIClientCapabilities
 from fastapi.testclient import TestClient
 
 from clio_agent import paths
+from clio_agent.arc.task_types import QuestionDefinition, QuestionReply, TaskSnapshot
 from clio_agent.gact import agent_blueprint_requires
 from clio_agent.gact import context as gact_context
 from clio_agent.gact.a2ui_capabilities import remember_client_capabilities, select_catalog
 from clio_agent.gact.a2ui_catalogs.builtin import basic_catalog_id, workspace_catalog_id
 from clio_agent.gact.a2ui_producer import build_create_a2ui_surface_tool
 from clio_agent.gact.agent_blueprints import install_agent_blueprint
-from clio_agent.gact.agent_mailbox import pending_mail, stage_session_inputs
 from clio_agent.gact.agents.skill_runtime import build_load_skill_tool, skill_runtime_for_agent
 from clio_agent.gact.app import build_app
-from clio_agent.gact.interaction_types import UserQuestion
 from clio_agent.gact.types import AgentDef
 from tests._marketplace import MARKETPLACE_ROOT
 
@@ -162,8 +161,8 @@ def _advertise_pack_first(app: Any, session_id: str) -> None:
     remember_client_capabilities(app, session_id, caps)
 
 
-def _stub_spawn(app: Any, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
-    """Prevent a real turn from executing; return the list of spawned coros."""
+def _hold_segments(app: Any, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    """Hold model execution after real Core admission, until lifespan shutdown."""
     from tests.test_gact.test_post_messages import FakeClioAgent
 
     spawned: list[Any] = []
@@ -172,12 +171,12 @@ def _stub_spawn(app: Any, monkeypatch: pytest.MonkeyPatch) -> list[Any]:
     monkeypatch.setattr(app.state, "agent", FakeClioAgent())
     monkeypatch.setattr(app.state, "test_spawn_started", started, raising=False)
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
+    async def hold(segment: Any) -> None:
+        spawned.append(segment)
         started.set()
+        await asyncio.Event().wait()
 
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    monkeypatch.setattr(app.state.conversations, "_run", hold)
     return spawned
 
 
@@ -266,23 +265,22 @@ def _find_values(node: Any, key: str) -> Iterator[Any]:
             yield from _find_values(item, key)
 
 
-def _pending_question(session_id: str, *, surface_id: str) -> UserQuestion:
-    now = datetime.now(timezone.utc).isoformat()
-    return UserQuestion(
-        id="q_earthscope_1",
-        session_id=session_id,
-        owner_session_id=session_id,
-        attended_session_id=session_id,
-        prompt="Which stations should I analyse?",
-        created_at=now,
-        updated_at=now,
-        metadata={"resume_on_answer": True, "a2ui_surface_id": surface_id},
+def _pending_question(app: Any, session_id: str, *, surface_id: str) -> TaskSnapshot:
+    """Post the exact visual Question through its production Core owner."""
+    assignment = app.state.task_history.latest_assignment(session_id)
+    assert assignment is not None
+    return app.state.questions.create(
+        assignment.owner.model_copy(update={"parent_handle": assignment.handle}),
+        QuestionDefinition(
+            prompt="Which stations should I analyse?",
+            metadata={
+                "a2ui_surface_id": surface_id,
+                "a2ui_answer_action": "earthscope.stations.selected",
+            },
+        ),
+        invocation_id="earthscope-surface-question",
+        handle="q_earthscope_1",
     )
-
-
-# --------------------------------------------------------------------------- #
-# Catalog discovery + capability negotiation                                 #
-# --------------------------------------------------------------------------- #
 
 
 def test_pack_catalog_producible_with_file_sidecar_and_instructions(
@@ -392,7 +390,9 @@ def test_idle_action_delivers_and_starts_a_turn_with_context_verbatim(
     client, app, sid = _activated_session(tmp_path, monkeypatch)
     _advertise_pack_first(app, sid)
     _create_example_surface(app, sid, monkeypatch)
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _hold_segments(app, monkeypatch)
+    original_assignment = app.state.task_history.latest_assignment(sid)
+    assert original_assignment is not None
     action = _selected_action(
         {"searchId": "earthscope-la-20260917", "stationIds": ["P123", "P456"]},
         "2026-09-17T00:00:00Z",
@@ -405,27 +405,41 @@ def test_idle_action_delivers_and_starts_a_turn_with_context_verbatim(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["state"] == "delivered"
-    assert body["delivery"] == "start"
+    # Admission belongs to TurnRunner. The producer always reports queued
+    # steering; the actual new segment is checked through its Core admission.
+    assert body["delivery"] == "steer"
     assert app.state.test_spawn_started.wait(5), "Queued action was not admitted"
     surface = app.state.a2ui_store.get(sid, "earthscope-stations")
     assert surface is not None
     assert len(surface.actions) == 1
     assert surface.actions[0]["state"] == "delivered"
-    mail = pending_mail(app, sid)
-    assert len(mail) == 1 and mail[0]["source_kind"] == "human"
+    history, owner = app.state.task_history, app.state.conversations
+    mail = history.pending_mail(sid)
+    assert len(mail) == 1 and mail[0].kind == "a2ui"
+    assert mail[0].sender_human == app.state.human_principal
+    queued = history.read_content(mail[0].content)
     expected_context = {
         "searchId": "earthscope-la-20260917",
         "stationIds": ["P123", "P456"],
     }
-    assert mail[0]["metadata"]["a2ui_action_context"] == expected_context
-    wakes = [m for m in app.state.messages[sid] if m.role == "system"]
-    assert len(spawned) == 1 and len(wakes) == 1
-    assert wakes[0].metadata["agent_mail_wake"] == [mail[0]["message_id"]]
-    staged = stage_session_inputs(app, sid)
-    assert len(staged) == 1
-    payload = json.loads(staged[0][1].split("\n")[-1])
-    assert payload["metadata"]["a2ui_action_context"] == expected_context
-    assert pending_mail(app, sid) == mail  # Staging is not recipient input commit.
+    action_data = json.loads(queued["text"].rsplit("\n\nA2UI action data:\n", 1)[1])
+    assert action_data["context"] == expected_context
+    assert len(spawned) == 1
+    assert mail[0].admission is not None
+    assignment = history.latest_assignment(sid)
+    assert assignment is not None and mail[0].admission.assignment_id == assignment.handle
+    assert assignment.handle == original_assignment.handle
+    assert mail[0].admission.turn_id == spawned[0].turn_id
+    assert mail[0].admission.content == mail[0].content
+    assert mail[0].admission.input_revision == mail[0].revision
+    staged = owner.mail.stage(owner.caller(sid))
+    assert len(staged.items) == 1 and len(staged.injections) == 1
+    payload = json.loads(staged.injections[0][1].split("\n", 1)[1])
+    assert (
+        json.loads(payload["text"].rsplit("\n\nA2UI action data:\n", 1)[1])["context"]
+        == expected_context
+    )
+    assert history.pending_mail(sid) == mail  # Staging is not recipient input commit.
 
 
 def test_duplicate_submission_is_one_record_and_one_turn(
@@ -434,7 +448,7 @@ def test_duplicate_submission_is_one_record_and_one_turn(
     client, app, sid = _activated_session(tmp_path, monkeypatch)
     _advertise_pack_first(app, sid)
     _create_example_surface(app, sid, monkeypatch)
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _hold_segments(app, monkeypatch)
     action = _selected_action(
         {"searchId": "s1", "stationIds": ["P123", "P456"]}, "2026-09-17T00:00:00Z"
     )
@@ -462,7 +476,7 @@ def test_empty_station_ids_is_422_event_context_invalid(
     client, app, sid = _activated_session(tmp_path, monkeypatch)
     _advertise_pack_first(app, sid)
     _create_example_surface(app, sid, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    _hold_segments(app, monkeypatch)
     action = _selected_action({"searchId": "s1", "stationIds": []}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -515,19 +529,16 @@ def test_load_skill_station_picker_fragment_is_fixed_to_multiple_selection(
 # --------------------------------------------------------------------------- #
 
 
-def test_waiting_user_scene_resumes_the_correlated_question_with_context(
+def test_correlated_async_question_answer_preserves_selected_context(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client, app, sid = _activated_session(tmp_path, monkeypatch)
     app.state.agent = object()
     _advertise_pack_first(app, sid)
     _create_example_surface(app, sid, monkeypatch)
-    _stub_spawn(app, monkeypatch)
-    question = _pending_question(sid, surface_id="earthscope-stations")
-    app.state.user_questions[question.id] = question
-    app.state.sessions.update(
-        sid, status="waiting_user", metadata_patch={"pending_user_question_id": question.id}
-    )
+    _hold_segments(app, monkeypatch)
+    question = _pending_question(app, sid, surface_id="earthscope-stations")
+    assert question.raw_status == "pending"
     action = _selected_action(
         {"searchId": "s1", "stationIds": ["P123", "P456"]}, "2026-09-17T00:00:00Z"
     )
@@ -538,11 +549,21 @@ def test_waiting_user_scene_resumes_the_correlated_question_with_context(
 
     assert response.status_code == 200, response.text
     assert response.json()["delivery"] == "resolve_question"
-    answered = app.state.user_questions[question.id]
-    assert answered.status == "answered"
-    assert answered.answer_metadata is not None
-    assert answered.answer_metadata["surface_id"] == "earthscope-stations"
-    assert answered.answer_metadata["a2ui_action_context"] == {
+    history = app.state.task_history
+    answered = history.task_snapshot(question.handle)
+    assert answered is not None and answered.raw_status == "answered"
+    assert answered.status == "completed" and answered.result is not None
+    reply = QuestionReply.model_validate(history.read_content(answered.result))
+    assert reply.source_action is not None
+    assert reply.source_action.surface_id == "earthscope-stations"
+    assert reply.source_action.session_id == sid
+    assert reply.source_action.action_id == response.json()["action_id"]
+    assert reply.metadata == {
         "searchId": "s1",
         "stationIds": ["P123", "P456"],
     }
+    assert reply.responder_human == app.state.human_principal
+    assert any(
+        item.kind == "question_answer" and item.handle == question.handle
+        for item in history.pending_mail(sid)
+    )

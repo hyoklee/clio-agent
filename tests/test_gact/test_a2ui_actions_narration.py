@@ -21,13 +21,16 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, mark
 
 from clio_agent.gact.a2ui_actions.narration import MAX_NARRATION_BYTES, narration_for
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.protocol.constants import A2UI_V091
 
+from .task_records import hold_model_segment
 from .test_a2ui_v3 import HEADERS, _create_message, _session_client
+
+pytestmark = mark.usefixtures("a2ui_session_lifespan")
 
 WORKSPACE_CATALOG_ID = workspace_catalog_id()
 
@@ -185,7 +188,7 @@ def test_declared_narration_renders_template_and_still_carries_context_json(
     assert reasons == []
 
 
-def test_steer_lane_carries_the_identical_declared_narration_text(
+def test_busy_feedback_preserves_declared_narration_and_structured_context(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
@@ -195,11 +198,7 @@ def test_steer_lane_carries_the_identical_declared_narration_text(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
 
-    class _LiveTurn:
-        def done(self) -> bool:
-            return False
-
-    app.state.in_flight_turns[sid] = _LiveTurn()
+    hold_model_segment(app, sid, monkeypatch)
     context = {"stationIds": ["MTA1", "PKRD"], "searchId": "earthscope-x"}
     action = _event(EVENT_NAME, "surface_1", context, "2026-09-17T00:00:00Z")
 
@@ -209,12 +208,15 @@ def test_steer_lane_carries_the_identical_declared_narration_text(
 
     assert response.status_code == 200, response.text
     assert response.json()["delivery"] == "steer"
-    from clio_agent.gact.agent_mailbox import pending_mail
-
-    [queued] = pending_mail(app, sid)
+    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "a2ui"]
+    queued = app.state.task_history.read_content(notice.content)
     expected_prefix = 'The user selected ["MTA1","PKRD"] for earthscope-x: analyse them.'
     expected_text = f"{expected_prefix}\n\nStructured context:\n{_canonical(context)}"
-    assert queued["text"] == expected_text
+    assert queued["text"] == (
+        expected_text
+        + "\n\nA2UI action data:\n"
+        + json.dumps({"context": context, "client_data_model": None}, ensure_ascii=False)
+    )
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions

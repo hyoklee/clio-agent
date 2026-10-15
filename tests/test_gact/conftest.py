@@ -10,7 +10,7 @@ flow for tests that just want "POST + return the assistant".
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import ExitStack
 from functools import wraps
 from typing import Any
@@ -19,39 +19,53 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+@pytest.fixture(autouse=True)
+def a2ui_session_lifespan(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Own real app startup and shutdown for the retained A2UI client helper."""
+    module = request.module
+    original = getattr(module, "_session_client", None)
+    if not callable(original) or original.__module__ != "tests.test_gact.test_a2ui_v3":
+        yield
+        return
+    with ExitStack() as stack:
+
+        @wraps(original)
+        def started(*args: Any, **kwargs: Any) -> Any:
+            client, session_id, path = original(*args, **kwargs)
+            stack.enter_context(client)
+            return client, session_id, path
+
+        monkeypatch.setattr(module, "_session_client", started)
+        yield
+
+
 @pytest.fixture
 def native_builtin_lifespan(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
-    """Open production MCP hosts for explicitly opted-in domain-tool tests.
-
-    Older domain tests construct real apps without entering their lifespan.
-    Keep their normal DSPy tool validation and actual native SDK dispatch; the
-    fixture only owns and closes those apps' production lifespans.
-    """
+    """Own real native app lifespans and dispatch opted-in tool calls through MCP."""
     from fastapi import FastAPI
 
     from clio_agent.gact import context
-    from clio_agent.tools import builtin_control_host
+    from clio_agent.gact.agents.tool_instrumentation import _clio_native_tool_class
+    from tests.test_gact.task_records import record_assignment_fixture
 
-    original = builtin_control_host.builtin_control_bridge
+    tool_class = _clio_native_tool_class()
+    original = tool_class.__call__
     with ExitStack() as stack:
 
-        def build(*args: Any, **kwargs: Any) -> Callable[..., Any]:
-            bridge = original(*args, **kwargs)
-
-            @wraps(bridge)
-            def invoke(*positional: Any, **keywords: Any) -> Any:
-                app = context.active_app()
-                if (
-                    isinstance(app, FastAPI)
-                    and context.active_session_id()
-                    and not getattr(app.state, "native_tools", None)
-                ):
+        @wraps(original)
+        def invoke(tool: Any, *positional: Any, **keywords: Any) -> Any:
+            app, sid = context.active_app(), context.active_session_id()
+            if isinstance(app, FastAPI) and sid and getattr(tool.func, "_clio_builtin", False):
+                if not getattr(app.state, "native_tools", None):
                     stack.enter_context(TestClient(app))
-                return bridge(*positional, **keywords)
+                if app.state.task_history.latest_assignment(sid) is None:
+                    record_assignment_fixture(app, sid)
+                tool = app.state.builtin_boundary.bind(tool)
+            return original(tool, *positional, **keywords)
 
-            return invoke
-
-        monkeypatch.setattr(builtin_control_host, "builtin_control_bridge", build)
+        monkeypatch.setattr(tool_class, "__call__", invoke)
         yield
 
 

@@ -668,11 +668,7 @@ def _patch_ambient_bind_network(monkeypatch) -> None:
     async def _unreachable_handshake(*args, **kwargs):  # noqa: ANN001, ANN002, ANN003
         raise RuntimeError("handshake stubbed for hermetic test (no live backend)")
 
-    async def _no_relay_kwargs(app):  # noqa: ANN001
-        return {}
-
     monkeypatch.setattr("clio_agent.providers.handshake.run_handshake", _unreachable_handshake)
-    monkeypatch.setattr("clio_agent.gact.relay_wiring.relay_agent_kwargs", _no_relay_kwargs)
 
 
 def test_provider_model_catalog_returns_handshake_models(tmp_path: Path, monkeypatch) -> None:

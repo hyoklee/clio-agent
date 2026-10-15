@@ -26,6 +26,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.minting import (
     compute_identity,
@@ -53,6 +54,9 @@ from clio_agent.gact.artifacts.versions import (
 )
 from clio_agent.gact.semantic_events import event_reaches_ui
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
+from tests.test_arc.conftest import core_arc  # noqa: F401 - shared real-Core fixture
+from tests.test_gact.task_records import record_assignment_fixture
 
 # --------------------------------------------------------------------------- #
 # Fakes (parity with the S1/S2 harness).
@@ -953,13 +957,14 @@ def test_seam_a_genuine_write_during_call_mints_normally(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def _lease_app(tmp_path):
-    from clio_agent.gact.agent_tasks import AgentTaskRegistry
-
-    app, sess, arc = _make_app(tmp_path)
+def _lease_app(tmp_path: Path, arc: ARCMemory) -> tuple[Any, Any, _CapturingArc]:
+    app, sess, captured = _make_app(tmp_path)
     app.state.in_flight_turns = {}
-    app.state.agent_task_registry = AgentTaskRegistry()
-    return app, sess, arc
+    app.state.task_history = TaskHistory(arc)
+    app.state.human_principal = "test-human"
+    app.state.turn_runner = SimpleNamespace(busy=lambda sid: sid in app.state.in_flight_turns)
+    record_assignment_fixture(app, sess.id)
+    return app, sess, captured
 
 
 @contextmanager
@@ -974,71 +979,50 @@ def _active_observer_call():
         tool_observer._OBSERVER_CALL_T0.value = None
 
 
-def test_lease_clean_single_quiet_session(tmp_path):
-    app, sess, _arc = _lease_app(tmp_path)
+def test_lease_clean_single_quiet_session(tmp_path: Path, arc: ARCMemory) -> None:
+    app, sess, _arc = _lease_app(tmp_path, arc)
     app.state.in_flight_turns = {sess.id: object()}  # only the current writer
     with _active_observer_call():
         assert workspace_lease_clean(app, "ws1", session_id=sess.id) is True
 
 
-def test_lease_dirty_two_active_tasks_one_workspace(tmp_path):
-    from clio_agent.gact.agent_tasks import STATUS_RUNNING, AgentTask
-
-    app, sess, _arc = _lease_app(tmp_path)
-    # A genuine concurrent child task RUNNING in the SAME workspace (via the real
-    # agent-task registry seam, not an injected boolean) — a second writer.
+def test_lease_dirty_two_active_tasks_one_workspace(tmp_path: Path, arc: ARCMemory) -> None:
+    app, sess, _arc = _lease_app(tmp_path, arc)
+    # Real Core assignment data plus an occupied child slot proves a second writer.
     child = app.state.sessions.create(workspace_id="ws1", title="child")
-    app.state.agent_task_registry.register(
-        AgentTask(
-            task_id="t1",
-            parent_session_id=sess.id,
-            child_session_id=child.id,
-            status=STATUS_RUNNING,
-        )
-    )
-    app.state.in_flight_turns = {sess.id: object()}
+    record_assignment_fixture(app, child.id, parent_sid=sess.id, handle="t1")
+    app.state.in_flight_turns = {sess.id: object(), child.id: object()}
     with _active_observer_call():
         # Sabotage: return `_observer_call_started_at() is not None` (the old latch) ->
         # the concurrent child is ignored and the lease reads CLEAN -> this goes red.
         assert workspace_lease_clean(app, "ws1", session_id=sess.id) is False
 
 
-def test_lease_clean_ignores_terminal_task_and_other_workspace(tmp_path):
-    from clio_agent.gact.agent_tasks import STATUS_COMPLETED, STATUS_RUNNING, AgentTask
-
-    app, sess, _arc = _lease_app(tmp_path)
+def test_lease_clean_ignores_terminal_task_and_other_workspace(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app, sess, _arc = _lease_app(tmp_path, arc)
     done_child = app.state.sessions.create(workspace_id="ws1", title="done")
-    app.state.agent_task_registry.register(
-        AgentTask(
-            task_id="t1",
-            parent_session_id=sess.id,
-            child_session_id=done_child.id,
-            status=STATUS_COMPLETED,  # terminal -> not a live writer
-        )
+    record_assignment_fixture(
+        app, done_child.id, parent_sid=sess.id, handle="t1", status="completed"
     )
     other_child = app.state.sessions.create(workspace_id="ws2", title="other")
-    app.state.agent_task_registry.register(
-        AgentTask(
-            task_id="t2",
-            parent_session_id=sess.id,
-            child_session_id=other_child.id,
-            status=STATUS_RUNNING,  # active but a DIFFERENT workspace
-        )
-    )
+    record_assignment_fixture(app, other_child.id, parent_sid=sess.id, handle="t2")
     app.state.in_flight_turns = {sess.id: object(), other_child.id: object()}
     with _active_observer_call():
         assert workspace_lease_clean(app, "ws1", session_id=sess.id) is True
 
 
-def test_lease_dirty_concurrent_session_same_workspace(tmp_path):
-    app, sess, _arc = _lease_app(tmp_path)
+def test_lease_dirty_concurrent_session_same_workspace(tmp_path: Path, arc: ARCMemory) -> None:
+    app, sess, _arc = _lease_app(tmp_path, arc)
     peer = app.state.sessions.create(workspace_id="ws1", title="peer")
+    record_assignment_fixture(app, peer.id)
     app.state.in_flight_turns = {sess.id: object(), peer.id: object()}
     with _active_observer_call():
         assert workspace_lease_clean(app, "ws1", session_id=sess.id) is False
 
 
-def test_lease_dirty_outside_active_call_is_not_latched(tmp_path):
+def test_lease_dirty_outside_active_call_is_not_latched(tmp_path: Path, arc: ARCMemory) -> None:
     """Finding [3] latch regression: no active call on this thread -> DIRTY.
 
     The stamp is cleared at ``completed`` (never latched), so a warm worker thread with
@@ -1046,7 +1030,7 @@ def test_lease_dirty_outside_active_call_is_not_latched(tmp_path):
     """
     from clio_agent.gact import tool_observer
 
-    app, sess, _arc = _lease_app(tmp_path)
+    app, sess, _arc = _lease_app(tmp_path, arc)
     app.state.in_flight_turns = {sess.id: object()}
     tool_observer._OBSERVER_CALL_T0.value = None  # the call completed -> stamp cleared
     assert workspace_lease_clean(app, "ws1", session_id=sess.id) is False

@@ -32,26 +32,12 @@ from tests._config_layer import delete_config
 
 
 def _patch_hermetic_bind_network(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub the two real network dependencies every bind reaches on its way
-    through ``_apply_lm_provider`` (mirrors ``test_lm_provider.py``'s
-    ``_patch_ambient_bind_network``): the per-provider connectivity handshake
-    and the relay/MCP-federation catalog discovery the first-bind path pulls
-    in via ``construct_agent_with_relay``. Neither is what these tests are
-    about, and both can legitimately take seconds against ambient conditions
-    (or hang against a claude_code CLI, or a Codex credential refresh, that
-    isn't signed in on this box), so they are stubbed for hermetic, fast
-    isolation exactly like the
-    rest of the ``PUT /v1/providers/lm`` suite.
-    """
+    """Isolate the provider handshake; first binding has no special Relay path."""
 
     async def _unreachable_handshake(*args: Any, **kwargs: Any) -> Any:
         raise RuntimeError("handshake stubbed for hermetic test (no live backend)")
 
-    async def _no_relay_kwargs(app: Any) -> dict[str, Any]:
-        return {}
-
     monkeypatch.setattr("clio_agent.providers.handshake.run_handshake", _unreachable_handshake)
-    monkeypatch.setattr("clio_agent.gact.relay_wiring.relay_agent_kwargs", _no_relay_kwargs)
 
 
 def _forbid_lm_studio_discovery(monkeypatch: pytest.MonkeyPatch) -> None:

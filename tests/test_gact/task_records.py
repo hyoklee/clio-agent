@@ -2,11 +2,79 @@
 
 from __future__ import annotations
 
+import asyncio
+import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any, Literal
 from uuid import uuid4
 
-from clio_agent.arc.task_types import AssignmentDetails, BackendReference, TaskOwner, TaskSnapshot
+import pytest
+
+from clio_agent.arc.task_types import (
+    AssignmentDetails,
+    BackendReference,
+    MailItem,
+    TaskOwner,
+    TaskSnapshot,
+)
+from clio_agent.gact import context
 from clio_agent.gact.native_work import now
+
+
+def hold_model_segment(app: Any, session_id: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Occupy a real runner slot from Core mail; replace only model execution."""
+    from tests.test_gact.test_post_messages import FakeClioAgent
+
+    entered = threading.Event()
+
+    async def hold(_segment: Any) -> None:
+        entered.set()
+        await asyncio.Event().wait()
+
+    monkeypatch.setattr(app.state, "agent", FakeClioAgent())
+    monkeypatch.setattr(app.state.conversations, "_run", hold)
+    history = app.state.task_history
+    history.record_mail(
+        MailItem(
+            id="fixture-busy:" + uuid4().hex,
+            recipient_session=session_id,
+            sender_human=app.state.human_principal,
+            kind="human",
+            content=history.write_content(session_id, {"text": "Hold this model segment."}),
+            created_at=now(),
+        )
+    )
+    assert entered.wait(5), "The real runner did not admit the initial input"
+    assert app.state.turn_runner.busy(session_id)
+
+
+@contextmanager
+def active_turn_fixture(app: Any, session_id: str) -> Iterator[None]:
+    """Bind an existing recorded assignment for a test call; start no work."""
+    app_token = context.set_app(app)
+    session_token = context.set_session_id(session_id)
+    try:
+        history = getattr(app.state, "task_history", None)
+        task = history.latest_assignment(session_id) if history is not None else None
+        if task is not None and history is not None:
+            details = (
+                AssignmentDetails.model_validate(history.read_content(task.details))
+                if task.details is not None
+                else AssignmentDetails()
+            )
+            context.set_turn_identity(
+                app=app,
+                session_id=session_id,
+                turn_id="fixture-turn",
+                trace_id="fixture-trace",
+                assignment_handle=task.handle,
+                context_epoch=details.context_epoch,
+            )
+        yield
+    finally:
+        context.reset(session_token)
+        context.reset(app_token)
 
 
 def record_assignment_fixture(

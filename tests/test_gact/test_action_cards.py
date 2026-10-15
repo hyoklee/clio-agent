@@ -31,6 +31,7 @@ from typing import Any, Callable
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.task_types import CoordinationGrant, TaskSnapshot
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.action_cards import (
     ALERT_CARD_NO_PARENT_ERROR,
@@ -40,9 +41,9 @@ from clio_agent.gact.action_cards import (
     build_raise_alert_card_tool,
     emit_action_card_part,
 )
-from clio_agent.gact.agent_tasks import STATUS_RUNNING, AgentTask
 from clio_agent.gact.app import build_app
 from clio_agent.gact.types import AgentDef
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
 _CONTRACT_ACTIONS = [
     {
@@ -134,17 +135,13 @@ def test_emit_with_no_active_turn_creates_visible_message_part(tmp_path: Path) -
 # --------------------------------------------------------------------------- #
 
 
-def _register_fake_child_task(
-    app, *, parent_sid: str, expert_id: str = "spotter_watcher", blueprint_id: str = ""
-) -> AgentTask:
-    """Mint a real child session + register a real AgentTask, without driving a
-    turn (this test targets ``raise_alert_card``'s own logic, not the spawn
-    substrate — that is covered end-to-end in test_spotter_watcher.py).
+def _record_child_assignment(
+    app: Any, *, parent_sid: str, expert_id: str = "spotter_watcher", blueprint_id: str = ""
+) -> TaskSnapshot:
+    """Seed the production delegation data, including its message-only reply grant.
 
-    ``blueprint_id``, when given, mirrors ``turn_spawn.spawn_child_turn``'s
-    real behavior: it stamps the child's OWN ``active_agent_blueprint_id``
-    metadata (via ``session_scope_metadata``), the exact field
-    ``raise_alert_card`` reads for the card's branded ``source``.
+    The child's own blueprint identity supplies the card's branded source.
+    This passive fixture starts no child model or task driver.
     """
 
     child = app.state.sessions.create(
@@ -156,31 +153,27 @@ def _register_fake_child_task(
         app.state.sessions.update(
             child.id, metadata_patch={"active_agent_blueprint_id": blueprint_id}
         )
-    task = AgentTask(
-        task_id="task_" + child.id.split("_")[-1],
-        parent_session_id=parent_sid,
-        child_session_id=child.id,
-        agent_ref={"expert_id": expert_id, "requesting_expert_id": "main"},
-        status=STATUS_RUNNING,
-        live_state=STATUS_RUNNING,
-        created_at="2026-01-01T00:00:00+00:00",
-        updated_at="2026-01-01T00:00:00+00:00",
+    task = record_assignment_fixture(app, child.id, parent_sid=parent_sid)
+    app.state.task_history.record_grant(
+        CoordinationGrant(
+            id="delegation-reply:" + task.handle,
+            granting_human=task.owner.human_id,
+            recipient_session=child.id,
+            target_session=parent_sid,
+            rights=("message",),
+            created_at=task.created_at,
+        ),
+        observation_id="fixture-reply:" + task.handle,
     )
-    app.state.agent_task_registry.register(task)
     return task
 
 
-def _call_tool_as(app, session_id: str, tool, **kwargs):
+def _call_tool_as(app: Any, session_id: str, tool: Any, **kwargs: Any) -> Any:
     """Invoke a native tool's underlying callable with the runtime context a
     real react step would carry (active app + active session)."""
 
-    app_token = _ctx.set_app(app)
-    sid_token = _ctx.set_session_id(session_id)
-    try:
+    with active_turn_fixture(app, session_id):
         return tool.func(**kwargs)
-    finally:
-        _ctx.reset(sid_token)
-        _ctx.reset(app_token)
 
 
 def test_raise_alert_card_from_child_emits_into_parent_with_discuss_handle(
@@ -189,12 +182,12 @@ def test_raise_alert_card_from_child_emits_into_parent_with_discuss_handle(
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         parent_sid = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        task = _register_fake_child_task(app, parent_sid=parent_sid, blueprint_id="spotter-ai")
+        task = _record_child_assignment(app, parent_sid=parent_sid, blueprint_id="spotter-ai")
 
         tool = build_raise_alert_card_tool(AgentDef(id="spotter_watcher", title="Spotter Watcher"))
         result = _call_tool_as(
             app,
-            task.child_session_id,
+            task.owner.session_id,
             tool,
             title="Anomalous run",
             body="run-012 anomalous (mean_biomass z=6.1).",
@@ -224,7 +217,7 @@ def test_raise_alert_card_from_child_emits_into_parent_with_discuss_handle(
             "id": "discuss",
             "label": "Discuss",
             "enabled": True,
-            "behavior": {"kind": "focus_session", "handle_id": task.task_id},
+            "behavior": {"kind": "focus_session", "handle_id": task.handle},
         }
         assert actions[1] == {
             "id": "address",
@@ -234,7 +227,7 @@ def test_raise_alert_card_from_child_emits_into_parent_with_discuss_handle(
         }
 
         # Nothing was emitted into the CHILD's own transcript.
-        child_messages = client.get(f"/v1/sessions/{task.child_session_id}/messages").json()[
+        child_messages = client.get(f"/v1/sessions/{task.owner.session_id}/messages").json()[
             "messages"
         ]
         assert not any(p["type"] == "action_card" for m in child_messages for p in m["parts"])
@@ -249,10 +242,10 @@ def test_raise_alert_card_source_falls_back_to_expert_id_without_blueprint(
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         parent_sid = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        task = _register_fake_child_task(app, parent_sid=parent_sid)  # no blueprint_id
+        task = _record_child_assignment(app, parent_sid=parent_sid)  # no blueprint_id
 
         tool = build_raise_alert_card_tool(AgentDef(id="spotter_watcher", title="Spotter Watcher"))
-        _call_tool_as(app, task.child_session_id, tool, title="t", body="b")
+        _call_tool_as(app, task.owner.session_id, tool, title="t", body="b")
 
         messages = client.get(f"/v1/sessions/{parent_sid}/messages").json()["messages"]
         cards = [p for m in messages for p in m["parts"] if p["type"] == "action_card"]
@@ -266,12 +259,12 @@ def test_raise_alert_card_accepts_bare_string_stub_actions(tmp_path: Path) -> No
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         parent_sid = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        task = _register_fake_child_task(app, parent_sid=parent_sid)
+        task = _record_child_assignment(app, parent_sid=parent_sid)
 
         tool = build_raise_alert_card_tool(AgentDef(id="spotter_watcher", title="Spotter Watcher"))
         result = _call_tool_as(
             app,
-            task.child_session_id,
+            task.owner.session_id,
             tool,
             title="t",
             body="b",
@@ -300,11 +293,11 @@ def test_raise_alert_card_reports_skipped_unsupported_stub_actions(tmp_path: Pat
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         parent_sid = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        task = _register_fake_child_task(app, parent_sid=parent_sid)
+        task = _record_child_assignment(app, parent_sid=parent_sid)
 
         tool = build_raise_alert_card_tool(AgentDef(id="spotter_watcher", title="Spotter Watcher"))
         result = _call_tool_as(
-            app, task.child_session_id, tool, title="t", body="b", stub_actions=[123, None]
+            app, task.owner.session_id, tool, title="t", body="b", stub_actions=[123, None]
         )
 
         assert result["emitted"] is True
@@ -400,11 +393,11 @@ def test_raise_alert_card_against_a_frozen_parent_ledger_reports_typed_drop(
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         parent_sid = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        task = _register_fake_child_task(app, parent_sid=parent_sid)
+        task = _record_child_assignment(app, parent_sid=parent_sid)
         _open_turn_ledger(app, parent_sid).abandon()
 
         tool = build_raise_alert_card_tool(AgentDef(id="spotter_watcher", title="Spotter Watcher"))
-        result = _call_tool_as(app, task.child_session_id, tool, title="t", body="b")
+        result = _call_tool_as(app, task.owner.session_id, tool, title="t", body="b")
 
         assert result == {
             "emitted": False,
