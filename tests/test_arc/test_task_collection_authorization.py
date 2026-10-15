@@ -24,6 +24,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.gact import context
 from clio_agent.gact.agents.clio_react_record import StepRecorder
+from clio_agent.gact.events import EventBus
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_declarations import _collected
@@ -209,6 +210,7 @@ async def test_delayed_mixed_collection_rechecks_peer_without_subscription(
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
     app.state.arc = arc
+    app.state.bus = EventBus()
 
     def create_peer() -> tuple[str, str]:
         session = app.state.sessions.create(workspace_id="workspace", agent={"id": "worker"})
