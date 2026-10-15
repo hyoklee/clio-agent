@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import TaskSnapshot
+from clio_agent.arc.task_types import AssignmentDetails, TaskSnapshot
 from clio_agent.gact.provenance_wiring import install_session_lifecycle_observer
 from clio_agent.gact.semantic_events import semantic_event_from_events_content
 from clio_agent.gact.sessions import SessionStore
@@ -201,8 +201,18 @@ async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
         await idle(owner, accepted["session_id"])
         assert effect.read_text() == "effect\n" and not models
         outcome = await asyncio.to_thread(owner.history.task_snapshot, accepted["handle"])
-        assert outcome is not None and outcome.status == "failed" and outcome.result is not None
-        result = await asyncio.to_thread(owner.history.read_content, outcome.result)
+        assert outcome is not None and outcome.details is not None
+        if fault == "hook_effect":
+            assert outcome.status == "task_state_uncertain"
+            assert outcome.terminal_at is None and outcome.result is None
+            assert outcome.settlement == "unknown" and outcome.attention_episode is not None
+        else:
+            assert outcome.status == "failed" and outcome.result is not None
+        details = AssignmentDetails.model_validate(
+            await asyncio.to_thread(owner.history.read_content, outcome.details)
+        )
+        assert details.last_output is not None
+        result = await asyncio.to_thread(owner.history.read_content, details.last_output)
         assert "unavailable" in str(result)
         assert any(
             item.handle == outcome.handle for item in owner.history.pending_mail(caller.session_id)

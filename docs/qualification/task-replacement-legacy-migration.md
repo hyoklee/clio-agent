@@ -25,3 +25,23 @@ retained when that fixture is rebuilt; it has not been migrated or executed.
 R37 source review remains NO-GO with two Astra findings pending correction;
 Claude's independent review of the same frozen tuple is running. No acceptance
 row, release or installed-state claim follows from this migration batch.
+
+## R39 batch
+
+The earlier review status above is historical. R37/R38 source reviews completed;
+R38 source adjudications and the actual local Fable report are retained here.
+Combined source/qualification acceptance remains NO-GO.
+
+| File | Migration | Preserved behavior |
+| --- | --- | --- |
+| test_spawn_nullable_arguments.py | Replace deleted spawn fixture with real Core/conversation/FastMCP control boundary. | Null defaults, batch null, invalid public types and explicit-empty placement rejection before effects. |
+| test_default_profile_authoritative.py | Fault actual startup preparation; remove only the retired relay-discovery case. | Generic startup failure and independent provider-default behavior. |
+| test_tool_presentation_adapters.py / test_wait_disclosure_contracts.py | Current shared wait presenter, including actual Core Question state. | Privacy without caller context, Question labels, immediate checks and no collection acknowledgement. |
+| test_child_creation_recovery.py | Hook-effect uncertainty stays nonterminal with retained last output. | No automatic hook/model replay; positive completed-hook receipt behavior remains distinct. |
+| test_document_artifacts.py | Current Core pending/header/input-commit paths; remove retired fixture/imports. | Autosave-only coalescing, full history, explicit review, interrupted withdrawal recovery and stale staged-input rejection. |
+
+Current AST-only inventory inspects 1,093 test files and finds 37 affected files,
+down from 41 under the expanded audit. These four files now have no identified
+retired imports; this does not claim complete collection or runtime acceptance.
+The remaining coupled cases are unfinished. Behavioral execution stays deferred
+until initial implementation and bulk regression construction are complete.

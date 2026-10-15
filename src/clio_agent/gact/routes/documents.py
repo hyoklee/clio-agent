@@ -283,6 +283,7 @@ def _dispatch_checkpoint(
         app,
         working_copy.session_id,
         text,
+        steer_message_id=f"document-save:{working_copy.id}:{working_copy.head_version}",
         metadata={
             "document_working_copy_id": working_copy.id,
             "coalesce_key": f"document-save:{working_copy.id}",

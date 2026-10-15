@@ -1,0 +1,39 @@
+{
+  "parent_core": "27b3a381d7c2da939a57e308c4f0e1cf87c3fe4e",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "scope": [
+    "src/clio_agent/gact/native_task_settlement.py",
+    "src/clio_agent/gact/native_tools.py",
+    "src/clio_agent/gact/task_declarations.py",
+    "src/clio_agent/gact/session_input.py",
+    "src/clio_agent/gact/session_mail.py",
+    "src/clio_agent/gact/routes/documents.py",
+    "tests/test_arc/test_wait_disclosure_contracts.py",
+    "tests/test_arc/test_native_cleanup_visibility.py",
+    "tests/test_arc/test_child_creation_recovery.py",
+    "tests/test_gact/test_default_profile_authoritative.py",
+    "tests/test_gact/test_document_artifacts.py",
+    "tests/test_gact/test_spawn_nullable_arguments.py",
+    "tests/test_gact/test_task_guidance.py",
+    "tests/test_gact/test_tool_presentation_adapters.py"
+  ],
+  "ruff": "pass: check --fix and format",
+  "mypy": "pass: Linux --follow-imports silent --check-untyped-defs; original 14-file run corrected by passing 3-file recheck",
+  "guards": {
+    "hidden_swallow_files": 200,
+    "source_cap": 800,
+    "class": "pass",
+    "hidden_swallows": 480,
+    "removal": 0
+  },
+  "behavior_executed": false,
+  "live_executed": false,
+  "legacy_import_audit": {
+    "scanned": 1093,
+    "affected": 37,
+    "collection_proven": false
+  },
+  "writable_runtime_root": "D:/Libraries/Documents/projects/clio-agent-task-qualification/.pytest-runtime",
+  "final_acceptance": "pending: legacy MCP input, coupled regressions, F03, CI and Q1-Q9/R1-R6"
+}

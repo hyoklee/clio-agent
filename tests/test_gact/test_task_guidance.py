@@ -96,10 +96,17 @@ def test_all_shipped_react_experts_receive_shared_task_lifecycle(
     """Real shipped root/child prompts retain domain policy and receive shared controls."""
     seen: set[tuple[str, str]] = set()
     controls = {"query_tasks", "observe_tasks", "wait_tasks", "cancel_tasks", "get_task_result"}
+    unsupported_child_input = (
+        "runtime supports durable child input_required state",
+        "runtime's typed input-response control",
+        "runtime's typed input_required mechanism",
+    )
     for manifest in sorted(MARKETPLACE_ROOT.glob("*/AGENT.md")):
         for agent in load_agent_blueprint_path(manifest.parent):
             if not agent.enabled or agent.module.get("kind") != "react":
                 continue
+            normalized_prompt = " ".join(agent.system_prompt.replace(chr(96), "").split())
+            assert not any(term in normalized_prompt for term in unsupported_child_input)
             tools = build_auto_react_tools(agent, a2ui_producers=False)
             assert controls <= {tool.name for tool in tools}
             lm, engine = scripted_lm([Reply(text="Ready.")])
@@ -126,3 +133,26 @@ def test_all_shipped_react_experts_receive_shared_task_lifecycle(
     } <= seen
     record_property("expert_count", len(seen))
     record_property("experts", ",".join(f"{pack}/{agent}" for pack, agent in sorted(seen)))
+
+
+def test_factorio_questions_use_parent_question_tasks_and_stable_child_sessions() -> None:
+    """Domain consultation output must not promise an unavailable child-input RPC."""
+    root = (MARKETPLACE_ROOT / "factorio" / "experts" / "main.md").read_text()
+    child = (MARKETPLACE_ROOT / "factorio" / "experts" / "research_methodologist.md").read_text()
+    root_text = " ".join(root.replace(chr(96), "").split())
+    child_text = " ".join(child.replace(chr(96), "").split())
+    assert all(
+        name in root_text
+        for name in (
+            "ask_user",
+            "wait_tasks",
+            "send_agent_message",
+            "query_tasks",
+        )
+    )
+    assert "same child session" in root_text and "linked assignment" in root_text
+    assert "completed handle keeps its original result" in root_text
+    assert "normal consultation result" in child_text and "finite consultation" in child_text
+    assert "linked assignment with retained context" in child_text
+    assert "typed input-response control" not in root_text
+    assert "runtime's typed input_required mechanism" not in child_text

@@ -14,6 +14,7 @@ from clio_agent.arc.task_types import (
     SubmissionContext,
     TaskSnapshot,
 )
+from clio_agent.gact.native_identity import local_runtime_identity
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.task_client import (
@@ -50,6 +51,7 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
             publish_task_notice(self.history, current)
             return
         attempts = self.history.native_attempts(current.handle)
+        context: SubmissionContext | None = None
         if (
             current.submission is not None
             and current.backend_observation is not None
@@ -122,6 +124,58 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
                 self._uncertain(
                     current.handle, "Physical settlement is unconfirmed. " + validation_problem
                 )
+            elif (
+                context is not None
+                and (
+                    current.status == "task_state_uncertain"
+                    or current.attention_episode is not None
+                )
+                and current.connection_freshness == "fresh"
+                and context.local_runtime == local_runtime_identity()
+                and current.backend == context.backend.model_copy(update={"task_id": reply.task_id})
+                and (
+                    accepted is None
+                    or (
+                        current.submission == accepted.submission.context
+                        and reply.task_id == accepted.task.task_id
+                        and schema == context.output_schema
+                    )
+                )
+                and any(attempt.cleanup_state == "pending" for attempt in attempts)
+                and all(
+                    attempt.cleanup_state in {"confirmed", "never_started"}
+                    or (
+                        attempt.cleanup_state == "pending"
+                        and attempt.backend == current.backend
+                        and attempt.cleanup_receipt is None
+                        and attempt.finished_at is None
+                        and (
+                            context.provider_continuation is None
+                            or attempt.incarnation
+                            not in context.provider_continuation.previous_incarnations
+                        )
+                    )
+                    for attempt in attempts
+                )
+            ):
+                # Fresh matching observation resolves lost visibility. The
+                # same-runtime worker still owns every unresolved incarnation.
+                # Keep its raw terminal reply nonfinal until cleanup receipts arrive.
+                progressing = current.model_copy(
+                    update={
+                        "status": "running",
+                        "activity": "cancelling"
+                        if reply.status == "cancelled" or current.cancellation_requested_at
+                        else "executing",
+                        "settlement": "cleanup_pending",
+                        "attention_episode": None,
+                        "progress": current.progress.model_copy(
+                            update={"message": "Required cleanup is in progress."}
+                        ),
+                        "updated_at": now(),
+                    }
+                )
+                self.history.record_snapshot(progressing, observation_id=uuid4().hex)
             return
         if reply.result is not None:
             result = reply.result

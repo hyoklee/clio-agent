@@ -24,10 +24,8 @@ def test_native_presenter_cannot_mutate_model_arguments_or_result(
 
     monkeypatch.setitem(tool_instrumentation._RESULT_PRESENTERS, "probe", presenter)
     args, result, structured = {"nested": [1]}, {"answer": [2]}, {"other": [3]}
-    assert (
-        tool_instrumentation.present_native_result("probe", args, result, structured)["summary"]
-        == "view"
-    )
+    view = tool_instrumentation.present_native_result("probe", args, result, structured)
+    assert view is not None and view["summary"] == "view"
     assert args == {"nested": [1]}
     assert result == {"answer": [2]}
     assert structured == {"other": [3]}
@@ -347,28 +345,33 @@ def test_declared_running_presenter_survives_wrapping_and_cannot_change_argument
     )
     instrument_tools([wrapped])
     arguments = {"task_ids": ["task"]}
-    assert present_native_start("start_probe", arguments)["summary"] == "Waiting for Researcher #1"
+    view = present_native_start("start_probe", arguments)
+    assert view is not None and view["summary"] == "Waiting for Researcher #1"
     assert arguments == {"task_ids": ["task"]}
 
     def broken(args: Any) -> dict[str, Any]:
         raise ValueError("observer failed")
 
     monkeypatch.setitem(tool_instrumentation._START_PRESENTERS, "start_probe", broken)
-    assert present_native_start("start_probe", arguments)["diagnostic"] == "presentation_failed"
+    failed_view = present_native_start("start_probe", arguments)
+    assert failed_view is not None and failed_view["diagnostic"] == "presentation_failed"
 
 
-def test_wait_start_identifies_requested_tasks_without_collecting(
+def test_wait_start_without_context_is_private_and_distinguishes_status_checks(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from clio_agent.gact import context
-    from clio_agent.gact.agents.native_presenters import waiting_presentation
+    from clio_agent.gact.task_wait_presentation import wait_start_presentation
 
     monkeypatch.setattr(context, "active_app", lambda: None)
-    assert waiting_presentation({"task_ids": ["x", "y"]}) == {
-        "summary": "Waiting for x, y",
+    assert wait_start_presentation({"tasks": ["x", "y"]}) == {
+        "summary": "Waiting for tasks",
         "blocks": [],
     }
-    assert waiting_presentation({"task_ids": []})["summary"] == "No tasks requested"
+    assert wait_start_presentation({"tasks": ["x"], "timeout_s": 0}) == {
+        "summary": "Checking task status",
+        "blocks": [],
+    }
 
 
 def test_markdown_file_presents_readable_frontmatter_and_body() -> None:
@@ -1010,9 +1013,11 @@ def test_standard_mcp_media_is_declared_and_binary_is_paged_not_dumped() -> None
     data = "AAAA" * 1000
     original = {"content": [{"type": "image", "mimeType": "image/png", "data": data}]}
     view = present_mcp_result("third_party", {}, original)
+    assert view is not None
     assert view["blocks"][0]["type"] == "media"
     assert view["blocks"][0]["media_type"] == "image/png"
     projected = project_presentation(view, "s", "call")
+    assert projected is not None
     assert len(projected["blocks"][0]["text"]) == 2048
     assert projected["blocks"][0]["content_ref"]["total_chars"] == 4000
     assert original["content"][0]["data"] == data

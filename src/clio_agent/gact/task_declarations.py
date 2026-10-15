@@ -538,7 +538,9 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
         raise ValueError("Declared fanout concurrency must be a positive integer")
 
     def local_placement(placement: str | None) -> None:
-        if placement not in {None, "", "local"}:
+        if placement == "":
+            raise ValueError("placement must be 'local' or null")
+        if placement not in {None, "local"}:
             raise ValueError(
                 "Special relay placement is unavailable; configure an ordinary MCP server"
             )

@@ -1,11 +1,11 @@
-"""ProviderProfileStore is the authoritative default source (design §9 step 9).
+"""ProviderProfileStore is the authoritative default source (design Â§9 step 9).
 
 Step 9 flips per-expert resolution ON for every path by making the per-app
 :class:`ProviderProfileStore` the ONE authoritative provider identity:
 
 * ``ClioAgent`` binds ``_main_lm`` / ``_dspy_adapter`` off an
   **injected** default-profile config (the gact server resolves it off the store)
-  rather than reading the environment a SECOND time — the dropped boot
+  rather than reading the environment a SECOND time â€” the dropped boot
   env-handoff. ``provider_config=None`` still reads ``load_config_from_env`` (the
   standalone CLI / test baseline, unchanged).
 * The boot ``_construct_agent_async`` hands the ONE boot config to ``ClioAgent``
@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -78,8 +79,8 @@ def test_clio_agent_binds_injected_provider_config_over_env(monkeypatch, tmp_pat
     """The injected default-profile config drives ``_provider_config`` / ``_main_lm``.
 
     The environment names a DIFFERENT model; the agent must ignore it and bind the
-    injected config verbatim — proving ClioAgent no longer performs its own second
-    ``load_config_from_env`` read (the dropped boot env-handoff, design §9 step 9).
+    injected config verbatim â€” proving ClioAgent no longer performs its own second
+    ``load_config_from_env`` read (the dropped boot env-handoff, design Â§9 step 9).
     """
     from clio_agent.agent import ClioAgent  # noqa: PLC0415
 
@@ -106,7 +107,7 @@ def test_clio_agent_binds_injected_provider_config_over_env(monkeypatch, tmp_pat
 
 
 def test_clio_agent_falls_back_to_env_when_no_config(monkeypatch, tmp_path) -> None:
-    """``provider_config=None`` reads ``load_config_from_env`` — the CLI baseline.
+    """``provider_config=None`` reads ``load_config_from_env`` â€” the CLI baseline.
 
     This is the byte-identical standalone path: no injected config means the agent
     resolves its provider identity straight off the environment, exactly as before.
@@ -142,7 +143,7 @@ def test_boot_passes_one_config_and_store_default_drives_main_lm(monkeypatch, tm
     A recording stub captures the ``provider_config`` the boot path injects and the
     LM it builds from it. The assertions prove (1) the boot passes exactly the boot
     config (one env read, no second handoff) and (2) the store's default profile
-    equals ``spec_from_config`` of the config the main LM is built from — i.e. the
+    equals ``spec_from_config`` of the config the main LM is built from â€” i.e. the
     default profile drives ``_main_lm`` when no per-expert override is declared.
     """
     import dspy  # noqa: PLC0415
@@ -201,7 +202,7 @@ def test_boot_passes_one_config_and_store_default_drives_main_lm(monkeypatch, tm
     assert injected.api_base == "http://boot.example/v1"
 
     # (2) The store's default profile is the SAME identity as the config the main
-    # LM was built from — the default profile drives ClioAgent._main_lm.
+    # LM was built from â€” the default profile drives ClioAgent._main_lm.
     store = app.state.provider_profiles
     assert isinstance(store, ProviderProfileStore)
     assert store.default == spec_from_config(agent._provider_config)
@@ -210,70 +211,19 @@ def test_boot_passes_one_config_and_store_default_drives_main_lm(monkeypatch, tm
     assert "boot-authoritative-model" in agent._main_lm.model
 
 
-def test_boot_passes_discovered_relay_surfaces_into_clio_agent(monkeypatch, tmp_path) -> None:
-    """Finding 4: the production agent constructor receives remote and JARVIS owners."""
-
-    import dspy
-
-    import clio_agent.tools.relay_transport as relay_module
-    from clio_agent.gact.app import _construct_agent_async
-
-    remote = object()
-    jarvis = object()
-    relay_install = object()
-
-    async def fake_discover() -> Any:
-        return SimpleNamespace(
-            remote_mcp_federation=remote,
-            jarvis_jobs=jarvis,
-            relay_install=relay_install,
-            status={"configured": True, "reason": None},
-        )
-
-    monkeypatch.setattr(relay_module, "discover_relay_tool_surfaces", fake_discover, raising=False)
-    monkeypatch.setattr(dspy, "configure", lambda **_kwargs: None)
-    monkeypatch.setattr(config_mod, "create_lm", lambda _cfg: SimpleNamespace(model="stub"))
-    monkeypatch.setattr(config_mod, "create_chat_adapter", lambda _cfg: object())
-    recorded: dict[str, Any] = {}
-
-    class RecordingAgent:
-        def __init__(
-            self,
-            *args: Any,
-            arc: Any = None,
-            provider_config: LMProviderConfig | None = None,
-            **kwargs: Any,
-        ) -> None:
-            recorded.update(kwargs)
-            assert provider_config is not None
-            self.arc = arc
-            self._provider_config = provider_config
-            self._main_lm = SimpleNamespace(model="stub")
-
-    monkeypatch.setattr("clio_agent.agent.ClioAgent", RecordingAgent)
-    app = build_app(sessions_path=tmp_path / "relay-wiring.json")
-
-    asyncio.run(_construct_agent_async(app))
-
-    assert recorded["remote_mcp_federation"] is remote
-    assert recorded["jarvis_jobs"] is jarvis
-    assert recorded["relay_install"] is relay_install
-    assert app.state.relay_tool_status == {"configured": True, "reason": None}
-
-
-def test_boot_records_relay_preflight_failure(monkeypatch, tmp_path) -> None:
+def test_boot_records_preflight_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """A pre-executor dependency failure is a typed failed startup, never a dead agent."""
 
     from clio_agent.gact.app import _construct_agent_async
 
-    async def fail_relay_preflight(_app: Any) -> Any:
+    async def fail_core_preflight(_app: Any) -> Any:
         raise ModuleNotFoundError("No module named 'psutil'")
 
     monkeypatch.setattr(
-        "clio_agent.gact.app.relay_wiring.relay_agent_kwargs",
-        fail_relay_preflight,
+        "clio_agent.gact.app.server_boot.process_arc_off_loop",
+        fail_core_preflight,
     )
-    app = build_app(sessions_path=tmp_path / "relay-preflight.json")
+    app = build_app(sessions_path=tmp_path / "preflight.json")
 
     asyncio.run(_construct_agent_async(app))
 
@@ -284,7 +234,7 @@ def test_boot_records_relay_preflight_failure(monkeypatch, tmp_path) -> None:
 def test_boot_seed_still_matches_env_single_provider(monkeypatch, tmp_path) -> None:
     """GACT single-provider operation unchanged: build_app seeds default from env.
 
-    Regression guard on the step-9 app.py change — the boot seed must still equal
+    Regression guard on the step-9 app.py change â€” the boot seed must still equal
     ``spec_from_config(load_config_from_env())`` for the single-default-LM case.
     """
     from clio_agent.config import load_config_from_env  # noqa: PLC0415
@@ -309,12 +259,12 @@ def test_boot_seed_still_matches_env_single_provider(monkeypatch, tmp_path) -> N
 
 @pytest.mark.concurrency
 def test_two_experts_two_providers_resolve_off_store_default(monkeypatch, tmp_path) -> None:
-    """An undeclared expert inherits the STORE default; two experts → two LMs.
+    """An undeclared expert inherits the STORE default; two experts â†’ two LMs.
 
     With an ACTIVE app whose store default differs from the base agent's
     ``_provider_config``, an expert that declares nothing must inherit the STORE
-    default (proving the store — not ``base_agent._provider_config`` — is the
-    authoritative source, design §9 step 9). A second expert declaring its own
+    default (proving the store â€” not ``base_agent._provider_config`` â€” is the
+    authoritative source, design Â§9 step 9). A second expert declaring its own
     provider + named credential resolves to a DISTINCT ``dspy.LM``. Both run their
     ``forward()`` concurrently with no cross-talk (the #818 requirement).
     """
@@ -422,5 +372,5 @@ def test_two_experts_two_providers_resolve_off_store_default(monkeypatch, tmp_pa
     }
     assert len(built_lms) == len(modules)
     assert built == expected
-    # The base agent's model must NOT appear — proof the store, not base_agent, drove it.
+    # The base agent's model must NOT appear â€” proof the store, not base_agent, drove it.
     assert all("base-agent-model" not in lm.model for lm in built_lms)

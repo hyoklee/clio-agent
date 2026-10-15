@@ -142,6 +142,26 @@ def withdraw_message_inputs(app: Any, session_id: str, message_ids: list[str]) -
                 history.withdraw_mail(session_id, identity)
 
 
+def coalesce_pending_inputs(history: TaskHistory, session_id: str) -> None:
+    """Withdraw older pending producer notices while retaining their full Core history."""
+    with history.serialized():
+        latest: set[str] = set()
+        for item in reversed(history.pending_mail(session_id)):
+            if item.kind != "hook":
+                continue
+            value = history.read_content(item.content)
+            if not isinstance(value, dict) or value.get("source") != "hook":
+                continue
+            metadata = value.get("metadata")
+            key = metadata.get("coalesce_key") if isinstance(metadata, dict) else None
+            if not isinstance(key, str) or not key:
+                continue
+            if key in latest:
+                history.withdraw_mail(session_id, item.id)
+            else:
+                latest.add(key)
+
+
 def accept_session_input(
     app: Any,
     session_id: str,
@@ -195,4 +215,5 @@ def accept_session_input(
                 handle=handle,
             )
         )
+        coalesce_pending_inputs(history, session_id)
     return identity

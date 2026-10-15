@@ -60,10 +60,11 @@ class SessionMail:
 
     def stage(self, caller: TaskCaller, *, collected: tuple[str, ...] = ()) -> StagedInput:
         """Read eligible arrivals in accepted order; no query/staging operation consumes them."""
-        from clio_agent.gact.session_input import apply_retry_supersession
+        from clio_agent.gact.session_input import apply_retry_supersession, coalesce_pending_inputs
 
         with self.history.serialized():
             access = TaskAccess(self.history, caller)
+            coalesce_pending_inputs(self.history, caller.session_id)
             for item in self.history.pending_mail(caller.session_id):
                 if item.delivery == "eligible" and self.eligible(caller.session_id, item):
                     apply_retry_supersession(self.history, item)

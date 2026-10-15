@@ -697,6 +697,7 @@ class NativeTools:
         driver, rpc = self._drivers.get(handle), self._rpc.get(handle)
         if (
             current is None
+            or current.terminal_at is None
             or self.history.requires_recovery
             or current.backend_observation is None
             or current.raw_status not in {"completed", "failed", "cancelled"}
@@ -740,8 +741,7 @@ class NativeTools:
                     self._identities.pop(key)
         self._drivers.pop(handle, None)
         self._rpc.pop(handle, None)
-        if current.terminal_at is not None:
-            self._control_holds.discard(handle)
+        self._control_holds.discard(handle)
 
     def _rejected(self, handle: str, reason: str) -> None:
         with self.history.serialized():

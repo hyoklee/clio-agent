@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import os
 import time
 import zipfile
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from clio_agent.gact.agent_mailbox import accept_session_input, pending_mail, retained_mail
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.task_types import ContextBoundary, MailItem
 from clio_agent.gact.app import build_app
 from clio_agent.gact.documents import renditions
 from clio_agent.gact.documents.editor_callbacks import exact_http_origin
@@ -24,10 +26,11 @@ from clio_agent.gact.documents.native_comments import (
 )
 from clio_agent.gact.documents.profiles import document_format
 from clio_agent.gact.documents.store import get_document_store
-from clio_agent.gact.turn_runner import TurnRunner
-from tests.test_gact import test_core_task_mailbox as core_fixtures
-
-owner = core_fixtures.owner
+from clio_agent.gact.native_work import now
+from clio_agent.gact.session_input import accept_session_input
+from clio_agent.gact.task_access import TaskCaller
+from tests.test_arc.conftest import core_arc as core_arc
+from tests.test_arc.test_conversation_owner_contracts import create_environment
 from tests.test_gact.test_post_messages import FakeClioAgent
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
@@ -434,19 +437,92 @@ def test_collabora_wopi_locks_guard_editor_saves(tmp_path: Path) -> None:
     assert released.status_code == 200
 
 
-def test_document_autosave_steers_coalesce_but_reviews_do_not(owner: Any) -> None:
+@pytest.mark.asyncio
+@pytest.mark.parametrize("withdrawal_fault", [False, True])
+async def test_document_autosave_steers_coalesce_but_reviews_do_not(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, withdrawal_fault: bool
+) -> None:
     """Only uncommitted autosaves coalesce; complete history and explicit reviews remain."""
-    app, sid = owner.app, owner.sid
-    app.state.turn_runner = TurnRunner({})
-    for text in ("version 2", "version 3"):
-        accept_session_input(app, sid, text, {"coalesce_key": "document-save:one"})
-    accept_session_input(app, sid, "explicit review", source_kind="human")
-    assert [row["text"] for row in pending_mail(app, sid)] == ["version 3", "explicit review"]
-    assert [row["text"] for row in retained_mail(app, sid)] == [
-        "version 2",
-        "version 3",
-        "explicit review",
-    ]
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    history, caller = owner.history, TaskCaller(sid, "human")
+
+    def mail_text(item: MailItem) -> str:
+        body = history.read_content(item.content)
+        assert isinstance(body, dict) and isinstance(body.get("text"), str)
+        text = body["text"]
+        assert isinstance(text, str)
+        return text
+
+    def exercise() -> None:
+        metadata = {"coalesce_key": "document-save:one"}
+        first = accept_session_input(
+            app, sid, "version 2", metadata=metadata, steer_message_id="save-2"
+        )
+        staged = owner.mail.stage(caller)
+        assert tuple(item.id for item in staged.items) == (first,)
+        if withdrawal_fault:
+            original = history.withdraw_mail
+
+            def fault(_sid: str, _identity: str) -> None:
+                raise OSError("Withdrawal recording unavailable after new notice acceptance")
+
+            monkeypatch.setattr(history, "withdraw_mail", fault)
+            with pytest.raises(OSError, match="Withdrawal recording unavailable"):
+                accept_session_input(
+                    app, sid, "version 3", metadata=metadata, steer_message_id="save-3"
+                )
+            monkeypatch.setattr(history, "withdraw_mail", original)
+            history.restore()
+            owner.mail.stage(caller)
+        latest = accept_session_input(
+            app, sid, "version 3", metadata=metadata, steer_message_id="save-3"
+        )
+        review = MailItem(
+            id="explicit-review",
+            recipient_session=sid,
+            kind="human",
+            sender_human="human",
+            created_at=now(),
+            content=history.write_content(sid, {"text": "explicit review"}),
+        )
+        history.record_mail(review)
+        assert [mail_text(item) for item in history.pending_mail(sid)] == [
+            "version 3",
+            "explicit review",
+        ]
+        for _ in range(2):
+            history.restore()
+            assert tuple(item.id for item in history.pending_mail(sid)) == (latest, review.id)
+        assert [
+            mail_text(history.require_mail(sid, identity))
+            for identity in (first, latest, review.id)
+        ] == ["version 2", "version 3", "explicit review"]
+        with pytest.raises(ValueError, match="Staged input changed"):
+            owner.mail.commit(
+                caller,
+                staged,
+                assignment_id=root.handle,
+                iteration_id="stale",
+                boundary=ContextBoundary(session_id=sid, scope="autosave", logical_time=0),
+            )
+        assert not history.acknowledged_notifications(sid)
+        current = owner.mail.stage(caller)
+        owner.mail.commit(
+            caller,
+            current,
+            assignment_id=root.handle,
+            iteration_id="newest",
+            boundary=ContextBoundary(session_id=sid, scope="autosave", logical_time=0),
+        )
+        assert history.acknowledged_notifications(sid) == frozenset({latest, review.id})
+        assert history.mail_withdrawn(sid, first)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
 
 
 def test_markdown_rendition_prefers_local_typst_engine(
