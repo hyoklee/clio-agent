@@ -10,6 +10,8 @@ import pytest
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import TaskSnapshot
+from clio_agent.gact.provenance_wiring import install_session_lifecycle_observer
+from clio_agent.gact.semantic_events import semantic_event_from_events_content
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskCaller
 from tests.test_arc.test_conversation_owner_contracts import create_environment
@@ -17,10 +19,12 @@ from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "fault", ["session_flush", "session_observation", "before_task", "after_task"]
+    "fault",
+    ["session_flush", "before_observation", "session_observation", "before_task", "after_task"],
 )
+@pytest.mark.parametrize("reconstruct", [False, True])
 async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_hooks(
-    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fault: str, reconstruct: bool
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
     caller = TaskCaller(root.owner.session_id, "human")
@@ -52,6 +56,9 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
 
     def lifecycle(event_type: str, session: Any) -> None:
         nonlocal fired
+        if fault == "before_observation" and not fired:
+            fired = True
+            raise OSError("session observation unavailable before publication")
         original_lifecycle(event_type, session)
         if fault == "session_observation" and not fired:
             fired = True
@@ -78,12 +85,15 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
 
         def recover() -> None:
             owner.history.restore()
-            # Actual persisted session state survives a new SessionStore instance.
-            app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
-            owner.sessions = app.state.sessions
+            if reconstruct:
+                app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+                owner.sessions = app.state.sessions
+                install_session_lifecycle_observer(app)
 
         await asyncio.to_thread(recover)
-        if fault in {"before_task", "session_observation"}:
+        if fault in {"before_task", "before_observation", "session_observation"} or (
+            fault == "session_flush" and not reconstruct
+        ):
             with pytest.raises(ValueError, match="different work"):
                 await owner.spawn(caller, "Changed assignment", "worker", "original-invocation")
         accepted = await owner.spawn(caller, "Original assignment", "worker", "original-invocation")
@@ -103,7 +113,99 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
         assert [child.id for child in children] == [child_id]
         mail = await asyncio.to_thread(owner.history.pending_mail, child_id)
         assert len(mail) == 1 and mail[0].kind == "delegation" and mail[0].handle == current.handle
-        assert hooks == ([] if fault == "session_observation" else [child_id])
+        assert hooks == [child_id]
+        creation = await asyncio.to_thread(arc.list_segments, child_id, "_events")
+        events = [
+            semantic_event_from_events_content(row.content, session_id=child_id)
+            for row in creation
+            if row.kind == "semantic_event"
+        ]
+        assert len([event for event in events if event.event_type == "session.created"]) == 1
+        child = app.state.sessions.get(child_id)
+        assert child is not None and child.creation_lifecycle_confirmed
+        assert child.creation_hook_state == "completed"
+        assert not {"creation_lifecycle_confirmed", "creation_hook_state"} & child.to_wire().keys()
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fault", ["hook_effect", "hook_receipt"])
+@pytest.mark.parametrize("reconstruct", [False, True])
+async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fault: str,
+    reconstruct: bool,
+) -> None:
+    app, owner, root = await create_environment(arc, tmp_path)
+    caller = TaskCaller(root.owner.session_id, "human")
+    effect = tmp_path / "hook-effect.txt"
+    original_flush = app.state.sessions._flush
+    fired = False
+
+    def hook(**_kwargs: Any) -> None:
+        effect.write_text((effect.read_text() if effect.exists() else "") + "effect\n")
+        if fault == "hook_effect":
+            raise OSError("Hook audit unavailable after the visible effect")
+
+    def flush() -> None:
+        nonlocal fired
+        if (
+            fault == "hook_receipt"
+            and not fired
+            and any(
+                child.parent_session_id and child.creation_hook_state == "completed"
+                for child in app.state.sessions._sessions.values()
+            )
+        ):
+            fired = True
+            raise OSError("Hook completion receipt unavailable")
+        original_flush()
+
+    monkeypatch.setattr("clio_agent.gact.hooks.dispatch_session_start", hook)
+    monkeypatch.setattr(app.state.sessions, "_flush", flush)
+    try:
+        with pytest.raises(OSError, match="unavailable"):
+            await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
+        assert effect.read_text() == "effect\n" and owner.history.requires_recovery
+        children = [
+            child
+            for child in app.state.sessions.list()
+            if child.parent_session_id == root.owner.session_id
+        ]
+        assert len(children) == 1
+        child_id = children[0].id
+
+        def recover() -> None:
+            owner.history.restore()
+            if reconstruct:
+                app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+                owner.sessions = app.state.sessions
+                install_session_lifecycle_observer(app)
+
+        await asyncio.to_thread(recover)
+        if fault == "hook_receipt" and not reconstruct:
+            accepted = await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
+            assert accepted["accepted"] is True and accepted["session_id"] == child_id
+        else:
+            with pytest.raises(RuntimeError, match="effects are unconfirmed"):
+                await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
+            assert not owner.history.pending_mail(child_id)
+            assert await asyncio.to_thread(owner.history.latest_assignment, child_id) is None
+        assert effect.read_text() == "effect\n"
+        assert (
+            len(
+                [
+                    child
+                    for child in app.state.sessions.list()
+                    if child.parent_session_id == root.owner.session_id
+                ]
+            )
+            == 1
+        )
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

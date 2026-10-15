@@ -382,3 +382,28 @@ Final tuple type checks and renewed independent reviews follow the committed
 candidate. Behavioral checks, migrated legacy tests, F03, exact-head CI and every
 required Q1–Q9/R1–R6 gate remain pending. No R34 behavioral/model/native/browser
 qualification has run and there is no release acceptance.
+
+## R34 independent reviews and R35 construction
+
+Both independent reviews support the R2 ownership/removal architecture. The
+combined adjudication confirms two source defects: unfinished child initialization
+and silent next-page failures. It preserves the established Stop-release and
+any-wait member-error contracts; the contrary suggestions are not applied.
+Reports and exact source/model/cleanup receipts are retained in this directory.
+Final scoped Linux Mypy and package-declared Core/Web TypeScript passed on the
+committed R34 tuple, superseding earlier pending-check caveats.
+
+R35 implements the two bounded corrections through SessionStore/provenance and
+the existing observability query owner. Its map is
+`docs/design/task-replacement-r35-corrections.md`. Initialization cases now include
+same-process retries, a real Core lifecycle observer, failures before/after
+publication and visible hook effects with uncertain receipts. The query regression
+exercises an actual failed second page, retained rows and successful retry through
+the production hook/component boundary. They remain unexecuted.
+
+R35 scoped Python/UI lint/format, unchanged Core/UI guards and scoped Linux Mypy
+pass. Final tuple types, renewed source reviews, focused execution and migrated
+legacy tests remain pending. No R34/R35 behavioral, native/model/browser run or
+installed-state change occurred. Fable's remote review cache, controller and result
+settled and were removed. Existing manual-only/rejected roots were preserved;
+all future execution stays inside the D qualification repository.

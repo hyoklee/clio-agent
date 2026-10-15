@@ -237,7 +237,7 @@ def build_task_tools() -> list[Any]:
                 "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"},
                 "timeout_s": _TIMEOUT,
             },
-            "Collect mixed task results and publish their completion notices. Default wait is unbounded; zero snapshots; positive expiry or Stop ends only this waiter. Pending tasks continue.",
+            "Collect independent task outcomes. With return_when='any', a member error is an available outcome; other handles remain explicitly pending and continue running. Default wait is unbounded; zero snapshots; positive expiry or Stop ends only this waiter.",
         ),
         _tool(
             cancel_tasks,

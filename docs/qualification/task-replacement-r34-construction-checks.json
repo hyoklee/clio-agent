@@ -6,16 +6,21 @@
   "behavioral_checks_executed": false,
   "live_qualification_executed": false,
   "construction": {
-    "python": "Scoped Ruff and formatting passed; Linux-target Mypy passed nine production files before the final trusted-session retention clarification.",
+    "python": "Scoped Ruff and formatting passed; Linux-target Mypy passed nine production files, then the final three changed production files on the committed D candidate.",
     "core_guards": "Removal, size, class and swallow guards passed without threshold changes.",
     "frontend": "Scoped Oxlint, Prettier and six existing guards passed without threshold changes.",
-    "typescript": "Pending on the committed candidate in the D checkout."
+    "typescript": "Passed using package-declared Core TypeScript 5.6.3 and web TypeScript 6.0.3 on the exact committed D candidate."
   },
   "retained_initial_static_failures": [
     "A private Core writer call was replaced by the existing public serialization API with explicit writable admission.",
     "The workspace UI exceeded the existing 800-line cap by one line; an outdated six-line explanatory comment was reduced to two lines. No guard changed."
   ],
-  "reviews": "Renewed Astra and actual Claude Code Fable source reviews pending.",
+  "reviews": "Both completed read-only reviews support the ownership design and decline release/source readiness. Astra identified unfinished creation and UI page-error propagation; Fable also raised Stop-held input and any-wait errors. Combined adjudication requested before correction.",
   "acceptance": "Not qualified. Required behavioral, migration, CI, F03 and live matrix gates remain pending.",
-  "cleanup": "No test run, Core service, model or browser process was launched for R34 construction. Existing rejected and manual-only roots were preserved."
+  "cleanup": "No R34 behavioral/model/native/browser qualification launched. Fable controller settled, remote 45,102,512-byte source cache removed, and hash-verified remote review result removed. D execution run roots remain absent. Rejected/manual-only roots preserved.",
+  "reviewed_tuple": {
+    "core": "47380c05437f7ceb9f2f9c4a8ca1855348437661",
+    "marketplace": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751",
+    "gact": "07745d5b63e16d1b1e46c0fdec9efda0d91ba0dc"
+  }
 }

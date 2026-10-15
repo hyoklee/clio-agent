@@ -1,0 +1,244 @@
+{
+  "status": "completed",
+  "snapshot": {
+    "human_reference_sha256": {
+      "subagent-lifecycle-and-session-messaging.md": "ff64da10597e9c135096b1ee04b3aaee88cfdf41cdf7cb682cef65ad065781ca",
+      "agent-task-architecture-review-2026-10-12.md": "8837983e2ccdc5d14b7a95a36fe2bc823e9b89fb87a934645f1f5edcef0bcac6",
+      "session-recall-and-long-term-memory.md": "3ca040731ca1a895b717068c45b08940c8d8d24febb50c5612b29abe7d060ddd"
+    },
+    "created_at": "2026-10-15T09:37:19.200709+00:00",
+    "heads": {
+      "core": "47380c05437f7ceb9f2f9c4a8ca1855348437661",
+      "external/gact-tui/": "07745d5b63e16d1b1e46c0fdec9efda0d91ba0dc",
+      "external/clio-agent-marketplace/": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751"
+    },
+    "source": "committed source and design documents; no earlier reviewer reports supplied",
+    "file_count": 5321,
+    "bytes": 45102512,
+    "omitted_binary_files": [
+      "site/src/assets/brand/clio-mark.png",
+      "site/src/assets/captures/current-dashboard.png",
+      "site/src/assets/captures/current-data.png",
+      "site/src/assets/captures/current-lineage.png",
+      "site/src/assets/captures/current-report.png",
+      "site/src/assets/captures/docs-best-of-n.png",
+      "site/src/assets/captures/docs-child-followup.png",
+      "site/src/assets/captures/docs-child-tab.png",
+      "site/src/assets/captures/docs-compact-work.png",
+      "site/src/assets/captures/docs-conversation-branch-control.png",
+      "site/src/assets/captures/docs-conversation-branch-result.png",
+      "site/src/assets/captures/docs-conversation-family-gantt.png",
+      "site/src/assets/captures/docs-conversation-menu.png",
+      "site/src/assets/captures/docs-conversation-output-lineage.png",
+      "site/src/assets/captures/docs-conversation-relationships.png",
+      "site/src/assets/captures/docs-conversation-rewind-confirm.png",
+      "site/src/assets/captures/docs-conversation-rewind-result.png",
+      "site/src/assets/captures/docs-dashboard-export-menu.png",
+      "site/src/assets/captures/docs-dashboard-export.png",
+      "site/src/assets/captures/docs-fleet-judges.png",
+      "site/src/assets/captures/docs-fork-checkpoint.png",
+      "site/src/assets/captures/docs-goal-completed.png",
+      "site/src/assets/captures/docs-goal-injections.png",
+      "site/src/assets/captures/docs-injection-collection-open.png",
+      "site/src/assets/captures/docs-injection-collection.png",
+      "site/src/assets/captures/docs-injection-detail.png",
+      "site/src/assets/captures/docs-injection-goal.png",
+      "site/src/assets/captures/docs-loop-completed.png",
+      "site/src/assets/captures/docs-loop-human-question.png",
+      "site/src/assets/captures/docs-loop-injections.png",
+      "site/src/assets/captures/docs-loop-setup.png",
+      "site/src/assets/captures/docs-marked-messages.png",
+      "site/src/assets/captures/docs-memory-search.png",
+      "site/src/assets/captures/docs-message-preview.png",
+      "site/src/assets/captures/docs-open-questions.png",
+      "site/src/assets/captures/docs-panel-evidence.png",
+      "site/src/assets/captures/docs-panel-file-preview.png",
+      "site/src/assets/captures/docs-question-choice.png",
+      "site/src/assets/captures/docs-question-confirmation.png",
+      "site/src/assets/captures/docs-question-text.png",
+      "site/src/assets/captures/docs-question-visual-controls.png",
+      "site/src/assets/captures/docs-refinement-revised.png",
+      "site/src/assets/captures/docs-refinement.png",
+      "site/src/assets/captures/docs-schedule-injection.png",
+      "site/src/assets/captures/docs-session-export-menu.png",
+      "site/src/assets/captures/docs-session-export-zip.png",
+      "site/src/assets/captures/docs-session-review.png",
+      "site/src/assets/captures/docs-todos-completed.png",
+      "site/src/assets/captures/docs-todos-current.png",
+      "site/src/assets/captures/docs-tool-call.png",
+      "site/src/assets/captures/docs-tool-collapsed.png",
+      "site/src/assets/captures/docs-tool-command-output.png",
+      "site/src/assets/captures/docs-visual-question.png",
+      "site/src/assets/captures/docs-wait-all-result.png",
+      "site/src/assets/captures/docs-work-goal.png",
+      "site/src/assets/captures/docs-work-questions-todos.png",
+      "site/src/assets/captures/tasks/question-answer-phone.png",
+      "site/src/assets/captures/tasks/question-cancel-confirmation-desktop.png",
+      "site/src/assets/captures/tasks/question-wait-desktop.png",
+      "tests/fixtures/attention/earthscope_9478ecf2.json.gz",
+      "tests/fixtures/attention/vllm-attn-9e11e1571c5f/chatcmpl-9478ecf2002ea26e-9b6ebc3a_g0.safetensors",
+      "tests/fixtures/recorded_catalogs/models-dev.json.gz",
+      "external/gact-tui/web/src/test-fixtures/mesh/bricks.glb",
+      "external/gact-tui/web/src/test-fixtures/mesh/surface.glb",
+      "external/gact-tui/web/tests/fixtures/document-preview/docx.pdf",
+      "external/gact-tui/web/tests/fixtures/document-preview/pptx.pdf",
+      "external/gact-tui/web/tests/fixtures/document-preview/synthetic.docx",
+      "external/gact-tui/web/tests/fixtures/document-preview/synthetic.pptx",
+      "external/gact-tui/web/tests/fixtures/document-preview/synthetic.xlsx",
+      "external/gact-tui/web/tests/fixtures/document-preview/xlsx.pdf",
+      "external/gact-tui/web/tests/fixtures/gallery-sample.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/summarization-disclosure-collapsed-chromium-linux.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/summarization-disclosure-collapsed-chromium-win32.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-desktop-dark-chromium-linux.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-desktop-dark-chromium-win32.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-mobile-light-reduced-chromium-linux.png",
+      "external/gact-tui/web/tests/visual/snapshots/workspace.spec.ts/workspace-mobile-light-reduced-chromium-win32.png",
+      "external/clio-agent-marketplace/phenotype/impl/tests/__pycache__/test_config.cpython-312-pytest-9.1.1.pyc",
+      "external/clio-agent-marketplace/phenotype/impl/tests/__pycache__/test_pipeline.cpython-312-pytest-9.1.1.pyc",
+      "external/clio-agent-marketplace/phenotype/impl/tests/__pycache__/test_store.cpython-312-pytest-9.1.1.pyc",
+      "external/clio-agent-marketplace/phenotype/impl/tests/__pycache__/test_tool_titles.cpython-312-pytest-9.1.1.pyc",
+      "external/clio-agent-marketplace/phenotype/impl/tests/__pycache__/test_workload.cpython-312-pytest-9.1.1.pyc"
+    ],
+    "file_hash_count": 5321,
+    "file_hash_manifest_sha256": "12aa183fa38d7bc2b71ec17c736db2ff16b77d525578695509fac5c399125b70"
+  },
+  "prompt": "Please independently review CLIO's task implementation at core 47380c05437f7ceb9f2f9c4a8ca1855348437661, GACT 07745d5b63e16d1b1e46c0fdec9efda0d91ba0dc and marketplace 999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751 against docs/design/task-replacement-plan.md and docs/qualification/task-replacement-acceptance.md. Include stable sessions and finite assignments, intersession/distinct-workflow messaging, observation and waits, and asynchronous Questions collected through shared controls. Judge actual source and regression quality for correctness, maintainability and the ownership/removal design; report concrete findings with locations and separate architecture/source/qualification verdicts.\n\nRead-only: no edits, tests, services or product/model qualification. The initial R34 correction batch and regressions are constructed; scoped source checks passed and final tuple type checks are next. R34 behavior/live acceptance is unexecuted. SNAPSHOT.json identifies the committed sources; protected human references and bounded committed check receipts are included. Earlier reviewer reports are excluded.",
+  "remote_root": "/home/jcernuda/.cache/clio-task-review-47380c05-fable-r34",
+  "root": "/home/jcernuda/.cache/clio-task-review-47380c05-fable-r34",
+  "created_at": "2026-10-15T09:37:27.024657+00:00",
+  "controller_pid": 1165714,
+  "session_persistence": false,
+  "model_requested": "fable",
+  "source": {
+    "human_reference_sha256": {
+      "subagent-lifecycle-and-session-messaging.md": "ff64da10597e9c135096b1ee04b3aaee88cfdf41cdf7cb682cef65ad065781ca",
+      "agent-task-architecture-review-2026-10-12.md": "8837983e2ccdc5d14b7a95a36fe2bc823e9b89fb87a934645f1f5edcef0bcac6",
+      "session-recall-and-long-term-memory.md": "3ca040731ca1a895b717068c45b08940c8d8d24febb50c5612b29abe7d060ddd"
+    },
+    "created_at": "2026-10-15T09:37:19.200709+00:00",
+    "heads": {
+      "core": "47380c05437f7ceb9f2f9c4a8ca1855348437661",
+      "external/gact-tui/": "07745d5b63e16d1b1e46c0fdec9efda0d91ba0dc",
+      "external/clio-agent-marketplace/": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751"
+    },
+    "source": "committed source and design documents; no earlier reviewer reports supplied",
+    "file_count": 5321,
+    "bytes": 45102512,
+    "file_hash_count": 5321,
+    "file_hash_manifest_sha256": "12aa183fa38d7bc2b71ec17c736db2ff16b77d525578695509fac5c399125b70"
+  },
+  "files": 5322,
+  "cli_pid": 1166058,
+  "exit_code": 0,
+  "stderr": "",
+  "result": {
+    "duration_api_ms": 632367,
+    "stop_reason": "end_turn",
+    "session_id": "2efe931f-2198-4a63-b3c5-ecd413170f18",
+    "total_cost_usd": 12.565979500000001,
+    "usage": {
+      "input_tokens": 482,
+      "cache_creation_input_tokens": 468658,
+      "cache_read_input_tokens": 3225398,
+      "output_tokens": 47633,
+      "output_tokens_details": {
+        "thinking_tokens": 31974
+      },
+      "server_tool_use": {
+        "web_search_requests": 0,
+        "web_fetch_requests": 0
+      },
+      "service_tier": "standard",
+      "cache_creation": {
+        "ephemeral_1h_input_tokens": 468658,
+        "ephemeral_5m_input_tokens": 0
+      },
+      "inference_geo": "global",
+      "iterations": [
+        {
+          "input_tokens": 32,
+          "output_tokens": 2977,
+          "cache_read_input_tokens": 464721,
+          "cache_creation_input_tokens": 7046,
+          "cache_creation": {
+            "ephemeral_5m_input_tokens": 0,
+            "ephemeral_1h_input_tokens": 7046
+          },
+          "type": "message"
+        }
+      ],
+      "speed": "standard",
+      "fallback_credit": null
+    },
+    "modelUsage": {
+      "claude-fable-5-1": {
+        "inputTokens": 482,
+        "outputTokens": 47633,
+        "cacheReadInputTokens": 3225398,
+        "cacheCreationInputTokens": 468658,
+        "webSearchRequests": 0,
+        "costUSD": 12.565979500000001,
+        "contextWindow": 1000000,
+        "maxOutputTokens": 64000,
+        "thinkingTokens": 31974,
+        "canonicalModel": "claude-fable-5-1",
+        "provider": "firstParty",
+        "costBasis": "list"
+      }
+    },
+    "permission_denials": [],
+    "terminal_reason": "completed",
+    "fast_mode_state": "off",
+    "fast_mode_disabled_reason": "sdk_opt_in_required",
+    "subagent_stats": {
+      "spawned": 0,
+      "requested": {
+        "background": 0,
+        "foreground": 0,
+        "unset": 0
+      },
+      "started_in_background": 0,
+      "max_depth": 0,
+      "spawned_by_subagents": 0,
+      "completed": 0,
+      "failed": 0,
+      "killed": {
+        "parent": 0,
+        "user": 0,
+        "system": 0
+      },
+      "refused": {
+        "depth_limit": 0,
+        "concurrency_limit": 0,
+        "budget": 0
+      },
+      "by_type": {}
+    },
+    "safety_stops": 0,
+    "is_error": false,
+    "num_turns": 121,
+    "subtype": "success",
+    "api_error_status": null,
+    "result": "Memory saving is not possible here: no write tool is exposed in this read-only session, so I am skipping it and delivering the review.\n\n# Independent review: CLIO task replacement, R34 candidate\n\nReviewed core `47380c05`, GACT `07745d5b`, marketplace `999fdafa` against the R2 plan and acceptance ledger. Read-only. No tests, services or models were run.\n\n## Verdicts\n\n| Area | Verdict | Summary |\n| --- | --- | --- |\n| Architecture | **Accept** | Matches the R2 contract. One typed snapshot, one Core writer, passive indexes, owner-separated transitions, Questions through shared controls, no driver or scheduler restored. |\n| Source | **Not release-ready, no blocker found in the R34 corrections** | All six R34 corrections are implemented where the map says. Two medium semantic defects and several low issues remain. |\n| Qualification | **Blocked, honestly reported** | R34 behavior cases unexecuted, final type checks not on the committed head, TypeScript pending, Q1\u2013Q9 and R1\u2013R6 untouched. |\n\n## Architecture\n\nThe committed sources implement the ownership split the plan requires.\n\n- **One representation.** `TaskSnapshot` in `src/clio_agent/arc/task_types.py:134` covers all seven kinds, with immutable identity and custody checks in `validate_identity` and `validate_custody`. Missing legacy descriptions stay explicit.\n- **One writer.** `TaskHistory` in `src/clio_agent/gact/task_history.py:60` is the only Core writer. Content is written before references, index writes follow the semantic event, and a failed write raises the recovery hold rather than rolling anything back. Indexes are rebuilt from history in `task_history_projection.restore`.\n- **Owners decide transitions.** The conversation engine alone settles assignments (`conversation_assignments._finish_segment`), `QuestionCommands` alone answers or cancels Questions, native and external owners publish observations, and `TaskOperations` only reads, waits, subscribes and delegates cancellation to the owner.\n- **Delivery acknowledgement is single.** `SessionMail.commit` at `session_mail.py:186` records the sole `RecipientInput`. Query and observe return `collect=False` results that never acknowledge. Explicit collection and automatic delivery share that boundary through `StepRecorder.commit_input`.\n- **Removal.** The guard in `scripts/check_task_replacement_removal.py` denies every module in the plan inventory, retired symbols, state attributes and configuration keys, with no compatibility exemption. The only historical exemption is the `user_questions` string in `task_migration.py`, and `tests/test_tools/test_task_removal_guard.py` proves attribute use is still rejected. Shipped aliases in `task_declarations.build_task_compatibility_tools` are pure delegates.\n\nTwo architectural notes, neither a defect against the plan:\n\n- Every retained task, mail item and recipient input lives in process memory after replay. The plan permits full-history replay pending the F03 measurement, but there is no bound on index growth for long-lived installs.\n- `TaskAccess.rights` takes the writer lock on each call and is invoked per candidate row inside query and observe loops. Contention is unmeasured.\n\n## Source findings\n\n**R34 corrections verified in code**\n\n| Correction | Location | Regression |\n| --- | --- | --- |\n| Typed disclosure denial no longer fails the assignment | `agents/clio_react_record.py:427`, `:621` | `tests/test_arc/test_conversation_disclosure_survival.py` runs the real runner and owner |\n| Wait keeps per-member read/observe requirements | `task_operations.py:60`, `task_declarations.py:428` | `tests/test_arc/test_wait_disclosure_contracts.py`, twelve cases |\n| Runs no longer calls a partial workflow completed | `external/gact-tui/web/src/routes/runs-page.tsx:223` | recorded and historical cases in the runs contract test |\n| Compatibility pages keep cursors, pending Questions selected before paging | `routes/tasks.py:242`, `:330`; `packages/core/src/v3/session-observability-repository.ts:239` | `tests/test_arc/test_task_projection_pages.py`, `task-projection-pages.test.ts`, `task-page-continuation.test.tsx` |\n| Failed child creation reuses the session address | `conversation_assignments.py:424`, `sessions.py:376`, `task_runtime.py:134` | `tests/test_arc/test_child_creation_recovery.py`, four fault points |\n| Question guidance separates Question and assignment outcomes | `factorio-flat/.../references/task-lifecycle.md:19` | `marketplace/tests/test_native_orchestration_prompt_contract.py:35` |\n\n**Medium**\n\n- **A Stop before input commit is undone by any later eligible arrival.** `conversations.py:270` releases every input held as `stopped_before_input_commit` whenever another eligible item exists, including a background task result or peer message. The same item is offered for explicit retry by `session_input.capture_retry_input`. So a human who pressed Stop can see that message run later without acting, which contradicts the plan's rule that other wake signals cannot retry a held input. Release should require a human or composer arrival, or the explicit retry path only.\n- **`wait_tasks(return_when=\"any\")` returns on an error row.** `task_operations.py:315` treats `task_unavailable` and `cannot_wait_for_own_active_assignment` outcomes as satisfying \"any\", so a list with one bad handle returns immediately with every real member still pending and `timed_out: False`. The prompt tells models invalid members do not affect others, but a model will read this as settlement. Error rows should not count toward the any-condition.\n\n**Low**\n\n- The SessionStart hook is never dispatched for a trusted child whose lifecycle observation failed once. `sessions.py:428` keeps the session and re-raises, and the reuse path returns before the hook. The test at `test_child_creation_recovery.py:106` encodes this as expected.\n- `run_workflow` passes its result through `_collected`, which drops observe metadata for pending handles and step task IDs. Own-tree rights make this harmless today.\n- GACT Work and Observability load only active tasks at `web/src/hooks/use-session-observability.ts:35`. Terminal children that are not in live transcript entities disappear after reload and exist only in Runs. This may be intended compaction but it is not stated anywhere.\n- Cosmetic: duplicate `TASK_CALL` import in `task_declarations.py:179`, local `logging` import in `conversations.py:140`.\n\nChecked and found correct: tree scoping never grants ancestor or sibling rights; exact-handle grants do not reach successors; subscriptions require read and observe and cannot consume owner delivery; attention and final notices have distinct identities; Question expiry and answers arbitrate under the writer lock; restart refuses to launch on uncertain settlement; `TurnRunner` releases the slot only after physical worker exit.\n\n## Qualification\n\nThe ledger and the R34 construction receipt are accurate about what was not done.\n\n- No R34 behavioral case has executed. The twenty-six R33 passes in `task-replacement-r33-component-checks.json` are against core `24e7dfbb`, not this head.\n- The receipt states Linux Mypy passed nine files before the final trusted-session retention change, so the committed head has no complete type check. TypeScript is recorded as pending.\n- F03, exact-head CI, legacy test migration, Q1\u2013Q9, R1\u2013R6, migration idempotence and all live families remain blocked. Nothing here authorizes a release.\n\nThe regressions themselves are of good quality. They use real Core, the production owners and the actual runner, inject faults at write boundaries, and assert non-disclosure by content rather than by status codes.\n\n## What to do next\n\n1. Decide the Stop-release semantics and adjust `conversations.py:270` with a regression that a task result alone does not re-admit a stopped human input.\n2. Exclude error rows from the any-wait condition and add a mixed-member case to `test_wait_disclosure_contracts.py`.\n3. Run the constructed R34 cases and the full type checks on `47380c05` before renewing the source reviews.",
+    "ttft_ms": 1906,
+    "type": "result",
+    "duration_ms": 633228,
+    "uuid": "b5f42fb7-c5eb-4820-8e0c-4a9dd3ac989d",
+    "ttft_stream_ms": 1783,
+    "time_to_request_ms": 111,
+    "first_content_frame_ms": 1783,
+    "queued_turn_count": 0,
+    "result_index": 0
+  },
+  "model_identities": [
+    "claude-fable-5-1"
+  ],
+  "cli_settled": true,
+  "ended_at": "2026-10-15T09:48:02.367390+00:00",
+  "root_absent": true,
+  "remote_receipt_sha256": "da229c459fd4fec5c2f30132a626d1bcd7fd42ebbfb2b75d4168365bf43948e9",
+  "retrieved_at": "2026-10-15T09:49:23.095054+00:00",
+  "remote_receipt_cleanup": {
+    "remote_receipt_absent": true
+  }
+}

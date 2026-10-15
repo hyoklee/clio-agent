@@ -1,0 +1,22 @@
+{
+  "candidate": "R35 initial correction candidate",
+  "reviewed_predecessor": {
+    "core": "47380c05437f7ceb9f2f9c4a8ca1855348437661",
+    "gact": "07745d5b63e16d1b1e46c0fdec9efda0d91ba0dc",
+    "marketplace": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751"
+  },
+  "execution_repository": "D:/Libraries/Documents/projects/clio-agent-task-qualification",
+  "source_correction": "Known unfinished session initialization and actual query-page error propagation, through existing owners.",
+  "checks": {
+    "python": "Scoped Ruff/format and Linux Mypy passed.",
+    "core_guards": "Removal, size, class and swallow guards passed with unchanged limits.",
+    "frontend": "Scoped Prettier/Oxlint and six existing guards passed with unchanged limits.",
+    "final_tuple_types": "Pending on the committed candidate."
+  },
+  "retained_static_failure": "Mypy rejected the Any/getattr condition in the lifecycle observer. The callback now names its actual Session type and reads the typed field; no suppression added.",
+  "behavioral_checks_executed": false,
+  "live_qualification_executed": false,
+  "reviews": "R34 architecture supported; R35 source review pending.",
+  "qualification": "Legacy migration, F03, exact-head CI and Q1-Q9/R1-R6 remain required.",
+  "cleanup": "No product/native/model/browser qualification launched. Review processes and remote temporary source/result data settled and were removed. No new C runtime/test deployment. Rejected/manual-only roots preserved."
+}

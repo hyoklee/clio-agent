@@ -215,6 +215,9 @@ class Session:
     # Trusted child creation identity; immutable through public session updates.
     # It names creation metadata, never an execution/retry policy.
     creation_digest: str = ""
+    creation_lifecycle_confirmed: bool = False
+    # A missing legacy receipt is unknown, never permission to replay a hook.
+    creation_hook_state: str = "unknown"
     # Routing override. "auto" runs the LM-based router; "chat" forces
     # every turn through the chat path; "experts" rejects chat/none
     # routes (raises a routing error) so users can lock the session
@@ -239,6 +242,8 @@ class Session:
         wire["status"] = normalize_stored_status(self.status)
         wire.pop("approval_profile", None)
         wire.pop("creation_digest", None)
+        wire.pop("creation_lifecycle_confirmed", None)
+        wire.pop("creation_hook_state", None)
         # cost_known is bookkeeping, not part of the wire contract -- it
         # decides whether cost_usd is a real number or null, never rides
         # along itself (#775: no turn ever reporting a cost must read as
@@ -369,8 +374,9 @@ class SessionStore:
 
         Trusted conversation owners may supply a stable creation identity and
         request digest. A matching existing child is returned without replaying
-        lifecycle hooks or replacing human-edited settings. This does not start
-        or repeat model execution.
+        completed initialization or replacing human-edited settings. Known
+        unfinished initialization resumes; an admitted hook without a confirmed
+        receipt reports uncertainty. This never starts or repeats model execution.
         """
 
         if bool(creation_id) != bool(creation_digest) or (
@@ -407,6 +413,7 @@ class SessionStore:
             approval_mode=approval_mode if approval_mode in valid_approval_modes else "ask",
             approval_profile=(approval_profile if approval_profile in _SERVER_PROFILES else ""),
             creation_digest=creation_digest,
+            creation_hook_state="pending" if creation_id else "unknown",
         )
         with self._lock:
             existing = self._sessions.get(sid)
@@ -419,14 +426,26 @@ class SessionStore:
                     or existing.agent != sess.agent
                 ):
                     raise ValueError("Session creation identity was reused with different work")
-                # An earlier flush can fail before task acceptance. Reconfirm this
-                # existing address without firing creation hooks or model execution.
+                # Reconfirm the original address, then resume only initialization
+                # that is known unfinished. Completed work is never repeated.
                 self._flush()
-                return existing
-            self._sessions[sid] = sess
-            self._flush()
+                if existing.creation_hook_state == "completed":
+                    if not existing.creation_lifecycle_confirmed:
+                        raise ValueError("Session initialization receipts are inconsistent")
+                    return existing
+                sess = existing
+            else:
+                self._sessions[sid] = sess
+                self._flush()
         try:
-            self._observe_lifecycle("session.created", sess)
+            if not creation_id or not sess.creation_lifecycle_confirmed:
+                if creation_id and self._lifecycle_observer is None:
+                    raise RuntimeError("Trusted session creation requires its lifecycle observer")
+                self._observe_lifecycle("session.created", sess)
+                if creation_id:
+                    with self._lock:
+                        sess.creation_lifecycle_confirmed = True
+                        self._flush()
         except BaseException:
             # Trusted task creation can already have a confirmed Core event
             # whose reply was lost. Retain its stable address for reconciliation.
@@ -437,9 +456,22 @@ class SessionStore:
                 self._sessions.pop(sid, None)
                 self._flush()
             raise
-        # P2.3 SessionStart lifecycle hook (observation): fires exactly once per
-        # created session, after it is persisted. Never blocks — the dispatcher
-        # returns a no-op outcome when no hook is configured.
+        # Reuse known-unattempted initialization. An admitted hook with no
+        # completion receipt is uncertain and must never be replayed by reuse.
+        if creation_id:
+            with self._lock:
+                if sess.creation_hook_state != "pending":
+                    raise RuntimeError(
+                        f"SessionStart effects are unconfirmed for {sid}; inspect before retrying"
+                    )
+                sess.creation_hook_state = "started"
+                try:
+                    self._flush()
+                except BaseException:
+                    # This process knows the hook was never called. A restart
+                    # seeing a persisted 'started' receipt remains uncertain.
+                    sess.creation_hook_state = "pending"
+                    raise
         from clio_agent.gact.hooks import dispatch_session_start  # noqa: PLC0415
 
         dispatch_session_start(
@@ -451,6 +483,10 @@ class SessionStore:
                 "mode": sess.mode,
             },
         )
+        if creation_id:
+            with self._lock:
+                sess.creation_hook_state = "completed"
+                self._flush()
         return sess
 
     def get(self, sid: str) -> Optional[Session]:

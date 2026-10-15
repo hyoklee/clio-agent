@@ -25,9 +25,12 @@ from clio_agent.gact import context
 from clio_agent.gact.agents.clio_react_record import StepRecorder
 from clio_agent.gact.conversations import ConversationOutcome, Conversations, ConversationSegment
 from clio_agent.gact.core_recovery import CoreRecovery
+from clio_agent.gact.events import EventBus
 from clio_agent.gact.native_work import now
+from clio_agent.gact.provenance_wiring import install_session_lifecycle_observer
 from clio_agent.gact.question_surface import answer_question
 from clio_agent.gact.questions import QuestionCommands
+from clio_agent.gact.semantic_events import NoopSemanticTraceBackend, SemanticEventSink
 from clio_agent.gact.session_input import withdraw_message_inputs
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskCaller
@@ -105,6 +108,12 @@ async def create_environment(
         ), root
 
     app, root = await asyncio.to_thread(records)
+    app.state.arc, app.state.bus = arc, EventBus()
+    app.state.semantic_event_sink = SemanticEventSink(
+        bus=app.state.bus, trace_backend=NoopSemanticTraceBackend()
+    )
+    arc.set_highway_sink(app.state.semantic_event_sink.emit)
+    install_session_lifecycle_observer(app)
 
     async def unavailable_model(segment: ConversationSegment) -> ConversationOutcome:
         pytest.fail(f"No inference in this test: {segment.session_id}")

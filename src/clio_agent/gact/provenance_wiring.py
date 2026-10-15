@@ -9,10 +9,14 @@ code, called from ``build_app`` / ``_lifespan`` as one-liners.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact.off_loop import schedule_off_loop
 from clio_agent.gact.runtime.globals import _emit_semantic_event
+from clio_agent.gact.semantic_events import semantic_event_from_events_content
+
+if TYPE_CHECKING:
+    from clio_agent.gact.sessions import Session
 
 
 def wire_artifact_provenance(app: Any, store_root: Path) -> Any:
@@ -36,11 +40,37 @@ def install_session_lifecycle_observer(app: Any) -> None:
     sessions open.
     """
 
-    def _observe_session_lifecycle(event_type: str, session: Any) -> None:
+    def _observe_session_lifecycle(event_type: str, session: Session) -> None:
         # #1334: ``SessionStore.create/delete`` are called inline by async routes; the
         # event's store RPC must not run on the loop thread, so it is dispatched off it
         # when a loop runs here (inline otherwise), failures audited + logged.
         def _emit() -> None:
+            if event_type == "session.created" and session.creation_digest:
+                # A prior publication may be durable even when its reply or
+                # derived notification failed. Read its existing Core evidence;
+                # do not repeat the provenance/hook fanout merely to reuse a row.
+                arc = getattr(app.state, "arc", None)
+                if arc is None:
+                    raise RuntimeError("Trusted session creation requires its Core provenance")
+                for segment in arc.list_segments(str(session.id), "_events"):
+                    if segment.kind != "semantic_event":
+                        continue
+                    event = semantic_event_from_events_content(
+                        segment.content, session_id=str(session.id)
+                    )
+                    if event.event_type != event_type:
+                        continue
+                    expected = {
+                        "workspace_id": session.workspace_id,
+                        "parent_session_id": session.parent_session_id,
+                        "agent": dict(session.agent),
+                        "started_at": session.created_at,
+                    }
+                    if event.trace_id != f"session:{session.id}" or any(
+                        event.payload.get(key) != value for key, value in expected.items()
+                    ):
+                        raise ValueError("Stored session creation provenance changed")
+                    return
             _emit_semantic_event(
                 app,
                 str(session.id),
