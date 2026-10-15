@@ -44,6 +44,7 @@ class ContextReader:
         self._closed: list[Message] = []
         self.snapshot: Any = None
         self._acknowledged: frozenset[str] = frozenset()
+        self._observed: frozenset[str] = frozenset()
         self._input_messages: dict[str, list[Any]] = {}
 
     def read(self) -> list[Message]:
@@ -77,6 +78,11 @@ class ContextReader:
         acknowledged = (
             history.acknowledged_notifications(self.session) if history is not None else frozenset()
         )
+        observed = (
+            history.committed_observations(self.session, self.scope)
+            if history is not None
+            else frozenset()
+        )
         segments = model_context_segments(
             snapshot.segments, history, self.session, self.scope, cache=self._input_messages
         )
@@ -85,9 +91,11 @@ class ContextReader:
             snapshot.generation != self._generation
             or len(segments) < self._closed_upto
             or acknowledged != self._acknowledged
+            or observed != self._observed
         ):
             self._generation = snapshot.generation
             self._acknowledged = acknowledged
+            self._observed = observed
             self._closed_upto = 0
             self._closed = []
         boundary = _last_boundary(segments, self._closed_upto)
@@ -139,7 +147,9 @@ def model_context_segments(
             result.extend(messages)
         elif (
             segment.kind == "observation"
-            and segment.content.get("notification_ids")
+            and (
+                segment.content.get("notification_ids") or segment.content.get("task_read_handles")
+            )
             and str(segment.id) not in proofs
         ):
             result.append(

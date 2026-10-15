@@ -1,0 +1,1138 @@
+{
+  "tests\\test_gact\\test_a2ui_actions.py": {
+    "imports": [
+      "clio_agent.gact.loop_inbox"
+    ],
+    "tests": [
+      "test_duplicate_submission_returns_same_record_no_second_turn",
+      "test_two_distinct_timestamps_create_two_records",
+      "test_running_session_steers_and_the_drain_consumes_the_record",
+      "test_waiting_user_surface_tagged_question_resumes_with_context",
+      "test_waiting_user_uncorrelated_action_refuses_409",
+      "test_permission_destination_resolves_in_scope_permission_only",
+      "test_permission_destination_unknown_permission_id_returns_typed_404",
+      "test_standalone_approval_without_permission_id_delivers_to_agent",
+      "test_standalone_approval_cancel_without_permission_id_delivers_to_agent",
+      "test_action_card_custom_event_unaffected_by_permission_routing",
+      "test_run_cancel_destination_cancels_the_session",
+      "test_run_retry_destination_queues_the_existing_owner_attempt",
+      "test_foreign_surface_data_model_dropped_while_action_still_delivers",
+      "test_validation_failed_repairs_once_then_exhausts_and_fails_the_surface",
+      "test_generic_client_error_persisted_never_delivered",
+      "test_error_envelope_routes_before_surface_lookup",
+      "test_interactions_row_flips_pending_to_answered_once_delivered",
+      "test_mark_consumed_transitions_delivered_record_and_publishes_event",
+      "test_preserve_a2ui_keeps_both_surface_and_action_parts",
+      "test_undo_preserves_action_record_from_removed_message"
+    ]
+  },
+  "tests\\test_gact\\test_a2ui_actions_narration.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox"
+    ],
+    "tests": [
+      "test_declared_narration_renders_template_and_still_carries_context_json",
+      "test_steer_lane_carries_the_identical_declared_narration_text",
+      "test_undeclared_event_delivers_legacy_form_and_records_reason_once",
+      "test_overlong_rendered_narration_is_bounded_with_truncation_marker"
+    ]
+  },
+  "tests\\test_gact\\test_a2ui_capabilities.py": {
+    "imports": [
+      "clio_agent.gact.agent_message_transport",
+      "clio_agent.gact.turn_spawn"
+    ],
+    "tests": [
+      "test_parse_client_capabilities_absent_is_none",
+      "test_parse_client_capabilities_valid",
+      "test_parse_client_capabilities_malformed_raises_typed_reason",
+      "test_parse_client_capabilities_inline_catalogs_refused",
+      "test_parse_client_data_model_absent_is_none",
+      "test_parse_client_data_model_valid",
+      "test_parse_client_data_model_malformed_raises_typed_reason",
+      "test_remember_and_read_back_client_capabilities",
+      "test_remembered_capabilities_survive_a_restart",
+      "test_a_later_advertisement_overwrites_the_earlier_one",
+      "test_agent_capabilities_server_wide_matches_official_shape",
+      "test_agent_capabilities_session_scoped_is_the_builtin_main_declaration",
+      "test_agent_capabilities_session_scoped_follows_declared_order",
+      "test_select_catalog_no_advertisement_is_typed_unknown",
+      "test_select_catalog_follows_the_agent_declared_order",
+      "test_select_catalog_no_intersection_is_typed_no_match",
+      "test_select_catalog_preferred_wins_only_when_in_both_sets",
+      "test_strip_renderer_metadata_removes_only_renderer_keys",
+      "test_strip_renderer_metadata_is_a_noop_on_falsy_input",
+      "test_session_requested_send_data_model_false_with_no_surfaces",
+      "test_blueprint_a2ui_capability_ids_is_empty_without_a_declaring_blueprint",
+      "test_message_in_process_passes_metadata_through_unchanged",
+      "test_message_in_process_handles_no_metadata",
+      "test_spawn_child_turn_never_forwards_renderer_metadata",
+      "test_v1_capabilities_carries_official_a2ui_capabilities_object",
+      "test_session_capabilities_route_unknown_session_404",
+      "test_session_capabilities_route_shape",
+      "test_post_message_malformed_capabilities_422",
+      "test_post_message_inline_catalogs_422",
+      "test_post_message_data_model_without_a_requesting_surface_422",
+      "test_post_message_valid_capabilities_are_remembered",
+      "test_post_message_data_model_is_carried_through_renamed",
+      "test_action_route_rejects_unknown_top_level_fields",
+      "test_action_route_accepts_and_remembers_metadata",
+      "test_action_route_malformed_capabilities_422",
+      "test_agent_rows_carry_a2ui_capabilities",
+      "test_agent_detail_route_carries_a2ui_capabilities",
+      "test_steer_door_malformed_capabilities_422_and_not_remembered",
+      "test_steer_door_valid_capabilities_remembered_on_child_session",
+      "test_steer_door_data_model_checked_against_the_childs_own_surfaces",
+      "test_pack_blueprint_session_capabilities_route_lists_the_pack_catalog",
+      "test_pack_blueprint_select_catalog_picks_it_when_client_lists_it_first",
+      "test_pack_blueprint_agent_row_for_that_session_carries_it",
+      "test_agent_blueprint_detail_route_carries_a2ui_capabilities"
+    ]
+  },
+  "tests\\test_gact\\test_a2ui_pack_composability.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox"
+    ],
+    "tests": [
+      "test_pack_catalog_producible_with_file_sidecar_and_instructions",
+      "test_pack_catalog_listed_in_server_wide_capabilities",
+      "test_unnamed_selection_follows_the_agent_order_not_the_client_order",
+      "test_generated_station_skill_states_the_catalog_json_catalog_id",
+      "test_create_surface_from_worked_example_naming_its_catalog",
+      "test_idle_action_delivers_and_starts_a_turn_with_context_verbatim",
+      "test_duplicate_submission_is_one_record_and_one_turn",
+      "test_empty_station_ids_is_422_event_context_invalid",
+      "test_skills_block_lists_the_pack_catalog_skill",
+      "test_load_skill_station_picker_fragment_is_fixed_to_multiple_selection",
+      "test_waiting_user_scene_resumes_the_correlated_question_with_context"
+    ]
+  },
+  "tests\\test_gact\\test_a2ui_v3.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox"
+    ],
+    "tests": [
+      "test_surface_tool_presentation_uses_the_surface_as_its_qualifying_subject",
+      "test_surface_tool_presentation_classifies_noninteractive_text",
+      "test_surface_tool_presentation_derives_input_from_a_pack_alias",
+      "test_surface_lifecycle_persists_and_reconciles",
+      "test_http_producer_reports_which_surfaces_the_batch_created",
+      "test_legacy_a2ui_ledger_is_retained_and_reported_as_superseded",
+      "test_message_batch_rejects_delete_followed_by_update_atomically",
+      "test_a2ui_message_eviction_preserves_create_and_reports_typed_count",
+      "test_complete_component_update_compacts_the_superseded_snapshot",
+      "test_fix_touching_fewer_ids_than_the_bad_update_still_folds_it_away",
+      "test_grid_gap_above_catalog_bound_is_rejected_without_persisting",
+      "test_message_revisions_are_present_and_monotonic_per_slot",
+      "test_surface_ids_are_scoped_to_each_session",
+      "test_unknown_component_and_executable_url_are_rejected",
+      "test_renderer_required_component_properties_are_rejected_before_persistence",
+      "test_catalog_components_are_closed_and_require_id_and_component",
+      "test_diff_paths_are_content_while_binding_paths_remain_json_pointers",
+      "test_unknown_persisted_a2ui_version_is_quarantined_with_typed_reason",
+      "test_persisted_a2ui_part_carries_protocol_and_ordered_payload",
+      "test_mermaid_component_is_trusted_but_executable_directives_are_rejected",
+      "test_registered_form_action_gets_a_server_surface_update",
+      "test_action_route_requires_a2ui_negotiation_and_tolerates_extensions",
+      "test_undeclared_action_destination_defaults_to_agent",
+      "test_root_agent_tool_produces_surface_and_transcript_reference",
+      "test_root_agent_tool_updates_one_stable_transcript_reference",
+      "test_root_agent_tool_reports_creation_and_the_session_surface_registry",
+      "test_root_agent_tool_reports_an_update_of_an_existing_surface_id",
+      "test_root_agent_tool_lists_every_live_surface_id_in_the_session",
+      "test_root_agent_tool_bounds_the_reported_surface_registry",
+      "test_root_agent_tool_registry_excludes_a_deleted_surface",
+      "test_root_agent_tool_registry_is_scoped_to_the_active_session",
+      "test_root_agent_tool_documents_how_to_revise_an_existing_surface",
+      "test_server_and_tool_reject_string_accessibility_before_persisting",
+      "test_server_accepts_accessibility_object_and_data_binding",
+      "test_server_rejects_a_double_wrapped_component_action",
+      "test_agent_submit_delivers_without_any_text_or_prompt_context",
+      "test_server_accepts_a_bounded_scientific_map",
+      "test_server_rejects_out_of_range_map_coordinates",
+      "test_server_accepts_registered_csv_chart",
+      "test_server_rejects_ambiguous_chart_sources",
+      "test_root_agent_tool_rejects_batch_atomically",
+      "test_root_agent_tool_requires_the_renderer_root_atomically",
+      "test_root_agent_tool_recreates_a_deleted_surface",
+      "test_deleted_surface_cannot_resurrect_across_requests_without_create",
+      "test_http_part_written_during_a_live_surface_folds_after_its_create",
+      "test_repeated_correlation_part_id_is_rejected_with_a_typed_error",
+      "test_concurrent_producers_cannot_double_create_one_surface",
+      "test_frozen_transcript_returns_the_typed_tool_reason",
+      "test_v3_transcript_route_folds_a2ui_parts_chronologically",
+      "test_agent_submit_queues_on_the_existing_inbox_while_a_turn_is_in_flight",
+      "test_agent_submit_starts_with_resolved_structured_surface_context",
+      "test_agent_submit_clears_a_stale_cancel_flag_before_staging",
+      "test_partial_component_update_keeps_earlier_definitions_on_replay",
+      "test_bound_url_properties_are_accepted_scheme_enforced_on_literals_only",
+      "test_projection_copies_surface_records_a_bounded_number_of_times"
+    ]
+  },
+  "tests\\test_gact\\test_action_cards.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks"
+    ],
+    "tests": [
+      "test_action_card_part_wire_shape_matches_frozen_contract",
+      "test_action_card_part_omits_empty_actions",
+      "test_action_card_part_status_is_overridable",
+      "test_emit_with_no_active_turn_creates_visible_message_part",
+      "test_raise_alert_card_from_child_emits_into_parent_with_discuss_handle",
+      "test_raise_alert_card_source_falls_back_to_expert_id_without_blueprint",
+      "test_raise_alert_card_accepts_bare_string_stub_actions",
+      "test_raise_alert_card_reports_skipped_unsupported_stub_actions",
+      "test_raise_alert_card_without_parent_returns_typed_error",
+      "test_raise_alert_card_with_parent_but_no_task_row_returns_distinct_typed_error",
+      "test_emit_while_parent_turn_is_live_lands_through_the_real_ledger",
+      "test_emit_against_a_frozen_ledger_reports_typed_drop_not_silent",
+      "test_raise_alert_card_against_a_frozen_parent_ledger_reports_typed_drop",
+      "test_raise_alert_card_auto_attached_for_blueprint_react_expert_with_curated_tools",
+      "test_raise_alert_card_auto_attached_for_tool_user_agent_with_curated_tools"
+    ]
+  },
+  "tests\\test_gact\\test_artifacts_pagination_children.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks"
+    ],
+    "tests": [
+      "test_include_children_pagination_reconstructs_full_set_no_dupes_no_gaps",
+      "test_include_children_pagination_limit_below_default_still_covers_full_set"
+    ]
+  },
+  "tests\\test_gact\\test_artifacts_s4.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks"
+    ],
+    "tests": [
+      "test_decide_version_v1_on_empty_chain",
+      "test_decide_version_dedup_same_sha",
+      "test_decide_version_new_content_stamps_revision_edge",
+      "test_decide_version_kind_locked_at_v1_warns",
+      "test_decide_version_stat_pinned_never_dedups",
+      "test_decide_version_drift_unchanged_head_is_noop",
+      "test_decide_version_drift_relink_by_hash_records_custody_gap",
+      "test_decide_version_drift_undesignated_overwrite_gap_when_lease_dirty",
+      "test_decide_version_drift_undesignated_overwrite_auto_mint_when_lease_clean",
+      "test_chain_v1_created_v2_version_added_and_alias_moved",
+      "test_dedup_same_bytes_twice_one_version_via_brain",
+      "test_kind_mismatch_on_mint_keeps_v1_kind_and_warns",
+      "test_reconcile_unchanged_head_is_noop",
+      "test_reconcile_relink_by_hash_records_custody_gap",
+      "test_reconcile_gap_version_when_lease_dirty",
+      "test_reconcile_auto_mint_when_lease_clean",
+      "test_reconcile_unknown_name_is_skip",
+      "test_fold_version_added_rebuilds_chain_with_edge",
+      "test_fold_out_of_order_version_events_rebuild_same_head",
+      "test_fold_alias_moved_last_writer_wins_order_independent",
+      "test_fold_full_log_shuffled_is_deterministic",
+      "test_fold_stale_alias_move_is_typed_noop",
+      "test_single_version_decision_point_no_number_assignment_elsewhere",
+      "test_no_inline_version_number_arithmetic_outside_the_helper",
+      "test_version_added_and_alias_moved_reach_ui",
+      "test_alias_move_route_and_ref_resolution_live",
+      "test_move_latest_alias_is_refused_422",
+      "test_version_wire_carries_revision_edge",
+      "test_relink_reobservation_is_idempotent_grows_by_exactly_one",
+      "test_seam_a_external_overwrite_reobservation_is_gap_not_false_tool_mint",
+      "test_seam_a_revert_reobservation_relinks_not_false_tool_mint",
+      "test_seam_a_genuine_write_during_call_mints_normally",
+      "test_lease_clean_single_quiet_session",
+      "test_lease_dirty_two_active_tasks_one_workspace",
+      "test_lease_clean_ignores_terminal_task_and_other_workspace",
+      "test_lease_dirty_concurrent_session_same_workspace",
+      "test_lease_dirty_outside_active_call_is_not_latched",
+      "test_observer_completed_clears_the_call_stamp",
+      "test_live_alias_move_stale_refused_identically_to_fold",
+      "test_vn_grammar_alias_rejected_at_route",
+      "test_vn_and_latest_alias_rejected_at_record_layer"
+    ]
+  },
+  "tests\\test_gact\\test_artifacts_s5.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks"
+    ],
+    "tests": [
+      "test_environment_tier_lockfile_hash_when_uv_lock_present",
+      "test_environment_declared_when_lockfile_unreachable",
+      "test_replay_reproducible_requires_tier_and_pinned_inputs",
+      "test_replay_rerunnable_when_env_below_lockfile",
+      "test_replay_rerunnable_when_an_input_is_unpinned",
+      "test_tier_order_total",
+      "test_used_edge_match_hash_pair",
+      "test_used_edge_changed_input_mints_gap_first",
+      "test_used_edge_external_when_not_registered",
+      "test_used_edge_over_threshold_stat_pinned",
+      "test_used_edge_none_for_non_path_and_output_args",
+      "test_used_edge_none_for_path_outside_workspace",
+      "test_record_transform_emits_trace_only_event_keyed_by_call_id",
+      "test_failed_transform_is_recorded",
+      "test_observe_tool_transform_end_to_end",
+      "test_ndp_stage_resource_authority_edge",
+      "test_ndp_catalog_details_authority_edges",
+      "test_non_ndp_result_yields_no_authority_edge",
+      "test_transform_fold_from_synthetic_payload_and_idempotency",
+      "test_transform_from_payload_rejects_missing_call_id",
+      "test_transform_event_is_in_boot_fold_set",
+      "test_lineage_upstream_from_plot_finds_activity_and_inputs",
+      "test_lineage_downstream_from_input_finds_plot",
+      "test_lineage_depth_bounds_traversal",
+      "test_lineage_revision_of_edge_downstream",
+      "test_lineage_unknown_artifact_is_none",
+      "test_route_session_transforms_and_lineage",
+      "test_used_edge_serializes_as_relay_artifact_use",
+      "test_stat_pinned_edge_is_not_a_relay_artifact_use",
+      "test_transform_extras_ride_relay_artifact_ref_metadata",
+      "test_used_edge_serializes_as_relay_artifact_use_fixture",
+      "test_transform_extras_ride_relay_artifact_ref_metadata_fixture",
+      "test_relay_fixture_pins_the_mirrored_commit",
+      "test_used_edge_freshness_guard_skips_freshly_written_output",
+      "test_used_edge_freshness_guard_off_when_no_call_start",
+      "test_used_edge_relative_bare_path_resolves_against_workspace_root",
+      "test_used_edge_unresolved_path_arg_is_noted_bare_query_is_not",
+      "test_used_edge_note_auto_revision_when_lease_clean",
+      "test_search_datasets_notes_hits_not_consumed",
+      "test_replay_rerunnable_authority_without_hash",
+      "test_replay_reproducible_authority_with_hash",
+      "test_lockfile_anchor_ignores_foreign_uv_lock",
+      "test_lockfile_anchor_resolves_clio_repo_root",
+      "test_instrument_args_bounded_for_large_inline_content",
+      "test_environment_model_ref_from_executing_expert_lm",
+      "test_environment_model_ref_typed_global_fallback",
+      "test_lineage_node_cap_has_no_dangling_edges",
+      "test_lineage_depth_horizon_is_typed",
+      "test_lineage_complete_graph_is_not_truncated",
+      "test_observe_tool_transform_drives_real_observer_seam",
+      "test_transform_record_failure_is_typed_not_swallowed",
+      "test_result_declared_paths_extracts_recognized_keys",
+      "test_mint_result_declared_output_stage_resource",
+      "test_result_declared_path_deduped_against_arg",
+      "test_result_declared_output_connects_downstream_hash_pair",
+      "test_create_artifact_declared_used_refs_gain_lineage_input_chain",
+      "test_create_artifact_declared_source_url_is_an_honest_external_lineage_leaf",
+      "test_create_artifact_declared_used_unresolvable_ref_is_typed_never_fabricated",
+      "test_create_artifact_without_used_stays_single_node_lineage",
+      "test_rerun_same_bytes_dedups_and_stamps_generated_edge",
+      "test_same_sha_dedup_records_artifact_used_for_deduping_session",
+      "test_route_session_artifacts_include_used_surfaces_dedup_reuse",
+      "test_descendant_session_ids_bfs_bounded_and_cycle_safe",
+      "test_route_session_transforms_include_children",
+      "test_route_session_artifacts_include_children",
+      "test_route_session_artifacts_is_scoped_to_the_producing_session",
+      "test_boot_fold_then_observer_never_pays_the_fold",
+      "test_get_registry_on_loop_guard_still_bites",
+      "test_arc_boot_fold_stall_raises_typed_actionable",
+      "test_construct_agent_aborts_and_stays_unready_on_boot_fold_stall",
+      "test_boot_fold_helper_returns_true_and_stamps_on_healthy_store",
+      "test_trace_only_provenance_never_reaches_ui_even_on_failure",
+      "test_failed_transform_never_leaks_to_sse_under_attach_race"
+    ]
+  },
+  "tests\\test_gact\\test_composer_af1_fix_round.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox",
+      "clio_agent.gact.ask_user_tool",
+      "clio_agent.gact.user_question_ledger",
+      "clio_agent.tools.mcp_task_records"
+    ],
+    "tests": [
+      "test_answering_a_question_cancels_its_armed_expiry_timer",
+      "test_cancelling_a_question_cancels_its_armed_expiry_timer",
+      "test_approval_respond_context_action_is_data_not_a_nested_action_envelope",
+      "test_a2ui_approval_respond_refuses_a_permission_outside_its_session_scope",
+      "test_a2ui_approval_respond_still_resolves_its_own_session_permission",
+      "test_interaction_permission_response_forwards_the_intercept_payload",
+      "test_interaction_a2ui_response_requires_the_negotiated_protocol_version",
+      "test_post_messages_never_hashes_a_referenced_file_on_the_loop_thread",
+      "test_oversized_workspace_file_is_refused_with_a_typed_limit",
+      "test_queue_promotion_authorizes_referenced_parts_exactly_once",
+      "test_resource_reference_search_row_attaches_as_a_resource_ref_part",
+      "test_capability_documents_the_part_type_mapping_and_the_agent_mechanism",
+      "test_admitted_diff_reference_redelivers_its_snapshot_with_a_stale_marker",
+      "test_init_failure_refuses_inputs_parked_for_an_agent_that_never_arrives",
+      "test_a_rebind_after_an_init_failure_still_delivers_the_retained_answer",
+      "test_the_session_store_refuses_an_out_of_vocabulary_status",
+      "test_mark_agent_ready_drains_through_the_running_loop",
+      "test_queue_head_that_fails_terminally_reports_its_typed_cause_once",
+      "test_editing_a_blocked_queue_head_unfreezes_the_queue",
+      "test_a2ui_surface_stops_reporting_pending_once_it_was_responded_to",
+      "test_interaction_projection_reads_this_apps_task_store_not_the_process_global",
+      "test_interaction_projection_is_bounded",
+      "test_user_questions_ledger_evicts_terminal_rows_before_pending_ones",
+      "test_provenance_kinds_classify_the_families_that_are_actually_emitted",
+      "test_bare_question_ids_no_longer_route_through_the_question_branch",
+      "test_submit_repair_attempt_is_declared_trace_only",
+      "test_registering_interaction_routes_does_not_mutate_live_state",
+      "test_uncorrelated_mcp_question_states_its_kind_downgrade",
+      "test_unreadable_resource_store_surfaces_a_typed_discovery_degradation",
+      "test_content_addressed_duplicate_drop_is_reported",
+      "test_reference_discovery_degradations_are_scoped_and_reset_per_workspace",
+      "test_ask_user_has_no_default_lifetime"
+    ]
+  },
+  "tests\\test_gact\\test_composer_fix_round.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox",
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.core_task_journal",
+      "clio_agent.gact.loop_inbox"
+    ],
+    "tests": [
+      "test_attachment_only_steer_reaches_the_model_and_settles",
+      "test_steer_with_no_text_and_no_parts_is_refused_typed",
+      "test_cancel_reaches_a_claimed_but_unconsumed_steer",
+      "test_a_cancelled_steer_is_never_surfaced_by_a_racing_drain",
+      "test_cancel_does_not_auto_start_the_queued_head",
+      "test_cancel_delivers_a_residual_steer_without_another_send",
+      "test_an_explicit_send_after_cancel_resumes_queue_promotion",
+      "test_every_composer_event_carries_an_entity_and_a_v3_payload",
+      "test_message_accepted_is_uniform_across_start_and_steer",
+      "test_cancelled_message_and_steer_intent_both_project",
+      "test_v3_session_projection_carries_the_cancellation_envelope",
+      "test_a_recovered_pending_steer_is_delivered_after_a_restart",
+      "test_queueing_on_an_idle_session_starts_the_head_immediately",
+      "test_a_revision_race_retries_once_instead_of_freezing_the_queue",
+      "test_a_failed_promotion_stays_typed_and_retryable",
+      "test_a_failed_promotion_preserves_the_typed_acceptance_cause",
+      "test_typed_cause_unwraps_every_acceptance_error_carrier",
+      "test_an_unclaimable_steer_does_not_strand_the_steers_behind_it",
+      "test_deleting_a_pending_steer_message_retires_its_intent",
+      "test_deleting_an_ordinary_message_leaves_the_intent_plane_alone",
+      "test_settled_steers_and_acceptances_are_bounded",
+      "test_the_queue_refuses_past_its_cap_instead_of_growing",
+      "test_promotion_does_not_hold_the_store_lock_across_acceptance",
+      "test_a_failed_promotion_restores_the_row_and_its_revision",
+      "test_v3_transcript_preserves_ledger_order_not_wall_clock",
+      "test_v3_message_page_carries_the_paging_cursor",
+      "test_mailbox_limit_counts_pending_inputs_and_retains_delivered_history",
+      "test_positive_pending_mail_limit_cannot_drop_history_or_block_human_input",
+      "test_delivery_steer_on_an_idle_session_is_refused_typed",
+      "test_the_acceptance_state_has_no_unreachable_value"
+    ]
+  },
+  "tests\\test_gact\\test_context_references.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox",
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.loop_inbox"
+    ],
+    "tests": [
+      "test_context_reference_capability_is_explicitly_enabled",
+      "test_context_ref_wire_keeps_part_identity_separate",
+      "test_context_reference_projects_as_a_navigable_message_block",
+      "test_search_aggregates_repositories_with_exact_shape_and_duplicate_labels",
+      "test_workspace_file_search_uses_registered_root_not_process_cwd",
+      "test_binary_workspace_reference_delivers_verified_remote_path",
+      "test_resource_search_prefers_a_readable_name_for_duplicate_content",
+      "test_evidence_search_ignores_categorical_source_metadata_and_keeps_urls",
+      "test_search_and_delivery_share_the_evidence_inventory",
+      "test_empty_reference_search_is_bounded_without_hiding_deep_matches",
+      "test_reference_route_accepts_csv_kinds_and_query",
+      "test_file_authorization_overwrites_display_fields_and_records_actual_hash",
+      "test_file_reference_reports_typed_stale_and_inaccessible_failures",
+      "test_artifact_revision_is_pinned_and_verified",
+      "test_session_and_agent_run_deliver_only_bounded_summaries",
+      "test_typed_parts_survive_message_builder_and_busy_queue",
+      "test_normal_submission_and_retry_preserve_context_ref",
+      "test_composer_busy_context_only_steer_is_canonical_and_model_ready",
+      "test_queue_context_refs_authorize_edit_reorder_and_retain_stale_promotion",
+      "test_context_only_busy_steer_idle_redrive_preserves_parts_and_model_text",
+      "test_delivery_reads_bounded_bytes_and_rejects_hash_disagreement",
+      "test_context_reference_errors_cover_invalid_missing_revision_and_ownership"
+    ]
+  },
+  "tests\\test_gact\\test_declared_workflows_s5.py": {
+    "imports": [
+      "clio_agent.gact.agents.invoker",
+      "clio_agent.gact.turn_spawn"
+    ],
+    "tests": [
+      "test_valid_workflow_parses_and_expert_stays_enabled",
+      "test_unknown_child_is_typed_error_and_disables",
+      "test_dependency_cycle_is_typed_error",
+      "test_malformed_predicate_neither_exists_nor_equals_is_typed_error",
+      "test_malformed_predicate_non_bool_exists_is_typed_error",
+      "test_when_child_completed_unproduced_is_typed_error",
+      "test_misordered_acyclic_workflow_is_typed_error_at_load",
+      "test_correctly_ordered_when_child_completed_stays_enabled",
+      "test_empty_steps_is_typed_error",
+      "test_no_workflow_block_yields_no_errors_and_no_parsed_workflow",
+      "test_equals_predicate_parses",
+      "test_gate_exists_false_holds_when_field_absent",
+      "test_gate_exists_true_unmet_surfaces_observed",
+      "test_gate_equals_holds_and_unmet",
+      "test_gate_when_child_completed_gates_on_completed_set",
+      "test_workflow_spawn_and_cancel_route_through_expert_invoker",
+      "test_runner_executes_a_b_c_in_order_with_per_step_records",
+      "test_runner_stalls_on_unmet_state_predicate",
+      "test_runner_stalls_on_child_failure_not_a_guess",
+      "test_run_index_resets_per_parent_turn",
+      "test_spawn_tool_run_index_resets_per_parent_turn",
+      "test_declared_absolute_budget_is_distinct_reason_and_cancels_orphan",
+      "test_declared_absolute_budget_must_be_positive_number",
+      "test_slow_but_active_child_is_not_stalled",
+      "test_truly_inactive_child_stalls_typed_and_cancels_orphan",
+      "test_activity_probe_is_load_bearing_sabotage_lock",
+      "test_gate_is_load_bearing_sabotage_lock",
+      "test_spawned_child_threads_prediction_workflow_state_field",
+      "test_workflow_gates_step_b_on_cot_step_a_prediction_field",
+      "test_run_workflow_tool_present_only_when_workflow_declared",
+      "test_run_workflow_tool_func_invokes_runner",
+      "test_fanout_max_workers_bounds_batch_admission",
+      "test_fanout_unbounded_when_absent_uses_global_depth_cap"
+    ]
+  },
+  "tests\\test_gact\\test_document_artifacts.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox"
+    ],
+    "tests": [
+      "test_capability_and_format_profiles_are_explicit",
+      "test_manifest_and_static_html_content_block_script_execution",
+      "test_review_is_version_bound_dispatched_once_and_preserved_as_typed_part",
+      "test_stale_review_is_rejected_before_dispatch",
+      "test_native_comments_and_malformed_archives_are_bounded",
+      "test_working_copy_reloads_from_long_canonical_state",
+      "test_working_copy_save_mints_revision_and_stale_save_conflicts",
+      "test_editor_tokens_are_short_lived_scoped_and_write_aware",
+      "test_editor_callback_download_requires_an_exact_origin",
+      "test_collabora_wopi_locks_guard_editor_saves",
+      "test_document_autosave_steers_coalesce_but_reviews_do_not",
+      "test_markdown_rendition_prefers_local_typst_engine",
+      "test_latex_rendition_uses_only_cached_tectonic_resources"
+    ]
+  },
+  "tests\\test_gact\\test_gact_v3.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks"
+    ],
+    "tests": [
+      "test_capabilities_negotiate_v3_without_changing_v2",
+      "test_capabilities_report_the_effective_active_model",
+      "test_capabilities_preserve_explicit_false_flags",
+      "test_unknown_protocol_is_rejected",
+      "test_workspace_v3_uses_short_server_label_and_keeps_path_secondary",
+      "test_v3_lifecycle_mutations_return_canonical_workspace_and_session_rows",
+      "test_v3_session_and_transcript_are_normalized",
+      "test_v3_preserves_rowless_tool_thought_fallback",
+      "test_v3_text_defaults_to_the_server_owned_answer_channel",
+      "test_v3_projects_mcp_app_as_a_typed_opaque_block",
+      "test_v3_message_deduplicates_repeated_artifact_references",
+      "test_v3_message_leaves_background_exit_to_the_child_return",
+      "test_v3_message_projects_only_native_resume_classification_metadata",
+      "test_v3_message_projects_special_prompt_execution_mode",
+      "test_v3_message_omits_execute_prompt_mode_from_presentation_metadata",
+      "test_v3_message_projects_only_public_mcp_app_response_identity",
+      "test_v3_transcript_preserves_navigable_child_agent_semantics",
+      "test_v3_projects_authoritative_child_relation_without_handoff_part",
+      "test_v3_omits_internal_runtime_child_from_parent_transcript",
+      "test_v3_omits_missing_parent_run_from_authoritative_child_relation",
+      "test_v3_action_card_preserves_labels_and_safe_client_behavior",
+      "test_v3_artifact_preserves_registry_identity_and_retrieval_metadata",
+      "test_event_projection_scopes_session_and_normalizes_delta",
+      "test_event_projection_preserves_live_tool_output_stream",
+      "test_connection_event_does_not_inherit_focused_session_scope",
+      "test_v3_normalizes_question_permission_and_child_agent_events",
+      "test_standing_watcher_between_checks_projects_as_running_not_interrupted"
+    ]
+  },
+  "tests\\test_gact\\test_hook_dispatcher.py": {
+    "imports": [
+      "clio_agent.gact.turn_spawn"
+    ],
+    "tests": [
+      "test_exit0_empty_stdout_allows",
+      "test_exit0_stdout_deny_blocks_with_reason",
+      "test_exit2_stderr_is_deny_with_reason",
+      "test_banner_tolerant_stdout_parse",
+      "test_json_banner_object_does_not_shadow_decision",
+      "test_multiple_decision_objects_tighten_to_deny",
+      "test_nested_dict_single_object_not_false_multi",
+      "test_exit0_nonjson_stdout_is_allow_with_typed_reason",
+      "test_additional_context_concatenated",
+      "test_other_exit_nonblocking_when_not_fail_closed",
+      "test_other_exit_denies_when_fail_closed",
+      "test_timeout_typed_reason_not_user_rejection",
+      "test_timeout_nonblocking_when_not_fail_closed",
+      "test_timeout_kills_child_process_not_just_the_hook",
+      "test_cancel_event_kills_a_running_hook_and_raises_hook_cancelled",
+      "test_cancel_never_disturbs_a_hook_that_finishes_on_its_own",
+      "test_wire_annotations_bounded_nondestructive_write_reports_destructive_false",
+      "test_wire_annotations_absent_or_malformed_defaults_destructive_true",
+      "test_bounded_nondestructive_write_hook_match_fires",
+      "test_anchored_tool_regex_does_not_overmatch",
+      "test_annotation_match",
+      "test_args_pattern_match",
+      "test_merge_most_restrictive_wins",
+      "test_modify_with_no_usable_input_records_typed_reason_not_silent",
+      "test_two_hooks_both_run_records_keyed_by_stable_id",
+      "test_missing_id_is_rejected",
+      "test_invalid_regex_skips_only_that_hook",
+      "test_unknown_event_dropped_rest_loads",
+      "test_read_only_tool_never_gated_by_a_hook",
+      "test_pre_tool_hook_deny_reaches_model_via_gate",
+      "test_pre_tool_hook_deny_emits_resolved_permission_audit_record",
+      "test_hook_allow_does_not_override_downstream_deny",
+      "test_external_mcp_read_only_hint_skips_hook",
+      "test_user_prompt_submit_hook_vetoes_turn",
+      "test_stop_hook_runs_after_settle",
+      "test_capabilities_report_new_dispatcher",
+      "test_no_dispatcher_installed_is_no_op",
+      "test_synthesize_and_modify_decisions_parse",
+      "test_intercept_from_synthesize_outcome",
+      "test_deny_beats_synthesize_tighten_only",
+      "test_stash_take_consume_once",
+      "test_gate_stashes_synthesize_for_the_interceptor",
+      "test_gate_deny_clears_any_intercept",
+      "test_post_tool_use_rewrite_changes_observation",
+      "test_post_tool_use_deny_feeds_reason",
+      "test_session_start_and_end_fire_exactly_once",
+      "test_subagent_start_and_stop_fire_exactly_once",
+      "test_post_tool_batch_fires_once_per_turn_with_tools",
+      "test_post_tool_batch_not_fired_for_pure_chat_turn",
+      "test_pre_compact_fires_once",
+      "test_disabled_hook_excluded_from_metadata",
+      "test_model_events_are_known_and_deny_capability",
+      "test_parse_model_payloads",
+      "test_merge_model_payloads_and_conflict_reason",
+      "test_before_model_deny_beats_synthesize_tighten_only",
+      "test_merge_model_payloads_scoped_to_winning_tier",
+      "test_dispatcher_has_hooks_for_model_events"
+    ]
+  },
+  "tests\\test_gact\\test_hook_invariants.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox"
+    ],
+    "tests": [
+      "test_invariant_stable_id_survives_config_reorder",
+      "test_invariant_hook_allow_cannot_override_permission_deny",
+      "test_invariant_reads_never_gated_in_any_mode",
+      "test_invariant_two_modify_is_error_not_writer_wins",
+      "test_single_modify_still_applies",
+      "test_invariant_additional_context_concatenated_and_most_restrictive_wins",
+      "test_most_restrictive_ordering_full_ladder",
+      "test_invariant_crash_fail_closed_deny_is_not_user_rejection",
+      "test_invariant_exit2_wins_over_valid_stdout_json",
+      "test_invariant_pre_execution_hook_deny_still_audits",
+      "test_evaluate_no_block_resets_and_does_not_redrive",
+      "test_evaluate_block_redrives_and_increments",
+      "test_evaluate_global_cap_trips_typed",
+      "test_evaluate_per_hook_loop_limit_trips_typed",
+      "test_evaluate_one_hook_exhausted_another_still_eligible",
+      "test_stop_loop_always_blocks_redrives_to_cap_then_settles",
+      "test_stop_loop_blocks_twice_then_allows_three_firings",
+      "test_stop_loop_per_hook_loop_limit_bounds_a_single_hook",
+      "test_stop_loop_infra_failure_never_fail_closes_into_a_redrive",
+      "test_stop_loop_tolerates_missing_session"
+    ]
+  },
+  "tests\\test_gact\\test_interactions.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox",
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.ask_user_tool",
+      "clio_agent.gact.elicitation_bridge",
+      "clio_agent.gact.user_question_ledger",
+      "clio_agent.tools.mcp_task_records"
+    ],
+    "tests": [
+      "test_damaged_surface_ledger_degrades_interactions_and_snapshot",
+      "test_invalid_transcript_text_degrades_surfaces_without_hiding_permissions",
+      "test_agent_init_failure_surfaces_a_deferred_question_resume",
+      "test_declared_native_tools_are_selective_and_root_a2ui_remains_compatible",
+      "test_ask_user_runtime_tool_injects_owner_task_and_attended_correlation",
+      "test_ask_user_success_returns_a_handle_to_the_next_model_step",
+      "test_interactions_aggregate_children_and_route_question_and_permission",
+      "test_resolved_interaction_hides_legacy_correlation_from_answer_fields",
+      "test_pending_native_question_survives_backend_restart",
+      "test_agent_ready_promotes_inputs_deferred_during_initialization",
+      "test_legacy_forwarded_question_hydrates_owner_and_attended_ids",
+      "test_native_question_deadline_atomically_expires_and_releases_root",
+      "test_mcp_task_request_id_correlates_hyphenated_task_exactly",
+      "test_child_a2ui_interaction_routes_to_owning_surface",
+      "test_capabilities_advertise_normalized_interactions",
+      "test_agent_routed_questions_project_without_human_actions_and_keep_resolved_history",
+      "test_resolved_agent_question_survives_process_restart",
+      "test_structured_form_422_keeps_prefill_and_question_pending"
+    ]
+  },
+  "tests\\test_gact\\test_part_atom_minter.py": {
+    "imports": [
+      "clio_agent.gact.user_question_pause"
+    ],
+    "tests": [
+      "test_streamed_text_part_seals_exactly_one_atom_with_the_full_text",
+      "test_whitespace_only_parts_never_seal",
+      "test_seal_sequence_matches_finalize_with_a_dropped_part_in_the_middle",
+      "test_tool_call_seals_on_its_result_carrying_a_presentation_delta",
+      "test_seal_never_touches_the_store_under_the_transcript_lock",
+      "test_loop_never_blocks_while_a_mint_is_stuck",
+      "test_finalize_mints_exactly_the_unsealed_remainder",
+      "test_atoms_minted_true_skips_the_mint_persist_still_records_state_merge",
+      "test_envelope_atom_is_the_sole_authority_for_message_level_fields",
+      "test_hand_built_v1_lane_reproduces_byte_identically",
+      "test_group_atoms_in_order_keeps_an_interleaved_message_separate",
+      "test_group_atoms_in_order_splits_adjacent_v1_messages_sharing_one_id",
+      "test_group_atoms_in_order_keeps_a_late_atom_profile_reseal_in_its_group",
+      "test_crash_without_envelope_reassembles_as_typed_incomplete",
+      "test_mint_failure_mid_turn_is_audited_and_recovered_at_finalize",
+      "test_double_sealed_atom_for_one_part_reproduces_to_one_part_last_wins",
+      "test_failed_finalize_keeps_the_streamed_parts_and_reload_equals_live",
+      "test_paused_transcript_persists_only_the_remainder",
+      "test_minter_refuses_an_arc_without_a_canonical_log",
+      "test_finalize_mint_failure_still_lands_the_retained_ledger_copy",
+      "test_minter_threads_do_not_leak_across_many_turns",
+      "test_a_later_turn_reusing_a_crashed_message_id_is_not_absorbed_by_it",
+      "test_two_envelope_less_turns_sharing_one_message_id_stay_distinct",
+      "test_a_remainder_part_minted_at_a_lower_index_never_splits_its_message",
+      "test_failed_finalize_settles_an_open_streamed_text_part",
+      "test_failed_finalize_drops_a_whitespace_only_open_part",
+      "test_a_mutation_after_the_seal_is_reminted_by_the_remainder",
+      "test_a_drain_of_slow_but_progressing_jobs_completes_past_the_window",
+      "test_a_stuck_job_fails_the_barrier_typed"
+    ]
+  },
+  "tests\\test_gact\\test_paused_transcript_persistence.py": {
+    "imports": [
+      "clio_agent.gact.user_question_pause"
+    ],
+    "tests": [
+      "test_pause_persists_tool_parts_without_synthesizing_an_answer"
+    ]
+  },
+  "tests\\test_gact\\test_plan_exit.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox"
+    ],
+    "tests": [
+      "test_plan_exit_no_plan_file_hard_errors_naming_path",
+      "test_plan_exit_outside_plan_mode_errors",
+      "test_plan_exit_requires_summary",
+      "test_plan_exit_rejects_bad_recommended_mode",
+      "test_plan_exit_success_records_pending_request",
+      "test_maybe_pause_mints_approval_question_and_yields",
+      "test_maybe_pause_noop_without_pending",
+      "test_approve_auto_transitions_edit_and_injects_constraint_lift",
+      "test_approval_reuses_reviewed_plan_artifact_without_minting_a_second_version",
+      "test_approve_interactive_uses_ask_approval_mode",
+      "test_approve_exit_only_leaves_plan_but_does_not_execute",
+      "test_approve_clear_context_modifier_applies",
+      "test_reject_stays_in_plan_mode_with_feedback",
+      "test_composer_request_changes_is_a_real_plan_mode_user_message",
+      "test_plan_approval_publishes_authoritative_posture_before_resume",
+      "test_empty_selection_rejects_safe_ignoring_recommended_mode",
+      "test_durable_defer_resume_when_turn_already_ended",
+      "test_seam_no_phantom_reapproval_after_approve",
+      "test_seam_no_phantom_reapproval_after_reject",
+      "test_durable_defer_busy_folds_into_loop_inbox",
+      "test_clear_context_announces_every_surface_it_deletes"
+    ]
+  },
+  "tests\\test_gact\\test_projection_fix_round.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks"
+    ],
+    "tests": [
+      "test_a_fork_is_attributed_to_itself_not_silently_to_the_root",
+      "test_a_span_from_an_unknown_session_is_reported_not_reattributed",
+      "test_the_descendant_scope_carries_forks_with_a_typed_marker",
+      "test_fork_pending_permission_is_listable_from_its_own_conversation",
+      "test_the_interactions_projection_serves_the_a2ui_quarantine_reasons",
+      "test_the_interactions_projection_bounds_the_owners_it_walks",
+      "test_child_lineage_is_actually_bounded_and_says_when_it_truncates",
+      "test_the_execution_projection_reports_its_own_depth_and_truncation",
+      "test_deleting_a_session_purges_its_agent_task_rows",
+      "test_agent_task_events_reach_the_attended_root",
+      "test_the_subagent_projection_carries_the_task_path",
+      "test_pending_interaction_rows_carry_a_revision",
+      "test_the_execution_route_honours_include_children",
+      "test_one_unreadable_child_does_not_cost_the_parent_its_timeline",
+      "test_the_execution_route_survives_a_deleted_child"
+    ]
+  },
+  "tests\\test_gact\\test_question_expiry_publication.py": {
+    "imports": [
+      "clio_agent.gact.ask_user_tool",
+      "clio_agent.gact.elicitation_bridge",
+      "clio_agent.gact.user_question_ledger"
+    ],
+    "tests": [
+      "test_expiry_waits_for_session_release_before_terminal_publication",
+      "test_owner_persistence_failure_and_losing_claim_preserve_question"
+    ]
+  },
+  "tests\\test_gact\\test_source_connect_runtime.py": {
+    "imports": [
+      "clio_agent.gact.task_controls"
+    ],
+    "tests": [
+      "test_permission_denial_leaves_no_source",
+      "test_connection_uses_live_permission_gate",
+      "test_connection_is_real_and_reused_without_a_second_approval",
+      "test_status_keeps_workspace_folders_when_remote_sources_are_empty",
+      "test_oauth_connection_waits_for_private_sign_in",
+      "test_source_configuration_cannot_smuggle_a_credential"
+    ]
+  },
+  "tests\\test_gact\\test_spotter_clearance.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.loop_inbox"
+    ],
+    "tests": [
+      "test_armed_session_with_no_live_watcher_fails_closed_typed",
+      "test_terminal_watcher_task_fails_closed_typed",
+      "test_errored_watcher_reports_check_failure_not_a_deadline",
+      "test_non_spotter_session_clears_without_a_watcher",
+      "test_idle_healthy_watcher_clears_immediately",
+      "test_silent_busy_watcher_fails_closed_with_its_own_stall_reason",
+      "test_progress_window_restarts_on_every_watcher_signal",
+      "test_a_buffered_coalesced_wake_also_holds_clearance",
+      "test_every_denial_reason_carries_a_model_facing_message",
+      "test_release_clearance_event_wakes_and_drops_the_entry",
+      "test_clearance_event_map_prunes_sessions_with_no_live_watcher",
+      "test_clearance_events_are_released_when_the_watcher_disarms",
+      "test_cancelling_a_spotter_session_denies_later_mutations_typed",
+      "test_arm_failure_denies_the_gate_instead_of_clearing_it",
+      "test_failed_watcher_denial_is_recorded_as_a_check_failure"
+    ]
+  },
+  "tests\\test_gact\\test_spotter_watcher.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox",
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.core_task_journal"
+    ],
+    "tests": [
+      "test_arm_creates_waiting_standing_row_with_no_turn",
+      "test_default_approval_mode_arms_nothing",
+      "test_watcher_child_session_is_never_itself_in_spotter_mode",
+      "test_watcher_approval_mode_allows_containment_but_not_release",
+      "test_second_identical_patch_to_spotter_ai_is_a_route_level_no_op",
+      "test_ensure_spotter_watcher_called_directly_twice_is_still_idempotent",
+      "test_disarm_transitions_standing_row_to_terminal",
+      "test_disarm_with_no_active_watcher_is_a_typed_no_op",
+      "test_arm_failure_logs_typed_and_route_still_succeeds",
+      "test_arm_failure_on_patch_also_logs_typed_and_route_still_succeeds",
+      "test_ensure_spotter_watcher_builds_expected_taskspec",
+      "test_ensure_spotter_watcher_is_a_no_op_off_spotter_mode",
+      "test_parent_tool_completion_wakes_exactly_one_check_turn",
+      "test_coalescing_under_burst_of_tool_completions",
+      "test_live_state_flips_waiting_running_waiting_across_a_wake",
+      "test_failed_watcher_turn_stays_armed_but_blocks_clearance",
+      "test_clearance_waits_until_running_watcher_releases_its_turn",
+      "test_permission_boundary_does_not_register_next_mutation_until_watcher_clears",
+      "test_user_message_to_waiting_watcher_works_and_returns_to_waiting",
+      "test_watcher_activity_never_self_wakes",
+      "test_tool_outcome_fact_reports_a_list_valued_entrys_length",
+      "test_tool_outcome_fact_is_empty_when_nothing_list_shaped",
+      "test_wake_text_tool_completed_carries_the_tool_name_and_fact",
+      "test_wake_text_tool_completed_with_no_derivable_fact_omits_the_parenthetical",
+      "test_wake_text_tool_failed_states_the_failure_as_the_fact",
+      "test_wake_text_turn_final_form_is_the_module_constant",
+      "test_coalesced_wake_text_names_no_single_tool",
+      "test_no_wake_form_carries_a_directive",
+      "test_turn_final_wake_via_on_turn_finalized_carries_its_own_form",
+      "test_failed_tool_completion_wakes_with_the_failed_form"
+    ]
+  },
+  "tests\\test_gact\\test_tool_telemetry.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks"
+    ],
+    "tests": [
+      "test_propose_edit_promotes_tool_result_to_file_diff",
+      "test_propose_edit_skips_failed_calls_and_dedups",
+      "test_bounded_tool_result_is_idempotent_no_nested_preview",
+      "test_bounded_tool_result_uses_configured_model_lane_limit",
+      "test_posthoc_tools_called_metadata_does_not_emit_lifecycle_events",
+      "test_live_observed_tool_call_is_not_reemitted_post_turn",
+      "test_concurrent_apps_do_not_cross_tool_telemetry",
+      "test_live_observer_upgrades_matching_posthoc_trace_metadata",
+      "test_live_observer_records_completed_tool_result_evidence",
+      "test_live_observer_correlates_and_accumulates_terminal_progress",
+      "test_wait_agent_tasks_tool_call_stamps_waited_tasks_display_rows",
+      "test_declared_structured_content_wins_over_raw_result_and_is_one_shot",
+      "test_live_observer_keeps_exact_large_mcp_structured_content",
+      "test_workspace_mcp_root_data_reaches_exact_gact_structured_content",
+      "test_live_observer_preserves_failed_structured_tool_result_evidence",
+      "test_tool_call_merge_does_not_attach_success_result_to_failed_attempt",
+      "test_live_tool_observer_emits_route_context_before_tool_part",
+      "test_live_tool_observer_marks_native_semantic_error_failed",
+      "test_tool_result_full_in_trace_but_bounded_in_ledger",
+      "test_declared_structured_content_does_not_leak_when_sid_is_unresolved",
+      "test_declared_structured_content_does_not_leak_when_observer_raises_before_its_own_pop",
+      "test_create_artifact_content_is_elided_not_mirrored_unbounded",
+      "test_create_artifact_batch_content_is_elided_per_item",
+      "test_other_tools_input_is_not_elided_only_generically_bounded",
+      "test_wait_agent_tasks_string_task_ids_does_not_fabricate_per_character_rows",
+      "test_wait_agent_tasks_non_string_list_items_does_not_fabricate_rows",
+      "test_wait_agent_tasks_missing_task_ids_resolves_empty_not_invalid",
+      "test_wait_agent_tasks_call_metadata_is_registered_not_hardcoded"
+    ]
+  },
+  "tests\\test_gact\\test_turn_runner_s1.py": {
+    "imports": [
+      "clio_agent.gact.agent_mailbox",
+      "clio_agent.gact.loop_inbox"
+    ],
+    "tests": [
+      "test_busy_true_while_running_and_clears_when_done",
+      "test_busy_slot_cannot_be_overwritten_by_another_producer",
+      "test_drain_with_no_turns_is_clean_and_empty",
+      "test_drain_settles_cooperative_turn_cleanly",
+      "test_drain_catches_turn_spawned_during_grace",
+      "test_session_busy_error_payload_shape",
+      "test_drain_hard_cancels_uncooperative_straggler",
+      "test_second_post_while_running_steers_with_202",
+      "test_three_accepted_steers_keep_three_identities_through_idle_boundaries",
+      "test_scheduler_defers_busy_session",
+      "test_scheduler_deferred_retry_fires_when_session_frees",
+      "test_answer_resume_deferred_when_busy_then_redriven",
+      "test_retry_execute_while_busy_is_blocked",
+      "test_shutdown_does_not_redrive_deferred_resume",
+      "test_shutdown_drains_in_flight_turn"
+    ]
+  },
+  "tests\\test_gact\\test_turn_transcript_equivalence.py": {
+    "imports": [
+      "clio_agent.gact.core_task_journal"
+    ],
+    "tests": [
+      "test_streamed_text_turn_matches_develop_golden",
+      "test_tool_call_turn_matches_develop_golden",
+      "test_multi_part_thinking_turn_matches_develop_golden",
+      "test_default_main_turn_stamps_agent_runtime_provenance",
+      "test_activated_blueprint_turn_stamps_agent_blueprint_provenance",
+      "test_activated_blueprint_catalog_agent_id_executes_declared_root",
+      "test_shimmed_producers_emit_identical_stream_as_legacy",
+      "test_turn_loop_settles_the_transcript_registry_after_a_turn",
+      "test_transcript_registry_closes_before_persist_can_release_the_gil"
+    ]
+  },
+  "tests\\test_gact\\test_turn_transcript_pr3.py": {
+    "imports": [
+      "clio_agent.gact.task_controls",
+      "clio_agent.gact.turn_spawn"
+    ],
+    "tests": [
+      "test_streamed_answer_is_never_swapped_and_the_batch_copy_never_lands",
+      "test_streamed_direct_response_is_not_repeated_as_a_batch_answer",
+      "test_batch_answer_lands_as_exactly_one_burst",
+      "test_field_stream_call_site_pattern_is_exactly_once",
+      "test_turn_answer_channel_covers_the_tap_attribution_label",
+      "test_turn_answer_channel_does_not_cover_a_delegated_childs_answer",
+      "test_route_banner_lands_exactly_once_live_or_finalize",
+      "test_wrap_up_thinking_gated_by_streamed_reasoning_identity",
+      "test_chat_path_streamed_reasoning_with_batch_only_answer_lands_once",
+      "test_wrap_up_thinking_lands_when_reasoning_did_not_stream",
+      "test_chat_answer_streamed_reasoning_batch_wraps_in_arrival_order",
+      "test_full_turn_rolls_up_child_mints_onto_the_parent_message"
+    ]
+  },
+  "tests\\test_gact\\test_variant_drafts.py": {
+    "imports": [
+      "clio_agent.gact.elicitation_bridge",
+      "clio_agent.gact.user_question_pause"
+    ],
+    "tests": [
+      "test_lm_judged_drafts_run_at_once_and_bestofn_keeps_the_highest_reward",
+      "test_bestofn_stops_at_the_threshold",
+      "test_a_user_pick_resumes_with_the_picks_line_even_after_a_restart",
+      "test_refine_with_a_user_comment_tells_the_next_try_the_advice",
+      "test_lm_judged_refine_tells_the_next_try_its_advice",
+      "test_a_user_judged_subagent_pauses_and_resumes_the_same_way",
+      "test_n_is_capped_by_config",
+      "test_five_poems_are_five_single_candidate_attempts",
+      "test_planning_deltas_are_reasoning_instead_of_candidate_content",
+      "test_a_drafts_answer_must_pick_exactly_one",
+      "test_tries_stream_to_their_tabs_and_project_to_v3"
+    ]
+  },
+  "tests\\test_gact\\test_variant_pick_close.py": {
+    "imports": [
+      "clio_agent.gact.elicitation_bridge"
+    ],
+    "tests": [
+      "test_superseding_drafts_does_not_anchor_an_async_question",
+      "test_a_new_message_supersedes_the_pick_and_no_later_answer_resumes_it",
+      "test_variant_closed_projects_to_its_v3_frame",
+      "test_the_pick_answer_turn_is_not_a_new_message",
+      "test_a_message_naming_the_drafts_question_must_pick_through_the_answer",
+      "test_a_dismissed_pick_closes_the_run_cancelled_and_the_conversation_goes_on",
+      "test_an_expired_pick_closes_the_run_expired",
+      "test_no_window_means_no_deadline",
+      "test_a_restart_between_the_pause_and_the_new_message",
+      "test_a_close_cut_short_by_a_restart_is_finished_at_the_next_turn"
+    ]
+  },
+  "tests\\test_gact\\test_wire_semantics_p5.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.agents.invoker",
+      "clio_agent.gact.background_exit",
+      "clio_agent.gact.task_fold"
+    ],
+    "tests": [
+      "test_trace_reads_semantic_event_from_arc_log",
+      "test_trace_unknown_session_returns_typed_404",
+      "test_trace_empty_session_returns_empty_events",
+      "test_trace_arc_unavailable_returns_typed_503",
+      "test_trace_scope_and_limit_keep_latest_matches_oldest_first",
+      "test_capabilities_carries_unconfigured_relay_block",
+      "test_relay_status_unconfigured_is_not_probed",
+      "test_relay_status_reports_mocked_tcp_reachability",
+      "test_relay_runtime_connection_can_be_attached_and_detached",
+      "test_relay_runtime_connection_rejects_unsafe_addresses",
+      "test_blueprint_tools_validate_against_serve_runtime_catalog",
+      "test_post_message_missing_parts_is_typed_400_validation_error",
+      "test_terminal_task_fold_appends_return_after_stored_start",
+      "test_terminal_task_fold_stored_handoff_writeback_is_idempotent",
+      "test_stale_handoff_reconciled_lazily_on_session_load",
+      "test_stale_handoff_reconcile_sweep_is_idempotent_across_reloads"
+    ]
+  },
+  "tests\\test_providers\\test_claude_code_cancel.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.turn_spawn"
+    ],
+    "tests": [
+      "test_handle_abort_is_one_shot",
+      "test_empty_session_id_is_never_cancellable",
+      "test_abort_kills_only_that_session_stream_typed_and_unrelated_survives",
+      "test_unregister_drops_the_handle_so_cancel_finds_nothing",
+      "test_cancel_agent_task_kills_the_child_sdk_stream"
+    ]
+  },
+  "tests\\test_providers\\test_claude_code_session_lifecycle.py": {
+    "imports": [
+      "clio_agent.gact.agent_tasks",
+      "clio_agent.gact.agents.invoker"
+    ],
+    "tests": [
+      "test_release_session_resources_forces_the_next_stateful_send_to_a_full_resend",
+      "test_release_session_resources_emits_a_typed_row_distinct_from_idle_reaped",
+      "test_release_session_resources_closes_and_drops_the_entry",
+      "test_release_session_resources_never_touches_a_sibling_session",
+      "test_release_session_resources_is_a_noop_for_an_unknown_session",
+      "test_released_session_resurrects_a_fresh_entry_on_next_use",
+      "test_released_session_resurrects_and_reconnects_live",
+      "test_release_session_resources_uses_close_nonblocking_not_close_blocking",
+      "test_release_session_resources_defers_a_genuinely_in_flight_entry",
+      "test_dead_entry_refuses_a_connect_after_being_released_mid_flight",
+      "test_pump_queues_stream_end_before_the_abnormal_end_reset",
+      "test_register_session_lifecycle_provider_is_idempotent_by_identity",
+      "test_release_session_resources_is_best_effort_across_providers",
+      "test_release_session_resources_noop_for_empty_session_id",
+      "test_stream_client_pool_release_is_registered_with_session_lifecycle",
+      "test_release_session_resources_logs_typed_reason_with_zero_providers",
+      "test_finish_agent_task_transition_releases_the_childs_session_resources",
+      "test_finish_agent_task_transition_releases_on_failure_too",
+      "test_finish_agent_task_transition_never_double_releases_a_race_loser",
+      "test_cancelled_child_task_releases_its_session_resources",
+      "test_fail_child_task_releases_its_session_resources",
+      "test_complete_forwarded_task_releases_its_session_resources"
+    ]
+  },
+  "tests\\test_runtime\\test_office_install.py": {
+    "imports": [
+      "clio_agent.runtime.document_stack"
+    ],
+    "tests": [
+      "test_official_assets_are_pinned",
+      "test_bad_download_checksum_never_extracts",
+      "test_windows_renderer_is_extracted_to_private_image",
+      "test_explicit_windows_command_line_reaches_createprocess_without_a_shell",
+      "test_private_renderer_is_probed_before_warm_reuse",
+      "test_debian_archive_parser_reads_real_data_member",
+      "test_linux_archive_cannot_escape_private_root",
+      "test_profile_cleanup_retries_transient_windows_handles",
+      "test_conversion_profile_uses_allowed_temp_instead_of_nested_artifact_path"
+    ]
+  },
+  "tests\\test_tools\\test_mcp_dual_emission_consume.py": {
+    "imports": [
+      "clio_agent.tools.relay_transport",
+      "clio_agent.tools.remote_mcp"
+    ],
+    "tests": [
+      "test_consume_dual_emission_twin_drops_verified_content_text_twin",
+      "test_consume_dual_emission_twin_preserves_genuinely_distinct_text",
+      "test_consume_dual_emission_twin_preserves_twin_plus_distinct_block",
+      "test_consume_dual_emission_twin_never_invents_a_twin_to_drop",
+      "test_consume_dual_emission_twin_ignores_unparseable_text",
+      "test_consume_dual_emission_twin_passes_through_non_mapping",
+      "test_structured_content_only_result_content_blocks_carry_no_twin",
+      "test_structured_content_with_distinct_text_block_preserves_it",
+      "test_structured_content_twin_plus_distinct_block_keeps_only_distinct",
+      "test_relay_wait_end_to_end_collapses_three_copies_to_one"
+    ]
+  },
+  "tests\\test_tools\\test_mcp_execution_era_visibility.py": {
+    "imports": [
+      "clio_agent.tools.relay_transport"
+    ],
+    "tests": [
+      "test_report_with_no_execution_history_is_unaffected",
+      "test_report_surfaces_a_real_execution_downgrade_even_when_probe_is_healthy",
+      "test_report_with_healthy_execution_era_stays_ready",
+      "test_handshake_wire_row_surfaces_execution_downgrade",
+      "test_handshake_wire_row_absent_execution_history_is_none",
+      "test_emit_downgrade_events_emits_once_per_session_and_server",
+      "test_emit_downgrade_events_is_a_noop_without_a_session_or_executor",
+      "test_relay_transport_client_classifies_under_relay_server_id"
+    ]
+  },
+  "tests\\test_tools\\test_mcp_v2_conformance.py": {
+    "imports": [
+      "clio_agent.tools.mcp_task_extension",
+      "clio_agent.tools.mcp_task_records"
+    ],
+    "tests": [
+      "test_modern_listing_omits_per_tool_execution",
+      "test_legacy_listing_carries_the_three_task_support_arms",
+      "test_modern_capabilities_declare_the_tasks_extension",
+      "test_proxy_front_strips_the_backend_tasks_declaration",
+      "test_unopted_client_receives_the_self_describing_refusal",
+      "test_plain_staller_progress_reaches_the_client",
+      "test_declared_path_serves_task_required_tools_readiness_ordered",
+      "test_declared_path_serves_task_required_tools_cold_race_then_heals",
+      "test_heal_attempt_is_bounded_when_the_direct_factory_never_lands",
+      "test_declared_path_plain_tools_work_on_a_task_capable_server",
+      "test_v1_fixture_negotiates_legacy_and_serves_the_tool",
+      "test_v1_fixture_through_the_declared_path",
+      "test_v1_fixture_definitive_capability_is_false_and_keeps_the_proxy_route",
+      "test_record_definitive_capability_reads_modern_extensions",
+      "test_declared_path_serves_a_task_when_capability_came_from_tool_execution",
+      "test_record_definitive_capability_reads_legacy_per_tool_marker",
+      "test_record_definitive_capability_records_a_genuine_negative",
+      "test_capability_unknown_default_keeps_the_proxy_path",
+      "test_known_task_capable_namespace_with_factory_builds_direct_client",
+      "test_known_task_capable_namespace_with_no_factory_demotes_typed",
+      "test_direct_factory_construction_failure_falls_back_to_proxy_typed",
+      "test_capability_demotion_guard_refuses_a_downgraded_false",
+      "test_permanent_protocol_refusal_terminates_the_react_loop_fast",
+      "test_extensions_declaration_composes_tasks_and_ui_for_a_plain_client",
+      "test_extensions_declaration_suppresses_tasks_but_keeps_ui_for_a_proxy_client",
+      "test_declared_path_negotiates_the_synthetic_extension_end_to_end",
+      "test_handshake_row_surfaces_declared_extensions",
+      "test_handshake_row_observed_empty_extensions_is_a_real_empty_list",
+      "test_handshake_row_extensions_unobserved_is_none",
+      "test_url_guarded_input_direct_client_carries_the_url_mode_input_request",
+      "test_url_guarded_input_task_required_naive_proxy_fails_typed_never_hangs",
+      "test_plain_url_guarded_input_completes_mrtr_through_the_proxy_route",
+      "test_guarded_prompt_completes_mrtr_on_the_direct_route",
+      "test_guarded_prompt_completes_mrtr_through_the_proxy_route",
+      "test_guarded_resource_completes_mrtr_on_the_direct_route",
+      "test_guarded_resource_completes_mrtr_through_the_proxy_route",
+      "test_unwired_client_gets_a_typed_terminal_refusal_not_a_hang_on_prompts_get",
+      "test_plain_guarded_input_completes_mrtr_through_the_sync_executor_forced_proxy_route",
+      "test_declared_path_ui_resource_admits_and_serves_through_the_apps_host",
+      "test_ui_bearing_result_survives_the_proxy_relay_to_the_apps_host",
+      "test_ui_bearing_call_auto_fires_the_production_observer_hook",
+      "test_stale_listing_cache_entry_silently_defeats_the_ui_meta_wiring"
+    ]
+  }
+}

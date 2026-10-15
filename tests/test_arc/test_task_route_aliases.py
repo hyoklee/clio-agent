@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,66 @@ from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 async def no_cancel(_task: TaskSnapshot, _caller: TaskCaller) -> dict[str, Any]:
     pytest.fail("A read alias must not dispatch cancellation")
+
+
+@pytest.mark.asyncio
+async def test_rest_result_cursor_reconstructs_exact_unicode_output(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app, owner, root = await create_environment(arc, tmp_path)
+    monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "64")
+    body = {"output": "é 中文 🚀 " * 80, "count": 80}
+
+    def prepare() -> TaskSnapshot:
+        result = owner.history.write_content(root.owner.session_id, body)
+        task = TaskSnapshot(
+            handle="task_paged",
+            kind="Shell",
+            owner=root.owner,
+            tool="shell_bash",
+            label="Large output",
+            invocation_id="paged",
+            created_at=now(),
+            updated_at=now(),
+            status="completed",
+            raw_status="completed",
+            terminal_at=now(),
+            settlement="confirmed",
+            result=result,
+        )
+        owner.history.record_snapshot(task, observation_id="paged-result")
+        return task
+
+    task = await asyncio.to_thread(prepare)
+    service = FastAPI()
+    service.state.task_history, service.state.sessions = owner.history, app.state.sessions
+    service.state.human_principal = "human"
+    service.state.task_operations = TaskOperations(owner.history, no_cancel)
+    register_task_routes(service)
+    try:
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=service), base_url="http://task-service"
+        ) as client:
+            path = f"/v1/sessions/{root.owner.session_id}/tasks/{task.handle}/result"
+            cursor, chunks, offsets = None, [], []
+            for _ in range(100):
+                response = await client.get(path, params={"cursor": cursor} if cursor else {})
+                assert response.status_code == 200
+                page = response.json()
+                assert page["offset"] not in offsets
+                offsets.append(page["offset"])
+                chunks.append(page["result"]["preview"])
+                cursor = page["next_cursor"]
+                if cursor is None:
+                    break
+            else:
+                pytest.fail("Result pages did not advance to completion")
+            assert len(offsets) > 1 and offsets == sorted(offsets)
+            assert json.loads("".join(chunks)) == body
+            assert owner.history.acknowledged_notifications(root.owner.session_id) == frozenset()
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
 
 
 @pytest.mark.asyncio

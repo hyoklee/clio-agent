@@ -306,7 +306,7 @@ async def _deliver_cancel(self: NativeTools, handle: str) -> bool:
         return current.cancellation_requested_at is not None
     if current.backend is not None and current.backend.task_id != bound.task.task_id:
         return False
-    await bound.task.cancel()
+    await bound.request_cancel()
     return True
 
 

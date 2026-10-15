@@ -1,0 +1,20 @@
+# Independent Astra source review R26
+
+**Source verdict: NO-GO for core `8f40aa8d` / GACT `557aecd3`.** The architecture is coherent enough to retain, but I found three concrete defects. These are source findings, not results from executed tests.
+
+1. **[P1] Explicit collection can bypass revocation before model input.**  
+   After a subscribed peer fetches a result, revoke its read grant before recording the tool observation. [SessionMail.collection](C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/session_mail.py:247) filters the unauthorized notification out. However, [the recorder still commits the entire observation](C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/agents/clio_react_record.py:673), even with an empty selection. [The projection marks that observation committed](C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/task_history_projection.py:501), and the context reader consequently exposes its original contents. A mixed collection can similarly authorize an observation containing a revoked member. Collection must validate every disclosed member or commit a safely filtered observation; silently dropping notification IDs is insufficient.
+
+2. **[P1] Cancellation RPCs can still stall all recovery.**  
+   The new timeout covers pings, but [native cancellation](C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/native_task_settlement.py:309) and [external cancellation](C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/external_task_controls.py:64) await `ToolTask.cancel()` without a request deadline. The pinned SDK supplies none for these calls when the session timeout is unset. These operations also run as callbacks in the serial recovery worker. A server that remains connected but never answers cancellation can therefore block unrelated recording repairs and readiness. Bound cancellation **RPC delivery**, retain its uncertain outcome, and continue awaiting actual physical settlement separately.
+
+3. **[P2] The REST result endpoint cannot advance result pages.**  
+   [The endpoint accepts only session and handle](C:/Users/jaime/.codex/worktrees/agent-facing-async-tasks/clio-agent/src/clio_agent/gact/routes/tasks.py:191), although the shared result operation returns `next_cursor`. Supplying that cursor to the endpoint simply returns the first page again. Forward the cursor through the REST facade; the agent tool already supports it.
+
+The requested session and Question design is otherwise present: sessions have finite, addressable assignment handles; messaging targets stable sessions with authorization checks; shared observe/wait operations accept assignments; and `ask_user` immediately posts a durable Question without a Docket worker. Answers use the common publication and collection paths. The first finding affects the correctness of that shared collection boundary, rather than demonstrating a need for another Question subsystem.
+
+**Maintainability has improved, but some redundancy remains.** Named history methods and validated state vocabularies help. However, persisted task indexes remain write-only outside repair checks, while reads use replay-built memory indexes. Also, kind/active queries seed from global task sets before scope filtering. F03 should measure unrelated-session growth as well as retained history within one session. `serialized()` makes locking explicit, but does not by itself reduce the broad coupling between owners and multi-write history operations.
+
+I would retain the ownership split and fix these boundaries. I did not find justification for recreating a task supervisor or universal lifecycle engine. The previous migration-epoch, primary-agent context, UI alias, and lifetime polling corrections are present in source; **the candidate still lacks implementation approval, and behavioral tests, CI, and live acceptance remain separate outstanding gates.** No files were edited and no tests or services were run.
+
+

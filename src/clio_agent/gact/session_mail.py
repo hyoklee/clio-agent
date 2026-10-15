@@ -200,6 +200,10 @@ class SessionMail:
                 if scope_epoch(boundary.scope) != details.context_epoch:
                     raise ValueError("Model context changed; retain inputs for the admitted epoch")
             access = TaskAccess(self.history, caller)
+            if tool_observation is not None:
+                # Every disclosed result must still be readable, including a result
+                # whose automatic delivery won the collection race already.
+                self.collection(caller, staged.collected)
             pending = {item.id: item for item in self.history.pending_mail(caller.session_id)}
             for item in staged.items:
                 if pending.get(item.id) != item:
@@ -213,7 +217,7 @@ class SessionMail:
                     item.delivery != "eligible" or not self.eligible(caller.session_id, item)
                 ):
                     raise ValueError("Staged input is gated; retain it pending")
-                if not self._authorized(item, access):
+                if not explicit_collection and not self._authorized(item, access):
                     raise ValueError("Staged input authorization changed; retain it pending")
                 if item.kind == "delegation" and item.handle:
                     from clio_agent.gact.assignment_evidence import validate_delegation_evidence
@@ -248,12 +252,21 @@ class SessionMail:
         """Select only notices represented by a persisted explicit tool observation."""
         with self.history.serialized():
             access = TaskAccess(self.history, caller)
-            items = tuple(
-                item
-                for item in self.history.pending_mail(caller.session_id)
-                if item.id in identities and self._authorized(item, access)
-            )
-            return StagedInput(items, (), tuple(item.id for item in items))
+            acknowledged = self.history.acknowledged_notifications(caller.session_id)
+            items = []
+            for identity in dict.fromkeys(identities):
+                item = self.history.mail_item(caller.session_id, identity)
+                if (
+                    item is None
+                    or item.kind not in {"task_result", "question_answer"}
+                    or item.handle is None
+                    or self.history.mail_withdrawn(caller.session_id, identity)
+                ):
+                    raise ValueError("Collected result has no accepted recipient notification")
+                access.require(item.handle, "read")
+                if identity not in acknowledged:
+                    items.append(item)
+            return StagedInput(tuple(items), (), identities)
 
     def _authorized(self, item: MailItem, recipient: TaskAccess) -> bool:
         if item.kind == "peer":

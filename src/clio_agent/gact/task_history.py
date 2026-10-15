@@ -409,7 +409,7 @@ class TaskHistory:
                 if item is not None and item.content != reference:
                     raise ValueError("Input content differs from the accepted mailbox item")
             if record.tool_observation is not None:
-                self.read_content(record.tool_observation)
+                task_history_projection._validate_observed_input(self, record)
             from clio_agent.gact.agents.clio_react_record import _token_estimate
 
             input_tokens = 0

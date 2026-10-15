@@ -61,7 +61,7 @@ async def cancel(owner: ExternalTasks, handle: str) -> dict[str, Any]:
                 )
             ):
                 return False  # adoption arms delivery; old RPC custody ends without an ACK
-            await bound.task.cancel()
+            await bound.request_cancel()
             return True
 
         async def retry_delivery() -> None:

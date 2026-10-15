@@ -523,15 +523,34 @@ async def test_uncertain_cancellation_retires_waiter_and_late_proof_settles_pare
         assert root.handle in owner._cancel_watches
         assert owner.history.acknowledged_notifications(root.owner.session_id) == frozenset()
         settled = asyncio.Event()
+        known_cleanup = asyncio.Event()
         loop = asyncio.get_running_loop()
 
         def parent_changed(_revision: int) -> None:
             current = owner.history.task_snapshot(root.handle)
             if current is not None and current.terminal_at is not None:
                 loop.call_soon_threadsafe(settled.set)
+            elif (
+                current is not None
+                and current.status == "active"
+                and current.attention_episode is None
+            ):
+                loop.call_soon_threadsafe(known_cleanup.set)
 
         remove = owner.history.listen(parent_changed, handles=(root.handle,))
         current_member = await asyncio.to_thread(owner.history.task_snapshot, member.handle)
+        progressing = current_member.model_copy(
+            update={"status": "running", "settlement": "cleanup_pending", "attention_episode": None}
+        )
+        await asyncio.to_thread(
+            owner.history.record_snapshot, progressing, observation_id="member-cleanup-visible"
+        )
+        await asyncio.wait_for(known_cleanup.wait(), 5)
+        snapshot = await TaskOperations(owner.history, no_cancel).wait(
+            TaskCaller("human-console", "human", human_action=True), root.handle, timeout_s=0
+        )
+        assert snapshot["pending"] == [root.handle] and snapshot["outcomes"] == []
+        assert snapshot["timed_out"] is True and not settled.is_set()
         proof = current_member.model_copy(
             update={
                 "status": "cancelled",
@@ -550,5 +569,21 @@ async def test_uncertain_cancellation_retires_waiter_and_late_proof_settles_pare
     finally:
         if remove is not None:
             remove()
+
+        def settle_fixture() -> None:
+            current = owner.history.task_snapshot(member.handle)
+            if current is not None and current.terminal_at is None:
+                owner.history.record_snapshot(
+                    current.model_copy(
+                        update={
+                            "status": "cancelled",
+                            "settlement": "confirmed",
+                            "terminal_at": now(),
+                        }
+                    ),
+                    observation_id="fixture-cleanup",
+                )
+
+        await asyncio.to_thread(settle_fixture)
         await owner.shutdown()
         await owner.recovery.drain()

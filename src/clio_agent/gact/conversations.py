@@ -236,6 +236,13 @@ class Conversations:
             task.backend.owner == "conversation" and task.backend.placement == "local"
         )
 
+    def require_execution_owner(self, task: TaskSnapshot) -> None:
+        """Reject control of historical work this engine cannot physically settle."""
+        if task.kind in {"Session", "Subagent"} and not self.supports_execution(task):
+            raise ValueError(
+                "Conversation execution backend is unavailable; settlement is unconfirmed"
+            )
+
     async def _admit(self, sid: str) -> tuple[str, Any] | None:
         def select() -> ConversationSegment | None:
             with self.history.serialized():

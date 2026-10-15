@@ -37,6 +37,7 @@ class Invocation:
     function: Callable[..., Any]
     context: contextvars.Context
     notifications: tuple[str, ...] = ()
+    read_handles: tuple[str, ...] = ()
     claimed: bool = False
     error: BaseException | None = None
 
@@ -75,6 +76,7 @@ class BuiltinTool(Tool):
             raise
         if isinstance(value, CollectedTaskResult):
             invocation.notifications = value.notification_ids
+            invocation.read_handles = value.read_handles
         if isinstance(value, dict):
             return ToolResult(structured_content=dict(value))
         return ToolResult(content=value)
@@ -194,10 +196,10 @@ class BuiltinBoundary:
             value: Any = reply.structured_content
             if value is None:
                 value = "\n".join(item.text for item in reply.content if hasattr(item, "text"))
-            if invocation.notifications:
+            if invocation.notifications or invocation.read_handles:
                 if not isinstance(value, dict):
                     raise TypeError("A collected task observation must contain an object")
-                return CollectedTaskResult(value, invocation.notifications)
+                return CollectedTaskResult(value, invocation.notifications, invocation.read_handles)
             return value
         finally:
             self.invocations.pop(reference, None)

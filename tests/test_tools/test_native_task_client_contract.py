@@ -68,6 +68,65 @@ def test_dependency_contract_is_pinned() -> None:
     assert version("pydocket") == "0.26.2"
 
 
+@pytest.mark.asyncio
+@pytest.mark.timeout(120)  # Actual SDK/native task survives an unanswered cancellation RPC.
+async def test_cancel_rpc_deadline_does_not_deadline_accepted_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    server = FastMCP("cancel-health-contract", tasks=True)
+    server.add_extension(
+        TasksExtension(url="memory://", name="cancel-" + uuid4().hex, concurrency=1)
+    )
+    started, release, cancel_retired = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    @server.tool(task=True)
+    async def work() -> dict[str, str]:
+        """Keep real accepted native execution active across a failed control RPC."""
+        started.set()
+        await release.wait()
+        return {"result": "deliberately released"}
+
+    accepted: list[AcceptedNativeCall] = []
+
+    async def adopt(call: AcceptedNativeCall) -> AcceptedTaskResult:
+        accepted.append(call)
+        return accepted_result({"accepted": True, "handle": call.submission.handle, "kind": "MCP"})
+
+    client = TaskAwareClient(server, on_task_accepted=adopt)
+    client.health_timeout_s = 0.02
+    async with client:
+        with client.submission(submission("work")):
+            await client.call_tool("work", {})
+        assert len(accepted) == 1
+        call = accepted[0]
+        observer = asyncio.create_task(call.task.result())
+        await asyncio.wait_for(started.wait(), 5)
+        session, requests = call.task._session, []
+        original_request = session.send_request
+
+        async def lost_cancel(request: Any, *args: Any, **kwargs: Any) -> Any:
+            if getattr(request, "method", "") == "tasks/cancel":
+                requests.append(request.params.task_id)
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancel_retired.set()
+            return await original_request(request, *args, **kwargs)
+
+        monkeypatch.setattr(session, "send_request", lost_cancel)
+        try:
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(call.request_cancel(), 2)
+            assert requests == [call.task.task_id] and cancel_retired.is_set()
+            assert not observer.done() and not release.is_set()
+            assert await asyncio.wait_for(client.ping(), 2)
+            assert not observer.done()
+        finally:
+            release.set()
+            result = await asyncio.wait_for(asyncio.shield(observer), 5)
+        assert result.structured_content == {"result": "deliberately released"}
+
+
 def test_default_client_factory_constructs_the_native_sdk_transport() -> None:
     """The ordinary configured-client route must work without a class override."""
     server = FastMCP("default-client-contract", tasks=True)

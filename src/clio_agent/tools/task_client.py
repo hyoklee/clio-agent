@@ -55,6 +55,14 @@ class AcceptedNativeCall:
     task: ToolTask
     creation: ClientCreateTaskResult
 
+    async def request_cancel(self) -> None:
+        """Bound cancellation RPC delivery, without imposing a cleanup/result deadline."""
+        client = self.task._client  # pinned SDK identity; dependency coupling stays here
+        if not isinstance(client, TaskAwareClient):
+            raise ValueError("Cancellation requires the application-owned task client")
+        async with asyncio.timeout(client.health_timeout_s):
+            await self.task.cancel()
+
     def reconnected(self, client: Client) -> AcceptedNativeCall:
         """Bind observation to the fresh SDK session, preserving original acceptance."""
         return AcceptedNativeCall(

@@ -63,6 +63,7 @@ def _collected(app: Any, caller: Any, value: dict[str, Any]) -> CollectedTaskRes
     }
     if value.get("handle") and value.get("pending") is False:
         handles.add(value["handle"])
+    read_handles = handles | ({value["handle"]} if value.get("handle") else set())
     with app.state.task_history.serialized():
         for handle in handles:
             current = TaskAccess(app.state.task_history, caller).require(handle, "read")
@@ -72,7 +73,7 @@ def _collected(app: Any, caller: Any, value: dict[str, Any]) -> CollectedTaskRes
             for item in app.state.task_history.pending_mail(caller.session_id)
             if item.handle in handles and item.kind in {"task_result", "question_answer"}
         )
-    return CollectedTaskResult(value, identities)
+    return CollectedTaskResult(value, identities, tuple(sorted(read_handles)))
 
 
 def _tool(
@@ -410,6 +411,7 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
         return CollectedTaskResult(
             {"results": value["outcomes"], **{k: v for k, v in value.items() if k != "outcomes"}},
             value.notification_ids,
+            value.read_handles,
         )
 
     async def observe_agent_tasks(
@@ -445,7 +447,9 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
 
     async def get_agent_task_output(task_id: str) -> dict[str, Any]:
         value = await canonical["get_task_result"](task_id)
-        return CollectedTaskResult({**value, "task_id": task_id}, value.notification_ids)
+        return CollectedTaskResult(
+            {**value, "task_id": task_id}, value.notification_ids, value.read_handles
+        )
 
     async def message_agent(task_id: str, message: str) -> dict[str, Any]:
         return await canonical["send_agent_message"](task_id, message)

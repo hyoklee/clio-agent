@@ -189,10 +189,13 @@ def register_task_routes(app: FastAPI) -> None:
             raise HTTPException(400, str(error)) from error
 
     @app.get("/v1/sessions/{sid}/tasks/{handle}/result")
-    async def result(sid: str, handle: str) -> dict[str, Any]:
+    async def result(sid: str, handle: str, cursor: str | None = None) -> dict[str, Any]:
         try:
             return await asyncio.to_thread(
-                app.state.task_operations.result, await asyncio.to_thread(caller, sid), handle
+                app.state.task_operations.result,
+                await asyncio.to_thread(caller, sid),
+                handle,
+                cursor,
             )
         except ValueError as error:
             raise HTTPException(404, str(error)) from error

@@ -28,12 +28,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def require_execution_owner(self: Conversations, task: TaskSnapshot) -> None:
-    """Reject control of a historical assignment this engine cannot physically own."""
-    if task.kind in {"Session", "Subagent"} and not self.supports_execution(task):
-        raise ValueError("Conversation execution backend is unavailable; settlement is unconfirmed")
-
-
 def _control_outcome(
     self: Conversations,
     caller: TaskCaller,
@@ -77,7 +71,7 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
     def request() -> tuple[TaskSnapshot, Any]:
         with self.history.serialized():
             current = TaskAccess(self.history, caller).require(handle, "control")
-            require_execution_owner(self, current)
+            self.require_execution_owner(current)
             latest = self.history.latest_assignment(current.owner.session_id)
             if (
                 current.kind not in {"Session", "Subagent"}
@@ -183,7 +177,7 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
 async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Release the model hold without replaying accepted operations."""
     current = await asyncio.to_thread(TaskAccess(self.history, caller).require, handle, "control")
-    require_execution_owner(self, current)
+    self.require_execution_owner(current)
     if current.kind not in {"Session", "Subagent"} or current.terminal_at is not None:
         raise ValueError("Resume requires the current active assignment")
     sid = current.owner.session_id
@@ -270,43 +264,45 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
     return {"handle": handle, "resumed": True}
 
 
+def _members_at_request(self: Conversations, current: TaskSnapshot, stamp: str) -> tuple[str, ...]:
+    """Use one immutable request boundary for live and recovered subtree membership."""
+    return tuple(
+        sorted(
+            member
+            for member in self.history.tree_handles(current.owner.session_id)
+            if member != current.handle
+            and (row := self.history.task_snapshot(member)) is not None
+            and row.created_at <= stamp
+            and (row.terminal_at is None or row.terminal_at > stamp)
+        )
+    )
+
+
 async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Close admission and acknowledge cancellation before awaiting actual subtree settlement."""
     members: tuple[str, ...] | None = None
     requested_at: str | None = None
 
-    def at_request(current: TaskSnapshot, stamp: str) -> tuple[str, ...]:
-        return tuple(
-            sorted(
-                member
-                for member in self.history.tree_handles(current.owner.session_id)
-                if member != current.handle
-                and (row := self.history.task_snapshot(member)) is not None
-                and row.created_at <= stamp
-                and (row.terminal_at is None or row.terminal_at > stamp)
-            )
-        )
-
     def request() -> TaskSnapshot:
         nonlocal members, requested_at
         with self.history.serialized():
             current = TaskAccess(self.history, caller).require(handle, "control")
-            require_execution_owner(self, current)
+            self.require_execution_owner(current)
             if current.kind not in {"Session", "Subagent"}:
                 raise ValueError("Handle is not a conversation assignment")
             if current.terminal_at is not None:
                 return current
+            details = (
+                AssignmentDetails.model_validate(self.history.read_content(current.details))
+                if current.details is not None
+                else AssignmentDetails()
+            )
             self._control_holds.add(handle)
             if current.cancellation_requested_at is None:
                 requested_at = requested_at or now()
                 stamp = requested_at
                 if members is None:
-                    members = at_request(current, stamp)
-                details = (
-                    AssignmentDetails.model_validate(self.history.read_content(current.details))
-                    if current.details is not None
-                    else AssignmentDetails()
-                )
+                    members = _members_at_request(self, current, stamp)
                 reference = self.history.write_content(
                     current.owner.session_id,
                     details.model_copy(update={"cancellation_members": members}).model_dump(
@@ -323,15 +319,10 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
                 )
                 self.history.record_snapshot(current, observation_id=uuid4().hex)
             else:
-                details = (
-                    AssignmentDetails.model_validate(self.history.read_content(current.details))
-                    if current.details is not None
-                    else AssignmentDetails()
-                )
                 members = (
                     details.cancellation_members
                     if details.cancellation_members is not None
-                    else at_request(current, current.cancellation_requested_at)
+                    else _members_at_request(self, current, current.cancellation_requested_at)
                 )
             return current
 
@@ -339,15 +330,18 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
     try:
         current = await asyncio.to_thread(request)
     except Exception:
+        if not self.history.requires_recovery:
+            raise
         current = await asyncio.to_thread(
             TaskAccess(self.history, caller).require, handle, "control"
         )
+        self.require_execution_owner(current)
         if current.kind not in {"Session", "Subagent"}:
             raise
         self._control_holds.add(handle)
         requested_at = requested_at or current.cancellation_requested_at or now()
         if members is None:
-            members = await asyncio.to_thread(at_request, current, requested_at)
+            members = await asyncio.to_thread(_members_at_request, self, current, requested_at)
         recording = "unconfirmed"
 
         async def reconcile() -> None:
@@ -367,7 +361,7 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
 async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Request a linked assignment after known cancellation/worker settlement."""
     current = await asyncio.to_thread(TaskAccess(self.history, caller).require, handle, "control")
-    require_execution_owner(self, current)
+    self.require_execution_owner(current)
     if current.kind not in {"Session", "Subagent"}:
         raise ValueError("Only conversation assignments restart")
     if handle in self._restarting:
@@ -491,7 +485,7 @@ async def _cancel_subtree(
     members: tuple[str, ...] | None = None,
     request_members: bool = True,
 ) -> None:
-    require_execution_owner(self, assignment)
+    self.require_execution_owner(assignment)
     previous_watch = self._cancel_watches.pop(assignment.handle, None)
     if previous_watch is not None:
         previous_watch()
@@ -511,14 +505,7 @@ async def _cancel_subtree(
             # Legacy cancellation lacks a captured set. Preserve work that was
             # active at the recorded request, including terminal replies since it.
             stamp = current.cancellation_requested_at or now()
-            return {
-                handle
-                for handle in self.history.tree_handles(current.owner.session_id)
-                if handle != current.handle
-                and (task := self.history.task_snapshot(handle)) is not None
-                and task.created_at <= stamp
-                and (task.terminal_at is None or task.terminal_at > stamp)
-            }
+            return set(_members_at_request(self, current, stamp))
 
     handles = tuple(sorted((await asyncio.to_thread(membership)) - {assignment.handle}))
     changed, loop = asyncio.Event(), asyncio.get_running_loop()
@@ -620,18 +607,26 @@ async def _cancel_subtree(
                 if retirement_error
                 else ()
             )
-            if current_errors or uncertain:
+            parent = await asyncio.to_thread(self.history.task_snapshot, assignment.handle)
+            unconfirmed = bool(current_errors or uncertain)
+            if unconfirmed or parent is not None and parent.attention_episode is not None:
 
-                async def record_uncertainty(
+                async def record_cancellation_state(
                     uncertain: list[str] = uncertain,
                     current_errors: tuple[dict[str, str], ...] = current_errors,
                     states: list[TaskSnapshot | None] = states,
+                    unconfirmed: bool = unconfirmed,
                 ) -> None:
                     def record() -> None:
                         with self.history.serialized():
                             current = self.history.task_snapshot(assignment.handle)
                             if current is None or current.terminal_at is not None:
                                 return
+                            if not unconfirmed and any(
+                                self.history.task_snapshot(handle) != state
+                                for handle, state in zip(handles, states, strict=True)
+                            ):
+                                return  # New owner evidence must be evaluated before clearing attention.
                             message = (
                                 "Descendant cancellation settlement is unconfirmed: "
                                 + json.dumps(
@@ -649,20 +644,27 @@ async def _cancel_subtree(
                                         "errors": current_errors,
                                     }
                                 )
+                                if unconfirmed
+                                else "Cancellation requested; physical cleanup is progressing."
+                            )
+                            status = "task_state_uncertain" if unconfirmed else "active"
+                            episode = (
+                                (current.attention_episode or uuid4().hex) if unconfirmed else None
                             )
                             if (
-                                current.status == "task_state_uncertain"
+                                current.status == status
                                 and current.progress.message == message
+                                and current.attention_episode == episode
                             ):
                                 return
                             observed = current.model_copy(
                                 update={
-                                    "status": "task_state_uncertain",
+                                    "status": status,
                                     "activity": "cancelling",
                                     "settlement": "unknown",
                                     "updated_at": now(),
                                     "progress": TaskProgress(message=message),
-                                    "attention_episode": current.attention_episode or uuid4().hex,
+                                    "attention_episode": episode,
                                     "supported_actions": (
                                         "observe",
                                         "wait",
@@ -673,21 +675,21 @@ async def _cancel_subtree(
                                 }
                             )
                             self.history.record_snapshot(observed, observation_id=uuid4().hex)
-                            publish_task_notice(
-                                self.history, observed, episode=observed.attention_episode or ""
-                            )
+                            if unconfirmed:
+                                publish_task_notice(self.history, observed, episode=episode or "")
 
                     await asyncio.to_thread(record)
 
                 try:
-                    await record_uncertainty()
+                    await record_cancellation_state()
                 except Exception as error:
                     logger.exception(
                         "Task boundary reason=cancel_attention_recording_unconfirmed error_type=%s",
                         type(error).__name__,
                     )
                     self.recovery.defer(
-                        "conversation-cancel-attention:" + assignment.handle, record_uncertainty
+                        "conversation-cancel-attention:" + assignment.handle,
+                        record_cancellation_state,
                     )
                 if retired_cleanly and all(
                     task is None or task.handle in uncertain or task.terminal_at is not None

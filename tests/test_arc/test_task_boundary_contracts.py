@@ -175,7 +175,8 @@ async def test_readiness_failure_after_last_owner_flush_remains_recoverable(
     await asyncio.wait_for(recovery.drain(), 10)
     assert flush_calls == 1 and ready_calls == 2
     assert not recovery.pending and not history.requires_recovery
-    assert [item.id for item in history.pending_mail("owner")] == ["ready"]
+    pending = await asyncio.to_thread(history.pending_mail, "owner")
+    assert [item.id for item in pending] == ["ready"]
 
 
 @pytest.mark.asyncio

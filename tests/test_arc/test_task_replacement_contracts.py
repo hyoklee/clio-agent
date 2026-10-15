@@ -198,6 +198,26 @@ async def test_expired_mixed_wait_preserves_running_members(arc: ARCMemory) -> N
 
 
 @pytest.mark.asyncio
+async def test_any_wait_reports_member_error_and_leaves_valid_work_pending(arc: ARCMemory) -> None:
+    """Preserve the shipped any=(settled or errors) contract without cancelling members."""
+    history = TaskHistory(arc)
+    running = await asyncio.to_thread(record_task, history, "task_running")
+    result = await asyncio.wait_for(
+        TaskOperations(history, forbid_cancel).wait(
+            TaskCaller("owner", "human"), ["task_missing", running.handle], return_when="any"
+        ),
+        2,
+    )
+    assert result == {
+        "outcomes": [{"handle": "task_missing", "error": "task_unavailable"}],
+        "pending": [running.handle],
+        "timed_out": False,
+    }
+    current = await asyncio.to_thread(history.task_snapshot, running.handle)
+    assert current.status == "running" and current.cancellation_requested_at is None
+
+
+@pytest.mark.asyncio
 async def test_revocation_releases_unbounded_peer_wait_without_task_progress(
     arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
 ) -> None:

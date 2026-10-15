@@ -201,3 +201,36 @@ entire fresh Q1–Q9/R1–R6 matrix remain outstanding. The feature candidate is
 not release-qualified. No product qualification service or model was launched
 during this correction packet; the completed review source and processes were
 removed, with bounded receipts retained.
+
+## R27: independent verdicts and finite input/control corrections
+
+Fable R26 ran as actual `claude-fable-5-1` over core `8f40aa8d` / GACT
+`557aecd3`, with the acceptance ledger included. It supports the architecture
+in principle and judges the replacement genuinely simpler, but returned NO-GO
+for source defects. Astra independently returned NO-GO and adjudicated Fable's
+findings. Its any-wait recommendation would change the shipped contract and is
+not adopted. The correction maps omitted from Fable's package are committed;
+the next package includes them without prior reviewer reports.
+
+The combined finite map is `docs/design/task-replacement-corrections-r27.md`.
+Initial source corrections and bulk regression construction are complete for
+collection revocation, RPC-only cancellation limits, REST pagination,
+defer-on-validation and resolved cancellation attention. Scoped static checks
+pass for fourteen changed source files. R27 behavioral cases are unexecuted
+and neither reviewer has approved these changes yet.
+
+The R26 boundary family executed eleven selected cases individually and
+sequentially with one worker. All passed after moving a test assertion's Core
+read off-loop; the original failure remains recorded. Receipts are
+`task-replacement-r26-boundary-checks.json` and
+`task-replacement-r26-boundary-retry-checks.json`. Both disposable parents are
+absent. The read-work case retained 1,004 tasks and measured 6.631 s startup
+replay, two exact snapshot reads and nine active snapshot reads. This does not
+qualify unrelated-session growth or the complete F03 gate.
+
+Static import inventory still identifies thirty-nine legacy test modules with
+retired imports; it includes unrelated historical imports and is not permission
+to delete their retained behavior. Required test migration, CI, Q1–Q9 and
+R1–R6 remain outstanding. No model/product qualification service, release or
+installed-state change occurred in this packet. Fable exited successfully;
+its source, process group and bounded remote receipt are absent after retrieval.

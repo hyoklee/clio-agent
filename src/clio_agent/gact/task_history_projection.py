@@ -509,6 +509,22 @@ def _accept_input(self: TaskHistory, record: RecipientInput) -> None:
     self.revision += 1
 
 
+def _validate_observed_input(self: TaskHistory, record: RecipientInput) -> None:
+    """An empty/subset acknowledgement cannot authenticate undisclosed result members."""
+    reference = record.tool_observation
+    if reference is None:
+        return
+    if reference.session_id != record.session_id or reference.scope != record.boundary.scope:
+        raise ValueError("Collected observation belongs to a different recipient context")
+    observation = self.read_content(reference)
+    identities = observation.get("notification_ids", ()) if isinstance(observation, dict) else ()
+    if not isinstance(identities, (list, tuple)) or any(not isinstance(i, str) for i in identities):
+        raise ValueError("Collected observation notification identities are malformed")
+    accepted = set(record.notification_ids) | self.acknowledged_notifications(record.session_id)
+    if not set(identities) <= accepted:
+        raise ValueError("Collected observation contains results outside the committed selection")
+
+
 def _validate_input_eligibility(self: TaskHistory, record: RecipientInput) -> None:
     iteration = (record.session_id, record.assignment_id, record.iteration_id)
     if iteration in self._iterations:
