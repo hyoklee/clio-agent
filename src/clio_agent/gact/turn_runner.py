@@ -6,7 +6,8 @@ import asyncio
 import logging
 import threading
 import time
-from collections.abc import Awaitable, Callable, Coroutine
+from collections.abc import Awaitable, Callable, Coroutine, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -244,6 +245,28 @@ class TurnRunner:
         """Reservation spans the whole segment, including waits and worker retirement."""
         with self._lock:
             return sid in self._turns
+
+    @contextmanager
+    def session_change(self, sid: str) -> Iterator[None]:
+        """Reserve the existing session slot while a finite runtime change settles.
+
+        Stop/shutdown waits for release. Callers must join any off-loop mutation
+        before leaving this boundary, including when their HTTP waiter is cancelled.
+        """
+        with self._lock:
+            if self._closing or sid in self._turns:
+                raise TurnAdmissionError(sid)
+            resources = _TurnResources(TurnHandle(sid, "", time.time()))
+            self._turns[sid] = resources
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._turns.pop(sid)
+                released = self._released.pop(sid, ())
+            for callback in released:
+                callback()
+            self.signal(sid)
 
     def bind_retirement(
         self, sid: str, turn_id: str, callback: Callable[[bool], Awaitable[None]]

@@ -19,7 +19,7 @@ from clio_agent.gact.blueprint_activation import agent_blueprint_activation_meta
 from clio_agent.gact.blueprint_catalog import materialize_blueprint, resolve_blueprint_choice
 from clio_agent.gact.blueprint_identity import AmbiguousBlueprintError, identity_fields
 from clio_agent.gact.blueprint_reload import apply_blueprint_change
-from clio_agent.gact.off_loop import run_off_loop
+from clio_agent.gact.off_loop import join_off_loop, run_off_loop
 from clio_agent.gact.session_warmup import release_session_fleet
 from clio_agent.gact.turn_runner import session_busy_error_payload
 
@@ -71,17 +71,14 @@ async def select_session_blueprint(
         )
         return selection_errors(selection) if row["materialized"] else {}
 
-    try:
-        with runner.reservation(sid):
-            result = await runner.revision_gate.run(run_off_loop(lambda: selection_errors(reuse)))
-            if not result:
-                result = await apply_blueprint_change(
-                    app, lambda: selection_errors(selection), label="Select blueprint"
-                )
-            await run_off_loop(release_session_fleet, sid)
-            return result
-    finally:
-        runner.request_input_admission(sid)
+    with runner.session_change(sid):
+        result = await runner.revision_gate.run(join_off_loop(lambda: selection_errors(reuse)))
+        if not result:
+            result = await apply_blueprint_change(
+                app, lambda: selection_errors(selection), label="Select blueprint"
+            )
+        await join_off_loop(release_session_fleet, sid)
+        return result
 
 
 async def prepare_session_blueprint(app: Any, workspace_id: str, metadata: dict[str, Any]) -> None:

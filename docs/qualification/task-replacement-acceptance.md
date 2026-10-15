@@ -531,3 +531,19 @@ The remaining legacy regression migration is tracked separately and must not be
 used to postpone live verification. Final CI, accepted implementation reviews,
 F03 and the finite Q1–Q9/R1–R6 matrix remain required. No release, installation,
 auth/default write or automatic-review boundary change is implied.
+
+## R44 correction from live source activation
+
+The R43 production service booted with private Core state on D, but blueprint
+activation failed before inference because a retained route called removed
+TurnRunner methods. No model or task ran. The failed attempt and normal service
+retirement are recorded in `task-replacement-r43-live-preflight.md`.
+
+R44 removes those calls. Finite blueprint changes reserve the existing TurnRunner
+session slot, join blocking mutations across HTTP cancellation, then signal the
+same admission owner. Stop/shutdown retains the slot until the change settles.
+No execution registry, alternate scheduler or model dispatch path is introduced.
+Fresh public activation and cancellation/retirement regressions are constructed,
+unexecuted. Scoped Ruff/format/Linux Mypy (three files), removal and unchanged
+size/class/hidden-swallow guards pass. The next run uses the corrected frozen
+source; none of these checks qualifies a Q/R acceptance row.
