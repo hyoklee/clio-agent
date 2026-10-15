@@ -1658,11 +1658,11 @@ def test_route_registration_eager_import_does_not_block_a_real_first_query(
     assert response.status_code == 200, response.text
 
 
-def _burn_cpu_for(seconds: float) -> None:
-    """Keep THIS thread on the CPU for ``seconds`` (a slow but working query stage)."""
-    deadline = time.monotonic() + seconds
+def _burn_cpu_for(seconds: float, *, clock: Callable[[], float] = time.monotonic) -> None:
+    """Burn work for the requested clock duration; wall time includes scheduler pauses."""
+    deadline = clock() + seconds
     total = 0
-    while time.monotonic() < deadline:
+    while clock() < deadline:
         total += sum(range(2_000))
     assert total > 0
 
@@ -1759,7 +1759,9 @@ def test_the_query_runs_on_its_own_measured_thread(tmp_path: Path) -> None:
     def run() -> Any:
         names.append(threading.current_thread().name)
         identity = progress.current_thread_identity()
-        _burn_cpu_for(0.3)
+        # This assertion measures CPU time, so scheduler pauses must not consume
+        # the fixture's work budget on a contended CI runner.
+        _burn_cpu_for(0.3, clock=time.thread_time)
         cpu = progress.thread_cpu_seconds(identity)
         assert cpu is not None and cpu >= 0.1
         return engine.run_table_query(
