@@ -20,6 +20,63 @@ from tests.test_arc.test_core_first_transcript import install
 
 
 @pytest.mark.asyncio
+async def test_withdrawal_keeps_a_surfaced_approval_waiting_for_its_human(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """Partial approval publication remains an input gate when its output is cleared."""
+    from clio_agent.arc.task_types import QuestionDefinition
+    from clio_agent.gact.question_surface import prepare_question_gate
+    from clio_agent.gact.questions import QuestionCommands
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    app.state.questions = QuestionCommands(owner.history)
+    app.state.questions.before_post = lambda task, definition: prepare_question_gate(
+        app, task, definition
+    )
+    stop = threading.Event()
+    app.state.cancel_events = {sid: stop}
+    retries: list[str] = []
+
+    def exercise() -> None:
+        question = app.state.questions.create(
+            root.owner,
+            QuestionDefinition(
+                prompt="Approve this retained plan?",
+                source="plan_exit",
+                metadata={
+                    "plan_approval": {
+                        "assignment": root.handle,
+                        "context_epoch": "",
+                        "request": {"summary": "Original plan"},
+                    }
+                },
+            ),
+            invocation_id="surfaced-plan",
+            handle="surfaced-plan",
+        )
+
+        def update_retry(status: str, **_kwargs: Any) -> None:
+            retries.append(status)
+
+        turn_finalize.settle_withdrawn_turn(app, sid, stop, update_retry_attempt=update_retry)
+        session = app.state.sessions.get(sid)
+        assert (
+            session.status == "waiting_user"
+            and session.metadata["execution_gate"] == question.handle
+        )
+        assert owner.history.task_snapshot(question.handle) == question
+        assert question.raw_status == "pending" and question.terminal_at is None
+        assert retries == ["cancelled"] and sid not in app.state.cancel_events
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["goal", "plan"])
 async def test_withdrawn_output_retires_without_goal_execution_or_plan_approval(
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, path: str

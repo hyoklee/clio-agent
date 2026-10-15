@@ -424,9 +424,19 @@ def settle_withdrawn_turn(
     """Retire a withdrawn turn's projections without publishing its discarded output."""
     if update_retry_attempt is not None:
         update_retry_attempt("cancelled", metadata_patch={"reason": "transcript_withdrawn"})
-    publish_turn_settled_status(app, sid, "idle", payload_extra={"reason": "transcript_withdrawn"})
     if app.state.cancel_events.get(sid) is turn_cancel_event:
         app.state.cancel_events.pop(sid, None)
+    with app.state.task_history.serialized():
+        current = app.state.sessions.get(sid)
+        if (
+            current is not None
+            and current.status == "waiting_user"
+            and current.metadata.get("execution_gate")
+        ):
+            return  # A surfaced approval still owns this input gate.
+        publish_turn_settled_status(
+            app, sid, "idle", payload_extra={"reason": "transcript_withdrawn"}
+        )
 
 
 def publish_finalized_turn(
