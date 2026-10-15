@@ -47,6 +47,73 @@ async def idle(owner: Conversations, sid: str) -> None:
 
 
 @pytest.mark.asyncio
+async def test_malformed_durable_input_is_visibly_held_without_stranding_later_feedback(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid, processed = root.owner.session_id, asyncio.Event()
+    observed: list[tuple[str, ...]] = []
+
+    async def model(segment: ConversationSegment) -> ConversationOutcome:
+        def commit() -> tuple[str, ...]:
+            caller = owner.caller(sid)
+            staged = owner.mail.stage(caller)
+            owner.mail.commit(
+                caller,
+                staged,
+                assignment_id=segment.assignment.handle,
+                iteration_id=segment.turn_id,
+                boundary=ContextBoundary(session_id=sid, scope="malformed-input", logical_time=0),
+            )
+            return tuple(item.id for item in staged.items)
+
+        observed.append(await asyncio.to_thread(commit))
+        processed.set()
+        return ConversationOutcome({"answer": "Processed valid feedback"})
+
+    owner.run_segment = model
+    owner.start()
+
+    def record_malformed() -> None:
+        # Normal API submission rejects this. The recovery contract still needs
+        # a visible hold for malformed retained records, rather than a retry spin.
+        owner.history.record_mail(
+            MailItem(
+                id="malformed",
+                recipient_session=sid,
+                kind="human",
+                sender_human="human",
+                created_at=now(),
+                content=owner.history.write_content(sid, {"text": 42}),
+            )
+        )
+
+    try:
+        await asyncio.to_thread(record_malformed)
+        owner.runner.signal(sid)
+        await idle(owner, sid)
+        held = owner.history.mail_item(sid, "malformed")
+        assert (
+            held is not None
+            and held.delivery == "held"
+            and held.held_reason == "invalid_queued_input"
+        )
+        assert not observed
+        owner.runner.signal(sid)
+        await idle(owner, sid)
+        assert owner.history.mail_item(sid, "malformed") == held and not observed
+        await accept(owner, sid, "valid-feedback", "Continue independent work")
+        await asyncio.wait_for(processed.wait(), 10)
+        await idle(owner, sid)
+        assert observed == [("valid-feedback",)]
+        assert owner.history.acknowledged_notifications(sid) == frozenset({"valid-feedback"})
+        assert owner.history.mail_item(sid, "malformed") == held
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("phase", ["admission", "busy_write", "final_write", "recording_failure"])
 async def test_stop_retirement_preserves_buffered_feedback_without_replaying_committed_input(
     arc: ARCMemory,

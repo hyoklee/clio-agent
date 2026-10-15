@@ -200,7 +200,7 @@ def _finish_segment(
             return
         pending = [
             self.history.task_snapshot(handle)
-            for handle in self.history.tree_handles(segment.session_id)
+            for handle in self.history.tree_handles(segment.session_id, active_only=True)
             if handle != current.handle
         ]
         details = (

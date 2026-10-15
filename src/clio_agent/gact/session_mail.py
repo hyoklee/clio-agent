@@ -214,6 +214,15 @@ class SessionMail:
                     if not isinstance(handle, str):
                         raise ValueError("Collected observation read identities are malformed")
                     access.require(handle, "read")
+                observations = (
+                    observed.get("task_observe_handles", ()) if isinstance(observed, dict) else ()
+                )
+                if not isinstance(observations, (list, tuple)):
+                    raise ValueError("Observed task identities are malformed")
+                for handle in observations:
+                    if not isinstance(handle, str):
+                        raise ValueError("Observed task identities are malformed")
+                    access.require(handle, "observe")
                 # Every disclosed result must still be readable, including a result
                 # whose automatic delivery won the collection race already.
                 notices = observed.get("notification_ids", ()) if isinstance(observed, dict) else ()
@@ -271,6 +280,63 @@ class SessionMail:
             self.committed(staged)
         return confirmed
 
+    def commit_collection(
+        self,
+        app: Any,
+        caller: TaskCaller,
+        observation: CoreReference,
+        notifications: tuple[str, ...],
+        *,
+        assignment_id: str,
+        iteration_id: str,
+        boundary: ContextBoundary,
+    ) -> RecipientInput:
+        """Render and confirm a stored observation through the sole recipient-input boundary."""
+        from clio_agent.gact.question_surface import render_collected_answers
+
+        with self.history.serialized():
+            content = self.history.read_content(observation)
+            if not isinstance(content, dict):
+                raise ValueError("Stored collection observation must be an object")
+            identities = content.get("notification_ids", ())
+            if not isinstance(identities, (tuple, list)) or tuple(identities) != notifications:
+                raise ValueError("Stored collection identities differ from the observation")
+            staged = self.collection(caller, notifications)
+            handles = content.get("task_read_handles", ())
+            if not isinstance(handles, (tuple, list)) or any(
+                not isinstance(handle, str) for handle in handles
+            ):
+                raise ValueError("Collected task read identities are malformed")
+            handles = tuple(
+                dict.fromkeys(
+                    (
+                        *handles,
+                        *(
+                            item.handle
+                            for item in staged.items
+                            if item.kind == "question_answer" and item.handle
+                        ),
+                    )
+                )
+            )
+            rendered = (
+                tuple(
+                    self.history.write_content(caller.session_id, value)
+                    for value in render_collected_answers(app, caller, handles)
+                )
+                if content.get("task_collection", True)
+                else ()
+            )
+            return self.commit(
+                caller,
+                staged,
+                assignment_id=assignment_id,
+                iteration_id=iteration_id,
+                boundary=boundary,
+                tool_observation=observation,
+                rendered_content=rendered,
+            )
+
     def collection(self, caller: TaskCaller, identities: tuple[str, ...]) -> StagedInput:
         """Select only notices represented by a persisted explicit tool observation."""
         with self.history.serialized():
@@ -283,10 +349,13 @@ class SessionMail:
                     item is None
                     or item.kind not in {"task_result", "question_answer"}
                     or item.handle is None
-                    or self.history.mail_withdrawn(caller.session_id, identity)
                 ):
                     raise ValueError("Collected result has no accepted recipient notification")
                 access.require(item.handle, "read")
+                if self.history.mail_withdrawn(caller.session_id, identity):
+                    # Unsubscribing withdraws automatic mail, not an authorized
+                    # explicit read already retained in the tool observation.
+                    continue
                 if identity not in acknowledged:
                     items.append(item)
             return StagedInput(tuple(items), (), identities)

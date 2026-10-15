@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from clio_agent import conf
-from clio_agent.gact.task_access import TaskAccess, TaskCaller
+from clio_agent.gact.task_access import TaskAccess, TaskAccessDenied, TaskCaller
 from clio_agent.gact.task_cursors import encode_cursor
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_output_pages import output_page, validate_output_cursor, workflow_state
@@ -32,7 +32,6 @@ def read_observations(
         or previous.get("handles") != list(handles)
     ):
         raise ValueError("Observation cursor belongs to a different read or history epoch")
-    access = TaskAccess(history, caller)
     if not isinstance(previous.get("positions", {}), dict) or not isinstance(
         previous.get("outputs", {}), dict
     ):
@@ -55,16 +54,19 @@ def read_observations(
     if type(start) is not int or not 0 <= start < len(handles):
         raise ValueError("Observation cursor has an invalid scan position")
     next_start, first_omitted = start, None
-    with history.serialized():
-        for scanned in range(len(handles)):
-            index = (start + scanned) % len(handles)
-            handle = handles[index]
+    for scanned in range(len(handles)):
+        index = (start + scanned) % len(handles)
+        handle = handles[index]
+        with history.serialized():
+            access = TaskAccess(history, caller)
             try:
                 current = access.require(handle, "observe")
-            except ValueError:
-                if positions.get(handle) == "unavailable":
-                    any_settled = True
-                    continue
+            except TaskAccessDenied:
+                current = None
+            readable = current is not None and "read" in access.rights(current)
+            view = access.view(current) if current is not None else {}
+        if current is None:
+            if positions.get(handle) != "unavailable":
                 if row_limit is None or len(rows) < row_limit:
                     rows.append({"handle": handle, "error": "task_unavailable"})
                     positions[handle] = "unavailable"
@@ -72,64 +74,85 @@ def read_observations(
                     has_more = True
                     if first_omitted is None:
                         first_omitted = index
-                any_settled = True
-                continue
-            settled = settled and current.terminal_at is not None
-            any_settled = (
-                any_settled
-                or current.terminal_at is not None
-                or (current.status == "task_state_uncertain")
-            )
-            view = access.view(current)
-            if include_state and "read" in access.rights(current):
+            any_settled = True
+            continue
+        settled = settled and current.terminal_at is not None
+        any_settled = (
+            any_settled
+            or current.terminal_at is not None
+            or current.status == "task_state_uncertain"
+        )
+        position = hashlib.sha256(json.dumps(view, sort_keys=True).encode()).hexdigest()
+        output_state = outputs.get(handle, {})
+        output_changed = readable and (
+            bool(output_state.get("pending"))
+            or output_state.get("completed")
+            != (current.progress.output.content_id if current.progress.output else None)
+        )
+        if positions.get(handle) == position and not output_changed:
+            continue
+        if (row_limit is not None and len(rows) >= row_limit) or (output_changed and budget == 0):
+            has_more = True
+            if first_omitted is None:
+                first_omitted = index
+            continue
+        # References and metadata are immutable; content I/O does not own the writer lock.
+        if readable:
+            if include_state:
                 view.update(workflow_state(history, current))
-            position = hashlib.sha256(json.dumps(view, sort_keys=True).encode()).hexdigest()
-            output_state = outputs.get(handle, {})
-            output_changed = "read" in access.rights(current) and (
-                bool(output_state.get("pending"))
-                or output_state.get("completed")
-                != (current.progress.output.content_id if current.progress.output else None)
+            chunks, continuation, used, more = output_page(
+                history, current, output_state, budget, pattern
             )
-            if positions.get(handle) == position and not output_changed:
+            outputs[handle] = continuation
+            if budget is not None:
+                budget -= used
+            if chunks:
+                view.update(output=chunks, output_order="newest_chunks_first")
+            view["output_truncated"] = more
+            has_more = has_more or more
+        positions[handle] = position
+        next_start = (index + 1) % len(handles)
+        rows.append(view)
+    # Recheck the entire batch: reading a later member may overlap a grant change.
+    with history.serialized():
+        access = TaskAccess(history, caller)
+        for row in rows:
+            handle = row["handle"]
+            if row.get("error"):
                 continue
-            if (row_limit is not None and len(rows) >= row_limit) or (
-                output_changed and budget == 0
-            ):
-                has_more = True
-                if first_omitted is None:
-                    first_omitted = index
-                continue
-            if "read" in access.rights(current):
-                chunks, continuation, used, more = output_page(
-                    history, current, output_state, budget, pattern
-                )
-                outputs[handle] = continuation
-                if budget is not None:
-                    budget -= used
-                if chunks:
-                    view.update(output=chunks, output_order="newest_chunks_first")
-                view["output_truncated"] = more
-                has_more = has_more or more
-            positions[handle] = position
-            next_start = (index + 1) % len(handles)
-            rows.append(view)
-        return {
-            "tasks": rows,
-            "settled": settled,
-            "any_settled": any_settled,
-            "timed_out": False,
-            "has_more": has_more,
-            "cursor": encode_cursor(
-                {
-                    "version": 2,
-                    "recipient": caller.session_id,
-                    "handles": list(handles),
-                    "positions": positions,
-                    "outputs": outputs,
-                    "scan_start": first_omitted if first_omitted is not None else next_start,
-                }
-            ),
-        }
+            try:
+                latest = access.require(handle, "observe")
+            except TaskAccessDenied:
+                row.clear()
+                row.update(handle=handle, error="task_unavailable")
+                positions[handle] = "unavailable"
+                outputs.pop(handle, None)
+                any_settled = True
+            else:
+                if "read" not in access.rights(latest):
+                    row.clear()
+                    row.update(access.view(latest))
+                    positions[handle] = hashlib.sha256(
+                        json.dumps(row, sort_keys=True).encode()
+                    ).hexdigest()
+                    outputs.pop(handle, None)
+    return {
+        "tasks": rows,
+        "settled": settled,
+        "any_settled": any_settled,
+        "timed_out": False,
+        "has_more": has_more,
+        "cursor": encode_cursor(
+            {
+                "version": 2,
+                "recipient": caller.session_id,
+                "handles": list(handles),
+                "positions": positions,
+                "outputs": outputs,
+                "scan_start": first_omitted if first_omitted is not None else next_start,
+            }
+        ),
+    }
 
 
 def pattern_text(row: dict[str, Any]) -> str:

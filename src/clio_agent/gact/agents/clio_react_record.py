@@ -405,18 +405,29 @@ class StepRecorder:
 
         segments = self.arc.context_view(self.session, self.scope).segments
         committed = owner.history.committed_observations(self.session, self.scope)
+        from clio_agent.gact.task_access import TaskAccessDenied
+
         for row in segments:
             if (
                 row.kind == "observation"
-                and (row.content.get("notification_ids") or row.content.get("task_read_handles"))
+                and (
+                    row.content.get("notification_ids")
+                    or row.content.get("task_read_handles")
+                    or row.content.get("task_observe_handles")
+                )
                 and str(row.id) not in committed
             ):
-                self._commit_collection(
-                    str(row.id),
-                    row.content,
-                    tuple(row.content.get("notification_ids", ())),
-                    str(row.content["call_id"]),
-                )
+                try:
+                    self._commit_collection(
+                        str(row.id),
+                        row.content,
+                        tuple(row.content.get("notification_ids", ())),
+                        str(row.content["call_id"]),
+                    )
+                except TaskAccessDenied:
+                    # ContextReader keeps this observation behind its existing safe
+                    # placeholder. Revocation must not strand unrelated accepted input.
+                    continue
         segments = self.arc.context_view(self.session, self.scope).segments
         collected = (identity,) if identity and human_head else ()
         staged = (
@@ -583,6 +594,9 @@ class StepRecorder:
             read_handles = (
                 list(value.read_handles) if isinstance(value, CollectedTaskResult) else []
             )
+            observe_handles = (
+                list(value.observe_handles) if isinstance(value, CollectedTaskResult) else []
+            )
             self._write(
                 "tool_call",
                 {"id": call.id, "name": call.name, "args": dict(call.input)},
@@ -595,9 +609,15 @@ class StepRecorder:
                 "is_error": is_error,
                 **({"notification_ids": notification_ids} if notification_ids else {}),
                 **({"task_read_handles": read_handles} if read_handles else {}),
+                **({"task_observe_handles": observe_handles} if observe_handles else {}),
+                **(
+                    {"task_collection": False}
+                    if isinstance(value, CollectedTaskResult) and not value.collect
+                    else {}
+                ),
             }
             observation_id = self._write("observation", observation, step, span)
-            if notification_ids or read_handles:
+            if notification_ids or read_handles or observe_handles:
                 self._commit_collection(
                     observation_id,
                     observation,
@@ -649,13 +669,9 @@ class StepRecorder:
         )
 
     def _commit_collection(
-        self,
-        identity: str,
-        content: dict[str, Any],
-        notifications: tuple[str, ...],
-        call_id: str,
+        self, identity: str, content: dict[str, Any], notifications: tuple[str, ...], call_id: str
     ) -> None:
-        """Acknowledge collection only after its real tool observation is durable."""
+        """Delegate durable result disclosure to the existing session input owner."""
         import hashlib
 
         from clio_agent.arc.task_types import ContextBoundary, CoreReference
@@ -665,52 +681,25 @@ class StepRecorder:
         app = context.active_app()
         if app is None:
             raise RuntimeError("Task collection requires its owning application")
-        owner = app.state.conversations
-        caller = owner.caller(self.session)
-        with owner.history.serialized():
-            staged = owner.mail.collection(caller, notifications)
-            from clio_agent.gact.question_surface import render_collected_answers
-
-            handles = content.get("task_read_handles", ())
-            if not isinstance(handles, (tuple, list)) or any(
-                not isinstance(handle, str) for handle in handles
-            ):
-                raise ValueError("Collected task read identities are malformed")
-            handles = tuple(
-                dict.fromkeys(
-                    (
-                        *handles,
-                        *(
-                            item.handle
-                            for item in staged.items
-                            if item.kind == "question_answer" and item.handle
-                        ),
-                    )
-                )
-            )
-            rendered = tuple(
-                owner.history.write_content(self.session, value)
-                for value in render_collected_answers(app, caller, handles)
-            )
-            segments = self.arc.context_view(self.session, self.scope).segments
-            owner.mail.commit(
-                caller,
-                staged,
-                assignment_id=context.active_assignment_handle(),
-                iteration_id=f"tool:{self.turn_id}:{self.expert_span_id}:{call_id}",
-                boundary=ContextBoundary(
-                    session_id=self.session,
-                    scope=self.scope,
-                    logical_time=max((row.logical_time for row in segments), default=0),
-                ),
-                tool_observation=CoreReference(
-                    session_id=self.session,
-                    scope=self.scope,
-                    content_id=identity,
-                    sha256=hashlib.sha256(_encoded(content)).hexdigest(),
-                ),
-                rendered_content=rendered,
-            )
+        segments = self.arc.context_view(self.session, self.scope).segments
+        app.state.conversations.mail.commit_collection(
+            app,
+            app.state.conversations.caller(self.session),
+            CoreReference(
+                session_id=self.session,
+                scope=self.scope,
+                content_id=identity,
+                sha256=hashlib.sha256(_encoded(content)).hexdigest(),
+            ),
+            notifications,
+            assignment_id=context.active_assignment_handle(),
+            iteration_id=f"tool:{self.turn_id}:{self.expert_span_id}:{call_id}",
+            boundary=ContextBoundary(
+                session_id=self.session,
+                scope=self.scope,
+                logical_time=max((row.logical_time for row in segments), default=0),
+            ),
+        )
 
     def completed(
         self,

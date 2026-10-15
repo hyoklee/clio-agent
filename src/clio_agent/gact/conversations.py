@@ -298,6 +298,10 @@ class Conversations:
                     else "Continue the retained assignment using the queued messages and task outcomes."
                 )
                 if not isinstance(input_text, str):
+                    self.history.update_mail(
+                        input_delivery(trigger, held=True, reason="invalid_queued_input"),
+                        expected_revision=trigger.revision,
+                    )
                     raise ValueError("Queued input text must be a string")
                 text = input_text
                 assignment = self.history.latest_assignment(sid)

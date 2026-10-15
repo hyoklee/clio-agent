@@ -78,7 +78,14 @@ class QuestionCommands:
                     previous.owner != owner
                     or previous.invocation_id != invocation_id
                     or previous.details is None
-                    or self._definition(previous) != definition
+                    or (
+                        QuestionDefinition.model_validate(
+                            self.history.read_content(previous.submission)
+                        )
+                        if previous.submission is not None
+                        else self._definition(previous)
+                    )
+                    != definition
                 ):
                     raise ValueError(
                         "Question invocation identity was reused with different content"
@@ -108,6 +115,7 @@ class QuestionCommands:
                 created_at=stamp,
                 updated_at=stamp,
                 details=content,
+                submission=content,
                 resource_id=resource,
             )
             self.history.record_snapshot(accepted, observation_id=uuid4().hex)
@@ -198,6 +206,7 @@ class QuestionCommands:
                     "status": "input_required",
                     "activity": "waiting_for_input",
                     "details": details,
+                    "submission": current.submission or details,
                     "updated_at": _now(),
                     "supported_actions": ("observe", "wait", "cancel", "answer"),
                 }

@@ -8,23 +8,36 @@ import json
 import logging
 import math
 import re
-from collections.abc import Awaitable, Callable
+from bisect import bisect_right
+from collections.abc import Awaitable, Callable, Iterator, Sequence
+from heapq import merge
+from itertools import islice
 from typing import Any, get_args
 
-from clio_agent.arc.task_types import TaskKind, TaskSnapshot, TaskSubscription
+from clio_agent.arc.task_types import CoordinationRight, TaskKind, TaskSnapshot, TaskSubscription
 from clio_agent.gact.native_work import now
-from clio_agent.gact.task_access import TaskAccess, TaskCaller
+from clio_agent.gact.task_access import TaskAccess, TaskAccessDenied, TaskCaller
 from clio_agent.gact.task_cursors import decode_cursor as _decode
 from clio_agent.gact.task_cursors import encode_cursor as _cursor
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_observations import pattern_text, read_observations
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 from clio_agent.gact.task_result_content import committed_evidence, read_cursor, result_page
+from clio_agent.gact.tool_observation import CollectedTaskResult
 
 CancelOwner = Callable[[TaskSnapshot, TaskCaller], Awaitable[dict[str, Any]]]
 
 
 logger = logging.getLogger(__name__)
+
+
+def _ordered_after(
+    ordering: Sequence[tuple[str, str]], after: tuple[str, str] | None
+) -> Iterator[tuple[str, str]]:
+    """Seek an immutable ordering without copying or walking its preceding history."""
+    start = bisect_right(ordering, after) if after is not None else 0
+    for index in range(start, len(ordering)):
+        yield ordering[index]
 
 
 def _handles(tasks: str | list[str]) -> tuple[str, ...]:
@@ -90,31 +103,53 @@ class TaskOperations:
         position = _decode(cursor)
         if position and position.get("filter") != signature:
             raise ValueError("Task cursor belongs to a different query")
+        after = position.get("after", [])
+        if (
+            not isinstance(after, list)
+            or len(after) not in {0, 2}
+            or any(not isinstance(value, str) for value in after)
+        ):
+            raise ValueError("Task query cursor ordering is malformed")
+        canonical_kind = next(
+            (
+                value
+                for value in get_args(TaskKind)
+                if kind is not None and value.casefold() == kind.casefold()
+            ),
+            kind or "",
+        )
         with self.history.serialized():
-            seed = None
+            orders = access.query_orders(scope, kind=canonical_kind, active_only=active_only)
+            total: int | None = (
+                len(orders[0])
+                if len(orders) == 1 and status is None and tool is None and agent is None
+                else None
+            )
             if handle is not None:
                 resolved = self.history.resolve_handle(handle)
-                seed = {resolved} if resolved is not None else set()
-            elif kind is not None or active_only:
-                canonical_kind = (
-                    next(
-                        (
-                            value
-                            for value in get_args(TaskKind)
-                            if value.casefold() == kind.casefold()
-                        ),
-                        kind,
-                    )
-                    if kind is not None
-                    else None
-                )
-                seed = self.history.task_handles(kind=canonical_kind, active_only=active_only)
-            candidates = access.candidates(scope, seed=seed)
-            rows = []
-            for identity in candidates:
-                current = self.history.task_snapshot(identity)
-                if current is None or not {"read", "observe"}.intersection(access.rights(current)):
+                task = self.history.task_snapshot(resolved) if resolved is not None else None
+                orders = (((task.created_at, task.handle),),) if task is not None else ((),)
+                total = None
+            anchor = (after[0], after[1]) if after else None
+            streams = (_ordered_after(ordering, anchor) for ordering in orders)
+            page, previous, last = [], None, None
+            last_readable = False
+            candidates = iter(merge(*streams))
+            for key in islice(candidates, max(200, limit * 4)):
+                if key == previous:
                     continue
+                previous = key
+                current = self.history.task_snapshot(key[1])
+                if (
+                    current is None
+                    or not access.in_scope(current, scope)
+                    or not {"read", "observe"}.intersection(access.rights(current))
+                ):
+                    if handle is not None:
+                        continue
+                    raise ValueError("Task query visibility changed; restart the query")
+                last = key
+                last_readable = "read" in access.rights(current)
                 if (
                     (kind is not None and current.kind.casefold() != kind.casefold())
                     or (status is not None and current.status != status)
@@ -126,95 +161,115 @@ class TaskOperations:
                     )
                     or (active_only and current.terminal_at is not None)
                 ):
-                    continue
-                rows.append(current)
-            rows.sort(key=lambda task: (task.created_at, task.handle))
-            total = len(rows)
-            after = tuple(position.get("after", ()))
-            if after:
-                rows = [task for task in rows if (task.created_at, task.handle) > after]
-            page = rows[:limit]
-            next_cursor = None
-            if len(rows) > len(page):
-                last = page[-1]
-                next_cursor = _cursor(
-                    {"filter": signature, "after": [last.created_at, last.handle]}
-                )
-            return {
+                    matched = False
+                else:
+                    matched = True
+                    page.append(current)
+                if handle is not None:
+                    total = int(matched)
+                if len(page) >= limit:
+                    break
+            exhausted = next(candidates, None) is None
+            next_cursor = (
+                _cursor({"filter": signature, "after": list(last)})
+                if not exhausted and last is not None
+                else None
+            )
+            if handle is not None and total is None:
+                total = 0
+            value = {
                 "tasks": [access.view(task) for task in page],
                 "total": total,
                 "cursor": next_cursor,
                 "revision": self.history.revision,
             }
+            # Sparse-page cursors identify their last authorized candidate too.
+            return CollectedTaskResult(
+                value,
+                (),
+                (last[1],) if last is not None and last_readable else (),
+                observe_handles=(last[1],) if last is not None and not last_readable else (),
+                collect=False,
+            )
 
     def result(self, caller: TaskCaller, handle: str, cursor: str | None = None) -> dict[str, Any]:
-        """Read retained terminal output; the recipient-input commit acknowledges collection."""
-        with self.history.serialized():
-            canonical = self.history.resolve_handle(handle) or handle
-            position = read_cursor(cursor, caller, canonical) if cursor is not None else {}
-            current = None
-            if position.get("mode") != "shared_evidence":
-                try:
-                    current = TaskAccess(self.history, caller).require(handle, "read")
-                except ValueError:
-                    if position:
-                        raise  # A task-result continuation cannot silently change read mode.
-            if current is None:
-                pin = committed_evidence(self.history, caller, canonical)
-                return {
-                    "result_kind": "shared_evidence",
-                    "handle": pin.handle,
-                    "status": pin.status,
-                    "pending": False,
-                    "source_owner": pin.owner.model_dump(mode="json"),
-                    "terminal_at": pin.terminal_at,
-                    "description": pin.description,
-                    "description_missing": pin.description_missing,
-                    "partial": pin.partial,
-                    **result_page(
-                        self.history, caller, pin.handle, pin.result, "shared_evidence", position
-                    ),
-                }
-            result: dict[str, Any] = {
-                "handle": current.handle,
-                "status": current.status,
-                "pending": current.terminal_at is None,
-                "settlement": current.settlement,
+        """Read immutable result content outside the writer lock, then recheck disclosure."""
+        value = self._read_result(caller, handle, cursor)
+        if value.get("result_kind") == "shared_evidence":
+            pin = committed_evidence(self.history, caller, value["handle"])
+            if value.get("result_reference") != pin.result.model_dump(mode="json"):
+                raise TaskAccessDenied("The exact delegated result is unavailable")
+        else:
+            TaskAccess(self.history, caller).require(value["handle"], "read")
+        return value
+
+    def _read_result(self, caller: TaskCaller, handle: str, cursor: str | None) -> dict[str, Any]:
+        """Capture a retained reference and read its bounded page without serializing writers."""
+        canonical = self.history.resolve_handle(handle) or handle
+        position = read_cursor(cursor, caller, canonical) if cursor is not None else {}
+        current = None
+        if position.get("mode") != "shared_evidence":
+            try:
+                current = TaskAccess(self.history, caller).require(handle, "read")
+            except TaskAccessDenied:
+                if position:
+                    raise  # A task-result continuation cannot silently change read mode.
+        if current is None:
+            pin = committed_evidence(self.history, caller, canonical)
+            return {
+                "result_kind": "shared_evidence",
+                "handle": pin.handle,
+                "status": pin.status,
+                "pending": False,
+                "source_owner": pin.owner.model_dump(mode="json"),
+                "terminal_at": pin.terminal_at,
+                "description": pin.description,
+                "description_missing": pin.description_missing,
+                "partial": pin.partial,
+                **result_page(
+                    self.history, caller, pin.handle, pin.result, "shared_evidence", position
+                ),
             }
-            if current.status in {"failed", "task_state_uncertain"}:
-                result["reason"] = current.progress.message
-            if current.terminal_at is None:
-                if current.backend_observation is not None and current.raw_status in {
-                    "completed",
-                    "failed",
-                    "cancelled",
-                    "inline",
-                }:
-                    result.update(
-                        result_page(
-                            self.history,
-                            caller,
-                            current.handle,
-                            current.backend_observation,
-                            "task_result",
-                            position,
-                        )
+        result: dict[str, Any] = {
+            "handle": current.handle,
+            "status": current.status,
+            "pending": current.terminal_at is None,
+            "settlement": current.settlement,
+        }
+        if current.status in {"failed", "task_state_uncertain"}:
+            result["reason"] = current.progress.message
+        if current.terminal_at is None:
+            if current.backend_observation is not None and current.raw_status in {
+                "completed",
+                "failed",
+                "cancelled",
+                "inline",
+            }:
+                result.update(
+                    result_page(
+                        self.history,
+                        caller,
+                        current.handle,
+                        current.backend_observation,
+                        "task_result",
+                        position,
                     )
-                    result.update(
-                        result_kind="backend_evidence",
-                        raw_status=current.raw_status,
-                        evidence_is_final=False,
-                    )
-                return result
-            if current.result is None:
-                result["result"] = None
-                return result
-            result.update(
-                result_page(
-                    self.history, caller, current.handle, current.result, "task_result", position
                 )
-            )
+                result.update(
+                    result_kind="backend_evidence",
+                    raw_status=current.raw_status,
+                    evidence_is_final=False,
+                )
             return result
+        if current.result is None:
+            result["result"] = None
+            return result
+        result.update(
+            result_page(
+                self.history, caller, current.handle, current.result, "task_result", position
+            )
+        )
+        return result
 
     async def wait(
         self,
@@ -270,16 +325,13 @@ class TaskOperations:
     def _outcomes(
         self, caller: TaskCaller, handles: tuple[str, ...]
     ) -> tuple[list[dict[str, Any]], list[str]]:
-        access = TaskAccess(self.history, caller)
         outcomes: list[dict[str, Any]] = []
         pending: list[str] = []
-        with self.history.serialized():
-            for handle in handles:
-                try:
-                    current = access.require(handle, "observe")
-                except ValueError:
-                    outcomes.append({"handle": handle, "error": "task_unavailable"})
-                    continue
+        checks: dict[int, tuple[str, CoordinationRight]] = {}
+        for handle in handles:
+            access = TaskAccess(self.history, caller)
+            try:
+                current = access.require(handle, "observe")
                 if (
                     not caller.human_action
                     and current.kind in {"Session", "Subagent"}
@@ -289,18 +341,41 @@ class TaskOperations:
                     outcomes.append(
                         {"handle": current.handle, "error": "cannot_wait_for_own_active_assignment"}
                     )
-                    continue
-                if current.terminal_at is None:
+                elif current.terminal_at is None:
                     pending.append(handle)
                     if (
                         current.status == "task_state_uncertain"
                         or current.attention_episode is not None
                     ):
+                        checks[len(outcomes)] = (handle, "observe")
                         outcomes.append({"handle": handle, "status": "task_state_uncertain"})
                 elif "read" in access.rights(current):
-                    outcomes.append(self.result(caller, handle))
+                    value = self.result(caller, handle)
+                    checks[len(outcomes)] = (handle, "read")
+                    outcomes.append(value)
                 else:
+                    checks[len(outcomes)] = (handle, "observe")
                     outcomes.append(access.view(current))
+            except TaskAccessDenied:
+                outcomes.append({"handle": handle, "error": "task_unavailable"})
+        # Another member's bounded Core read may have overlapped revocation.
+        with self.history.serialized():
+            access = TaskAccess(self.history, caller)
+            for index, (handle, right) in checks.items():
+                try:
+                    access.require(handle, right)
+                except TaskAccessDenied:
+                    outcomes[index] = {"handle": handle, "error": "task_unavailable"}
+                    pending = [item for item in pending if item != handle]
+            for handle in tuple(pending):
+                try:
+                    access.require(handle, "observe")
+                except TaskAccessDenied:
+                    pending.remove(handle)
+                    if not any(
+                        row.get("handle") == handle and row.get("error") for row in outcomes
+                    ):
+                        outcomes.append({"handle": handle, "error": "task_unavailable"})
         return outcomes, pending
 
     async def observe(

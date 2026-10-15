@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from functools import cached_property
 
@@ -9,6 +10,10 @@ from clio_agent.arc.task_types import CoordinationGrant, CoordinationRight, Task
 from clio_agent.gact.task_history import TaskHistory
 
 ALL_RIGHTS: frozenset[CoordinationRight] = frozenset({"read", "observe", "message", "control"})
+
+
+class TaskAccessDenied(ValueError):
+    """An unavailable task cannot be disclosed or controlled by this caller."""
 
 
 @dataclass(frozen=True)
@@ -25,10 +30,6 @@ class TaskAccess:
 
     def __init__(self, history: TaskHistory, caller: TaskCaller) -> None:
         self.history, self.caller = history, caller
-
-    @cached_property
-    def _tree(self) -> set[str]:
-        return self.history.tree_handles(self.caller.session_id)
 
     @cached_property
     def _grants(self) -> tuple[CoordinationGrant, ...]:
@@ -94,7 +95,7 @@ class TaskAccess:
         resolved = self.history.resolve_handle(handle)
         current = self.history.task_snapshot(resolved) if resolved is not None else None
         if current is None or right not in self.rights(current):
-            raise ValueError("Task is unavailable for this operation")
+            raise TaskAccessDenied("Task is unavailable for this operation")
         return current
 
     def stable_message_right(self, task: TaskSnapshot) -> bool:
@@ -127,10 +128,9 @@ class TaskAccess:
     def session_candidates(self, right: CoordinationRight) -> set[str]:
         """Read stable-session rights without broadening exact assignment grants."""
         sessions = {self.caller.session_id} if self.caller.session_id else set()
-        for handle in self._tree:
-            task = self.history.task_snapshot(handle)
-            if task is not None and task.owner.human_id == self.caller.human_id:
-                sessions.add(task.owner.session_id)
+        sessions.update(
+            self.history.session_tree_ids(self.caller.session_id, human_id=self.caller.human_id)
+        )
         if self.history.requires_recovery:
             return sessions
         for grant in self._grants:
@@ -142,39 +142,54 @@ class TaskAccess:
                 continue
             sessions.add(grant.target_session)
             if grant.target_scope == "tree":
-                for handle in self.history.tree_handles(grant.target_session):
-                    task = self.history.task_snapshot(handle)
-                    if task is not None:
-                        sessions.add(task.owner.session_id)
+                sessions.update(self.history.session_tree_ids(grant.target_session))
         return sessions
 
-    def candidates(self, scope: str, *, seed: set[str] | None = None) -> set[str]:
-        """Use passive hierarchy/relationship indexes, without scanning unrelated tasks."""
+    def query_orders(
+        self, scope: str, *, kind: str = "", active_only: bool = False
+    ) -> tuple[Sequence[tuple[str, str]], ...]:
+        """Select authorized scope streams before examining retained task candidates."""
         if scope not in {"tree", "authorized"}:
             raise ValueError("Task scope must be tree or authorized")
-        if seed is not None:
-            return {
-                handle
-                for handle in seed
-                if (task := self.history.task_snapshot(handle)) is not None
-                and self.in_scope(task, scope)
-            }
         if self.caller.human_action and not self.caller.session_id and scope == "authorized":
-            return self.history.task_handles(human_id=self.caller.human_id)
-        handles = set(self._tree)
-        if scope == "authorized":
-            for grant in self.history.coordination_grants(self.caller.session_id):
+            return (
+                self.history.task_order(
+                    "human", self.caller.human_id, kind=kind, active_only=active_only
+                ),
+            )
+        orders = [
+            self.history.task_order(
+                "tree",
+                self.caller.session_id,
+                human_id=self.caller.human_id,
+                kind=kind,
+                active_only=active_only,
+            )
+        ]
+        if scope == "authorized" and not self.history.requires_recovery:
+            for grant in self._grants:
                 if grant.revoked_at is not None or not {"read", "observe"}.intersection(
                     grant.rights
                 ):
                     continue
-                if grant.target_handle:
-                    handles.add(grant.target_handle)
-                elif grant.target_scope == "tree":
-                    handles.update(self.history.tree_handles(grant.target_session))
+                if grant.target_handle is not None:
+                    task = self.history.task_snapshot(grant.target_handle)
+                    if (
+                        task is not None
+                        and (not kind or task.kind == kind)
+                        and (not active_only or task.terminal_at is None)
+                    ):
+                        orders.append(((task.created_at, task.handle),))
                 else:
-                    handles.update(self.history.session_handles(grant.target_session))
-        return handles
+                    orders.append(
+                        self.history.task_order(
+                            grant.target_scope,
+                            grant.target_session,
+                            kind=kind,
+                            active_only=active_only,
+                        )
+                    )
+        return tuple(orders)
 
     def view(self, task: TaskSnapshot) -> dict[str, object]:
         """Observe-only grants expose safe counts/status, never descriptions or output."""

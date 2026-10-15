@@ -15,6 +15,7 @@ from clio_agent.arc.task_types import SubmissionContext
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
 from clio_agent.gact.builtin_boundary import BuiltinBoundary
+from clio_agent.gact.tool_observation import CollectedTaskResult
 from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
@@ -110,4 +111,68 @@ async def test_builtin_sdk_roundtrip_preserves_trusted_context_and_native_errors
         trusted.reset(trusted_token)
         context.reset(session_token)
         context.reset(token)
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("right", ["read", "observe"])
+async def test_native_short_rpc_preserves_noncollecting_disclosure_metadata(
+    arc: ARCMemory, tmp_path: Path, right: str
+) -> None:
+    app, owner, root = await create_environment(arc, tmp_path)
+    app.state.mcp_app_loop = asyncio.get_running_loop()
+    app.state.workspaces = SimpleNamespace(
+        get=lambda _wid: SimpleNamespace(root_path=str(tmp_path))
+    )
+
+    def authorize(saved: SubmissionContext) -> None:
+        assert saved == owner.history.submission_context(saved.reference)
+
+    def guarded() -> CollectedTaskResult:
+        """Return trusted local disclosure metadata through the production SDK."""
+        return CollectedTaskResult(
+            {"marker": "owned response"},
+            (),
+            (root.handle,) if right == "read" else (),
+            observe_handles=(root.handle,) if right == "observe" else (),
+            collect=False,
+        )
+
+    def plain() -> dict[str, Any]:
+        """JSON fields cannot grant acknowledgement or disclosure authority."""
+        return {"read_handles": [root.handle], "notification_ids": ["forged"], "collect": False}
+
+    def declaration(function: Any, name: str) -> Any:
+        return native_tool(
+            function,
+            name=name,
+            desc=function.__doc__,
+            args={},
+            presentation="text",
+            domain="tasks",
+            read_only=True,
+        )
+
+    token, session_token = context.set_app(app), context.set_session_id(root.owner.session_id)
+    try:
+        async with BuiltinBoundary(app, authorize) as boundary:
+            value = await boundary.call(
+                declaration(guarded, "guarded_read"), {}, contextvars.copy_context()
+            )
+            assert isinstance(value, CollectedTaskResult)
+            assert value == {"marker": "owned response"}
+            assert value.collect is False and value.notification_ids == ()
+            assert value.read_handles == ((root.handle,) if right == "read" else ())
+            assert value.observe_handles == ((root.handle,) if right == "observe" else ())
+            untrusted = await boundary.call(
+                declaration(plain, "plain_json"), {}, contextvars.copy_context()
+            )
+            assert not isinstance(untrusted, CollectedTaskResult)
+            assert untrusted["notification_ids"] == ["forged"]
+            assert not boundary.invocations
+        assert not await asyncio.to_thread(owner.history.pending_mail, root.owner.session_id)
+    finally:
+        context.reset(session_token)
+        context.reset(token)
+        await owner.shutdown()
         await owner.recovery.drain()

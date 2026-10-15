@@ -93,6 +93,13 @@ async def test_historical_invocation_cannot_advance_retry_and_inputs_keep_prior_
             await job
         first = await run_declared_workflow(app, caller, agent, "Inspect data", "invocation-A")
         assert first["status"] == STALL_CHILD_FAILED
+        assert first["failed_step"] == "b"
+        assert [step["launch_state"] for step in first["steps"]] == [
+            "accepted",
+            "accepted",
+            "not_launched",
+        ]
+        assert first["steps"][2]["task_id"] is None
         retry = asyncio.create_task(
             run_declared_workflow(app, caller, agent, "Inspect data", "invocation-B")
         )
@@ -102,6 +109,8 @@ async def test_historical_invocation_cannot_advance_retry_and_inputs_keep_prior_
         after = await asyncio.to_thread(owner.history.workflow_checkpoint, root.handle)
         assert replay["workflow_id"] == first["workflow_id"] and replay["replayed"] is True
         assert replay["status"] == STALL_CHILD_FAILED and after == before
+        assert replay["failed_step"] == first["failed_step"] and replay["steps"] == first["steps"]
+        assert before is not None
         assert before.execution_id != first["workflow_id"] and not retry.done()
         release.set()
         final = await asyncio.wait_for(retry, 5)
@@ -124,6 +133,7 @@ async def test_historical_invocation_cannot_advance_retry_and_inputs_keep_prior_
         latest = await asyncio.to_thread(
             owner.history.workflow_checkpoint, root.handle, "invocation-B"
         )
+        assert exact is not None and latest is not None
         assert exact.execution_id == first["workflow_id"]
         assert latest.execution_id == final["workflow_id"]
         await asyncio.to_thread(owner._restore_input_projections)
@@ -177,6 +187,7 @@ async def test_confirmed_workflow_checkpoint_repairs_stale_projection_after_repl
         assert root.handle in owner.history._workflow_dirty
         owner._restore_input_projections()
         current = owner.history.task_snapshot(root.handle)
+        assert current is not None and current.details is not None
         details = AssignmentDetails.model_validate(owner.history.read_content(current.details))
         assert details.workflow == content and details.workflow_id == "execution-A"
         assert (
@@ -184,7 +195,8 @@ async def test_confirmed_workflow_checkpoint_repairs_stale_projection_after_repl
         )
         owner.history.restore()
         owner._restore_input_projections()
-        assert owner.history.workflow_checkpoint(root.handle, "invocation-A").content == content
+        checkpoint = owner.history.workflow_checkpoint(root.handle, "invocation-A")
+        assert checkpoint is not None and checkpoint.content == content
         assert not owner.history._workflow_dirty
 
     try:

@@ -148,7 +148,9 @@ def model_context_segments(
         elif (
             segment.kind == "observation"
             and (
-                segment.content.get("notification_ids") or segment.content.get("task_read_handles")
+                segment.content.get("notification_ids")
+                or segment.content.get("task_read_handles")
+                or segment.content.get("task_observe_handles")
             )
             and str(segment.id) not in proofs
         ):

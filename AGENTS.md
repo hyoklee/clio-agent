@@ -27,7 +27,7 @@ Use `uv` for environment and command execution:
 - `uv sync --extra dev --extra optimizers` installs contributor dependencies.
 - `uv run ruff check src/ tests/ scripts/create_demo_data.py` runs lint checks.
 - `uv run ruff format src/ tests/ scripts/create_demo_data.py` formats code.
-- `uv run pytest tests/ -m "not integration"` runs the test suite. Coverage is not on by default; CI adds the flags explicitly (see Testing Guidelines).
+- `uv run --frozen --no-sync python -B scripts/run_tests.py tests/ -m "not integration"` runs the test suite with writable state inside the checkout before pytest plugins load. Coverage is not on by default; CI adds the flags explicitly (see Testing Guidelines).
 - `uv run src/clio_agent/ui/cli.py doctor` reports runtime truth for LM, tools, file policy, API, and `clio-core`.
 - `uv run src/clio_agent/ui/cli.py` starts the interactive CLI.
 - `uv run clio-agent serve --host 0.0.0.0 --port 8100` starts the unified GACT server (the `/v1` REST/SSE API, health at `/v1/health`).

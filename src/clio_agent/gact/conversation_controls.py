@@ -247,12 +247,16 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
     return {"handle": handle, "resumed": True}
 
 
-def _members_at_request(self: Conversations, current: TaskSnapshot, stamp: str) -> tuple[str, ...]:
+def _members_at_request(
+    self: Conversations, current: TaskSnapshot, stamp: str, *, active_only: bool = False
+) -> tuple[str, ...]:
     """Use one immutable request boundary for live and recovered subtree membership."""
     return tuple(
         sorted(
             member
-            for member in self.history.tree_handles(current.owner.session_id)
+            for member in self.history.tree_handles(
+                current.owner.session_id, active_only=active_only
+            )
             if member != current.handle
             and (row := self.history.task_snapshot(member)) is not None
             and row.created_at <= stamp
@@ -286,7 +290,7 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
                 requested_at = requested_at or now()
                 stamp = requested_at
                 if members is None:
-                    members = _members_at_request(self, current, stamp)
+                    members = _members_at_request(self, current, stamp, active_only=True)
                 reference = self.history.write_content(
                     current.owner.session_id,
                     details.model_copy(update={"cancellation_members": members}).model_dump(

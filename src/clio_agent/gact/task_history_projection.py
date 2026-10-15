@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import logging
 import time
+from bisect import bisect_left
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.arc.loop_guard import assert_store_write_off_loop
@@ -155,10 +157,134 @@ def _legacy_workflow(self: TaskHistory, snapshot: TaskSnapshot) -> None:
         self._workflow_unresolved[snapshot.handle] = str(error)
 
 
+def tree_handles(self: TaskHistory, session_id: str, *, active_only: bool = False) -> set[str]:
+    """Return the stable session's work and delegated descendants, never its ancestors."""
+    with self._lock:
+        if active_only:
+            return set(self._active_trees.get(session_id, ()))
+        handles = set(self._session_tasks.get(session_id, set()))
+        pending = list(handles)
+        while pending:
+            for child in self._children.get(pending.pop(), set()):
+                if child not in handles:
+                    handles.add(child)
+                    pending.append(child)
+        return handles
+
+
+def session_handles(self: TaskHistory, session_id: str) -> set[str]:
+    """Read the passive session index without loading or scanning task history."""
+    with self._lock:
+        return set(self._session_tasks.get(session_id, set()))
+
+
+def task_handles(
+    self: TaskHistory,
+    *,
+    kind: str | None = None,
+    human_id: str | None = None,
+    session_id: str | None = None,
+    active_only: bool = False,
+) -> set[str]:
+    """Read passive Core indexes; callers authorize before disclosing selected rows."""
+    with self._lock:
+        indexes = (
+            (kind, self._kind_tasks),
+            (human_id, self._human_tasks),
+            (session_id, self._session_tasks),
+        )
+        selections = [index.get(key, set()) for key, index in indexes if key is not None]
+        if active_only:
+            selections.append(self._active_tasks)
+        if not selections:
+            return set(self._tasks)
+        return set.intersection(*sorted(selections, key=len))
+
+
+def resource_handles(self: TaskHistory, resource_id: str) -> set[str]:
+    """Read owner-published resource associations from a passive Core index."""
+    with self._lock:
+        return set(self._resource_tasks.get(resource_id, ()))
+
+
+def task_order(
+    self: TaskHistory,
+    domain: str,
+    identity: str,
+    *,
+    human_id: str = "",
+    kind: str = "",
+    active_only: bool = False,
+) -> Sequence[tuple[str, str]]:
+    """Borrow a passive ordering while the caller holds history serialization."""
+    with self._lock:
+        return self._query_order.get((domain, identity, human_id, kind, active_only), ())
+
+
+def session_tree_ids(self: TaskHistory, session_id: str, *, human_id: str = "") -> set[str]:
+    """Read stable descendant addresses without enumerating their retained assignments."""
+    with self._lock:
+        return set(self._tree_sessions.get((session_id, human_id), ()))
+
+
 def _encoded(value: Any) -> bytes:
     return json.dumps(
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False
     ).encode()
+
+
+def _index_task_order(self: TaskHistory, snapshot: TaskSnapshot, *, known: bool) -> None:
+    """Project immutable ordering and active tree membership from confirmed observations."""
+    pending, seen = [snapshot.handle], set()
+    while pending:
+        handle = pending.pop()
+        if handle in seen:
+            continue
+        seen.add(handle)
+        task = self._tasks[handle]
+        scopes, ancestry = {task.owner.session_id}, {handle}
+        parent = task.owner.parent_handle
+        while parent is not None and parent not in ancestry:
+            ancestry.add(parent)
+            ancestor = self._tasks.get(parent)
+            if ancestor is None:
+                break
+            scopes.add(ancestor.owner.session_id)
+            parent = ancestor.owner.parent_handle
+        key = task.created_at, handle
+        buckets = {("human", task.owner.human_id, ""), ("session", task.owner.session_id, "")}
+        buckets.update(
+            ("tree", sid, human) for sid in scopes for human in ("", task.owner.human_id)
+        )
+        for domain, identity, human in buckets:
+            for kind in ("", task.kind):
+                for active in (False, True):
+                    ordering = self._query_order.setdefault(
+                        (domain, identity, human, kind, active), []
+                    )
+                    if self._replaying:
+                        if not active or task.terminal_at is None:
+                            ordering.append(key)
+                        continue
+                    at = bisect_left(ordering, key)
+                    present = at < len(ordering) and ordering[at] == key
+                    if active and task.terminal_at is not None:
+                        if present:
+                            ordering.pop(at)
+                    elif not present:
+                        ordering.insert(at, key)
+        for sid in scopes:
+            for human in ("", task.owner.human_id):
+                self._tree_sessions.setdefault((sid, human), set()).add(task.owner.session_id)
+            active_handles = self._active_trees.setdefault(sid, set())
+            if task.terminal_at is None:
+                active_handles.add(handle)
+            else:
+                active_handles.discard(handle)
+        if not known:
+            # Historical records may name a parent before its first observation.
+            # Its eventual arrival extends only that known descendant branch.
+            pending.extend(self._children.get(handle, ()))
 
 
 logger = logging.getLogger(__name__)
@@ -185,6 +311,8 @@ def restore(self: TaskHistory) -> None:
             self._active_tasks,
         )
         resource_tasks = self._resource_tasks
+        query_order, active_trees = self._query_order, self._active_trees
+        tree_sessions = self._tree_sessions
         assignments = self._assignments
         recipient_grants, subscriptions = self._recipient_grants, self._subscriptions
         workflows = self._workflow_bindings, self._workflow_executions, self._workflow_latest
@@ -202,6 +330,8 @@ def restore(self: TaskHistory) -> None:
         self._session_tasks, self._children = {}, {}
         self._kind_tasks, self._human_tasks, self._active_tasks = {}, {}, set()
         self._resource_tasks = {}
+        self._query_order, self._active_trees = {}, {}
+        self._tree_sessions = {}
         self._assignments = {}
         self._recipient_grants, self._subscriptions = {}, {}
         self._workflow_bindings, self._workflow_executions, self._workflow_latest = {}, {}, {}
@@ -233,6 +363,12 @@ def restore(self: TaskHistory) -> None:
                         raise ValueError("Task history observation envelope is incomplete")
                     continue  # unversioned historical formats are decoded at startup migration
                 self._project(event_type, payload)
+            # Build from latest observations once, with complete parent identities.
+            # Startup order may group sessions rather than follow global creation time.
+            for snapshot in self._tasks.values():
+                _index_task_order(self, snapshot, known=True)
+            for ordering in self._query_order.values():
+                ordering.sort()
             scopes: dict[tuple[str, str], dict[str, RecipientInput]] = {}
             for locator in self._input_locations.values():
                 key = (locator["session_id"], locator["scope"])
@@ -265,6 +401,8 @@ def restore(self: TaskHistory) -> None:
                 active_tasks,
             )
             self._resource_tasks = resource_tasks
+            self._query_order, self._active_trees = query_order, active_trees
+            self._tree_sessions = tree_sessions
             self._assignments = assignments
             self._recipient_grants, self._subscriptions = recipient_grants, subscriptions
             self._workflow_bindings, self._workflow_executions, self._workflow_latest = workflows
@@ -359,6 +497,8 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
                 self._deduplicated[key] = snapshot.handle
             elif self._deduplicated.get(key) == snapshot.handle:
                 self._deduplicated.pop(key, None)
+        if not self._replaying:
+            _index_task_order(self, snapshot, known=known)
     elif event_type in {"session.mail.accepted", "session.mail.updated"}:
         item = MailItem.model_validate(payload)
         previous = self._mail.get(item.recipient_session, {}).get(item.id)
@@ -518,10 +658,23 @@ def _validate_observed_input(self: TaskHistory, record: RecipientInput) -> None:
         raise ValueError("Collected observation belongs to a different recipient context")
     observation = self.read_content(reference)
     identities = observation.get("notification_ids", ()) if isinstance(observation, dict) else ()
-    if not isinstance(identities, (list, tuple)) or any(not isinstance(i, str) for i in identities):
+    if not isinstance(identities, (list, tuple)):
         raise ValueError("Collected observation notification identities are malformed")
     accepted = set(record.notification_ids) | self.acknowledged_notifications(record.session_id)
-    if not set(identities) <= accepted:
+    required: list[str] = []
+    for identity in identities:
+        if not isinstance(identity, str):
+            raise ValueError("Collected observation notification identities are malformed")
+        required.append(identity)
+        item = self.mail_item(record.session_id, identity)
+        if (
+            self.mail_withdrawn(record.session_id, identity)
+            and item is not None
+            and item.kind in {"task_result", "question_answer"}
+            and item.handle is not None
+        ):
+            accepted.add(identity)
+    if not set(required) <= accepted:
         raise ValueError("Collected observation contains results outside the committed selection")
 
 

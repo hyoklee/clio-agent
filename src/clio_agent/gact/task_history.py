@@ -86,6 +86,9 @@ class TaskHistory:
         self._kind_tasks: dict[str, set[str]] = {}
         self._human_tasks: dict[str, set[str]] = {}
         self._active_tasks: set[str] = set()
+        self._query_order: dict[tuple[str, str, str, str, bool], list[tuple[str, str]]] = {}
+        self._active_trees: dict[str, set[str]] = {}
+        self._tree_sessions: dict[tuple[str, str], set[str]] = {}
         self._resource_tasks: dict[str, set[str]] = {}
         self._assignments: dict[str, str] = {}
         self._children: dict[str, set[str]] = {}
@@ -577,49 +580,12 @@ class TaskHistory:
             handle = self._deduplicated.get((session_id, key))
             return self._tasks.get(handle) if handle is not None else None
 
-    def tree_handles(self, session_id: str) -> set[str]:
-        """Return the stable session's work and delegated descendants, never its ancestors."""
-        with self._lock:
-            handles = set(self._session_tasks.get(session_id, set()))
-            pending = list(handles)
-            while pending:
-                for child in self._children.get(pending.pop(), set()):
-                    if child not in handles:
-                        handles.add(child)
-                        pending.append(child)
-            return handles
-
-    def session_handles(self, session_id: str) -> set[str]:
-        """Read the passive session index without loading or scanning task history."""
-        with self._lock:
-            return set(self._session_tasks.get(session_id, set()))
-
-    def task_handles(
-        self,
-        *,
-        kind: str | None = None,
-        human_id: str | None = None,
-        session_id: str | None = None,
-        active_only: bool = False,
-    ) -> set[str]:
-        """Read passive Core indexes; callers authorize before disclosing selected rows."""
-        with self._lock:
-            indexes = (
-                (kind, self._kind_tasks),
-                (human_id, self._human_tasks),
-                (session_id, self._session_tasks),
-            )
-            selections = [index.get(key, set()) for key, index in indexes if key is not None]
-            if active_only:
-                selections.append(self._active_tasks)
-            if not selections:
-                return set(self._tasks)
-            return set.intersection(*sorted(selections, key=len))
-
-    def resource_handles(self, resource_id: str) -> set[str]:
-        """Read owner-published resource associations from a passive Core index."""
-        with self._lock:
-            return set(self._resource_tasks.get(resource_id, ()))
+    tree_handles = task_history_projection.tree_handles
+    session_handles = task_history_projection.session_handles
+    task_handles = task_history_projection.task_handles
+    resource_handles = task_history_projection.resource_handles
+    task_order = task_history_projection.task_order
+    session_tree_ids = task_history_projection.session_tree_ids
 
     def latest_assignment(self, session_id: str) -> TaskSnapshot | None:
         """Resolve a stable session's latest finite assignment from its passive Core index."""

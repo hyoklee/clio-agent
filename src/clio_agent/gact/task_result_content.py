@@ -7,7 +7,7 @@ from typing import Any
 
 from clio_agent import conf
 from clio_agent.arc.task_types import AssignmentDetails, AssignmentEvidence, CoreReference
-from clio_agent.gact.task_access import TaskCaller
+from clio_agent.gact.task_access import TaskAccessDenied, TaskCaller
 from clio_agent.gact.task_cursors import decode_cursor, encode_cursor
 from clio_agent.gact.task_history import TaskHistory
 
@@ -52,14 +52,14 @@ def committed_evidence(history: TaskHistory, caller: TaskCaller, handle: str) ->
     """Allow only an exact result included in this stable session's confirmed delegation input."""
     current = history.latest_assignment(caller.session_id)
     if current is None or current.owner.human_id != caller.human_id or current.details is None:
-        raise ValueError("Task result is unavailable")
+        raise TaskAccessDenied("Task result is unavailable")
     details = AssignmentDetails.model_validate(history.read_content(current.details))
     if details.evidence_assignment is None:
-        raise ValueError("Task result is unavailable")
+        raise TaskAccessDenied("Task result is unavailable")
     identity = "assignment:" + details.evidence_assignment
     committed = history.committed_notification_input(caller.session_id, identity)
     if committed is None:
-        raise ValueError("Task result is unavailable before delegated input commitment")
+        raise TaskAccessDenied("Task result is unavailable before delegated input commitment")
     reference = committed.content[committed.notification_ids.index(identity)]
     body = history.read_content(reference)
     if not isinstance(body, dict):
@@ -74,7 +74,7 @@ def committed_evidence(history: TaskHistory, caller: TaskCaller, handle: str) ->
     for pin in details.input_evidence:
         if pin.handle == handle and pin in confirmed:
             return pin
-    raise ValueError("Task result is unavailable")
+    raise TaskAccessDenied("Task result is unavailable")
 
 
 def result_page(

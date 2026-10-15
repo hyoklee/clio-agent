@@ -194,6 +194,7 @@ async def test_unavailable_assignment_control_is_rejected_without_recovery_inten
         assert root.handle not in owner._controls
         assert not any(key.startswith("conversation-cancel:") for key in owner.recovery.pending)
         current = await asyncio.to_thread(owner.history.task_snapshot, root.handle)
+        assert current is not None
         assert current.cancellation_requested_at is None and current.terminal_at is None
     finally:
         await owner.shutdown()
@@ -299,10 +300,28 @@ async def test_delayed_mixed_collection_rechecks_peer_without_subscription(
                     owner.history.record_grant(
                         grant.model_copy(update={"revoked_at": now()}), observation_id="revoke"
                     )
-                    with pytest.raises(ValueError, match="unavailable"):
-                        recorder.commit_input(1)
+                    recorder.commit_input(1)
                     assert not owner.history.committed_observations(sid, "main")
                     assert all(handle not in str(recorder.read_steps()) for handle in handles)
+                    owner.history.record_mail(
+                        MailItem(
+                            id="later-feedback",
+                            recipient_session=sid,
+                            sender_human="human",
+                            kind="human",
+                            content=owner.history.write_content(
+                                sid, {"text": "Continue independently of the inaccessible result"}
+                            ),
+                            created_at=now(),
+                        )
+                    )
+                    recorder.commit_input(2)
+                    assert "later-feedback" in owner.history.acknowledged_notifications(sid)
+                    assert "Continue independently" in str(recorder.read_steps())
+                    assert not owner.history.committed_observations(sid, "main")
+                    assert all(handle not in str(recorder.read_steps()) for handle in handles)
+                    if with_human:
+                        assert "human-feedback" in owner.history.acknowledged_notifications(sid)
                 else:
                     recorder.commit_input(1)
                     assert owner.history.committed_observations(sid, "main")

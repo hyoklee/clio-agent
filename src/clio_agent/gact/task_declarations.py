@@ -76,6 +76,22 @@ def _collected(app: Any, caller: Any, value: dict[str, Any]) -> CollectedTaskRes
     return CollectedTaskResult(value, identities, tuple(sorted(read_handles)))
 
 
+def _task_read(value: dict[str, Any]) -> CollectedTaskResult:
+    """Retain disclosure rights without collecting completion or rendering answer media."""
+    rows = [row for row in value.get("tasks", ()) if row.get("handle") and not row.get("error")]
+    reads = value.read_handles if isinstance(value, CollectedTaskResult) else ()
+    observations = value.observe_handles if isinstance(value, CollectedTaskResult) else ()
+    return CollectedTaskResult(
+        value,
+        (),
+        tuple(dict.fromkeys((*reads, *(row["handle"] for row in rows if "owner" in row)))),
+        observe_handles=tuple(
+            dict.fromkeys((*observations, *(row["handle"] for row in rows if "owner" not in row)))
+        ),
+        collect=False,
+    )
+
+
 def _tool(
     function: Any, name: str, args: dict[str, Any], description: str, *, read: bool = False
 ) -> Any:
@@ -106,7 +122,7 @@ def build_task_tools() -> list[Any]:
         scope: str = "tree",
     ) -> dict[str, Any]:
         app, caller = _runtime()
-        return await asyncio.to_thread(
+        value = await asyncio.to_thread(
             app.state.task_operations.query,
             caller,
             kind,
@@ -119,6 +135,7 @@ def build_task_tools() -> list[Any]:
             limit,
             scope,
         )
+        return _task_read(value)
 
     async def observe_tasks(
         tasks: str | list[str],
@@ -128,9 +145,10 @@ def build_task_tools() -> list[Any]:
         notify: bool | None = None,
     ) -> dict[str, Any]:
         app, caller = _runtime()
-        return await app.state.task_operations.observe(
+        value = await app.state.task_operations.observe(
             caller, tasks, cursor, pattern, timeout_s, notify
         )
+        return _task_read(value)
 
     async def wait_tasks(
         tasks: str | list[str], return_when: str = "all", timeout_s: float | None = None
@@ -190,7 +208,7 @@ def build_task_tools() -> list[Any]:
                 "limit": {"type": "integer", "minimum": 1, "default": 50},
                 "scope": {"type": "string", "enum": ["tree", "authorized"], "default": "tree"},
             },
-            "Inspect authorized tasks and finite session assignments. query_tasks('Subagent') filters children. Reading does not consume results.",
+            "Inspect authorized tasks and finite session assignments. query_tasks('Subagent') filters children. Follow cursor even after a short or empty page; total=null means the full count is unknown. Reading does not consume results.",
             read=True,
         ),
         _tool(
@@ -213,8 +231,7 @@ def build_task_tools() -> list[Any]:
                 "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"},
                 "timeout_s": _TIMEOUT,
             },
-            "Collect mixed task results. Default wait is unbounded; zero snapshots; positive expiry or Stop ends only this waiter. Pending tasks continue.",
-            read=True,
+            "Collect mixed task results and publish their completion notices. Default wait is unbounded; zero snapshots; positive expiry or Stop ends only this waiter. Pending tasks continue.",
         ),
         _tool(
             cancel_tasks,
@@ -226,8 +243,7 @@ def build_task_tools() -> list[Any]:
             get_task_result,
             "get_task_result",
             {"handle": {"type": "string"}, "cursor": _STRING},
-            "Read retained terminal output, or report pending. Follow next_cursor for bounded output; concatenate JSON chunks before parsing. A delegated evidence cursor reads only its committed snapshot. Later explicit reads remain possible.",
-            read=True,
+            "Collect retained terminal output and publish its completion notices, or report pending. Follow next_cursor for bounded output; concatenate JSON chunks before parsing. A delegated evidence cursor reads only its committed snapshot. Later explicit reads remain possible.",
         ),
         _tool(
             send_agent_message,
@@ -443,7 +459,7 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
             result["notice"] = (
                 "legacy_history_unavailable: starting the Core observation epoch; limit counts changed task rows, not SSE events"
             )
-        return result
+        return _task_read(result)
 
     async def get_agent_task_output(task_id: str) -> dict[str, Any]:
         value = await canonical["get_task_result"](task_id)
@@ -462,7 +478,7 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
                 "task_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
                 "timeout_s": _TIMEOUT,
             },
-            True,
+            False,
         ),
         (
             observe_agent_tasks,
@@ -480,7 +496,7 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
             },
             True,
         ),
-        (get_agent_task_output, "get_agent_task_output", {"task_id": {"type": "string"}}, True),
+        (get_agent_task_output, "get_agent_task_output", {"task_id": {"type": "string"}}, False),
         (
             message_agent,
             "message_agent",

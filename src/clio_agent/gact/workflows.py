@@ -20,21 +20,10 @@ if TYPE_CHECKING:
 STALL_PREDICATE_UNSATISFIED = "workflow_predicate_unsatisfied"
 STALL_CHILD_FAILED = "workflow_child_failed"
 STALL_SPAWN_REFUSED = "workflow_spawn_refused"
-# A step whose child went INACTIVE (no observable progress) for the inactivity window
-# while still RUNNING (non-terminal) — the progress-based liveness stall (#992). Distinct
-# from a child that FAILED, so the wire record never claims "failed" for a child whose
-# status is "running", and distinct from STALL_STEP_TIMEOUT (a declared absolute budget).
+# Historical wire vocabulary; the replacement installs no inactivity driver.
 STALL_STEP_STALLED = "workflow_step_stalled"
-# A step whose child exceeded a pack-DECLARED absolute per-step budget (``step.timeout_s``)
-# while still RUNNING. Retained ONLY for the opt-in declared budget — the default liveness
-# watch is progress-based (STALL_STEP_STALLED), never a wall-clock bound on legitimate work
-# (the owner's liveness principle, #992). A child that FAILED is STALL_CHILD_FAILED.
+# Only an explicitly declared execution deadline can produce this outcome.
 STALL_STEP_TIMEOUT = "workflow_step_timeout"
-
-
-# ===========================================================================
-# Declaration model
-# ===========================================================================
 
 
 @dataclass(frozen=True)
@@ -72,11 +61,7 @@ class WorkflowStep:
     task: str
     when_state: tuple[StatePredicate, ...]
     when_child_completed: str  # "" when no completion gate
-    # Optional pack-DECLARED absolute per-step budget in seconds (#992): a hard wall this
-    # step's child may not exceed even while actively progressing. ``0.0`` (the default,
-    # and the absence of ``timeout_s`` in the declaration) means progress-based liveness
-    # ONLY — no absolute bound. A pack author sets this only when a step genuinely must be
-    # bounded regardless of activity; the default watch never wall-clock-bounds legit work.
+    # Zero means no execution deadline; positive values are an author's explicit limit.
     timeout_s: float = 0.0
 
 
@@ -85,11 +70,6 @@ class DeclaredWorkflow:
     """A parsed, structurally-valid workflow declaration."""
 
     steps: tuple[WorkflowStep, ...]
-
-
-# ===========================================================================
-# Parsing + typed validation
-# ===========================================================================
 
 
 def _workflow_meta(agent_def: "AgentDef") -> Any:
@@ -195,7 +175,7 @@ def _parse_step(raw: Any, *, index: int) -> tuple[Optional[WorkflowStep], list[s
 def _parse_step_timeout(raw: Mapping[str, Any], *, step_id: str) -> tuple[float, str]:
     """Parse a step's optional declared absolute budget ``timeout_s`` (#992).
 
-    Absent → ``(0.0, "")`` (progress-based liveness only). Present → it must be a
+    Absent → ``(0.0, "")`` (no execution deadline). Present → it must be a
     positive number; anything else is a typed authoring error (like a malformed
     predicate) that disables the expert rather than silently degrading to no budget.
     """
@@ -375,11 +355,6 @@ def workflow_row_errors(row: "AgentDef", all_rows: list["AgentDef"]) -> list[str
     return workflow_validation_errors(row, {r.id for r in all_rows if r.parent_id == row.id})
 
 
-# ===========================================================================
-# Predicate evaluation (pure)
-# ===========================================================================
-
-
 @dataclass(frozen=True)
 class GateResult:
     """Whether a step's gate holds, plus the unmet predicate + observed state."""
@@ -449,11 +424,6 @@ def _merge_step_state(accumulated: dict[str, Any], incoming: Mapping[str, Any]) 
         accumulated[str(key)] = value
 
 
-# ===========================================================================
-# The runner
-# ===========================================================================
-
-
 def _render_task(step: WorkflowStep, request: str) -> str:
     """The child's task text: the declared step template, grounded with the request."""
 
@@ -467,7 +437,16 @@ def _step_references(workflow: DeclaredWorkflow, execution: dict[str, Any]) -> l
     """Expose ordered provenance from the runner's existing confirmed execution."""
     rows = execution["steps"]
     return [
-        {"step_id": step.id, "child": step.child, "task_id": rows.get(step.id, {}).get("handle")}
+        {
+            "step_id": step.id,
+            "child": step.child,
+            "task_id": rows.get(step.id, {}).get("handle"),
+            "launch_state": "accepted"
+            if step.id in rows
+            else "not_launched"
+            if execution.get("finished") or execution.get("status") == STALL_SPAWN_REFUSED
+            else "not_started",
+        }
         for step in workflow.steps
     ]
 
@@ -630,6 +609,7 @@ async def run_declared_workflow(
             "workflow_state": execution["state"],
             "outcomes": recorded_outcomes,
             "replayed": True,
+            "failed_step": execution.get("failed_step"),
             "steps": _step_references(workflow, execution),
         }
 
@@ -712,19 +692,29 @@ async def run_declared_workflow(
                 if step.timeout_s > 0
                 else None,
             )
+            if not spawned.get("accepted", False):
+                execution["status"] = STALL_SPAWN_REFUSED
+                await asyncio.to_thread(save)
+                return {
+                    "workflow_id": execution["id"],
+                    "status": STALL_SPAWN_REFUSED,
+                    "step": step.id,
+                    "failed_step": step.id,
+                    "reason": spawned.get("reason", "child_submission_rejected"),
+                    "steps": _step_references(workflow, execution),
+                    "outcomes": outcomes,
+                }
             row = {"handle": spawned["handle"], "session": spawned["session_id"]}
             execution["steps"][step.id] = row
             await asyncio.to_thread(save)
         waited = await app.state.task_operations.wait(caller, row["handle"], "all")
         outcomes.extend(waited["outcomes"])
         if waited["pending"]:
-            execution["status"] = (
-                "task_state_uncertain" if not waited["timed_out"] else STALL_STEP_TIMEOUT
-            )
+            execution["status"] = "task_state_uncertain"
             await asyncio.to_thread(save)
             return {
                 "workflow_id": execution["id"],
-                "status": "task_state_uncertain" if not waited["timed_out"] else STALL_STEP_TIMEOUT,
+                "status": "task_state_uncertain",
                 "step": step.id,
                 "pending": waited["pending"],
                 "steps": _step_references(workflow, execution),
@@ -764,11 +754,14 @@ async def run_declared_workflow(
             return {
                 "workflow_id": execution["id"],
                 "status": "task_state_uncertain"
-                if child is not None and child.settlement not in {"confirmed", "never_started"}
+                if child is None
+                or child.terminal_at is None
+                or child.settlement not in {"confirmed", "never_started"}
                 else STALL_STEP_TIMEOUT
                 if deadline_exceeded
                 else STALL_CHILD_FAILED,
                 "step": step.id,
+                "failed_step": execution.get("failed_step"),
                 "steps": _step_references(workflow, execution),
                 "outcomes": outcomes,
             }

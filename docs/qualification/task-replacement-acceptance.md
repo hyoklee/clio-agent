@@ -309,3 +309,27 @@ native Core or browser qualification ran during this construction packet.
 Source formatting/lint, Linux-target Mypy and the six frontend guards pass.
 TypeScript, focused execution, refreshed reviews, CI, F03 and Q1–Q9/R1–R6 remain
 pending. Constructed tests and earlier component evidence are not final acceptance.
+
+## R33 construction after R32 source review
+
+Six selected R32 component cases passed sequentially in the D execution checkout;
+the retained receipt separates initial test/bootstrap failures from retries. Both
+R32 independent reviews accept the architecture direction and reject source
+readiness. Astra's combined adjudication distinguishes source defects from missing
+qualification and rejects the claim that historical, noninstallable marketplace
+files restore relay execution.
+
+The correction/removal map is `docs/design/task-replacement-r33-corrections.md`.
+The complete current correction batch is constructed in existing owners. Typed
+disclosure denial, trusted query/observe metadata, non-consuming Question reads,
+immutable Question requests, passive ordered/active indexes, lock-free content
+reads with authorization rechecks and honest workflow provenance have fresh cases.
+Shared UI cache invalidation and canonical APPL collection grading have cases too.
+No R33 behavioral case has executed at this construction checkpoint.
+
+All tests, native Core, temporary state and caches must remain inside the D
+qualification repository. The contributor command and nested probes use the early
+contained launcher. Existing rejected/manual-only cleanup is preserved. No product
+service, model, browser qualification, release or installed-state change occurred
+during this construction packet. R33 source approval, migrated regressions, F03,
+exact-head CI and the full Q1–Q9/R1–R6 matrix remain required.
