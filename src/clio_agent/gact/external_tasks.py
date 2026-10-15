@@ -333,7 +333,11 @@ class ExternalTasks:
         if assignment is None:
             raise ValueError("MCP calls require an owning assignment")
         session = self.app.state.sessions.get(sid)
-        workspace = self.app.state.workspaces.get(session.workspace_id)
+        workspace = (
+            self.app.state.workspaces.get(session.workspace_id) if session is not None else None
+        )
+        if session is None or workspace is None:
+            raise ValueError("MCP execution session or workspace is unavailable")
         handle, reference, stamp = "task_" + uuid4().hex, uuid4().hex, now()
         submission = SubmissionContext(
             reference=reference,

@@ -279,7 +279,8 @@ class TaskOperations:
                     outcomes.append({"handle": handle, "error": "task_unavailable"})
                     continue
                 if (
-                    current.kind in {"Session", "Subagent"}
+                    not caller.human_action
+                    and current.kind in {"Session", "Subagent"}
                     and current.owner.session_id == caller.session_id
                     and current.terminal_at is None
                 ):

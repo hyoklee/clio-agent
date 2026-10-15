@@ -7,9 +7,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from clio_agent.arc.task_types import TaskSnapshot
+from clio_agent.arc.task_types import QuestionDefinition, TaskSnapshot
 from clio_agent.gact.events import Event
-from clio_agent.gact.question_surface import question_view, resolve_plan_question
+from clio_agent.gact.question_surface import (
+    prepare_question_gate,
+    question_view,
+    resolve_plan_question,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,10 +130,16 @@ class QuestionEvents:
             for handle in history.task_handles(kind="Question", active_only=True):
                 task = history.task_snapshot(handle)
                 if task is not None and task.details is not None:
-                    if task.tool == "hook_defer":
-                        from clio_agent.gact.hooks.turn_approval import restore_gate
-
-                        restore_gate(self.app, task)
+                    if task.tool in {"hook_defer", "plan_exit"}:
+                        definition = QuestionDefinition.model_validate(
+                            history.read_content(task.details)
+                        )
+                        try:
+                            prepare_question_gate(self.app, task, definition)
+                        except ValueError:
+                            logger.exception(
+                                "Approval gate requires inspection handle=%s", task.handle
+                            )
                     self.changed(task)
             for session in self.app.state.sessions.list():
                 gate = session.metadata.get("execution_gate")

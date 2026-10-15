@@ -777,7 +777,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     server_boot.start(app)  # clio-core attach + first doctor pass, both off-loop (typed rows)
     from clio_agent.gact import task_runtime
 
-    app.state.task_runtime_start = asyncio.create_task(task_runtime.start(app))
+    readiness: asyncio.Future[None] = asyncio.get_running_loop().create_future()
+    app.state.task_runtime_start = readiness
     agent_task: Optional[asyncio.Task] = None
     if getattr(app.state, "want_agent", False) and app.state.agent is None:
         agent_task = asyncio.create_task(_construct_agent_async(app))
@@ -785,7 +786,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     provider_catalog_task = server_boot.start_provider_catalog(app)
 
-    await asyncio.shield(app.state.task_runtime_start)
+    try:
+        await task_runtime.start(app)
+    except BaseException as error:
+        readiness.set_exception(error)
+        readiness.exception()  # observe failure even when construction has no readiness waiter
+        desktop_lifecycle.wake_for_shutdown()
+        producers = [item for item in (task, agent_task, provider_catalog_task) if item is not None]
+        for producer in producers:
+            producer.cancel()
+        await asyncio.gather(*producers, return_exceptions=True)
+        raise
+    readiness.set_result(None)
     yield
 
     # Agent construction runs on an executor thread. Cancelling its asyncio task
@@ -797,14 +809,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # #1334: no request is served on this loop any more, so the teardown flushes below
     # (the turn drain, the trace close) must LAND rather than be refused and dropped.
     loop_guard.begin_server_loop_drain(app.state.mcp_app_loop)
-    # #948 S1: the turn-runner idle hook is ALSO a turn producer — a draining
-    # turn's completion would otherwise re-drive a deferred resume, staging a fresh
-    # turn whose task the drain hard-cancels but whose SIDE EFFECTS (a persisted
-    # user message, the session flipped to 'running', a misleading
-    # ``user_question.resumed`` event) survive. Unregister it before draining so no
-    # completion during teardown stages new work. The deferred resume is simply
-    # not run (honest: no false 'resumed' claim), consistent with shutdown losing
-    # other in-memory in-flight state.
     await asyncio.to_thread(app.state.document_store.close)
     # #948 S1 (#662): quiesce the internal turn-PRODUCERS (the scheduler tick, the
     # agent-construction and lm-config tasks) BEFORE draining turns, so nothing can
@@ -825,22 +829,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             pass
 
     # Settle turns and task owners while their durable stores are still alive.
-    await task_runtime.close(app)
+    task_cleanup_errors = await task_runtime.close(app)
 
-    # Desktop Quit must release the shared runtime before any later executor join can
-    # block on a provider/tool worker.  The turn drain above is the safety boundary:
-    # cooperative cancellation has been signalled and every asyncio turn task has
-    # settled or been hard-cancelled, so application work can no longer reacquire the
-    # runtime.  Releasing from the HTTP route itself was too early (an active turn
-    # could immediately spawn clio-core again); releasing at the very end was too
-    # late (a stuck executor join let the desktop supervisor kill Python first,
-    # skipping this cleanup and leaking clio-core).
+    # Release Core after verified worker retirement and before later executor joins.
     await desktop_lifecycle.release_runtime_after_drain(app)
-
-    # #948 S3/S4: shut down every per-depth agent-task pool (child forwards) off the
-    # loop, symmetric to their lazy install. Without this their non-daemon workers
-    # leak across app lifecycles and a worker still in a slow child forward blocks
-    # process exit (concurrent.futures' atexit joins all workers).
 
     # MCP Apps may own browser attachments or other remote resources. Close
     # every retained record while the exact originating MCP transports are
@@ -876,6 +868,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # binding above is the backstop. The owner helper never raises.
     _agent = getattr(app.state, "agent", None)
     await desktop_lifecycle.finalize_desktop_shutdown(app, _agent)
+    if task_cleanup_errors:
+        raise BaseExceptionGroup("Task runtime cleanup failed", list(task_cleanup_errors))
 
 
 async def _construct_agent_async(app: "FastAPI") -> None:

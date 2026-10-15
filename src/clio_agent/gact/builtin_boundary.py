@@ -93,6 +93,8 @@ class BuiltinBoundary:
         self._registrations: dict[str, str] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
         self._closing = False
+        self._retired = asyncio.Event()
+        self._retired.set()
 
     async def __aenter__(self) -> BuiltinBoundary:
         """Retain both SDK endpoints on the application loop, independent of executor reaping."""
@@ -103,8 +105,7 @@ class BuiltinBoundary:
     async def __aexit__(self, *exc: Any) -> None:
         """Retire the client after conversation workers and their invocations exit."""
         self._closing = True
-        if self.invocations:
-            raise RuntimeError("Built-in invocations have not physically retired")
+        await self._retired.wait()
         await self.client.__aexit__(*exc)
 
     async def run_callable(self, invocation: Invocation, arguments: dict[str, Any]) -> Any:
@@ -182,8 +183,11 @@ class BuiltinBoundary:
             component._boundary, component._public_name = self, tool.name
             self.server.add_tool(component)
             self._registrations[identity] = registered
+        if self._closing:
+            raise RuntimeError("Built-in admission closed before dispatch")
         invocation = Invocation(submission, tool.func, captured)
         self.invocations[reference] = invocation
+        self._retired.clear()
         try:
             try:
                 reply = await self.client.call_tool(
@@ -203,6 +207,8 @@ class BuiltinBoundary:
             return value
         finally:
             self.invocations.pop(reference, None)
+            if not self.invocations:
+                self._retired.set()
 
     async def native_call(
         self, name: str, arguments: dict[str, Any], captured: contextvars.Context

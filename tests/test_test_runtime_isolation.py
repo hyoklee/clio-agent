@@ -1,10 +1,12 @@
-"""Regression tests for workspace-volume-contained pytest runtime state."""
+"""Regression tests for repository-contained pytest runtime state."""
 
 from __future__ import annotations
 
 import os
 import stat
 from pathlib import Path
+
+import pytest
 
 from tests._test_runtime_isolation import (
     cleanup_test_runtime,
@@ -14,15 +16,15 @@ from tests._test_runtime_isolation import (
 )
 
 
-def test_default_runtime_stays_beside_checkout(tmp_path: Path) -> None:
+def test_default_runtime_stays_inside_checkout(tmp_path: Path) -> None:
     checkout = tmp_path / "checkout"
     checkout.mkdir()
     environment: dict[str, str] = {}
 
     runtime = create_test_runtime(checkout, environment, pid=123, nonce="unit")
 
-    assert runtime.parent == tmp_path / ".checkout.pytest-runtime"
-    assert not runtime.parent.is_relative_to(checkout)
+    assert runtime.parent == checkout / ".pytest-runtime"
+    assert runtime.parent.is_relative_to(checkout)
     assert runtime.root == runtime.parent / "run-123-unit"
     assert runtime.temp_dir.is_relative_to(runtime.root)
     assert runtime.pytest_dir.is_relative_to(runtime.root)
@@ -38,6 +40,40 @@ def test_default_runtime_stays_beside_checkout(tmp_path: Path) -> None:
         "XDG_STATE_HOME",
     ):
         assert Path(environment[name]).is_relative_to(runtime.root)
+
+
+@pytest.mark.parametrize("configured", ["..", "../external-state", "."])
+def test_runtime_rejects_escaping_or_checkout_root_override(
+    tmp_path: Path, configured: str
+) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+
+    with pytest.raises(ValueError, match="inside the checkout"):
+        create_test_runtime(checkout, {"CLIO_TEST_RUNTIME_ROOT": configured})
+
+    assert list(checkout.iterdir()) == []
+    assert not (tmp_path / "external-state").exists()
+
+
+def test_runtime_rejects_absolute_external_override(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    external = tmp_path / "external-state"
+
+    with pytest.raises(ValueError, match="inside the checkout"):
+        create_test_runtime(checkout, {"CLIO_TEST_RUNTIME_ROOT": str(external)})
+
+    assert not external.exists()
+
+
+def test_runtime_accepts_repository_local_override(tmp_path: Path) -> None:
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+
+    parent = resolve_test_runtime_parent(checkout, {"CLIO_TEST_RUNTIME_ROOT": ".test-state"})
+
+    assert parent == checkout / ".test-state"
 
 
 def test_runtime_cleanup_removes_readonly_fixture_files(tmp_path: Path) -> None:
@@ -92,11 +128,10 @@ def test_live_suite_runtime_is_not_system_temp() -> None:
     runtime = Path(os.environ["CLIO_TEST_RUNTIME_DIR"]).resolve()
     checkout = Path(__file__).resolve().parents[1]
 
-    # Beside the checkout by default; an explicit CLIO_TEST_RUNTIME_ROOT (a short
-    # path for Windows' MAX_PATH) moves it, and the suite must honor that.
+    # Overrides may select another directory, but cannot escape the checkout.
     expected_parent = resolve_test_runtime_parent(checkout, os.environ)
     assert runtime.is_relative_to(expected_parent)
-    assert not runtime.is_relative_to(checkout)
+    assert runtime.is_relative_to(checkout)
     assert Path(os.environ["TEMP"]).resolve().is_relative_to(runtime)
     assert Path(os.environ["TMP"]).resolve().is_relative_to(runtime)
     assert Path(os.environ["TMPDIR"]).resolve().is_relative_to(runtime)

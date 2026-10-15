@@ -10,7 +10,7 @@ from typing import Any
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import AssignmentDetails, MailItem, QuestionReply
+from clio_agent.arc.task_types import AssignmentDetails, DeferredCompletion, MailItem, QuestionReply
 from clio_agent.gact import context
 from clio_agent.gact.conversation_assignments import (
     ConversationOutcome,
@@ -22,7 +22,11 @@ from clio_agent.gact.hooks import turn_approval
 from clio_agent.gact.messaging import queued_user_input
 from clio_agent.gact.native_work import now
 from clio_agent.gact.permission_gate import resolve_permission
-from clio_agent.gact.question_surface import answer_question, resolve_plan_question
+from clio_agent.gact.question_surface import (
+    answer_question,
+    prepare_question_gate,
+    resolve_plan_question,
+)
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.session_input import apply_retry_supersession
 from clio_agent.gact.task_access import TaskCaller
@@ -44,6 +48,9 @@ async def prepared(
     app, owner, root = await create_environment(arc, tmp_path)
     app.state.bus, app.state.permissions = EventBus(), {}
     app.state.questions = QuestionCommands(owner.history)
+    app.state.questions.before_post = lambda task, definition: prepare_question_gate(
+        app, task, definition
+    )
     owner._loop = asyncio.get_running_loop()
     monkeypatch.setattr(owner.runner, "signal", lambda _sid: None)
 
@@ -83,7 +90,15 @@ async def prepared(
                 input_notification_id=original.id,
             )
             handle = turn_approval.suspend(
-                app, sid, event, "Human approval required", "Continue original work", "running"
+                app,
+                sid,
+                event,
+                "Human approval required",
+                "Continue original work",
+                "running",
+                completion=ConversationOutcome({"answer": "Approved exact output"})
+                if event == "Stop"
+                else None,
             )
         finally:
             context.reset(token)
@@ -372,8 +387,12 @@ async def test_stop_approval_uses_captured_assignment_and_cancellation_does_not_
     sid = root.owner.session_id
     calls = []
 
-    async def completed(session: str, assignment: str, *, context_epoch: str) -> None:
+    async def completed(
+        session: str, assignment: str, *, context_epoch: str, completion: DeferredCompletion
+    ) -> None:
         assert context_epoch == ""
+        assert owner.history.read_content(completion.result) == {"answer": "Approved exact output"}
+        assert not completion.failed
         calls.append((session, assignment))
 
     monkeypatch.setattr(owner, "complete_deferred", completed)
@@ -518,8 +537,16 @@ async def test_deferred_completion_rechecks_context_after_retirement(
         )
 
     await asyncio.to_thread(record, "original-epoch")
+    output = await asyncio.to_thread(
+        owner.history.write_content, root.owner.session_id, {"answer": "Original output"}
+    )
     finishing = asyncio.create_task(
-        owner.complete_deferred(root.owner.session_id, root.handle, context_epoch="original-epoch")
+        owner.complete_deferred(
+            root.owner.session_id,
+            root.handle,
+            context_epoch="original-epoch",
+            completion=DeferredCompletion(result=output),
+        )
     )
     try:
         await asyncio.sleep(0)

@@ -587,7 +587,9 @@ def finalize_turn(
     # audit code sees the settled assistant. A BOUNDED completion gate: a ``deny`` re-drives one more
     # turn on the #1031 idle-hook seam, hard-bounded by a per-hook ``loopLimit`` + a global cap that
     # settles DONE with a typed ``stop_loop_cap`` reason. Protocol lives in the hooks owner module.
+    from clio_agent.gact.conversation_assignments import ConversationOutcome
     from clio_agent.gact.hooks.stop_loop import dispatch_stop_at_finalize  # noqa: PLC0415
+    from clio_agent.gact.messaging import _prediction_summary
 
     dispatch_stop_at_finalize(
         state.app,
@@ -598,6 +600,15 @@ def finalize_turn(
         assistant_msg_id=assistant_msg.id,
         assistant_payload=assistant_msg.model_dump(exclude_none=True),
         blueprint_id=_runtime_active_agent_blueprint_id(state.app, state.sid),
+        completion=ConversationOutcome(
+            outputs=_prediction_summary(state.pred)
+            if state.pred is not None
+            else {"answer": state.answer_text},
+            context=getattr(state.pred, "clio_context_boundary", None),
+            error=state.error_info.model_dump(mode="json")
+            if state.error_info is not None
+            else None,
+        ),
     )
     # P4.1 #1079: the autonomous-loop bounded fallback (owner module; no-op when idle).
     from clio_agent.gact.autonomous_loop import dispatch_loop_at_finalize  # noqa: PLC0415

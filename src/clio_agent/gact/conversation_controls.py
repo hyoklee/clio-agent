@@ -20,9 +20,7 @@ from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 
 if TYPE_CHECKING:
-    from clio_agent.gact.conversations import (
-        Conversations,
-    )
+    from clio_agent.gact.conversations import Conversations
 
 
 logger = logging.getLogger(__name__)
@@ -291,6 +289,7 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
             if current.kind not in {"Session", "Subagent"}:
                 raise ValueError("Handle is not a conversation assignment")
             if current.terminal_at is not None:
+                self._control_holds.discard(handle)
                 return current
             details = (
                 AssignmentDetails.model_validate(self.history.read_content(current.details))
@@ -324,6 +323,7 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
                     if details.cancellation_members is not None
                     else _members_at_request(self, current, current.cancellation_requested_at)
                 )
+            self._control_holds.discard(handle)  # the confirmed cancellation now closes admission
             return current
 
     recording = "confirmed"
@@ -375,9 +375,7 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
 
     async def restart_settled() -> None:
         if cancellation is not None:
-            # Use the same mixed-wait semantics: genuine uncertainty ends
-            # this restart request, while the cancellation owner continues
-            # reconciling cleanup. Do not silently launch a successor later.
+            # Unknown settlement ends this restart request; it never launches later.
             await self.app.state.task_operations.wait(
                 TaskCaller("", current.owner.human_id, human_action=True), handle
             )
@@ -737,6 +735,9 @@ async def _cancel_subtree(
                 and session.metadata.get("agent_paused_assignment", current.handle)
                 == current.handle
             ):
+                from clio_agent.gact.question_surface import release_cancelled_assignment_gate
+
+                release_cancelled_assignment_gate(self.app, current)
                 self.sessions.update(
                     current.owner.session_id,
                     metadata_patch={

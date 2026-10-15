@@ -41,6 +41,7 @@ class QuestionCommands:
     def __init__(self, history: TaskHistory) -> None:
         self.history = history
         self.on_change: Callable[[TaskSnapshot], None] | None = None
+        self.before_post: Callable[[TaskSnapshot, QuestionDefinition], None] | None = None
 
     def create(
         self,
@@ -186,6 +187,8 @@ class QuestionCommands:
             self.validate_definition(definition)
             if definition.expires_at is not None:
                 self._deadline(definition)
+            if self.before_post is not None:
+                self.before_post(current, definition)
             details = self.history.write_content(
                 current.owner.session_id, definition.model_dump(mode="json")
             )

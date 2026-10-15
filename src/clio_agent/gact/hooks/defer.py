@@ -21,6 +21,8 @@ from clio_agent.gact.runtime.retention import enforce_dict_bound
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from clio_agent.gact.conversation_assignments import ConversationOutcome
+
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
@@ -292,6 +294,7 @@ def suspend_turn_defer(
     resume_text: str,
     prev_status: str = "running",
     extra: Mapping[str, Any] | None = None,
+    completion: ConversationOutcome | None = None,
 ) -> str | None:
     """Delegate turn-ending approval to the existing Core Question owner."""
     from clio_agent.gact.hooks.turn_approval import suspend
@@ -300,4 +303,4 @@ def suspend_turn_defer(
         return None
     if extra:
         raise ValueError("Turn approval bindings must be captured by their trusted owner")
-    return suspend(app, sid, hook_event, reason, resume_text, prev_status)
+    return suspend(app, sid, hook_event, reason, resume_text, prev_status, completion=completion)

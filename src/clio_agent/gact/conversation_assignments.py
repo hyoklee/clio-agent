@@ -15,6 +15,7 @@ from clio_agent.arc.task_types import (
     BackendReference,
     ContextBoundary,
     CoordinationGrant,
+    DeferredCompletion,
     MailItem,
     TaskOwner,
     TaskSnapshot,
@@ -207,7 +208,15 @@ def _finish_segment(
             else AssignmentDetails()
         )
         if segment.context_epoch != details.context_epoch:
-            return  # a cleared model segment cannot restore its old context after retirement
+            # Model execution has returned. A late Core retry must not change
+            # a newer reservation or restore output into the cleared epoch.
+            reservation = self.runner.handle(segment.session_id)
+            if reservation is None or reservation.turn_id == segment.turn_id:
+                self.history.record_snapshot(
+                    current.model_copy(update={"activity": "yielded", "updated_at": now()}),
+                    observation_id=uuid4().hex,
+                )
+            return
         if details.execution_deadline is not None and datetime.now(
             timezone.utc
         ) >= datetime.fromisoformat(details.execution_deadline):
@@ -253,7 +262,17 @@ def _finish_segment(
                 for item in self.history.pending_mail(segment.session_id)
             )
         )
-        disposition = outcome.disposition or ("yield" if has_work else "complete")
+        gated = bool(session.metadata.get("execution_gate")) or any(
+            task is not None
+            and task.kind == "Question"
+            and task.tool in {"hook_defer", "plan_exit"}
+            and task.owner.assignment_id == current.handle
+            and task.terminal_at is None
+            for task in pending
+        )
+        disposition = (
+            "yield" if gated else outcome.disposition or ("yield" if has_work else "complete")
+        )
         if disposition not in {"yield", "complete"}:
             raise ValueError("Invalid assignment disposition")
         output = self.history.write_content(segment.session_id, outcome.error or outcome.outputs)
@@ -273,7 +292,7 @@ def _finish_segment(
             "updated_at": stamp,
             "details": detail_ref,
         }
-        if outcome.error is not None or disposition == "complete":
+        if not gated and (outcome.error is not None or disposition == "complete"):
             updates.update(
                 status="failed" if outcome.error else "completed",
                 raw_status="failed" if outcome.error else "completed",
@@ -291,7 +310,12 @@ def _finish_segment(
 
 
 async def complete_deferred(
-    self: Conversations, sid: str, assignment_handle: str, *, context_epoch: str
+    self: Conversations,
+    sid: str,
+    assignment_handle: str,
+    *,
+    context_epoch: str,
+    completion: DeferredCompletion,
 ) -> None:
     """Accept a trusted Stop-hook approval after the model worker actually retires."""
     released, loop = asyncio.Event(), asyncio.get_running_loop()
@@ -305,13 +329,20 @@ async def complete_deferred(
                 raise ValueError("Deferred completion no longer addresses this assignment")
             if current.terminal_at is not None or current.cancellation_requested_at is not None:
                 return
-            if current.details is None:
-                raise ValueError("Deferred assignment context is unavailable")
-            details = AssignmentDetails.model_validate(self.history.read_content(current.details))
+            details = (
+                AssignmentDetails.model_validate(self.history.read_content(current.details))
+                if current.details
+                else AssignmentDetails()
+            )
             if details.context_epoch != context_epoch:
                 raise ValueError("Deferred completion context changed before worker retirement")
-            if details.last_output is None:
-                raise ValueError("Deferred completion has no retained model outcome")
+            if (
+                completion.result.session_id != sid
+                or completion.context is not None
+                and completion.context.session_id != sid
+            ):
+                raise ValueError("Deferred completion belongs to another session")
+            self.history.read_content(completion.result)
             if details.execution_deadline and datetime.now(timezone.utc) >= datetime.fromisoformat(
                 details.execution_deadline
             ):
@@ -322,18 +353,24 @@ async def complete_deferred(
                 return
             reference = self.history.write_content(
                 sid,
-                details.model_copy(update={"disposition": "complete"}).model_dump(mode="json"),
+                details.model_copy(
+                    update={
+                        "disposition": "complete",
+                        "last_output": completion.result,
+                        "context": completion.context or details.context,
+                    }
+                ).model_dump(mode="json"),
             )
             stamp = now()
             settled = current.model_copy(
                 update={
-                    "status": "completed",
-                    "raw_status": "completed",
+                    "status": "failed" if completion.failed else "completed",
+                    "raw_status": "failed" if completion.failed else "completed",
                     "activity": "",
                     "terminal_at": stamp,
                     "updated_at": stamp,
                     "settlement": "confirmed",
-                    "result": details.last_output,
+                    "result": completion.result,
                     "details": reference,
                     "supported_actions": ("get_result", "message", "restart"),
                 }

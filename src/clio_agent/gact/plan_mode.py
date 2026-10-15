@@ -500,10 +500,16 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     if not isinstance(pending, Mapping) or not pending or pending.get("surfaced"):
         return False
 
-    from clio_agent.arc.task_types import QuestionDefinition, QuestionOption, TaskOwner
+    from clio_agent.arc.task_types import (
+        AssignmentDetails,
+        QuestionDefinition,
+        QuestionOption,
+        TaskOwner,
+    )
     from clio_agent.gact.enrichment import _finalize_context_frame  # noqa: PLC0415
     from clio_agent.gact.events import Event  # noqa: PLC0415
     from clio_agent.gact.paused_transcript import persist_paused_transcript  # noqa: PLC0415
+    from clio_agent.gact.plan_exit_resolution import PlanApproval
     from clio_agent.gact.plan_reuse import save_approved_plan  # noqa: PLC0415
     from clio_agent.gact.question_surface import question_row
     from clio_agent.gact.runtime.globals import (  # noqa: PLC0415
@@ -568,6 +574,16 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
         if assignment is None:
             raise ValueError("Plan approval requires its owning assignment")
         app.state.conversations.require_admission(assignment)
+        details = (
+            AssignmentDetails.model_validate(history.read_content(assignment.details))
+            if assignment.details is not None
+            else AssignmentDetails()
+        )
+        question.metadata["plan_approval"] = PlanApproval(
+            assignment=assignment.handle,
+            context_epoch=details.context_epoch,
+            request=dict(pending),
+        ).model_dump(mode="json")
         app.state.questions.create(
             TaskOwner(
                 human_id=assignment.owner.human_id,
@@ -590,16 +606,9 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
             handle=question.id,
         )
     question = question_row(app, question.id)
-    updated = app.state.sessions.update(
-        state.sid,
-        status="waiting_user",
-        message_count=len(app.state.messages.get(state.sid, [])),
-        metadata_patch={
-            "pending_user_question_id": question.id,
-            "execution_gate": question.id,
-            _PLAN_EXIT_PENDING_KEY: {**dict(pending), "surfaced": True, "question_id": question.id},
-        },
-    )
+    # Question posting installs the recoverable gate before exposing an answerable
+    # question. Never reinstall it here after an early answer released it.
+    updated = app.state.sessions.get(state.sid)
     _finalize_context_frame(
         app,
         state.sid,

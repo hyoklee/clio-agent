@@ -43,6 +43,13 @@ async def run_owned_callable(
     worker = threading.Thread(target=execute, name=name)
     worker.start()
     stopped = False
+    # The worker result wakes the waiter; only final thread teardown needs
+    # liveness checks. Cancellation still waits for physical retirement.
+    while not result.done():
+        try:
+            await asyncio.wait({result})
+        except asyncio.CancelledError:
+            stopped = True
     while worker.is_alive():
         try:
             await asyncio.sleep(0.005)

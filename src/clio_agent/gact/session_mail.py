@@ -23,7 +23,7 @@ from clio_agent.gact.task_history import MailboxFull, TaskHistory
 from clio_agent.gact.task_publication import task_owner_recipient
 
 Eligibility = Callable[[str, MailItem], bool]
-ATOMIC_INPUT_KINDS = frozenset({"human", "composer", "delegation"})
+ATOMIC_INPUT_KINDS = frozenset({"human", "composer", "delegation", "question_answer"})
 
 
 class MailText(str):

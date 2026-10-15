@@ -44,6 +44,7 @@ from clio_agent.gact.session_input import accept_session_input
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from clio_agent.gact.conversation_assignments import ConversationOutcome
     from clio_agent.gact.types import Session
 
 logger = logging.getLogger(__name__)
@@ -243,6 +244,7 @@ def run_stop_hooks(
     turn_id: str,
     cwd: str,
     payload: Mapping[str, Any],
+    completion: ConversationOutcome | None = None,
 ) -> StopLoopResult:
     """Fire ``Stop`` hooks at the finalize boundary and apply the bounded self-loop.
 
@@ -293,6 +295,7 @@ def run_stop_hooks(
             resume_text=feedback
             or "A Stop hook reported the task is not complete; continue working.",
             prev_status="running",
+            completion=completion,
         )
         # A defer leaves the stop-sequence counters untouched (it neither redrove nor
         # settled); persist the prior state so a post-approval re-drive still counts.
@@ -343,6 +346,7 @@ def dispatch_stop_at_finalize(
     assistant_msg_id: str,
     assistant_payload: Mapping[str, Any],
     blueprint_id: str,
+    completion: ConversationOutcome | None = None,
 ) -> "StopLoopResult | None":
     """Fire the bounded Stop gate at the turn-finalize boundary + emit observability.
 
@@ -376,6 +380,7 @@ def dispatch_stop_at_finalize(
             turn_id=turn_id,
             cwd=cwd,
             payload={"assistant": dict(assistant_payload), "blueprint_id": blueprint_id},
+            completion=completion,
         )
         if result.redrive:
             _emit_semantic_event(

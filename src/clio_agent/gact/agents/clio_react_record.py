@@ -438,6 +438,12 @@ class StepRecorder:
                     from clio_agent.gact.assignment_evidence import render_delegation
 
                     rendered[notification] = render_delegation(owner.history, item.handle, payload)
+                elif item.kind == "question_answer" and item.handle:
+                    from clio_agent.gact.question_surface import render_answer_input
+
+                    rendered[notification] = render_answer_input(
+                        app, caller, item.handle, str(text)
+                    )
                 elif (
                     item.kind in {"human", "composer"}
                     and isinstance(payload, dict)
@@ -490,12 +496,7 @@ class StepRecorder:
                     emit_injection(source, str(value.get("text", "")), agent_id=self.expert_id)
 
     def injections(self, injections: Sequence[tuple[str, str]]) -> None:
-        """Record CLIO's additions for this turn, each once.
-
-        An addition whose text equals the latest recorded one from the same source is
-        still in the model's context, so it is not repeated (prefix reuse); a changed
-        one is recorded again, as a new message.
-        """
+        """Record changed CLIO additions; retain identical existing context for prefix reuse."""
         if self.arc is None or not injections:
             return
         latest: dict[str, str] = {}
@@ -682,6 +683,16 @@ class StepRecorder:
         caller = owner.caller(self.session)
         with owner.history.serialized():
             staged = owner.mail.collection(caller, notifications)
+            from clio_agent.gact.question_surface import render_answer_input
+
+            rendered = tuple(
+                owner.history.write_content(
+                    self.session,
+                    render_answer_input(app, caller, item.handle, str(content.get("text", ""))),
+                )
+                for item in staged.items
+                if item.kind == "question_answer" and item.handle is not None
+            )
             segments = self.arc.context_view(self.session, self.scope).segments
             owner.mail.commit(
                 caller,
@@ -699,6 +710,7 @@ class StepRecorder:
                     content_id=identity,
                     sha256=hashlib.sha256(_encoded(content)).hexdigest(),
                 ),
+                rendered_content=rendered,
             )
 
     def completed(

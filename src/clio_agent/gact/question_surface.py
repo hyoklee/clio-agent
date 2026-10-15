@@ -10,6 +10,48 @@ from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.types import UserQuestion
 
 
+def prepare_question_gate(app: Any, task: TaskSnapshot, definition: QuestionDefinition) -> None:
+    """Install approval projections before Question posting can admit an answer."""
+    if definition.source == "hook_defer":
+        from clio_agent.gact.hooks.turn_approval import restore_gate as restore_hook_gate
+
+        valid = restore_hook_gate(app, task)
+    elif definition.source == "plan_exit":
+        from clio_agent.gact.plan_exit_resolution import restore_gate as restore_plan_gate
+
+        valid = restore_plan_gate(app, task, definition)
+    else:
+        return
+    if not valid:
+        raise ValueError("Approval no longer addresses its owning assignment/input")
+
+
+def release_cancelled_assignment_gate(app: Any, assignment: TaskSnapshot) -> None:
+    """Release only this settled assignment's Question projection, preserving policy gates."""
+    history = app.state.task_history
+    with history.serialized():
+        latest = history.latest_assignment(assignment.owner.session_id)
+        session = app.state.sessions.get(assignment.owner.session_id)
+        if latest is None or latest.handle != assignment.handle or session is None:
+            return
+        gate = session.metadata.get("execution_gate")
+        question = history.task_snapshot(gate) if isinstance(gate, str) and gate else None
+        if (
+            question is not None
+            and question.kind == "Question"
+            and question.tool in {"plan_exit", "hook_defer"}
+            and question.owner.assignment_id == assignment.handle
+        ):
+            app.state.sessions.update(
+                session.id,
+                metadata_patch={
+                    "execution_gate": "",
+                    "pending_user_question_id": "",
+                    "pending_defer_permission_id": "",
+                },
+            )
+
+
 def question_view(app: Any, task: TaskSnapshot) -> dict[str, Any]:
     """Project an existing Question; no presentation record owns its lifecycle."""
     if task.kind != "Question" or task.details is None:
@@ -63,6 +105,46 @@ def question_row(app: Any, handle: str) -> UserQuestion:
     return UserQuestion.model_validate(question_view(app, task))
 
 
+def render_answer_input(app: Any, caller: TaskCaller, handle: str, text: str) -> dict[str, Any]:
+    """Render authorized answer media for the existing recipient-input commitment."""
+    from clio_agent.gact.message_submission import prepare_references_sync
+    from clio_agent.gact.messaging import queued_user_input
+    from clio_agent.gact.types import Message, Part, PostMessageRequest
+
+    history = app.state.task_history
+    task = TaskAccess(history, caller).require(handle, "read")
+    if task.kind != "Question" or task.raw_status != "answered" or task.result is None:
+        return {"text": text, "source": "question_answer", "actor": "algorithm"}
+    definition = QuestionDefinition.model_validate(history.read_content(task.details))
+    if definition.source == "mcp_elicitation":
+        return {"text": text, "source": "question_answer", "actor": "algorithm"}
+    reply = QuestionReply.model_validate(history.read_content(task.result))
+    if not reply.parts:
+        return {"text": text, "source": "question_answer", "actor": "algorithm"}
+    session = app.state.sessions.get(caller.session_id)
+    if session is None:
+        raise ValueError("Question answer recipient is unavailable")
+    prepared = prepare_references_sync(
+        app,
+        session,
+        PostMessageRequest(text=text, parts=[Part.model_validate(part) for part in reply.parts]),
+    )
+    # This transient value is only the native renderer's adapter. It is never
+    # stored as another transcript message or mailbox item.
+    message = Message(
+        id=task.handle,
+        session_id=caller.session_id,
+        role="user",
+        created_at=task.terminal_at or task.updated_at,
+        updated_at=task.updated_at,
+        parts=list(prepared.parts),
+    )
+    rendered = queued_user_input(
+        app, caller.session_id, {"message": message.model_dump(mode="json"), "text": text}
+    )
+    return {**rendered, "source": "question_answer", "actor": "algorithm"}
+
+
 def answer_question(
     app: Any, caller: TaskCaller, handle: str, reply: QuestionReply
 ) -> TaskSnapshot:
@@ -79,6 +161,8 @@ def answer_question(
     definition = QuestionDefinition.model_validate(
         app.state.task_history.read_content(task.details)
     )
+    if definition.source == "plan_exit" and not caller.human_action:
+        raise PermissionError("Plan approval requires the authenticated human control channel")
     if definition.source == "hook_defer":
         from clio_agent.gact.hooks.turn_approval import restore_gate
 
@@ -137,12 +221,22 @@ def answer_question(
         )
     with app.state.task_history.serialized():
         task = TaskAccess(app.state.task_history, caller).require(task.handle, "control")
+        if definition.source == "plan_exit" and task.terminal_at is None:
+            prepare_question_gate(app, task, definition)
         if (
             definition.source == "hook_defer"
             and task.terminal_at is None
             and not restore_gate(app, task)
         ):
             raise ValueError("Hook approval input changed before answer acceptance")
+        if definition.source == "hook_defer":
+            from clio_agent.gact.hooks.turn_approval import binding, validate_decision
+
+            validate_decision(
+                app,
+                binding(app, task),
+                reply.action == "accept" and reply.selected_options == ("allow",),
+            )
         answered = app.state.questions.answer(task.handle, reply)
     resolve_plan_question(app, answered)
     return answered
@@ -159,6 +253,14 @@ def resolve_plan_question(app: Any, task: TaskSnapshot) -> None:
 
         resolve(app, task)
         return
+    if task.tool == "plan_exit":
+        definition = QuestionDefinition.model_validate(
+            app.state.task_history.read_content(task.details)
+        )
+        from clio_agent.gact.plan_exit_resolution import restore_gate
+
+        if not restore_gate(app, task, definition):
+            return
     session = app.state.sessions.get(task.owner.session_id)
     if session is None or session.metadata.get("execution_gate") != task.handle:
         return

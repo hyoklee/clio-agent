@@ -33,9 +33,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from clio_agent.gact.agent_tasks import AgentTask
 from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.minting import mint_tool_declared_outputs
+from tests.test_gact.task_records import record_assignment_fixture
 
 _LIST_LIMIT_DEFAULT = 50
 
@@ -77,14 +77,7 @@ def test_include_children_pagination_reconstructs_full_set_no_dupes_no_gaps(tmp_
         child = app.state.sessions.create(
             workspace_id=wid2, title="child", parent_session_id=parent
         )
-        app.state.agent_task_registry.register(
-            AgentTask(
-                task_id="t_pagination",
-                parent_session_id=parent,
-                child_session_id=child.id,
-                created_at="1",
-            )
-        )
+        record_assignment_fixture(app, child.id, handle="t_pagination", parent_sid=parent)
 
         # 34 records produced by the parent, 33 by the child — 67 total, comfortably
         # over the default 50-record page so at least two pages are required.
@@ -161,14 +154,7 @@ def test_include_children_pagination_limit_below_default_still_covers_full_set(
         child = app.state.sessions.create(
             workspace_id=wid2, title="child", parent_session_id=parent
         )
-        app.state.agent_task_registry.register(
-            AgentTask(
-                task_id="t_pagination_small",
-                parent_session_id=parent,
-                child_session_id=child.id,
-                created_at="1",
-            )
-        )
+        record_assignment_fixture(app, child.id, handle="t_pagination_small", parent_sid=parent)
 
         expected_names: set[str] = set()
         for i in range(12):

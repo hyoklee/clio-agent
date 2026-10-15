@@ -5,6 +5,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+from pydantic import BaseModel, ConfigDict
+
+from clio_agent.arc.task_types import AssignmentDetails, QuestionDefinition, TaskSnapshot
 from clio_agent.gact.plan_exit_resume import approved_plan_resume_text, rejected_plan_resume_text
 from clio_agent.gact.planning import PLAN_VARIANT_METADATA_KEY, transition_playbook_to_execution
 
@@ -12,6 +15,61 @@ if TYPE_CHECKING:
     from fastapi import FastAPI
 
     from clio_agent.gact.routes.deps import GactDeps
+
+
+class PlanApproval(BaseModel):
+    """Fixed assignment and plan-request identity retained in its Question."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    assignment: str
+    context_epoch: str
+    request: dict[str, Any]
+
+
+def restore_gate(app: Any, task: TaskSnapshot, definition: QuestionDefinition) -> bool:
+    """Install a plan gate from confirmed Question content before it is answerable."""
+    from clio_agent.gact.plan_mode import _PLAN_EXIT_PENDING_KEY
+
+    history = app.state.task_history
+    with history.serialized():
+        session = app.state.sessions.get(task.owner.session_id)
+        current = history.latest_assignment(task.owner.session_id)
+        if session is None or current is None or current.terminal_at is not None:
+            return False
+        if current.cancellation_requested_at is not None:
+            return False
+        captured = PlanApproval.model_validate(definition.metadata.get("plan_approval"))
+        if current.handle != captured.assignment or task.owner.assignment_id != current.handle:
+            return False
+        gate = session.metadata.get("execution_gate")
+        frozen = app.state.questions.resolution(task.handle)
+        if frozen is not None and gate != task.handle:
+            return False  # Already released; historical reads cannot reinstall a gate.
+        details = (
+            AssignmentDetails.model_validate(history.read_content(current.details))
+            if current.details is not None
+            else AssignmentDetails()
+        )
+        if details.context_epoch != captured.context_epoch and frozen is None:
+            return False
+        if gate and gate != task.handle:
+            return False
+        if gate == task.handle:
+            return True
+        app.state.sessions.update(
+            session.id,
+            status="waiting_user",
+            metadata_patch={
+                "execution_gate": task.handle,
+                "pending_user_question_id": task.handle,
+                _PLAN_EXIT_PENDING_KEY: {
+                    **captured.request,
+                    "surfaced": True,
+                    "question_id": task.handle,
+                },
+            },
+        )
+        return True
 
 
 def _stage_plan_exit_resume(
@@ -34,6 +92,7 @@ def _stage_plan_exit_resume(
         metadata={**metadata, "approval": True},
         steer_message_id="plan-answer:" + question_id,
         source="plan_exit",
+        handle=question_id,
     )
 
 
@@ -68,7 +127,8 @@ def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questio
         session = app.state.sessions.get(sid)
         if session is None or session.metadata.get("execution_gate") != question.id:
             return
-        _resolve_plan_exit_answer(app, deps, sid, question)
+        if question.status == "answered":
+            _resolve_plan_exit_answer(app, deps, sid, question)
         app.state.sessions.update(
             sid,
             metadata_patch={

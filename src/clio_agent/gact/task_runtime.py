@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import AsyncExitStack
 from typing import Any
 
@@ -14,12 +15,15 @@ from clio_agent.gact.external_tasks import ExternalTasks
 from clio_agent.gact.native_storage import register_native_storage
 from clio_agent.gact.native_tools import NativeTools
 from clio_agent.gact.question_events import QuestionEvents
+from clio_agent.gact.question_surface import prepare_question_gate
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.sessions import Session as StoredSession
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_operations import TaskOperations
+
+logger = logging.getLogger(__name__)
 
 
 async def start(app: Any) -> None:
@@ -41,6 +45,9 @@ async def start(app: Any) -> None:
     app.state.questions = QuestionCommands(history)
     app.state.question_events = QuestionEvents(app)
     app.state.questions.on_change = app.state.question_events.changed
+    app.state.questions.before_post = lambda task, definition: prepare_question_gate(
+        app, task, definition
+    )
     app.state.external_tasks = ExternalTasks(app)
 
     def authorize(submission: SubmissionContext) -> None:
@@ -383,13 +390,17 @@ async def start(app: Any) -> None:
             await asyncio.to_thread(app.state.questions.restore)
             await app.state.question_events.restore()
             conversations.signal_pending()
-    except BaseException:
-        await stack.aclose()
+    except BaseException as error:
+        cleanup_errors = await close(app)
+        if cleanup_errors:
+            raise BaseExceptionGroup(
+                "Task runtime startup failed", [error, *cleanup_errors]
+            ) from None
         raise
 
 
-async def close(app: Any) -> None:
-    """Stop model admission, settle local native work, then close transports/Core evidence."""
+async def close(app: Any) -> tuple[BaseException, ...]:
+    """Retire effects first; return independent cleanup errors for final lifespan reporting."""
     conversations = getattr(app.state, "conversations", None)
     if conversations is not None:
         conversations.close_admission()
@@ -398,18 +409,26 @@ async def close(app: Any) -> None:
         await native.request_shutdown()
     if conversations is not None:
         await conversations.shutdown()
+    errors: list[BaseException] = []
+    if native is not None:
+        errors.extend(await native.settle_shutdown())
     question_events = getattr(app.state, "question_events", None)
-    if question_events is not None:
-        await question_events.close()
     stack = getattr(app.state, "task_resource_stack", None)
-    if stack is not None:
-        await stack.aclose()
     external = getattr(app.state, "external_tasks", None)
-    if external is not None:
-        await external.close()
     recovery = getattr(app.state, "task_recovery", None)
-    if recovery is not None:
-        await recovery.drain()
+    for resource, method in (
+        (question_events, "close"),
+        (stack, "aclose"),
+        (external, "close"),
+        (recovery, "drain"),
+    ):
+        if resource is not None:
+            try:
+                await getattr(resource, method)()
+            except BaseException as error:
+                logger.exception("Task runtime resource close failed method=%s", method)
+                errors.append(error)
     history = getattr(app.state, "task_history", None)
     if history is not None:
         history.observation_committed = None
+    return tuple(errors)

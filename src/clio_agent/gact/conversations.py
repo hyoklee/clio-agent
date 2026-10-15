@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -13,7 +14,6 @@ from uuid import uuid4
 from clio_agent import conf
 from clio_agent.arc.task_types import (
     AssignmentDetails,
-    ContextBoundary,
     CoreReference,
     MailItem,
     TaskProgress,
@@ -35,6 +35,14 @@ from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _InferenceGroup:
+    """Live fanout permits and users, including acquisition waiters."""
+
+    semaphore: asyncio.Semaphore
+    users: int = 0
 
 
 RunSegment = Callable[[ConversationSegment], Awaitable[ConversationOutcome]]
@@ -70,7 +78,7 @@ class Conversations:
         self._control_holds: set[str] = set()
         self._paused: dict[str, str] = {}
         self._inference: dict[int, asyncio.Semaphore] = {}
-        self._fanout_inference: dict[str, asyncio.Semaphore] = {}
+        self._fanout_inference: dict[str, _InferenceGroup] = {}
         self._restarting: set[str] = set()
         self._pause_tokens: dict[str, str] = {}
         self._deadlines: dict[str, asyncio.TimerHandle] = {}
@@ -133,28 +141,13 @@ class Conversations:
 
         task.add_done_callback(retired)
 
-    def _control_outcome(
-        self,
-        caller: TaskCaller,
-        task: TaskSnapshot,
-        action: str,
-        outcome: dict[str, Any],
-        identity: str,
-    ) -> None:
-        """Delegate to the same conversation owner\'s controls implementation."""
-        return conversation_controls._control_outcome(self, caller, task, action, outcome, identity)
+    _control_outcome = conversation_controls._control_outcome
 
-    def _restore_input_projections(self) -> None:
-        """Delegate to the same conversation owner\'s recovery implementation."""
-        return conversation_recovery._restore_input_projections(self)
+    _restore_input_projections = conversation_recovery._restore_input_projections
 
-    async def restore(self) -> None:
-        """Delegate to the same conversation owner\'s recovery implementation."""
-        return await conversation_recovery.restore(self)
+    restore = conversation_recovery.restore
 
-    def _record_interrupted_calls(self, task: TaskSnapshot, boundary: ContextBoundary) -> None:
-        """Delegate to the same conversation owner\'s recovery implementation."""
-        return conversation_recovery._record_interrupted_calls(self, task, boundary)
+    _record_interrupted_calls = conversation_recovery._record_interrupted_calls
 
     def eligible(self, sid: str, item: MailItem) -> bool:
         """One admission/injection policy; producers do not independently spawn turns."""
@@ -171,6 +164,20 @@ class Conversations:
         gate = session.metadata.get("execution_gate")
         if gate:
             return False
+        # A confirmed approval header is a gate even if its presentation write
+        # was interrupted. Indexed reads do not reconstruct the whole registry.
+        assignment = self.history.latest_assignment(sid)
+        if assignment is not None and assignment.cancellation_requested_at is None:
+            for handle in self.history.task_handles(
+                kind="Question", active_only=True
+            ) & self.history.session_handles(sid):
+                question = self.history.task_snapshot(handle)
+                if (
+                    question is not None
+                    and question.tool in {"hook_defer", "plan_exit"}
+                    and question.owner.assignment_id == assignment.handle
+                ):
+                    return False
         if item.kind in {"goal", "loop", "schedule"}:
             value = self.history.read_content(item.content)
             metadata = value.get("metadata", {}) if isinstance(value, dict) else {}
@@ -196,7 +203,6 @@ class Conversations:
                     not in {"max_fires_reached", "no_recurring_trigger", "until_reached"}
                 ):
                     return False
-        assignment = self.history.latest_assignment(sid)
         if assignment is None:
             return True
         if not self.supports_execution(assignment):
@@ -204,7 +210,10 @@ class Conversations:
         if assignment.cancellation_requested_at is not None:
             if assignment.terminal_at is None:
                 return False
-            if item.kind in {"task_result", "attention", "question_answer"} and item.handle:
+            if (
+                item.kind in {"task_result", "attention", "question_answer", "approval"}
+                and item.handle
+            ):
                 source = self.history.task_snapshot(item.handle)
                 if source is not None and (
                     source.owner.assignment_id == assignment.handle
@@ -535,7 +544,7 @@ class Conversations:
                 task = self.history.task_snapshot(task.owner.parent_handle)
             return level, parent, details.inference_concurrency
 
-        async def acquire() -> tuple[asyncio.Semaphore, ...]:
+        async def acquire() -> tuple[Callable[[], None], ...]:
             level, parent, fanout = await asyncio.to_thread(limits)
             if level == 0:
                 return ()  # roots retain their provider's existing budgets
@@ -548,18 +557,33 @@ class Conversations:
             if capacity < 1:
                 raise ValueError("Child inference concurrency must be positive")
             semaphore = self._inference.setdefault(level, asyncio.Semaphore(capacity))
-            reserved = []
+            reserved: list[Callable[[], None]] = []
             try:
                 if fanout is not None and parent is not None:
-                    group = self._fanout_inference.setdefault(parent, asyncio.Semaphore(fanout))
-                    await group.acquire()
-                    reserved.append(group)
+                    group = self._fanout_inference.setdefault(
+                        parent, _InferenceGroup(asyncio.Semaphore(fanout))
+                    )
+                    group.users += 1
+
+                    def leave_group(acquired: bool = True) -> None:
+                        if acquired:
+                            group.semaphore.release()
+                        group.users -= 1
+                        if group.users == 0 and self._fanout_inference.get(parent) is group:
+                            self._fanout_inference.pop(parent)
+
+                    try:
+                        await group.semaphore.acquire()
+                    except BaseException:
+                        leave_group(False)
+                        raise
+                    reserved.append(leave_group)
                 await semaphore.acquire()
-                reserved.append(semaphore)
+                reserved.append(semaphore.release)
                 return tuple(reserved)
             except BaseException:
-                for permit in reserved:
-                    permit.release()
+                for release in reserved:
+                    release()
                 raise
 
         future = asyncio.run_coroutine_threadsafe(acquire(), owner_loop)
@@ -569,16 +593,16 @@ class Conversations:
 
             def release_late(completed: Any) -> None:
                 if not completed.cancelled() and completed.exception() is None:
-                    for permit in completed.result():
-                        owner_loop.call_soon_threadsafe(permit.release)
+                    for release in completed.result():
+                        owner_loop.call_soon_threadsafe(release)
 
             future.add_done_callback(release_late)
             raise
         try:
             yield
         finally:
-            for permit in lease:
-                owner_loop.call_soon_threadsafe(permit.release)
+            for release in lease:
+                owner_loop.call_soon_threadsafe(release)
 
     async def stopping(self, sid: str) -> None:
         """Expose cooperative unwind without declaring worker retirement or task completion."""
@@ -716,62 +740,15 @@ class Conversations:
 
     complete_deferred = conversation_assignments.complete_deferred
 
-    async def pause(self, caller: TaskCaller, handle: str) -> dict[str, Any]:
-        """Delegate to the same conversation owner\'s controls implementation."""
-        return await conversation_controls.pause(self, caller, handle)
+    pause = conversation_controls.pause
 
-    async def resume(self, caller: TaskCaller, handle: str) -> dict[str, Any]:
-        """Delegate to the same conversation owner\'s controls implementation."""
-        return await conversation_controls.resume(self, caller, handle)
+    resume = conversation_controls.resume
 
-    async def cancel(self, caller: TaskCaller, handle: str) -> dict[str, Any]:
-        """Delegate to the same conversation owner\'s controls implementation."""
-        return await conversation_controls.cancel(self, caller, handle)
+    cancel = conversation_controls.cancel
 
-    async def spawn(
-        self,
-        caller: TaskCaller,
-        assignment: str,
-        agent_id: str,
-        invocation_id: str,
-        *,
-        workflow_id: str | None = None,
-        workflow_step: str | None = None,
-        execution_deadline: str | None = None,
-        inference_concurrency: int | None = None,
-        launch_context: dict[str, Any] | None = None,
-        target_scope: dict[str, Any] | None = None,
-        strategy: dict[str, Any] | None = None,
-        parent_handle: str | None = None,
-        session_metadata: dict[str, Any] | None = None,
-        approval_profile: str | None = None,
-        resource_id: str | None = None,
-        start: bool = True,
-    ) -> dict[str, Any]:
-        """Delegate to the same conversation owner\'s assignments implementation."""
-        return await conversation_assignments.spawn(
-            self,
-            caller,
-            assignment,
-            agent_id,
-            invocation_id,
-            workflow_id=workflow_id,
-            workflow_step=workflow_step,
-            execution_deadline=execution_deadline,
-            inference_concurrency=inference_concurrency,
-            launch_context=launch_context,
-            target_scope=target_scope,
-            strategy=strategy,
-            parent_handle=parent_handle,
-            session_metadata=session_metadata,
-            approval_profile=approval_profile,
-            resource_id=resource_id,
-            start=start,
-        )
+    spawn = conversation_assignments.spawn
 
-    async def restart(self, caller: TaskCaller, handle: str) -> dict[str, Any]:
-        """Delegate to the same conversation owner\'s controls implementation."""
-        return await conversation_controls.restart(self, caller, handle)
+    restart = conversation_controls.restart
 
     def close_admission(self) -> None:
         """Reject new model admission while existing owners retire their work."""

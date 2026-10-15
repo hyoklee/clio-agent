@@ -19,6 +19,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.gact.events import EventBus
 from clio_agent.gact.native_work import now
+from clio_agent.gact.plan_exit_resolution import PlanApproval
 from clio_agent.gact.question_surface import resolve_plan_question
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.task_access import TaskCaller
@@ -81,6 +82,9 @@ async def test_degraded_approval_reuses_frozen_content_after_mutable_plan_change
             kind="choice",
             options=(QuestionOption(label="Approve", value=decision),),
             metadata={
+                "plan_approval": PlanApproval(
+                    assignment=root.handle, context_epoch="", request={}
+                ).model_dump(mode="json"),
                 "plan_file": str(plan),
                 "plan_content": "Original reviewed file",
                 "plan_content_status": "available",

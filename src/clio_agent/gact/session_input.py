@@ -55,6 +55,7 @@ def accept_session_input(
     metadata: dict[str, Any] | None = None,
     steer_message_id: str = "",
     source: str = "hook",
+    handle: str | None = None,
 ) -> str:
     """Confirm an attributed system injection and signal its exact Core mailbox."""
     history = app.state.task_history
@@ -81,7 +82,11 @@ def accept_session_input(
         previous = history.mail_item(session_id, identity)
         value = {"text": text, "metadata": metadata, "source": source}
         if previous is not None:
-            if previous.kind != kind or history.read_content(previous.content) != value:
+            if (
+                previous.kind != kind
+                or previous.handle != handle
+                or history.read_content(previous.content) != value
+            ):
                 raise ValueError("Session input identity was reused with different content")
             return previous.id
         content = history.write_content(session_id, value)
@@ -92,6 +97,7 @@ def accept_session_input(
                 kind=kind,
                 content=content,
                 created_at=now(),
+                handle=handle,
             )
         )
     return identity

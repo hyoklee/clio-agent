@@ -150,6 +150,19 @@ class NativeTools:
         traceback: TracebackType | None,
     ) -> None:
         """Close admission, settle owned native work, then retire clients and Core hints."""
+        errors = list(await self.settle_shutdown())
+        try:
+            await self._stack.__aexit__(exc_type, exc, traceback)
+        except BaseException as error:
+            logger.exception("Native resource close failed after physical settlement")
+            errors.append(error)
+        if errors:
+            raise BaseExceptionGroup("Native resource cleanup failed", errors)
+
+    async def settle_shutdown(self) -> tuple[BaseException, ...]:
+        """Confirm physical retirement while native transports and Core remain available."""
+        if self._resources_closed:
+            return ()
         await self.request_shutdown()
         # Resolve outstanding submissions before cancelling their verified identities.
         if self._rpc:
@@ -165,9 +178,12 @@ class NativeTools:
             await asyncio.shield(
                 asyncio.gather(*tuple(self._drivers.values()), return_exceptions=True)
             )
-        if self._retiring:
-            await asyncio.shield(asyncio.gather(*tuple(self._retiring)))
-        await self._stack.__aexit__(exc_type, exc, traceback)
+        results = (
+            await asyncio.shield(asyncio.gather(*tuple(self._retiring), return_exceptions=True))
+            if self._retiring
+            else ()
+        )
+        return tuple(result for result in results if isinstance(result, BaseException))
 
     async def request_shutdown(self) -> None:
         """Close admission and request local cancellation while transports stay available."""
@@ -225,9 +241,7 @@ class NativeTools:
             result.append(row)
         return result
 
-    async def restore(self, handles: tuple[str, ...] | None = None) -> None:
-        "Reattach persistent native identities; never replay a recorded submission."
-        return await native_task_recovery.restore(self, handles)
+    restore = native_task_recovery.restore
 
     async def submit(
         self,
@@ -646,24 +660,13 @@ class NativeTools:
 
         await self._record_or_defer("native-settlement:" + handle, settle, handle=handle)
 
-    def _settle(self, current: TaskSnapshot, accepted: AcceptedNativeCall | None) -> None:
-        return native_task_settlement._settle(self, current, accepted)
+    _settle = native_task_settlement._settle
 
-    async def cancel(self, handle: str) -> dict[str, Any]:
-        "Close owned admission before native cancellation; acknowledgement is not settlement."
-        return await native_task_settlement.cancel(self, handle)
+    cancel = native_task_settlement.cancel
 
-    async def _deliver_cancel(self, handle: str) -> bool:
-        "Retry cancellation only against this submission's adopted native identity."
-        return await native_task_settlement._deliver_cancel(self, handle)
+    _deliver_cancel = native_task_settlement._deliver_cancel
 
-    async def await_settlement(
-        self, handle: str, *, allow_uncertainty: bool = True
-    ) -> TaskSnapshot:
-        "Wait on confirmed owner changes; caller cancellation cannot stop native work."
-        return await native_task_settlement.await_settlement(
-            self, handle, allow_uncertainty=allow_uncertainty
-        )
+    await_settlement = native_task_settlement.await_settlement
 
     async def _record_or_defer(
         self, identity: str, operation: Callable[[], None], *, handle: str | None = None

@@ -1,4 +1,4 @@
-"""Workspace-volume-contained scratch lifecycle for the CLIO test suite."""
+"""Repository-contained scratch lifecycle for the CLIO test suite."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
-_RUNTIME_PARENT_SUFFIX = ".pytest-runtime"
+_RUNTIME_PARENT_NAME = ".pytest-runtime"
 _OWNER_FILE = ".clio-test-run.json"
 _RUN_NAME = re.compile(r"run-(?P<pid>[0-9]+)-[A-Za-z0-9_-]+\Z")
 
@@ -35,14 +35,14 @@ def resolve_test_runtime_parent(
     checkout: Path,
     environ: MutableMapping[str, str],
 ) -> Path:
-    """Return the explicit scratch parent, defaulting beside the checkout."""
-    configured = environ.get("CLIO_TEST_RUNTIME_ROOT", "").strip()
-    if configured:
-        return Path(configured).expanduser().resolve()
+    """Resolve a scratch parent inside the checkout, rejecting external overrides."""
     resolved_checkout = checkout.resolve()
-    return (
-        resolved_checkout.parent / f".{resolved_checkout.name}{_RUNTIME_PARENT_SUFFIX}"
-    ).resolve()
+    configured = environ.get("CLIO_TEST_RUNTIME_ROOT", "").strip()
+    candidate = Path(configured).expanduser() if configured else Path(_RUNTIME_PARENT_NAME)
+    parent = (resolved_checkout / candidate).resolve()
+    if parent == resolved_checkout or not parent.is_relative_to(resolved_checkout):
+        raise ValueError("CLIO_TEST_RUNTIME_ROOT must be a directory inside the checkout")
+    return parent
 
 
 def create_test_runtime(

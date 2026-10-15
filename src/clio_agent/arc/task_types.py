@@ -413,6 +413,14 @@ class AssignmentEvidence(TaskRecord):
     partial: bool = False
 
 
+class DeferredCompletion(TaskRecord):
+    """The exact model outcome awaiting a trusted completion decision."""
+
+    result: CoreReference
+    context: ContextBoundary | None = None
+    failed: bool = False
+
+
 class AssignmentDetails(TaskRecord):
     """Conversation-owned finite assignment and fixed context, without copied history."""
 

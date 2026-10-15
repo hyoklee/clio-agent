@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict
 
 from clio_agent.arc.task_types import (
     AssignmentDetails,
+    DeferredCompletion,
     MailItem,
     QuestionDefinition,
     QuestionOption,
@@ -16,6 +17,7 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
 )
 from clio_agent.gact import context
+from clio_agent.gact.conversation_assignments import ConversationOutcome
 from clio_agent.gact.permission_delivery import publish_permission_event
 from clio_agent.gact.session_input import accept_session_input
 
@@ -32,6 +34,8 @@ class HookApproval(BaseModel):
     origin: MailItem | None = None
     resume_text: str
     previous_status: str
+    turn_id: str = ""
+    completion: DeferredCompletion | None = None
 
 
 def binding(app: Any, task: TaskSnapshot) -> HookApproval:
@@ -45,7 +49,14 @@ def binding(app: Any, task: TaskSnapshot) -> HookApproval:
 
 
 def suspend(
-    app: Any, sid: str, event: str, reason: str, resume_text: str, previous_status: str
+    app: Any,
+    sid: str,
+    event: str,
+    reason: str,
+    resume_text: str,
+    previous_status: str,
+    *,
+    completion: ConversationOutcome | None = None,
 ) -> str:
     """Confirm the approval and exact input before installing its admission gate."""
     history = app.state.task_history
@@ -54,6 +65,7 @@ def suspend(
         assignment = history.task_snapshot(turn.assignment_handle)
         if assignment is None or assignment.owner.session_id != sid:
             raise ValueError("Hook approval has no verified assignment")
+        app.state.conversations.require_admission(assignment)
         details = (
             AssignmentDetails.model_validate(history.read_content(assignment.details))
             if assignment.details
@@ -74,6 +86,14 @@ def suspend(
                 "origin": origin,
                 "resume_text": resume_text,
                 "previous_status": previous_status,
+                "turn_id": turn.turn_id,
+                "completion": DeferredCompletion(
+                    result=history.write_content(sid, completion.error or completion.outputs),
+                    context=completion.context,
+                    failed=completion.error is not None,
+                )
+                if event == "Stop" and completion is not None
+                else None,
             }
         )
         question = app.state.questions.create(
@@ -113,6 +133,8 @@ def restore_gate(app: Any, task: TaskSnapshot) -> bool:
         session = app.state.sessions.get(task.owner.session_id)
         current = history.latest_assignment(task.owner.session_id)
         if session is None or current is None or current.handle != captured.assignment:
+            return False
+        if current.terminal_at is not None or current.cancellation_requested_at is not None:
             return False
         details = (
             AssignmentDetails.model_validate(history.read_content(current.details))
@@ -190,6 +212,14 @@ def project(app: Any, task: TaskSnapshot, row: dict[str, Any]) -> None:
     )
 
 
+def validate_decision(app: Any, captured: HookApproval, approved: bool) -> None:
+    """An approval cannot substitute another segment's last output for missing evidence."""
+    if approved and captured.event == "Stop":
+        if captured.completion is None:
+            raise ValueError("Deferred completion has no verified exact output; gate retained")
+        app.state.task_history.read_content(captured.completion.result)
+
+
 def respond(app: Any, task: TaskSnapshot, action: str, grantor: str) -> dict[str, Any]:
     """Accept an authenticated decision through QuestionCommands, then repair its effect."""
     if grantor != "user":
@@ -202,6 +232,7 @@ def respond(app: Any, task: TaskSnapshot, action: str, grantor: str) -> dict[str
     if action not in {"allow", "deny", "allow_session", "allow_workspace"}:
         raise ValueError("Unsupported hook approval action")
     captured = binding(app, task)
+    validate_decision(app, captured, action.startswith("allow"))
     if captured.event == "UserPromptSubmit" and captured.origin is None:
         raise ValueError("Legacy hook approval has no verified original input; gate retained")
     reply = QuestionReply(
@@ -281,8 +312,15 @@ def resolve(app: Any, task: TaskSnapshot) -> None:
         if captured.event == "Stop" and frozen["approved"]:
 
             async def complete() -> None:
+                if captured.completion is None:
+                    raise ValueError(
+                        "Deferred completion has no verified exact output; gate retained"
+                    )
                 await owner.complete_deferred(
-                    sid, captured.assignment, context_epoch=captured.context_epoch
+                    sid,
+                    captured.assignment,
+                    context_epoch=captured.context_epoch,
+                    completion=captured.completion,
                 )
                 await asyncio.to_thread(release)
 
@@ -348,8 +386,9 @@ def resolve(app: Any, task: TaskSnapshot) -> None:
                 sid,
                 captured.resume_text,
                 source=SOURCE,
-                metadata={"stop_defer_redrive": True, "question_id": task.handle},
+                metadata={"stop_defer_redrive": True, "question_id": task.handle, "approval": True},
                 steer_message_id="hook-resume:" + task.handle,
+                handle=task.handle,
             )
         release()
 
