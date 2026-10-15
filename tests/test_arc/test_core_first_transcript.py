@@ -144,7 +144,7 @@ async def test_clear_withdraws_volatile_output_instead_of_resurrecting_it(
         pending = await asyncio.to_thread(interrupted_then_cleared)
         assert await owner.confirm_transcript_recording(pending) is False
         assert await asyncio.to_thread(assemble_session_messages, arc, sid) == []
-        assert not owner.history.pending_mail(sid)
+        assert not await asyncio.to_thread(owner.history.pending_mail, sid)
         assert not owner._model_recording
     finally:
         await owner.shutdown()
