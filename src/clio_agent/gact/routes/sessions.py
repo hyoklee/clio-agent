@@ -1,7 +1,5 @@
 """Session lifecycle + ask-user/retry routes for the GACT server (#714).
 
-This concern owns the ``/v1/sessions`` lifecycle and scoped ask/retry protocol:
-
 * CRUD creates, lists, patches, and permission-gates session deletion.
 * Undo/rewind drop trailing messages and publish their lifecycle events.
 * Fork/import/export provide branching and portable JSON transfer.
@@ -46,6 +44,7 @@ from clio_agent.gact.routes.side_sessions import register_side_session_routes
 from clio_agent.gact.runtime.globals import _new_attempt_id
 from clio_agent.gact.runtime.retention import enforce_dict_bound
 from clio_agent.gact.session_tool_output import delete_session_tool_output
+from clio_agent.gact.turn_reasoning import forget_session_reasoning
 from clio_agent.gact.types import (
     ErrorEnvelope,
     ErrorInfo,
@@ -249,6 +248,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     )
                 ).model_dump(exclude_none=True),
             )
+        forget_session_reasoning(app, sid)
         deps.delete_session_context_files(app, sid)
         await run_off_loop(delete_session_tool_output, app, sess.workspace_id, sid)
         await run_off_loop(deps.release_session_arc, app, sid)  # #1334: drops _events scopes

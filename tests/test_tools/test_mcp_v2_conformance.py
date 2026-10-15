@@ -45,7 +45,6 @@ from clio_agent.errors import (
     MCP_TASK_CAPABILITY_UNKNOWN,
     MCP_TASK_DIRECT_FACTORY_CONSTRUCTION_FAILED,
     MCP_TASK_DIRECT_FACTORY_MISSING,
-    MCP_TASKS_DECLARATION_SUPPRESSED,
     MCP_TASKS_DIRECT_ROUTE_SELECTED,
     MCPMissingRequiredClientCapabilityError,
 )
@@ -80,8 +79,6 @@ from clio_agent.tools.mcp_extension_registry import (
     extensions_declaration,
 )
 from clio_agent.tools.mcp_runtime import MCPClientCapabilities, MCPClientHandlers, make_mcp_client
-from clio_agent.tools.mcp_task_extension import tasks_declaration
-from clio_agent.tools.mcp_task_records import InMemoryTaskRecordStore, set_task_record_store
 from clio_agent.tools.mcp_task_routing import (
     record_definitive_capability,
     record_namespace_route_decision,
@@ -130,15 +127,6 @@ def _clean_connect_mode_env(monkeypatch: pytest.MonkeyPatch) -> Any:
         "era tests need the real default"
     )
     yield
-
-
-@pytest.fixture(autouse=True)
-def _isolated_store() -> Any:
-    """Keep task records out of the process-wide registry."""
-
-    set_task_record_store(InMemoryTaskRecordStore())
-    yield
-    set_task_record_store(None)
 
 
 def _reap(needle: str) -> None:
@@ -578,8 +566,8 @@ async def test_v1_fixture_definitive_capability_is_false_and_keeps_the_proxy_rou
         assert decision.use_direct is False
         assert decision.reason is None
 
-        declaration = tasks_declaration(ProxyClient, object())
-        assert declaration.reason == MCP_TASKS_DECLARATION_SUPPRESSED
+        declaration = extensions_declaration(ProxyClient, object())
+        assert TASKS_EXTENSION_ID not in {entry.identifier for entry in declaration.entries}
     finally:
         _reap("mcp_v1_fixture.py")
 
@@ -885,59 +873,22 @@ def test_permanent_protocol_refusal_terminates_the_react_loop_fast() -> None:
 # --------------------------------------------------------------------------
 
 
-def test_extensions_declaration_composes_tasks_and_ui_for_a_plain_client() -> None:
-    """The registry folds BOTH active entries for a plain (non-proxy) client.
-
-    Tasks entry #1 is byte-identical to the pre-registry ``tasks_declaration``
-    call (proven by the layer-4 tests above, untouched); this pins the NEW
-    composition: ui is entry #2, and both are active for a plain client.
-
-    #1325 (a1f7a017, postdates this test): registry entry #3, the
-    agent-driven-elicitation ad, is unconditional like ``ui`` and folds in too.
-    """
-
+def test_clio_extension_registry_composes_apps_and_agent_elicitation() -> None:
+    """CLIO adds Apps/input declarations; native SDK owns Tasks negotiation."""
     declaration = extensions_declaration(Client, object())
     by_id = {entry.identifier: entry for entry in declaration.entries}
-    assert set(by_id) == {TASKS_EXTENSION_ID, UI_EXTENSION_ID, AGENT_ELICITATION_EXTENSION_ID}
-    assert by_id[TASKS_EXTENSION_ID].extension is not None
-    assert by_id[TASKS_EXTENSION_ID].reason is None
-    assert by_id[UI_EXTENSION_ID].extension is not None
-    assert by_id[UI_EXTENSION_ID].reason is None
-    assert by_id[AGENT_ELICITATION_EXTENSION_ID].extension is not None
-    assert by_id[AGENT_ELICITATION_EXTENSION_ID].reason is None
-    assert {ext.identifier for ext in declaration.extensions} == {
-        TASKS_EXTENSION_ID,
-        UI_EXTENSION_ID,
-        AGENT_ELICITATION_EXTENSION_ID,
-    }
+    assert set(by_id) == {UI_EXTENSION_ID, AGENT_ELICITATION_EXTENSION_ID}
+    assert all(entry.extension is not None and entry.reason is None for entry in by_id.values())
+    assert {ext.identifier for ext in declaration.extensions} == set(by_id)
 
 
-def test_extensions_declaration_suppresses_tasks_but_keeps_ui_for_a_proxy_client() -> None:
-    """The proxy suppression is TASKS-specific -- ui is never suppressed (#1283).
-
-    Unlike tasks (a proxy backend leg cannot drive a backend TASK on the
-    caller's behalf), a proxy can always relay a ui-bearing result unchanged;
-    declaring ui is what makes a spec-compliant server willing to attach
-    ``_meta.ui`` in the first place, regardless of transport shape.
-
-    #1325 (a1f7a017, postdates this test): registry entry #3, the
-    agent-driven-elicitation ad, is unconditional like ``ui`` -- never
-    suppressed for a proxy client either (a proxy's front CLIO still answers
-    the MRTR round-trip exactly as a direct client does).
-    """
-
+def test_clio_proxy_extensions_preserve_apps_and_agent_elicitation() -> None:
+    """Proxy clients keep Apps/input declarations without a custom Tasks owner."""
     declaration = extensions_declaration(ProxyClient, object())
     by_id = {entry.identifier: entry for entry in declaration.entries}
-    assert by_id[TASKS_EXTENSION_ID].extension is None
-    assert by_id[TASKS_EXTENSION_ID].reason == MCP_TASKS_DECLARATION_SUPPRESSED
-    assert by_id[UI_EXTENSION_ID].extension is not None
-    assert by_id[UI_EXTENSION_ID].reason is None
-    assert by_id[AGENT_ELICITATION_EXTENSION_ID].extension is not None
-    assert by_id[AGENT_ELICITATION_EXTENSION_ID].reason is None
-    assert {ext.identifier for ext in declaration.extensions} == {
-        UI_EXTENSION_ID,
-        AGENT_ELICITATION_EXTENSION_ID,
-    }
+    assert set(by_id) == {UI_EXTENSION_ID, AGENT_ELICITATION_EXTENSION_ID}
+    assert all(entry.extension is not None and entry.reason is None for entry in by_id.values())
+    assert {ext.identifier for ext in declaration.extensions} == set(by_id)
 
 
 async def test_declared_path_negotiates_the_synthetic_extension_end_to_end() -> None:

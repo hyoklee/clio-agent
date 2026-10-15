@@ -504,3 +504,30 @@ Initial regression migration remains unfinished. No pytest/Vitest, Core/model,
 native/browser qualification or release acceptance ran in this packet. CI,
 full F03, migration acceptance and every Q1–Q9/R1–R6 row remain pending. The
 October 14 release target was not met; the released product remains preserved.
+
+## R43 source correction and qualification handoff
+
+Initial production implementation is present. Regression assurance, independent
+source review and actual-model qualification are separate gates. Tests and source
+reviews do not qualify the replacement; live production-service evidence does.
+
+Astra demonstrated a composer identity collision in R42. R43 rejects conflicting
+client message identities before acceptance and before/after promotion preflight,
+using the existing confirmed Core writer. Promotion no longer overwrites an
+unrelated accepted transcript row. Three public regression cases are constructed.
+Session deletion also releases its existing reasoning cache through its owner;
+the regression preserves another session's records. Architecture-bound relay and
+custom MCP-extension cases are removed or migrated without restoring old owners.
+The retained behavior inventory remains a regression migration checklist.
+
+Scoped Ruff/format (eight files), Linux Mypy (five files), removal, unchanged size,
+class and hidden-swallow guards pass. No behavioral cases or live qualification
+ran in this correction packet. R42's independent review reports and adjudication
+are retained. Canonical invalid-identity handling remains fail-closed; no new
+recovery authority was added for speculative corruption availability.
+
+The next work is an isolated D-repository production service with actual models.
+The remaining legacy regression migration is tracked separately and must not be
+used to postpone live verification. Final CI, accepted implementation reviews,
+F03 and the finite Q1–Q9/R1–R6 matrix remain required. No release, installation,
+auth/default write or automatic-review boundary change is implied.

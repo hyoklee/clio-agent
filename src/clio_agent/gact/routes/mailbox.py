@@ -63,6 +63,28 @@ def wire(app: Any, item: MailItem) -> dict[str, Any]:
     }
 
 
+def _require_available_message_id(
+    app: Any, sid: str, message_id: str, *, queue_id: str = ""
+) -> None:
+    """Reject another accepted input's identity while the Core writer is reserved."""
+    history = app.state.task_history
+    existing = history.mail_item(sid, message_id)
+    collision = existing is not None and existing.id != queue_id
+    collision = collision or any(row.id == message_id for row in app.state.messages.get(sid, []))
+    collision = collision or any(
+        item.id != queue_id and wire(app, item)["client_message_id"] == message_id
+        for item in queued(app, sid)
+    )
+    if collision:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "error": "client_message_id_conflict",
+                "message": "This message identity already belongs to accepted input.",
+            },
+        )
+
+
 def promote(
     app: Any, sid: str, identity: str, revision: int, *, automatic: bool = False
 ) -> dict[str, Any]:
@@ -85,8 +107,9 @@ def promote(
         value = history.read_content(item.content)
         request = PostMessageRequest.model_validate(value["request"])
         session = app.state.sessions.get(sid)
+        message_id = request.client_message_id or item.id
+        _require_available_message_id(app, sid, message_id, queue_id=item.id)
     prepared = prepare_references_sync(app, session, request)
-    message_id = request.client_message_id or item.id
     session, model, text, _images, parts = _validate_provider_and_payload(
         app, app.state.gact_deps, sid, request, prepared=prepared
     )
@@ -97,6 +120,7 @@ def promote(
         current = next((entry for entry in queued(app, sid) if entry.id == identity), None)
         if current != item:
             raise HTTPException(status_code=409, detail="Queued message changed during preflight")
+        _require_available_message_id(app, sid, message_id, queue_id=item.id)
         current_session = app.state.sessions.get(sid)
         if current_session is None or current_session.workspace_id != session.workspace_id:
             raise HTTPException(status_code=409, detail="Queued message workspace changed")
@@ -124,9 +148,6 @@ def promote(
             metadata=metadata,
             user_msg_id=message_id,
             mailbox_item=item.model_copy(update={"automatic_promotion": automatic}),
-            replace_existing_user_message=any(
-                row.id == message_id for row in app.state.messages.get(sid, [])
-            ),
         )
         _commit_resource_deliveries(app, sid, deliveries)
         return {
@@ -233,6 +254,8 @@ def register_mailbox_routes(app: FastAPI) -> None:
                             status_code=409, detail="Queue identity was reused with changed content"
                         )
                     return wire(app, existing)
+                if body.client_message_id:
+                    _require_available_message_id(app, sid, body.client_message_id)
                 stamp = now()
                 content = history.write_content(
                     sid, {"request": body.model_dump(mode="json"), "updated_at": stamp}
