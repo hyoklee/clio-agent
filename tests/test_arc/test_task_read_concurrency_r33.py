@@ -80,10 +80,14 @@ async def test_slow_result_read_allows_writer_progress_and_rechecks_disclosure(
         assert await asyncio.to_thread(entered.wait, 10)
 
         def revoke() -> None:
-            update: dict[str, Any] = (
-                {"rights": ("observe",)} if retain_observe else {"revoked_at": now()}
+            history.record_grant(
+                grant.model_copy(update={"revoked_at": now()}), observation_id="read-revoked"
             )
-            history.record_grant(grant.model_copy(update=update), observation_id="read-revoked")
+            if retain_observe:
+                history.record_grant(
+                    grant.model_copy(update={"id": "observe-only", "rights": ("observe",)}),
+                    observation_id="observe-retained",
+                )
 
         # This write must settle while the actual production content reader is held.
         await asyncio.wait_for(asyncio.to_thread(revoke), 10)
