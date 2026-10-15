@@ -17,6 +17,18 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 
+class _ClientCleanupError(RuntimeError):
+    """One client failed to close; the owner must still close its remaining clients."""
+
+
+async def _close_client(lm: Any) -> None:
+    """Expose arbitrary client failures as a typed lifecycle failure, preserving the cause."""
+    try:
+        await lm.aclose()
+    except Exception as exc:
+        raise _ClientCleanupError("Owned model client cleanup failed") from exc
+
+
 class _Resources:
     def __init__(self) -> None:
         self.lock = threading.Lock()
@@ -56,8 +68,11 @@ async def _close(lms: list[Any], primary: BaseException | None) -> None:
     with anyio.CancelScope(shield=True):
         for lm in reversed(lms):
             try:
-                await lm.aclose()
-            except Exception as exc:  # noqa: BLE001 - close every owned pool before reporting
+                await _close_client(lm)
+            except _ClientCleanupError as failure:
+                exc = failure.__cause__
+                if not isinstance(exc, Exception):
+                    exc = failure
                 errors.append(exc)
                 logger.warning(
                     "owned model client cleanup failed error_type=%s", type(exc).__name__
