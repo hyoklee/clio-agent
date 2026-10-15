@@ -96,6 +96,7 @@ def create_test_runtime(
         "HOME": state_dir / "home",
         "USERPROFILE": state_dir / "home",
         "CLIO_USER_DIR": state_dir / "clio",
+        "CLIO_RUNTIME_STATE_DIR": state_dir / "core",
         "FASTMCP_HOME": state_dir / "fastmcp",
         "MPLCONFIGDIR": cache_dir / "matplotlib",
     }
@@ -103,6 +104,7 @@ def create_test_runtime(
         path.mkdir(parents=True, exist_ok=True)
         environ[name] = str(path)
     environ["CLIO_TEST_RUNTIME_DIR"] = str(root)
+    environ["USER"] = f"clio-test-{owner_pid}-{run_nonce}"
     return TestRuntime(
         parent=parent,
         root=root,
@@ -128,6 +130,13 @@ def bootstrap_test_runtime(checkout: Path) -> TestRuntime:
             if name == "CLIO_AGENT_HOME" or re.fullmatch(r"CLIO_AGENT_\w+_DIR", name):
                 del os.environ[name]
         os.environ.pop("CLIO_ENV_FILE", None)
+        for name in (
+            "CLIO_ARC_STORE_CONFIG",
+            "CLIO_SERVER_CONF",
+            "CLIO_CORE_PORT",
+            "CLIO_CTE_POOL",
+        ):
+            os.environ.pop(name, None)
     elif _BOOTSTRAP_RUNTIME.parent != parent:
         raise RuntimeError("the test runtime belongs to a different checkout")
     return _BOOTSTRAP_RUNTIME

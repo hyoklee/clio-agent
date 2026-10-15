@@ -348,7 +348,7 @@ def _commit_charge_line() -> str:
 
     status = _MemoryStatus()
     status.dwLength = ctypes.sizeof(_MemoryStatus)
-    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+    if not getattr(ctypes, "windll").kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
         return "commit charge: unavailable (GlobalMemoryStatusEx failed)"
     limit = status.ullTotalPageFile / 2**30
     used = (status.ullTotalPageFile - status.ullAvailPageFile) / 2**30

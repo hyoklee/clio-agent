@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import stat
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -38,6 +41,12 @@ def test_default_runtime_stays_inside_checkout(tmp_path: Path) -> None:
         "PYTHONPYCACHEPREFIX",
         "XDG_CACHE_HOME",
         "XDG_STATE_HOME",
+        "HOME",
+        "USERPROFILE",
+        "LOCALAPPDATA",
+        "APPDATA",
+        "CLIO_USER_DIR",
+        "CLIO_RUNTIME_STATE_DIR",
     ):
         assert Path(environment[name]).is_relative_to(runtime.root)
 
@@ -140,6 +149,53 @@ def test_live_suite_runtime_is_not_system_temp() -> None:
     assert Path(os.environ["PYTHONPYCACHEPREFIX"]).resolve().is_relative_to(runtime)
     assert Path(os.environ["XDG_CACHE_HOME"]).resolve().is_relative_to(runtime)
     assert Path(os.environ["XDG_STATE_HOME"]).resolve().is_relative_to(runtime)
+
+
+def test_launcher_isolates_plugin_imports_and_cleans_help_exit(tmp_path: Path) -> None:
+    checkout = Path(__file__).resolve().parents[1]
+    probe = tmp_path / "plugin-result.json"
+    runtime_parent = tmp_path / "bootstrap-runs"
+    plugin = tmp_path / "clio_bootstrap_probe.py"
+    plugin.write_text(
+        "import json, os, tempfile\n"
+        "from pathlib import Path\n"
+        "names = ['TEMP', 'TMP', 'TMPDIR', 'HOME', 'USERPROFILE', 'CLIO_USER_DIR', "
+        "'CLIO_RUNTIME_STATE_DIR', 'UV_CACHE_DIR', 'XDG_CONFIG_HOME', 'LOCALAPPDATA']\n"
+        "Path(os.environ['CLIO_BOOTSTRAP_PROBE_PATH']).write_text(json.dumps({"
+        "'root': os.environ['CLIO_TEST_RUNTIME_DIR'], 'tempfile': tempfile.gettempdir(), "
+        "'paths': {name: os.environ[name] for name in names}, 'user': os.environ['USER']}))\n",
+        encoding="utf-8",
+    )
+    environment = {
+        **os.environ,
+        "CLIO_TEST_RUNTIME_ROOT": str(runtime_parent),
+        "CLIO_BOOTSTRAP_PROBE_PATH": str(probe),
+        "PYTHONPATH": str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""),
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-B",
+            str(checkout / "scripts/run_tests.py"),
+            "--help",
+            "-p",
+            "clio_bootstrap_probe",
+        ],
+        cwd=checkout,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    evidence = json.loads(probe.read_text(encoding="utf-8"))
+    root = Path(evidence["root"])
+    assert root.is_relative_to(checkout)
+    assert all(Path(path).is_relative_to(root) for path in evidence["paths"].values())
+    assert Path(evidence["tempfile"]).is_relative_to(root)
+    assert evidence["user"] != os.environ["USER"]
+    assert not root.exists()
 
 
 def test_cleanup_removes_readonly_snapshot_directories(tmp_path: Path) -> None:
