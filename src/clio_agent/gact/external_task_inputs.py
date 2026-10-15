@@ -36,6 +36,13 @@ def _record_reply(
 ) -> None:
     with self.history.serialized():
         current = self.history.task_snapshot(accepted.submission.handle)
+        if (
+            current is None
+            or current.submission != accepted.submission.context
+            or current.backend != host.backend.model_copy(update={"task_id": accepted.task.task_id})
+            or reply.task_id != accepted.task.task_id
+        ):
+            raise ValueError("External reply differs from its captured submission/backend identity")
         if current.terminal_at is not None:
             return
         if (
@@ -119,6 +126,9 @@ def _record_reply(
 
 
 async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, request: Any) -> Any:
+    if host.closing or host.client is None or request.session is not host.client.session:
+        raise ValueError("MCP input does not belong to a live bound transport session")
+
     def resolve_locked() -> tuple[TaskSnapshot, str, dict[str, Any]]:
         candidates = []
         payload = params.model_dump(mode="json", by_alias=True, exclude_none=True)
@@ -135,9 +145,21 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
                 ):
                     candidates.append((current, key, raw))
         inline = host.inline.get()
+        if inline is None and host.isolated and host.rpcs and not host.calls:
+            inline = host.invocation
+        if inline is not None and any(
+            call.submission.handle == inline.handle for call in host.calls.values()
+        ):
+            inline = None
         if not candidates and inline is not None:
             current = self.history.task_snapshot(inline.handle)
-            if current is None:
+            if (
+                current is None
+                or current.backend is not None
+                or current.submission is None
+                or inline.backend != host.backend
+                or self.history.read_content(current.submission) != inline.model_dump(mode="json")
+            ):
                 raise ValueError("Inline input has no confirmed invocation")
             key = "inline:" + str(request.request_id)
             details = self._details(current)

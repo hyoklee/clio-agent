@@ -27,7 +27,7 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
     argument_digest,
 )
-from clio_agent.gact import context, external_task_inputs
+from clio_agent.gact import context, external_task_connections, external_task_inputs
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot, safe_description
@@ -38,7 +38,6 @@ from clio_agent.tools.task_client import (
     submission_failure,
 )
 from clio_agent.tools.task_receipt import accepted_result
-from clio_agent.tools.task_transport import TaskObservationTransport
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +54,12 @@ class ExternalConnection:
     inline: ContextVar[SubmissionContext | None] = field(
         default_factory=lambda: ContextVar("clio_inline_mcp", default=None)
     )
+    isolated: bool = False
+    cache_key: tuple[str, str, str] = ("", "", "")
+    stack: AsyncExitStack = field(default_factory=AsyncExitStack)
+    invocation: SubmissionContext | None = None
+    rpcs: set[asyncio.Task[Any]] = field(default_factory=set)
+    closing: bool = False
 
 
 class ExternalTasks:
@@ -65,109 +70,10 @@ class ExternalTasks:
         self.connections: dict[tuple[str, str, str], ExternalConnection] = {}
         self._opening: dict[tuple[str, str, str], asyncio.Task[ExternalConnection]] = {}
         self._retiring: set[asyncio.Task[None]] = set()
-        self._stack = AsyncExitStack()
         self._closing = False
 
-    async def connection(
-        self,
-        server: str,
-        configured: Client,
-        auth_scope: str,
-        *,
-        original: BackendReference | None = None,
-    ) -> ExternalConnection:
-        """Retain a fully configured direct transport on the application lifespan."""
-        key = (server, auth_scope, original.session if original is not None else "")
-        if key in self.connections:
-            return self.connections[key]
-        opening = self._opening.get(key)
-        if opening is None:
-
-            async def open_client() -> ExternalConnection:
-                host = ExternalConnection(
-                    original.model_copy(update={"task_id": ""})
-                    if original is not None
-                    else BackendReference(
-                        owner="external_mcp",
-                        server=server,
-                        auth_scope=auth_scope,
-                        session=uuid4().hex,
-                        transport=type(configured.transport).__name__,
-                    )
-                )
-
-                async def observe(session: Any, task_id: str, reply: ClientGetTaskResult) -> None:
-                    await self._observe(host, task_id, reply)
-
-                async def guard(session: Any, task_id: str, answers: dict[str, Any]) -> None:
-                    def validate() -> None:
-                        current = self._task(host, task_id)
-                        details = self._details(current)
-                        if any(
-                            details.get("answers", {}).get(key) != value
-                            for key, value in answers.items()
-                        ):
-                            raise ValueError(
-                                "Task update differs from confirmed canonical input responses"
-                            )
-
-                    await asyncio.to_thread(validate)
-
-                async def accepted(call: AcceptedNativeCall) -> Any:
-                    previous = host.calls.get(call.task.task_id)
-                    if (
-                        previous is not None
-                        and previous.submission.handle != call.submission.handle
-                    ):
-                        raise ValueError(
-                            "Server reused an active task identity for another submission"
-                        )
-                    host.calls[call.task.task_id] = call  # retain custody before persistence
-
-                    async def adopt() -> Any:
-                        return await asyncio.to_thread(self._adopt, host, call)
-
-                    try:
-                        receipt = await adopt()
-                    except Exception:
-
-                        async def retry() -> None:
-                            assert host.client is not None
-                            if any(
-                                error.accepted is call
-                                for error in host.client.unconfirmed_adoptions
-                            ):
-                                await host.client.retry_adoption(call.submission.handle)
-                            else:
-                                await adopt()
-                            self._drive(host, call)
-                            await self._retire_resources(host, call)
-
-                        self.recovery.defer("external-adopt:" + call.submission.handle, retry)
-                        raise
-                    self._drive(host, call)
-                    return receipt
-
-                async def elicit(
-                    message: str, response_type: Any, params: Any, request: Any
-                ) -> Any:
-                    return await self._input(host, params, request)
-
-                transport = TaskObservationTransport(configured.transport, observe, guard)
-                client = TaskAwareClient.from_configured(
-                    configured, transport, on_task_accepted=accepted, elicitation_handler=elicit
-                )
-                host.client = await self._stack.enter_async_context(client)
-                self.connections[key] = host
-                return host
-
-            opening = asyncio.create_task(open_client())
-            self._opening[key] = opening
-        try:
-            return await asyncio.shield(opening)
-        finally:
-            if opening.done():
-                self._opening.pop(key, None)
+    connection = external_task_connections.connection
+    _retire_connection = external_task_connections.retire_connection
 
     async def restore(self, handles: tuple[str, ...] | None = None) -> None:
         """Register recovery of original external identities without submitting work."""
@@ -323,6 +229,20 @@ class ExternalTasks:
         if not isinstance(description, str) or len(description) > 2000:
             raise ValueError("Task description is invalid")
         host = await self.connection(server, configured, auth_scope)
+        try:
+            return await self._call(host, name, public, description, progress_handler)
+        finally:
+            self._schedule_retirement(host)
+
+    async def _call(
+        self,
+        host: ExternalConnection,
+        name: str,
+        public: dict[str, Any],
+        description: str,
+        progress_handler: Callable[[float, float | None, str | None], Awaitable[None]] | None,
+    ) -> Any:
+        """Submit one call using its captured schema and trusted invocation identity."""
         assert host.client is not None
         tools = await host.client.list_tools()
         component = next((tool for tool in tools if tool.name == name), None)
@@ -385,7 +305,13 @@ class ExternalTasks:
                 )
                 return content
 
+        if self._closing:
+            raise ValueError("External task observation is closing")
         content = await asyncio.to_thread(confirm)
+        if host.isolated:
+            if host.invocation is not None:
+                raise ValueError("An invocation-bound transport cannot serve another submission")
+            host.invocation = submission
         binding = TaskSubmission(
             handle,
             name,
@@ -419,6 +345,8 @@ class ExternalTasks:
                 host.inline.reset(token)
 
         rpc = asyncio.create_task(submit())
+        host.rpcs.add(rpc)
+        rpc.add_done_callback(lambda finished: self._rpc_retired(host, finished))
         stopped = False
         while True:
             try:
@@ -437,7 +365,9 @@ class ExternalTasks:
                 failure = submission_failure(error)
                 if failure == "rejected":
                     await self._record_or_defer(
-                        "external-rejected:" + handle, partial(self._rejected, handle, reason)
+                        "external-rejected:" + handle,
+                        partial(self._rejected, handle, reason),
+                        retire=lambda: self._retire_connection(host),
                     )
                     return mcp_types.CallToolResult(
                         content=[
@@ -474,7 +404,11 @@ class ExternalTasks:
             call.submission.handle == handle for call in host.calls.values()
         )
         if not accepted:
-            await asyncio.to_thread(self._inline_result, handle, reply)
+            await self._record_or_defer(
+                "external-inline:" + handle,
+                partial(self._inline_result, handle, reply),
+                retire=lambda: self._retire_connection(host),
+            )
         if stopped:
             raise asyncio.CancelledError
         return reply
@@ -569,8 +503,18 @@ class ExternalTasks:
         host.drivers[call.task.task_id] = driver
         driver.add_done_callback(lambda finished: self._schedule_retirement(host, call))
 
-    def _schedule_retirement(self, host: ExternalConnection, call: AcceptedNativeCall) -> None:
-        task = asyncio.create_task(self._retire_resources(host, call))
+    def _rpc_retired(self, host: ExternalConnection, rpc: asyncio.Task[Any]) -> None:
+        host.rpcs.discard(rpc)
+        self._schedule_retirement(host)
+
+    def _schedule_retirement(
+        self, host: ExternalConnection, call: AcceptedNativeCall | None = None
+    ) -> None:
+        task = asyncio.create_task(
+            self._retire_resources(host, call)
+            if call is not None
+            else self._retire_connection(host)
+        )
         self._retiring.add(task)
         task.add_done_callback(self._retiring.discard)
 
@@ -599,6 +543,7 @@ class ExternalTasks:
         if host.calls.get(call.task.task_id) is call:
             host.calls.pop(call.task.task_id)
             host.drivers.pop(call.task.task_id, None)
+        await self._retire_connection(host)
 
     async def _observe(
         self, host: ExternalConnection, task_id: str, reply: ClientGetTaskResult
@@ -761,11 +706,4 @@ class ExternalTasks:
 
     async def close(self) -> None:
         """Retire observation without claiming surviving external jobs were cancelled."""
-        self._closing = True
-        drivers = [driver for host in self.connections.values() for driver in host.drivers.values()]
-        for driver in drivers:
-            driver.cancel()
-        await asyncio.gather(*drivers, return_exceptions=True)
-        if self._retiring:
-            await asyncio.shield(asyncio.gather(*tuple(self._retiring)))
-        await self._stack.aclose()
+        await external_task_connections.close_connections(self)

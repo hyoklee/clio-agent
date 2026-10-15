@@ -1,0 +1,25 @@
+{
+  "parent_core": "1db2742dc8f90f94bd6472523eb97e400680ecf1",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "files": [
+    "src/clio_agent/gact/external_tasks.py",
+    "src/clio_agent/gact/external_task_connections.py",
+    "src/clio_agent/gact/external_task_inputs.py",
+    "tests/test_arc/test_external_inline_session_contracts.py",
+    "tests/test_arc/test_external_task_observations.py"
+  ],
+  "ruff": "pass",
+  "format": "pass",
+  "linux_mypy": "pass: --follow-imports silent --check-untyped-defs; corrected Optional test reads and rechecked affected files",
+  "removal_violations": 0,
+  "source_cap": 800,
+  "class_guard": "pass",
+  "hidden_swallows": 480,
+  "hidden_swallow_files": 200,
+  "behavioral_execution": false,
+  "live_execution": false,
+  "remaining_legacy_affected_files": 37,
+  "acceptance": "pending independent source review and all required runtime gates",
+  "writable_state": "D:/Libraries/Documents/projects/clio-agent-task-qualification/.pytest-runtime"
+}

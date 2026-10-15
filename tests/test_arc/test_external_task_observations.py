@@ -53,7 +53,6 @@ async def test_invalid_external_terminal_is_failed_with_raw_evidence_and_one_own
             created_at=STAMP,
             updated_at=STAMP,
         )
-        history.record_snapshot(current, observation_id="accepted")
         submission = TaskSubmission(
             handle=current.handle,
             tool_name=current.tool,
@@ -66,6 +65,8 @@ async def test_invalid_external_terminal_is_failed_with_raw_evidence_and_one_own
                 "properties": {"value": {"type": "integer"}},
             },
         )
+        current = current.model_copy(update={"submission": submission.context})
+        history.record_snapshot(current, observation_id="accepted")
         client = Client(FastMCP("unused-contract-transport"))
         accepted = restore_native_call(
             client,
@@ -87,6 +88,15 @@ async def test_invalid_external_terminal_is_failed_with_raw_evidence_and_one_own
             }
         )
         connection = ExternalConnection(backend.model_copy(update={"task_id": ""}))
+        unchanged = history.task_snapshot(current.handle)
+        with pytest.raises(
+            ValueError, match="differs from its captured submission/backend identity"
+        ):
+            owner._record_reply(
+                connection, accepted, reply.model_copy(update={"task_id": "foreign-task"})
+            )
+        assert history.task_snapshot(current.handle) == unchanged
+        assert not history.pending_mail("owner")
         owner._record_reply(connection, accepted, reply)
         settled = history.task_snapshot(current.handle)
         assert settled is not None
@@ -95,7 +105,8 @@ async def test_invalid_external_terminal_is_failed_with_raw_evidence_and_one_own
         assert "declared schema" in settled.progress.message
         assert settled.backend == backend and settled.invocation_id == "invocation"
         assert settled.result is not None
-        assert history.read_content(settled.result)["result"] == raw
+        retained = history.read_content(settled.result)
+        assert isinstance(retained, dict) and retained["result"] == raw
         notices = history.pending_mail("owner")
         assert len(notices) == 1 and notices[0].handle == current.handle
         owner._record_reply(connection, accepted, reply)
