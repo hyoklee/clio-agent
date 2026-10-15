@@ -108,8 +108,8 @@ def present_task_family(
             str(presentation.get("summary") or "Waiting for tasks"),
             list(presentation.get("blocks") or []),
             "Wait",
-            "",
-            "",
+            str(presentation.get("status") or ""),
+            str(presentation.get("subject") or ""),
         )
     if declaration == "message":
         error = payload.get("error")

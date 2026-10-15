@@ -181,7 +181,7 @@ def _new_assignment(
         if predecessor is not None and predecessor.details is not None
         else None
     )
-    parent_input = self.history.recovery_input(parent.handle) if parent is not None else None
+    parent_input = self.history.latest_input(parent.handle) if parent is not None else None
     details = self.history.write_content(
         sid,
         (initial_details or AssignmentDetails())

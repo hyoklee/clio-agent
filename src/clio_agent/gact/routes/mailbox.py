@@ -86,11 +86,12 @@ def promote(
         request = PostMessageRequest.model_validate(value["request"])
         session = app.state.sessions.get(sid)
     prepared = prepare_references_sync(app, session, request)
+    message_id = request.client_message_id or item.id
     session, model, text, _images, parts = _validate_provider_and_payload(
         app, app.state.gact_deps, sid, request, prepared=prepared
     )
     parts, deliveries = _plan_resource_parts(
-        app, workspace_id=session.workspace_id, message_id=item.id, parts=parts, model=model
+        app, workspace_id=session.workspace_id, message_id=message_id, parts=parts, model=model
     )
     with history.serialized():
         current = next((entry for entry in queued(app, sid) if entry.id == identity), None)
@@ -121,10 +122,10 @@ def promote(
             request_parts=parts,
             model_text=prepared.model_text,
             metadata=metadata,
-            user_msg_id=item.id,
+            user_msg_id=message_id,
             mailbox_item=item.model_copy(update={"automatic_promotion": automatic}),
             replace_existing_user_message=any(
-                row.id == item.id for row in app.state.messages.get(sid, [])
+                row.id == message_id for row in app.state.messages.get(sid, [])
             ),
         )
         _commit_resource_deliveries(app, sid, deliveries)
@@ -214,6 +215,10 @@ def register_mailbox_routes(app: FastAPI) -> None:
                 )
                 existing = history.mail_item(sid, identity)
                 if existing is not None:
+                    if body.idempotency_key:
+                        # A released idempotency key identifies the accepted row,
+                        # including its original client ID and later human edits.
+                        return wire(app, existing)
                     stored = history.read_content(existing.content)
                     if "queue_context" in stored:
                         stored = history.read_content(

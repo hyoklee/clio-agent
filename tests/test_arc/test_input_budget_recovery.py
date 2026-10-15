@@ -70,7 +70,7 @@ async def test_late_eligible_input_excludes_trigger_until_a_later_committed_iter
             assert owner.history.acknowledged_notifications(sid) == frozenset({"earlier"})
             assert [item.id for item in owner.history.pending_mail(sid)] == ["trigger"]
             owner.history.restore()
-            replay = owner.history.recovery_input(root.handle)
+            replay = owner.history.latest_input(root.handle)
             assert replay is not None
             assert replay.notification_ids == ("earlier",)
             assert marker not in str(

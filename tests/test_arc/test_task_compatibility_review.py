@@ -36,7 +36,9 @@ async def test_first_assignment_pins_evidence_before_an_interrupted_acceptance(
 ) -> None:
     app, owner, source, _critic, _body = await evidence_children(arc, tmp_path)
     history = owner.history
-    parent = await asyncio.to_thread(history.task_snapshot, source.owner.parent_handle)
+    parent_handle = source.owner.parent_handle
+    assert parent_handle is not None
+    parent = await asyncio.to_thread(history.task_snapshot, parent_handle)
     assert parent is not None
     caller = TaskCaller(parent.owner.session_id, "human")
     pins = await asyncio.to_thread(select_assignment_evidence, history, caller, [source.handle])
@@ -54,7 +56,7 @@ async def test_first_assignment_pins_evidence_before_an_interrupted_acceptance(
 
     monkeypatch.setattr(history, "record_snapshot", interrupt)
     before = len(app.state.sessions.list())
-    arguments = {
+    arguments: dict[str, Any] = {
         "launch_context": {"input_task_refs": [pin.model_dump(mode="json") for pin in pins]}
     }
     with pytest.raises(RuntimeError, match="Lost reply"):
@@ -184,7 +186,8 @@ async def test_expired_pattern_wait_retains_its_search_recovery_metadata(
     )
     assert result["timed_out"] is True and result["tasks"] == []
     assert "search_start_cursor" in result and result["scanned_pages"] == 0
-    assert (await asyncio.to_thread(owner.history.task_snapshot, task.handle)).terminal_at is None
+    pending = await asyncio.to_thread(owner.history.task_snapshot, task.handle)
+    assert pending is not None and pending.terminal_at is None
     await owner.recovery.drain()
 
 
@@ -263,7 +266,7 @@ async def test_transcript_injection_matches_the_committed_rendered_delegation(
                 arc, critic.owner.session_id, "main", expert_id="critic"
             )
             recorder.commit_input(0)
-            committed = owner.history.recovery_input(critic.handle)
+            committed = owner.history.latest_input(critic.handle)
             assert committed is not None and len(committed.rendered_content) == 1
             rendered = owner.history.read_content(committed.rendered_content[0])
             assert isinstance(rendered, dict)

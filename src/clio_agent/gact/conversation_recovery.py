@@ -109,6 +109,9 @@ async def restore(self: Conversations) -> None:
     await asyncio.to_thread(self._restore_input_projections)
     if self.history.requires_recovery:
         return  # The existing readiness callback resumes this same restoration.
+    from clio_agent.gact.session_store import restore_pending_mail_messages
+
+    await asyncio.to_thread(restore_pending_mail_messages, self.app, self.history)
     handles = await asyncio.to_thread(self.history.task_handles, active_only=True)
     for handle in handles:
         task = await asyncio.to_thread(self.history.task_snapshot, handle)
@@ -191,7 +194,7 @@ async def restore(self: Conversations) -> None:
                 )
                 from clio_agent.gact.context import scope_epoch
 
-                committed = self.history.recovery_input(task.handle, epoch=details.context_epoch)
+                committed = self.history.latest_input(task.handle, epoch=details.context_epoch)
                 boundary = committed.boundary if committed is not None else details.context
                 if boundary is not None and scope_epoch(boundary.scope) != details.context_epoch:
                     boundary = None

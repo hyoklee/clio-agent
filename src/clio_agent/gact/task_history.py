@@ -72,6 +72,7 @@ class TaskHistory:
         self._mail: dict[str, dict[str, MailItem]] = {}
         self._pending: dict[str, dict[str, MailItem]] = {}
         self._inputs: dict[tuple[str, str], RecipientInput] = {}
+        self._latest_inputs: dict[tuple[str, str | None], RecipientInput] = {}
         self._notification_inputs: dict[tuple[str, str], str] = {}
         self._iterations: dict[tuple[str, str, str], str] = {}
         self._input_locations: dict[tuple[str, str], dict[str, Any]] = {}
@@ -342,23 +343,12 @@ class TaskHistory:
         with self._lock:
             return frozenset(self._observation_inputs.get((session_id, scope), ()))
 
-    def recovery_input(
+    def latest_input(
         self, assignment_id: str, *, epoch: str | None = None
     ) -> RecipientInput | None:
-        """Find the last confirmed input during startup recovery, never during hot reads."""
-        from clio_agent.gact.context import scope_epoch
-
+        """Read the latest confirmed assignment input from its rebuildable projection."""
         with self._lock:
-            return max(
-                (
-                    record
-                    for record in self._inputs.values()
-                    if record.assignment_id == assignment_id
-                    and (epoch is None or scope_epoch(record.boundary.scope) == epoch)
-                ),
-                key=lambda record: record.committed_at,
-                default=None,
-            )
+            return self._latest_inputs.get((assignment_id, epoch))
 
     def committed_notification_input(self, session_id: str, identity: str) -> RecipientInput | None:
         """Resolve a confirmed exact notification input without scanning retained session history."""

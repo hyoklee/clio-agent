@@ -296,6 +296,7 @@ def restore(self: TaskHistory) -> None:
     started = time.monotonic()
     with self._lock:
         tasks, mail, inputs = self._tasks, self._mail, self._inputs
+        latest_inputs = self._latest_inputs
         aliases = self._aliases
         pending, previous_revision = self._pending, self.revision
         acknowledgements, withdrawn, grants = self._acknowledged, self._withdrawn, self._grants
@@ -319,6 +320,7 @@ def restore(self: TaskHistory) -> None:
         workflow_dirty = self._workflow_dirty
         workflow_unresolved = self._workflow_unresolved
         self._tasks, self._mail, self._inputs = {}, {}, {}
+        self._latest_inputs = {}
         self._aliases = {}
         self._pending, self.revision = {}, 0
         self._acknowledged, self._withdrawn, self._grants = {}, {}, {}
@@ -382,6 +384,7 @@ def restore(self: TaskHistory) -> None:
             self._replaying = False
             self.requires_recovery = True
             self._tasks, self._mail, self._inputs = tasks, mail, inputs
+            self._latest_inputs = latest_inputs
             self._aliases = aliases
             self._pending, self.revision = pending, previous_revision
             self._acknowledged, self._withdrawn, self._grants = (
@@ -627,6 +630,8 @@ def _find_input(
 
 
 def _accept_input(self: TaskHistory, record: RecipientInput) -> None:
+    from clio_agent.gact.context import scope_epoch
+
     key = (record.session_id, record.id)
     previous = self._inputs.get(key)
     if previous is not None:
@@ -635,6 +640,11 @@ def _accept_input(self: TaskHistory, record: RecipientInput) -> None:
         return
     _validate_input_eligibility(self, record)
     self._inputs[key] = record
+    for epoch in (None, scope_epoch(record.boundary.scope)):
+        latest_key = (record.assignment_id, epoch)
+        latest = self._latest_inputs.get(latest_key)
+        if latest is None or record.committed_at > latest.committed_at:
+            self._latest_inputs[latest_key] = record
     self._iterations[(record.session_id, record.assignment_id, record.iteration_id)] = record.id
     self._acknowledged.setdefault(record.session_id, set()).update(record.notification_ids)
     self._acknowledged[record.session_id].update(record.legacy_notification_ids)

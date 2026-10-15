@@ -61,6 +61,14 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
     rows = [row for row in outcomes if isinstance(row, Mapping) and not row.get("error")]
     errors = [row for row in outcomes if isinstance(row, Mapping) and row.get("error")]
     errors.extend(row for row in result.get("errors", []) if isinstance(row, Mapping))
+
+    def uncollected(row: Mapping[str, Any]) -> bool:
+        return (
+            row.get("status") == "task_state_uncertain"
+            or bool(row.get("pending"))
+            or row.get("handle") in pending
+        )
+
     handles = list(
         dict.fromkeys(
             [handle for handle in requested if isinstance(handle, str)]
@@ -110,13 +118,17 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
                 label=f"{handle}: {label}",
                 text="No result body was recorded." if value is None else _result_text(value),
                 status=status,
-                result_kind="completion",
+                result_kind="snapshot" if uncollected(row) else "completion",
             )
             if status == "task_state_uncertain":
                 block.update(
-                    label=f"{handle}: State uncertain",
-                    text="Execution state could not be confirmed. Inspect this task and its effects before retrying.",
+                    label=f"{handle}: Needs attention",
+                    text=str(
+                        row.get("reason")
+                        or "Execution state could not be confirmed. Inspect this task and its effects before retrying."
+                    ),
                     result_kind="snapshot",
+                    severity="warning",
                 )
             if status in _UNSUCCESSFUL:
                 block["severity"] = "error"
@@ -142,11 +154,15 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
                 }
             )
     failed = sum(row.get("status") in _UNSUCCESSFUL for row in rows)
-    counts = [f"{len(rows)} {'result' if len(rows) == 1 else 'results'} collected"]
+    collected = sum(not uncollected(row) for row in rows)
+    attention = sum(row.get("status") == "task_state_uncertain" for row in rows)
+    counts = [f"{collected} {'result' if collected == 1 else 'results'} collected"]
     if pending:
         counts.insert(0, f"{len(pending)} pending")
     if failed:
         counts.append(f"{failed} unsuccessful")
+    if attention:
+        counts.append(f"{attention} {'task needs' if attention == 1 else 'tasks need'} attention")
     if errors:
         counts.append(f"{len(errors)} {'error' if len(errors) == 1 else 'errors'}")
     presentation = {
@@ -155,6 +171,6 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
         "summary": ", ".join(counts),
         "blocks": blocks,
     }
-    if failed or errors:
+    if failed or errors or attention:
         presentation["status"] = "degraded"
     return presentation

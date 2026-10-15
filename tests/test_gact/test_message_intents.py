@@ -2,222 +2,109 @@
 
 from __future__ import annotations
 
-import json
 import time
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
-from clio_agent.gact.message_intents import (
-    IntentStoreReadError,
-    MessageIntentStore,
-    PendingSteer,
-    QueuedMessage,
-    RevisionConflictError,
-)
-from clio_agent.gact.types import Part, PostMessageResponse
 from tests.test_gact.test_post_messages import FakeClioAgent, SlowClioAgent
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
 
-def test_pending_steer_and_acceptance_survive_restart(tmp_path: Path) -> None:
-    path = tmp_path / "message-intents.json"
-    store = MessageIntentStore(path)
-    pending = PendingSteer(
-        message_id="msg_user_client_1",
-        session_id="sess_1",
-        parts=[Part(type="text", text="change course")],
-        text="change course",
-        accepted_at="2026-08-30T12:00:00+00:00",
-    )
-    response = PostMessageResponse(
-        message_id=pending.message_id,
-        accepted_at=pending.accepted_at,
-        delivery="steer",
-        state="pending_steer",
-    )
+def test_core_queue_edits_reorder_and_idempotency_use_current_revisions(tmp_path: Path) -> None:
+    """Exercise public queue commands while model execution is explicitly held."""
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(answer="unused"))
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Core queue revisions"}).json()["id"]
+        app.state.sessions.update(sid, metadata_patch={"agent_paused": True})
+        endpoint = f"/v1/sessions/{sid}/queued-messages"
+        first = client.post(endpoint, json={"text": "first", "idempotency_key": "first"})
+        second = client.post(endpoint, json={"text": "second", "idempotency_key": "second"})
+        assert first.status_code == second.status_code == 201
+        original, other = first.json(), second.json()
+        edited = client.patch(
+            endpoint + "/" + original["id"],
+            json={"revision": original["revision"], "text": "edited first"},
+        )
+        assert edited.status_code == 200, edited.text
+        current = edited.json()
+        assert current["revision"] == original["revision"] + 1
+        stale = client.patch(
+            endpoint + "/" + original["id"],
+            json={"revision": original["revision"], "text": "stale"},
+        )
+        assert stale.status_code == 409
+        reordered = client.post(
+            endpoint + "/reorder",
+            json={
+                "items": [
+                    {"id": other["id"], "revision": other["revision"]},
+                    {"id": current["id"], "revision": current["revision"]},
+                ]
+            },
+        )
+        assert reordered.status_code == 200, reordered.text
+        assert [row["id"] for row in reordered.json()["queued_messages"]] == [
+            other["id"],
+            current["id"],
+        ]
+        app.state.task_history.restore()
+        rows = client.get(endpoint).json()["queued_messages"]
+        assert [row["id"] for row in rows] == [other["id"], current["id"]]
+        assert [(part["type"], part.get("text")) for part in rows[1]["parts"]] == [
+            ("text", "edited first")
+        ]
+        replay = client.post(endpoint, json={"text": "first", "idempotency_key": "first"})
+        assert replay.status_code == 201, replay.text
+        assert replay.json()["id"] == current["id"]
+        assert len(client.get(endpoint).json()["queued_messages"]) == 2
+        assert not app.state.task_history.acknowledged_notifications(sid)
 
-    assert store.accept_pending(pending, "idem-1", response) is None
-    replay = store.accept_pending(pending, "idem-1", response)
-    assert replay == response
 
-    restored = MessageIntentStore(path)
-    assert [row.message_id for row in restored.list_pending("sess_1")] == [pending.message_id]
-    assert restored.acceptance("sess_1", "idem-1") == response
+def test_queue_promotion_preflight_failure_preserves_core_pending_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Failure before promotion cannot lose accepted work or acknowledge model input."""
+    from fastapi import HTTPException
 
-    claimed = restored.claim_pending("sess_1", pending.message_id)
-    assert claimed is not None and claimed.state == "claimed"
-    # A process restart before consumption makes the claim available again.
-    restarted = MessageIntentStore(path)
-    assert restarted.get_pending("sess_1", pending.message_id).state == "pending"  # type: ignore[union-attr]
+    from clio_agent.gact import message_submission
 
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(answer="unused"))
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Promotion recovery"}).json()["id"]
+        app.state.sessions.update(sid, metadata_patch={"agent_paused": True})
+        endpoint = f"/v1/sessions/{sid}/queued-messages"
+        created = client.post(
+            endpoint, json={"text": "next", "client_message_id": "promotion-input"}
+        )
+        assert created.status_code == 201, created.text
+        queued = created.json()
+        original = message_submission.prepare_references_sync
 
-def test_restart_repairs_acceptance_committed_before_transcript_append(tmp_path: Path) -> None:
-    sessions_path = tmp_path / "sessions.json"
-    first_app = build_app(sessions_path=sessions_path, agent=FakeClioAgent(answer="unused"))
-    with TestClient(first_app) as client:
-        sid = client.post("/v1/sessions", json={"title": "restart repair"}).json()["id"]
+        def unavailable(*_args: Any, **_kwargs: Any) -> Any:
+            raise HTTPException(status_code=400, detail="Reference preflight unavailable")
 
-    accepted_at = "2026-08-30T12:00:00+00:00"
-    pending = PendingSteer(
-        message_id="msg_restart_gap",
-        session_id=sid,
-        parts=[Part(type="text", text="recover me")],
-        text="recover me",
-        accepted_at=accepted_at,
-        metadata={"delivery": "steer", "pending_steer": True},
-    )
-    response = PostMessageResponse(
-        message_id=pending.message_id,
-        accepted_at=accepted_at,
-        delivery="steer",
-        state="pending_steer",
-    )
-    MessageIntentStore(tmp_path / "message_intents.json").accept_pending(
-        pending, "restart-gap", response
-    )
-
-    restarted_app = build_app(
-        sessions_path=sessions_path,
-        agent=FakeClioAgent(answer="unused"),
-    )
-    with TestClient(restarted_app) as client:
+        monkeypatch.setattr(message_submission, "prepare_references_sync", unavailable)
+        failed = client.post(
+            endpoint + "/" + queued["id"] + "/promote", json={"revision": queued["revision"]}
+        )
+        assert failed.status_code == 400
+        assert client.get(endpoint).json()["queued_messages"] == [queued]
+        assert not app.state.task_history.acknowledged_notifications(sid)
+        monkeypatch.setattr(message_submission, "prepare_references_sync", original)
+        promoted = client.post(
+            endpoint + "/" + queued["id"] + "/promote", json={"revision": queued["revision"]}
+        )
+        assert promoted.status_code == 200, promoted.text
+        assert promoted.json()["acceptance"]["message_id"] == "promotion-input"
+        assert client.get(endpoint).json()["queued_messages"] == []
         messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        recovered = [row for row in messages if row["id"] == pending.message_id]
-        assert len(recovered) == 1
-        assert recovered[0]["metadata"]["pending_steer"] is True
-        snapshot = client.get(f"/v1/sessions/{sid}/message-state").json()
-        assert [row["message_id"] for row in snapshot["pending_steers"]] == [pending.message_id]
-
-
-def test_queue_is_revisioned_ordered_and_idempotent(tmp_path: Path) -> None:
-    path = tmp_path / "message-intents.json"
-    store = MessageIntentStore(path)
-    first = store.create_queued(
-        QueuedMessage(
-            id="queued_1",
-            session_id="sess_1",
-            idempotency_key="client-key-1",
-            parts=[Part(type="text", text="first")],
-        )
-    )
-    second = store.create_queued(
-        QueuedMessage(
-            id="queued_2",
-            session_id="sess_1",
-            parts=[Part(type="text", text="second")],
-        )
-    )
-    assert [row.id for row in store.list_queued("sess_1")] == ["queued_1", "queued_2"]
-    assert store.find_queued_by_idempotency("sess_1", "client-key-1") == first
-
-    edited = store.update_queued(
-        "sess_1",
-        first.id,
-        first.revision,
-        parts=[Part(type="text", text="edited first")],
-    )
-    assert edited is not None and edited.revision == 2
-    with pytest.raises(RevisionConflictError):
-        store.update_queued("sess_1", first.id, first.revision, metadata={"stale": True})
-
-    reordered = store.reorder(
-        "sess_1",
-        [second.id, first.id],
-        {second.id: second.revision, first.id: edited.revision},
-    )
-    assert [row.id for row in reordered] == ["queued_2", "queued_1"]
-    assert [row.id for row in MessageIntentStore(path).list_queued("sess_1")] == [
-        "queued_2",
-        "queued_1",
-    ]
-
-
-def test_queue_promotion_is_atomic_and_retains_row_on_acceptance_failure(tmp_path: Path) -> None:
-    store = MessageIntentStore(tmp_path / "message-intents.json")
-    queued = store.create_queued(
-        QueuedMessage(
-            id="queued_atomic",
-            session_id="sess_atomic",
-            parts=[Part(type="text", text="next")],
-        )
-    )
-
-    def fail_acceptance(_row: QueuedMessage) -> str:
-        raise RuntimeError("acceptance failed")
-
-    with pytest.raises(RuntimeError, match="acceptance failed"):
-        store.promote_queued(
-            "sess_atomic",
-            queued.id,
-            queued.revision,
-            fail_acceptance,
-        )
-    assert [row.id for row in store.list_queued("sess_atomic")] == [queued.id]
-
-    promoted = store.promote_queued(
-        "sess_atomic",
-        queued.id,
-        queued.revision,
-        lambda row: row.parts[0].text,
-    )
-    assert promoted is not None and promoted[1] == "next"
-    assert store.list_queued("sess_atomic") == []
-
-
-def test_delete_session_removes_all_intent_planes(tmp_path: Path) -> None:
-    path = tmp_path / "message-intents.json"
-    store = MessageIntentStore(path)
-    pending = PendingSteer(
-        message_id="msg_pending",
-        session_id="sess_delete",
-        parts=[Part(type="text", text="now")],
-        text="now",
-        accepted_at="2026-08-30T12:00:00+00:00",
-    )
-    response = PostMessageResponse(
-        message_id=pending.message_id,
-        accepted_at=pending.accepted_at,
-        delivery="steer",
-        state="pending_steer",
-    )
-    store.accept_pending(pending, "accepted", response)
-    store.create_queued(
-        QueuedMessage(
-            id="queued_delete",
-            session_id="sess_delete",
-            parts=[Part(type="text", text="later")],
-        )
-    )
-    store.create_queued(
-        QueuedMessage(
-            id="queued_keep",
-            session_id="sess_keep",
-            parts=[Part(type="text", text="keep")],
-        )
-    )
-
-    store.delete_session("sess_delete")
-
-    restored = MessageIntentStore(path)
-    assert restored.list_pending("sess_delete") == []
-    assert restored.list_queued("sess_delete") == []
-    assert restored.acceptance("sess_delete", "accepted") is None
-    assert [row.id for row in restored.list_queued("sess_keep")] == ["queued_keep"]
-
-
-def test_corrupt_intent_state_fails_closed(tmp_path: Path) -> None:
-    path = tmp_path / "message-intents.json"
-    path.write_text(
-        json.dumps({"pending": [{"message_id": "missing-required-fields"}]}),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(IntentStoreReadError, match="invalid pending message intent"):
-        MessageIntentStore(path)
+        assert len([row for row in messages if row["id"] == "promotion-input"]) == 1
+        assert not app.state.task_history.acknowledged_notifications(sid)
 
 
 def test_queue_routes_keep_future_messages_out_of_transcript_until_promoted(

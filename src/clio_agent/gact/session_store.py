@@ -41,6 +41,7 @@ from clio_agent.runtime import trace
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from clio_agent.gact.task_history import TaskHistory
     from clio_agent.gact.types import Message
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,58 @@ def _metrics_counters(app: "FastAPI") -> Any:
     """
 
     return getattr(app.state, "metrics_counters", None)
+
+
+def restore_pending_mail_messages(app: "FastAPI", history: "TaskHistory") -> None:
+    """Repair accepted pending feedback at startup without acknowledging or executing it.
+
+    Admission remains closed while this runs. Unpromoted drafts have no accepted
+    message body; withdrawals are absent from the Core pending-recipient index.
+    Reuse the transcript writer so repair survives resident-ledger eviction.
+    """
+    from clio_agent.gact.storage.drafts import retain_message_sources
+    from clio_agent.gact.types import Message
+
+    for sid in history.pending_sessions():
+        if app.state.sessions.get(sid) is None:
+            continue
+        accepted: dict[str, Message] = {}
+        for item in history.pending_mail(sid):
+            if item.kind not in {"human", "composer"}:
+                continue
+            content = history.read_content(item.content)
+            if not isinstance(content, dict) or "message" not in content:
+                continue
+            message = Message.model_validate(content["message"])
+            if (
+                not message.id
+                or message.session_id != sid
+                or message.role != "user"
+                or content.get("message_id") != message.id
+                or not item.sender_human
+            ):
+                raise ValueError("Pending feedback transcript identity differs from its Core owner")
+            previous = accepted.get(message.id)
+            if previous is not None and previous != message:
+                raise ValueError(
+                    "Pending feedback reused a transcript identity with changed content"
+                )
+            accepted[message.id] = message
+        if not accepted:
+            continue
+        existing = list(app.state.messages.get(sid, []))
+        if any(
+            message.id in accepted and (message.role != "user" or message.session_id != sid)
+            for message in existing
+        ):
+            raise ValueError("Pending feedback conflicts with an existing transcript identity")
+        known = {message.id for message in existing}
+        missing = [message for identity, message in accepted.items() if identity not in known]
+        if missing:
+            merged = sorted([*existing, *missing], key=lambda message: message.created_at)
+            _replace_session_messages(app, sid, merged)
+            for message in missing:
+                retain_message_sources(app, message)
 
 
 def _append_session_message(

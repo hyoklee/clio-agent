@@ -461,3 +461,46 @@ legacy-test migration, focused behavior execution, F03, exact-head CI and all
 required Q1–Q9/R1–R6 remain pending. Installed state and manual-only boundaries
 remain preserved. No R34/R35/R36 behavioral, native/model/browser qualification
 has run.
+
+
+## R39–R42 source construction and review
+
+R39–R41 are committed source corrections, not runtime acceptance. They retain
+native cleanup custody, bind legacy MCP input to invocation-owned transports,
+retire completed inline observations without inventing settlement, and route
+native cancellation before backend adoption. Selected independent review reports
+and scoped static receipts are retained in this directory. R41 received scoped
+source GO from both reviewers; Astra's later R42 adjudication narrows that GO
+because three additional source gaps require correction.
+
+R42 constructs those corrections in existing owners: a rebuildable latest-input
+projection removes the normal spawn history scan; Core/GACT wait presentation
+supports canonical outcomes and legacy receipts, preserving attention, independent
+errors and the server subject marker; startup transcript persistence restores
+missing accepted pending feedback before admission, including held legacy input.
+It excludes withdrawals and unpromoted drafts and acknowledges nothing. New
+regressions cover epoch/timestamp selection, failed projection replay, a forbidden
+history scan, mixed wait receipts, paused startup, eviction and foreign identities.
+They remain unexecuted. F03 timing/resource measurements are still required.
+
+The removed MessageIntentStore-only cases do not remove their behavioral lessons:
+
+| Removed architecture case | Retained contract and replacement construction |
+| --- | --- |
+| pending steer/acceptance restart | M06 plus Core recipient-input staging/crash cases; no claimed flag becomes an acknowledgement |
+| acceptance before transcript append | M06 test_pending_feedback_projection.py: real migration and startup restore while paused, twice-idempotent migration and persisted transcript after eviction |
+| queue revision/order/idempotency | M07 public REST case in test_message_intents.py, including stale revision refusal, Core replay, edited-row replay and original client identity |
+| promotion failure | M07 public preflight-fault/promotion case retains pending work, then promotes once without acknowledging held model input |
+| delete removes intent planes | A08 explicit session deletion through existing owners; active-work refusal and canonical erasure remain required in session-delete regressions, with no JSON intent authority restored |
+| corrupt legacy intent state | M06 data-only migration retains invalid historical evidence without blocking valid neighbors; existing strict migration cases remain required |
+
+Three independent public queue/message-state scenarios remain in place. Promotion
+preserves the original client message identity while its Core mailbox header keeps
+the queue identity. Explicit idempotency keys return the retained canonical row;
+client-ID-only reuse still validates its accepted request. No assertions, timeout,
+resource budgets, guards or required acceptance rows are relaxed.
+
+Initial regression migration remains unfinished. No pytest/Vitest, Core/model,
+native/browser qualification or release acceptance ran in this packet. CI,
+full F03, migration acceptance and every Q1–Q9/R1–R6 row remain pending. The
+October 14 release target was not met; the released product remains preserved.

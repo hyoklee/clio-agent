@@ -1,0 +1,34 @@
+{
+  "purpose": "Independent actual Claude Code R41 source review",
+  "core": "22ab2e46e347797aa03d3d0b0c142cc78b8baa3c",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "state": "settled",
+  "started_at": 1792074983.208851,
+  "source_cache_created": false,
+  "debug_log_enabled": false,
+  "retention": "Bounded selected reviewer identity receipt; no disposable output/debug/session export",
+  "pid": 65788,
+  "exit_code": 0,
+  "finished_at": 1792075622.0142198,
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 386,
+      "outputTokens": 36649,
+      "cacheReadInputTokens": 2195388,
+      "cacheCreationInputTokens": 361523,
+      "webSearchRequests": 0,
+      "costUSD": 9.615617,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 27462,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "session": "c09e5b91-bba7-4951-9ad2-2eef109e6bb5",
+  "is_error": false,
+  "subtype": "success",
+  "process_absent": true
+}
