@@ -681,7 +681,7 @@ def _start_background_user_turn(
 
     # This finite request boundary persists input only. TurnRunner owns the
     # decision to inject it into a busy segment or admit an idle session.
-    with owner.history._lock:
+    with owner.history.serialized():
         now = time.time()
         user_metadata = dict(metadata or {})
         from clio_agent.gact.automatic_turn_injection import automatic_turn_injection

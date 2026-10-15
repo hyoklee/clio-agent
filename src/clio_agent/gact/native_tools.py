@@ -109,33 +109,39 @@ class NativeTools:
 
     async def __aenter__(self) -> NativeTools:
         """Start both independent SDK/native lifespans on the application event loop."""
-        for kind, root in self.roots.items():
-            await self._stack.enter_async_context(own_native_runtime(root.server))
+        try:
+            for kind, root in self.roots.items():
 
-            async def observe(
-                session: ClientSession,
-                task_id: str,
-                reply: ClientGetTaskResult,
-                *,
-                root_kind: NativeRootKind = kind,
-            ) -> None:
-                await self._observe(root_kind, task_id, reply)
+                async def observe(
+                    session: ClientSession,
+                    task_id: str,
+                    reply: ClientGetTaskResult,
+                    *,
+                    root_kind: NativeRootKind = kind,
+                ) -> None:
+                    await self._observe(root_kind, task_id, reply)
 
-            async def guard(session: ClientSession, task_id: str, answers: dict[str, Any]) -> None:
-                # Shell does not request input. Storage controls and external MCP
-                # install their identity-bound canonical answer implementation.
-                raise ValueError("Native workload has no pending input request")
+                async def guard(
+                    session: ClientSession, task_id: str, answers: dict[str, Any]
+                ) -> None:
+                    # Shell does not request input. Storage controls and external MCP
+                    # install their identity-bound canonical answer implementation.
+                    raise ValueError("Native workload has no pending input request")
 
-            transport = TaskObservationTransport(FastMCPTransport(root.server), observe, guard)
+                transport = TaskObservationTransport(FastMCPTransport(root.server), observe, guard)
 
-            async def accepted(
-                call: AcceptedNativeCall, *, root_kind: NativeRootKind = kind
-            ) -> AcceptedTaskResult:
-                return await self._accepted(root_kind, call)
+                async def accepted(
+                    call: AcceptedNativeCall, *, root_kind: NativeRootKind = kind
+                ) -> AcceptedTaskResult:
+                    return await self._accepted(root_kind, call)
 
-            client = TaskAwareClient(transport, on_task_accepted=accepted)
-            self.clients[kind] = await self._stack.enter_async_context(client)
-        return self
+                client = TaskAwareClient(transport, on_task_accepted=accepted)
+                await self._stack.enter_async_context(own_native_runtime(root.server))
+                self.clients[kind] = await self._stack.enter_async_context(client)
+            return self
+        except BaseException as error:
+            await self.__aexit__(type(error), error, error.__traceback__)
+            raise
 
     async def __aexit__(
         self,
@@ -168,7 +174,7 @@ class NativeTools:
         self._closing = True
 
         def reserved() -> set[str]:
-            with self.history._lock:
+            with self.history.serialized():
                 return {
                     handle
                     for handle in self.history.task_handles(active_only=True)
@@ -395,7 +401,7 @@ class NativeTools:
         return await native_task_settlement._stop_foreground(self, handle)
 
     def _confirm(self, context: SubmissionContext, kind: TaskKind, description: str) -> Any:
-        with self.history._lock:
+        with self.history.serialized():
             if self._closing:
                 raise ValueError("Native admission is closed")
             parent = self.history.task_snapshot(context.owner.assignment_id)
@@ -500,7 +506,7 @@ class NativeTools:
             raise ValueError("Acceptance came from a different native root")
 
         def confirm() -> TaskSnapshot:
-            with self.history._lock:
+            with self.history.serialized():
                 current = self._current(context.handle)
                 adopted = current.model_copy(
                     update={
@@ -562,7 +568,7 @@ class NativeTools:
                     if not client.is_connected():
                         await client.close()
                         await client.__aenter__()
-                    await client.ping()
+                    await client.check_health()
                     call = accepted.reconnected(client)
                     self._calls[handle] = call
                     self._identities[(root, call.task.task_id)] = call
@@ -588,7 +594,7 @@ class NativeTools:
         )
 
     def _record_reply(self, accepted: AcceptedNativeCall, reply: ClientGetTaskResult) -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self._current(accepted.submission.handle)
             raw = None
             if reply.status in {"completed", "failed", "cancelled"}:
@@ -735,7 +741,7 @@ class NativeTools:
             self._control_holds.discard(handle)
 
     def _rejected(self, handle: str, reason: str) -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self._current(handle)
             if current.terminal_at is not None:
                 return
@@ -760,7 +766,7 @@ class NativeTools:
             )
 
     def _uncertain(self, handle: str, reason: str, *, lost: bool = False) -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self._current(handle)
             if current.terminal_at is not None:
                 return

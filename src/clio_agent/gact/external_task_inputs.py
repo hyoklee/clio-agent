@@ -34,7 +34,7 @@ def _record_reply(
     accepted: AcceptedNativeCall,
     reply: ClientGetTaskResult,
 ) -> None:
-    with self.history._lock:
+    with self.history.serialized():
         current = self.history.task_snapshot(accepted.submission.handle)
         if current.terminal_at is not None:
             return
@@ -157,13 +157,13 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
         return candidates[0]
 
     def resolve() -> tuple[TaskSnapshot, str, dict[str, Any]]:
-        with self.history._lock:
+        with self.history.serialized():
             return resolve_locked()
 
     task, key, raw = await asyncio.to_thread(resolve)
 
     def question() -> tuple[str, Any | None]:
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(task.handle)
             details = self._details(current)
             if key in details.get("answers", {}):
@@ -249,7 +249,7 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
     )
 
     def answer() -> Any:
-        with self.history._lock:
+        with self.history.serialized():
             q = self.history.task_snapshot(qid)
             if q.status == "completed":
                 reply = QuestionReply.model_validate(self.history.read_content(q.result))

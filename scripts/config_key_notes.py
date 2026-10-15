@@ -94,8 +94,32 @@ KEY_NOTES: dict[str, str] = {
         "producers with legitimately long text fields."
     ),
     "agent_tasks.max_concurrent": (
-        "Max child agent-task threads run concurrently at one spawn depth; raise to widen fan-out "
-        "on a big host, lower to cap CPU use."
+        "Reserved or in-flight child inference at one spawn depth; tools and waits release their "
+        "inference permit. This does not cap active sessions or background tasks."
+    ),
+    "gact.tasks.health_timeout_s": (
+        "Timeout in seconds for task transport health pings only; accepted execution, result "
+        "waits and physical cleanup retain their own semantics. Must be finite and positive."
+    ),
+    "gact.tasks.shell.url": (
+        "Native Shell backend URL. memory:// loses local work on process loss; persistent "
+        "backends can redeliver execution and do not promise exactly-once effects."
+    ),
+    "gact.tasks.storage.url": (
+        "Native Download/Indexing backend URL, independent of Shell. memory:// is ephemeral; "
+        "persistent backends can redeliver execution."
+    ),
+    "gact.tasks.shell.queue": (
+        "Shell queue identity; empty selects an automatic clio-shell name, with an incarnation "
+        "suffix for the memory backend. Keep it separate from storage."
+    ),
+    "gact.tasks.storage.queue": (
+        "Storage queue identity; empty selects an automatic clio-storage name, with an "
+        "incarnation suffix for the memory backend. Keep it separate from Shell."
+    ),
+    "gact.tasks.shell.concurrency": "Native Shell worker concurrency; positive, default 10.",
+    "gact.tasks.storage.concurrency": (
+        "Native Download/Indexing worker concurrency; positive, default 10, independent of Shell."
     ),
     "agents.default_blueprint_id": (
         "Installed marketplace Agent Blueprint a fresh deployment bootstraps and binds as its "

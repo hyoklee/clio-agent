@@ -226,6 +226,39 @@ def violations(root: Path = ROOT) -> list[str]:
             findings.append(f"{relative}:{error.lineno}: cannot audit syntax: {error.msg}")
             continue
         for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Attribute)
+                and node.attr.startswith("_")
+                and (
+                    isinstance(node.value, ast.Name)
+                    and node.value.id == "history"
+                    or isinstance(node.value, ast.Attribute)
+                    and node.value.attr in {"history", "task_history"}
+                )
+                and relative
+                not in {
+                    "src/clio_agent/gact/task_history.py",
+                    "src/clio_agent/gact/task_history_projection.py",
+                }
+            ):
+                findings.append(
+                    f"{relative}:{node.lineno}: owner bypasses the explicit Core history API"
+                )
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Name)
+                and node.func.value.id == "TaskSnapshot"
+                and node.func.attr == "read_history"
+                and relative
+                not in {
+                    "src/clio_agent/gact/task_history_projection.py",
+                    "src/clio_agent/gact/task_migration.py",
+                }
+            ):
+                findings.append(
+                    f"{relative}:{node.lineno}: live owner uses historical vocabulary decoding"
+                )
             if isinstance(node, ast.ImportFrom):
                 imported = node.module or ""
                 if node.level:

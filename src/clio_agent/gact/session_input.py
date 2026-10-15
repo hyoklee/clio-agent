@@ -12,7 +12,7 @@ from clio_agent.gact.native_work import now
 def withdraw_message_inputs(app: Any, session_id: str, message_ids: list[str]) -> None:
     """Withdraw only pending human/composer inputs removed by an explicit human edit."""
     history = app.state.task_history
-    with history._lock:
+    with history.serialized():
         pending = {item.id: item for item in history.pending_mail(session_id)}
         for identity in message_ids:
             item = pending.get(identity)
@@ -50,8 +50,8 @@ def accept_session_input(
         else "hook"
     )
     identity = steer_message_id or "input_" + uuid4().hex
-    with history._lock:
-        previous = history._mail.get(session_id, {}).get(identity)
+    with history.serialized():
+        previous = history.mail_item(session_id, identity)
         value = {"text": text, "metadata": metadata, "source": source}
         if previous is not None:
             if previous.kind != kind or history.read_content(previous.content) != value:

@@ -12,8 +12,9 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Callable
 
+import pytest
+
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.storage import make_arc_store
 from clio_agent.gact import context as _ctx
 from clio_agent.gact import goal as goal_mod
 from clio_agent.gact.events import EventBus
@@ -33,7 +34,9 @@ from clio_agent.gact.goal import (
 )
 from clio_agent.gact.scheduler import ScheduleStore
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.turn_runner import TurnRunner
+from tests.test_arc.conftest import core_arc as core_arc
 
 
 class _Bus(EventBus):
@@ -50,7 +53,7 @@ class _Bus(EventBus):
         self._m[sid] = value
 
 
-def _app(tmp_path: Path) -> SimpleNamespace:
+def _app(tmp_path: Path, arc: ARCMemory) -> SimpleNamespace:
     """A minimal app carrying only what the goal (and loop-compose) modules touch."""
 
     state = SimpleNamespace(
@@ -58,12 +61,24 @@ def _app(tmp_path: Path) -> SimpleNamespace:
         deferred_schedules=set(),
         sessions=SessionStore(path=None),
         bus=_Bus(),
-        arc=ARCMemory(store=make_arc_store(backend="cte")),
-        turn_runner=TurnRunner({}),
+        arc=arc,
+        task_history=TaskHistory(arc),
         messages={},  # dict-like ledger set: .get(sid, []) returns []
         semantic_event_sink=None,  # _emit_semantic_event no-ops
     )
-    return SimpleNamespace(state=state)
+    app = SimpleNamespace(state=state)
+
+    async def no_admission(_sid: str) -> None:
+        pytest.fail("Goal policy tests cannot start model execution")
+
+    state.turn_runner = TurnRunner(app, no_admission)
+    return app
+
+
+def _pending_inputs(app: Any, sid: str) -> list[dict[str, Any]]:
+    """Read confirmed pending producer payloads; never acknowledge or admit them."""
+    history = app.state.task_history
+    return [history.read_content(item.content) for item in history.pending_mail(sid)]
 
 
 def _session(app: SimpleNamespace) -> str:
@@ -92,8 +107,10 @@ def _mock_judge(monkeypatch: Any, *, met: bool, reason: str = "") -> None:
     monkeypatch.setattr(goal_mod, "run_llm_judge", _judge)
 
 
-def test_goal_judge_transcript_includes_bounded_tool_call_and_result(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_goal_judge_transcript_includes_bounded_tool_call_and_result(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     app.state.messages[sid] = [
         SimpleNamespace(
@@ -186,9 +203,11 @@ def test_evaluate_goal_unset_iters_is_unlimited() -> None:
 # =========================================================================== #
 # Orchestrator (dispatch_goal_at_finalize) — judge MOCKED                       #
 # =========================================================================== #
-def test_dispatch_redrives_when_judge_not_met(tmp_path: Path, monkeypatch: Any) -> None:
+def test_dispatch_redrives_when_judge_not_met(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         _mock_judge(monkeypatch, met=False, reason="tests still failing")
@@ -200,18 +219,21 @@ def test_dispatch_redrives_when_judge_not_met(tmp_path: Path, monkeypatch: Any) 
         assert goal["active"] is True
         assert goal["iters_elapsed"] == 1
         # A re-drive was enqueued on the loop-inbox seam (the same one the Stop-loop rides).
-        from clio_agent.gact.agent_mailbox import pending_mail  # noqa: PLC0415
+        pending_mail = _pending_inputs
 
         events = pending_mail(app, sid)
         assert len(events) == 1
-        assert events[0]["metadata"].get("goal_redrive") is True
+        assert events[0]["metadata"].get("goal_continuation") is True
+        assert events[0]["metadata"]["goal_id"] == goal["goal_id"]
 
     _in_ctx(body)
 
 
-def test_dispatch_settles_and_autoclears_when_judge_met(tmp_path: Path, monkeypatch: Any) -> None:
+def test_dispatch_settles_and_autoclears_when_judge_met(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         _mock_judge(monkeypatch, met=True, reason="the summary is complete")
@@ -223,16 +245,18 @@ def test_dispatch_settles_and_autoclears_when_judge_met(tmp_path: Path, monkeypa
         assert goal["cleared"] is True
         assert goal["met"] is True
         # No re-drive enqueued on a met goal.
-        from clio_agent.gact.agent_mailbox import pending_mail  # noqa: PLC0415
+        pending_mail = _pending_inputs
 
         assert pending_mail(app, sid) == []
 
     _in_ctx(body)
 
 
-def test_dispatch_max_iters_settles_with_typed_reason(tmp_path: Path, monkeypatch: Any) -> None:
+def test_dispatch_max_iters_settles_with_typed_reason(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         _mock_judge(monkeypatch, met=False, reason="not yet")
@@ -250,9 +274,9 @@ def test_dispatch_max_iters_settles_with_typed_reason(tmp_path: Path, monkeypatc
     _in_ctx(body)
 
 
-def test_dispatch_noop_without_goal(tmp_path: Path) -> None:
+def test_dispatch_noop_without_goal(tmp_path: Path, arc: ARCMemory) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         assert _dispatch(app, session_id=sid, turn_id="t1") is None
         assert app.state.sessions.get(sid).metadata.get("goal") is None
@@ -261,7 +285,9 @@ def test_dispatch_noop_without_goal(tmp_path: Path) -> None:
 
 
 def test_when_state_arg_does_not_create_self_satisfiable_gate(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path,
+    monkeypatch: Any,
+    arc: ARCMemory,
 ) -> None:
     """A4 core: the deterministic goal tier is DELETED. A ``when_state`` / ``predicate``
     command arg no longer arms a gate the model can self-satisfy by writing ``workflow_state``.
@@ -269,7 +295,7 @@ def test_when_state_arg_does_not_create_self_satisfiable_gate(
     state field is 'satisfied' (the self-grading anti-pattern is closed)."""
 
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         _mock_judge(monkeypatch, met=False, reason="not actually done")
@@ -313,12 +339,12 @@ def test_goal_status_tool_builds_read_only() -> None:
     assert tool.args == {}  # a pure read-back, no inputs to mutate anything
 
 
-def test_goal_status_does_not_run_judge(tmp_path: Path, monkeypatch: Any) -> None:
+def test_goal_status_does_not_run_judge(tmp_path: Path, monkeypatch: Any, arc: ARCMemory) -> None:
     """``goal_status`` returns ARMED STATE ONLY — it never runs the judge (or any gate) and
     never exposes a ``met`` / ``predicate_backed`` readback the model could steer toward."""
 
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
 
@@ -342,7 +368,9 @@ def test_goal_status_does_not_run_judge(tmp_path: Path, monkeypatch: Any) -> Non
     _in_ctx(body)
 
 
-def test_goal_status_declares_typed_structured_content(tmp_path: Path, monkeypatch: Any) -> None:
+def test_goal_status_declares_typed_structured_content(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     """goal_status gets wait_agent_tasks's OWN treatment: an honest ``message``
     naming the armed state FIRST, then the SAME fields the model-facing return
     already carries. Never a readback the model could steer toward (rule 2's
@@ -355,7 +383,7 @@ def test_goal_status_declares_typed_structured_content(tmp_path: Path, monkeypat
     )
 
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         tool = build_goal_status_tool()
@@ -388,9 +416,9 @@ def test_parse_goal_command_condition_and_bounds() -> None:
     assert clear2 is True
 
 
-def test_goal_command_arms_and_clears(tmp_path: Path) -> None:
+def test_goal_command_arms_and_clears(tmp_path: Path, arc: ARCMemory) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         msg = run_goal_command(
@@ -409,14 +437,14 @@ def test_goal_command_arms_and_clears(tmp_path: Path) -> None:
     _in_ctx(body)
 
 
-def test_goal_command_message_says_llm_judge(tmp_path: Path) -> None:
+def test_goal_command_message_says_llm_judge(tmp_path: Path, arc: ARCMemory) -> None:
     """The /goal confirmation confirms arming (the verbose LLM-judge/bounds prose
     this test name predates was replaced by the simplified copy at de0b7dd7;
     the LLM-judge-only contract is still enforced -- see run_llm_judge -- just
     no longer restated in the command's own confirmation text)."""
 
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         msg = run_goal_command(app, sid, {"input": "the report reads well"})
@@ -426,9 +454,9 @@ def test_goal_command_message_says_llm_judge(tmp_path: Path) -> None:
     _in_ctx(body)
 
 
-def test_goal_command_usage_when_no_condition(tmp_path: Path) -> None:
+def test_goal_command_usage_when_no_condition(tmp_path: Path, arc: ARCMemory) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         msg = run_goal_command(app, sid, {"input": ""})
@@ -441,9 +469,9 @@ def test_goal_command_usage_when_no_condition(tmp_path: Path) -> None:
     _in_ctx(body)
 
 
-def test_arm_goal_rejects_empty_condition(tmp_path: Path) -> None:
+def test_arm_goal_rejects_empty_condition(tmp_path: Path, arc: ARCMemory) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         raised = False
@@ -457,9 +485,9 @@ def test_arm_goal_rejects_empty_condition(tmp_path: Path) -> None:
     _in_ctx(body)
 
 
-def test_clear_goal_idempotent(tmp_path: Path) -> None:
+def test_clear_goal_idempotent(tmp_path: Path, arc: ARCMemory) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         assert clear_goal(app, sid) is False  # nothing to clear
@@ -473,9 +501,9 @@ def test_clear_goal_idempotent(tmp_path: Path) -> None:
 # =========================================================================== #
 # State on session.metadata (no fifth store)                                   #
 # =========================================================================== #
-def test_goal_state_lives_on_session_metadata(tmp_path: Path) -> None:
+def test_goal_state_lives_on_session_metadata(tmp_path: Path, arc: ARCMemory) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         armed = arm_goal(app, sid, condition="triage", max_goal_iters=7)
@@ -492,10 +520,12 @@ def test_goal_state_lives_on_session_metadata(tmp_path: Path) -> None:
 # =========================================================================== #
 # Compose with the loop (#1079 loop_goal_met seam) — LLM-only, finalize glue    #
 # =========================================================================== #
-def test_goal_completion_leaves_independent_loop_running(tmp_path: Path, monkeypatch: Any) -> None:
+def test_goal_completion_leaves_independent_loop_running(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     from clio_agent.gact.autonomous_loop import _get_loop, start_loop
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     start_loop(app, sid, prompt="Monitor the simulation", interval_s=60)
     pending = _get_loop(app, sid)["pending_schedule_id"]
@@ -542,8 +572,9 @@ def test_evaluate_goal_returns_goal_decision_type() -> None:
 
 def test_goal_evidence_preserves_inputs_and_task_results_without_credentials(
     tmp_path: Path,
+    arc: ARCMemory,
 ) -> None:
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     app.state.messages[sid] = [
         SimpleNamespace(
@@ -568,8 +599,10 @@ def test_goal_evidence_preserves_inputs_and_task_results_without_credentials(
     assert "task_owned" in evidence and "exit_code: 0" in evidence
 
 
-def test_goal_evidence_preserves_turn_boundaries_after_automatic_injections(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_goal_evidence_preserves_turn_boundaries_after_automatic_injections(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     app.state.messages[sid] = [
         SimpleNamespace(

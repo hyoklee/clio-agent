@@ -6,11 +6,54 @@ import hashlib
 import json
 from collections.abc import Mapping
 from datetime import datetime, timezone
-from typing import Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 TaskKind = Literal["Shell", "Download", "Indexing", "MCP", "Session", "Subagent", "Question"]
+TaskStatus = Literal[
+    "accepted",
+    "queued",
+    "running",
+    "working",
+    "active",
+    "input_required",
+    "paused",
+    "completed",
+    "failed",
+    "cancelled",
+    "interrupted",
+    "task_state_uncertain",
+    "unknown",
+]
+TaskActivity = Literal[
+    "",
+    "busy",
+    "executing",
+    "idle",
+    "yielded",
+    "stopping",
+    "stopped",
+    "interrupted",
+    "cancelling",
+    "paused",
+    "recovering",
+    "unavailable",
+    "waiting_for_input",
+    "input_required",
+    "submitting",
+    "queued",
+    "pending",
+]
+TaskSettlement = Literal[
+    "unknown",
+    "confirmed",
+    "external_acknowledged",
+    "never_started",
+    "cleanup_pending",
+    "historical_unknown",
+]
+TaskFreshness = Literal["fresh", "lost", "unavailable", "unknown"]
 CoordinationRight = Literal["read", "observe", "message", "control"]
 MailKind = Literal[
     "human",
@@ -91,6 +134,7 @@ class TaskProgress(TaskRecord):
 class TaskSnapshot(TaskRecord):
     """One passive common view; the execution owner supplies status and settlement."""
 
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
     handle: str
     kind: TaskKind
     owner: TaskOwner
@@ -104,13 +148,13 @@ class TaskSnapshot(TaskRecord):
     updated_at: str
     backend: BackendReference | None = None
     raw_status: str = ""
-    status: str = "accepted"
-    activity: str = ""
+    status: TaskStatus = "accepted"
+    activity: TaskActivity = ""
     progress: TaskProgress = Field(default_factory=TaskProgress)
     supported_actions: tuple[str, ...] = ()
     cancellation_requested_at: str | None = None
-    connection_freshness: str = "unknown"
-    settlement: str = "unknown"
+    connection_freshness: TaskFreshness = "unknown"
+    settlement: TaskSettlement = "unknown"
     recording: Literal["confirmed", "unconfirmed"] = "confirmed"
     terminal_at: str | None = None
     result: CoreReference | None = None
@@ -120,6 +164,92 @@ class TaskSnapshot(TaskRecord):
     deduplication_key: str | None = None
     attention_episode: str | None = None
     resource_id: str | None = None
+
+    @classmethod
+    def read_history(cls, record: dict[str, Any]) -> TaskSnapshot:
+        """Decode older vocabularies as unavailable data; never infer an outcome or rewrite Core."""
+        values = dict(record)
+        for field, vocabulary, fallback in (
+            (
+                "status",
+                get_args(TaskStatus),
+                "unknown" if values.get("terminal_at") else "task_state_uncertain",
+            ),
+            ("activity", get_args(TaskActivity), "unavailable"),
+            ("settlement", get_args(TaskSettlement), "historical_unknown"),
+            ("connection_freshness", get_args(TaskFreshness), "unknown"),
+        ):
+            value = values.get(field)
+            if isinstance(value, str) and value not in vocabulary:
+                values[field] = fallback
+        return cls.model_validate(values)
+
+    def validate_identity(self, previous: TaskSnapshot | None) -> None:
+        """Reject changes to a handle's immutable identity before resolving its content."""
+        if previous is not None and any(
+            getattr(previous, name) != getattr(self, name)
+            for name in (
+                "owner",
+                "kind",
+                "invocation_id",
+                "tool",
+                "created_at",
+                "description",
+                "description_missing",
+            )
+        ):
+            raise ValueError("Task identity cannot change under an existing handle")
+
+    def validate_custody(
+        self, previous: TaskSnapshot | None, replacement: SubmissionContext | None
+    ) -> None:
+        """Validate retained identities and outcomes without deciding execution transitions."""
+        if previous is None:
+            return
+        continuation = replacement.provider_continuation if replacement is not None else None
+        continuation_reserved = (
+            previous.kind == "Download"
+            and previous.terminal_at is None
+            and previous.submission is not None
+            and self.submission is not None
+            and previous.submission != self.submission
+            and self.backend is None
+            and replacement is not None
+            and replacement.tool == "connected_data_continue"
+            and replacement.handle == previous.handle
+            and replacement.owner == previous.owner
+            and replacement.invocation_id == previous.invocation_id
+            and continuation is not None
+            and continuation.previous_submission == previous.submission
+            and continuation.previous_backend == previous.backend
+            and continuation.operation_id == previous.handle
+            and continuation.source_id == previous.resource_id
+        )
+        if (
+            previous.backend is not None
+            and previous.backend != self.backend
+            and not continuation_reserved
+        ):
+            raise ValueError("An accepted backend identity cannot be rebound")
+        if (
+            previous.submission is not None
+            and previous.submission != self.submission
+            and not continuation_reserved
+        ):
+            raise ValueError("Confirmed submission context cannot be replaced")
+        if previous.resource_id is not None and previous.resource_id != self.resource_id:
+            raise ValueError("A task's accepted resource identity cannot be rebound")
+        if (
+            previous.cancellation_requested_at is not None
+            and previous.cancellation_requested_at != self.cancellation_requested_at
+        ):
+            raise ValueError("A cancellation intent cannot be silently cleared")
+        if previous.terminal_at is not None and (
+            self.terminal_at != previous.terminal_at
+            or self.status != previous.status
+            or self.result != previous.result
+        ):
+            raise ValueError("A historical terminal outcome cannot be reopened or replaced")
 
     @model_validator(mode="after")
     def validate_description_presence(self) -> TaskSnapshot:

@@ -172,7 +172,7 @@ async def await_question_input(
     history, owner, questions = app.state.task_history, app.state.conversations, app.state.questions
 
     def prepare() -> tuple[str, str, str, int] | None:
-        with history._lock:
+        with history.serialized():
             question = questions.expire(question_handle)
             if question.raw_status != "pending":
                 return None
@@ -274,7 +274,7 @@ async def await_question_input(
     await app.state.task_operations.wait(caller, [question_handle, helper], return_when="any")
 
     def propose() -> bool:
-        with history._lock:
+        with history.serialized():
             current = questions.expire(question_handle)
             if current.raw_status != "pending":
                 return True

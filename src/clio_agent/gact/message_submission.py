@@ -556,11 +556,11 @@ def accept_message(
         if key
         else _new_message_id("user")
     )
-    with owner.history._lock:
+    with owner.history.serialized():
         previous = next(
             (row for row in app.state.messages.get(sid, []) if row.id == identity), None
         )
-        accepted = owner.history._mail.get(sid, {}).get(identity)
+        accepted = owner.history.mail_item(sid, identity)
         if previous is not None and accepted is not None:
             saved = owner.history.read_content(accepted.content)
             if saved.get("text") != text:

@@ -21,7 +21,7 @@ async def cancel(owner: ExternalTasks, handle: str) -> dict[str, Any]:
     """Record intent and deliver to the original identity; never infer cleanup."""
 
     def intent() -> None:
-        with owner.history._lock:
+        with owner.history.serialized():
             selected = owner.history.task_snapshot(handle)
             if selected is None:
                 raise ValueError("External task is unavailable")

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import math
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from contextvars import ContextVar
@@ -21,6 +22,7 @@ from fastmcp_tasks.client_models import ClientCreateTaskResult
 from fastmcp_tasks.context import get_task_context, get_task_leg_number
 from mcp.shared.exceptions import MCPError
 
+from clio_agent import conf
 from clio_agent.arc.task_types import CoreReference, argument_digest
 from clio_agent.tools.task_receipt import AcceptedTaskResult
 
@@ -150,12 +152,26 @@ class TaskAwareClient(Client):
 
     def __init__(self, *args: Any, on_task_accepted: TaskAcceptor, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.health_timeout_s = conf.resolve(
+            "gact.tasks.health_timeout_s",
+            env="CLIO_TASKS_HEALTH_TIMEOUT_S",
+            default=10.0,
+            cast=conf.as_float,
+        )
+        if not math.isfinite(self.health_timeout_s) or self.health_timeout_s <= 0:
+            raise ValueError("Task transport health timeout must be finite and positive")
         self._accept_task = on_task_accepted
         self._submission: ContextVar[TaskSubmission | None] = ContextVar(
             "clio_sdk_submission", default=None
         )
         self._adoptions: dict[asyncio.Future[AcceptedTaskResult], AcceptedNativeCall] = {}
         self._unconfirmed_adoptions: dict[str, TaskAdoptionError] = {}
+
+    async def check_health(self) -> None:
+        """Bound only the transport ping; task result waits and cleanup remain unbounded."""
+        async with asyncio.timeout(self.health_timeout_s):
+            if not await self.ping():
+                raise ConnectionError("Task transport did not acknowledge its health ping")
 
     @classmethod
     def from_configured(

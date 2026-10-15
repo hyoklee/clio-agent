@@ -48,7 +48,7 @@ async def deliver_to_agent(
 
     def accept() -> None:
         nonlocal question_answered, question_handle
-        with history._lock:
+        with history.serialized():
             if record.session_id != session_id or app.state.sessions.get(session_id) is None:
                 raise ValueError("A2UI action owner is unavailable")
             question = record.correlation.get("question_id")

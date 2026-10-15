@@ -62,7 +62,7 @@ def _stage_plan_revision_message(
 def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, question: Any) -> None:
     """Apply one explicit plan decision and stage the corresponding lifecycle transition."""
 
-    with app.state.task_history._lock:
+    with app.state.task_history.serialized():
         from clio_agent.gact.plan_mode import _PLAN_EXIT_PENDING_KEY
 
         session = app.state.sessions.get(sid)

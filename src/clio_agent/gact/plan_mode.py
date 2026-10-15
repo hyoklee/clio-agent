@@ -563,7 +563,7 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     # transcript a late settle here would close.
     settle_turn_transcript(state)
     history = app.state.task_history
-    with history._lock:
+    with history.serialized():
         assignment = history.latest_assignment(state.sid)
         if assignment is None:
             raise ValueError("Plan approval requires its owning assignment")

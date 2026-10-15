@@ -35,7 +35,7 @@ async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str,
             await runner.stop(sid, reservation=reservation)
 
             def project_idle() -> None:
-                with app.state.task_history._lock:
+                with app.state.task_history.serialized():
                     if runner.busy(sid):
                         return
                     app.state.sessions.update(sid, status="idle")

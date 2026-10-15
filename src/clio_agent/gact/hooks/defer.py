@@ -479,7 +479,7 @@ def _stage_resume_turn(
     if session is None:
         raise ValueError("Deferred session is unavailable")
     history = app.state.task_history
-    with history._lock:
+    with history.serialized():
         content = history.write_content(
             sid,
             {
@@ -488,7 +488,7 @@ def _stage_resume_turn(
             },
         )
         identity = "hook-resume:" + question_id
-        previous = history._mail.get(sid, {}).get(identity)
+        previous = history.mail_item(sid, identity)
         if previous is not None:
             if previous.content != content:
                 raise ValueError("Deferred hook input identity was reused")

@@ -88,6 +88,10 @@ class Conversations:
         self._unlisten = self.history.listen_mail(self.runner.signal)
 
         async def ready() -> None:
+            if self._restoring:
+                await self.restore()
+            if self.history.requires_recovery:
+                return
             await asyncio.to_thread(self.app.state.questions.restore)
             await self.app.state.question_events.restore()
             await asyncio.to_thread(self._restore_input_projections)
@@ -195,6 +199,8 @@ class Conversations:
         assignment = self.history.latest_assignment(sid)
         if assignment is None:
             return True
+        if not self.supports_execution(assignment):
+            return False
         if assignment.cancellation_requested_at is not None:
             if assignment.terminal_at is None:
                 return False
@@ -223,9 +229,16 @@ class Conversations:
                 return any(conditions) if details.return_when == "any" else all(conditions)
         return True
 
+    @staticmethod
+    def supports_execution(task: TaskSnapshot) -> bool:
+        """Only the local conversation engine can admit its assignments here."""
+        return task.backend is None or (
+            task.backend.owner == "conversation" and task.backend.placement == "local"
+        )
+
     async def _admit(self, sid: str) -> tuple[str, Any] | None:
         def select() -> ConversationSegment | None:
-            with self.history._lock:
+            with self.history.serialized():
                 if self._closing or self.history.requires_recovery:
                     return None
                 if self.runner.stop_requested(sid):
@@ -309,7 +322,7 @@ class Conversations:
             def prepare_queue() -> None:
                 from clio_agent.gact.routes.mailbox import promote_next
 
-                with self.history._lock:
+                with self.history.serialized():
                     if (
                         self._closing
                         or self.history.requires_recovery
@@ -371,7 +384,7 @@ class Conversations:
         handles = (tasks,) if isinstance(tasks, str) else tuple(dict.fromkeys(tasks))
         if not handles:
             raise ValueError("At least one dependency is required")
-        with self.history._lock:
+        with self.history.serialized():
             caller = self.caller(sid)
             current = self.history.latest_assignment(sid)
             if current is None or current.terminal_at is not None:
@@ -410,7 +423,7 @@ class Conversations:
         """Index public iteration output by reference; progress creates no mailbox wake."""
 
         def record() -> None:
-            with self.history._lock:
+            with self.history.serialized():
                 task = self.history.task_snapshot(handle)
                 if task is None or task.terminal_at is not None:
                     return
@@ -564,7 +577,7 @@ class Conversations:
         """Expose cooperative unwind without declaring worker retirement or task completion."""
 
         def record() -> None:
-            with self.history._lock:
+            with self.history.serialized():
                 current = self.history.latest_assignment(sid)
                 if (
                     current is None
@@ -594,7 +607,7 @@ class Conversations:
         handle, sid = segment.assignment.handle, segment.session_id
 
         def activity(value: str) -> None:
-            with self.history._lock:
+            with self.history.serialized():
                 current = self.history.task_snapshot(handle)
                 if current is None or current.terminal_at is not None:
                     return
@@ -625,7 +638,7 @@ class Conversations:
         except asyncio.CancelledError:
 
             def stopped() -> None:
-                with self.history._lock:
+                with self.history.serialized():
                     activity(
                         "interrupted"
                         if self._closing
@@ -684,7 +697,9 @@ class Conversations:
             )
 
         async def finish() -> None:
-            await asyncio.to_thread(self._finish_segment, segment, outcome)
+            await asyncio.to_thread(
+                conversation_assignments._finish_segment, self, segment, outcome
+            )
             self.runner.signal(sid)
 
         try:
@@ -693,10 +708,6 @@ class Conversations:
             if not self.history.requires_recovery:
                 raise
             self.recovery.defer("conversation-finish:" + handle + ":" + segment.turn_id, finish)
-
-    def _finish_segment(self, segment: ConversationSegment, outcome: ConversationOutcome) -> None:
-        """Delegate to the same conversation owner\'s assignments implementation."""
-        return conversation_assignments._finish_segment(self, segment, outcome)
 
     async def complete_deferred(self, sid: str, assignment_handle: str) -> None:
         """Delegate to the same conversation owner\'s assignments implementation."""
@@ -758,18 +769,6 @@ class Conversations:
     async def restart(self, caller: TaskCaller, handle: str) -> dict[str, Any]:
         """Delegate to the same conversation owner\'s controls implementation."""
         return await conversation_controls.restart(self, caller, handle)
-
-    async def _cancel_subtree(
-        self,
-        assignment: TaskSnapshot,
-        *,
-        members: tuple[str, ...] | None = None,
-        request_members: bool = True,
-    ) -> None:
-        """Delegate to the same conversation owner\'s controls implementation."""
-        return await conversation_controls._cancel_subtree(
-            self, assignment, members=members, request_members=request_members
-        )
 
     def close_admission(self) -> None:
         """Reject new model admission while existing owners retire their work."""

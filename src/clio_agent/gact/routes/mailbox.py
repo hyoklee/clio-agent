@@ -78,7 +78,7 @@ def promote(
     from clio_agent.gact.turn import _start_background_user_turn
 
     history, owner = app.state.task_history, app.state.conversations
-    with history._lock:
+    with history.serialized():
         item = next((item for item in queued(app, sid) if item.id == identity), None)
         if item is None or item.revision != revision:
             raise HTTPException(status_code=409, detail="Queued message revision changed")
@@ -92,7 +92,7 @@ def promote(
     parts, deliveries = _plan_resource_parts(
         app, workspace_id=session.workspace_id, message_id=item.id, parts=parts, model=model
     )
-    with history._lock:
+    with history.serialized():
         current = next((entry for entry in queued(app, sid) if entry.id == identity), None)
         if current != item:
             raise HTTPException(status_code=409, detail="Queued message changed during preflight")
@@ -205,14 +205,14 @@ def register_mailbox_routes(app: FastAPI) -> None:
 
         def accept() -> dict[str, Any]:
             history = app.state.task_history
-            with history._lock:
+            with history.serialized():
                 key = body.idempotency_key or body.client_message_id
                 identity = (
                     "queued_" + hashlib.sha256((sid + "\0" + key).encode()).hexdigest()
                     if key
                     else "queued_" + uuid4().hex
                 )
-                existing = history._mail.get(sid, {}).get(identity)
+                existing = history.mail_item(sid, identity)
                 if existing is not None:
                     stored = history.read_content(existing.content)
                     if "queue_context" in stored:
@@ -256,7 +256,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
 
         def apply() -> dict[str, Any]:
             history = app.state.task_history
-            with history._lock:
+            with history.serialized():
                 items = {item.id: item for item in queued(app, sid)}
                 selected = body.get("items", [])
                 if (
@@ -284,7 +284,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
 
         def apply() -> dict[str, Any]:
             history = app.state.task_history
-            with history._lock:
+            with history.serialized():
                 item = next((item for item in queued(app, sid) if item.id == identity), None)
                 if item is None or item.revision != body.get("revision"):
                     raise HTTPException(status_code=409, detail="Queued message revision changed")
@@ -322,7 +322,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
         require_session(sid)
 
         def apply() -> None:
-            with app.state.task_history._lock:
+            with app.state.task_history.serialized():
                 item = next((item for item in queued(app, sid) if item.id == identity), None)
                 if item is None or item.revision != revision:
                     raise HTTPException(status_code=409, detail="Queued message revision changed")

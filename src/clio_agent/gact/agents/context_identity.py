@@ -51,7 +51,7 @@ def restore_context(
     reader = getattr(getattr(state, "semantic_trace_backend", None), "session_events", None)
     # Capture canonical proof before any restoration; indexes and trace intents
     # cannot authenticate their own input record on the next replay.
-    confirmed = history._scope_inputs(session, scope) if history is not None else {}
+    confirmed = history.context_inputs(session, scope) if history is not None else {}
     retained_turns = {
         str(identity)
         for row in ledger

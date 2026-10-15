@@ -36,12 +36,32 @@ def resolve_native_root(kind: NativeRootKind) -> NativeRootSettings:
     """Keep native URL/queue/capacity settings and distinct default queue identities."""
     if kind not in {"shell", "storage"}:
         raise ValueError("Unknown native root")
-    prefix, environment = f"gact.tasks.{kind}", f"CLIO_TASKS_{kind.upper()}"
-    url = conf.resolve(prefix + ".url", env=environment + "_URL", default="memory://", cast=str)
-    queue = conf.resolve(prefix + ".queue", env=environment + "_QUEUE", default="", cast=str)
-    concurrency = conf.resolve(
-        prefix + ".concurrency", env=environment + "_CONCURRENCY", default=10, cast=conf.as_int
-    )
+    if kind == "shell":
+        url = conf.resolve(
+            "gact.tasks.shell.url", env="CLIO_TASKS_SHELL_URL", default="memory://", cast=str
+        )
+        queue = conf.resolve(
+            "gact.tasks.shell.queue", env="CLIO_TASKS_SHELL_QUEUE", default="", cast=str
+        )
+        concurrency = conf.resolve(
+            "gact.tasks.shell.concurrency",
+            env="CLIO_TASKS_SHELL_CONCURRENCY",
+            default=10,
+            cast=conf.as_int,
+        )
+    else:
+        url = conf.resolve(
+            "gact.tasks.storage.url", env="CLIO_TASKS_STORAGE_URL", default="memory://", cast=str
+        )
+        queue = conf.resolve(
+            "gact.tasks.storage.queue", env="CLIO_TASKS_STORAGE_QUEUE", default="", cast=str
+        )
+        concurrency = conf.resolve(
+            "gact.tasks.storage.concurrency",
+            env="CLIO_TASKS_STORAGE_CONCURRENCY",
+            default=10,
+            cast=conf.as_int,
+        )
     if not url or concurrency < 1:
         raise ValueError("Native roots require a backend URL and positive worker concurrency")
     if not queue:

@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import goal as goal_mod
-from clio_agent.gact.agent_mailbox import pending_mail
 from clio_agent.gact.autonomous_loop import _get_loop, run_loop_command, start_loop
 from clio_agent.gact.autonomy_guard import (
     goal_redrive_is_current,
@@ -28,13 +28,17 @@ from clio_agent.gact.goal import (
     run_goal_command,
 )
 from clio_agent.gact.scheduler_runtime import _fire_schedule
+from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_gact.test_goal import _app, _session
+from tests.test_gact.test_goal import _pending_inputs as pending_mail
 
 
 @pytest.mark.parametrize("limit", ["time", "tokens", "iterations"])
-def test_waiting_loop_limit_prevents_staging(tmp_path: Path, monkeypatch: Any, limit: str) -> None:
+def test_waiting_loop_limit_prevents_staging(
+    tmp_path: Path, monkeypatch: Any, limit: str, arc: ARCMemory
+) -> None:
     """A limit crossed during the wait must prevent another tool/model turn."""
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     start_loop(
@@ -71,9 +75,9 @@ def test_waiting_loop_limit_prevents_staging(tmp_path: Path, monkeypatch: Any, l
 
 
 def test_unmet_goal_continues_independently_of_loop_pacing(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
 ) -> None:
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     start_loop(app, sid, prompt="One checkpoint", interval_s=60)
@@ -90,8 +94,10 @@ def test_unmet_goal_continues_independently_of_loop_pacing(
 
 
 @pytest.mark.parametrize("paced", [False, True])
-def test_goal_expiring_while_queued_prevents_another_turn(tmp_path: Path, paced: bool) -> None:
-    app = _app(tmp_path)
+def test_goal_expiring_while_queued_prevents_another_turn(
+    tmp_path: Path, paced: bool, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Done", max_wallclock_s=1)
     goal = _get_goal(app, sid)
@@ -110,8 +116,10 @@ def test_goal_expiring_while_queued_prevents_another_turn(tmp_path: Path, paced:
     assert _get_goal(app, sid)["clear_reason"] == "goal_budget"
 
 
-def test_unpaced_goal_redrives_then_clear_invalidates_wakeup(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_unpaced_goal_redrives_then_clear_invalidates_wakeup(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     _settle_goal_decision(app, sid, _get_goal(app, sid), GoalJudgement(met=False), "t", "tr")
@@ -123,9 +131,9 @@ def test_unpaced_goal_redrives_then_clear_invalidates_wakeup(tmp_path: Path) -> 
     assert not goal_redrive_is_current(app, sid, wakeup["metadata"])
 
 
-def test_clear_before_settlement_cannot_resurrect_goal(tmp_path: Path) -> None:
+def test_clear_before_settlement_cannot_resurrect_goal(tmp_path: Path, arc: ARCMemory) -> None:
     """Recheck under the mutation lock, including the post-await executor window."""
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     stale = _get_goal(app, sid)
@@ -135,10 +143,10 @@ def test_clear_before_settlement_cannot_resurrect_goal(tmp_path: Path) -> None:
     assert pending_mail(app, sid) == []
 
 
-def test_stale_budget_check_cannot_clear_a_replacement_goal(tmp_path: Path) -> None:
+def test_stale_budget_check_cannot_clear_a_replacement_goal(tmp_path: Path, arc: ARCMemory) -> None:
     from clio_agent.gact.autonomy_guard import expire_goal_budget
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Old", max_wallclock_s=1)
     stale = _get_goal(app, sid)
@@ -148,8 +156,10 @@ def test_stale_budget_check_cannot_clear_a_replacement_goal(tmp_path: Path) -> N
     assert _get_goal(app, sid)["active"] and _get_goal(app, sid)["condition"] == "New"
 
 
-def test_exhausted_goal_does_not_call_judge(tmp_path: Path, monkeypatch: Any) -> None:
-    app = _app(tmp_path)
+def test_exhausted_goal_does_not_call_judge(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep", max_tokens=1)
     app.state.sessions.update(sid, add_tokens_input=2)
@@ -163,8 +173,10 @@ def test_exhausted_goal_does_not_call_judge(tmp_path: Path, monkeypatch: Any) ->
     assert pending_mail(app, sid) == []
 
 
-def test_last_allowed_goal_continuation_can_succeed(tmp_path: Path, monkeypatch: Any) -> None:
-    app = _app(tmp_path)
+def test_last_allowed_goal_continuation_can_succeed(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Done", max_goal_iters=1)
     goal = _get_goal(app, sid)
@@ -180,9 +192,9 @@ def test_last_allowed_goal_continuation_can_succeed(tmp_path: Path, monkeypatch:
 
 
 def test_failed_judge_stops_instead_of_spending_more_turns(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
 ) -> None:
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
 
@@ -197,8 +209,10 @@ def test_failed_judge_stops_instead_of_spending_more_turns(
 
 
 @pytest.mark.parametrize("status", ["idle", "running"])
-def test_restart_preserves_only_durable_waiting_work(tmp_path: Path, status: str) -> None:
-    app = _app(tmp_path)
+def test_restart_preserves_only_durable_waiting_work(
+    tmp_path: Path, status: str, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     from clio_agent.gact.sessions import SessionStore
 
     app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
@@ -228,8 +242,8 @@ def test_restart_preserves_only_durable_waiting_work(tmp_path: Path, status: str
         assert reloaded.state.schedules.list(session_id=sid) == []
 
 
-def test_restart_does_not_leave_unpaced_goal_active(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_restart_does_not_leave_unpaced_goal_active(tmp_path: Path, arc: ARCMemory) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     reconcile_autonomous_controls(app)
@@ -255,8 +269,8 @@ def test_normal_backend_boot_persists_schedule_without_explicit_path(
     assert _get_loop(restarted, sid)["active"] is True
 
 
-def test_composer_limits_and_user_stop_are_deterministic(tmp_path: Path) -> None:
-    app = _app(tmp_path)
+def test_composer_limits_and_user_stop_are_deterministic(tmp_path: Path, arc: ARCMemory) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     condition, bounds, _ = parse_goal_command(
         {"input": "--max-iters=72 --max-hours=72 --max-tokens=1000000 Save final report"}
@@ -277,8 +291,10 @@ def test_composer_limits_and_user_stop_are_deterministic(tmp_path: Path) -> None
 @pytest.mark.parametrize(
     "option", ["--max-iters=-1", "--max-iters=2.5", "--max-hours=nan", "--max-hours=inf", "--bad=1"]
 )
-def test_invalid_options_leave_prior_work_unchanged(tmp_path: Path, option: str) -> None:
-    app = _app(tmp_path)
+def test_invalid_options_leave_prior_work_unchanged(
+    tmp_path: Path, option: str, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Original")
     start_loop(app, sid, prompt="Original")
@@ -288,10 +304,12 @@ def test_invalid_options_leave_prior_work_unchanged(tmp_path: Path, option: str)
     assert _get_goal(app, sid) == goal and _get_loop(app, sid) == loop
 
 
-def test_judge_timeout_cancels_pending_call(tmp_path: Path, monkeypatch: Any) -> None:
+def test_judge_timeout_cancels_pending_call(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     import dspy
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     cancelled: list[bool] = []
 
@@ -309,10 +327,12 @@ def test_judge_timeout_cancels_pending_call(tmp_path: Path, monkeypatch: Any) ->
     assert cancelled == [True]
 
 
-def test_goal_cap_stops_paired_loop_at_real_finalize_seam(tmp_path: Path, monkeypatch: Any) -> None:
+def test_goal_cap_stops_paired_loop_at_real_finalize_seam(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     from clio_agent.gact import turn_finalize_goal
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Done", max_tokens=1)
     start_loop(app, sid, prompt="One checkpoint")
@@ -333,9 +353,11 @@ def test_goal_cap_stops_paired_loop_at_real_finalize_seam(tmp_path: Path, monkey
     assert len(app.state.schedules.list(session_id=sid)) == 1
 
 
-def test_judge_retains_precise_artifact_facts_and_recent_chronology(tmp_path: Path) -> None:
+def test_judge_retains_precise_artifact_facts_and_recent_chronology(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     """A generic UI title must not hide the filenames that prove the user's goal."""
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     app.state.messages[sid] = [
         SimpleNamespace(
@@ -364,8 +386,10 @@ def test_judge_retains_precise_artifact_facts_and_recent_chronology(tmp_path: Pa
 
 
 @pytest.mark.parametrize("status", ["waiting_user", "waiting_permission"])
-def test_wakeup_waits_for_human_input(tmp_path: Path, monkeypatch: Any, status: str) -> None:
-    app = _app(tmp_path)
+def test_wakeup_waits_for_human_input(
+    tmp_path: Path, monkeypatch: Any, status: str, arc: ARCMemory
+) -> None:
+    app = _app(tmp_path, arc)
     sid = _session(app)
     start_loop(app, sid, prompt="One checkpoint", interval_s=60)
     app.state.sessions.update(sid, status=status)
@@ -384,11 +408,13 @@ def test_wakeup_waits_for_human_input(tmp_path: Path, monkeypatch: Any, status: 
     assert app.state.schedules.get(schedule.id) is not None
 
 
-def test_exhausted_schedule_retries_settle_loop_and_goal(tmp_path: Path, monkeypatch: Any) -> None:
+def test_exhausted_schedule_retries_settle_loop_and_goal(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     from clio_agent.gact import app as app_mod
     from clio_agent.gact.scheduler_runtime import _fire_one
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Done")
     start_loop(app, sid, prompt="One checkpoint")
@@ -407,11 +433,13 @@ def test_exhausted_schedule_retries_settle_loop_and_goal(tmp_path: Path, monkeyp
     assert not app.state.schedules.list(session_id=sid)
 
 
-def test_startup_storage_failure_retries_before_firing(tmp_path: Path, monkeypatch: Any) -> None:
+def test_startup_storage_failure_retries_before_firing(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     """A transient startup read failure must neither fire unsafe work nor kill the scheduler."""
     from clio_agent.gact import scheduler_runtime
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     attempts: list[str] = []
 
     def reconcile(app: Any) -> None:
@@ -436,11 +464,11 @@ def test_startup_storage_failure_retries_before_firing(tmp_path: Path, monkeypat
 
 @pytest.mark.parametrize("starting", [True, False])
 def test_overdue_wakeup_waits_for_runtime_readiness(
-    tmp_path: Path, monkeypatch: Any, starting: bool
+    tmp_path: Path, monkeypatch: Any, starting: bool, arc: ARCMemory
 ) -> None:
     from clio_agent.gact import app as app_mod
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     start_loop(app, sid, prompt="One checkpoint", interval_s=60)
     schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
@@ -461,11 +489,13 @@ def test_overdue_wakeup_waits_for_runtime_readiness(
     assert app.state.schedules.get(schedule.id) is None
 
 
-def test_scheduler_restores_a_sessions_own_model(tmp_path: Path, monkeypatch: Any) -> None:
+def test_scheduler_restores_a_sessions_own_model(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     from clio_agent.gact import session_host_agent
     from clio_agent.gact.autonomy_guard import prepare_scheduled_host
 
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     app.state.sessions.update(sid, model={"provider_id": "codex", "model_id": "gpt-6-luna"})
     start_loop(app, sid, prompt="One checkpoint")

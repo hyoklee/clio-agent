@@ -44,7 +44,7 @@ def native_builtin_lifespan(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
                 if (
                     isinstance(app, FastAPI)
                     and context.active_session_id()
-                    and not getattr(app.state, "native_task_hosts", None)
+                    and not getattr(app.state, "native_tools", None)
                 ):
                     stack.enter_context(TestClient(app))
                 return bridge(*positional, **keywords)

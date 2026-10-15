@@ -25,7 +25,7 @@ def task_owner_recipient(history: TaskHistory, current: TaskSnapshot) -> str | N
 
 def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode: str = "") -> None:
     """Confirm an outcome/attention notification; reads and progress never acknowledge it."""
-    with history._lock:
+    with history.serialized():
         if current.terminal_at is not None:
             kind: MailKind = (
                 "question_answer"
@@ -66,7 +66,7 @@ def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode:
         recipients = {
             recipient: notice_id
             for recipient, notice_id in recipients.items()
-            if notice_id not in history._mail.get(recipient, {})
+            if history.mail_item(recipient, notice_id) is None
         }
         if not recipients:
             return
@@ -132,7 +132,7 @@ def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode:
             )
         for recipient, notice_id in recipients.items():
             # Publication retries reuse the recipient's confirmed content/reference.
-            if notice_id in history._mail.get(recipient, {}):
+            if history.mail_item(recipient, notice_id) is not None:
                 continue
             history.record_mail(
                 MailItem(

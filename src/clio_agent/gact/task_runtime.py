@@ -379,9 +379,10 @@ async def start(app: Any) -> None:
         await app.state.external_tasks.restore()
         conversations.start()
         await conversations.restore()
-        await asyncio.to_thread(app.state.questions.restore)
-        await app.state.question_events.restore()
-        conversations.signal_pending()
+        if not history.requires_recovery:
+            await asyncio.to_thread(app.state.questions.restore)
+            await app.state.question_events.restore()
+            conversations.signal_pending()
     except BaseException:
         await stack.aclose()
         raise

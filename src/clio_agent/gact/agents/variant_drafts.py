@@ -423,7 +423,7 @@ def _pause(app: Any, run: VariantRun) -> None:
     )
     sid = _ctx.active_session_id()
     history = app.state.task_history
-    with history._lock:
+    with history.serialized():
         assignment = history.task_snapshot(_ctx.active_assignment_handle())
         if (
             assignment is None

@@ -59,6 +59,7 @@ class TurnContext:
     context_epoch_after: str | None = None
     assignment_handle: str = ""  # Confirmed finite assignment; never inherited across sessions.
     input_notification_id: str = ""  # Human head already rendered by this segment.
+    primary_agent_id: str = ""  # Executable root resolved for this turn, not its catalog id.
     tool_session_id: str = ""  # _ACTIVE_TOOL_SESSION_ID
     # Optional Agent Blueprint selected by this message's execution mode.  This
     # is deliberately turn-scoped: Deep Research layers its coordinator over
@@ -320,6 +321,7 @@ def set_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
                 if sid == cur.turn.session_id
                 else None,
                 assignment_handle=cur.turn.assignment_handle if sid == cur.turn.session_id else "",
+                primary_agent_id=cur.turn.primary_agent_id if sid == cur.turn.session_id else "",
             ),
         )
     )
@@ -329,6 +331,12 @@ def set_tool_session_id(sid: str) -> contextvars.Token[RuntimeContext]:
     """Set ``turn.tool_session_id`` (the ``_tool_session_context`` body)."""
     cur = _RUNTIME.get()
     return _RUNTIME.set(replace(cur, turn=replace(cur.turn, tool_session_id=sid)))
+
+
+def set_primary_agent_id(agent_id: str) -> None:
+    """Capture the resolved executable root before any expert forwards run."""
+    cur = _RUNTIME.get()
+    _RUNTIME.set(replace(cur, turn=replace(cur.turn, primary_agent_id=agent_id)))
 
 
 def set_turn_identity(

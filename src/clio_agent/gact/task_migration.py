@@ -20,10 +20,12 @@ from clio_agent.arc.task_types import (
     TaskAlias,
     TaskKind,
     TaskOwner,
+    TaskProgress,
     TaskSnapshot,
     TaskSubscription,
     question_surface_resource,
 )
+from clio_agent.gact.context import scope_epoch
 from clio_agent.gact.task_migration_inputs import (
     _legacy_mail_kind,
     _migrate_inputs,
@@ -279,7 +281,11 @@ def migrate_history(app: Any) -> None:
                     details = history.write_content(
                         owner_sid,
                         AssignmentDetails(
-                            context=boundary, predecessor=row.get("supersedes_task_id") or None
+                            context=boundary,
+                            predecessor=row.get("supersedes_task_id") or None,
+                            context_epoch=row.get("context_epoch")
+                            or (scope_epoch(boundary.scope) if boundary else ""),
+                            context_epoch_after=row.get("context_epoch_after") or None,
                         ).model_dump(mode="json"),
                     )
                 elif family == "question":
@@ -365,45 +371,56 @@ def migrate_history(app: Any) -> None:
                         else "historical"
                     )
                 )
-                task = TaskSnapshot(
-                    handle=handle,
-                    kind=kind,
-                    owner=owner,
-                    description=description,
-                    description_missing=description is None,
-                    label=str(row.get("run_label") or row.get("tool") or session.title),
-                    invocation_id=str(
-                        row.get("invocation_id")
-                        or row.get("parent_turn_id")
-                        or "migration:" + handle
-                    ),
-                    tool=tool,
-                    created_at=created,
-                    updated_at=updated,
-                    backend=reference,
-                    raw_status=raw,
-                    status=status,
-                    activity="yielded"
-                    if family == "assignment" and not terminal
-                    else "waiting_for_input"
-                    if raw == "pending"
-                    else "",
-                    terminal_at=updated if terminal else None,
-                    settlement="historical_unknown",
-                    details=details,
-                    result=result,
-                    backend_observation=retained,
-                    resource_id=resource,
-                    cancellation_requested_at=updated if row.get("cancel_requested") else None,
-                    connection_freshness="unavailable",
-                    attention_episode="migration:" + handle
-                    if status == "task_state_uncertain"
-                    else None,
-                    supported_actions=("observe", "wait", "get_result", "message")
-                    if family == "assignment"
-                    else ("observe", "wait", "cancel", "answer")
-                    if raw == "pending"
-                    else ("observe", "wait", "get_result"),
+                task = TaskSnapshot.read_history(
+                    {
+                        "handle": handle,
+                        "kind": kind,
+                        "owner": owner,
+                        "description": description,
+                        "description_missing": description is None,
+                        "label": str(row.get("run_label") or row.get("tool") or session.title),
+                        "invocation_id": str(
+                            row.get("invocation_id")
+                            or row.get("parent_turn_id")
+                            or "migration:" + handle
+                        ),
+                        "tool": tool,
+                        "created_at": created,
+                        "updated_at": updated,
+                        "backend": reference,
+                        "raw_status": raw,
+                        "status": status,
+                        "activity": "yielded"
+                        if family == "assignment" and not terminal
+                        else "waiting_for_input"
+                        if raw == "pending"
+                        else "",
+                        "terminal_at": updated if terminal else None,
+                        "settlement": "historical_unknown",
+                        "details": details,
+                        "result": result,
+                        "backend_observation": retained,
+                        "progress": TaskProgress(
+                            message="Historical execution placement is unavailable."
+                            if family == "assignment" and placement != "local"
+                            else ""
+                        ),
+                        "resource_id": resource,
+                        "cancellation_requested_at": updated
+                        if row.get("cancel_requested")
+                        else None,
+                        "connection_freshness": "unavailable",
+                        "attention_episode": "migration:" + handle
+                        if status == "task_state_uncertain"
+                        else None,
+                        "supported_actions": ("observe", "wait", "get_result")
+                        if family == "assignment" and placement != "local"
+                        else ("observe", "wait", "get_result", "message")
+                        if family == "assignment"
+                        else ("observe", "wait", "cancel", "answer")
+                        if raw == "pending"
+                        else ("observe", "wait", "get_result"),
+                    }
                 )
                 history.record_snapshot(task, observation_id="migration:" + handle)
             task = history.task_snapshot(handle)
@@ -427,7 +444,7 @@ def migrate_history(app: Any) -> None:
                     app, "mail:" + recipient + ":" + identity, "mailbox_identity_incomplete", row
                 )
                 continue
-            if identity not in history._mail.get(recipient, {}):
+            if history.mail_item(recipient, identity) is None:
                 content = history.write_content(
                     recipient,
                     {
@@ -480,7 +497,7 @@ def migrate_history(app: Any) -> None:
                 )
             if (
                 (recipient, identity) in withdrawals
-                and identity not in history._withdrawn.get(recipient, set())
+                and not history.mail_withdrawn(recipient, identity)
                 and identity not in history.acknowledged_notifications(recipient)
             ):
                 history.withdraw_mail(recipient, identity)
@@ -564,11 +581,7 @@ def migrate_history(app: Any) -> None:
         publish_task_notice(history, task)
         owner_recipient = task_owner_recipient(history, task)
         notice = f"outcome:{task.handle}:{owner_recipient}"
-        item = (
-            history._mail.get(owner_recipient, {}).get(notice)
-            if owner_recipient is not None
-            else None
-        )
+        item = history.mail_item(owner_recipient, notice) if owner_recipient is not None else None
         if item is not None and not row.get("notify_pending") and item.delivery == "eligible":
             history.update_mail(
                 item.model_copy(

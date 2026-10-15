@@ -9,9 +9,9 @@ import logging
 import math
 import re
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, get_args
 
-from clio_agent.arc.task_types import TaskSnapshot, TaskSubscription
+from clio_agent.arc.task_types import TaskKind, TaskSnapshot, TaskSubscription
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_cursors import decode_cursor as _decode
@@ -88,11 +88,26 @@ class TaskOperations:
         position = _decode(cursor)
         if position and position.get("filter") != signature:
             raise ValueError("Task cursor belongs to a different query")
-        with self.history._lock:
-            candidates = access.candidates(scope)
+        with self.history.serialized():
+            seed = None
             if handle is not None:
                 resolved = self.history.resolve_handle(handle)
-                candidates.intersection_update({resolved} if resolved is not None else set())
+                seed = {resolved} if resolved is not None else set()
+            elif kind is not None or active_only:
+                canonical_kind = (
+                    next(
+                        (
+                            value
+                            for value in get_args(TaskKind)
+                            if value.casefold() == kind.casefold()
+                        ),
+                        kind,
+                    )
+                    if kind is not None
+                    else None
+                )
+                seed = self.history.task_handles(kind=canonical_kind, active_only=active_only)
+            candidates = access.candidates(scope, seed=seed)
             rows = []
             for identity in candidates:
                 current = self.history.task_snapshot(identity)
@@ -132,7 +147,7 @@ class TaskOperations:
 
     def result(self, caller: TaskCaller, handle: str, cursor: str | None = None) -> dict[str, Any]:
         """Read retained terminal output; the recipient-input commit acknowledges collection."""
-        with self.history._lock:
+        with self.history.serialized():
             canonical = self.history.resolve_handle(handle) or handle
             position = read_cursor(cursor, caller, canonical) if cursor is not None else {}
             current = None
@@ -240,7 +255,7 @@ class TaskOperations:
 
     def _canonical_observed(self, caller: TaskCaller, handles: tuple[str, ...]) -> tuple[str, ...]:
         """Authorize aliases before registering for canonical owner observations."""
-        with self.history._lock:
+        with self.history.serialized():
             access = TaskAccess(self.history, caller)
             resolved: list[str] = []
             for handle in handles:
@@ -256,7 +271,7 @@ class TaskOperations:
         access = TaskAccess(self.history, caller)
         outcomes: list[dict[str, Any]] = []
         pending: list[str] = []
-        with self.history._lock:
+        with self.history.serialized():
             for handle in handles:
                 try:
                     current = access.require(handle, "observe")
@@ -408,7 +423,7 @@ class TaskOperations:
     ) -> list[dict[str, str]]:
         errors: list[dict[str, str]] = []
         access = TaskAccess(self.history, caller)
-        with self.history._lock:
+        with self.history.serialized():
             for handle in handles:
                 try:
                     current = access.require(handle, "observe")

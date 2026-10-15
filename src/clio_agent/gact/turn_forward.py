@@ -218,6 +218,7 @@ async def _forward_turn_leased(state: "TurnState") -> Any:
     )
     if run_builtin_main:
         state.active_agent_id = "main"
+    _ctx.set_primary_agent_id(state.active_agent_id)
     routing_mode = getattr(state.sess, "routing_mode", "auto") or "auto"
     state.invocation_agent_id = state.active_agent_id or "orchestrator"
     await emit_semantic_event_async(

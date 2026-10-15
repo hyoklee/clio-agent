@@ -83,7 +83,7 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
                     continue
 
             def interrupted(handle: str = handle) -> None:
-                with self.history._lock:
+                with self.history.serialized():
                     task = self._current(handle)
                     result = self.history.write_content(
                         task.owner.session_id,
@@ -220,7 +220,7 @@ async def continue_provider(
     )
 
     def confirm() -> CoreReference:
-        with self.history._lock:
+        with self.history.serialized():
             latest = self._current(current.handle)
             if latest.terminal_at is not None:
                 raise ValueError("Provider work changed before continuation reservation")

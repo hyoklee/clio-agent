@@ -38,7 +38,7 @@ class NativeProgress:
 
         def record() -> None:
             history = self.work.history
-            with history._lock:
+            with history.serialized():
                 current = history.task_snapshot(self.context.handle)
                 if current is None or current.terminal_at is not None:
                     return

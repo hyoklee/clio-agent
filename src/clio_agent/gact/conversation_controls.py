@@ -28,6 +28,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def require_execution_owner(self: Conversations, task: TaskSnapshot) -> None:
+    """Reject control of a historical assignment this engine cannot physically own."""
+    if task.kind in {"Session", "Subagent"} and not self.supports_execution(task):
+        raise ValueError("Conversation execution backend is unavailable; settlement is unconfirmed")
+
+
 def _control_outcome(
     self: Conversations,
     caller: TaskCaller,
@@ -38,7 +44,7 @@ def _control_outcome(
 ) -> None:
     """Relay an observed control outcome to the owning parent through Core mail."""
     recipient = task_owner_recipient(self.history, task)
-    if recipient is None or identity in self.history._mail.get(recipient, {}):
+    if recipient is None or self.history.mail_item(recipient, identity) is not None:
         return
     content = self.history.write_content(
         recipient,
@@ -69,8 +75,9 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
     token = uuid4().hex
 
     def request() -> tuple[TaskSnapshot, Any]:
-        with self.history._lock:
+        with self.history.serialized():
             current = TaskAccess(self.history, caller).require(handle, "control")
+            require_execution_owner(self, current)
             latest = self.history.latest_assignment(current.owner.session_id)
             if (
                 current.kind not in {"Session", "Subagent"}
@@ -91,7 +98,7 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
             await self.runner.stop(current.owner.session_id, reservation=reservation)
 
         def settle() -> None:
-            with self.history._lock:
+            with self.history.serialized():
                 if self._pause_tokens.get(current.owner.session_id) != token:
                     return
                 latest = self.history.task_snapshot(handle)
@@ -140,7 +147,7 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
 
     async def record() -> None:
         def confirm_pause() -> None:
-            with self.history._lock:
+            with self.history.serialized():
                 latest = self.history.latest_assignment(current.owner.session_id)
                 if (
                     self._pause_tokens.get(current.owner.session_id) != token
@@ -176,6 +183,7 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
 async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Release the model hold without replaying accepted operations."""
     current = await asyncio.to_thread(TaskAccess(self.history, caller).require, handle, "control")
+    require_execution_owner(self, current)
     if current.kind not in {"Session", "Subagent"} or current.terminal_at is not None:
         raise ValueError("Resume requires the current active assignment")
     sid = current.owner.session_id
@@ -194,7 +202,7 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
         raise ValueError("Resume requires confirmed Core input recording")
 
     def inject() -> None:
-        with self.history._lock:
+        with self.history.serialized():
             inject_locked()
 
     def inject_locked() -> None:
@@ -234,7 +242,7 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
             "Resume this assignment. Accepted operations may still be running; inspect their handles and confirmed effects before retrying anything.",
         )
         identity = "resume:" + handle + ":" + str(token)
-        if identity not in self.history._mail.get(sid, {}):
+        if self.history.mail_item(sid, identity) is None:
             self.history.record_mail(
                 MailItem(
                     id=identity,
@@ -281,8 +289,9 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
 
     def request() -> TaskSnapshot:
         nonlocal members, requested_at
-        with self.history._lock:
+        with self.history.serialized():
             current = TaskAccess(self.history, caller).require(handle, "control")
+            require_execution_owner(self, current)
             if current.kind not in {"Session", "Subagent"}:
                 raise ValueError("Handle is not a conversation assignment")
             if current.terminal_at is not None:
@@ -350,7 +359,7 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
     job = self._controls.get(handle)
     if job is None or job.done():
         self.retain_control(
-            handle, asyncio.create_task(self._cancel_subtree(current, members=members))
+            handle, asyncio.create_task(_cancel_subtree(self, current, members=members))
         )
     return {"handle": handle, "cancellation_requested": True, "recording": recording}
 
@@ -358,6 +367,7 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
 async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Request a linked assignment after known cancellation/worker settlement."""
     current = await asyncio.to_thread(TaskAccess(self.history, caller).require, handle, "control")
+    require_execution_owner(self, current)
     if current.kind not in {"Session", "Subagent"}:
         raise ValueError("Only conversation assignments restart")
     if handle in self._restarting:
@@ -394,7 +404,7 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
             await asyncio.shield(cancellation)
 
         def create() -> None:
-            with self.history._lock:
+            with self.history.serialized():
                 previous = self.history.task_snapshot(handle)
                 if (
                     previous is None
@@ -481,6 +491,7 @@ async def _cancel_subtree(
     members: tuple[str, ...] | None = None,
     request_members: bool = True,
 ) -> None:
+    require_execution_owner(self, assignment)
     previous_watch = self._cancel_watches.pop(assignment.handle, None)
     if previous_watch is not None:
         previous_watch()
@@ -488,7 +499,7 @@ async def _cancel_subtree(
     def membership() -> set[str]:
         if members is not None:
             return set(members)
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(assignment.handle) or assignment
             details = (
                 AssignmentDetails.model_validate(self.history.read_content(current.details))
@@ -617,7 +628,7 @@ async def _cancel_subtree(
                     states: list[TaskSnapshot | None] = states,
                 ) -> None:
                     def record() -> None:
-                        with self.history._lock:
+                        with self.history.serialized():
                             current = self.history.task_snapshot(assignment.handle)
                             if current is None or current.terminal_at is not None:
                                 return
@@ -696,8 +707,8 @@ async def _cancel_subtree(
                         self.retain_control(
                             assignment.handle,
                             asyncio.create_task(
-                                self._cancel_subtree(
-                                    assignment, members=tuple(handles), request_members=False
+                                _cancel_subtree(
+                                    self, assignment, members=tuple(handles), request_members=False
                                 )
                             ),
                         )
@@ -737,7 +748,7 @@ async def _cancel_subtree(
                 self._pause_tokens.pop(current.owner.session_id, None)
 
         def finish() -> None:
-            with self.history._lock:
+            with self.history.serialized():
                 current = self.history.task_snapshot(assignment.handle)
                 if current is None:
                     return

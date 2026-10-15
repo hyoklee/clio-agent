@@ -54,8 +54,11 @@ class CoreRecovery:
 
     async def drain(self) -> None:
         """Retain unresolved evidence through orderly shutdown, without a hidden cutoff."""
-        while self._worker is not None and not self._worker.done():
-            await asyncio.shield(self._worker)
+        while self._worker is not None:
+            worker = self._worker
+            await asyncio.shield(worker)
+            if self._worker is worker:
+                return
 
     async def _recover(self) -> None:
         delay = 1.0
@@ -65,10 +68,9 @@ class CoreRecovery:
                 await asyncio.to_thread(
                     self.history.arc._store.exists, INDEX_KIND, "__recovery_probe__"
                 )
+                restored = self.history.requires_recovery
                 if self.history.requires_recovery:
                     await asyncio.to_thread(self.history.restore)
-                    if self.on_ready is not None:
-                        await self.on_ready()
                 for identity, action in tuple(self._pending.items()):
                     try:
                         confirmed = await action()
@@ -83,14 +85,18 @@ class CoreRecovery:
                         continue
                     if confirmed is not False and self._pending.get(identity) is action:
                         self._pending.pop(identity)
+                if self.on_ready is not None and (restored or not self._pending):
+                    await self.on_ready()
                 delay = min(delay * 2, 30.0) if self._pending else 1.0
             except Exception as error:
+                if self.history.requires_recovery and "core-writer" not in self._pending:
+                    self.defer("core-writer", self._recording_confirmed)
                 logger.exception(
                     "Task boundary reason=core_recovery_pending error_type=%s", type(error).__name__
                 )
                 logger.warning(
                     "Core recovery pending=%d error=%s", len(self._pending), type(error).__name__
                 )
+                if not self._pending:
+                    raise  # An invalid readiness transition is not a settled recovery.
                 delay = min(delay * 2, 30.0)
-        if self.on_ready is not None:
-            await self.on_ready()

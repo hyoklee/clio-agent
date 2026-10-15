@@ -26,15 +26,19 @@ from typing import Any
 import dspy
 import pytest
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import goal as goal_mod
 from clio_agent.gact import turn_finalize_goal
 from clio_agent.gact.goal import GoalJudgement, arm_goal, clear_goal, dispatch_goal_at_finalize
+from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_gact.test_goal import _app, _bind, _in_ctx, _session
 
 
-def test_judge_is_awaited_and_the_loop_stays_live(tmp_path: Path, monkeypatch: Any) -> None:
+def test_judge_is_awaited_and_the_loop_stays_live(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         arm_goal(app, sid, condition="all tests pass")
@@ -92,10 +96,10 @@ class _CodexShapedLM(dspy.BaseLM):
         )
 
 
-def test_codex_shaped_lm_judges_through_the_async_path(tmp_path: Path) -> None:
+def test_codex_shaped_lm_judges_through_the_async_path(tmp_path: Path, arc: ARCMemory) -> None:
     def body() -> None:
         lm = _CodexShapedLM()
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         # The ambient branch of ``_judge_route``: finalize runs outside any dspy.context, so
         # the judge resolves the app's main LM + adapter explicitly.
         app.state.agent = SimpleNamespace(_main_lm=lm, _dspy_adapter=dspy.ChatAdapter())
@@ -119,7 +123,7 @@ def test_codex_shaped_lm_judges_through_the_async_path(tmp_path: Path) -> None:
 
 
 def test_unreadable_evidence_pauses_instead_of_judging_an_empty_history(
-    tmp_path: Path, monkeypatch: Any
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
 ) -> None:
     """An unavailable conversation store must surface as an unavailable judge."""
 
@@ -128,17 +132,17 @@ def test_unreadable_evidence_pauses_instead_of_judging_an_empty_history(
 
     monkeypatch.setattr(goal_mod, "_build_transcript", unavailable)
     verdict = asyncio.run(
-        goal_mod.run_llm_judge(_app(tmp_path), "session", {"condition": "Save the report"})
+        goal_mod.run_llm_judge(_app(tmp_path, arc), "session", {"condition": "Save the report"})
     )
     assert not verdict.available and not verdict.met
 
 
 @pytest.mark.parametrize("shutdown,user_stopped", [(True, False), (False, False), (True, True)])
 def test_shutdown_retains_goal_but_user_stop_and_work_failure_do_not_resume(
-    tmp_path: Path, monkeypatch: Any, shutdown: bool, user_stopped: bool
+    tmp_path: Path, monkeypatch: Any, shutdown: bool, user_stopped: bool, arc: ARCMemory
 ) -> None:
     """The real async finalizer distinguishes service exit from user cancellation."""
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Inspect the retained simulation outcome")
     if user_stopped:
@@ -250,9 +254,11 @@ def test_turn_orchestrator_awaits_the_async_finalize() -> None:
     assert inspect.iscoroutinefunction(goal_mod.run_llm_judge)
 
 
-def test_goal_cleared_during_judge_is_discarded(tmp_path: Path, monkeypatch: Any) -> None:
+def test_goal_cleared_during_judge_is_discarded(
+    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+) -> None:
     def body() -> None:
-        app = _app(tmp_path)
+        app = _app(tmp_path, arc)
         sid = _session(app)
         _bind(app, sid)
         arm_goal(app, sid, condition="all tests pass")
@@ -267,7 +273,7 @@ def test_goal_cleared_during_judge_is_discarded(tmp_path: Path, monkeypatch: Any
         assert decision is None
         goal = dict(app.state.sessions.get(sid).metadata.get("goal") or {})
         assert goal.get("active") is False and goal.get("cleared") is True, goal
-        from clio_agent.gact.agent_mailbox import pending_mail  # noqa: PLC0415
+        from tests.test_gact.test_goal import _pending_inputs as pending_mail
 
         assert pending_mail(app, sid) == []
 

@@ -55,7 +55,7 @@ class QuestionCommands:
         self.validate_definition(definition)
         if definition.expires_at is not None:
             self._deadline(definition)
-        with self.history._lock:
+        with self.history.serialized():
             identity, stamp = (
                 handle
                 or "task_"
@@ -116,7 +116,7 @@ class QuestionCommands:
         self, session_id: str, surface_id: str, action_name: str
     ) -> TaskSnapshot | None:
         """Preserve answer identity even after closure; reused surfaces require an exact ID."""
-        with self.history._lock:
+        with self.history.serialized():
             candidates = []
             for handle in self.history.resource_handles(
                 question_surface_resource(session_id, surface_id)
@@ -151,7 +151,7 @@ class QuestionCommands:
 
     def restore(self) -> None:
         """Finish posting confirmed Question headers after an interrupted owner write."""
-        with self.history._lock:
+        with self.history.serialized():
             for handle in self.history.task_handles(kind="Question", active_only=True):
                 current = self.history.task_snapshot(handle)
                 if current is not None and not current.raw_status and current.details is not None:
@@ -174,7 +174,7 @@ class QuestionCommands:
 
     def post(self, accepted: TaskSnapshot, definition: QuestionDefinition) -> TaskSnapshot:
         """Post content under the already persisted public handle and return immediately."""
-        with self.history._lock:
+        with self.history.serialized():
             current = self._question(accepted.handle)
             if (
                 current.model_dump(exclude={"description_reference"})
@@ -206,7 +206,7 @@ class QuestionCommands:
 
     def annotate(self, handle: str, metadata: dict[str, Any]) -> TaskSnapshot:
         """Record trusted routing facts without replacing a Question's input contract."""
-        with self.history._lock:
+        with self.history.serialized():
             current = self._question(handle)
             if current.raw_status != "pending":
                 return current
@@ -235,7 +235,7 @@ class QuestionCommands:
 
     def resolution(self, handle: str) -> dict[str, Any] | None:
         """Read immutable server decision data without replacing a Question's answer."""
-        with self.history._lock:
+        with self.history.serialized():
             task = self._question(handle)
             reference = self._definition(task).resolution
             if reference is None:
@@ -254,7 +254,7 @@ class QuestionCommands:
 
     def freeze_resolution(self, handle: str, value: dict[str, Any]) -> dict[str, Any]:
         """Confirm content before attaching one decision reference to the original Question."""
-        with self.history._lock:
+        with self.history.serialized():
             task = self._question(handle)
             value = {
                 **value,
@@ -283,7 +283,7 @@ class QuestionCommands:
 
     def answer(self, handle: str, reply: QuestionReply) -> TaskSnapshot:
         """Confirm one validated answer; a concurrent answer/cancel cannot overwrite it."""
-        with self.history._lock:
+        with self.history.serialized():
             current = self._question(handle)
             if current.raw_status != "pending":
                 if (
@@ -360,7 +360,7 @@ class QuestionCommands:
 
     def cancel(self, handle: str) -> TaskSnapshot:
         """Dismiss an open Question; historical terminal outcomes stay unchanged."""
-        with self.history._lock:
+        with self.history.serialized():
             current = self._question(handle)
             if current.raw_status in {"answered", "cancelled", "expired"}:
                 publish_task_notice(self.history, current)
@@ -369,7 +369,7 @@ class QuestionCommands:
 
     def expire(self, handle: str) -> TaskSnapshot:
         """Arbitrate an explicit Question deadline against answers under the same writer lock."""
-        with self.history._lock:
+        with self.history.serialized():
             current = self._question(handle)
             if current.raw_status != "pending":
                 return current

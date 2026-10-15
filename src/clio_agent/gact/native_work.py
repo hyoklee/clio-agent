@@ -173,7 +173,7 @@ class NativeWork:
         arguments: Mapping[str, object],
         attempt: NativeAttempt,
     ) -> tuple[SubmissionContext, NativeAttempt]:
-        with self.history._lock:
+        with self.history.serialized():
             submission = self.history.submission_context(reference)
             if (
                 submission.tool != tool
@@ -228,7 +228,7 @@ class NativeWork:
         self.admission(current)
 
     def _finished(self, attempt: NativeAttempt, outcome: str, evidence: WorkEvidence) -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(attempt.handle)
             if current is None:
                 raise ValueError("Native task disappeared before cleanup recording")

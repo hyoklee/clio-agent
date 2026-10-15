@@ -106,6 +106,23 @@ def process_view(app: Any, task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def agent_task_view(app: Any, task: dict[str, Any]) -> dict[str, Any]:
+    """Project shipped agent aliases through the same snapshot and display mapping."""
+    process = process_view(app, task)
+    return {
+        "task_id": task["handle"],
+        "child_session_id": process["child_session_id"],
+        "parent_session_id": process["parent_session_id"],
+        "parent_turn_id": task["invocation_id"],
+        "status": task["status"],
+        "live_state": process["live_state"],
+        "created_at": task["created_at"],
+        "updated_at": task["updated_at"],
+        "run_label": task["label"],
+        "error_reason": process["error_reason"],
+    }
+
+
 def register_task_routes(app: FastAPI) -> None:
     """Register canonical controls plus pure compatibility projections."""
 
@@ -222,23 +239,26 @@ def register_task_routes(app: FastAPI) -> None:
             rows = app.state.task_operations.query(caller(sid), kind="Subagent", limit=10000)[
                 "tasks"
             ]
-            return {
-                "tasks": [
-                    {
-                        "task_id": row["handle"],
-                        "child_session_id": row["owner"]["session_id"],
-                        "parent_session_id": sid,
-                        "status": row["status"],
-                        "live_state": row["activity"] or row["status"],
-                        "created_at": row["created_at"],
-                        "updated_at": row["updated_at"],
-                        "run_label": row["label"],
-                    }
-                    for row in rows
-                ]
-            }
+            return {"tasks": [agent_task_view(app, row) for row in rows]}
 
         return await asyncio.to_thread(project)
+
+    @app.get("/v1/agent-tasks/{handle}")
+    async def agent_task(handle: str) -> dict[str, Any]:
+        def project() -> dict[str, Any]:
+            access = TaskAccess(
+                app.state.task_history,
+                TaskCaller("", app.state.human_principal, human_action=True),
+            )
+            task = access.require(handle, "read")
+            if task.kind not in {"Session", "Subagent"}:
+                raise ValueError("Task is unavailable for this operation")
+            return agent_task_view(app, access.view(task))
+
+        try:
+            return await asyncio.to_thread(project)
+        except ValueError as error:
+            raise HTTPException(404, str(error)) from error
 
     @app.post("/v1/sessions/{sid}/tasks/cancel")
     @app.post("/v1/sessions/{sid}/async-tasks/cancel")

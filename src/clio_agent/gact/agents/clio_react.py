@@ -369,7 +369,9 @@ class _Loop:
         if ledger is not None and _ctx.active_react_run() < 0:
             sessions = getattr(state, "sessions", None)
             session = sessions.get(self.session) if sessions is not None else None
-            primary = getattr(session, "agent", {}).get("id", "main") if session is not None else ""
+            primary = _ctx.current_turn().primary_agent_id or (
+                getattr(session, "agent", {}).get("id", "main") if session is not None else ""
+            )
             self.recorder.carry_over(
                 ledger.get(self.session, []) or [],
                 allow_transcript=self.scope == _ctx.run_keyed_scope(primary),

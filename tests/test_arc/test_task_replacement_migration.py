@@ -7,13 +7,93 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.task_types import AssignmentDetails, ContextBoundary, TaskOwner, TaskSnapshot
 from clio_agent.gact.semantic_events import SemanticEvent
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_migration import migrate_history
+from clio_agent.gact.task_migration_inputs import migrate_context_epochs
 
 STAMP = "2026-10-13T20:00:00Z"
+
+
+@pytest.mark.parametrize("explicit_epoch", [False, True])
+def test_assignment_migration_preserves_fixed_epoch_and_cutoff(
+    arc: ARCMemory, tmp_path: Path, explicit_epoch: bool
+) -> None:
+    sessions = SessionStore(path=tmp_path / "sessions.json")
+    session = sessions.create(workspace_id="workspace")
+    row: dict[str, Any] = {
+        "task_id": "legacy-assignment",
+        "assignment_kind": "Session",
+        "child_session_id": session.id,
+        "status": "running",
+        "context_checkpoint": {"scope": "resolved-root#epoch:retained", "logical_time": 3},
+        "context_epoch_after": STAMP,
+    }
+    if explicit_epoch:
+        row["context_epoch"] = "retained"
+    legacy_event(arc, session.id, "task.assignment", {"task": row})
+    history = TaskHistory(arc)
+    app = SimpleNamespace(
+        state=SimpleNamespace(task_history=history, sessions=sessions, human_principal="human")
+    )
+    migrate_history(app)
+    handle = history.resolve_handle("legacy-assignment")
+    assert handle is not None
+    task = history.task_snapshot(handle)
+    assert task is not None and task.details is not None
+    details = AssignmentDetails.model_validate(history.read_content(task.details))
+    assert details.context is not None
+    assert details.context.scope == "resolved-root#epoch:retained"
+    assert details.context_epoch == "retained" and details.context_epoch_after == STAMP
+    before = len(list(arc._live.iter_event_contents()))
+    migrate_history(app)
+    assert history.task_snapshot(handle) == task
+    assert len(list(arc._live.iter_event_contents())) == before
+
+
+def test_previously_converted_empty_epoch_is_repaired_idempotently(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    sessions = SessionStore(path=tmp_path / "sessions.json")
+    session = sessions.create(workspace_id="workspace")
+    history = TaskHistory(arc)
+    details = history.write_content(
+        session.id,
+        AssignmentDetails(
+            context=ContextBoundary(
+                session_id=session.id, scope="resolved-root#epoch:retained", logical_time=3
+            ),
+            context_epoch="",
+            context_epoch_after=STAMP,
+        ).model_dump(mode="json"),
+    )
+    task = TaskSnapshot(
+        handle="task_converted",
+        kind="Session",
+        owner=TaskOwner(human_id="human", session_id=session.id, assignment_id="task_converted"),
+        label="Retained assignment",
+        tool="conversation",
+        invocation_id="legacy-request",
+        created_at=STAMP,
+        updated_at=STAMP,
+        details=details,
+    )
+    history.record_snapshot(task, observation_id="legacy-conversion")
+    app = SimpleNamespace(state=SimpleNamespace(task_history=history, task_migration_issues=[]))
+    migrate_context_epochs(app)
+    repaired = history.task_snapshot(task.handle)
+    assert repaired is not None and repaired.details is not None
+    restored = AssignmentDetails.model_validate(history.read_content(repaired.details))
+    assert restored.context_epoch == "retained" and restored.context_epoch_after == STAMP
+    before = len(list(arc._live.iter_event_contents()))
+    migrate_context_epochs(app)
+    assert history.task_snapshot(task.handle) == repaired
+    assert len(list(arc._live.iter_event_contents())) == before
 
 
 def test_invalid_historical_rows_are_retained_without_blocking_valid_neighbors(

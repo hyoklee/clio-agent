@@ -33,7 +33,7 @@ def migrate_context_epochs(app: Any) -> None:
             continue
         try:
             raw = history.read_content(task.details)
-            if not isinstance(raw, dict) or "context_epoch" in raw:
+            if not isinstance(raw, dict) or raw.get("context_epoch"):
                 continue
             details = AssignmentDetails.model_validate(raw)
             epoch = scope_epoch(details.context.scope) if details.context else ""
@@ -130,11 +130,11 @@ def _migrate_intents(app: Any, sessions: dict[str, Any], anchor: Callable[[str],
                         row,
                     )
                     continue
-                if identity in history._mail.get(sid, {}):
+                if history.mail_item(sid, identity) is not None:
                     if (
                         family == "pending"
                         and row.get("state") == "cancelled"
-                        and identity not in history._withdrawn.get(sid, set())
+                        and not history.mail_withdrawn(sid, identity)
                         and identity not in history.acknowledged_notifications(sid)
                     ):
                         history.withdraw_mail(sid, identity)
@@ -143,7 +143,7 @@ def _migrate_intents(app: Any, sessions: dict[str, Any], anchor: Callable[[str],
                         and row.get("state") in {"claimed", "consumed"}
                         and identity not in history.acknowledged_notifications(sid)
                     ):
-                        existing = history._mail[sid][identity]
+                        existing = history.require_mail(sid, identity)
                         body = history.read_content(existing.content)
                         if (
                             isinstance(body, dict)
@@ -289,7 +289,7 @@ def _migrate_inputs(app: Any, anchor: Callable[[str], str]) -> None:
                     sha256=hashlib.sha256(_encoded(proof)).hexdigest(),
                 )
                 identity = "migration-input:" + str(segment.id)
-                existing = history._inputs.get((session.id, identity))
+                existing = history.recipient_input(session.id, identity)
                 if existing is not None:
                     if existing.legacy_proof != reference:
                         _unresolved(app, identity, "legacy_input_proof_changed", proof)
@@ -316,7 +316,7 @@ def _migrate_inputs(app: Any, anchor: Callable[[str], str]) -> None:
                         if owner == session.id
                         else f"outcome:{handle}:subscriber:{session.id}:1"
                     )
-                    if canonical not in history._mail.get(session.id, {}):
+                    if history.mail_item(session.id, canonical) is None:
                         # This receipt acknowledges only the recipient proved by
                         # this old input. It must not publish notices to others.
                         content = task.result or history.write_content(

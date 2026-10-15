@@ -72,7 +72,7 @@ def register_native_storage(
             raise PermissionError("Approved source configuration changed before execution")
 
     def progress(context: SubmissionContext, done: int, total: int | None, unit: str) -> None:
-        with work.history._lock:
+        with work.history.serialized():
             current = work.history.task_snapshot(context.handle)
             if current is None or current.terminal_at is not None:
                 return
@@ -89,7 +89,7 @@ def register_native_storage(
     def associate(
         context: SubmissionContext, record: SourceRecord, operation: TransferOperation
     ) -> None:
-        with work.history._lock:
+        with work.history.serialized():
             current = work.history.task_snapshot(context.handle)
             if current is None:
                 raise ValueError("Storage task is unavailable")
@@ -133,7 +133,7 @@ def register_native_storage(
         }
 
     def cancellation_needed(context: SubmissionContext) -> bool:
-        with work.history._lock:
+        with work.history.serialized():
             current = work.history.task_snapshot(context.handle)
             if current is None:
                 raise ValueError("Provider continuation owner is unavailable")
@@ -214,7 +214,7 @@ def register_native_storage(
                     if previous_publication_absent:
 
                         def confirm_previous() -> None:
-                            with work.history._lock:
+                            with work.history.serialized():
                                 for attempt in work.history.native_attempts(context.handle):
                                     if (
                                         attempt.incarnation

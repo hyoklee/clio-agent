@@ -394,8 +394,8 @@ class StepRecorder:
             raise ValueError("Model input has no confirmed conversation assignment")
         caller = owner.caller(self.session)
         identity = context.current_turn().input_notification_id
-        with owner.history._lock:
-            trigger = owner.history._mail.get(self.session, {}).get(identity)
+        with owner.history.serialized():
+            trigger = owner.history.mail_item(self.session, identity)
         human_head = (
             self._mail_head
             if trigger is not None and trigger.kind in {"human", "composer"}
@@ -669,7 +669,7 @@ class StepRecorder:
             raise RuntimeError("Task collection requires its owning application")
         owner = app.state.conversations
         caller = owner.caller(self.session)
-        with owner.history._lock:
+        with owner.history.serialized():
             staged = owner.mail.collection(caller, notifications)
             segments = self.arc.context_view(self.session, self.scope).segments
             owner.mail.commit(

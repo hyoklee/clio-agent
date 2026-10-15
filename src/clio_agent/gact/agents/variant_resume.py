@@ -30,7 +30,7 @@ def _pending_runs(app: Any, sid: str) -> dict[str, Any]:
 
 
 def _clear_pending(app: Any, sid: str, variants_id: str) -> None:
-    with app.state.task_history._lock:
+    with app.state.task_history.serialized():
         pending = _pending_runs(app, sid)
         pending.pop(variants_id, None)
         app.state.sessions.update(sid, metadata_patch={PENDING_META: pending})

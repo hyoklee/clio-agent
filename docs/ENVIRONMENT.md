@@ -125,7 +125,6 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_FS_MAX_READ_BYTES` | `limits.fs_read_bytes` | int | `262144` | `src/clio_agent/tools/servers/fs_server.py` |
 | `CLIO_GACT_ALLOWED_HOSTS` | `gact.allowed_hosts` | str | _(unset)_ | `src/clio_agent/gact/cors.py` |
 | `CLIO_GACT_BEARER_TOKEN` | `gact.auth.bearer_token` | str | _(unset)_ | `src/clio_agent/gact/auth.py` |
-| `CLIO_GACT_CANCELLATION_GRACE_S` | `gact.cancellation_grace_s` | float | `0.1` | `src/clio_agent/gact/routes/session_cancellation.py` |
 | `CLIO_GACT_CORS_ORIGINS` | `gact.cors.origins` | str | _(unset)_ | `src/clio_agent/gact/cors.py` |
 | `CLIO_GACT_MEDIA_CACHE_BYTES` | `gact.media_cache_bytes` | int | `67108864` | `src/clio_agent/gact/agents/media_cache.py` |
 | `CLIO_GACT_TURN_TIMEOUT_S` | `limits.turn_timeout_s` | float | `900.0` | `src/clio_agent/gact/_params.py` |
@@ -172,7 +171,8 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_LM_TOP_P` | `lm.top_p` | float | _(unset)_ | `src/clio_agent/config.py` |
 | `CLIO_LM_TRANSIENT_RETRIES` | `limits.lm_transient_retries` | float | `2.0` | `src/clio_agent/lm/policy.py` |
 | `CLIO_LOG_LM_RESPONSE` | `debug.lm_response` | bool | `false` | `src/clio_agent/runtime/trace.py` |
-| `CLIO_MAX_CONCURRENT_AGENT_TASKS` | `agent_tasks.max_concurrent` | int | `3` | `src/clio_agent/gact/turn_spawn_executor.py` |
+| `CLIO_MAILBOX_MAX_PENDING_MESSAGES` | `gact.mailbox.max_pending_messages` | int | `0` | `src/clio_agent/gact/session_mail.py` |
+| `CLIO_MAX_CONCURRENT_AGENT_TASKS` | `agent_tasks.max_concurrent` | int | `3` | `src/clio_agent/gact/conversations.py` |
 | `CLIO_MAX_FILE_SIZE_BYTES` | `tools.file_policy.max_file_size_bytes` | str | `1073741824` | `src/clio_agent/tools/file_policy.py` |
 | `CLIO_MAX_LM_CALL_S` | `limits.lm_call_s` | float | `1800.0` | `src/clio_agent/runtime/lm_activity.py` |
 | `CLIO_MCP_CACHE_MAX_AGE_DAYS` | `tools.mcp_cache.max_age_days` | float | `14.0` | `src/clio_agent/tools/mcp_cache.py` |
@@ -184,13 +184,11 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_MCP_CONTENT_BLOCK_MAX_BYTES` | `limits.mcp_content_block_max_bytes` | int | `524288` | `src/clio_agent/tools/mcp_results.py` |
 | `CLIO_MCP_DISCOVERY_CONCURRENCY` | `tools.mcp.discovery_concurrency` | int | `8` | `src/clio_agent/tools/mcp_discovery.py` |
 | `CLIO_MCP_DISCOVERY_HEAL_INTERVAL_S` | `tools.mcp.discovery_heal_interval_s` | float | `20.0` | `src/clio_agent/tools/mcp_discovery.py` |
-| `CLIO_MCP_ELICITATION_AGENT_AUDIENCE_ANSWER_MODE` | `tools.mcp.elicitation.agent_audience.answer_mode` | str | `inline` | `src/clio_agent/gact/agent_elicitation_policy.py` |
 | `CLIO_MCP_ELICITATION_AGENT_AUDIENCE_DEFAULT_UNHINTED` | `tools.mcp.elicitation.agent_audience.default_unhinted` | bool | `true` | `src/clio_agent/gact/agent_elicitation_policy.py` |
 | `CLIO_MCP_ELICITATION_AGENT_AUDIENCE_DENIED_SERVERS` | `tools.mcp.elicitation.agent_audience.denied_servers` | list | `default` _(computed)_ | `src/clio_agent/gact/agent_elicitation_policy.py` |
 | `CLIO_MCP_ELICITATION_AGENT_AUDIENCE_ENABLED` | `tools.mcp.elicitation.agent_audience.enabled` | bool | `true` | `src/clio_agent/gact/agent_elicitation_policy.py` |
 | `CLIO_MCP_ELICITATION_AGENT_AUDIENCE_MAX_DEPTH` | `tools.mcp.elicitation.agent_audience.max_depth` | int | `1` | `src/clio_agent/gact/agent_elicitation_policy.py` |
-| `CLIO_MCP_ELICITATION_AGENT_AUDIENCE_TIMEOUT_S` | `tools.mcp.elicitation.agent_audience.timeout_s` | float | `90.0` | `src/clio_agent/gact/agent_elicitation_policy.py` |
-| `CLIO_MCP_ELICITATION_URL_TRUSTED_ORIGINS` | `tools.mcp.elicitation.url_trusted_origins` | list | `default` _(computed)_ | `src/clio_agent/gact/elicitation_bridge.py` |
+| `CLIO_MCP_ELICITATION_URL_TRUSTED_ORIGINS` | `tools.mcp.elicitation.url_trusted_origins` | list | _(unset)_ | `src/clio_agent/gact/elicitation_config.py` |
 | `CLIO_MCP_HOLD_WHILE_WAITING_S` | `tools.mcp.hold_while_waiting_s` | float | `1800.0` | `src/clio_agent/gact/session_warmup.py` |
 | `CLIO_MCP_INPUT_REQUIRED_MAX_ROUNDS` | `tools.mcp.input_required_max_rounds` | int | `DEFAULT_INPUT_REQUIRED_MAX_ROUNDS` _(computed)_ | `src/clio_agent/tools/mcp_runtime.py` |
 | `CLIO_MCP_LISTING_TTL_H` | `tools.mcp.listing_ttl_h` | float | `24.0` | `src/clio_agent/tools/listing_cache.py` |
@@ -207,7 +205,7 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_MODEL_CATALOG` | `paths.model_catalog` | str | _(unset)_ | `src/clio_agent/providers/model_discovery/overlay.py` |
 | `CLIO_MODEL_CATALOG_TTL_S` | `providers.model_catalog_ttl_s` | float | `86400.0` | `src/clio_agent/providers/model_discovery/overlay.py` |
 | `CLIO_MODEL_DB` | `paths.model_db` | str | _(unset)_ | `src/clio_agent/providers/handshake/sources/db.py` |
-| `CLIO_MODEL_TOOL_RESULT_CHARS` | `limits.model_tool_result_chars` | int | `12000` | `src/clio_agent/tools/mcp_result_projection.py` |
+| `CLIO_MODEL_TOOL_RESULT_CHARS` | `limits.model_tool_result_chars` | int | `12000` | `src/clio_agent/gact/session_mail.py` |
 | `CLIO_NATIVE_ARTIFACT_STORE` | `provenance.artifacts.native.storage` | str | `file` | `src/clio_agent/gact/artifacts/provenance/factory.py` |
 | `CLIO_PLAN_REVIEW_CHARS` | `limits.plan_review_chars` | int | `256000` | `src/clio_agent/gact/plan_review.py` |
 | `CLIO_PROVENANCE_ATTENTION` | `provenance.attention` | str | `false` | `src/clio_agent/provenance_config.py` |
@@ -292,8 +290,15 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_SUMMARIZER_MODEL` | `summarizer.model` | str | _(unset)_ | `src/clio_agent/lm/secondary.py` |
 | `CLIO_SUMMARIZER_PROVIDER` | `summarizer.provider` | str | _(unset)_ | `src/clio_agent/lm/secondary.py` |
 | `CLIO_SUMMARIZER_TRANSPORT` | `summarizer.transport` | str | _(unset)_ | `src/clio_agent/lm/secondary.py` |
+| `CLIO_TASKS_HEALTH_TIMEOUT_S` | `gact.tasks.health_timeout_s` | float | `10.0` | `src/clio_agent/tools/task_client.py` |
+| `CLIO_TASKS_SHELL_CONCURRENCY` | `gact.tasks.shell.concurrency` | int | `10` | `src/clio_agent/tools/native_roots.py` |
+| `CLIO_TASKS_SHELL_QUEUE` | `gact.tasks.shell.queue` | str | _(unset)_ | `src/clio_agent/tools/native_roots.py` |
+| `CLIO_TASKS_SHELL_URL` | `gact.tasks.shell.url` | str | `memory://` | `src/clio_agent/tools/native_roots.py` |
+| `CLIO_TASKS_STORAGE_CONCURRENCY` | `gact.tasks.storage.concurrency` | int | `10` | `src/clio_agent/tools/native_roots.py` |
+| `CLIO_TASKS_STORAGE_QUEUE` | `gact.tasks.storage.queue` | str | _(unset)_ | `src/clio_agent/tools/native_roots.py` |
+| `CLIO_TASKS_STORAGE_URL` | `gact.tasks.storage.url` | str | `memory://` | `src/clio_agent/tools/native_roots.py` |
 | `CLIO_TOOL_FAILURE_LIMIT` | `tools.circuit_breaker.failure_limit` | int | `3` | `src/clio_agent/tools/execution.py` |
-| `CLIO_TOOL_RESULT_CHARS` | `limits.tool_result_chars` | int | `12000` | `src/clio_agent/tools/mcp_result_projection.py` |
+| `CLIO_TOOL_RESULT_CHARS` | `limits.tool_result_chars` | int | `12000` | `src/clio_agent/gact/assignment_evidence.py` |
 | `CLIO_TRANSCRIPT_FILE` | `transcript.file` | bool | `true` | `src/clio_agent/gact/transcript_file.py` |
 | `CLIO_TRANSIENT_PROVIDER_RETRY_DELAYS` | `limits.transient_provider_retry_delays` | list | _(unset)_ | `src/clio_agent/agent.py` |
 | `CLIO_VARIANTS_MAX_N` | `variants.max_n` | int | `8` | `src/clio_agent/gact/agents/variant_drafts.py` |

@@ -25,7 +25,6 @@ class TaskAccess:
 
     def __init__(self, history: TaskHistory, caller: TaskCaller) -> None:
         self.history, self.caller = history, caller
-        self._target_trees: dict[str, set[str]] = {}
 
     @cached_property
     def _tree(self) -> set[str]:
@@ -35,30 +34,56 @@ class TaskAccess:
     def _grants(self) -> tuple[CoordinationGrant, ...]:
         return self.history.coordination_grants(self.caller.session_id)
 
+    def _in_session_tree(self, task: TaskSnapshot, session_id: str) -> bool:
+        """Check immutable lineage from the target, without loading retained siblings."""
+        seen: set[str] = set()
+        current: TaskSnapshot | None = task
+        while current is not None and current.handle not in seen:
+            if current.owner.session_id == session_id:
+                return True
+            seen.add(current.handle)
+            parent = current.owner.parent_handle
+            current = self.history.task_snapshot(parent) if parent is not None else None
+        return False
+
+    def _matches(self, grant: CoordinationGrant, task: TaskSnapshot) -> bool:
+        if grant.revoked_at is not None:
+            return False
+        if grant.target_handle is not None:
+            return task.handle == grant.target_handle
+        if grant.target_scope == "tree":
+            return self._in_session_tree(task, grant.target_session)
+        return task.owner.session_id == grant.target_session
+
+    def in_scope(self, task: TaskSnapshot, scope: str) -> bool:
+        """Scope a narrow indexed candidate without turning it into a whole-tree query."""
+        if scope not in {"tree", "authorized"}:
+            raise ValueError("Task scope must be tree or authorized")
+        if self._in_session_tree(task, self.caller.session_id):
+            return True
+        return (
+            scope == "authorized"
+            and not self.history.requires_recovery
+            and any(
+                {"read", "observe"}.intersection(grant.rights) and self._matches(grant, task)
+                for grant in self._grants
+            )
+        )
+
     def rights(self, task: TaskSnapshot) -> frozenset[CoordinationRight]:
         """Keep control, messaging, observation and content rights independent."""
-        with self.history._lock:
+        with self.history.serialized():
             if self.caller.human_action and task.owner.human_id == self.caller.human_id:
                 return ALL_RIGHTS
-            if task.handle in self._tree and task.owner.human_id == self.caller.human_id:
+            if task.owner.human_id == self.caller.human_id and self._in_session_tree(
+                task, self.caller.session_id
+            ):
                 return ALL_RIGHTS
             if self.history.requires_recovery:
                 return frozenset()
             rights: set[CoordinationRight] = set()
             for grant in self._grants:
-                if grant.revoked_at is not None:
-                    continue
-                if grant.target_handle is not None:
-                    matches = task.handle == grant.target_handle
-                elif grant.target_scope == "tree":
-                    if grant.target_session not in self._target_trees:
-                        self._target_trees[grant.target_session] = self.history.tree_handles(
-                            grant.target_session
-                        )
-                    matches = task.handle in self._target_trees[grant.target_session]
-                else:
-                    matches = task.owner.session_id == grant.target_session
-                if matches:
+                if self._matches(grant, task):
                     rights.update(grant.rights)
             return frozenset(rights)
 
@@ -72,7 +97,9 @@ class TaskAccess:
 
     def stable_message_right(self, task: TaskSnapshot) -> bool:
         """Exact historical grants do not silently grant access to a successor assignment."""
-        if task.handle in self._tree and task.owner.human_id == self.caller.human_id:
+        if task.owner.human_id == self.caller.human_id and self._in_session_tree(
+            task, self.caller.session_id
+        ):
             return True
         if self.caller.human_action and self.caller.human_id == task.owner.human_id:
             return True
@@ -87,9 +114,7 @@ class TaskAccess:
                 continue
             if grant.target_session == task.owner.session_id:
                 return True
-            if grant.target_scope == "tree" and task.handle in self.history.tree_handles(
-                grant.target_session
-            ):
+            if grant.target_scope == "tree" and self._in_session_tree(task, grant.target_session):
                 return True
         return False
 
@@ -121,10 +146,17 @@ class TaskAccess:
                         sessions.add(task.owner.session_id)
         return sessions
 
-    def candidates(self, scope: str) -> set[str]:
+    def candidates(self, scope: str, *, seed: set[str] | None = None) -> set[str]:
         """Use passive hierarchy/relationship indexes, without scanning unrelated tasks."""
         if scope not in {"tree", "authorized"}:
             raise ValueError("Task scope must be tree or authorized")
+        if seed is not None:
+            return {
+                handle
+                for handle in seed
+                if (task := self.history.task_snapshot(handle)) is not None
+                and self.in_scope(task, scope)
+            }
         handles = set(self._tree)
         if scope == "authorized":
             for grant in self.history.coordination_grants(self.caller.session_id):

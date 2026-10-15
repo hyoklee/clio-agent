@@ -45,7 +45,7 @@ def read_observations(
     if type(start) is not int or not 0 <= start < len(handles):
         raise ValueError("Observation cursor has an invalid scan position")
     next_start, first_omitted = start, None
-    with history._lock:
+    with history.serialized():
         for scanned in range(len(handles)):
             index = (start + scanned) % len(handles)
             handle = handles[index]

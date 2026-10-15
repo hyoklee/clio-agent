@@ -54,7 +54,7 @@ class ConversationOutcome:
 
 def clear_model_context(self: Conversations, sid: str, question: str, boundary: str) -> None:
     """Confirm one exact Question epoch without erasing history or replaying accepted work."""
-    with self.history._lock:
+    with self.history.serialized():
         current = self.history.latest_assignment(sid)
         if current is None:
             raise ValueError("Plan context owner is unavailable")
@@ -187,7 +187,7 @@ def _new_assignment(
 def _finish_segment(
     self: Conversations, segment: ConversationSegment, outcome: ConversationOutcome
 ) -> None:
-    with self.history._lock:
+    with self.history.serialized():
         current = self.history.task_snapshot(segment.assignment.handle)
         if (
             current is None
@@ -272,7 +272,7 @@ async def complete_deferred(self: Conversations, sid: str, assignment_handle: st
     await released.wait()
 
     def complete() -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.latest_assignment(sid)
             if current is None or current.handle != assignment_handle:
                 raise ValueError("Deferred completion no longer addresses this assignment")
@@ -360,7 +360,7 @@ async def spawn(
     )
 
     def create() -> TaskSnapshot:
-        with self.history._lock:
+        with self.history.serialized():
             validate_assignment_evidence(self.history, caller, pins)
             existing = self.history.task_snapshot(handle)
             if existing is not None:
@@ -476,7 +476,7 @@ async def spawn(
                 },
             )
             mail_id = "assignment:" + task.handle
-            if mail_id not in self.history._mail.get(child.id, {}):
+            if self.history.mail_item(child.id, mail_id) is None:
                 self.history.record_mail(
                     MailItem(
                         id=mail_id,
@@ -488,7 +488,7 @@ async def spawn(
                         handle=task.handle,
                     )
                 )
-            elif self.history._mail[child.id][mail_id].content != content:
+            elif self.history.require_mail(child.id, mail_id).content != content:
                 raise ValueError("Accepted child launch context changed")
             return task
 

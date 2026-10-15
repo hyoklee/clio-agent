@@ -44,7 +44,7 @@ def select_assignment_evidence(
         return ()
     if not isinstance(handles, list) or any(not isinstance(h, str) or not h for h in handles):
         raise ValueError("input_task_ids must be a list of nonempty task handles")
-    with history._lock:
+    with history.serialized():
         pins = tuple(dict.fromkeys(_pin(history, caller, handle) for handle in handles))
     # Bodies can be expensive; keep their validation outside the global writer lock.
     for pin in pins:
@@ -57,7 +57,7 @@ def validate_assignment_evidence(
     history: TaskHistory, caller: TaskCaller, pins: tuple[AssignmentEvidence, ...]
 ) -> None:
     """Recheck ownership, access and exact captured results before creation or input commitment."""
-    with history._lock:
+    with history.serialized():
         for pin in pins:
             current = _pin(history, caller, pin.handle)
             if (

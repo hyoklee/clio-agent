@@ -48,7 +48,7 @@ async def submit_source_action(
         validate_task_owner(app, workspace_id, session_id)
         record = app.state.connected_storage.get(workspace_id, arguments["source_id"])
         history, conversations = app.state.task_history, app.state.conversations
-        with history._lock:
+        with history.serialized():
             assignment = history.latest_assignment(session_id)
             if assignment is None or assignment.terminal_at is not None:
                 assignment = conversations._new_assignment(

@@ -359,7 +359,7 @@ class ExternalTasks:
         )
 
         def confirm() -> Any:
-            with self.history._lock:
+            with self.history.serialized():
                 self.app.state.conversations.require_admission(assignment)
                 content = self.history.record_submission(submission)
                 self.history.record_snapshot(
@@ -476,7 +476,7 @@ class ExternalTasks:
         return reply
 
     def _adopt(self, host: ExternalConnection, accepted: AcceptedNativeCall) -> Any:
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(accepted.submission.handle)
             observed = current.model_copy(
                 update={
@@ -548,12 +548,12 @@ class ExternalTasks:
                         assert host.client is not None
                         if not host.client.is_connected():
                             if "stdio" in host.backend.transport.casefold():
-                                raise RuntimeError(
-                                    "Original stdio task runtime is unavailable; restarting it would not reconnect the same work"
-                                )
+                                # The attention record remains durable. This identity
+                                # cannot reconnect, so retrying cannot establish custody.
+                                return True
                             await host.client.close()
                             await host.client.__aenter__()
-                        await host.client.ping()
+                        await host.client.check_health()
                         rebound = call.reconnected(host.client)
                         host.calls[call.task.task_id] = rebound
                         self._drive(host, rebound)  # original identity/schema; never tools/call
@@ -631,7 +631,7 @@ class ExternalTasks:
     def _attention(
         self, handle: str, message: str, *, lost: bool = True, episode: str = ""
     ) -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(handle)
             if current.terminal_at is not None:
                 return
@@ -659,7 +659,7 @@ class ExternalTasks:
         self, handle: str, done: float, total: float | None, message: str | None
     ) -> None:
         """Persist this invocation's progress; progress alone cannot wake a model."""
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(handle)
             if current is None or current.terminal_at is not None:
                 return
@@ -673,7 +673,7 @@ class ExternalTasks:
             )
 
     def _inline_result(self, handle: str, reply: Any) -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(handle)
             value = {
                 "content": [part.model_dump(mode="json") for part in reply.content],
@@ -712,7 +712,7 @@ class ExternalTasks:
             # Inline output is already this invocation's observation; no task wake.
 
     def _rejected(self, handle: str, reason: str) -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self.history.task_snapshot(handle)
             if current.terminal_at is not None:
                 return

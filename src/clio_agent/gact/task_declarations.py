@@ -63,7 +63,7 @@ def _collected(app: Any, caller: Any, value: dict[str, Any]) -> CollectedTaskRes
     }
     if value.get("handle") and value.get("pending") is False:
         handles.add(value["handle"])
-    with app.state.task_history._lock:
+    with app.state.task_history.serialized():
         for handle in handles:
             current = TaskAccess(app.state.task_history, caller).require(handle, "read")
             publish_task_notice(app.state.task_history, current)
@@ -274,7 +274,7 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
 
         def post() -> dict[str, Any]:
             history = app.state.task_history
-            with history._lock:
+            with history.serialized():
                 parent = history.latest_assignment(caller.session_id)
                 if parent is None:
                     raise ValueError("Question requires a confirmed parent assignment")

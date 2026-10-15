@@ -18,9 +18,11 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
 )
 from clio_agent.errors import ClioError
+from clio_agent.gact import conversation_controls
 from clio_agent.gact.native_work import now
 from clio_agent.gact.session_mail import StagedInput
 from clio_agent.gact.task_access import TaskCaller
+from clio_agent.gact.task_history import RecordingUnconfirmed
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 
 if TYPE_CHECKING:
@@ -75,13 +77,13 @@ def _restore_input_projections(self: Conversations) -> None:
     """Repair display receipts from confirmed inputs, without redelivering mail."""
     from clio_agent.gact.workflows import repair_workflow_reference
 
-    for root in tuple(self.history._workflow_dirty):
+    for root in self.history.pending_workflow_references():
         try:
             repair_workflow_reference(self.app, root)
         except ValueError as error:
             logger.exception("Workflow reference unavailable root=%s", root)
-            self.history._workflow_unresolved[root] = str(error)
-        except (OSError, ClioError) as error:
+            self.history.workflow_reference_unavailable(root, str(error))
+        except (OSError, ClioError, RecordingUnconfirmed) as error:
             logger.exception(
                 "Workflow reference repair pending root=%s error_type=%s",
                 root,
@@ -95,25 +97,22 @@ def _restore_input_projections(self: Conversations) -> None:
                 self._loop.call_soon_threadsafe(
                     self.recovery.defer, "workflow-reference:" + root, repair
                 )
-    with self.history._lock:
-        items = tuple(
-            item
-            for sid, acknowledged in self.history._acknowledged.items()
-            for identity in acknowledged
-            if (item := self.history._mail.get(sid, {}).get(identity)) is not None
-            and item.kind in {"a2ui", "question_answer"}
-        )
+    items = self.history.acknowledged_mail(("a2ui", "question_answer"))
     self._input_committed(StagedInput(items, ()))
 
 
 async def restore(self: Conversations) -> None:
     """Recover interrupted model segments; dormant assignments do not wake at boot."""
     await asyncio.to_thread(self._restore_input_projections)
+    if self.history.requires_recovery:
+        return  # The existing readiness callback resumes this same restoration.
     handles = await asyncio.to_thread(self.history.task_handles, active_only=True)
     for handle in handles:
         task = await asyncio.to_thread(self.history.task_snapshot, handle)
         if task is None or task.kind not in {"Session", "Subagent"}:
             continue
+        if not self.supports_execution(task):
+            continue  # Retained unavailable work is not converted into local execution.
         if await asyncio.to_thread(self.history.latest_assignment, task.owner.session_id) != task:
             continue
         session = self.sessions.get(task.owner.session_id)
@@ -130,7 +129,7 @@ async def restore(self: Conversations) -> None:
             unavailable_task: TaskSnapshot = task
 
             def unavailable(task: TaskSnapshot = unavailable_task) -> None:
-                with self.history._lock:
+                with self.history.serialized():
                     current = self.history.task_snapshot(task.handle)
                     if current is None or current.terminal_at is not None:
                         return
@@ -155,11 +154,17 @@ async def restore(self: Conversations) -> None:
                         self.history, observed, episode=observed.attention_episode or ""
                     )
 
-            await asyncio.to_thread(unavailable)
+            try:
+                await asyncio.to_thread(unavailable)
+            except (OSError, ClioError, RecordingUnconfirmed):
+                logger.exception("Assignment recovery recording pending handle=%s", task.handle)
+                return
             continue
         self.arm_deadline(handle, details.execution_deadline)
         if task.cancellation_requested_at is not None:
-            self.retain_control(handle, asyncio.create_task(self._cancel_subtree(task)))
+            self.retain_control(
+                handle, asyncio.create_task(conversation_controls._cancel_subtree(self, task))
+            )
             continue
         if (
             task.activity == "paused"
@@ -175,7 +180,7 @@ async def restore(self: Conversations) -> None:
         def recover(task: TaskSnapshot | None = task) -> None:
             if task is None:
                 raise ValueError("Recovery assignment is unavailable")
-            with self.history._lock:
+            with self.history.serialized():
                 details = (
                     AssignmentDetails.model_validate(self.history.read_content(task.details))
                     if task.details is not None
@@ -209,7 +214,7 @@ async def restore(self: Conversations) -> None:
                     + ":"
                     + (committed.id if committed is not None else task.updated_at)
                 )
-                if identity not in self.history._mail.get(task.owner.session_id, {}):
+                if self.history.mail_item(task.owner.session_id, identity) is None:
                     self.history.record_mail(
                         MailItem(
                             id=identity,
@@ -231,7 +236,11 @@ async def restore(self: Conversations) -> None:
                     observation_id=uuid4().hex,
                 )
 
-        await asyncio.to_thread(recover)
+        try:
+            await asyncio.to_thread(recover)
+        except (OSError, ClioError, RecordingUnconfirmed):
+            logger.exception("Assignment recovery recording pending handle=%s", task.handle)
+            return
     self._restoring = False
 
 
@@ -257,7 +266,7 @@ def _record_interrupted_calls(
         }
         from clio_agent.gact.agents.clio_react_record import _token_estimate
 
-        self.history._confirm(
+        self.history.confirm_write(
             partial(
                 self.history.arc.insert_segment,
                 task.owner.session_id,
@@ -287,7 +296,7 @@ def arm_deadline(self: Conversations, handle: str, deadline: str | None) -> None
 
     async def expire() -> None:
         def due() -> TaskSnapshot | None:
-            with self.history._lock:
+            with self.history.serialized():
                 task = self.history.task_snapshot(handle)
                 if task is None or task.terminal_at is not None or task.details is None:
                     return None

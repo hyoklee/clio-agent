@@ -42,9 +42,8 @@ async def intervene(
     }
 
     def record(phase: str, effect: dict[str, Any] | None = None) -> None:
-        with history._writing():
-            history._record(
-                "task.human.intervention",
+        with history.serialized():
+            history.record_intervention(
                 current.owner.session_id,
                 identity + ":" + phase,
                 {**intent, "phase": phase, "effect": effect},

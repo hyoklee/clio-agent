@@ -237,11 +237,11 @@ def restore(self: TaskHistory) -> None:
             for locator in self._input_locations.values():
                 key = (locator["session_id"], locator["scope"])
                 if key not in scopes:
-                    scopes[key] = self._scope_inputs(*key)
+                    scopes[key] = self.context_inputs(*key)
                 recovered = scopes[key].get(locator["id"])
                 if recovered is not None:
-                    self._accept_input(recovered)
-            self._repair_indexes()
+                    _accept_input(self, recovered)
+            _repair_indexes(self)
         except Exception:
             self._replaying = False
             self.requires_recovery = True
@@ -275,7 +275,7 @@ def restore(self: TaskHistory) -> None:
         self.revision = max(previous_revision, self.revision) + 1
         self.requires_recovery = False
         self._replaying = False
-    self._notify(restored=True)
+    _notify(self, restored=True)
 
 
 def _repair_indexes(self: TaskHistory) -> None:
@@ -329,7 +329,7 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
         alias = TaskAlias.model_validate(payload)
         self._aliases.setdefault(alias.alias, {})[alias.source_identity] = alias
     elif event_type == "task.observed":
-        snapshot = TaskSnapshot.model_validate(payload)
+        snapshot = TaskSnapshot.read_history(payload)
         if snapshot.description_reference is not None:
             description = self.read_content(snapshot.description_reference)
             if not isinstance(description, str):
@@ -406,7 +406,8 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
         return
     handle = payload.get("handle")
     recipient = payload.get("recipient_session")
-    self._notify(
+    _notify(
+        self,
         handle=handle,
         recipient=recipient,
         mail_changed=event_type.startswith("session.mail.")
@@ -482,7 +483,7 @@ def _scope_inputs(self: TaskHistory, session_id: str, scope: str) -> dict[str, R
 def _find_input(
     self: TaskHistory, session_id: str, scope: str, identity: str
 ) -> RecipientInput | None:
-    return self._scope_inputs(session_id, scope).get(identity)
+    return self.context_inputs(session_id, scope).get(identity)
 
 
 def _accept_input(self: TaskHistory, record: RecipientInput) -> None:
@@ -492,7 +493,7 @@ def _accept_input(self: TaskHistory, record: RecipientInput) -> None:
         if previous != record:
             raise ValueError("Recipient input identity was reused")
         return
-    self._validate_input_eligibility(record)
+    _validate_input_eligibility(self, record)
     self._inputs[key] = record
     self._iterations[(record.session_id, record.assignment_id, record.iteration_id)] = record.id
     self._acknowledged.setdefault(record.session_id, set()).update(record.notification_ids)

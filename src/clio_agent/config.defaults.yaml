@@ -306,7 +306,7 @@ limits.lm_transient_retries: 2.0
 # (image/audio/resource) before it's elided; raise for larger images.
 limits.mcp_content_block_max_bytes: 524288
 
-# CLIO_MODEL_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/tools/mcp_result_projection.py
+# CLIO_MODEL_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/gact/session_mail.py
 # Characters of a tool result shown to the model; a longer result is saved
 # to the session's tool-output folder and the agent gets this many head
 # characters plus the file path. Distinct from limits.tool_result_chars.
@@ -347,7 +347,7 @@ limits.shell_max_output_bytes: 131072
 # ceiling.
 limits.shell_max_timeout_s: 0.0
 
-# CLIO_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/tools/mcp_result_projection.py
+# CLIO_TOOL_RESULT_CHARS  (int)  <- src/clio_agent/gact/assignment_evidence.py
 # Character bound on the transcript/evidence-metadata preview of a tool
 # result; raise to keep more result text visible in the transcript.
 limits.tool_result_chars: 12000
@@ -380,26 +380,11 @@ limits.view_pdf_source_max_bytes: 536870912
 # Child-agent concurrency, declared-workflow step liveness, goal judging and
 # the cron scheduler.
 
-# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)
-# Child inference budget at one spawn depth; does not cap active sessions
-# or hold a permit while a child runs tools or waits.
+# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)  <- src/clio_agent/gact/conversations.py
+# Reserved or in-flight child inference at one spawn depth; tools and waits
+# release their inference permit. This does not cap active sessions or
+# background tasks.
 agent_tasks.max_concurrent: 3
-
-# Independent native task roots retain their backend and capacity settings.
-# Memory-backed work is interrupted by process loss; persistence does not
-# guarantee exactly-once effects. Queue identity defaults are generated per root.
-gact.tasks.shell.url: "memory://"
-gact.tasks.shell.concurrency: 10
-# gact.tasks.shell.queue:  # default clio-shell-<incarnation> for memory, clio-shell otherwise
-gact.tasks.storage.url: "memory://"
-gact.tasks.storage.concurrency: 10
-# gact.tasks.storage.queue:  # default clio-storage-<incarnation> for memory, clio-storage otherwise
-# Environment: CLIO_TASKS_SHELL_URL / QUEUE / CONCURRENCY and
-# CLIO_TASKS_STORAGE_URL / QUEUE / CONCURRENCY override the corresponding keys.
-
-# 0/unset is unlimited. Positive capacity counts undelivered peer messages,
-# including staged inputs; human input/controls and accepted results are exempt.
-gact.mailbox.max_pending_messages: 0
 
 # CLIO_DEFAULT_AGENT_BLUEPRINT_ID  (str)  <- src/clio_agent/gact/agent_blueprint_refresh.py
 # Installed marketplace Agent Blueprint a fresh deployment bootstraps and
@@ -539,11 +524,6 @@ gact.blueprint_source.clone_timeout_s: 30.0
 # snappy, raise for a slow link.
 gact.blueprint_source.ls_remote_timeout_s: 10.0
 
-# CLIO_GACT_CANCELLATION_GRACE_S  (float)  <- src/clio_agent/gact/routes/session_cancellation.py
-# Seconds a cooperative session cancel is given before the turn task is
-# hard-cancelled; raise to let a mid-tool-call turn unwind cleanly.
-gact.cancellation_grace_s: 0.1
-
 # CLIO_CONTEXT_REFERENCE_BROWSE_LIMIT  (int)  <- src/clio_agent/gact/context_reference_search.py
 # Rows returned per reference kind when the picker opens with no query
 # typed; raise to browse more of a large workspace at a glance.
@@ -668,6 +648,9 @@ gact.ledger_retention.turn_attempts.max: 2000
 # meaningful with the S5 atoms regime, leave off normally.
 gact.live_edge_streaming: false
 
+# CLIO_MAILBOX_MAX_PENDING_MESSAGES  (int)  <- src/clio_agent/gact/session_mail.py
+gact.mailbox.max_pending_messages: 0
+
 # CLIO_GACT_MEDIA_CACHE_BYTES  (int)  <- src/clio_agent/gact/agents/media_cache.py
 # Bytes of rehydrated tool media (viewed images, PDFs) kept for reuse across
 # context reads, least recently used first out; lower to bound memory.
@@ -687,6 +670,42 @@ gact.resident_ledgers.max_bytes: 536870912
 # Max sessions whose transcript ledgers stay resident in memory at once;
 # raise to keep more sessions warm at the cost of memory.
 gact.resident_ledgers.max_sessions: 512
+
+# CLIO_TASKS_HEALTH_TIMEOUT_S  (float)  <- src/clio_agent/tools/task_client.py
+# Timeout in seconds for task transport health pings only; accepted
+# execution, result waits and physical cleanup retain their own semantics.
+# Must be finite and positive.
+gact.tasks.health_timeout_s: 10.0
+
+# CLIO_TASKS_SHELL_CONCURRENCY  (int)  <- src/clio_agent/tools/native_roots.py
+# Native Shell worker concurrency; positive, default 10.
+gact.tasks.shell.concurrency: 10
+
+# CLIO_TASKS_SHELL_QUEUE  (str)  <- src/clio_agent/tools/native_roots.py
+# Shell queue identity; empty selects an automatic clio-shell name, with an
+# incarnation suffix for the memory backend. Keep it separate from storage.
+# gact.tasks.shell.queue:  # default unset; resolved in code
+
+# CLIO_TASKS_SHELL_URL  (str)  <- src/clio_agent/tools/native_roots.py
+# Native Shell backend URL. memory:// loses local work on process loss;
+# persistent backends can redeliver execution and do not promise exactly-
+# once effects.
+gact.tasks.shell.url: "memory://"
+
+# CLIO_TASKS_STORAGE_CONCURRENCY  (int)  <- src/clio_agent/tools/native_roots.py
+# Native Download/Indexing worker concurrency; positive, default 10,
+# independent of Shell.
+gact.tasks.storage.concurrency: 10
+
+# CLIO_TASKS_STORAGE_QUEUE  (str)  <- src/clio_agent/tools/native_roots.py
+# Storage queue identity; empty selects an automatic clio-storage name, with
+# an incarnation suffix for the memory backend. Keep it separate from Shell.
+# gact.tasks.storage.queue:  # default unset; resolved in code
+
+# CLIO_TASKS_STORAGE_URL  (str)  <- src/clio_agent/tools/native_roots.py
+# Native Download/Indexing backend URL, independent of Shell. memory:// is
+# ephemeral; persistent backends can redeliver execution.
+gact.tasks.storage.url: "memory://"
 
 # CLIO_HOOKS_ALLOW_MANAGED_ONLY  (bool)  <- src/clio_agent/gact/hooks/dispatcher.py
 # Lockdown flag dropping every non-managed (user/project) hook source,
@@ -1205,14 +1224,6 @@ tools.mcp.discovery_concurrency: 8
 # discovery; lower to recover faster, raise to cut retry noise.
 tools.mcp.discovery_heal_interval_s: 20.0
 
-# CLIO_MCP_ELICITATION_AGENT_AUDIENCE_ANSWER_MODE  (str)  <- src/clio_agent/gact/agent_elicitation_policy.py
-# Which answerer fulfills a routed agent-audience elicitation: 'inline'
-# (default) runs one bounded tool-less completion on the session's own
-# model; 'turn' spawns the child answer turn (deadlocks while the parent
-# tool call holds the session's turn slot -- retained for lifecycle parity
-# only).
-tools.mcp.elicitation.agent_audience.answer_mode: "inline"
-
 # CLIO_MCP_ELICITATION_AGENT_AUDIENCE_DEFAULT_UNHINTED  (bool)  <- src/clio_agent/gact/agent_elicitation_policy.py
 # Whether an UNHINTED form-mode elicitation defaults to the agent. fastmcp
 # drops the nested _meta on the InputRequiredResult round-trip, so an
@@ -1240,16 +1251,10 @@ tools.mcp.elicitation.agent_audience.enabled: true
 # for deliberately layered server flows.
 tools.mcp.elicitation.agent_audience.max_depth: 1
 
-# CLIO_MCP_ELICITATION_AGENT_AUDIENCE_TIMEOUT_S  (float)  <- src/clio_agent/gact/agent_elicitation_policy.py
-# Seconds an agent-answer turn may take before the question falls back typed
-# to the human; bounds the 'agent is answering' window a pending question
-# can sit in.
-tools.mcp.elicitation.agent_audience.timeout_s: 90.0
-
-# CLIO_MCP_ELICITATION_URL_TRUSTED_ORIGINS  (list)  <- src/clio_agent/gact/elicitation_bridge.py
+# CLIO_MCP_ELICITATION_URL_TRUSTED_ORIGINS  (list)  <- src/clio_agent/gact/elicitation_config.py
 # CSV allow-list of origins a url-mode elicitation may point to; add one to
 # enable url elicitation for that server.
-# tools.mcp.elicitation.url_trusted_origins:  # computed at runtime: default
+# tools.mcp.elicitation.url_trusted_origins:  # default unset; resolved in code
 
 # CLIO_MCP_HOLD_WHILE_WAITING_S  (float)  <- src/clio_agent/gact/session_warmup.py
 # Seconds a session waiting on its user (a question or plan approval) keeps

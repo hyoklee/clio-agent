@@ -44,7 +44,7 @@ async def _stop_foreground(self: NativeTools, handle: str) -> None:
 
 
 def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCall | None) -> None:
-    with self.history._lock:
+    with self.history.serialized():
         current = self._current(current.handle)
         if current.terminal_at is not None:
             publish_task_notice(self.history, current)
@@ -168,7 +168,7 @@ async def cancel(self: NativeTools, handle: str) -> dict[str, Any]:
         return {"handle": handle, "cancellation_requested": False, "status": current.status}
 
     def intent() -> None:
-        with self.history._lock:
+        with self.history.serialized():
             current = self._current(handle)
             if current.terminal_at is None and current.cancellation_requested_at is None:
                 self.history.record_snapshot(

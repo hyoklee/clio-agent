@@ -60,7 +60,7 @@ class SessionMail:
 
     def stage(self, caller: TaskCaller, *, collected: tuple[str, ...] = ()) -> StagedInput:
         """Read eligible arrivals in accepted order; no query/staging operation consumes them."""
-        with self.history._lock:
+        with self.history.serialized():
             access = TaskAccess(self.history, caller)
             items: list[MailItem] = []
             injections: list[tuple[str, MailText]] = []
@@ -191,7 +191,7 @@ class SessionMail:
         turn_id: str = "",
     ) -> RecipientInput:
         """Recheck permission/eligibility, then confirm the sole delivery acknowledgement."""
-        with self.history._lock:
+        with self.history.serialized():
             from clio_agent.gact.context import scope_epoch
 
             owner = self.history.task_snapshot(assignment_id)
@@ -246,7 +246,7 @@ class SessionMail:
 
     def collection(self, caller: TaskCaller, identities: tuple[str, ...]) -> StagedInput:
         """Select only notices represented by a persisted explicit tool observation."""
-        with self.history._lock:
+        with self.history.serialized():
             access = TaskAccess(self.history, caller)
             items = tuple(
                 item
@@ -300,7 +300,7 @@ class SessionMail:
         """Accept an attributed message to an exact authorized stable session."""
         if not message.strip():
             raise ValueError("Peer message cannot be empty")
-        with self.history._lock:
+        with self.history.serialized():
             access = TaskAccess(self.history, caller)
             resolved = self.history.resolve_handle(target)
             if resolved is not None:
@@ -321,7 +321,7 @@ class SessionMail:
                 if invocation_id
                 else "mail_" + uuid4().hex
             )
-            previous = self.history._mail.get(recipient, {}).get(identity)
+            previous = self.history.mail_item(recipient, identity)
             if previous is not None:
                 if (
                     previous.sender_session != caller.session_id
@@ -333,9 +333,9 @@ class SessionMail:
                     )
                 return previous
             if reply_to is not None:
-                original = self.history._mail.get(caller.session_id, {}).get(
-                    reply_to
-                ) or self.history._mail.get(recipient, {}).get(reply_to)
+                original = self.history.mail_item(
+                    caller.session_id, reply_to
+                ) or self.history.mail_item(recipient, reply_to)
                 if original is None or {original.sender_session, original.recipient_session} != {
                     caller.session_id,
                     recipient,

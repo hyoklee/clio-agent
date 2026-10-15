@@ -145,7 +145,7 @@ class TaskHistory:
             if existing:
                 self.read_content(reference)
                 return reference
-            self._confirm(
+            self.confirm_write(
                 lambda: self.arc.append_segment(
                     session_id,
                     reference.scope,
@@ -191,65 +191,19 @@ class TaskHistory:
     def record_snapshot(self, snapshot: TaskSnapshot, *, observation_id: str) -> None:
         """Record an owner's observation without imposing cross-owner transitions."""
         assert_store_write_off_loop("task.observation")
+        snapshot = TaskSnapshot.model_validate(snapshot)
         with self._writing():
             previous = self._tasks.get(snapshot.handle)
-            if previous is not None and (
-                previous.owner != snapshot.owner
-                or previous.kind != snapshot.kind
-                or previous.invocation_id != snapshot.invocation_id
-                or previous.tool != snapshot.tool
-                or previous.created_at != snapshot.created_at
-                or previous.description != snapshot.description
-                or previous.description_missing != snapshot.description_missing
-            ):
-                raise ValueError("Task identity cannot change under an existing handle")
-            continuation_reserved = False
-            if (
-                previous is not None
+            snapshot.validate_identity(previous)
+            replacement = (
+                SubmissionContext.model_validate(self.read_content(snapshot.submission))
+                if previous is not None
                 and previous.submission is not None
                 and snapshot.submission is not None
                 and previous.submission != snapshot.submission
-            ):
-                replacement = SubmissionContext.model_validate(
-                    self.read_content(snapshot.submission)
-                )
-                continuation = replacement.provider_continuation
-                continuation_reserved = (
-                    previous.kind == "Download"
-                    and previous.terminal_at is None
-                    and snapshot.backend is None
-                    and replacement.tool == "connected_data_continue"
-                    and replacement.handle == previous.handle
-                    and replacement.owner == previous.owner
-                    and replacement.invocation_id == previous.invocation_id
-                    and continuation is not None
-                    and continuation.previous_submission == previous.submission
-                    and continuation.previous_backend == previous.backend
-                    and continuation.operation_id == previous.handle
-                    and continuation.source_id == previous.resource_id
-                )
-            if previous is not None and previous.backend is not None:
-                if previous.backend != snapshot.backend and not continuation_reserved:
-                    raise ValueError("An accepted backend identity cannot be rebound")
-            if previous is not None and previous.submission is not None:
-                if previous.submission != snapshot.submission and not continuation_reserved:
-                    raise ValueError("Confirmed submission context cannot be replaced")
-            if (
-                previous is not None
-                and previous.resource_id is not None
-                and previous.resource_id != snapshot.resource_id
-            ):
-                raise ValueError("A task's accepted resource identity cannot be rebound")
-            if previous is not None and previous.cancellation_requested_at is not None:
-                if previous.cancellation_requested_at != snapshot.cancellation_requested_at:
-                    raise ValueError("A cancellation intent cannot be silently cleared")
-            if previous is not None and previous.terminal_at is not None:
-                if (
-                    snapshot.terminal_at != previous.terminal_at
-                    or snapshot.status != previous.status
-                    or snapshot.result != previous.result
-                ):
-                    raise ValueError("A historical terminal outcome cannot be reopened or replaced")
+                else None
+            )
+            snapshot.validate_custody(previous, replacement)
             if snapshot.result is not None:
                 self.read_content(snapshot.result)
             reference = (
@@ -430,7 +384,7 @@ class TaskHistory:
                 if previous != record:
                     raise ValueError("Recipient input identity was reused")
                 return previous
-            self._validate_input_eligibility(record)
+            task_history_projection._validate_input_eligibility(self, record)
             if record.legacy_notification_ids:
                 if (
                     record.legacy_proof is None
@@ -475,17 +429,19 @@ class TaskHistory:
             if existing_locator is not None:
                 if existing_locator != locator:
                     raise ValueError("Input locator identity was reused")
-                recovered = self._find_input(record.session_id, record.boundary.scope, record.id)
+                recovered = task_history_projection._find_input(
+                    self, record.session_id, record.boundary.scope, record.id
+                )
                 if recovered is not None:
                     if recovered != record:
                         raise ValueError("Durable input identity was reused")
-                    self._accept_input(recovered)
+                    task_history_projection._accept_input(self, recovered)
                     return recovered
             else:
                 self._record("session.input.prepared", record.session_id, record.id, locator)
                 self._put_index(locator_name, locator)
                 self._project("session.input.prepared", locator)
-            self._confirm(
+            self.confirm_write(
                 lambda: self.arc.append_segment(
                     record.session_id,
                     record.boundary.scope,
@@ -495,7 +451,7 @@ class TaskHistory:
                     token_count=input_tokens,
                 )
             )
-            self._accept_input(record)
+            task_history_projection._accept_input(self, record)
             return record
 
     def record_grant(self, grant: CoordinationGrant, *, observation_id: str) -> None:
@@ -698,6 +654,71 @@ class TaskHistory:
         with self._lock:
             return tuple(self._pending.get(session_id, {}).values())
 
+    @contextmanager
+    def serialized(self) -> Iterator[None]:
+        """Serialize related owner reads/writes; each Core write still confirms separately."""
+        with self._lock:
+            yield
+
+    def mail_item(self, session_id: str, identity: str) -> MailItem | None:
+        """Read one immutable mailbox header without enumerating retained messages."""
+        with self._lock:
+            return self._mail.get(session_id, {}).get(identity)
+
+    def require_mail(self, session_id: str, identity: str) -> MailItem:
+        """Read a header already required by an owner operation, or report its absence."""
+        item = self.mail_item(session_id, identity)
+        if item is None:
+            raise KeyError(identity)
+        return item
+
+    def mail_withdrawn(self, session_id: str, identity: str) -> bool:
+        """Read a retained withdrawal without exposing the mutable projection."""
+        with self._lock:
+            return identity in self._withdrawn.get(session_id, set())
+
+    def recipient_input(self, session_id: str, identity: str) -> RecipientInput | None:
+        """Read one confirmed recipient-input record by its stable identity."""
+        with self._lock:
+            return self._inputs.get((session_id, identity))
+
+    def acknowledged_mail(self, kinds: tuple[str, ...]) -> tuple[MailItem, ...]:
+        """Rebuild owner display state only from proven recipient-input acknowledgements."""
+        with self._lock:
+            return tuple(
+                item
+                for sid, identities in self._acknowledged.items()
+                for identity in identities
+                if (item := self._mail.get(sid, {}).get(identity)) is not None
+                and item.kind in kinds
+            )
+
+    def pending_workflow_references(self) -> tuple[str, ...]:
+        """Read the passive projection's outstanding provenance repairs."""
+        with self._lock:
+            return tuple(self._workflow_dirty)
+
+    def workflow_reference_error(self, root: str) -> str | None:
+        """Report unavailable provenance without publishing an execution outcome."""
+        with self._lock:
+            return self._workflow_unresolved.get(root)
+
+    def workflow_reference_unavailable(self, root: str, reason: str) -> None:
+        """Retain a decoder failure in the rebuildable provenance projection."""
+        with self._lock:
+            self._workflow_unresolved[root] = reason
+
+    def workflow_reference_repaired(self, root: str) -> None:
+        """Clear projection flags after the owner confirms the current provenance reference."""
+        with self._lock:
+            self._workflow_dirty.discard(root)
+            self._workflow_unresolved.pop(root, None)
+
+    def record_intervention(self, session_id: str, identity: str, payload: dict[str, Any]) -> None:
+        """Confirm an authenticated owner's control record through the same Core writer."""
+        with self._writing():
+            self._record("task.human.intervention", session_id, identity, payload)
+
     def pending_sessions(self) -> tuple[str, ...]:
         """Read the pending-recipient index for startup/readiness, without scanning history."""
         with self._lock:
@@ -734,9 +755,6 @@ class TaskHistory:
                 self.requires_recovery = True
                 raise
 
-    def _repair_indexes(self) -> None:
-        return task_history_projection._repair_indexes(self)
-
     def _record(
         self, event_type: str, session_id: str, identity: str, payload: dict[str, Any]
     ) -> None:
@@ -744,7 +762,7 @@ class TaskHistory:
         from clio_agent.gact.semantic_events import SemanticEvent
 
         assert_store_write_off_loop("task.observation")
-        self._confirm(
+        self.confirm_write(
             lambda: self.arc.record_semantic_event(
                 SemanticEvent(
                     event_type=event_type,
@@ -758,9 +776,10 @@ class TaskHistory:
 
     def _put_index(self, name: str, payload: dict[str, Any]) -> None:
         assert_store_write_off_loop("task.index")
-        self._confirm(lambda: self.arc._store.put(INDEX_KIND, name, _encoded(payload)))
+        self.confirm_write(lambda: self.arc._store.put(INDEX_KIND, name, _encoded(payload)))
 
-    def _confirm(self, operation: Callable[[], Any]) -> Any:
+    def confirm_write(self, operation: Callable[[], Any]) -> Any:
+        """Confirm an ARC write, holding later durable admission if its outcome is uncertain."""
         try:
             return operation()
         except Exception:
@@ -772,27 +791,6 @@ class TaskHistory:
     def _project(self, event_type: str, payload: dict[str, Any]) -> None:
         return task_history_projection._project(self, event_type, payload)
 
-    def _notify(
-        self,
-        *,
-        handle: Any = None,
-        recipient: Any = None,
-        restored: bool = False,
-        mail_changed: bool = False,
-    ) -> None:
-        "Signal indexes once after replay, rather than waking on historical rows."
-        return task_history_projection._notify(
-            self, handle=handle, recipient=recipient, restored=restored, mail_changed=mail_changed
-        )
-
-    def _scope_inputs(self, session_id: str, scope: str) -> dict[str, RecipientInput]:
+    def context_inputs(self, session_id: str, scope: str) -> dict[str, RecipientInput]:
+        """Read proven model inputs for one fixed Core context scope."""
         return task_history_projection._scope_inputs(self, session_id, scope)
-
-    def _find_input(self, session_id: str, scope: str, identity: str) -> RecipientInput | None:
-        return task_history_projection._find_input(self, session_id, scope, identity)
-
-    def _accept_input(self, record: RecipientInput) -> None:
-        return task_history_projection._accept_input(self, record)
-
-    def _validate_input_eligibility(self, record: RecipientInput) -> None:
-        return task_history_projection._validate_input_eligibility(self, record)

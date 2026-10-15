@@ -194,8 +194,9 @@ class TurnRunner:
             thread.start()
 
         async def exited() -> None:
-            # Python has no asynchronous Thread.join. Check actual retirement
-            # without blocking the loop or occupying a second executor worker.
+            # The outcome wakes this monitor once. Only final thread teardown
+            # needs liveness checks; an active model/tool/wait never gets polled.
+            await asyncio.wait({result})
             while thread.is_alive():
                 await asyncio.sleep(0.005)
 

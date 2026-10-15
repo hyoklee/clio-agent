@@ -216,7 +216,7 @@ def ensure_spotter_watcher(app: "FastAPI", session: "Session") -> TaskSnapshot |
     if session.approval_mode != SPOTTER_APPROVAL_MODE:
         return None
     history, owner = app.state.task_history, app.state.conversations
-    with history._lock:
+    with history.serialized():
         existing = _live_watcher_tasks(app, session.id)
         if existing:
             return existing[0]
@@ -261,7 +261,7 @@ def ensure_spotter_watcher(app: "FastAPI", session: "Session") -> TaskSnapshot |
 def _push_wake(app: "FastAPI", parent_id: str, task: TaskSnapshot, text: str) -> None:
     """Persist factual input; coalesce only not-yet-committed watcher activity."""
     history = app.state.task_history
-    with history._lock:
+    with history.serialized():
         app.state.conversations.require_admission(task)
         pending = next(
             (

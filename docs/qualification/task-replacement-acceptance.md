@@ -175,3 +175,29 @@ Both R20 source reviews returned NO-GO. The complete finite correction map is `d
 ## R23 initial source corrections
 
 Both independent R22 source reviews returned NO-GO; reports and the approved correction seams are retained. `docs/design/task-replacement-corrections-r23.md` records the combined finite packet: exact failed cancellation delivery, per-step orphan closure, legacy workflow identity and recovery isolation, closed-transport retry retirement, external attention deduplication, immutable Question decisions and conversation epochs. The matching static receipt has source hashes and successful scoped checks. Fresh regression construction is unexecuted; prior local tests, CI and model runs do not qualify this packet. Required Q1–Q9/R1–R6 and migration gates remain outstanding. No merge, release or installed-state change occurred.
+
+## R26 independent Fable review and boundary corrections
+
+Actual Claude Code `claude-fable-5-1` independently inspected frozen core
+`14cd98be` and GACT `ce993164`, using a neutral two-paragraph brief. Its verdict
+was NO-GO. The report identifies real UI, health, query and thread-retirement
+defects; its claim that the ledger was absent resulted from review packaging,
+not missing committed source. The next package includes this ledger. Astra's
+read-only adjudication confirms the consequential defects and rejects another
+architectural replacement. Neither review approves the current corrections.
+
+The finite source/removal map is
+`docs/design/task-replacement-corrections-r26.md`. The existing Core writer now
+exposes named history operations, validates owner vocabularies and rejects
+private-map access in production callers. Narrow queries use existing indexes
+and target lineage. Health checks have a transport-only bound. Root-context,
+migration, startup-recovery and historical-placement corrections retain honest
+uncertainty. GACT uses one operational-state decoder and restored read aliases.
+
+Scoped static evidence is recorded in the R26 receipts. Constructed migration,
+route, thread-retirement and retained-behavior cases remain **unexecuted**.
+F03 measurements, accepted independent source reviews, required CI and the
+entire fresh Q1–Q9/R1–R6 matrix remain outstanding. The feature candidate is
+not release-qualified. No product qualification service or model was launched
+during this correction packet; the completed review source and processes were
+removed, with bounded receipts retained.

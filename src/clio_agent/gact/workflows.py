@@ -471,11 +471,11 @@ def repair_workflow_reference(app: Any, root_handle: str) -> None:
     from clio_agent.gact.native_work import now
 
     history = app.state.task_history
-    with history._lock:
+    with history.serialized():
         root = history.task_snapshot(root_handle)
         checkpoint = history.workflow_checkpoint(root_handle)
         if root is None or checkpoint is None or root.details is None:
-            history._workflow_dirty.discard(root_handle)
+            history.workflow_reference_repaired(root_handle)
             return
         details = AssignmentDetails.model_validate(history.read_content(root.details))
         if details.workflow != checkpoint.content:
@@ -498,7 +498,7 @@ def repair_workflow_reference(app: Any, root_handle: str) -> None:
                     "workflow_root_session": root.owner.session_id,
                 },
             )
-        history._workflow_dirty.discard(root_handle)
+        history.workflow_reference_repaired(root_handle)
 
 
 async def run_declared_workflow(
@@ -526,7 +526,7 @@ async def run_declared_workflow(
     history = app.state.task_history
 
     def load() -> tuple[str, dict[str, Any], bool]:
-        with history._lock:
+        with history.serialized():
             owner = history.latest_assignment(caller.session_id)
             if owner is None or owner.terminal_at is not None:
                 raise ValueError("Workflow execution requires an active assignment")
@@ -539,7 +539,7 @@ async def run_declared_workflow(
                 ):
                     raise ValueError("Workflow invocation was reused with different inputs")
                 return owner.handle, dict(history.read_content(exact.content)), True
-            if owner.handle in history._workflow_unresolved:
+            if history.workflow_reference_error(owner.handle) is not None:
                 raise ValueError(
                     "Retained workflow evidence is unavailable; inspect the original records before new execution"
                 )
@@ -624,7 +624,7 @@ async def run_declared_workflow(
         }
 
     def save() -> None:
-        with history._lock:
+        with history.serialized():
             owner = history.task_snapshot(owner_handle)
             app.state.conversations.require_admission(owner)
             details = AssignmentDetails.model_validate(history.read_content(owner.details))
@@ -657,7 +657,7 @@ async def run_declared_workflow(
                     "workflow_root_session": caller.session_id,
                 },
             )
-            history._workflow_dirty.discard(owner_handle)
+            history.workflow_reference_repaired(owner_handle)
 
     await asyncio.to_thread(save)
     completed: set[str] = set()
