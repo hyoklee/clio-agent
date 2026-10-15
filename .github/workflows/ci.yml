@@ -144,7 +144,7 @@ jobs:
       # clio-core daemon (tests/_cte_isolation.py). worksteal rebalances the long
       # tail; --durations keeps the slowest tests visible in every log.
       - run: >-
-          uv run pytest tests/ -m "not integration"
+          uv run python -B scripts/run_tests.py tests/ -m "not integration"
           ${{ matrix.python-version == '3.14' && '-W error::DeprecationWarning' || '' }}
           --num-shards 3 --shard-id ${{ matrix.shard }}
           -n logical --dist worksteal --durations=30
@@ -230,7 +230,7 @@ jobs:
       # importorskip would skip the module and this job would go green having
       # tested nothing (the exact skip-rot it exists to prevent).
       - run: uv run python -c "import flowcept"
-      - run: uv run pytest tests/test_gact/test_flowcept_integration.py -m integration -q
+      - run: uv run python -B scripts/run_tests.py tests/test_gact/test_flowcept_integration.py -m integration -q
 
   flake-hunt:
     # Concurrency / shared-state tests (marked ``@pytest.mark.concurrency``) run
@@ -254,4 +254,4 @@ jobs:
         with:
           version: "latest"
       - run: uv sync --extra dev --extra optimizers
-      - run: uv run pytest -m concurrency -n 4 --dist loadfile --count 3 -p no:cacheprovider
+      - run: uv run python -B scripts/run_tests.py -m concurrency -n 4 --dist loadfile --count 3 -p no:cacheprovider

@@ -7,6 +7,13 @@ HDF5 and Parquet test data for MCP server testing.
 
 import os
 import re
+from pathlib import Path
+
+from tests._test_runtime_isolation import TestRuntime, bootstrap_test_runtime
+
+# Establish containment before importing any application code or dependencies.
+# scripts/run_tests.py also does this before pytest loads third-party plugins.
+_TEST_RUNTIME: TestRuntime | None = bootstrap_test_runtime(Path(__file__).resolve().parents[1])
 
 # LiteLLM does a network GET for its model-cost map on the first `import
 # litellm` unless this is set (litellm's own offline-mode flag) -- every
@@ -78,7 +85,6 @@ except Exception:  # noqa: BLE001 - a warm-up failure must not block the suite
 import contextlib  # noqa: E402
 import tempfile  # noqa: E402
 from collections.abc import Iterator  # noqa: E402
-from pathlib import Path  # noqa: E402
 from typing import Any  # noqa: E402
 
 import pytest  # noqa: E402
@@ -112,13 +118,8 @@ from tests._process_hygiene import (
     release_this_process_client,
 )
 from tests._test_runtime_isolation import (
-    TestRuntime,
     cleanup_test_runtime,
-    create_test_runtime,
-    resolve_test_runtime_parent,
 )
-
-_TEST_RUNTIME: TestRuntime | None = None
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -137,12 +138,9 @@ def pytest_configure(config: pytest.Config) -> None:
     """Redirect pytest, Python, children, and CTE away from the system temp directory."""
     global _TEST_RUNTIME
 
-    if _TEST_RUNTIME is not None:
-        return
     checkout = Path(__file__).resolve().parents[1]
-    parent = resolve_test_runtime_parent(checkout, os.environ)
-    reap_stale_suite_runtimes(parent)
-    runtime = create_test_runtime(checkout, os.environ)
+    runtime = _TEST_RUNTIME or bootstrap_test_runtime(checkout)
+    reap_stale_suite_runtimes(runtime.parent)
     tempfile.tempdir = str(runtime.temp_dir)
     config.option.basetemp = str(runtime.pytest_dir)
     _TEST_RUNTIME = runtime

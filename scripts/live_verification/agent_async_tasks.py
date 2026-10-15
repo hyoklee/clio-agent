@@ -88,6 +88,8 @@ def main() -> int:
     if args.hold_until is not None and args.hold_until.exists():
         raise ValueError("A UI release marker must be a fresh owned path")
     proof = args.proof.resolve()
+    if proof == CORE or not proof.is_relative_to(CORE):
+        raise ValueError("Live qualification proof/state must be inside this repository")
     proof.mkdir(parents=True, exist_ok=False)
     workspace = proof / "workspace"
     workspace.mkdir()
@@ -136,6 +138,19 @@ def main() -> int:
         else None
     )
     environment = dict(os.environ)
+    for directory, keys in {
+        "tmp": ("TEMP", "TMP", "TMPDIR"),
+        "cache": ("XDG_CACHE_HOME", "PIP_CACHE_DIR", "MPLCONFIGDIR"),
+        "config": ("XDG_CONFIG_HOME", "FASTMCP_HOME"),
+        "data": ("XDG_DATA_HOME",),
+        "state": ("XDG_STATE_HOME",),
+        "local": ("LOCALAPPDATA",),
+        "roaming": ("APPDATA",),
+        "home": ("HOME", "USERPROFILE"),
+    }.items():
+        directory_path = proof / directory
+        directory_path.mkdir()
+        environment.update({key: str(directory_path) for key in keys})
     environment.update(
         {
             "PYTHONPATH": str(CORE / "src"),

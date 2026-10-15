@@ -8,6 +8,8 @@ import re
 import secrets
 import shutil
 import stat
+import sys
+import tempfile
 import time
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
@@ -16,6 +18,7 @@ from pathlib import Path
 _RUNTIME_PARENT_NAME = ".pytest-runtime"
 _OWNER_FILE = ".clio-test-run.json"
 _RUN_NAME = re.compile(r"run-(?P<pid>[0-9]+)-[A-Za-z0-9_-]+\Z")
+_BOOTSTRAP_RUNTIME: TestRuntime | None = None
 
 
 @dataclass(frozen=True)
@@ -77,13 +80,27 @@ def create_test_runtime(
         environ[name] = str(temp_dir)
     contained_paths = {
         "UV_CACHE_DIR": cache_dir / "uv",
+        "UV_PYTHON_INSTALL_DIR": cache_dir / "uv-python",
+        "UV_TOOL_DIR": cache_dir / "uv-tools",
+        "UV_TOOL_BIN_DIR": cache_dir / "uv-bin",
         "PIP_CACHE_DIR": cache_dir / "pip",
         "PYTHONPYCACHEPREFIX": cache_dir / "pycache",
+        "RUFF_CACHE_DIR": cache_dir / "ruff",
+        "MYPY_CACHE_DIR": cache_dir / "mypy",
         "XDG_CACHE_HOME": cache_dir / "xdg",
         "XDG_STATE_HOME": state_dir / "xdg",
+        "XDG_CONFIG_HOME": state_dir / "config",
+        "XDG_DATA_HOME": state_dir / "data",
+        "LOCALAPPDATA": state_dir / "local",
+        "APPDATA": state_dir / "roaming",
+        "HOME": state_dir / "home",
+        "USERPROFILE": state_dir / "home",
+        "CLIO_USER_DIR": state_dir / "clio",
+        "FASTMCP_HOME": state_dir / "fastmcp",
+        "MPLCONFIGDIR": cache_dir / "matplotlib",
     }
     for name, path in contained_paths.items():
-        path.mkdir(parents=True)
+        path.mkdir(parents=True, exist_ok=True)
         environ[name] = str(path)
     environ["CLIO_TEST_RUNTIME_DIR"] = str(root)
     return TestRuntime(
@@ -95,6 +112,25 @@ def create_test_runtime(
         cache_dir=cache_dir,
         state_dir=state_dir,
     )
+
+
+def bootstrap_test_runtime(checkout: Path) -> TestRuntime:
+    """Isolate import-time writes before pytest or application imports occur."""
+    global _BOOTSTRAP_RUNTIME
+
+    parent = resolve_test_runtime_parent(checkout, os.environ)
+    if _BOOTSTRAP_RUNTIME is None or not _BOOTSTRAP_RUNTIME.root.exists():
+        _BOOTSTRAP_RUNTIME = create_test_runtime(checkout, os.environ)
+        tempfile.tempdir = str(_BOOTSTRAP_RUNTIME.temp_dir)
+        sys.dont_write_bytecode = True
+        sys.pycache_prefix = os.environ["PYTHONPYCACHEPREFIX"]
+        for name in list(os.environ):
+            if name == "CLIO_AGENT_HOME" or re.fullmatch(r"CLIO_AGENT_\w+_DIR", name):
+                del os.environ[name]
+        os.environ.pop("CLIO_ENV_FILE", None)
+    elif _BOOTSTRAP_RUNTIME.parent != parent:
+        raise RuntimeError("the test runtime belongs to a different checkout")
+    return _BOOTSTRAP_RUNTIME
 
 
 def _pid_is_live(pid: int) -> bool:
