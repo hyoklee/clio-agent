@@ -75,18 +75,20 @@ def test_real_read_waits_for_human_then_runs_or_returns_refusal(
     app, client, root, external, wid, sid = setup_workspace(tmp_path, monkeypatch)
     source = external / "notes.txt"
     source.write_text("private research", encoding="utf-8")
+    arguments = {
+        "filepath": str(source),
+        "access_reason": "Read the outside notes selected for this research.",
+    }
 
     def operation() -> Any:
         with _gact_app_context(app), _tool_session_context(sid):
-            decision = _make_permission_gate(app)("fs_read_file", {"filepath": str(source)})
+            decision = _make_permission_gate(app)("fs_read_file", arguments)
             if decision != "allow":
                 return decision
 
             async def read() -> Any:
                 async with Client(fs_server) as fs:
-                    return (
-                        await fs.call_tool("read_file", {"filepath": str(source)})
-                    ).structured_content
+                    return (await fs.call_tool("read_file", arguments)).structured_content
 
             return asyncio.run(read())
 
@@ -96,6 +98,7 @@ def test_real_read_waits_for_human_then_runs_or_returns_refusal(
         assert not future.done() and granted_write_roots(str(root)) == ()
         assert row["access"]["folders"] == [str(external.resolve())]
         assert row["access"]["paths"] == [str(source)]
+        assert row["access"]["reason"] == arguments["access_reason"]
         assert row["actions"] == ["deny", "allow_workspace"]
         assert (
             client.post(f"/v1/permissions/{row['id']}", json={"action": "allow"}).status_code == 422
