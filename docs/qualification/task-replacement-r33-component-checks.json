@@ -1,0 +1,316 @@
+{
+  "production_core": "24e7dfbb280818eeb188570f1af7d78ea166e31a",
+  "production_gact": "754958995724598b01ae167d947e4bfaf4d63b89",
+  "latest_test_core": "0bf8359e03f8e239c3040eb03fc2b9308355c382",
+  "latest_test_gact": "3a753c4d9e5bb2fa72969813c7475e5b613285ee",
+  "marketplace": "c17dcc6b23aa4356a1a1fd3acbd19e34b1b18dff",
+  "repository": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification",
+  "selected_passes": [
+    {
+      "case": "tests/test_test_runtime_isolation.py::test_default_runtime_stays_inside_checkout",
+      "started": "2026-10-15T08:27:43.1752836Z",
+      "log": "case-1.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:28:35.6301996Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_test_runtime_isolation.py::test_runtime_rejects_absolute_external_override",
+      "started": "2026-10-15T08:28:35.6474738Z",
+      "log": "case-2.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:28:58.7126204Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_test_runtime_isolation.py::test_live_suite_runtime_is_not_system_temp",
+      "started": "2026-10-15T08:28:58.7156051Z",
+      "log": "case-3.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:29:21.4139659Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_test_runtime_isolation.py::test_launcher_isolates_plugin_imports_and_cleans_help_exit",
+      "started": "2026-10-15T08:29:21.4171915Z",
+      "log": "case-4.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:29:46.5329939Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_recovery_r33.py::test_question_retry_uses_immutable_accepted_request_after_owner_updates[annotated]",
+      "started": "2026-10-15T08:29:46.5365156Z",
+      "log": "case-5.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:30:15.4656490Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_recovery_r33.py::test_question_retry_uses_immutable_accepted_request_after_owner_updates[resolved]",
+      "started": "2026-10-15T08:30:15.4685684Z",
+      "log": "case-6.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:30:43.3364870Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_recovery_r33.py::test_unsubscribe_does_not_invalidate_an_authorized_explicit_collection",
+      "started": "2026-10-15T08:30:43.3388620Z",
+      "log": "case-7.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:31:10.7755753Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_recovery_r33.py::test_question_snapshot_disclosure_does_not_collect_answer_or_consume_notice[query]",
+      "started": "2026-10-15T08:31:10.7791393Z",
+      "log": "case-8.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:31:36.9994967Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_recovery_r33.py::test_question_snapshot_disclosure_does_not_collect_answer_or_consume_notice[observe]",
+      "started": "2026-10-15T08:31:37.0024692Z",
+      "log": "case-9.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:32:03.9862470Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_recovery_r33.py::test_snapshot_revocation_before_input_commit_protects_data_without_stranding_feedback[query]",
+      "started": "2026-10-15T08:32:03.9895245Z",
+      "log": "case-10.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:32:31.2617967Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_recovery_r33.py::test_snapshot_revocation_before_input_commit_protects_data_without_stranding_feedback[observe]",
+      "started": "2026-10-15T08:32:31.2641542Z",
+      "log": "case-11.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:32:57.9982837Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_index_pages_r33.py::test_sparse_task_pages_bound_candidates_and_exclude_unrelated_history",
+      "started": "2026-10-15T08:32:58.0010334Z",
+      "log": "case-12.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:34:43.4650681Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_index_pages_r33.py::test_ordered_peer_streams_deduplicate_and_recheck_revocation_between_pages",
+      "started": "2026-10-15T08:34:43.4679916Z",
+      "log": "case-13.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:35:11.3433570Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_index_pages_r33.py::test_late_parent_observation_rebuilds_descendant_order_and_active_membership",
+      "started": "2026-10-15T08:35:11.3473557Z",
+      "log": "case-14.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:35:38.1907794Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_concurrency_r33.py::test_slow_result_read_allows_writer_progress_and_rechecks_disclosure[False-result]",
+      "started": "2026-10-15T08:35:38.1952274Z",
+      "log": "case-15.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:36:05.8611377Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_concurrency_r33.py::test_slow_result_read_allows_writer_progress_and_rechecks_disclosure[False-observe]",
+      "started": "2026-10-15T08:36:05.8645512Z",
+      "log": "case-16.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:36:34.4728461Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_concurrency_r33.py::test_slow_result_read_allows_writer_progress_and_rechecks_disclosure[True-result]",
+      "started": "2026-10-15T08:39:41.8030650Z",
+      "log": "case-1.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:40:08.4952911Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_arc/test_task_read_concurrency_r33.py::test_slow_result_read_allows_writer_progress_and_rechecks_disclosure[True-observe]",
+      "started": "2026-10-15T08:40:08.5171673Z",
+      "log": "case-2.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:40:34.4124986Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_tools/test_builtin_control_host.py::test_native_short_rpc_preserves_noncollecting_disclosure_metadata[read]",
+      "started": "2026-10-15T08:40:34.4164022Z",
+      "log": "case-3.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:41:02.6681979Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_tools/test_builtin_control_host.py::test_native_short_rpc_preserves_noncollecting_disclosure_metadata[observe]",
+      "started": "2026-10-15T08:41:02.6709536Z",
+      "log": "case-4.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:41:30.4345849Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_arc/test_task_retirement_contracts.py::test_malformed_durable_input_is_visibly_held_without_stranding_later_feedback",
+      "started": "2026-10-15T08:41:30.4373850Z",
+      "log": "case-5.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:41:58.6717555Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_arc/test_workflow_checkpoint_contracts.py::test_historical_invocation_cannot_advance_retry_and_inputs_keep_prior_state",
+      "started": "2026-10-15T08:41:58.6742048Z",
+      "log": "case-6.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:42:31.4897717Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-False]",
+      "started": "2026-10-15T08:42:31.4921027Z",
+      "log": "case-7.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:42:58.9011554Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-True]",
+      "started": "2026-10-15T08:47:19.8028855Z",
+      "log": "case-1.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:47:49.4964214Z",
+      "run_roots_remaining": [],
+      "head": "0bf8359e03f8e239c3040eb03fc2b9308355c382",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-feedback-2"
+    },
+    {
+      "case": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[True-False]",
+      "started": "2026-10-15T08:47:49.5202087Z",
+      "log": "case-2.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:48:18.0403177Z",
+      "run_roots_remaining": [],
+      "head": "0bf8359e03f8e239c3040eb03fc2b9308355c382",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-feedback-2"
+    },
+    {
+      "case": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[True-True]",
+      "started": "2026-10-15T08:48:18.0446436Z",
+      "log": "case-3.log",
+      "exit_code": 0,
+      "ended": "2026-10-15T08:48:48.0337475Z",
+      "run_roots_remaining": [],
+      "head": "0bf8359e03f8e239c3040eb03fc2b9308355c382",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-feedback-2"
+    }
+  ],
+  "failed_attempts": [
+    {
+      "case": "tests/test_arc/test_task_read_concurrency_r33.py::test_slow_result_read_allows_writer_progress_and_rechecks_disclosure[True-result]",
+      "started": "2026-10-15T08:36:34.4761473Z",
+      "log": "case-17.log",
+      "exit_code": 1,
+      "ended": "2026-10-15T08:37:02.8168065Z",
+      "run_roots_remaining": [],
+      "head": "9c553b29b8cad790fa22944961893e0df46dd9ce",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-focused"
+    },
+    {
+      "case": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-True]",
+      "started": "2026-10-15T08:42:58.9038538Z",
+      "log": "case-8.log",
+      "exit_code": 1,
+      "ended": "2026-10-15T08:43:28.6258902Z",
+      "run_roots_remaining": [],
+      "head": "428bd79dc19119a7c73867215a56742e3e1212fa",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-retry"
+    },
+    {
+      "case": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-True]",
+      "started": "2026-10-15T08:45:29.2178284Z",
+      "log": "case-1.log",
+      "exit_code": 1,
+      "ended": "2026-10-15T08:46:00.0301602Z",
+      "run_roots_remaining": [],
+      "head": "9925d9ac49359d9b0f6f57252946d8202fe5b07e",
+      "log_root": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\r33-feedback-retry"
+    }
+  ],
+  "corrections": [
+    "Immutable grant fixture now revokes the original and separately creates observe-only permission.",
+    "Delayed feedback fixture now supplies the actual EventBus.",
+    "Mixed collection requires revoked peer output withheld and independently eligible owned output delivered; the protected mixed observation remains uncommitted."
+  ],
+  "static": "R33 scoped Ruff/format/Linux Mypy25/Core guards/UI guards/scoped lint pass; declared Core5.6.3/web6.0.3 TypeScript passed. Initial wrong web compiler and unsupported test matcher failures were corrected without production changes.",
+  "runtime_warning": "Core bindings emit nanobind reference-leak diagnostics at interpreter exit. These are retained warnings, not native crash evidence or resource-growth acceptance.",
+  "model_acceptance": false,
+  "qualification": "R33 component passes only. Both source reviews NO-GO; full F03, migrated tests, exact-head CI, Q1-Q9 and R1-R6 remain unaccepted. Uncommitted R34 source is unexecuted.",
+  "cleanup": {
+    "all_completed_case_run_roots_absent": true,
+    "new_fable_remote_source_and_result_absent": true,
+    "manual_only_roots_untouched": true
+  }
+}

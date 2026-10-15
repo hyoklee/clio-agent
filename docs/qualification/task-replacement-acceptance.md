@@ -147,12 +147,12 @@ This is one correction slice; it introduces no execution owner or driver.
 
 | ID | Required behavior / retained lesson | Fresh source and test | Prerequisites / evidence / expected result | Status |
 | --- | --- | --- | --- | --- |
-| C01 | Shipped spawn names, blueprint/strategy preparation, local placement and per-member failures | `task_declarations`; `test_spawn_tool_compatibility` | Real Core; same preparation path; explicit relay refusal; no child for invalid evidence | Unexecuted |
-| C02 | Finished child evidence is pinned and authorized before creation and input commit | `assignment_evidence`, `session_mail`; `test_assignment_evidence_contracts` | Real Core; original assignment committed intact; before-commit/forged evidence cannot be read | Unexecuted |
-| C03 | Shared result pages stay on exact committed content through successor recovery and grants changing | `task_result_content`, passive recipient-input index; `test_assignment_evidence_contracts` | Reconstruct exact JSON; cross-session denial; no source completion publication/acknowledgement | Unexecuted |
-| C04 | Observe retains omitted task rows and every output byte without another producer event | `task_observations`, `task_output_pages`; `test_task_observation_compatibility` | Bounded pages, late output while draining; cursor cannot disclose another task namespace | Unexecuted |
-| C05 | Honest SSE cursor migration, actual workflow state and output-only pattern search | Shared observation plus compatibility delegate; `test_task_observation_compatibility` | Numeric resume refused; string continuation works; match beyond first page; metadata is not output | Unexecuted |
-| C06 | Shipped getter/wait/message delegates preserve authorization and collection receipts | `task_declarations`; `test_task_output_compatibility` | Real Core; terminal/pending/unknown/read denial and input commitment | Unexecuted |
+| K01 | Shipped spawn names, blueprint/strategy preparation, local placement and per-member failures | `task_declarations`; `test_spawn_tool_compatibility` | Real Core; same preparation path; explicit relay refusal; no child for invalid evidence | Unexecuted |
+| K02 | Finished child evidence is pinned and authorized before creation and input commit | `assignment_evidence`, `session_mail`; `test_assignment_evidence_contracts` | Real Core; original assignment committed intact; before-commit/forged evidence cannot be read | Unexecuted |
+| K03 | Shared result pages stay on exact committed content through successor recovery and grants changing | `task_result_content`, passive recipient-input index; `test_assignment_evidence_contracts` | Reconstruct exact JSON; cross-session denial; no source completion publication/acknowledgement | Unexecuted |
+| K04 | Observe retains omitted task rows and every output byte without another producer event | `task_observations`, `task_output_pages`; `test_task_observation_compatibility` | Bounded pages, late output while draining; cursor cannot disclose another task namespace | Unexecuted |
+| K05 | Honest SSE cursor migration, actual workflow state and output-only pattern search | Shared observation plus compatibility delegate; `test_task_observation_compatibility` | Numeric resume refused; string continuation works; match beyond first page; metadata is not output | Unexecuted |
+| K06 | Shipped getter/wait/message delegates preserve authorization and collection receipts | `task_declarations`; `test_task_output_compatibility` | Real Core; terminal/pending/unknown/read denial and input commitment | Unexecuted |
 
 Scoped source Ruff/format and Linux Mypy passed before behavioral execution.
 Removal, size and class guards passed; noqa-hidden swallow count remained 493.
@@ -333,3 +333,26 @@ contained launcher. Existing rejected/manual-only cleanup is preserved. No produ
 service, model, browser qualification, release or installed-state change occurred
 during this construction packet. R33 source approval, migrated regressions, F03,
 exact-head CI and the full Q1–Q9/R1–R6 matrix remain required.
+
+## R33 component results and R34 construction
+
+Twenty-six selected R33 cases passed individually/sequentially with one worker in
+the D repository; `task-replacement-r33-component-checks.json` records revisions,
+attempts and cleanup. Three initial fixture/assertion failures remain recorded:
+immutable grant reduction, the missing real EventBus, and an overbroad expectation
+that also hid independently eligible owned completion. Corrections retain revoked
+peer non-disclosure, require owned delivery, and leave the protected mixed tool
+observation uncommitted. All per-case run roots and test/Core processes settled.
+
+Both R33 reviewers support architectural simplification and reject source readiness.
+Their source findings and adjudication are retained separately from runtime proof.
+The bounded R34 map is `docs/design/task-replacement-r34-corrections.md`; its
+confirmed-correction subset and regressions are in progress and unexecuted. The
+compatibility-page and reusable-child-creation corrections still need implementation.
+No new execution owner, scheduler, recovery service or acknowledgement is authorized.
+
+R33 static checks and declared-package TypeScript passed before the uncommitted R34
+changes. Core binding reference-leak warnings are retained, not called native crashes
+or resource-growth acceptance. Test migration, full F03, exact-head CI and Q1–Q9/R1–R6
+remain outstanding. No model/product/browser qualification, release or installed-state
+change occurred in this packet.
