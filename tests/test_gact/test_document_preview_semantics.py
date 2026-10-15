@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
+from clio_agent.gact.artifacts.proposals import Proposal, promote_proposal
 from clio_agent.gact.artifacts.registry import get_registry
 from clio_agent.gact.artifacts.transform_edges import detect_used_edges
 from clio_agent.gact.artifacts.transforms import record_transform, transform_from_payload
@@ -17,6 +18,7 @@ from clio_agent.gact.artifacts.wire import (
     append_turn_resource_links,
 )
 from clio_agent.gact.documents import renditions
+from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_document_artifacts import _pin, _workspace_session
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
@@ -150,21 +152,34 @@ def test_legacy_registration_projection_discards_output_guesses_and_keeps_declar
 def test_child_delivery_rollup_keeps_the_editable_document_and_omits_its_preview(
     tmp_path: Path,
 ) -> None:
-    """The child's retained rendition must not reappear as a parent deliverable."""
-    from tests.test_gact.test_spawn_runtime_s4 import (
-        _FakeTranscript,
-        _rollup_app,
-        _rollup_mint,
-        _rollup_task,
-    )
-
-    app = _rollup_app(tmp_path)
-    _rollup_task(app, parent_sid="parent", child_sid="child", parent_turn_id="turn")
-    document = _rollup_mint(app, "child", "report.docx", "a" * 64)
-    preview = _rollup_mint(app, "child", "report.docx.v1.pdf", "b" * 64)
-    preview.producer.update(
-        designation="document-rendition", source_artifact_id=document.artifact_id
-    )
-    transcript = _FakeTranscript()
-    append_turn_child_resource_links(cast(FastAPI, app), "parent", "turn", transcript)
-    assert [part.name for part in transcript.snapshot()] == ["report.docx"]
+    """The child's retained rendition must not become a parent deliverable."""
+    with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as client:
+        app = client.app
+        app.state.workspaces.update("ws_default", root_path=str(tmp_path))
+        parent = app.state.sessions.create(workspace_id="ws_default", title="parent")
+        child = app.state.sessions.create(
+            workspace_id="ws_default", parent_session_id=parent.id, title="child"
+        )
+        record_assignment_fixture(app, child.id, parent_sid=parent.id, parent_turn_id="turn")
+        document = promote_proposal(
+            app,
+            child.id,
+            Proposal(name="report.docx", content="editable document"),
+            workspace_id="ws_default",
+        ).version
+        preview = promote_proposal(
+            app,
+            child.id,
+            Proposal(name="report.docx.v1.pdf", content="%PDF-1.7 preview"),
+            workspace_id="ws_default",
+        ).version
+        assert document is not None and preview is not None
+        preview.producer.update(
+            designation="document-rendition", source_artifact_id=document.artifact_id
+        )
+        transcript = Mock()
+        transcript.snapshot.return_value = []
+        append_turn_child_resource_links(app, parent.id, "turn", transcript)
+        assert [call.args[0].name for call in transcript.append_part.call_args_list] == [
+            "report.docx"
+        ]

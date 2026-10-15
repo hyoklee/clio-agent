@@ -19,9 +19,9 @@ from clio_agent.gact.artifacts.wire import (
     append_turn_resource_links,
     resource_link_part,
 )
+from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_artifacts_s3 import _make_app, _proposal_events
 from tests.test_gact.test_document_artifacts import _workspace_session
-from tests.test_gact.test_spawn_runtime_s4 import _rollup_app, _rollup_task
 
 
 def test_response_keeps_latest_deliverable_and_all_evidence(tmp_path: Path) -> None:
@@ -126,32 +126,35 @@ def test_same_named_child_outputs_retain_separate_causal_identities(tmp_path: Pa
 
 
 def test_child_rollup_honors_explicit_publication_of_reused_review_bytes(tmp_path: Path) -> None:
-    """A child's response can publish existing evidence without changing its origin."""
-    app, session, _ = _make_app(tmp_path)
-    version = promote_proposal(
-        app,
-        session.id,
-        Proposal(name="plot.svg", content="<svg/>", purpose="verification"),
-        workspace_id="ws1",
-    ).version
-    assert version is not None
-    parent = _rollup_app(tmp_path / "parent")
-    parent.state.artifact_registry = get_registry(app)
-    _rollup_task(parent, parent_sid="parent", child_sid="child", parent_turn_id="turn")
-    parent.state.messages = {
-        "child": [
+    """Child publication retains the original immutable verification producer."""
+    with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as client:
+        app = client.app
+        app.state.workspaces.update("ws_default", root_path=str(tmp_path))
+        parent = app.state.sessions.create(workspace_id="ws_default", title="parent")
+        child = app.state.sessions.create(
+            workspace_id="ws_default", parent_session_id=parent.id, title="child"
+        )
+        version = promote_proposal(
+            app,
+            parent.id,
+            Proposal(name="plot.svg", content="<svg/>", purpose="verification"),
+            workspace_id="ws_default",
+        ).version
+        assert version is not None
+        record_assignment_fixture(app, child.id, parent_sid=parent.id, parent_turn_id="turn")
+        app.state.messages[child.id] = [
             SimpleNamespace(
                 role="assistant",
-                parts=[resource_link_part("ws1", "plot.svg", version, part_id="published")],
+                parts=[resource_link_part("ws_default", "plot.svg", version, part_id="published")],
             )
         ]
-    }
-    ledger = Mock()
-    ledger.snapshot.return_value = []
-    append_turn_child_resource_links(parent, "parent", "turn", ledger)
-    assert ledger.append_part.call_count == 1
-    assert ledger.append_part.call_args.args[0].metadata["artifact_id"] == version.artifact_id
-    assert version.producer["purpose"] == "verification"
+        ledger = Mock()
+        ledger.snapshot.return_value = []
+        append_turn_child_resource_links(app, parent.id, "turn", ledger)
+        assert ledger.append_part.call_count == 1
+        assert ledger.append_part.call_args.args[0].metadata["artifact_id"] == version.artifact_id
+        assert version.producer["purpose"] == "verification"
+        assert version.producer["session_id"] == parent.id
 
 
 @pytest.mark.usefixtures("host_agent_executor")

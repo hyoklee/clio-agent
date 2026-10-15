@@ -62,3 +62,34 @@ Completed construction in this packet:
 - Queue identity: different idempotency keys cannot accept one client message identity; existing transcript ownership and an intervening public acceptance during preflight are checked before mutation.
 
 All cases are constructed, not passed. Migration acceptance, scoped behavior execution, F03, exact-head CI and Q1–Q9/R1–R6 remain required. Current reviews finished on R42; the composer identity collision is the demonstrated source blocker being corrected. Generic corruption availability and unmeasured timestamp/performance concerns did not authorize another task policy.
+
+## October 15 Core-backed migration map
+
+Production remains at the accepted e581cfd5 implementation. These changes replace
+test arrangements and removed internal expectations; they add no execution owner.
+
+| Old arrangement | Retained behavior and replacement evidence |
+| --- | --- |
+| AgentTaskRegistry in artifact aggregation | Actual Core assignment lineage; depth/cycle protection, descendant transforms/artifacts and sibling isolation in test_artifacts_s5.py. |
+| Removed child-rollup helpers | Actual Core parent-turn references and production artifact proposals; explicit publication preserves original evidence, and previews remain omitted. |
+| Registry/inbox context-reference fixtures | Core task results, actual TurnRunner ownership, canonical Core mail and queued_user_input rendering; typed references, authorization and content/hash bounds remain asserted. |
+| Relay sibling checkout and copied-model pin tests | Relay execution is excluded by the reviewed plan. Retained provenance serialization has exact identity/hash/metadata assertions without a Relay installation or skip. |
+| JSON Question ledger and pre-publication session callback | The sole QuestionCommands owner confirms Core transitions before publication. New cases cover failed writes, answer/expiry arbitration and no implicit deadline. Session UI metadata is a projection rather than lifecycle authority. |
+| Generated waited_tasks metadata and registry-based display-row fabrication | This removed internal field is not rebuilt. Canonical wait presentation is covered by test_canonical_wait_presentation.py, test_task_wait_presentation.py and test_wait_disclosure_contracts.py. Public wait_agent_tasks delegation/collection is covered by test_task_output_compatibility.py. The generic observer metadata extension and isolation are tested independently in test_tool_telemetry.py. |
+
+These are construction/regression proofs, not live model qualification. The
+selected cases were executed individually and sequentially with one worker;
+receipts record actual execution and disposable-root custody. Removing a legacy
+arrangement does not mark an acceptance-ledger row passed.
+
+The first transform-metadata run exceeded its 120-second test limit during
+apparent teardown. Its isolated daemon/console helper were identified and retired,
+and its owned directory was removed. An unchanged diagnostic rerun passed with
+normal cleanup. The initial failure remains recorded and its cause is unproven;
+no production patch or timeout increase was made.
+
+The composer busy-reference case initially failed its five-second admission
+assertion. An unchanged rerun, with admission-state diagnostics added to that
+assertion, passed. Its cause also remains unproven; no timeout or production
+policy was changed. Both initial failures remain evidence, rather than being
+erased by their subsequent passes.

@@ -1,13 +1,12 @@
 """Unit + route tests for S5 artifacts (#966/#971) — TransformRecords, environment
-tiers, used-edge capture, lineage queries, relay convergence.
+tiers, used-edge capture, lineage queries and retained provenance data.
 
 Covers: the transform projection from synthetic logs (fold + idempotency for the new
 ``artifact.transform.recorded`` event); the FULL used-edge matrix (match/hash-pair,
 changed→gap-first, external, over-threshold stat-pinned, non-path no-edge); the
 environment tier computation + the reproducible/re-runnable replay labeling; failed-
 transform recording; lineage both directions incl. depth/truncation; NDP authority-
-asserted identity; and the relay ``ArtifactUse``/``ArtifactRef`` shape-compat against
-the REAL clio-relay models (sibling checkout).
+asserted identity; and exact retained hash-identity/provenance serialization, without a Relay checkout.
 
 Each key lock carries a sabotage note: the referenced neutralization turns the named
 assertion red, proving the test binds the invariant (not a tautology).
@@ -17,8 +16,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import json
 import os
-import sys
 import time
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,6 +60,7 @@ from clio_agent.gact.semantic_events import (
     event_reaches_ui,
 )
 from clio_agent.gact.sessions import SessionStore
+from tests.test_gact.task_records import record_assignment_fixture
 
 # --------------------------------------------------------------------------- #
 # Fakes (parity with the S1-S4 harness).
@@ -731,42 +731,13 @@ def test_route_session_transforms_and_lineage(tmp_path, monkeypatch):
         assert client.get("/v1/artifacts/artifact_nope/lineage").status_code == 404
 
 
-# --------------------------------------------------------------------------- #
-# 8. Relay convergence — shape-compat against the REAL clio-relay models (item 6).
-# --------------------------------------------------------------------------- #
+# Retained provenance serialization is data-only. Relay execution and the
+# removed vendored-model/checkout compatibility layer are outside this release.
 
 
-def _load_relay_models():
-    """Import the REAL clio_relay models from the sibling checkout, or skip.
-
-    clio-relay is not a clio-agent dependency (federation is future); the shape-compat
-    test validates against its ACTUAL pydantic models when the sibling checkout is
-    present (set CLIO_RELAY_ROOT), never a hand-copied shape that could drift."""
-    repo_root = Path(__file__).resolve().parents[2]
-    candidates = [
-        os.environ.get("CLIO_RELAY_ROOT", ""),
-        str(repo_root.parent / "clio-relay"),
-        str(repo_root.parent.parent / "clio-relay"),
-    ]
-    for cand in candidates:
-        if not cand:
-            continue
-        src = Path(cand) / "src"
-        if (src / "clio_relay" / "models.py").is_file():
-            if str(src) not in sys.path:
-                sys.path.insert(0, str(src))
-            import importlib
-
-            return importlib.import_module("clio_relay.models")
-    pytest.skip("clio-relay checkout not found (set CLIO_RELAY_ROOT); cannot verify shape-compat")
-
-
-def test_used_edge_serializes_as_relay_artifact_use():
+def test_used_edge_serializes_exact_registered_identity() -> None:
     from clio_agent.gact.artifacts.records import new_artifact_id
 
-    models = _load_relay_models()
-    # Our REAL artifact-id shape (``artifact_<uuid4hex>``) must itself validate as a
-    # relay ``DurableRecordId`` — a stronger check than a synthetic id.
     artifact_id = new_artifact_id()
     edge = ProvEdge(
         role=EdgeRole.USED,
@@ -774,122 +745,45 @@ def test_used_edge_serializes_as_relay_artifact_use():
         artifact_id=artifact_id,
         sha256="a" * 64,
     )
-    use = edge.to_artifact_use()
-    assert use is not None
-    # Our used edge MUST validate as the REAL relay ArtifactUse {artifact_id, sha256}.
-    # Sabotage: rename to_artifact_use's keys (e.g. 'sha' instead of 'sha256') -> the
-    # real model rejects extra/missing fields (extra='forbid') -> red.
-    relay_use = models.ArtifactUse(**use)
-    assert relay_use.artifact_id == artifact_id
-    assert relay_use.sha256 == "a" * 64
+    assert edge.to_artifact_use() == {"artifact_id": artifact_id, "sha256": "a" * 64}
 
 
-def test_stat_pinned_edge_is_not_a_relay_artifact_use():
-    # A stat-pinned / external-only edge has no sha → cannot be a relay ArtifactUse
-    # (relay requires a 64-hex sha). This is the exact convergence gap the issue files.
+def test_stat_pinned_edge_does_not_invent_hash_identity() -> None:
     edge = ProvEdge(
         role=EdgeRole.USED, evidence=EdgeEvidence.SCHEMA_ARG, external_ref="external:/x"
     )
     assert edge.to_artifact_use() is None
 
 
-def test_transform_extras_ride_relay_artifact_ref_metadata(tmp_path):
-    models = _load_relay_models()
+def test_transform_metadata_retains_pinned_input_identity(tmp_path: Path) -> None:
     app, sess, _arc = _make_app(tmp_path)
-    in_path, _v = _register_file(app, sess, tmp_path, "in.csv", b"seed", "call_seed")
-    rec = record_transform(
+    in_path, version = _register_file(app, sess, tmp_path, "in.csv", b"seed", "call_seed")
+    record = record_transform(
         app,
         sess.id,
         tool_name="plot",
         args={"data_path": str(in_path)},
-        call_id="call_relay",
+        call_id="call_metadata",
         ok=True,
         result=None,
         minted=[],
         workspace_id="ws1",
     )
-    assert rec is not None
-    provenance = rec.to_relay_provenance()
-    # Our extras ride ArtifactRef.metadata['clio.provenance.v1'] (ArtifactUse is frozen
-    # + extra='forbid' with no metadata field). Sabotage: put extras as a top-level
-    # ArtifactRef field -> extra='forbid' rejects it -> red.
-    ref = models.ArtifactRef(
-        job_id="job_test0001",
-        uri="artifact://ws1/in.csv@v1",
-        kind="dataset",
-        sha256="d" * 64,
-        metadata={"clio.provenance.v1": provenance},
-    )
-    assert ref.metadata["clio.provenance.v1"]["activity_id"] == "call_relay"
-    assert "used_artifact_refs" in ref.metadata["clio.provenance.v1"]
-
-
-# --------------------------------------------------------------------------- #
-# 8b. Relay convergence — ALWAYS-run compat against the VENDORED relay mirror
-#     (finding [12]): the real-repo tests above skip in default CI; this fixture
-#     layer catches a clio-side to_artifact_use/to_relay_provenance regression on
-#     every run, and pins the relay commit it mirrors.
-# --------------------------------------------------------------------------- #
-
-
-def test_used_edge_serializes_as_relay_artifact_use_fixture():
-    from clio_agent.gact.artifacts.records import new_artifact_id
-    from tests.test_gact.relay_compat_fixture import ArtifactUse as FixtureArtifactUse
-
-    artifact_id = new_artifact_id()
-    edge = ProvEdge(
-        role=EdgeRole.USED,
-        evidence=EdgeEvidence.HASH_PAIR,
-        artifact_id=artifact_id,
-        sha256="a" * 64,
-    )
-    use = edge.to_artifact_use()
-    assert use is not None
-    # ALWAYS-run: the vendored mirror is frozen + extra='forbid' + 64-hex sha, so a
-    # clio-side key/shape drift reddens in default CI (no sibling checkout needed).
-    # Sabotage: rename to_artifact_use's keys ('sha' for 'sha256') -> extra='forbid' -> red.
-    relay_use = FixtureArtifactUse(**use)
-    assert relay_use.artifact_id == artifact_id
-    assert relay_use.sha256 == "a" * 64
-
-
-def test_transform_extras_ride_relay_artifact_ref_metadata_fixture(tmp_path):
-    from tests.test_gact.relay_compat_fixture import ArtifactRef as FixtureArtifactRef
-
-    app, sess, _arc = _make_app(tmp_path)
-    in_path, _v = _register_file(app, sess, tmp_path, "in.csv", b"seed", "call_seed")
-    rec = record_transform(
-        app,
-        sess.id,
-        tool_name="plot",
-        args={"data_path": str(in_path)},
-        call_id="call_relay_fx",
-        ok=True,
-        result=None,
-        minted=[],
-        workspace_id="ws1",
-    )
-    assert rec is not None
-    ref = FixtureArtifactRef(
-        artifact_id="artifact_" + "a" * 32,
-        job_id="job_test0001",
-        uri="artifact://ws1/in.csv@v1",
-        kind="dataset",
-        sha256="d" * 64,
-        metadata={"clio.provenance.v1": rec.to_relay_provenance()},
-    )
-    assert ref.metadata["clio.provenance.v1"]["activity_id"] == "call_relay_fx"
-    assert "used_artifact_refs" in ref.metadata["clio.provenance.v1"]
-
-
-def test_relay_fixture_pins_the_mirrored_commit():
-    from tests.test_gact.relay_compat_fixture import RELAY_PINNED_COMMIT
-
-    # The fixture must carry the relay commit it mirrors (finding [12]) so a re-mirror
-    # is auditable. Sabotage: blank the pin -> red.
-    assert len(RELAY_PINNED_COMMIT) == 40 and all(
-        c in "0123456789abcdef" for c in RELAY_PINNED_COMMIT
-    )
+    assert record is not None
+    metadata = json.loads(json.dumps({"clio.provenance.v1": record.to_relay_provenance()}))
+    value = metadata["clio.provenance.v1"]
+    assert set(value) == {
+        "activity_id",
+        "instrument",
+        "environment",
+        "replay",
+        "used_evidence",
+        "used_artifact_refs",
+    }
+    assert value["activity_id"] == "call_metadata"
+    assert value["used_artifact_refs"] == [
+        {"artifact_id": version.artifact_id, "sha256": version.sha256}
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -1845,48 +1739,43 @@ def test_route_session_artifacts_include_used_surfaces_dedup_reuse(tmp_path, mon
 # --------------------------------------------------------------------------- #
 
 
-def test_descendant_session_ids_bfs_bounded_and_cycle_safe():
-    from clio_agent.gact.agent_tasks import AgentTask, AgentTaskRegistry
+def test_descendant_session_ids_bfs_bounded_and_cycle_safe(tmp_path: Path) -> None:
     from clio_agent.gact.session_descendants import descendant_session_ids
 
-    reg = AgentTaskRegistry()
-    reg.register(
-        AgentTask(task_id="t1", parent_session_id="root", child_session_id="c1", created_at="1")
-    )
-    reg.register(
-        AgentTask(task_id="t2", parent_session_id="root", child_session_id="c2", created_at="2")
-    )
-    reg.register(
-        AgentTask(task_id="t3", parent_session_id="c1", child_session_id="g1", created_at="3")
-    )
-    app = SimpleNamespace(state=SimpleNamespace(agent_task_registry=reg))
-
-    # Full descendants: children + grandchildren.
-    assert set(descendant_session_ids(app, "root")) == {"c1", "c2", "g1"}
-    # depth 1 = direct children only (grandchild excluded).
-    # Sabotage: ignore max_depth -> g1 leaks in -> red.
-    assert set(descendant_session_ids(app, "root", max_depth=1)) == {"c1", "c2"}
-    # Cycle safety: a task pointing back to the root never re-includes it / loops.
-    reg.register(
-        AgentTask(task_id="t4", parent_session_id="g1", child_session_id="root", created_at="4")
-    )
-    got = descendant_session_ids(app, "root")
-    assert "root" not in got and set(got) == {"c1", "c2", "g1"}
-    # No registry -> empty.
-    empty = SimpleNamespace(state=SimpleNamespace(agent_task_registry=None))
-    assert descendant_session_ids(empty, "root") == []
+    with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as client:
+        app = client.app
+        root = app.state.sessions.create(workspace_id="ws_default", title="root")
+        c1 = app.state.sessions.create(
+            workspace_id="ws_default", title="c1", parent_session_id=root.id
+        )
+        c2 = app.state.sessions.create(
+            workspace_id="ws_default", title="c2", parent_session_id=root.id
+        )
+        grandchild = app.state.sessions.create(
+            workspace_id="ws_default", title="g1", parent_session_id=c1.id
+        )
+        record_assignment_fixture(app, c1.id, parent_sid=root.id, handle="t1")
+        record_assignment_fixture(app, c2.id, parent_sid=root.id, handle="t2")
+        record_assignment_fixture(app, grandchild.id, parent_sid=c1.id, handle="t3")
+        assert set(descendant_session_ids(app, root.id)) == {c1.id, c2.id, grandchild.id}
+        assert set(descendant_session_ids(app, root.id, max_depth=1)) == {c1.id, c2.id}
+        # A retained session-lineage cycle must not reinclude the root or loop.
+        record_assignment_fixture(app, root.id, parent_sid=grandchild.id, handle="cycle")
+        got = descendant_session_ids(app, root.id)
+        assert root.id not in got and set(got) == {c1.id, c2.id, grandchild.id}
+        assert descendant_session_ids(app, "missing-root") == []
 
 
 def test_route_session_transforms_include_children(tmp_path, monkeypatch):
-    from clio_agent.gact.agent_tasks import seed_agent_task
-
     monkeypatch.setenv("CLIO_ALLOWED_ROOTS", str(tmp_path))
     with TestClient(build_app(sessions_path=tmp_path / "s.json")) as client:
         app = client.app
         wid, parent = _workspace_session(client, tmp_path)
-        t1 = seed_agent_task(app, parent_session_id=parent, agent_ref={"expert_id": "ndp"})
-        t2 = seed_agent_task(app, parent_session_id=parent, agent_ref={"expert_id": "geo"})
-        for child, cid in ((t1.child_session_id, "cc1"), (t2.child_session_id, "cc2")):
+        child1 = app.state.sessions.create(workspace_id=wid, parent_session_id=parent, title="ndp")
+        child2 = app.state.sessions.create(workspace_id=wid, parent_session_id=parent, title="geo")
+        t1 = record_assignment_fixture(app, child1.id, parent_sid=parent)
+        t2 = record_assignment_fixture(app, child2.id, parent_sid=parent)
+        for child, cid in ((t1.owner.session_id, "cc1"), (t2.owner.session_id, "cc2")):
             record_transform(
                 app,
                 child,
@@ -1910,16 +1799,14 @@ def test_route_session_transforms_include_children(tmp_path, monkeypatch):
         # Sabotage: ignore include_children -> count stays 0 -> red.
         assert on["count"] == 2
         assert {t["session_id"] for t in on["transforms"]} == {
-            t1.child_session_id,
-            t2.child_session_id,
+            t1.owner.session_id,
+            t2.owner.session_id,
         }
         assert {t["call_id"] for t in on["transforms"]} == {"cc1", "cc2"}
-        assert set(on["child_session_ids"]) == {t1.child_session_id, t2.child_session_id}
+        assert set(on["child_session_ids"]) == {t1.owner.session_id, t2.owner.session_id}
 
 
 def test_route_session_artifacts_include_children(tmp_path, monkeypatch):
-    from clio_agent.gact.agent_tasks import AgentTask
-
     monkeypatch.setenv("CLIO_ALLOWED_ROOTS", str(tmp_path))
     ws2_dir = tmp_path / "ws2"
     ws2_dir.mkdir()
@@ -1933,11 +1820,7 @@ def test_route_session_artifacts_include_children(tmp_path, monkeypatch):
         child = app.state.sessions.create(
             workspace_id=wid2, title="child", parent_session_id=parent
         )
-        app.state.agent_task_registry.register(
-            AgentTask(
-                task_id="t1", parent_session_id=parent, child_session_id=child.id, created_at="1"
-            )
-        )
+        record_assignment_fixture(app, child.id, parent_sid=parent, handle="t1")
         f2 = ws2_dir / "child_out.csv"
         f2.write_bytes(b"child rows")
         mint_tool_declared_outputs(
@@ -1974,8 +1857,6 @@ def test_route_session_artifacts_include_children(tmp_path, monkeypatch):
 
 
 def test_route_session_artifacts_is_scoped_to_the_producing_session(tmp_path, monkeypatch):
-    from clio_agent.gact.agent_tasks import AgentTask
-
     monkeypatch.setenv("CLIO_ALLOWED_ROOTS", str(tmp_path))
     with TestClient(build_app(sessions_path=tmp_path / "s.json")) as client:
         app = client.app
@@ -1997,11 +1878,7 @@ def test_route_session_artifacts_is_scoped_to_the_producing_session(tmp_path, mo
         # A child of A, wired via the agent-task registry, mints its OWN artifact —
         # also in the shared workspace (same-workspace children are common).
         child = app.state.sessions.create(workspace_id=wid, title="child", parent_session_id=sid_a)
-        app.state.agent_task_registry.register(
-            AgentTask(
-                task_id="t1", parent_session_id=sid_a, child_session_id=child.id, created_at="1"
-            )
-        )
+        record_assignment_fixture(app, child.id, parent_sid=sid_a, handle="t1")
         c_out = tmp_path / "c_out.csv"
         c_out.write_bytes(b"c rows")
         mint_tool_declared_outputs(

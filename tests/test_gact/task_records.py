@@ -45,7 +45,19 @@ def hold_model_segment(app: Any, session_id: str, monkeypatch: pytest.MonkeyPatc
             created_at=now(),
         )
     )
-    assert entered.wait(5), "The real runner did not admit the initial input"
+    assert entered.wait(5), (
+        "The real runner did not admit the initial input",
+        {
+            "execution_gate": app.state.conversations.execution_gate(session_id),
+            "restoring": app.state.conversations._restoring,
+            "requires_recovery": history.requires_recovery,
+            "busy": app.state.turn_runner.busy(session_id),
+            "session_metadata": app.state.sessions.get(session_id).metadata,
+            "pending_mail": [
+                item.model_dump(mode="json") for item in history.pending_mail(session_id)
+            ],
+        },
+    )
     assert app.state.turn_runner.busy(session_id)
 
 
@@ -83,6 +95,7 @@ def record_assignment_fixture(
     *,
     handle: str | None = None,
     parent_sid: str | None = None,
+    parent_turn_id: str | None = None,
     status: Literal["active", "completed"] = "active",
 ) -> TaskSnapshot:
     """Confirm passive test data through the production writer; create no model worker."""
@@ -119,7 +132,9 @@ def record_assignment_fixture(
             backend=BackendReference(
                 owner="conversation", server="clio", session=session_id, task_id=identity
             ),
-            details=history.write_content(session_id, AssignmentDetails().model_dump(mode="json")),
+            details=history.write_content(
+                session_id, AssignmentDetails(parent_turn_id=parent_turn_id).model_dump(mode="json")
+            ),
             result=history.write_content(session_id, {"answer": "Fixture completed"})
             if status == "completed"
             else None,

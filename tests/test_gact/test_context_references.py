@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
+from uuid import uuid4
 
 import pytest
 from fastapi import FastAPI, HTTPException
@@ -16,10 +17,7 @@ from fastapi.testclient import TestClient
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.storage import make_arc_store
-from clio_agent.gact import context as gact_context
 from clio_agent.gact import context_reference_delivery as context_reference_delivery_module
-from clio_agent.gact.agent_mailbox import pending_mail
-from clio_agent.gact.agent_tasks import AgentTask, AgentTaskRegistry
 from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.records import (
     ArtifactKind,
@@ -31,17 +29,16 @@ from clio_agent.gact.artifacts.registry import ArtifactRegistry
 from clio_agent.gact.context_reference_delivery import enrich_with_context_references
 from clio_agent.gact.context_reference_search import search_workspace_references
 from clio_agent.gact.context_references import authorize_context_reference_parts
-from clio_agent.gact.loop_inbox import (
-    drain_active_session_inbox,
-    enqueue_user_steer,
-)
-from clio_agent.gact.messaging import _user_message_parts
+from clio_agent.gact.messaging import _user_message_parts, queued_user_input
+from clio_agent.gact.native_work import now
 from clio_agent.gact.protocol_v3 import part_to_v3_block
 from clio_agent.gact.routes.references import register_reference_routes
 from clio_agent.gact.runtime.constants import _CTX_MAX_BYTES
-from clio_agent.gact.runtime.globals import _ContextFileAccessError, _gact_app_context
-from clio_agent.gact.turn_runner import TurnRunner
+from clio_agent.gact.runtime.globals import _ContextFileAccessError
+from clio_agent.gact.task_history import TaskHistory
+from clio_agent.gact.turn import _start_background_user_turn
 from clio_agent.gact.types import Message, Part
+from tests.test_gact.task_records import hold_model_segment, record_assignment_fixture
 from tests.test_gact.test_post_messages import SlowClioAgent
 
 
@@ -129,33 +126,6 @@ def _app(tmp_path: Path) -> FastAPI:
     session_a = _session("sess_a", "ws_a", title="Shared title", message_count=12)
     session_b = _session("sess_b", "ws_a", title="Shared title")
     session_other = _session("sess_other", "ws_b", title="Private")
-    registry = AgentTaskRegistry()
-    registry.register(
-        AgentTask(
-            task_id="task_1",
-            parent_session_id="sess_a",
-            child_session_id="sess_b",
-            agent_ref={"expert_id": "analysis"},
-            run_label="Analysis run",
-            status="completed",
-            result={"answer_excerpt": "bounded result"},
-            created_at="2026-09-02T11:00:00+00:00",
-            updated_at="2026-09-02T12:00:00+00:00",
-        )
-    )
-    registry.register(
-        AgentTask(
-            task_id="task_2",
-            parent_session_id="sess_a",
-            child_session_id="sess_b",
-            agent_ref={"expert_id": "analysis"},
-            run_label="Analysis run",
-            status="failed",
-            error_reason="failure " + "z" * 900,
-            created_at="2026-09-02T11:30:00+00:00",
-            updated_at="2026-09-02T12:30:00+00:00",
-        )
-    )
     message_rows = [
         Message(
             id=f"msg_{index}",
@@ -171,17 +141,36 @@ def _app(tmp_path: Path) -> FastAPI:
         workspaces=_Workspaces({"ws_a": tmp_path / "a", "ws_b": tmp_path / "b"}),
         sessions=_Sessions([session_a, session_b, session_other]),
         messages={"sess_a": message_rows, "sess_b": [], "sess_other": []},
-        agent_task_registry=registry,
         artifact_registry=ArtifactRegistry(),
         resource_store=_Resources(),
         pending_diffs={},
         context_frames={},
-        arc=ARCMemory(store=make_arc_store(backend="cte")),
-        turn_runner=TurnRunner({}),
+        arc=ARCMemory(store=make_arc_store(backend="cte", namespace="test-context-" + uuid4().hex)),
+        human_principal="context-test-human",
     )
     app = FastAPI()
     for name, value in vars(state).items():
         setattr(app.state, name, value)
+    app.state.task_history = TaskHistory(app.state.arc)
+    for handle, status, result in (
+        ("task_1", "completed", {"answer_excerpt": "bounded result"}),
+        ("task_2", "failed", {"error_reason": "failure " + "z" * 900}),
+    ):
+        task = record_assignment_fixture(app, "sess_b", parent_sid="sess_a", handle=handle)
+        stamp = now()
+        terminal = task.model_copy(
+            update={
+                "label": "Analysis run",
+                "raw_status": status,
+                "status": status,
+                "activity": "",
+                "updated_at": stamp,
+                "terminal_at": stamp,
+                "settlement": "confirmed",
+                "result": app.state.task_history.write_content("sess_b", result),
+            }
+        )
+        app.state.task_history.record_snapshot(terminal, observation_id="result:" + handle)
     return app
 
 
@@ -785,34 +774,49 @@ def test_session_and_agent_run_deliver_only_bounded_summaries(tmp_path: Path) ->
         )
     )[0]
     failure_summary = failed_run.metadata["context_reference"]["delivery"]["summary"]
-    assert len(failure_summary["error_reason"]) <= 600
+    assert len(failure_summary["result_excerpt"]) <= 600
+    assert "failure " in failure_summary["result_excerpt"]
+    assert failure_summary["result_reference"] is not None
 
 
-def test_typed_parts_survive_message_builder_and_busy_queue(tmp_path: Path) -> None:
-    app = _app(tmp_path)
-    source = Part(
-        id="part_context",
-        type="context_ref",
-        ref_kind="session",
-        ref_id="sess_b",
-        label="Shared title",
-        revision="r1",
-    )
-    parts = _user_message_parts(request_parts=[source], user_text="")
-
-    enqueue_user_steer(
-        app,
-        "sess_a",
-        "",
-        steer_message_id="msg_queued",
-        steer_parts=parts,
-        model_text="server resolved summary",
-    )
-
-    event = pending_mail(app, "sess_a")[0]
-    assert event["message"]["parts"][0]["type"] == "context_ref"
-    assert event["message"]["parts"][0]["ref_id"] == "sess_b"
-    assert event["text"] == "server resolved summary"
+def test_typed_parts_survive_message_builder_and_busy_queue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with TestClient(build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())) as client:
+        app = client.app
+        owner = app.state.sessions.create(workspace_id="ws_default", title="Owner")
+        target = app.state.sessions.create(workspace_id="ws_default", title="Context target")
+        source = Part(
+            id="part_context",
+            type="context_ref",
+            ref_kind="session",
+            ref_id=target.id,
+            label="Shared title",
+            revision="r1",
+        )
+        canonical = asyncio.run(authorize_context_reference_parts(app, owner, [source]))
+        parts = _user_message_parts(request_parts=canonical, user_text="")
+        hold_model_segment(app, owner.id, monkeypatch)
+        _start_background_user_turn(
+            app,
+            owner.id,
+            owner,
+            "",
+            user_msg_id="msg_queued",
+            request_parts=parts,
+            model_text="server resolved summary",
+        )
+        notice = app.state.task_history.mail_item(owner.id, "msg_queued")
+        assert notice is not None and notice.kind == "human"
+        body = app.state.task_history.read_content(notice.content)
+        assert body["message"]["parts"][0]["type"] == "context_ref"
+        assert body["message"]["parts"][0]["ref_id"] == target.id
+        assert body["message"]["parts"][0]["id"] == "part_context"
+        assert body["model_text"] == "server resolved summary"
+        rendered = queued_user_input(app, owner.id, body)
+        assert "Context target" in rendered["text"]
+        assert "provenance" in rendered["text"]
+        assert notice.id not in app.state.task_history.acknowledged_notifications(owner.id)
 
 
 def test_normal_submission_and_retry_preserve_context_ref(
@@ -881,7 +885,7 @@ def test_normal_submission_and_retry_preserve_context_ref(
 
 
 def test_composer_busy_context_only_steer_is_canonical_and_model_ready(
-    tmp_path: Path, host_agent_executor: object
+    tmp_path: Path, host_agent_executor: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     del host_agent_executor
     target = tmp_path / "workspace" / "steer.txt"
@@ -893,17 +897,7 @@ def test_composer_busy_context_only_steer_is_canonical_and_model_ready(
 
     with TestClient(app) as client:
         session_id = client.post("/v1/sessions", json={"title": "Busy context"}).json()["id"]
-        assert (
-            client.post(
-                f"/v1/sessions/{session_id}/messages",
-                json={"parts": [{"type": "text", "text": "first"}]},
-            ).status_code
-            == 200
-        )
-        deadline = time.monotonic() + 3
-        while not app.state.turn_runner.busy(session_id) and time.monotonic() < deadline:
-            time.sleep(0.02)
-        assert app.state.turn_runner.busy(session_id)
+        hold_model_segment(app, session_id, monkeypatch)
 
         steer = client.post(
             f"/v1/sessions/{session_id}/messages",
@@ -921,14 +915,12 @@ def test_composer_busy_context_only_steer_is_canonical_and_model_ready(
         )
         assert steer.status_code == 202, steer.text
 
-        with _gact_app_context(app):
-            token = gact_context.set_session_id(session_id)
-            try:
-                arrivals = drain_active_session_inbox(app)
-            finally:
-                gact_context.reset(token)
-        assert [source for source, _ in arrivals] == ["steer"]
-        block = arrivals[0][1]
+        owner = app.state.conversations
+        staged = owner.mail.stage(owner.caller(session_id))
+        notice = next(item for item in staged.items if item.id == steer.json()["message_id"])
+        payload = owner.history.read_content(notice.content)
+        block = queued_user_input(app, session_id, payload)["text"]
+        assert notice.id not in owner.history.acknowledged_notifications(session_id)
         assert "## Structured context references (server-resolved)" in block
         assert "authoritative steer context" in block
 

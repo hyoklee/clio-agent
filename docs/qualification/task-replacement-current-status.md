@@ -11,8 +11,10 @@ Docket 0.26.2, Python 3.14.6 and iowarp-core 2.3.1.
 
 The two-hour checkpoint was 21:45:05 UTC / 4:45:05 PM Chicago. It remains
 **UNDONE**: Fable's last source verdict arrived at 21:45:08.409 UTC.
-The one-checkpoint automation is paused. Source acceptance afterward does not
-retroactively satisfy that deadline or qualify a release.
+Source acceptance afterward does not retroactively satisfy that deadline or
+qualify a release. The human renewed the checkpoint for 2026-10-16 01:14:18 UTC
+/ October 15 8:14:18 PM Chicago. That checkpoint checks implementation convergence,
+executed regression checks and actual-model verification separately.
 
 ## Regression migration
 
@@ -51,12 +53,34 @@ obsolete runtime-field arrangements also need migration. The regression suite is
 not yet coherent or CI-qualified. Its remaining work is separate from the
 reviewers' accepted production-source verdict.
 
+The second migration replaces artifact lineage, document-preview publication,
+context references, Question expiry and generic tool telemetry arrangements.
+The refreshed inventory finds 23 files with removed-module or missing-helper
+references. Canonical wait presentation and the shipped wait/message aliases
+remain asserted against the shared implementations. Scoped Ruff/format checks
+pass for seven changed test files; Mypy passes for the assignment helper and
+Question expiry cases. Twenty-four selected cases passed individually and
+sequentially; the two initial failures described below remain recorded. Source
+implementation, dependencies and gitlinks remain unchanged.
+
+Two initial regression failures remain recorded: transform-metadata teardown
+exceeded the 120-second test limit, and a composer case missed its five-second
+runner-admission assertion. Their reruns passed without production or timeout
+changes; the causes remain unproven. The timed-out case's exact private daemon
+and console helper were retired and its owned runtime root removed. Later
+selected cases completed their normal cleanup. These are regression results,
+not final-candidate model acceptance.
+
 Bounded D execution-repository receipts are under `.pytest-runtime/static/`:
 `r56-reviewed-source.json`, `implementation-deadline-current.json`,
 `r57-current-retired-bindings.json`, `r57-test-migration.json`,
 `r58-test-migration.json`, `r60-test-migration.json`, `r61-test-migration.json`,
 `r62-test-migration.json`, `r63-provider-setup-migration.json`,
 `r60-retired-test-bindings.json` and `r63-migration-custody.json`.
+The second batch adds `r64-test-migration.json`, `r64-timeout-cleanup.json`,
+`r65-metadata-diagnostic.json`, `r66-artifact-context-question-migration.json`,
+`r68-composer-telemetry-checks.json`, `r69-retired-test-bindings.json` and
+`r70-wait-compatibility.json`.
 
 ## Qualification still required
 
