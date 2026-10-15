@@ -4,6 +4,37 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
+## [0.9.5-beta.7.1] - 2026-10-15
+
+### Added
+
+- Redesign all six Infrastructure views with the topology graph, consistent host
+  selection, direct service actions, progressive configuration, searchable tools
+  and filtered activity with actionable failures.
+- Reuse model capability tags in discovery, show popular models and model cards,
+  expose download progress, and safely remove owned downloads with audit receipts.
+- Support native Windows SearXNG installation and service supervision through the
+  existing compatibility launcher, independently of the optional PDF service.
+
+### Fixed
+
+- Include MAG, Minerva and Tara in Windows installer choices and preserve their
+  visibility when migrating saved provider selections.
+- Protect and round-trip long Windows credentials beyond the native single-value
+  limit, including long MAG tokens.
+- Send model-operation programs through stdin and use noninteractive SSH pipes
+  for large command input instead of exceeding platform command-line limits.
+- Restore question resizing/fullscreen, clear selection on reference/image entry,
+  reference selected Mermaid text, and retain editable queued-message semantics.
+- Queue on Enter and steer on Ctrl+Enter while running; send with either when
+  paused, with the submit control reflecting the state and Ctrl key.
+
+This beta retains beta.7's dashboards, knowledge bases, fork/rewind, LaTeX,
+document previews, global search and media. Desktop/web/phone review and local
+Windows/Homelab lifecycle evidence are retained. Google Drive sign-in and full
+Ares/Polaris/Homelab topology acceptance remain unverified. Separate task-system
+and diagnostic work remains excluded.
+
 ## [0.9.5-beta.7] - 2026-10-14
 
 ### Fixed
