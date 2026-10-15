@@ -192,14 +192,16 @@ def register_native_storage(
 
             record, operation, workspace = await join_off_loop(prepare)
             previous_publication_absent = operation.publication_started_at is None
+            retired = False
             evidence.acquiring_effects()
             try:
-                await service.execute_transfer(
+                retired = not await service.execute_transfer(
                     record,
                     workspace,
                     operation,
                     existing_job_only=True,
                     cancellation_requested=lambda: cancellation_needed(context),
+                    shutdown_requested=lambda: native._closing,
                     progress=lambda done, total: progress(context, done, total, "bytes"),
                 )
             finally:
@@ -229,7 +231,7 @@ def register_native_storage(
                                             "execution_key": attempt.execution_key,
                                             "provider_job_id": continuation.provider_job_id,
                                             "continuation": context.reference,
-                                            "previous_runtime_gone": True,
+                                            "previous_local_execution_retired": True,
                                             "previous_publication_absent": True,
                                             "provider_and_staging_settled": True,
                                         },
@@ -254,6 +256,15 @@ def register_native_storage(
                                 "provider-predecessor-cleanup:" + context.reference,
                                 retain_previous_evidence,
                             )
+                if retired:
+                    evidence.retire_provider_observer(
+                        {
+                            "operation_id": settled.id,
+                            "source_id": settled.source_id,
+                            "provider_job_id": settled.native_job_id,
+                            "publication_started_at": settled.publication_started_at,
+                        }
+                    )
             latest = await join_off_loop(service.get, record.source.workspace_id, record.source.id)
             return await join_off_loop(result, latest, settled)
 
@@ -319,6 +330,8 @@ def register_native_storage(
 
         async def reattach() -> bool:
             nonlocal continuation
+            if native._closing and not await join_off_loop(cancellation_needed, context):
+                return True  # only observation retires; recording retries remain pending
             if "provider-reservation:" + task.handle in native.recovery.pending:
                 return False  # the exact reserved context owns its safe retry
             latest = await join_off_loop(work.history.task_snapshot, task.handle)
@@ -375,6 +388,25 @@ def register_native_storage(
 
         return await join_off_loop(request)
 
+    async def provider_survives_shutdown(task: TaskSnapshot) -> bool:
+        def classify() -> bool:
+            if task.kind != "Download" or task.submission is None:
+                return False
+            context = SubmissionContext.model_validate(work.history.read_content(task.submission))
+            source_id = (
+                context.provider_continuation.source_id
+                if context.provider_continuation is not None
+                else context.arguments.get("source_id")
+            )
+            if not isinstance(source_id, str):
+                raise ValueError("Shutdown provider custody is unavailable")
+            session, _workspace = owner(context)
+            record = service.get(session.workspace_id, source_id)
+            return record.source.provider == "globus"
+
+        return await join_off_loop(classify)
+
+    native.provider_shutdown = provider_survives_shutdown
     native.provider_recovery = recover_provider
     native.provider_cancel = cancel_provider
 
@@ -459,8 +491,16 @@ def register_native_storage(
                     )
                 raise
             evidence.acquiring_effects()
+            retired = False
             try:
-                await service.execute_transfer(record, workspace, operation, progress=report)
+                retired = not await service.execute_transfer(
+                    record,
+                    workspace,
+                    operation,
+                    progress=report,
+                    cancellation_requested=lambda: cancellation_needed(context),
+                    shutdown_requested=lambda: native._closing,
+                )
             finally:
                 settled = await join_off_loop(
                     service.store.get, "operation", operation.id, TransferOperation
@@ -469,6 +509,15 @@ def register_native_storage(
                     record.source.provider != "globus" or settled.provider_cleanup_confirmed
                 ):
                     evidence.confirm_cleanup()
+                if retired:
+                    evidence.retire_provider_observer(
+                        {
+                            "operation_id": settled.id,
+                            "source_id": settled.source_id,
+                            "provider_job_id": settled.native_job_id,
+                            "publication_started_at": settled.publication_started_at,
+                        }
+                    )
             latest = await asyncio.to_thread(service.get, record.source.workspace_id, source_id)
             return await asyncio.to_thread(result, latest, settled)
 

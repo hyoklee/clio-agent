@@ -22,6 +22,7 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
     question_surface_resource,
 )
+from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_publication import publish_task_notice
 
@@ -370,9 +371,11 @@ class QuestionCommands:
             publish_task_notice(self.history, answered)
             return answered
 
-    def cancel(self, handle: str) -> TaskSnapshot:
+    def cancel(self, handle: str, *, caller: TaskCaller | None = None) -> TaskSnapshot:
         """Dismiss an open Question; historical terminal outcomes stay unchanged."""
         with self.history.serialized():
+            if caller is not None:
+                TaskAccess(self.history, caller).require(handle, "control")
             current = self._question(handle)
             if current.raw_status in {"answered", "cancelled", "expired"}:
                 publish_task_notice(self.history, current)

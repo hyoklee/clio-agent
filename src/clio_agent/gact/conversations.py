@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -733,9 +734,12 @@ class Conversations:
         self._model_recording.setdefault(sid, set()).add(identity)
         self.history.requires_recovery = True
         future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+        publication_context = contextvars.copy_context()
 
         async def confirm() -> None:
             confirmed = await asyncio.to_thread(self.history.confirm_write, pending.confirm)
+            if confirmed and pending.after_confirmed is not None:
+                await asyncio.to_thread(publication_context.run, pending.after_confirmed)
             self._recording_confirmed(sid, identity)
             if not future.done():
                 future.set_result(confirmed)

@@ -168,13 +168,9 @@ def project_message(
 
 
 async def resume_recording(app: Any, pending: TranscriptRecordingPending) -> bool:
-    """Await existing owner-local recovery, then run its first publication once."""
-    from clio_agent.gact.off_loop import join_off_loop
+    """Await owner-local recording/publication custody; Stop may cancel only this waiter."""
 
     owner = getattr(app.state, "conversations", None)
     if owner is None:
         raise pending
-    confirmed = await owner.confirm_transcript_recording(pending)
-    if confirmed and pending.after_confirmed is not None:
-        await join_off_loop(pending.after_confirmed)
-    return confirmed
+    return await owner.confirm_transcript_recording(pending)

@@ -17,6 +17,7 @@ from clio_agent.arc.task_types import (
     argument_digest,
 )
 from clio_agent.gact.native_identity import local_runtime_gone, local_runtime_identity
+from clio_agent.gact.native_task_settlement import provider_locally_retired
 from clio_agent.gact.native_work import SUBMISSION_ARGUMENT, now
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.native_roots import NativeRootKind
@@ -64,6 +65,13 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
                 partial(self._uncertain, handle, "Original native root is unavailable"),
             )
             continue
+        if (
+            root == "storage"
+            and self.provider_recovery is not None
+            and await asyncio.to_thread(provider_locally_retired, self, handle)
+        ):
+            if await self.provider_recovery(current, submission):
+                continue
         if (
             self.roots[root].settings.url.startswith("memory://")
             and submission.local_runtime != local_runtime_identity()
@@ -181,7 +189,12 @@ async def continue_provider(
     continuation: ProviderContinuation,
 ) -> dict[str, Any]:
     """Create one host-only local leg for verified provider work after process loss."""
-    if self._closing or not await asyncio.to_thread(local_runtime_gone, original.local_runtime):
+    if self._closing and not continuation.cancellation_only:
+        raise ValueError("Provider observation admission is closed")
+    if not (
+        await asyncio.to_thread(local_runtime_gone, original.local_runtime)
+        or await asyncio.to_thread(provider_locally_retired, self, current.handle)
+    ):
         raise ValueError("Previous local runtime loss is not confirmed")
     if (
         current.submission != continuation.previous_submission
@@ -264,6 +277,8 @@ async def continue_provider(
         return await self._invoke(root, context, content, wire, background=True)
 
     async def retry_reservation() -> bool:
+        if self._closing and not continuation.cancellation_only:
+            return True  # Core retains custody; no new observation leg during shutdown
         if not dispatched:
             await attempt()
         return True

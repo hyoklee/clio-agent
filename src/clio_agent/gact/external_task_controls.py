@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from clio_agent.gact.native_work import now
+from clio_agent.gact.task_access import TaskAccess, TaskCaller
 
 if TYPE_CHECKING:
     from clio_agent.gact.external_tasks import ExternalConnection, ExternalTasks
@@ -17,11 +18,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-async def cancel(owner: ExternalTasks, handle: str) -> dict[str, Any]:
+async def cancel(
+    owner: ExternalTasks, handle: str, *, caller: TaskCaller | None = None
+) -> dict[str, Any]:
     """Record intent and deliver to the original identity; never infer cleanup."""
 
+    authorized = False
+
     def intent() -> None:
+        nonlocal authorized
         with owner.history.serialized():
+            if caller is not None and not authorized:
+                TaskAccess(owner.history, caller).require(handle, "control")
+            authorized = True
             selected = owner.history.task_snapshot(handle)
             if selected is None:
                 raise ValueError("External task is unavailable")

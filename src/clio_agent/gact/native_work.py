@@ -46,6 +46,7 @@ class WorkEvidence:
 
     acquired: bool = False
     cleaned: bool = False
+    local_retirement: dict[str, Any] | None = None
 
     def acquiring_effects(self) -> None:
         """Mark the boundary before effect acquisition, including uncertain spawn."""
@@ -54,6 +55,10 @@ class WorkEvidence:
     def confirm_cleanup(self) -> None:
         """Record the workload's proof after process/provider and required cleanup settle."""
         self.cleaned = True
+
+    def retire_provider_observer(self, details: dict[str, Any]) -> None:
+        """Record joined local observation, without claiming remote cleanup."""
+        self.local_retirement = {**details, "kind": "provider_observer", "local_work_joined": True}
 
 
 class NativeWork:
@@ -256,6 +261,7 @@ class NativeWork:
                     "execution_key": attempt.execution_key,
                     "outcome": outcome,
                     "physical_cleanup": state,
+                    "local_retirement": evidence.local_retirement,
                 },
             )
             self.history.record_attempt(

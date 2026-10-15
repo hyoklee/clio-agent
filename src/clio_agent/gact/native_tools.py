@@ -39,6 +39,7 @@ from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_identity import local_runtime_identity
 from clio_agent.gact.native_shell import register_native_shell
 from clio_agent.gact.native_work import SUBMISSION_ARGUMENT, NativeWork, SubmissionAuthorizer, now
+from clio_agent.gact.task_access import TaskAccessDenied
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.native_roots import NativeRootKind, build_native_roots
@@ -102,6 +103,7 @@ class NativeTools:
             Callable[[TaskSnapshot, SubmissionContext], Awaitable[bool]] | None
         ) = None
         self.provider_cancel: Callable[[TaskSnapshot], Awaitable[bool]] | None = None
+        self.provider_shutdown: Callable[[TaskSnapshot], Awaitable[bool]] | None = None
 
     def admission_closed(self, handle: str) -> bool:
         """Expose only this owner's provisional cancellation intent to the shared gate."""
@@ -159,71 +161,9 @@ class NativeTools:
         if errors:
             raise BaseExceptionGroup("Native resource cleanup failed", errors)
 
-    async def settle_shutdown(self) -> tuple[BaseException, ...]:
-        """Confirm physical retirement while native transports and Core remain available."""
-        if self._resources_closed:
-            return ()
-        await self.request_shutdown()
-        # Resolve outstanding submissions before cancelling their verified identities.
-        if self._rpc:
-            await asyncio.shield(asyncio.gather(*tuple(self._rpc.values()), return_exceptions=True))
-        await self.request_shutdown()
-        for handle in tuple(self._calls):
-            await self.await_settlement(handle, allow_uncertainty=False)
-        self._resources_closed = True
-        for driver in tuple(self._drivers.values()):
-            if not driver.done():
-                driver.cancel()  # observation only; owned effects/cleanup have settled above
-        if self._drivers:
-            await asyncio.shield(
-                asyncio.gather(*tuple(self._drivers.values()), return_exceptions=True)
-            )
-        results = (
-            await asyncio.shield(asyncio.gather(*tuple(self._retiring), return_exceptions=True))
-            if self._retiring
-            else ()
-        )
-        return tuple(result for result in results if isinstance(result, BaseException))
+    settle_shutdown = native_task_settlement.settle_shutdown
 
-    async def request_shutdown(self) -> None:
-        """Close admission and request local cancellation while transports stay available."""
-        self._closing = True
-
-        def reserved() -> set[str]:
-            with self.history.serialized():
-                return {
-                    handle
-                    for handle in self.history.task_handles(active_only=True)
-                    if (task := self.history.task_snapshot(handle)) is not None
-                    and task.kind in {"Shell", "Download", "Indexing"}
-                    and task.submission is not None
-                    and (
-                        task.backend is None
-                        or any(
-                            task.backend.owner == "native"
-                            and task.backend.server == root.server
-                            and task.backend.session == root.session
-                            and task.backend.queue == root.queue
-                            for root in self.backends.values()
-                        )
-                    )
-                }
-
-        handles = set(self._calls) | set(self._rpc) | await asyncio.to_thread(reserved)
-
-        async def request(handle: str) -> None:
-            try:
-                await self.cancel(handle)
-            except Exception as error:
-                logger.exception(
-                    "Task boundary reason=native_shutdown_settlement_failed error_type=%s",
-                    type(error).__name__,
-                )
-                await self._record_or_defer(
-                    "native-shutdown:" + handle, partial(self._uncertain, handle, str(error))
-                )
-
-        await asyncio.gather(*(request(handle) for handle in handles))
+    request_shutdown = native_task_settlement.request_shutdown
 
     async def public_tools(self, kind: NativeRootKind) -> list[dict[str, Any]]:
         """Expose ordinary arguments only; caller-supplied internal references are refused."""
@@ -678,6 +618,8 @@ class NativeTools:
 
         try:
             await record()
+        except TaskAccessDenied:
+            raise
         except Exception:
             if not self.history.requires_recovery:
                 raise
@@ -695,9 +637,13 @@ class NativeTools:
         """Release live SDK resources after confirmed settlement and observer exit."""
         current = await asyncio.to_thread(self.history.task_snapshot, handle)
         driver, rpc = self._drivers.get(handle), self._rpc.get(handle)
+        provider_retired = self._closing and await asyncio.to_thread(
+            native_task_settlement.provider_locally_retired, self, handle
+        )
         if (
             current is None
             or current.terminal_at is None
+            and not provider_retired
             or self.history.requires_recovery
             or current.backend_observation is None
             or current.raw_status not in {"completed", "failed", "cancelled"}
@@ -711,6 +657,22 @@ class NativeTools:
                 for error in client.unconfirmed_adoptions
             )
         ):
+            return
+        if (
+            provider_retired
+            and current.terminal_at is None
+            and current.connection_freshness != "lost"
+        ):
+            await self._record_or_defer(
+                "provider-shutdown:" + handle,
+                partial(
+                    self._uncertain,
+                    handle,
+                    "Local observation retired for shutdown; the provider job remains unconfirmed.",
+                    lost=True,
+                ),
+                handle=handle,
+            )
             return
         accepted = self._calls.get(handle)
         if accepted is not None:

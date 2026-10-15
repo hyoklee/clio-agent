@@ -29,6 +29,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.gact import context, external_task_connections, external_task_inputs
 from clio_agent.gact.native_work import now
+from clio_agent.gact.task_access import TaskAccessDenied, TaskCaller
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot, safe_description
 from clio_agent.tools.task_client import (
@@ -693,16 +694,18 @@ class ExternalTasks:
 
         try:
             await record()
+        except TaskAccessDenied:
+            raise
         except Exception:
             if not self.history.requires_recovery:
                 raise
             self.recovery.defer(identity, record)
 
-    async def cancel(self, handle: str) -> dict[str, Any]:
+    async def cancel(self, handle: str, *, caller: TaskCaller | None = None) -> dict[str, Any]:
         """Request cancellation through this owner's verified live SDK binding."""
         from clio_agent.gact.external_task_controls import cancel
 
-        return await cancel(self, handle)
+        return await cancel(self, handle, caller=caller)
 
     async def close(self) -> None:
         """Retire observation without claiming surviving external jobs were cancelled."""

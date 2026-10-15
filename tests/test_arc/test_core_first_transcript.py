@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ from clio_agent.gact.transcript_migration import (
 )
 from clio_agent.gact.transcript_projection import assemble_session_messages
 from clio_agent.gact.transcript_recording import TranscriptRecordingPending
-from clio_agent.gact.types import Message
+from clio_agent.gact.types import ErrorInfo, Message
 from tests.test_arc.test_accepted_transcript_repair import raw_atoms, retained
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
@@ -189,6 +190,7 @@ async def test_legacy_custody_preserves_duplicate_occurrences_without_inventing_
     cache = install(app, tmp_path)
 
     def exercise() -> None:
+        original_assignment = owner.history.latest_assignment(sid)
         canonical = retained(sid, "canonical", 10, role="assistant")
         persist_finalized_message(app, sid, canonical)
         duplicate = retained(sid, "duplicate-legacy-id", 9)
@@ -220,7 +222,7 @@ async def test_legacy_custody_preserves_duplicate_occurrences_without_inventing_
         assert legacy_transcript(app, sid) == first
         assert len(arc._segments.list_segments(sid, LEGACY_SCOPE)) == 1
         assert not owner.history.pending_mail(sid)
-        assert owner.history.latest_assignment(sid) == root
+        assert owner.history.latest_assignment(sid) == original_assignment
 
     try:
         await asyncio.to_thread(exercise)
@@ -262,6 +264,83 @@ async def test_boot_captures_legacy_before_reconciling_and_reads_metrics_from_co
 
     try:
         await asyncio.to_thread(exercise)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("shutdown", [False, True])
+async def test_stopped_recording_waiter_retains_original_completion_and_cleanup(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, shutdown: bool
+) -> None:
+    """A cancelled turn cannot discard the recovery owner's original publication."""
+    from clio_agent.gact.turn_finalize import publish_failed_finalize
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    install(app, tmp_path)
+    message = retained(sid, "retained-original-failure", 10, role="assistant").model_copy(
+        update={"error_info": ErrorInfo(error="original_failure", message="Original error")}
+    )
+    stop = threading.Event()
+    app.state.cancel_events = {sid: stop}
+    for name in ("live_assistant_message_ids", "live_assistant_parts", "live_assistant_part_keys"):
+        setattr(app.state, name, {sid: message.id if name.endswith("ids") else []})
+    updates: list[str] = []
+
+    def prepare() -> TranscriptRecordingPending:
+        def unavailable(*_args: Any, **_kwargs: Any) -> None:
+            raise OSError("Canonical recording was temporarily unavailable")
+
+        with monkeypatch.context() as faults:
+            faults.setattr(transcript_recording, "append_part_atom", unavailable)
+            with pytest.raises(TranscriptRecordingPending) as caught:
+                persist_finalized_message(app, sid, message)
+        return caught.value
+
+    pending = await asyncio.to_thread(prepare)
+
+    def update_retry(status: str, **_kwargs: Any) -> None:
+        updates.append(status)
+
+    pending.after_confirmed = lambda: publish_failed_finalize(
+        app,
+        sid,
+        message,
+        {"message_id": message.id, "stop_reason": "error"},
+        turn_id=message.turn_id or message.id,
+        trace_id="original-trace",
+        turn_cancel_event=stop,
+        update_retry_attempt=update_retry,
+    )
+    waiter = asyncio.create_task(transcript_recording.resume_recording(app, pending))
+    try:
+        while not owner.recovery.pending:
+            await asyncio.sleep(0)
+        waiter.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await waiter
+        if shutdown:
+            await owner.shutdown()
+        await owner.recovery.drain()
+        assert await asyncio.to_thread(assemble_session_messages, arc, sid) == [message]
+        assert updates == ["failed"]
+        assert all(
+            sid not in getattr(app.state, name)
+            for name in (
+                "live_assistant_message_ids",
+                "live_assistant_parts",
+                "live_assistant_part_keys",
+            )
+        )
+        assert not owner._model_recording and sid not in app.state.cancel_events
+        completions = [
+            event
+            for event in app.state.bus.session_events_since(sid)
+            if event.type == "message.completed"
+        ]
+        assert len(completions) == 1 and completions[0].payload["message_id"] == message.id
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

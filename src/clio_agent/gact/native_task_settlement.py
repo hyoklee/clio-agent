@@ -16,6 +16,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.gact.native_identity import local_runtime_identity
 from clio_agent.gact.native_work import now
+from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.task_client import (
     AcceptedNativeCall,
@@ -215,15 +216,25 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
         publish_task_notice(self.history, settled)
 
 
-async def cancel(self: NativeTools, handle: str) -> dict[str, Any]:
+async def cancel(
+    self: NativeTools, handle: str, *, caller: TaskCaller | None = None
+) -> dict[str, Any]:
     """Close owned admission before native cancellation; acknowledgement is not settlement."""
     current = await asyncio.to_thread(self._current, handle)
-    if current.terminal_at is not None:
+    if caller is None and current.terminal_at is not None:
         return {"handle": handle, "cancellation_requested": False, "status": current.status}
 
+    authorized = False
+
     def intent() -> None:
+        nonlocal current, authorized
         with self.history.serialized():
+            if caller is not None and not authorized:
+                TaskAccess(self.history, caller).require(handle, "control")
+            authorized = True
             current = self._current(handle)
+            if current.terminal_at is None:
+                self._control_holds.add(handle)
             if current.terminal_at is None and current.cancellation_requested_at is None:
                 self.history.record_snapshot(
                     current.model_copy(
@@ -236,8 +247,9 @@ async def cancel(self: NativeTools, handle: str) -> dict[str, Any]:
                     observation_id=uuid4().hex,
                 )
 
-    self._control_holds.add(handle)
     await self._record_or_defer("native-cancel:" + handle, intent)
+    if current.terminal_at is not None:
+        return {"handle": handle, "cancellation_requested": False, "status": current.status}
     provider_owned = False
     if self.provider_cancel is not None:
         try:
@@ -393,3 +405,119 @@ async def await_settlement(
             await changed.wait()
     finally:
         remove()
+
+
+async def settle_shutdown(self: NativeTools) -> tuple[BaseException, ...]:
+    """Confirm physical retirement while native transports and Core remain available."""
+    if self._resources_closed:
+        return ()
+    await self.request_shutdown()
+    # Resolve outstanding submissions before cancelling their verified identities.
+    if self._rpc:
+        await asyncio.shield(asyncio.gather(*tuple(self._rpc.values()), return_exceptions=True))
+    await self.request_shutdown()
+    while self._calls:
+        await self.recovery.drain()
+        for handle in tuple(self._calls):
+            current = await asyncio.to_thread(self._current, handle)
+            remote = self.provider_shutdown is not None and await self.provider_shutdown(current)
+            driver = self._drivers.get(handle)
+            if remote and driver is not None:
+                await asyncio.shield(driver)
+                await self.recovery.drain()
+            if not remote or not await asyncio.to_thread(provider_locally_retired, self, handle):
+                await self.await_settlement(handle, allow_uncertainty=False)
+            if driver is not None:
+                await asyncio.shield(driver)
+            await self._retire_resources(handle)
+    self._resources_closed = True
+    for driver in tuple(self._drivers.values()):
+        if not driver.done():
+            driver.cancel()  # observation only; owned effects/cleanup have settled above
+    if self._drivers:
+        await asyncio.shield(asyncio.gather(*tuple(self._drivers.values()), return_exceptions=True))
+    results = (
+        await asyncio.shield(asyncio.gather(*tuple(self._retiring), return_exceptions=True))
+        if self._retiring
+        else ()
+    )
+    return tuple(result for result in results if isinstance(result, BaseException))
+
+
+async def request_shutdown(self: NativeTools) -> None:
+    """Close admission and request local cancellation while transports stay available."""
+    self._closing = True
+
+    def reserved() -> set[str]:
+        with self.history.serialized():
+            return {
+                handle
+                for handle in self.history.task_handles(active_only=True)
+                if (task := self.history.task_snapshot(handle)) is not None
+                and task.kind in {"Shell", "Download", "Indexing"}
+                and task.submission is not None
+                and (
+                    task.backend is None
+                    or any(
+                        task.backend.owner == "native"
+                        and task.backend.server == root.server
+                        and task.backend.session == root.session
+                        and task.backend.queue == root.queue
+                        for root in self.backends.values()
+                    )
+                )
+            }
+
+    handles = set(self._calls) | set(self._rpc) | await asyncio.to_thread(reserved)
+
+    async def request(handle: str) -> None:
+        try:
+            current = await asyncio.to_thread(self._current, handle)
+            if self.provider_shutdown is not None and await self.provider_shutdown(current):
+                if current.cancellation_requested_at is None:
+                    return  # workload retires its local observation cooperatively
+            await self.cancel(handle)
+        except Exception as error:
+            logger.exception(
+                "Task boundary reason=native_shutdown_settlement_failed error_type=%s",
+                type(error).__name__,
+            )
+            await self._record_or_defer(
+                "native-shutdown:" + handle, partial(self._uncertain, handle, str(error))
+            )
+
+    await asyncio.gather(*(request(handle) for handle in handles))
+
+
+def provider_locally_retired(self: NativeTools, handle: str) -> bool:
+    """Require incarnation-specific joined-observer receipts, never generic uncertainty."""
+    with self.history.serialized():
+        current = self.history.task_snapshot(handle)
+        if current is None or current.kind != "Download" or current.backend is None:
+            return False
+        attempts = [
+            attempt
+            for attempt in self.history.native_attempts(handle)
+            if attempt.backend == current.backend
+        ]
+        if not attempts:
+            return False
+        for attempt in attempts:
+            if attempt.finished_at is None or attempt.cleanup_receipt is None:
+                return False
+            receipt = self.history.read_content(attempt.cleanup_receipt)
+            if not isinstance(receipt, dict):
+                return False
+            detail = receipt.get("local_retirement")
+            if (
+                not isinstance(detail, dict)
+                or detail.get("kind") != "provider_observer"
+                or detail.get("local_work_joined") is not True
+                or detail.get("operation_id") != handle
+                or current.resource_id is not None
+                and detail.get("source_id") != current.resource_id
+                or receipt.get("incarnation") != attempt.incarnation
+                or receipt.get("execution_key") != attempt.execution_key
+            ):
+                return False
+        return True

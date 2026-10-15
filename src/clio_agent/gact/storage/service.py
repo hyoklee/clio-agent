@@ -387,8 +387,9 @@ class StorageService:
         progress: Callable[[int, int], None] | None = None,
         existing_job_only: bool = False,
         cancellation_requested: Callable[[], bool] | None = None,
-    ) -> None:
-        """Execute one native-owned transfer and join its provider/cleanup on cancellation."""
+        shutdown_requested: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Join each provider step; return False only for local shutdown retirement."""
 
         def step() -> bool:
             current = self.store.get("operation", operation.id, TransferOperation)
@@ -409,17 +410,51 @@ class StorageService:
                 materialize(self.store, record, adapter, workspace_root, current, progress=progress)
                 return True
 
+        def retire() -> bool:
+            if (
+                record.source.provider != "globus"
+                or shutdown_requested is None
+                or not shutdown_requested()
+            ):
+                return False
+            current = self.store.get("operation", operation.id, TransferOperation)
+            if (
+                current.cancel_requested
+                or cancellation_requested is not None
+                and cancellation_requested()
+            ):
+                return False
+            self.store.update_operation(
+                operation.id,
+                state="interrupted",
+                error=current.error
+                or "Local observation retired for shutdown; provider settlement remains unconfirmed.",
+            )
+            return True
+
+        def retiring() -> bool:
+            return (
+                record.source.provider == "globus"
+                and shutdown_requested is not None
+                and shutdown_requested()
+            )
+
         interrupted = False
         while True:
+            if retiring() and await asyncio.to_thread(retire):
+                return False
             worker = asyncio.create_task(asyncio.to_thread(step))
             while not worker.done():
                 try:
                     await asyncio.shield(worker)
                 except asyncio.CancelledError:
-                    interrupted = True
+                    interrupted = interrupted or not retiring()
                     # The native cancellation request must reach the provider,
                     # including cloud transfers, before its worker can settle.
-                    self.store.update_operation(operation.id, cancel_requested=True)
+                    if not retiring():
+                        await asyncio.to_thread(
+                            self.store.update_operation, operation.id, cancel_requested=True
+                        )
                 except (OSError, ValueError, RuntimeError):
                     break  # The joined worker's error and cleanup state are inspected below.
             try:
@@ -431,19 +466,26 @@ class StorageService:
                 current = self.store.get("operation", operation.id, TransferOperation)
                 if current.state not in {"completed", "failed", "cancelled"}:
                     self.store.update_operation(operation.id, state="interrupted", error=str(exc))
+                    if retiring() and await asyncio.to_thread(retire):
+                        return False
                     raise
                 if interrupted:
                     raise asyncio.CancelledError from exc
-                return
+                return True
             if settled:
                 if interrupted:
                     raise asyncio.CancelledError
-                return
+                return True
+            if retiring() and await asyncio.to_thread(retire):
+                return False
             try:
                 await asyncio.sleep(5)
             except asyncio.CancelledError:
-                interrupted = True
-                self.store.update_operation(operation.id, cancel_requested=True)
+                interrupted = interrupted or not retiring()
+                if not retiring():
+                    await asyncio.to_thread(
+                        self.store.update_operation, operation.id, cancel_requested=True
+                    )
 
     def download_available(self, record: SourceRecord) -> bool:
         """Offer copies only when the selected connector's transfer backend is ready."""

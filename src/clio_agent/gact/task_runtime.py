@@ -120,7 +120,9 @@ async def start(app: Any) -> None:
         if current.kind in {"Session", "Subagent"}:
             return await app.state.conversations.cancel(caller, current.handle)
         if current.kind == "Question":
-            settled = await asyncio.to_thread(app.state.questions.cancel, current.handle)
+            settled = await asyncio.to_thread(
+                app.state.questions.cancel, current.handle, caller=caller
+            )
             return {
                 "handle": settled.handle,
                 "cancellation_requested": settled.status == "cancelled",
@@ -130,8 +132,8 @@ async def start(app: Any) -> None:
         if current.kind in {"Shell", "Download", "Indexing"} or (
             current.backend is not None and current.backend.owner == "native"
         ):
-            return await app.state.native_tools.cancel(current.handle)
-        return await app.state.external_tasks.cancel(current.handle)
+            return await app.state.native_tools.cancel(current.handle, caller=caller)
+        return await app.state.external_tasks.cancel(current.handle, caller=caller)
 
     async def cancel_owned(task: TaskSnapshot) -> dict[str, Any]:
         return await cancel_owner(task, TaskCaller(task.owner.session_id, task.owner.human_id))
