@@ -176,10 +176,9 @@ class TaskAwareClient(Client):
         self._unconfirmed_adoptions: dict[str, TaskAdoptionError] = {}
 
     async def check_health(self) -> None:
-        """Bound only the transport ping; task result waits and cleanup remain unbounded."""
+        """Bound catalog discovery as health; task result waits/cleanup remain unbounded."""
         async with asyncio.timeout(self.health_timeout_s):
-            if not await self.ping():
-                raise ConnectionError("Task transport did not acknowledge its health ping")
+            await self.list_tools()
 
     @classmethod
     def from_configured(

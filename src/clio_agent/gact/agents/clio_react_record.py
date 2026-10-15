@@ -616,7 +616,6 @@ class StepRecorder:
                     observation,
                     tuple(notification_ids),
                     call.id,
-                    tuple(read_handles),
                 )
             rows.append(
                 {
@@ -668,14 +667,12 @@ class StepRecorder:
         content: dict[str, Any],
         notifications: tuple[str, ...],
         call_id: str,
-        read_handles: tuple[str, ...] = (),
     ) -> None:
         """Acknowledge collection only after its real tool observation is durable."""
         import hashlib
 
         from clio_agent.arc.task_types import ContextBoundary, CoreReference
         from clio_agent.gact import context
-        from clio_agent.gact.task_access import TaskAccess
         from clio_agent.gact.task_history import _encoded
 
         app = context.active_app()
@@ -684,9 +681,6 @@ class StepRecorder:
         owner = app.state.conversations
         caller = owner.caller(self.session)
         with owner.history.serialized():
-            access = TaskAccess(owner.history, caller)
-            for handle in read_handles:
-                access.require(handle, "read")
             staged = owner.mail.collection(caller, notifications)
             segments = self.arc.context_view(self.session, self.scope).segments
             owner.mail.commit(

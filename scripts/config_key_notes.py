@@ -98,7 +98,7 @@ KEY_NOTES: dict[str, str] = {
         "inference permit. This does not cap active sessions or background tasks."
     ),
     "gact.tasks.health_timeout_s": (
-        "Timeout in seconds for task transport ping/cancellation RPC delivery; accepted execution, result "
+        "Timeout in seconds for task transport discovery/cancellation RPC delivery; accepted execution, result "
         "waits and physical cleanup retain their own semantics. Must be finite and positive."
     ),
     "gact.tasks.shell.url": (

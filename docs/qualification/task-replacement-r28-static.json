@@ -1,0 +1,79 @@
+{
+  "base": "5eab9ef8",
+  "created_at": "2026-10-15T02:13:10.346227+00:00",
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "--fix",
+        "scripts/config_key_notes.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/tools/task_client.py",
+        "tests/test_arc/test_task_boundary_contracts.py",
+        "tests/test_arc/test_task_collection_authorization.py",
+        "tests/test_tools/test_native_task_client_contract.py"
+      ],
+      "exit_code": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "scripts/config_key_notes.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/tools/task_client.py",
+        "tests/test_arc/test_task_boundary_contracts.py",
+        "tests/test_arc/test_task_collection_authorization.py",
+        "tests/test_tools/test_native_task_client_contract.py"
+      ],
+      "exit_code": 0,
+      "output": "4 files reformatted, 3 files left unchanged\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/gen_env_reference.py"
+      ],
+      "exit_code": 0,
+      "output": "Wrote docs/ENVIRONMENT.md, .env.example and src/clio_agent/config.defaults.yaml.\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_task_replacement_removal.py"
+      ],
+      "exit_code": 0,
+      "output": "Task replacement removal guard: 0 violations\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_file_size.py"
+      ],
+      "exit_code": 0,
+      "output": "OK: no file under src/clio_agent exceeds its ratchet baseline (cap 800 for new files).\n"
+    },
+    {
+      "command": [
+        "mypy",
+        "--platform",
+        "linux",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/tools/task_client.py"
+      ],
+      "exit_code": 1,
+      "output": "src\\clio_agent\\gact\\session_mail.py:211: error: Argument 1 to \"require\" of \"TaskAccess\" has incompatible type \"list[JsonValue] | dict[str, JsonValue] | str | bool | int | float | None\"; expected \"str\"  [arg-type]\nFound 1 error in 1 file (checked 3 source files)\n"
+    }
+  ],
+  "behavioral_tests": "R28 unexecuted",
+  "source_sha256": {
+    "src/clio_agent/gact/agents/clio_react_record.py": "2aa2ad940c4fdeb14a20c24e999dab40ec309e377b2fe24553ec5d5cee2f31c3",
+    "src/clio_agent/gact/session_mail.py": "b75d111ab14ccf51ad42e52f7b2a8de3b52c833153609359302a201175a5516b",
+    "src/clio_agent/tools/task_client.py": "0f9cab7c0b1e62cdf59e778d780ed0c6c9c2e09dca9e6e52ab87299f79b8c5c3"
+  }
+}

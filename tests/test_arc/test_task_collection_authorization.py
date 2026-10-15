@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import pytest
+from dspy.lm15 import Message as ModelMessage
 from dspy.lm15 import ToolCallPart
 
 from clio_agent.arc.memory import ARCMemory
@@ -15,6 +17,7 @@ from clio_agent.arc.task_types import (
     ContextBoundary,
     CoordinationGrant,
     CoreReference,
+    MailItem,
     RecipientInput,
     TaskSnapshot,
     TaskSubscription,
@@ -192,6 +195,125 @@ async def test_unavailable_assignment_control_is_rejected_without_recovery_inten
         assert not any(key.startswith("conversation-cancel:") for key in owner.recovery.pending)
         current = await asyncio.to_thread(owner.history.task_snapshot, root.handle)
         assert current.cancellation_requested_at is None and current.terminal_at is None
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("revoked", [False, True])
+@pytest.mark.parametrize("with_human", [False, True])
+async def test_delayed_mixed_collection_rechecks_peer_without_subscription(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, revoked: bool, with_human: bool
+) -> None:
+    app, owner, root = await create_environment(arc, tmp_path)
+    app.state.arc = arc
+
+    def create_peer() -> tuple[str, str]:
+        session = app.state.sessions.create(workspace_id="workspace", agent={"id": "worker"})
+        assignment = owner._new_assignment(
+            session.id, "Inspect mixed results", "human", invocation_id="peer"
+        )
+        return session.id, assignment.handle
+
+    sid, assignment = await asyncio.to_thread(create_peer)
+    caller = TaskCaller(sid, "human")
+
+    async def no_cancel(_task: TaskSnapshot, _caller: TaskCaller) -> dict[str, Any]:
+        pytest.fail("Input recovery attempted cancellation")
+
+    def prepare() -> tuple[list[str], CoordinationGrant]:
+        if with_human:
+            owner.history.record_mail(
+                MailItem(
+                    id="human-feedback",
+                    recipient_session=sid,
+                    sender_human="human",
+                    kind="human",
+                    content=owner.history.write_content(sid, {"text": "Continue the analysis"}),
+                    created_at=now(),
+                )
+            )
+        own = record_task(owner.history, "task_owned_result", session=sid)
+        foreign = record_task(owner.history, "task_peer_result", session=root.owner.session_id)
+        grant = CoordinationGrant(
+            id="peer-read",
+            granting_human="human",
+            recipient_session=sid,
+            target_session=root.owner.session_id,
+            target_handle=foreign.handle,
+            rights=("read", "observe"),
+            created_at=now(),
+        )
+        owner.history.record_grant(grant, observation_id="peer-read")
+        finish(owner.history, own)
+        finish(owner.history, foreign)
+        return [own.handle, foreign.handle], grant
+
+    handles, grant = await asyncio.to_thread(prepare)
+    value = await TaskOperations(owner.history, no_cancel).wait(caller, handles, timeout_s=0)
+    original_append = arc.append_segment
+    failed_once = False
+
+    def failed_input(*args: Any, **kwargs: Any) -> Any:
+        nonlocal failed_once
+        kind = args[2] if len(args) > 2 else kwargs.get("kind")
+        if kind == "recipient_input" and not failed_once:
+            failed_once = True
+            raise OSError("input commit unavailable after tool observation")
+        return original_append(*args, **kwargs)
+
+    monkeypatch.setattr(arc, "append_segment", failed_input)
+    try:
+
+        def scenario() -> None:
+            token = context.set_app(app)
+            try:
+                context.set_turn_identity(
+                    app=app,
+                    session_id=sid,
+                    turn_id="delayed-collection",
+                    trace_id="delayed",
+                    assignment_handle=assignment,
+                    input_notification_id="human-feedback" if with_human else "",
+                )
+                context.set_react_run(-1)
+                collected = _collected(app, caller, value)
+                assert len(collected.notification_ids) == 1
+                assert set(collected.read_handles) == set(handles)
+                recorder = StepRecorder(arc, sid, "main", expert_id="worker")
+                if with_human:
+                    recorder.user_message(ModelMessage.user("Continue the analysis"))
+                with pytest.raises(OSError, match="input commit unavailable"):
+                    recorder.step_done(
+                        0,
+                        "step",
+                        text="",
+                        thinking=(),
+                        calls=(ToolCallPart(id="mixed", name="wait_tasks", input={}),),
+                        results={"mixed": (collected, False)},
+                    )
+                assert owner.history.requires_recovery
+                owner.history.restore()
+                if revoked:
+                    owner.history.record_grant(
+                        grant.model_copy(update={"revoked_at": now()}), observation_id="revoke"
+                    )
+                    with pytest.raises(ValueError, match="unavailable"):
+                        recorder.commit_input(1)
+                    assert not owner.history.committed_observations(sid, "main")
+                    assert all(handle not in str(recorder.read_steps()) for handle in handles)
+                else:
+                    recorder.commit_input(1)
+                    assert owner.history.committed_observations(sid, "main")
+                    assert all(handle in str(recorder.read_steps()) for handle in handles)
+                    if with_human:
+                        assert "human-feedback" in owner.history.acknowledged_notifications(sid)
+                        assert "Continue the analysis" in str(recorder.read_steps())
+            finally:
+                context.reset(token)
+
+        await asyncio.to_thread(scenario)
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

@@ -234,3 +234,29 @@ to delete their retained behavior. Required test migration, CI, Q1–Q9 and
 R1–R6 remain outstanding. No model/product qualification service, release or
 installed-state change occurred in this packet. Fable exited successfully;
 its source, process group and bounded remote receipt are absent after retrieval.
+
+## R28: one disclosure check for immediate and delayed input
+
+Astra R27 found two remaining shared-input defects on `5eab9ef8`: delayed mixed
+collection could omit permission rechecks for an unsubscribed peer, and a human
+trigger could be mistaken for a task-result notice. Read authorization now lives
+in `SessionMail.commit`, using the persisted observation's read handles and
+notification IDs. The separate immediate-recorder check is removed. Four real
+Core recovery cases cover granted/revoked peers, with and without queued human
+feedback; immediate subscribed-peer cases also remain passing.
+
+The actual native SDK check exposed `ping` returning Method not found under the
+pinned runtime. Health probing now uses supported tool discovery, retaining the
+RPC-only bound. The first failed SDK case is retained in the R27 receipt. Ten
+affected R28 cases subsequently passed individually/sequentially with one worker,
+including actual native work remaining active across a cancelled RPC and settling
+after deliberate release. The disposable parent is absent. Source lint/format,
+generated-reference/removal/size checks and Mypy pass; the initial type-check
+failure and its correction remain in separate receipts.
+
+Fable R27 independently supports the architecture but identifies pre-input
+re-admission after hook denial/setup failure. Astra confirms the narrower defect,
+including hook-defer release ordering. Its bounded existing-owner correction is
+under review and not implemented in this packet. Source approval, legacy test
+migration, CI, Q1–Q9 and R1–R6 remain outstanding. These component checks are not
+model acceptance or a release-qualified candidate.

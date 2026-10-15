@@ -180,7 +180,7 @@ async def test_readiness_failure_after_last_owner_flush_remains_recoverable(
 
 
 @pytest.mark.asyncio
-async def test_transport_health_timeout_retires_ping_without_cancelling_other_work(
+async def test_transport_health_timeout_retires_probe_without_cancelling_other_work(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def reject_acceptance(_call: Any) -> Any:
@@ -188,22 +188,22 @@ async def test_transport_health_timeout_retires_ping_without_cancelling_other_wo
 
     client = TaskAwareClient(FastMCP("health contract"), on_task_accepted=reject_acceptance)
     client.health_timeout_s = 0.02
-    ping_retired = asyncio.Event()
+    probe_retired = asyncio.Event()
     release = asyncio.Event()
 
-    async def blocked_ping() -> bool:
+    async def blocked_probe() -> list[Any]:
         try:
             await asyncio.Event().wait()
-            return True
+            return []
         finally:
-            ping_retired.set()
+            probe_retired.set()
 
-    monkeypatch.setattr(client, "ping", blocked_ping)
+    monkeypatch.setattr(client, "list_tools", blocked_probe)
     independent_work = asyncio.create_task(release.wait())
     try:
         with pytest.raises(TimeoutError):
             await asyncio.wait_for(client.check_health(), 2)
-        assert ping_retired.is_set() and not independent_work.done()
+        assert probe_retired.is_set() and not independent_work.done()
     finally:
         release.set()
         await independent_work

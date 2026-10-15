@@ -1,0 +1,204 @@
+{
+  "controller_pid": 37976,
+  "created_at": "2026-10-15T02:19:56.389924+00:00",
+  "purpose": "R28 shared input and supported SDK health checks",
+  "source": "5eab9ef828a63389782df6d5e1f620fc81137ba7",
+  "candidate": "uncommitted R28 shared-boundary correction",
+  "source_hash_receipt": "task-replacement-r28-final-static.json",
+  "runtime_parent": "C:\\t28-core",
+  "workers": 1,
+  "tests": [
+    {
+      "node": "tests/test_tools/test_native_task_client_contract.py::test_cancel_rpc_deadline_does_not_deadline_accepted_execution",
+      "pid": 64156,
+      "birth": 1792030796.431473,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 20.08,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_tools/test_native_task_client_contract.py::test_cancel_rpc_deadline_does_not_deadline_accepted_execution\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-0.xml ------------------\n1 passed, 1 warning in 11.92s\nUsing legacy Agent config at C:\\Users\\jaime\\.config\\clio-agent; run migrate-paths to relocate it\n",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "11.715"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_boundary_contracts.py::test_transport_health_timeout_retires_probe_without_cancelling_other_work",
+      "pid": 59980,
+      "birth": 1792030816.523216,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 20.44,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_boundary_contracts.py::test_transport_health_timeout_retires_probe_without_cancelling_other_work\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-1.xml ------------------\n1 passed, 1 warning in 11.41s\n",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "11.176"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-False]",
+      "pid": 69596,
+      "birth": 1792030836.9756029,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 21.8,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-False]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-2.xml ------------------\n1 passed, 1 warning in 13.02s\nnanobind: leaked 18 instances!\n - leaked instance 00000175DECF6BB8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DB31B8E8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000175DB31BA28 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000175DECF6A28 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DECF6B18 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DECF6988 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DECF6B68 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DB31B6A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000175DB31B568 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000175DECF6708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DECF6938 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000176180EF248 of type \"clio_cte_core_ext.Client\"\n - leaked instance 00000175DB31B968 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000175DECF6898 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DECF69D8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DECF6A78 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000175DB31B328 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000175DECF6AC8 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"__init__\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"Dynamic\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"GetNull\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"Local\"\n - leaked function \"RegisterTarget\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"\"\n - leaked function \"TemporalSearch\"\n - leaked function \"__init__\"\n - leaked function \"TagQuery\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"SemanticSearch\"\n - leaked function \"__init__\"\n - leaked function \"BlobQuery\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"IsNull\"\n - leaked function \"ToU64\"\n - leaked function \"DelBlob\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"Broadcast\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "12.800"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-True]",
+      "pid": 25188,
+      "birth": 1792030858.7878344,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 26.81,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[False-True]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-3.xml ------------------\n1 passed, 1 warning in 18.09s\nnanobind: leaked 18 instances!\n - leaked instance 000001EE928EB668 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001EE928EB9E8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001EE972825C8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE972826B8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EEE86C99C8 of type \"clio_cte_core_ext.Client\"\n - leaked instance 000001EE928EB928 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001EE928EB2E8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001EE972827F8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE928EB8A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001EE97282758 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE97282668 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE972824D8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE97282618 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE97282708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE928EB4A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001EE97282578 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE972827A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001EE97282348 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"BlobQuery\"\n - leaked function \"IsNull\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"DelBlob\"\n - leaked function \"GetNull\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"Local\"\n - leaked function \"RegisterTarget\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"TemporalSearch\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"Dynamic\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"\"\n - leaked function \"Broadcast\"\n - leaked function \"TagQuery\"\n - leaked function \"__init__\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"SemanticSearch\"\n - leaked function \"\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"__init__\"\n - leaked function \"\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"ToU64\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"__init__\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "17.870"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[True-False]",
+      "pid": 28636,
+      "birth": 1792030885.6074183,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 22.09,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[True-False]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-4.xml ------------------\n1 passed, 1 warning in 13.28s\nnanobind: leaked 18 instances!\n - leaked instance 000001E0C1E1E2F8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0C1E1E528 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0BD48BA08 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E0C1E1E488 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0C1E1E708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0C1E1E5C8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0C1E1E758 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0C1E1E7A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0BD48B8C8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E0BD48B448 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E0BD48B688 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E0BD48B948 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E11326D948 of type \"clio_cte_core_ext.Client\"\n - leaked instance 000001E0C1E1E668 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0C1E1E578 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0C1E1E6B8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E0BD48B308 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E0C1E1E618 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"TemporalSearch\"\n - leaked function \"Local\"\n - leaked function \"\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"DelBlob\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"__init__\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"__init__\"\n - leaked function \"__init__\"\n - leaked function \"IsNull\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"Broadcast\"\n - leaked function \"ToU64\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"TagQuery\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"BlobQuery\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"Dynamic\"\n - leaked function \"\"\n - leaked function \"\"\n - leaked function \"SemanticSearch\"\n - leaked function \"RegisterTarget\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"GetNull\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "13.009"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[True-True]",
+      "pid": 7444,
+      "birth": 1792030907.7014804,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 22.68,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_delayed_mixed_collection_rechecks_peer_without_subscription[True-True]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-5.xml ------------------\n1 passed, 1 warning in 13.33s\nnanobind: leaked 18 instances!\n - leaked instance 000001E27FF92488 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27C5CB448 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E27FF92618 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27FF927A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27C5CB8C8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E27FF92668 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27C5CB308 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E27C5CBA08 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E27C5CB688 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E252459948 of type \"clio_cte_core_ext.Client\"\n - leaked instance 000001E27C5CB948 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001E27FF922F8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27FF926B8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27FF925C8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27FF92528 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27FF92708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27FF92578 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001E27FF92758 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"RegisterTarget\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"__init__\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"SemanticSearch\"\n - leaked function \"IsNull\"\n - leaked function \"\"\n - leaked function \"Dynamic\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"__init__\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"Local\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"GetNull\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"ToU64\"\n - leaked function \"\"\n - leaked function \"BlobQuery\"\n - leaked function \"__init__\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"TemporalSearch\"\n - leaked function \"DelBlob\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"TagQuery\"\n - leaked function \"Broadcast\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "13.026"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[False-False]",
+      "pid": 38188,
+      "birth": 1792030930.393752,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 21.74,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[False-False]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-6.xml ------------------\n1 passed, 1 warning in 12.53s\nnanobind: leaked 18 instances!\n - leaked instance 0000015638A02578 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001563406B908 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000015638A02348 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000015638A02708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001563406BA48 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001563406B988 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000001568ADF9948 of type \"clio_cte_core_ext.Client\"\n - leaked instance 0000015638A025C8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000015638A024D8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000015638A027A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001563406B6C8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000015638A02668 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000015638A026B8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000015638A02618 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001563406B3E8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000015638A027F8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000001563406B348 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000015638A02758 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"Local\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"__init__\"\n - leaked function \"RegisterTarget\"\n - leaked function \"TemporalSearch\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"__init__\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"Broadcast\"\n - leaked function \"IsNull\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"TagQuery\"\n - leaked function \"DelBlob\"\n - leaked function \"BlobQuery\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"GetNull\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"\"\n - leaked function \"ToU64\"\n - leaked function \"\"\n - leaked function \"SemanticSearch\"\n - leaked function \"Dynamic\"\n - leaked function \"\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"__init__\"\n - leaked function \"AsyncGetContainedBlobs\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "12.318"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[False-True]",
+      "pid": 41624,
+      "birth": 1792030952.1420794,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 21.45,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[False-True]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-7.xml ------------------\n1 passed, 1 warning in 12.44s\nnanobind: leaked 18 instances!\n - leaked instance 000002B6B1A9B588 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000002B6B1A9BA48 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000002B6B545E398 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B545E528 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B1A9B2E8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000002B6B545E848 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B545E758 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B545E7A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B545E5C8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B545E6B8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B1A9BA28 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000002B6B1A9B348 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000002B6B545E618 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B1A9B9A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 000002B70689DDC8 of type \"clio_cte_core_ext.Client\"\n - leaked instance 000002B6B545E708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B545E668 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 000002B6B545E7F8 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"PollTelemetryLog\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"Local\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"SemanticSearch\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"ToU64\"\n - leaked function \"__init__\"\n - leaked function \"\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"Dynamic\"\n - leaked function \"DelBlob\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"BlobQuery\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"__init__\"\n - leaked function \"__init__\"\n - leaked function \"Broadcast\"\n - leaked function \"IsNull\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"GetNull\"\n - leaked function \"TemporalSearch\"\n - leaked function \"\"\n - leaked function \"TagQuery\"\n - leaked function \"RegisterTarget\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"\"\n - leaked function \"AsyncTagQuery\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "12.224"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[True-False]",
+      "pid": 34004,
+      "birth": 1792030973.599326,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 22.39,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[True-False]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-8.xml ------------------\n1 passed, 1 warning in 12.59s\nnanobind: leaked 18 instances!\n - leaked instance 00000210D44F25C8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D0B2B848 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000210D44F27A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D44F2668 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D44F2708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D44F27F8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D44F2758 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D44F2618 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D44F2398 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D0B2B8C8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000210D0B2B288 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000210D0B2B4A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000210FF949948 of type \"clio_cte_core_ext.Client\"\n - leaked instance 00000210D0B2B608 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000210D44F2848 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D0B2B988 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 00000210D44F2528 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 00000210D44F26B8 of type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"GetNull\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"Broadcast\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"SemanticSearch\"\n - leaked function \"RegisterTarget\"\n - leaked function \"TagQuery\"\n - leaked function \"__init__\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"DelBlob\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"ToU64\"\n - leaked function \"TemporalSearch\"\n - leaked function \"IsNull\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"Dynamic\"\n - leaked function \"\"\n - leaked function \"__init__\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"Local\"\n - leaked function \"__init__\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"BlobQuery\"\n - leaked function \"\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"DeferErrorCount\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "12.375"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    },
+    {
+      "node": "tests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[True-True]",
+      "pid": 464,
+      "birth": 1792030995.9970005,
+      "status": "passed",
+      "exit_code": 0,
+      "elapsed_s": 23.72,
+      "output": ".                                                                        [100%]\n============================== warnings summary ===============================\ntests/test_arc/test_task_collection_authorization.py::test_revoked_member_cannot_enter_model_context_through_collection[True-True]\n  C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent\\paths.py:114: FutureWarning: CLIO_USER_DIR is deprecated; migrate to CLIO_AGENT_HOME\n    root = resolve_root(role, home=base_home, env=source, platform=_platform())\n\n-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html\n----------------- generated xml file: C:\\t28-core\\case-9.xml ------------------\n1 passed, 1 warning in 13.35s\nnanobind: leaked 18 instances!\n - leaked instance 0000018C2982B2A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000018C2D1F2488 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2982B388 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000018C2D1F2668 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2982B868 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000018C2D1F2758 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2D1F25C8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2D1F2708 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2982B8E8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000018C2982B9A8 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000018C2D1F2618 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2D1F2528 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2D1F27A8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2D1F2578 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2D1F26B8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2D1F22F8 of type \"clio_cte_core_ext.PoolQuery\"\n - leaked instance 0000018C2982B628 of type \"clio_cte_core_ext.UniqueId\"\n - leaked instance 0000018C7E619948 of type \"clio_cte_core_ext.Client\"\nnanobind: leaked 3 types!\n - leaked type \"clio_cte_core_ext.Client\"\n - leaked type \"clio_cte_core_ext.UniqueId\"\n - leaked type \"clio_cte_core_ext.PoolQuery\"\nnanobind: leaked 38 functions!\n - leaked function \"GetNull\"\n - leaked function \"AsyncSemanticSearch\"\n - leaked function \"AsyncRegisterTarget\"\n - leaked function \"AsyncTagQuery\"\n - leaked function \"PollTelemetryLog\"\n - leaked function \"AsyncPutBlob\"\n - leaked function \"AsyncPollTelemetryLog\"\n - leaked function \"TagQuery\"\n - leaked function \"AsyncGetContainedBlobs\"\n - leaked function \"Dynamic\"\n - leaked function \"ReorganizeBlob\"\n - leaked function \"SemanticSearch\"\n - leaked function \"__init__\"\n - leaked function \"RegisterTarget\"\n - leaked function \"Broadcast\"\n - leaked function \"AwaitPutsUntilSpace\"\n - leaked function \"TemporalSearch\"\n - leaked function \"ToU64\"\n - leaked function \"AsyncPutBlobDefer\"\n - leaked function \"AsyncReorganizeBlob\"\n - leaked function \"AsyncTemporalSearch\"\n - leaked function \"DelBlob\"\n - leaked function \"AsyncGetBlobSize\"\n - leaked function \"__init__\"\n - leaked function \"\"\n - leaked function \"AsyncGetBlob\"\n - leaked function \"AsyncDelBlob\"\n - leaked function \"__init__\"\n - leaked function \"DeferErrorCount\"\n - leaked function \"IsNull\"\n - leaked function \"\"\n - leaked function \"AsyncGetOrCreateTag\"\n - leaked function \"Local\"\n - leaked function \"\"\n - leaked function \"AsyncBlobQuery\"\n - leaked function \"AsyncGetBlobDefer\"\n - leaked function \"BlobQuery\"\n - leaked function \"\"\nnanobind: this is likely caused by a reference counting issue in the binding code.\nSee https://nanobind.readthedocs.io/en/latest/refleaks.html",
+      "junit": {
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "time": "13.095"
+      },
+      "properties": {},
+      "runtime_residue": [],
+      "pytest_absent": true
+    }
+  ],
+  "status": "passed",
+  "parent_absent": true
+}

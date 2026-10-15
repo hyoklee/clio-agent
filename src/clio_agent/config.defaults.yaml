@@ -672,7 +672,7 @@ gact.resident_ledgers.max_bytes: 536870912
 gact.resident_ledgers.max_sessions: 512
 
 # CLIO_TASKS_HEALTH_TIMEOUT_S  (float)  <- src/clio_agent/tools/task_client.py
-# Timeout in seconds for task transport ping/cancellation RPC delivery;
+# Timeout in seconds for task transport discovery/cancellation RPC delivery;
 # accepted execution, result waits and physical cleanup retain their own
 # semantics. Must be finite and positive.
 gact.tasks.health_timeout_s: 10.0

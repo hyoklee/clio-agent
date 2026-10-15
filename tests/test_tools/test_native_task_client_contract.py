@@ -119,7 +119,8 @@ async def test_cancel_rpc_deadline_does_not_deadline_accepted_execution(
                 await asyncio.wait_for(call.request_cancel(), 2)
             assert requests == [call.task.task_id] and cancel_retired.is_set()
             assert not observer.done() and not release.is_set()
-            assert await asyncio.wait_for(client.ping(), 2)
+            client.health_timeout_s = 2
+            await client.check_health()
             assert not observer.done()
         finally:
             release.set()

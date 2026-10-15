@@ -201,9 +201,27 @@ class SessionMail:
                     raise ValueError("Model context changed; retain inputs for the admitted epoch")
             access = TaskAccess(self.history, caller)
             if tool_observation is not None:
+                observed = self.history.read_content(tool_observation)
+                reads = observed.get("task_read_handles", ()) if isinstance(observed, dict) else ()
+                if not isinstance(reads, (list, tuple)):
+                    raise ValueError("Collected observation read identities are malformed")
+                for handle in reads:
+                    if not isinstance(handle, str):
+                        raise ValueError("Collected observation read identities are malformed")
+                    access.require(handle, "read")
                 # Every disclosed result must still be readable, including a result
                 # whose automatic delivery won the collection race already.
-                self.collection(caller, staged.collected)
+                notices = observed.get("notification_ids", ()) if isinstance(observed, dict) else ()
+                if not isinstance(notices, (list, tuple)):
+                    raise ValueError("Collected observation notification identities are malformed")
+                result_notices = []
+                for identity in notices:
+                    if not isinstance(identity, str):
+                        raise ValueError(
+                            "Collected observation notification identities are malformed"
+                        )
+                    result_notices.append(identity)
+                self.collection(caller, tuple(result_notices))
             pending = {item.id: item for item in self.history.pending_mail(caller.session_id)}
             for item in staged.items:
                 if pending.get(item.id) != item:
