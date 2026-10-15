@@ -52,6 +52,8 @@ def install_session_lifecycle_observer(app: Any) -> None:
                 arc = getattr(app.state, "arc", None)
                 if arc is None:
                     raise RuntimeError("Trusted session creation requires its Core provenance")
+                if getattr(app.state, "semantic_event_sink", None) is None:
+                    raise RuntimeError("Trusted session creation requires its provenance sink")
                 for segment in arc.list_segments(str(session.id), "_events"):
                     if segment.kind != "semantic_event":
                         continue
