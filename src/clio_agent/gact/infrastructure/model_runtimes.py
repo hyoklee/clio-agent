@@ -181,7 +181,9 @@ ENGINES: dict[str, EngineSpec] = {
         variants=(
             VariantSpec("cuda", "NVIDIA CUDA", VLLM_VERSION, VLLM_IMAGES["cuda"], "nvidia"),
             VariantSpec("rocm", "AMD ROCm", VLLM_VERSION, VLLM_IMAGES["rocm"], "amd"),
-            VariantSpec("cpu", "CPU", VLLM_VERSION, VLLM_IMAGES["cpu"], x86_only=True),
+            VariantSpec(
+                "cpu", "CPU", VLLM_VERSION, VLLM_IMAGES["cpu"], linux_only=False, x86_only=True
+            ),
         ),
         fields=(_field("model", "Model", "Qwen/Qwen3-8B", required=True),),
     ),
@@ -210,7 +212,7 @@ ENGINES: dict[str, EngineSpec] = {
         container_name="clio-ollama",
         health_path="/api/version",
         variants=(
-            VariantSpec("cpu", "CPU", OLLAMA_VERSION, OLLAMA_IMAGE),
+            VariantSpec("cpu", "CPU", OLLAMA_VERSION, OLLAMA_IMAGE, linux_only=False),
             VariantSpec("cuda", "NVIDIA CUDA", OLLAMA_VERSION, OLLAMA_IMAGE, "nvidia"),
             VariantSpec("rocm", "AMD ROCm", OLLAMA_VERSION, OLLAMA_ROCM_IMAGE, "amd"),
         ),
@@ -306,7 +308,9 @@ def model_runtime_definition(service_id: str, facts: TargetFacts) -> ManagedServ
                 install_type="native_archive",
                 artifact=LLAMA_WINDOWS_CPU_ARCHIVE,
                 compatible=native,
-                reason="Requires the CLIO host to be 64-bit Windows.",
+                reason="Ready for native installation; no container runtime is needed."
+                if native
+                else "Requires the CLIO host to be 64-bit Windows.",
             )
         )
     for variant in spec.variants:
@@ -322,7 +326,7 @@ def model_runtime_definition(service_id: str, facts: TargetFacts) -> ManagedServ
                 reason=reason,
             )
         )
-    recommended = next((row.id for row in variants if row.compatible), spec.variants[-1].id)
+    recommended = next((row.id for row in variants if row.compatible), "cpu")
     if native:
         recommended = "native-windows-cpu"
     runtime_options = usable_runtimes(_runtimes(facts))
