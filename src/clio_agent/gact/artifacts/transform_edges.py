@@ -5,8 +5,7 @@ Split from :mod:`clio_agent.gact.artifacts.transforms`; both detectors favor pre
 * :func:`detect_used_edges` resolves bounded paths with hash/stat evidence.
 * :func:`detect_authority_edges` keeps specific catalog resources as authority.
 
-Both detectors return an :class:`EdgeScan` (edges + typed notes) so a deliberate
-non-edge (precision over recall) stays DETECTABLE on the record, never silent.
+Both return edges and typed notes in an :class:`EdgeScan`, including deliberate non-edges.
 """
 
 from __future__ import annotations
@@ -61,11 +60,8 @@ _NDP_DETAILS_TOOLS: frozenset[str] = frozenset({"get_dataset_details"})
 #: ``catalog_hits_not_consumed`` so the discovery is honestly recorded.
 _NDP_SEARCH_TOOLS: frozenset[str] = frozenset({"search_datasets", "list_organizations"})
 _NDP_STAGE_TOOL = "stage_resource"
-# #1200: clio-agent's own bounded relay transfer. Named here for the same reason
-# ``stage_resource`` is -- the tool's result carries a REMOTE origin the generic
-# args-based scan cannot see, and that origin is the used-edge authority for the
-# local file it wrote. Both the gateway-mounted name and the bare mount name are
-# listed because the short-name match sees whichever the dispatch used.
+# Relay results carry remote authority invisible to the args scan; accept
+# both gateway-mounted and bare tool names (#1200).
 _RELAY_FETCH_TOOLS: frozenset[str] = frozenset({"relay_fetch_artifact", "fetch_artifact"})
 
 #: Bound on how many authority-asserted catalog resources one result contributes,
@@ -80,8 +76,7 @@ _MAX_ARG_DEPTH = 4
 _MAX_CANDIDATE_STRLEN = 4096
 
 
-# Used-edge detection (item 3) — precision over recall (owner decision #966.10).
-# --------------------------------------------------------------------------- #
+# Used-edge detection favors precision over recall (owner decision #966.10).
 
 
 #: Declared-channel arg names EXCLUDED from the generic heuristic scan — each has
@@ -792,24 +787,9 @@ def _catalog_resource_edges(structured: dict[str, Any]) -> list[ProvEdge]:
 
 def _hash_if_contained(app: "FastAPI", raw_path: str, workspace_id: str) -> Optional[str]:
     """Hash a staged file when it exists inside the workspace root, else ``None``."""
-    from clio_agent.gact.artifacts.minting import (  # noqa: PLC0415
-        _contained,
-        _workspace_root,
-        compute_identity,
-    )
+    from clio_agent.gact.artifacts.minting import hash_if_contained  # noqa: PLC0415
 
-    root = _workspace_root(app, workspace_id)
-    if root is None:
-        return None
-    path = Path(raw_path)
-    if not _contained(path, root):
-        return None
-    try:
-        if not path.is_file():
-            return None
-        return compute_identity(path).sha256
-    except OSError:
-        return None
+    return hash_if_contained(app, raw_path, workspace_id)
 
 
 __all__ = [

@@ -78,6 +78,22 @@ def _observer_call_started_at() -> float | None:
         return None
 
 
+def hash_if_contained(app: "FastAPI", raw_path: str, workspace_id: str) -> Optional[str]:
+    """Hash a staged file when it exists inside the workspace root, else ``None``."""
+    root = _workspace_root(app, workspace_id)
+    if root is None:
+        return None
+    path = Path(raw_path)
+    if not _contained(path, root):
+        return None
+    try:
+        if not path.is_file():
+            return None
+        return compute_identity(path).sha256
+    except OSError:
+        return None
+
+
 def _workspace_root(app: "FastAPI", workspace_id: str) -> Optional[Path]:
     """Resolve the bound workspace's root path, or ``None`` when unresolvable.
 
