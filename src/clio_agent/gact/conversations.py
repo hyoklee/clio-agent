@@ -749,6 +749,7 @@ class Conversations:
     def close_admission(self) -> None:
         """Reject new model admission while existing owners retire their work."""
         self._closing = True
+        self.recovery.on_ready = None
         self.runner.close_admission()
 
     async def shutdown(self) -> None:

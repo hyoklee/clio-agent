@@ -172,6 +172,9 @@ async def start(app: Any) -> None:
                 recovered = Message.model_validate(original["message"])
                 if recovered.session_id != segment.session_id or recovered.role != "user":
                     raise ValueError("Retained human input belongs to another session or role")
+                from clio_agent.gact.session_store import project_accepted_mail_messages
+
+                project_accepted_mail_messages(app, history, segment.session_id, (segment.trigger,))
                 return recovered, agent, model_text
             if segment.trigger.kind in {"human", "composer"} and existing is not None:
                 return existing, agent, model_text

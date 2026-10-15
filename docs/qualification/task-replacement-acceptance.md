@@ -547,3 +547,23 @@ Fresh public activation and cancellation/retirement regressions are constructed,
 unexecuted. Scoped Ruff/format/Linux Mypy (three files), removal and unchanged
 size/class/hidden-swallow guards pass. The next run uses the corrected frozen
 source; none of these checks qualifies a Q/R acceptance row.
+
+## R44 live execution and R45 correction
+
+Actual Codex/Luna production-service execution now supplies partial live evidence
+for immediate Shell/Subagent/Indexing/Download handles, independent work, progress,
+expired and unbounded waits, Question idle/post-Stop wakes, background Download
+Stop independence, human cancellation notices and real manifest/byte/hash checks.
+See `task-replacement-r44-live.json` for identities, invocations and exclusions.
+This does not pass the entire final matrix or five-repeat races.
+
+R44 shutdown failed through a healthy Question display-projection recovery cycle.
+The bounded diagnosis and cleanup-only closing-readiness intervention are recorded
+in `task-replacement-r44-shutdown.json`. Original shutdown remains failed.
+Exact disposable-root removal was rejected and is now manual-only; no deletion
+ran. Registered processes/private listeners are absent.
+
+`task-replacement-r45-impact.md` maps three bounded corrections to their existing
+owners and the required affected live rechecks. New regression cases remain
+unexecuted; source correction/review and regression assurance cannot replace live
+qualification. Full Q1–Q9/R1–R6, CI and final accepted review remain outstanding.

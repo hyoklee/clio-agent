@@ -40,37 +40,42 @@ def _input_committed(self: Conversations, staged: StagedInput) -> None:
         if item.kind not in {"a2ui", "question_answer"}:
             continue
 
-        async def project(item: MailItem = item) -> None:
-            def update() -> None:
-                from clio_agent.gact.a2ui_actions.record import mark_a2ui_action_consumed
+        def update(item: MailItem = item) -> None:
+            from clio_agent.gact.a2ui_actions.record import mark_a2ui_action_consumed
 
-                content = self.history.read_content(item.content)
-                metadata = content.get("metadata") if isinstance(content, dict) else None
-                session_id = item.recipient_session
-                if item.kind == "question_answer":
-                    task = self.history.task_snapshot(item.handle or "")
-                    if (
-                        task is None
-                        or task_owner_recipient(self.history, task) != item.recipient_session
-                    ):
-                        return  # A subscriber cannot acknowledge the owner's receipt.
-                    action = content.get("source_action") if isinstance(content, dict) else None
-                    if not isinstance(action, dict):
-                        return
-                    session_id = str(action["session_id"])
-                    metadata = {
-                        "a2ui_action": action["action_id"],
-                        "surface_id": action["surface_id"],
-                    }
-                mark_a2ui_action_consumed(
-                    self.app,
-                    session_id,
-                    metadata if isinstance(metadata, dict) else None,
-                )
+            content = self.history.read_content(item.content)
+            metadata = content.get("metadata") if isinstance(content, dict) else None
+            session_id = item.recipient_session
+            if item.kind == "question_answer":
+                task = self.history.task_snapshot(item.handle or "")
+                if (
+                    task is None
+                    or task_owner_recipient(self.history, task) != item.recipient_session
+                ):
+                    return  # A subscriber cannot acknowledge the owner's receipt.
+                action = content.get("source_action") if isinstance(content, dict) else None
+                if not isinstance(action, dict):
+                    return
+                session_id = str(action["session_id"])
+                metadata = {
+                    "a2ui_action": action["action_id"],
+                    "surface_id": action["surface_id"],
+                }
+            mark_a2ui_action_consumed(
+                self.app,
+                session_id,
+                metadata if isinstance(metadata, dict) else None,
+            )
 
+        async def project(update: Callable[[], None] = update) -> None:
             await asyncio.to_thread(update)
 
-        if self._loop is not None:
+        try:
+            update()
+        except Exception:
+            logger.exception("Confirmed input display projection remains pending id=%s", item.id)
+            if self._loop is None:
+                raise
             self._loop.call_soon_threadsafe(
                 self.recovery.defer, "a2ui-consumed:" + item.id, project
             )

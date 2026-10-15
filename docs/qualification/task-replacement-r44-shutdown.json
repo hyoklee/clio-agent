@@ -1,0 +1,58 @@
+{
+  "intervention": {
+    "at": 1792083398.0169592,
+    "pid": 8180,
+    "failed_shutdown_gate": true,
+    "cleanup_only_intervention": "Detach readiness of an already-closing service",
+    "pending_actions_retained": [
+      "a2ui-consumed:outcome:task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4:sess_dd47845035f8",
+      "a2ui-consumed:outcome:task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602:sess_9bbb3c6a0edd"
+    ],
+    "core_recording_unconfirmed": false,
+    "active_tasks": 0,
+    "records_dropped": 0,
+    "source_methods_patched": false,
+    "forced_process_exit": false
+  },
+  "diagnosis": {
+    "at": 1792083067.7202132,
+    "read_only": true,
+    "reports": [
+      {
+        "requires_core_recovery": false,
+        "pending_count": 2,
+        "pending": [
+          {
+            "identity": "a2ui-consumed:outcome:task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602:sess_9bbb3c6a0edd",
+            "action": "_input_committed.<locals>.project",
+            "closure_types": [
+              "Conversations"
+            ]
+          },
+          {
+            "identity": "a2ui-consumed:outcome:task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4:sess_dd47845035f8",
+            "action": "_input_committed.<locals>.project",
+            "closure_types": [
+              "Conversations"
+            ]
+          }
+        ],
+        "truncated": false
+      }
+    ]
+  },
+  "cleanup": {
+    "human_manual_only": true,
+    "never_retry_or_bypass": true,
+    "targets": [
+      "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\live\\r43-shell-6f494f5f",
+      "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.r44-live-tmp"
+    ],
+    "state": "rejected",
+    "command_executed": false,
+    "reason": "blocked by policy"
+  },
+  "source": "278d57863ebe1134ec61559fde13850eae13879e",
+  "recorded_utc": "2026-10-15T17:13:53.8278845Z",
+  "shutdown_gate": "failed; healthy Question display recovery cycle"
+}

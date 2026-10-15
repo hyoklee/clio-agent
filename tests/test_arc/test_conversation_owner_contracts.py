@@ -39,10 +39,6 @@ from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.turn_runner import TurnRunner
 
 
-async def unavailable_admission(_sid: str) -> None:
-    pytest.fail("The owner test must not admit an inference turn")
-
-
 @pytest.mark.asyncio
 async def test_spawn_strategy_is_validated_before_child_creation_and_immutable(
     arc: ARCMemory,
@@ -146,7 +142,10 @@ async def create_environment(
 
         return create
 
-    app.state.turn_runner = TurnRunner(app, unavailable_admission)
+    async def admit(sid: str) -> tuple[str, Any] | None:
+        return await app.state.conversations._admit(sid)
+
+    app.state.turn_runner = TurnRunner(app, admit)
     app.state.turn_runner.bind_loop(asyncio.get_running_loop())
     owner = Conversations(
         app,
@@ -160,6 +159,162 @@ async def create_environment(
     app.state.conversations = owner
     await owner.restore()
     return app, owner, root
+
+
+@pytest.mark.asyncio
+async def test_human_arrival_during_cancellation_admits_after_settlement(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """A vetoed Core-pending arrival must not require another message to wake it."""
+    from dspy.lm15 import Message as ModelMessage
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    history = owner.history
+    dispatched, received = asyncio.Event(), asyncio.Event()
+    sid = root.owner.session_id
+    stamp = now()
+    child = TaskSnapshot(
+        handle="task_settling_child",
+        kind="MCP",
+        tool="external",
+        owner=root.owner.model_copy(update={"parent_handle": root.handle}),
+        label="Settling external work",
+        invocation_id="child-call",
+        created_at=stamp,
+        updated_at=stamp,
+        status="running",
+    )
+    await asyncio.to_thread(history.record_snapshot, child, observation_id="child-start")
+
+    async def request_cancel(task: TaskSnapshot) -> dict[str, Any]:
+        assert task.handle == child.handle
+        dispatched.set()
+        return {"handle": task.handle, "cancellation_requested": True}
+
+    observed: list[ConversationSegment] = []
+
+    async def model(segment: ConversationSegment) -> ConversationOutcome:
+        def commit_input() -> None:
+            token = context.set_app(app)
+            try:
+                recorder = StepRecorder(arc, sid, "main", expert_id="main")
+                recorder.user_message(ModelMessage.user(segment.text))
+                recorder.commit_input(0)
+            finally:
+                context.reset(token)
+
+        await asyncio.to_thread(commit_input)
+        observed.append(segment)
+        received.set()
+        return ConversationOutcome({"answer": segment.text}, disposition="complete")
+
+    owner.cancel_work = request_cancel
+    owner.run_segment = model
+    owner.start()
+
+    def accept() -> None:
+        history.record_mail(
+            MailItem(
+                id="human-during-cancellation",
+                recipient_session=sid,
+                sender_human="human",
+                kind="human",
+                content=history.write_content(sid, "Continue with the new human assignment"),
+                created_at=now(),
+            )
+        )
+
+    def settle_child() -> None:
+        current = history.task_snapshot(child.handle)
+        if current is not None and current.terminal_at is not None:
+            return
+        history.record_snapshot(
+            child.model_copy(
+                update={
+                    "status": "cancelled",
+                    "raw_status": "cancelled",
+                    "settlement": "confirmed",
+                    "terminal_at": now(),
+                }
+            ),
+            observation_id="child-cleanup-confirmed",
+        )
+
+    try:
+        await owner.cancel(TaskCaller(sid, "human", human_action=True), root.handle)
+        await dispatched.wait()
+        await asyncio.to_thread(accept)
+        await asyncio.sleep(0)
+        assert not observed
+        await asyncio.to_thread(settle_child)
+        await received.wait()
+        assert len(observed) == 1 and observed[0].text == "Continue with the new human assignment"
+        assert observed[0].assignment.handle != root.handle
+        current = await asyncio.to_thread(history.task_snapshot, root.handle)
+        assert current is not None and current.status == "cancelled" and current.terminal_at
+        assert "human-during-cancellation" in history.acknowledged_notifications(sid)
+    finally:
+        await asyncio.to_thread(settle_child)
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_consumed_plain_question_does_not_requeue_healthy_recovery(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """The live shutdown failure was a readiness cycle over an ordinary answered Question."""
+    from dspy.lm15 import Message as ModelMessage
+
+    from clio_agent.gact.task_publication import publish_task_notice
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    questions = QuestionCommands(owner.history)
+    app.state.questions = questions
+    with owner.runner.session_change(sid):
+        owner.start()
+
+        def commit_answer() -> None:
+            question = questions.create(
+                root.owner.model_copy(update={"parent_handle": root.handle}),
+                QuestionDefinition(prompt="Which owned dataset?", source="native"),
+                invocation_id="ordinary-question",
+            )
+            answered = questions.answer(question.handle, QuestionReply(answer="Owned dataset"))
+            publish_task_notice(owner.history, answered)
+            notices = owner.history.pending_mail(sid)
+            assert len(notices) == 1 and notices[0].kind == "question_answer"
+            token = context.set_app(app)
+            try:
+                context.set_turn_identity(
+                    app=app,
+                    session_id=sid,
+                    turn_id="question-input",
+                    trace_id="question-input",
+                    assignment_handle=root.handle,
+                    input_notification_id=notices[0].id,
+                )
+                recorder = StepRecorder(arc, sid, "main", expert_id="main")
+                recorder.user_message(ModelMessage.user("Continue with the answer"))
+                recorder.commit_input(0)
+                assert owner.history.acknowledged_notifications(sid) == {notices[0].id}
+            finally:
+                context.reset(token)
+
+        try:
+            await asyncio.to_thread(commit_answer)
+            await asyncio.sleep(0)
+            await owner.recovery.drain()
+            assert owner.recovery.pending == ()
+            await asyncio.to_thread(owner._restore_input_projections)
+            await asyncio.sleep(0)
+            await owner.recovery.drain()
+            assert owner.recovery.pending == ()
+        finally:
+            owner.close_admission()
+    await owner.shutdown()
+    await owner.recovery.drain()
 
 
 @pytest.mark.asyncio

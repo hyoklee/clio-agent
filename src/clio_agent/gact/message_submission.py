@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from fastapi import FastAPI, HTTPException
 
@@ -57,6 +57,7 @@ from clio_agent.gact.runtime.globals import (
     _ContextFileAccessError,
     _new_message_id,
 )
+from clio_agent.gact.session_store import project_accepted_mail_messages
 from clio_agent.gact.thinking_level_guard import raise_if_selection_unusable
 from clio_agent.gact.types import (
     ErrorEnvelope,
@@ -561,23 +562,42 @@ def accept_message(
             (row for row in app.state.messages.get(sid, []) if row.id == identity), None
         )
         accepted = owner.history.mail_item(sid, identity)
-        if previous is not None and accepted is not None:
+        if accepted is not None:
             saved = owner.history.read_content(accepted.content)
-            if saved.get("text") != text:
+            if not isinstance(saved, dict) or saved.get("text") != text:
                 raise HTTPException(
                     status_code=409, detail="Message identity was reused with changed content"
                 )
+            retained = (
+                Message.model_validate(saved["message"]) if saved.get("message") else previous
+            )
+            if retained is None or retained.id != identity or retained.session_id != sid:
+                raise HTTPException(
+                    status_code=409, detail="Accepted message identity is unavailable"
+                )
+            if not owner.history.mail_withdrawn(
+                sid, identity
+            ) and identity not in owner.history.acknowledged_notifications(sid):
+                project_accepted_mail_messages(app, owner.history, sid, (accepted,))
+            original_handle = saved.get("assignment_id")
+            if original_handle is None and accepted.admission is not None:
+                original_handle = accepted.admission.assignment_id
+            if original_handle is not None and not isinstance(original_handle, str):
+                raise ValueError("Retained acceptance assignment identity is invalid")
+            original_delivery: Literal["steer", "start"] = (
+                "steer" if retained.metadata.get("delivery") == "steer" else "start"
+            )
             return PostMessageResponse(
                 message_id=identity,
-                accepted_at=previous.created_at,
-                effective_model=selected,
-                behavior=req.behavior,
-                idempotent_replay=True,
-                task_handle=(
-                    owner.history.latest_assignment(sid).handle
-                    if owner.history.latest_assignment(sid) is not None
-                    else None
+                accepted_at=retained.created_at,
+                delivery=original_delivery,
+                state="pending_steer" if original_delivery == "steer" else "started",
+                effective_model=ModelRef.model_validate(
+                    retained.metadata.get("effective_model", {})
                 ),
+                behavior=type(req.behavior).model_validate(retained.metadata.get("behavior", {})),
+                idempotent_replay=True,
+                task_handle=original_handle,
             ), 200
         parts, deliveries = _plan_resource_parts(
             app, workspace_id=session.workspace_id, message_id=identity, parts=parts, model=selected

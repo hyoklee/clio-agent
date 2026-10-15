@@ -1,0 +1,33 @@
+{
+  "purpose": "Independent actual Claude Code R44 source review",
+  "core": "278d57863ebe1134ec61559fde13850eae13879e",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "state": "settled",
+  "started_at": 1792080339.6885436,
+  "source_cache_created": false,
+  "debug_log_enabled": false,
+  "retention": "Bounded selected reviewer identity receipt; no disposable output/debug/session export",
+  "pid": 71156,
+  "exit_code": 0,
+  "finished_at": 1792081025.6430328,
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 546,
+      "outputTokens": 45293,
+      "cacheReadInputTokens": 2935643,
+      "cacheCreationInputTokens": 297735,
+      "webSearchRequests": 0,
+      "costUSD": 8.95872075,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 33088,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "session": "95fcae9f-fe82-4c4d-aa64-8eb833065fc3",
+  "is_error": false,
+  "subtype": "success"
+}

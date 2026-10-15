@@ -713,20 +713,16 @@ def _start_background_user_turn(
             metadata=user_metadata,
         )
 
-        # #1334: the ledger + local store are written here (the 202 already promised the
-        # identity); the ARC transcript persist is handed to the turn to run off the loop.
-        if replace_existing_user_message:
-            rows = list(app.state.messages.get(sid, []))
-            rows = [user_msg if row.id == user_msg.id else row for row in rows]
-            if not any(row.id == user_msg.id for row in rows):
-                rows.append(user_msg)
-            _replace_session_messages(app, sid, rows)
-        else:
-            _append_session_message(app, sid, user_msg)
+        accepted_assignment = owner.history.latest_assignment(sid)
         content = owner.history.write_content(
             sid,
             {
                 "message_id": user_msg.id,
+                "assignment_id": (
+                    accepted_assignment.handle
+                    if accepted_assignment is not None and accepted_assignment.terminal_at is None
+                    else None
+                ),
                 "text": user_text,
                 "agent_id": turn_agent_id,
                 "metadata": user_metadata,
@@ -762,6 +758,17 @@ def _start_background_user_turn(
                 ),
                 expected_revision=mailbox_item.revision,
             )
+        # Core mail is authoritative. A failure before its commit must not leave
+        # a conflicting transcript row; a later projection failure is recoverable
+        # from the confirmed message body through startup/segment preparation.
+        if replace_existing_user_message:
+            rows = list(app.state.messages.get(sid, []))
+            rows = [user_msg if row.id == user_msg.id else row for row in rows]
+            if not any(row.id == user_msg.id for row in rows):
+                rows.append(user_msg)
+            _replace_session_messages(app, sid, rows)
+        else:
+            _append_session_message(app, sid, user_msg)
         app.state.bus.publish(
             Event(
                 type="message.created",

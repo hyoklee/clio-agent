@@ -787,6 +787,8 @@ async def _cancel_subtree(
 
         async def confirm_finish() -> None:
             await asyncio.to_thread(finish)
+            # Confirmed settlement makes previously vetoed mailbox arrivals eligible.
+            self.runner.signal(sid)
 
         try:
             await confirm_finish()
