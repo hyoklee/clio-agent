@@ -260,3 +260,32 @@ including hook-defer release ordering. Its bounded existing-owner correction is
 under review and not implemented in this packet. Source approval, legacy test
 migration, CI, Q1–Q9 and R1–R6 remain outstanding. These component checks are not
 model acceptance or a release-qualified candidate.
+
+## R30: hold exact failed inputs and reuse the Question owner for hook approvals
+
+Astra's R29/R30 bounded source reviews endorse holding the exact uncommitted
+trigger and replacing turn-defer permission state with QuestionCommands. The
+old turn-defer transition/resume helpers and text reconstruction are removed;
+the removal guard denies their return. Permission cards/routes delegate to
+Question decisions. PreToolUse enforcement remains its existing owner.
+
+The replacement captures immutable input/assignment/epoch correlation, freezes
+human decisions before effects, preserves typed input/media without rewriting
+its body, and retains control-only outcome mail without an automatic owner wake.
+An authenticated retry supersedes only the server-bound held input. Veto/setup
+failure and Stop cannot overwrite a revised/approved input. Approval rechecks
+control and input identity at acceptance; deferred completion rechecks its
+captured epoch after retirement. Legacy unbound approvals remain unresolved.
+
+The first fifteen component cases passed individually/sequentially, one worker,
+with no skipped case. Evidence is `task-replacement-r30-behavior-checks.json`;
+its disposable Core parent is absent. The final audit added explicit atomic
+approval and retirement checks. Fresh affected cases on that final correction
+are constructed but unexecuted. Earlier fifteen-case evidence is not final-head
+acceptance of the later correction.
+
+Initial size/type-check failures and their corrections remain in the R30 static
+receipts. No guard, assertion, timeout or resource budget was weakened. Final
+source checks and independent implementation reviews remain required. Legacy
+test migration, CI, F03, Q1–Q9 and R1–R6 remain outstanding; no live-model/product
+qualification service, release or installed-state change occurred in this packet.

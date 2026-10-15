@@ -415,7 +415,17 @@ def resolve_permission(
     (idempotent — a double-resolve is a no-op, matching the route's prior behaviour).
     """
 
+    from clio_agent.gact.hooks.turn_approval import SOURCE, respond
+
+    history = getattr(app.state, "task_history", None)
+    task = history.task_snapshot(pid) if history is not None else None
+    if task is not None and task.kind == "Question" and task.tool == SOURCE:
+        return respond(app, task, action, grantor)
     row = app.state.permissions.get(pid)
+    if row is not None and row.get("kind") == "turn_defer":
+        raise ValueError(
+            "Legacy hook approval lacks its verified Core input binding; gate retained"
+        )
     if row is None or row.get("status") != "pending":
         return None
     row["status"] = "resolved"
@@ -452,14 +462,6 @@ def resolve_permission(
     evt = app.state.permission_events.pop(pid, None)
     if evt is not None:
         evt.set()
-    # P2.6: a TURN-ending defer (Stop / UserPromptSubmit) holds NO thread — it suspended
-    # the session. Resolving its row stages the deferred-resume (approve → new turn /
-    # release; deny → tighten) via the owner module. Runs exactly once (this body only
-    # runs on the pending→resolved transition, which is idempotent above).
-    if row.get("kind") == "turn_defer":
-        from clio_agent.gact.hooks.defer import resume_turn_defer  # noqa: PLC0415
-
-        resume_turn_defer(app, row, action)
     # B5 #979.8: surface the resolution on the highway/trace too so the request→resolution
     # lifecycle is consistently captured AND SSE-served. Guarded — a resolution must never
     # fail on an emit.

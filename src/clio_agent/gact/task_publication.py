@@ -143,5 +143,15 @@ def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode:
                     created_at=stamp,
                     handle=current.handle,
                     episode=episode or None,
+                    delivery="held"
+                    if current.kind == "Question"
+                    and current.tool == "hook_defer"
+                    and recipient == owner_recipient
+                    else "eligible",
+                    held_reason="control_only"
+                    if current.kind == "Question"
+                    and current.tool == "hook_defer"
+                    and recipient == owner_recipient
+                    else "",
                 )
             )

@@ -79,6 +79,20 @@ def answer_question(
     definition = QuestionDefinition.model_validate(
         app.state.task_history.read_content(task.details)
     )
+    if definition.source == "hook_defer":
+        from clio_agent.gact.hooks.turn_approval import restore_gate
+
+        if not caller.human_action:
+            raise PermissionError("Hook approval requires the authenticated human control channel")
+        if task.terminal_at is None and not restore_gate(app, task):
+            raise ValueError("Hook approval no longer addresses its retained input")
+        reply = reply.model_copy(
+            update={
+                "responder_human": caller.human_id,
+                "responder_session": None,
+                "metadata": {"grantor": "user"},
+            }
+        )
     elicitation = definition.metadata.get("elicitation", {})
     if definition.source == "mcp_elicitation" and isinstance(elicitation, dict):
         from clio_agent.gact.elicitation_schema import build_form_content
@@ -121,7 +135,15 @@ def answer_question(
         reply = reply.model_copy(
             update={"parts": tuple(part.model_dump(mode="json") for part in prepared.parts)}
         )
-    answered = app.state.questions.answer(task.handle, reply)
+    with app.state.task_history.serialized():
+        task = TaskAccess(app.state.task_history, caller).require(task.handle, "control")
+        if (
+            definition.source == "hook_defer"
+            and task.terminal_at is None
+            and not restore_gate(app, task)
+        ):
+            raise ValueError("Hook approval input changed before answer acceptance")
+        answered = app.state.questions.answer(task.handle, reply)
     resolve_plan_question(app, answered)
     return answered
 
@@ -131,6 +153,11 @@ def resolve_plan_question(app: Any, task: TaskSnapshot) -> None:
     from clio_agent.gact.routes.plan_interactions import is_plan_exit_question
 
     if task.terminal_at is None:
+        return
+    if task.tool == "hook_defer":
+        from clio_agent.gact.hooks.turn_approval import resolve
+
+        resolve(app, task)
         return
     session = app.state.sessions.get(task.owner.session_id)
     if session is None or session.metadata.get("execution_gate") != task.handle:

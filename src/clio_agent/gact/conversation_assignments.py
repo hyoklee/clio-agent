@@ -50,6 +50,7 @@ class ConversationOutcome:
     disposition: str | None = None
     context: ContextBoundary | None = None
     error: dict[str, Any] | None = None
+    input_hold: str | None = None
 
 
 def clear_model_context(self: Conversations, sid: str, question: str, boundary: str) -> None:
@@ -215,6 +216,30 @@ def _finish_segment(
                     self.arm_deadline, current.handle, details.execution_deadline
                 )
             return
+        # A veto/setup failure has not consumed its trigger. Keep that exact
+        # revision pending, without letting ordinary wake signals retry it.
+        # Early approval/retry may already have changed or withdrawn the input.
+        reason = outcome.input_hold or (
+            "execution_failed_before_input_commit" if outcome.error else ""
+        )
+        attempted = self.history.mail_item(segment.session_id, segment.trigger.id)
+        if (
+            reason
+            and attempted == segment.trigger
+            and attempted.delivery == "eligible"
+            and attempted.id not in self.history.acknowledged_notifications(segment.session_id)
+            and not self.history.mail_withdrawn(segment.session_id, attempted.id)
+        ):
+            self.history.update_mail(
+                attempted.model_copy(
+                    update={
+                        "delivery": "held",
+                        "held_reason": reason,
+                        "revision": attempted.revision + 1,
+                    }
+                ),
+                expected_revision=attempted.revision,
+            )
         dependencies = [self.history.task_snapshot(handle) for handle in details.dependencies]
         session = self.sessions.get(segment.session_id)
         if session is None:
@@ -265,7 +290,9 @@ def _finish_segment(
         publish_task_notice(self.history, observed)
 
 
-async def complete_deferred(self: Conversations, sid: str, assignment_handle: str) -> None:
+async def complete_deferred(
+    self: Conversations, sid: str, assignment_handle: str, *, context_epoch: str
+) -> None:
     """Accept a trusted Stop-hook approval after the model worker actually retires."""
     released, loop = asyncio.Event(), asyncio.get_running_loop()
     self.runner.run_when_released(sid, lambda: loop.call_soon_threadsafe(released.set))
@@ -281,6 +308,8 @@ async def complete_deferred(self: Conversations, sid: str, assignment_handle: st
             if current.details is None:
                 raise ValueError("Deferred assignment context is unavailable")
             details = AssignmentDetails.model_validate(self.history.read_content(current.details))
+            if details.context_epoch != context_epoch:
+                raise ValueError("Deferred completion context changed before worker retirement")
             if details.last_output is None:
                 raise ValueError("Deferred completion has no retained model outcome")
             if details.execution_deadline and datetime.now(timezone.utc) >= datetime.fromisoformat(

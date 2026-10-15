@@ -1,35 +1,9 @@
-"""Turn-orchestration engine for the GACT server (#714).
+"""Conversation segment execution and confirmed producer input acceptance.
 
-This module owns the *turn loop* — the off-request-thread machinery that drives
-one agent turn end to end:
-
-* :func:`_start_background_user_turn` stages a user message + parts, flips the
-  session to ``running``, publishes the ``session.status_changed`` /
-  ``message.created`` events, and schedules the turn as a tracked ``asyncio``
-  task (so cancellation can reach it via ``app.state.in_flight_turns``).
-* :func:`_run_turn_in_background` is the body of that task: it invokes
-  ``agent.forward`` in an executor, streams/slices the result into Parts
-  (a react main routes to its declared children by CALLING the spawn-runtime
-  tools, so its ``answer`` is already the deliverable — no post-forward settle
-  pass), publishes every SSE event the TUI consumes, persists the assistant
-  message, records the context frame + token/cost usage, and returns the session
-  to ``idle`` (or ``error``).
-
-It was carved verbatim out of ``clio_agent.gact.app.build_app`` so the route
-factories (post-message, question-answer, retry-attempt, schedules) and the
-scheduler tick can share the entrypoint via ``GactDeps`` without importing back
-into the 24k-line app module. To keep the import graph acyclic (#714), the turn
-helpers this engine calls are imported at module top from their true *leaf*
-owners (``delegation``/``streaming``/``enrichment``/``evidence``/``usage``/
-``messaging``/``session_store``/``agents.resolution``/``runtime.globals`` …) —
-so turn.py has ZERO top-level ``clio_agent.gact.app`` imports. Only the
-agent-builder + blueprint-runner seams and ``_enrich_cancellation_error_info``
-(the "danger set" retargeted by ~83 ``app._X`` test monkeypatches) are still
-resolved through ``app`` via a *function-local* import at their single call site,
-the same cycle-break pattern ``clio_agent.gact.agents.builders`` uses.
-
-Behavior preserves the original threading handoff, cancellation, timeout,
-contextvar, trajectory, and SSE semantics.
+TurnRunner owns admission and physical worker retirement. This module prepares
+and executes an admitted segment, returning its explicit outcome to the
+conversation owner. Input acceptance persists typed messages into Core mail;
+it never starts a second turn or acknowledges model delivery.
 """
 
 from __future__ import annotations
@@ -425,7 +399,9 @@ async def _run_turn_in_background(
         )
         if outcome != "proceed":
             settle_turn_transcript(state)
-            return
+            from clio_agent.gact.conversation_assignments import ConversationOutcome
+
+            return ConversationOutcome({}, disposition="yield", input_hold="hook_" + outcome)
         if state.context_file_error is not None:
             raise _ContextFileAccessError(state.context_file_error)
 
@@ -660,19 +636,12 @@ def _start_background_user_turn(
     retained_model: Optional[dict[str, Any]] = None,
     mailbox_item: Any = None,
     model_text: str | None = None,
+    supersedes_input: str = "",
 ) -> Message:
-    """Stage a user or system-event turn and drive it off-thread.
+    """Confirm typed user/system input; TurnRunner alone admits execution.
 
-    Persists the user message + parts, flips the session to ``running``, publishes
-    ``session.status_changed`` + ``message.created``, then schedules
-    :func:`_run_turn_in_background` as a tracked ``asyncio`` task (in
-    ``app.state.in_flight_turns`` so cancellation reaches it). Returns the staged
-    user :class:`Message`. Hoisted out of ``build_app`` (#714) so callers share it
-    via ``GactDeps`` with ``app`` an explicit arg. ``user_msg_id`` overrides the
-    minted message/turn id (empty ⇒ mint) so an idle steer re-drive reuses the id
-    its ``202`` already returned. The two ``…_existing``/``…_created_at`` args
-    promote an ALREADY persisted pending steer: acceptance wrote that identity
-    durably, so staging replaces that row in place, its accepted stamp kept.
+    Promotion preserves the accepted message identity. Retry supersession uses
+    a server-supplied input identity, never client-overridable metadata.
     """
     owner = getattr(app.state, "conversations", None)
     if owner is None:
@@ -682,6 +651,19 @@ def _start_background_user_turn(
     # This finite request boundary persists input only. TurnRunner owns the
     # decision to inject it into a busy segment or admit an idle session.
     with owner.history.serialized():
+        superseded = owner.history.mail_item(sid, supersedes_input) if supersedes_input else None
+        retry_binding = (
+            {
+                "id": superseded.id,
+                "revision": superseded.revision,
+                "content": superseded.content.model_dump(mode="json"),
+            }
+            if superseded is not None
+            and superseded.kind in {"human", "composer"}
+            and superseded.delivery == "held"
+            and superseded.held_reason in {"hook_blocked", "execution_failed_before_input_commit"}
+            else None
+        )
         now = time.time()
         user_metadata = dict(metadata or {})
         from clio_agent.gact.automatic_turn_injection import automatic_turn_injection
@@ -754,6 +736,7 @@ def _start_background_user_turn(
                 "agent_id": turn_agent_id,
                 "metadata": user_metadata,
                 "message": user_msg.model_dump(mode="json"),
+                **({"supersedes_input": retry_binding} if retry_binding is not None else {}),
                 **({"model_text": model_text} if model_text is not None else {}),
                 **(
                     {"queue_context": mailbox_item.content.model_dump(mode="json")}

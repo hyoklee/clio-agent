@@ -764,11 +764,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     status_code=422,
                     detail=envelope.model_dump(exclude_none=True),
                 )
-        # #948 S1: the within-session busy gate covers the retry producer too. A
-        # retry-execute while a turn is already in flight would double-stage a
-        # concurrent turn on this session (orphaning the running one, both writing
-        # the same session + ARC). Record the attempt with a typed blocked reason
-        # instead of staging; the client retries once the running turn finishes.
+        # Refuse concurrent retry execution; preserve the attempt's blocked reason.
         if req.execute and not execution_blocked_reason and app.state.turn_runner.busy(sid):
             execution_blocked_reason = "session_busy"
         retry_parts = None
@@ -811,14 +807,15 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                 sess,
                 retry_text,
                 metadata={
+                    **req.metadata,
                     "retry_attempt_id": attempt.id,
                     "retry_source_message_id": message_id,
                     "retry_source_user_message_id": source_user.id,
                     "retry_notes": req.notes,
-                    **req.metadata,
                 },
                 prev_status=sess.status,
                 request_parts=retry_parts,
+                supersedes_input=source_user.id,
             )
             attempt = attempt.model_copy(
                 update={

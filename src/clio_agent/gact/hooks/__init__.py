@@ -35,7 +35,6 @@ from clio_agent.gact.hooks.defer import (
     TURN_DEFER_KIND,
     defer_timeout_s,
     park_pretool_defer,
-    resume_turn_defer,
     suspend_turn_defer,
 )
 from clio_agent.gact.hooks.dispatcher import (
@@ -152,7 +151,6 @@ __all__ = [
     "ModelRequest",
     "defer_timeout_s",
     "park_pretool_defer",
-    "resume_turn_defer",
     "suspend_turn_defer",
     "STOP_LOOP_GLOBAL_CAP_DEFAULT",
     "STOP_LOOP_METADATA_KEY",

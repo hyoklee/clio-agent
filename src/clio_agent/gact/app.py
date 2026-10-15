@@ -49,6 +49,7 @@ _install_sigusr1_diagnostic()
 # must happen at module import: build_app can race a prior app's startup worker.
 from collections.abc import Mapping
 from contextlib import asynccontextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any, AsyncIterator, Optional
 
@@ -690,9 +691,6 @@ from clio_agent.gact.transcript_file import boot_transcript_store
 from clio_agent.gact.types import (
     AgentDef,
     ErrorInfo,
-    Message,
-    Part,
-    Session,
 )
 from clio_agent.gact.usage import (  # noqa: E402,F401
     _PRICE_TABLE_PER_M,
@@ -1694,39 +1692,7 @@ def build_app(
     # app, deps). Answering a resume-on-answer question + executing a retry
     # both drive a turn through ``deps.start_background_user_turn`` (the
     # thin ``build_app`` wrapper around the turn engine, defined just below).
-    def _start_background_user_turn(
-        sid: str,
-        sess: Session,
-        user_text: str,
-        *,
-        request_parts: Optional[list[Part]] = None,
-        metadata: Optional[dict[str, Any]] = None,
-        prev_status: str = "idle",
-        turn_agent_id: str = "",
-        user_msg_id: str = "",
-        user_created_at: str = "",
-        replace_existing_user_message: bool = False,
-    ) -> Message:
-        """Stage + drive a user turn (thin ``build_app`` wrapper, #714).
-
-        The engine moved to :func:`clio_agent.gact.turn._start_background_user_turn`
-        (single source). ``build_app``'s in-closure callers + the route factories
-        (via ``GactDeps.start_background_user_turn``) reach it through this wrapper
-        so they need not thread ``app`` explicitly; behavior is unchanged.
-        """
-        return _turn_start_background_user_turn(
-            app,
-            sid,
-            sess,
-            user_text,
-            request_parts=request_parts,
-            metadata=metadata,
-            prev_status=prev_status,
-            turn_agent_id=turn_agent_id,
-            user_msg_id=user_msg_id,
-            user_created_at=user_created_at,
-            replace_existing_user_message=replace_existing_user_message,
-        )
+    _start_background_user_turn = partial(_turn_start_background_user_turn, app)
 
     # ---- POST /v1/sessions/{sid}/cancel (BBB20) -----------------------
     # Best-effort cooperative cancel of an in-flight turn is owned by

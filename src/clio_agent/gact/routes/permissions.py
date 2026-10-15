@@ -120,6 +120,24 @@ def register_permissions_routes(app: FastAPI, deps: "GactDeps") -> None:
 
         row = app.state.permissions.get(pid)
         if row is None:
+
+            def projected() -> dict[str, Any] | None:
+                from clio_agent.gact.hooks.turn_approval import project
+                from clio_agent.gact.question_surface import question_view
+
+                task = app.state.task_history.task_snapshot(pid)
+                if (
+                    task is None
+                    or task.kind != "Question"
+                    or task.tool != "hook_defer"
+                    or task.owner.human_id != app.state.human_principal
+                ):
+                    return None
+                project(app, task, question_view(app, task))
+                return app.state.permissions[pid]
+
+            row = await run_off_loop(projected)
+        if row is None:
             raise HTTPException(
                 status_code=404,
                 detail=ErrorEnvelope(
@@ -160,15 +178,20 @@ def register_permissions_routes(app: FastAPI, deps: "GactDeps") -> None:
             intercept = {"input": body["input"]}
         elif "result" in body:
             intercept = {"result": body["result"]}
-        await run_off_loop(
-            lambda: resolve_permission(
-                app,
-                pid,
-                action,
-                grantor=GRANTOR_USER,
-                intercept=intercept,
+        try:
+            await run_off_loop(
+                lambda: resolve_permission(
+                    app,
+                    pid,
+                    action,
+                    grantor=GRANTOR_USER,
+                    intercept=intercept,
+                )
             )
-        )
+        except (ValueError, PermissionError) as error:
+            raise HTTPException(
+                status_code=403 if isinstance(error, PermissionError) else 409, detail=str(error)
+            ) from error
         return Response(status_code=204)
 
     # ---- /v1/policies (SPEC §6.11.b permission policies) -------------

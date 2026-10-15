@@ -379,3 +379,26 @@ Additional retired modules: gact.elicitation_forwarding, gact.routes.session_que
 After confirmed loss of a local native runtime, recovery may create a host-only native continuation for a verified existing provider job. The continuation retains the public task and original custody, records a new local execution identity, and cannot submit provider work. Its acceptance follows the ordinary uncertainty rules; unresolved local publication or cleanup remains uncertain. This clarification does not permit replay of an uncertain original download or introduce a transfer scheduler.
 
 Astra reviewed this narrow clarification read-only after finding the absent provider reattachment path in the initial implementation. Implementation and independent Claude source review remain pending. A saved provider request without a verified job ID is insufficient. A replacement leg requires confirmed loss of the former local worker, current authorization, original provider/source/destination/path custody, and no unresolved earlier continuation. Cancellation permits only provider control and cleanup; publication remains prohibited under cancellation.
+
+## Turn-ending approval owner refinement
+
+Astra's R30 source review endorses using QuestionCommands for UserPromptSubmit
+and Stop approvals rather than persisting another permission lifecycle. The
+Question captures its exact input revision/content reference, assignment and
+context epoch. Permission cards/routes are compatibility projections/delegates;
+PreToolUse enforcement, policies and parked-call events keep their existing owner.
+
+Remove the turn-defer permission-row transition, turn-defer metadata mirror,
+text-only resume reconstruction and separate resume helpers. A confirmed human
+decision releases the same Core input through a verified Question reference;
+its typed content/media remain unchanged. Control outcomes stay retained but do
+not automatically wake the owner. Explicit Stop denial may stage feedback;
+cancellation/expiry cannot approve work or manufacture a continuation.
+
+Veto/setup errors hold only the exact uncommitted attempted input. Other wake
+signals cannot retry that input. An authenticated retry binds supersession at
+the server acceptance boundary, independently of user-supplied metadata. Early
+approval or a changed/withdrawn input makes stale finalization a no-op. Legacy
+approvals without exact correlation remain visibly unresolved; no old resolver
+fallback is retained. The common Core writer and existing pending recovery path
+remain the only persistence/reconciliation infrastructure.

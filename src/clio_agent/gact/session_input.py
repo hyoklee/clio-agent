@@ -7,6 +7,33 @@ from uuid import uuid4
 
 from clio_agent.arc.task_types import MailItem, MailKind
 from clio_agent.gact.native_work import now
+from clio_agent.gact.task_history import TaskHistory
+
+
+def apply_retry_supersession(history: TaskHistory, item: MailItem) -> None:
+    """Retire the exact held input referenced by a trusted retry acceptance."""
+    if item.kind not in {"human", "composer"}:
+        return
+    with history.serialized():
+        value = history.read_content(item.content)
+        binding = value.get("supersedes_input") if isinstance(value, dict) else None
+        if not isinstance(binding, dict):
+            return
+        identity = binding.get("id")
+        if not isinstance(identity, str) or identity == item.id:
+            raise ValueError("Retry input binding is malformed")
+        source = history.mail_item(item.recipient_session, identity)
+        if (
+            source is not None
+            and source.kind in {"human", "composer"}
+            and source.delivery == "held"
+            and source.held_reason in {"hook_blocked", "execution_failed_before_input_commit"}
+            and source.revision == binding.get("revision")
+            and source.content.model_dump(mode="json") == binding.get("content")
+            and source.id not in history.acknowledged_notifications(item.recipient_session)
+            and not history.mail_withdrawn(item.recipient_session, source.id)
+        ):
+            history.withdraw_mail(item.recipient_session, source.id)
 
 
 def withdraw_message_inputs(app: Any, session_id: str, message_ids: list[str]) -> None:

@@ -119,6 +119,10 @@ REMOVED_MODULES = frozenset(
 )
 REMOVED_NAMES = frozenset(
     {
+        "resume_turn_defer",
+        "_stage_resume_turn",
+        "_resume_user_prompt_defer",
+        "_resume_stop_defer",
         "watch_step",
         "PENDING_ASK_USER_META",
         "refresh_session_inputs",

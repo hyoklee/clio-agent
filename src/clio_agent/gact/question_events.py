@@ -58,10 +58,16 @@ class QuestionEvents:
             "expired": "user_question.expired",
         }.get(task.raw_status, "user_question.updated")
         owner, attended = row["session_id"], row["attended_session_id"]
-        for sid in dict.fromkeys((owner, attended)):
-            self.app.state.bus.publish(Event(type=event_type, session_id=sid, payload=row))
+        if row["source"] == "hook_defer":
+            from clio_agent.gact.hooks.turn_approval import project
+
+            project(self.app, task, row)
+        else:
+            for sid in dict.fromkeys((owner, attended)):
+                self.app.state.bus.publish(Event(type=event_type, session_id=sid, payload=row))
         if task.terminal_at is not None and (
-            row["source"] == "plan_exit" or row["metadata"].get("plan_exit_approval")
+            row["source"] in {"plan_exit", "hook_defer"}
+            or row["metadata"].get("plan_exit_approval")
         ):
 
             async def resolve() -> None:
@@ -75,7 +81,13 @@ class QuestionEvents:
                         "Task boundary reason=plan_question_repair_pending error_type=%s",
                         type(error).__name__,
                     )
-                    self.app.state.task_recovery.defer("plan-question:" + task.handle, resolve)
+                    if (
+                        row["source"] != "hook_defer"
+                        or self.app.state.task_history.requires_recovery
+                    ):
+                        self.app.state.task_recovery.defer(
+                            "question-resolution:" + task.handle, resolve
+                        )
 
             repairing = asyncio.create_task(repair())
             self._active.add(repairing)
@@ -114,6 +126,10 @@ class QuestionEvents:
             for handle in history.task_handles(kind="Question", active_only=True):
                 task = history.task_snapshot(handle)
                 if task is not None and task.details is not None:
+                    if task.tool == "hook_defer":
+                        from clio_agent.gact.hooks.turn_approval import restore_gate
+
+                        restore_gate(self.app, task)
                     self.changed(task)
             for session in self.app.state.sessions.list():
                 gate = session.metadata.get("execution_gate")

@@ -654,15 +654,13 @@ class Conversations:
                         else "stopped"
                     )
                     if not self._closing and not self.model_paused(sid):
-                        pending = next(
-                            (
-                                item
-                                for item in self.history.pending_mail(sid)
-                                if item.id == segment.trigger.id
-                            ),
-                            None,
-                        )
-                        if pending is not None:
+                        pending = self.history.mail_item(sid, segment.trigger.id)
+                        if (
+                            pending == segment.trigger
+                            and pending.delivery == "eligible"
+                            and pending.id not in self.history.acknowledged_notifications(sid)
+                            and not self.history.mail_withdrawn(sid, pending.id)
+                        ):
                             current = self.history.task_snapshot(handle)
                             reason = (
                                 "cancelled_before_input_commit"
@@ -716,9 +714,7 @@ class Conversations:
                 raise
             self.recovery.defer("conversation-finish:" + handle + ":" + segment.turn_id, finish)
 
-    async def complete_deferred(self, sid: str, assignment_handle: str) -> None:
-        """Delegate to the same conversation owner\'s assignments implementation."""
-        return await conversation_assignments.complete_deferred(self, sid, assignment_handle)
+    complete_deferred = conversation_assignments.complete_deferred
 
     async def pause(self, caller: TaskCaller, handle: str) -> dict[str, Any]:
         """Delegate to the same conversation owner\'s controls implementation."""

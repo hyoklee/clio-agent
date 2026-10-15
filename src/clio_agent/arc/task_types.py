@@ -344,6 +344,7 @@ class MailItem(TaskRecord):
     revision: int = Field(default=1, ge=1)
     delivery: Literal["eligible", "queued", "held"] = "eligible"
     held_reason: str = ""
+    approval_question: str | None = None
     queued_order: int | None = None
     automatic_promotion: bool = False
 
