@@ -12,6 +12,7 @@ from pydantic import ValidationError
 from clio_agent.gact.a2ui import project_a2ui_parts
 from clio_agent.gact.evidence import _bounded_tool_call_result
 from clio_agent.gact.protocol.v3 import utcnow_iso
+from clio_agent.gact.reasoning_timing import reasoning_timing
 from clio_agent.gact.summarization_record import legacy_compaction_block
 from clio_agent.gact.tool_result_presentation import project_presentation
 
@@ -193,6 +194,7 @@ def part_to_v3_block(part: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "id": part_id,
             "type": "reasoning",
+            **reasoning_timing(dict(part)),
             "text": str(part.get("text") or ""),
             "source": str(metadata.get("thinking_source") or "provider"),
             **(

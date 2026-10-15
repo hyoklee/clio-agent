@@ -27,3 +27,15 @@ The UI labels model reasoning as Thinking. A sentence such as “Writing shader
 code” is provider prose, not evidence of an executed tool. Tool rows require
 recorded tool events. Continued activity is not folded across a delivered steer.
 Original message, part and tool identities remain available for inspection.
+
+Adjacent human steers share one sender header in the UI. Each bubble retains its
+own identity, timestamp, references, copy/mark controls, and cancellation before
+delivery. Assistant activity, a different delivery boundary, or a changed
+execution mode starts a new group.
+
+New streamed reasoning passages record their first-delta timestamp and their
+closing timestamp, with a monotonic elapsed duration. This is CLIO-observed phase
+time, not provider compute or scheduling time before the first delta. The live
+completion event and persisted part carry the same timing. Tool execution keeps
+its own start/end clock. Older or batch-only reasoning without recorded timing
+shows no invented duration.
