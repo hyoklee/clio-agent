@@ -241,6 +241,8 @@ class TurnState:
     last_prompt_usage: dict[str, Any] = field(default_factory=dict)
     pred: Any = None
     cancelled_turn: bool = False
+    publication_steps: set[str] = field(default_factory=set)
+    publication_usage: tuple[int, int, float, bool] | None = None
     assistant_metadata: dict[str, Any] = field(default_factory=dict)
 
 

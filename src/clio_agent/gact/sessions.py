@@ -584,6 +584,7 @@ class SessionStore:
         add_tokens_input: int = 0,
         add_tokens_output: int = 0,
         add_cost_usd: Optional[float] = None,
+        usage_totals: tuple[int, int, float, bool] | None = None,
         mode: Optional[str] = None,
         edit_mode: Optional[str] = None,
         routing_mode: Optional[str] = None,
@@ -605,6 +606,8 @@ class SessionStore:
         source for this turn" and leaves ``cost_usd``/``cost_known``
         untouched; pass a real float (0.0 included) only when the turn
         actually produced one, which is what flips ``cost_known`` True.
+        ``usage_totals`` replaces that projection with fixed totals, allowing a
+        finalized turn to retry a failed flush without accumulating twice.
         """
 
         with self._lock:
@@ -639,6 +642,8 @@ class SessionStore:
             if add_cost_usd is not None:
                 sess.cost_usd += add_cost_usd
                 sess.cost_known = True
+            if usage_totals is not None:
+                sess.tokens_input, sess.tokens_output, sess.cost_usd, sess.cost_known = usage_totals
             if mode is not None and mode in {"plan", "edit", "architect"}:
                 sess.mode = mode
             if edit_mode is not None and edit_mode in {"diff", "whole", "patch"}:

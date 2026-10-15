@@ -35,6 +35,27 @@ class TranscriptRecordingPending(RuntimeError):
         super().__init__(f"Transcript recording unconfirmed for {message.id}: {cause}")
 
 
+def publication_step(
+    completed: set[str], name: str, action: Callable[[], Any], *, retry: bool = True
+) -> None:
+    """Resume owner-local publication without replaying already completed steps.
+
+    Effectful hooks and ephemeral events are attempted once. A raised hook may
+    already have acted, so its error is reported rather than automatically replayed.
+    Required projection writes may retry and must themselves be idempotent.
+    This volatile progress is not a delivery acknowledgement or crash guarantee.
+    """
+    if name in completed:
+        return
+    try:
+        action()
+    except Exception:
+        if retry:
+            raise
+        logger.exception("Transcript publication effect unconfirmed step=%s", name)
+    completed.add(name)
+
+
 def visibility_epoch(arc: Any, session_id: str) -> str:
     """Read the UI owner's mutation identity committed with an intentional lane replace."""
     store = arc._segments

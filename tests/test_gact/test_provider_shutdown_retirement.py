@@ -23,6 +23,7 @@ from clio_agent.gact.native_work import WorkEvidence, now
 from clio_agent.gact.storage.globus import GlobusSource, GlobusStatusUnavailable
 from clio_agent.gact.storage.models import SourceRecord, TransferOperation
 from clio_agent.gact.storage.service import StorageService
+from tests.test_arc.conftest import core_arc  # noqa: F401 - expose the real-Core fixture here
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 

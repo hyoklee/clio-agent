@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from clio_agent import paths
+from clio_agent.gact import context
 from clio_agent.gact.artifacts.observer_bridge import observer_call_id
 from clio_agent.gact.plan_review import ensure_owned_plan_directory, plan_review_content
 from clio_agent.gact.planning import (
@@ -346,6 +347,8 @@ def _record_plan_exit_request(
                 "risk_notes": str(risk_notes or "").strip(),
                 "plan_file": plan_file,
                 "invocation_id": observer_call_id(),
+                "assignment_handle": context.current_turn().assignment_handle,
+                "context_epoch": context.current_turn().context_epoch,
                 "surfaced": False,
             }
         },
@@ -488,6 +491,9 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     if getattr(state, "error_info", None) is not None:
         return False
     app = state.app
+
+    admitted = context.current_turn()
+    assignment_handle, context_epoch = admitted.assignment_handle, admitted.context_epoch
     session = app.state.sessions.get(state.sid)
     if session is None:
         return False
@@ -499,6 +505,8 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     # approval. `_record_plan_exit_request` always writes a non-empty dict, so this is unambiguous.
     if not isinstance(pending, Mapping) or not pending or pending.get("surfaced"):
         return False
+    assignment_handle = str(pending.get("assignment_handle") or assignment_handle)
+    context_epoch = str(pending.get("context_epoch") or context_epoch)
 
     from clio_agent.gact.paused_transcript import persist_paused_transcript
     from clio_agent.gact.plan_reuse import save_approved_plan  # noqa: PLC0415
@@ -551,7 +559,7 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
             "source_user_message_id": state.user_msg.id,
         },
     )
-    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending, publication_step
 
     try:
         assistant_message_id = persist_paused_transcript(state)
@@ -561,17 +569,37 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
 
         def publish() -> None:
             if first_publication is not None:
-                first_publication()
-            complete_plan_exit_pause(state, pending, question, retained_message_id)
+                publication_step(state.publication_steps, "paused_output", first_publication)
+            complete_plan_exit_pause(
+                state,
+                pending,
+                question,
+                retained_message_id,
+                assignment_handle=assignment_handle,
+                context_epoch=context_epoch,
+            )
 
         recording.after_confirmed = publish
         raise
-    complete_plan_exit_pause(state, pending, question, assistant_message_id)
+    complete_plan_exit_pause(
+        state,
+        pending,
+        question,
+        assistant_message_id,
+        assignment_handle=assignment_handle,
+        context_epoch=context_epoch,
+    )
     return True
 
 
 def complete_plan_exit_pause(
-    state: "TurnState", pending: Mapping[str, Any], question: Any, assistant_message_id: str
+    state: "TurnState",
+    pending: Mapping[str, Any],
+    question: Any,
+    assistant_message_id: str,
+    *,
+    assignment_handle: str,
+    context_epoch: str,
 ) -> None:
     """Post the prepared approval after the original output confirms; never replay its setup."""
     from clio_agent.arc.task_types import (
@@ -594,15 +622,37 @@ def complete_plan_exit_pause(
     settle_turn_transcript(state)
     history = app.state.task_history
     with history.serialized():
-        assignment = history.latest_assignment(state.sid)
+
+        def obsolete() -> None:
+            session = app.state.sessions.get(state.sid)
+            if session is not None and session.metadata.get(_PLAN_EXIT_PENDING_KEY) == pending:
+                app.state.sessions.update(state.sid, metadata_patch={_PLAN_EXIT_PENDING_KEY: {}})
+
+        assignment = history.task_snapshot(assignment_handle)
         if assignment is None:
             raise ValueError("Plan approval requires its owning assignment")
-        app.state.conversations.require_admission(assignment)
+        latest = history.latest_assignment(state.sid)
+        if (
+            latest is None
+            or latest.handle != assignment.handle
+            or assignment.terminal_at is not None
+            or assignment.cancellation_requested_at is not None
+        ):
+            obsolete()
+            return  # Obsolete approval: keep the recorded output, never attach to a successor.
         details = (
             AssignmentDetails.model_validate(history.read_content(assignment.details))
             if assignment.details is not None
             else AssignmentDetails()
         )
+        if details.context_epoch != context_epoch:
+            obsolete()
+            return  # A clear/restart superseded the original plan context.
+        try:
+            app.state.conversations.require_admission(assignment)
+        except ValueError:
+            obsolete()
+            return  # Ancestor cancellation closed this approval's admission.
         question.metadata["plan_approval"] = PlanApproval(
             assignment=assignment.handle,
             context_epoch=details.context_epoch,

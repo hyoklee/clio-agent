@@ -596,3 +596,12 @@ unchanged guards pass; new regressions are constructed, unexecuted. R47 still
 requires independent source review and affected actual-model verification. No
 test or source verdict is counted as qualification. Required CI, F03, remaining
 Q/R rows and the newly manual-only cleanup roots remain outstanding.
+
+## R50 execution and R51 source corrections
+
+R50 focused execution returned 17 passes and one fixture-setup failure; the
+unexecuted behavior remains a failed gate. `task-replacement-r51-impact.md`
+records the corrected setup, the three new Astra findings and their replacement
+owner changes. Fresh affected execution and both independent source reviews are
+required. The R49 actual-model diagnostics predate this candidate; no full
+qualification or publication claim is made.

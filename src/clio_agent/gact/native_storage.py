@@ -256,7 +256,7 @@ def register_native_storage(
                                 "provider-predecessor-cleanup:" + context.reference,
                                 retain_previous_evidence,
                             )
-                if retired:
+                if retired or not settled.provider_cleanup_confirmed:
                     evidence.retire_provider_observer(
                         {
                             "operation_id": settled.id,
@@ -400,8 +400,12 @@ def register_native_storage(
             )
             if not isinstance(source_id, str):
                 raise ValueError("Shutdown provider custody is unavailable")
-            session, _workspace = owner(context)
-            record = service.get(session.workspace_id, source_id)
+            identity = context.attribution.get("source_identity")
+            if isinstance(identity, dict) and identity.get("source_id") == source_id:
+                return identity.get("provider") == "globus"
+            # Classification reads original source custody. A deleted session or
+            # workspace cannot turn a surviving provider job into local work.
+            record = service.store.get("source", source_id, SourceRecord)
             return record.source.provider == "globus"
 
         return await join_off_loop(classify)
@@ -509,7 +513,9 @@ def register_native_storage(
                     record.source.provider != "globus" or settled.provider_cleanup_confirmed
                 ):
                     evidence.confirm_cleanup()
-                if retired:
+                if record.source.provider == "globus" and (
+                    retired or not settled.provider_cleanup_confirmed
+                ):
                     evidence.retire_provider_observer(
                         {
                             "operation_id": settled.id,

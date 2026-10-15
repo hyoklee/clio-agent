@@ -138,7 +138,12 @@ async def _apply_turn_prediction(
         if await _run_turn_setup_off_loop(state, lambda: maybe_pause_for_plan_exit(state)):
             return False
     except TranscriptRecordingPending as pending:
-        await resume_recording(state.app, pending)
+        try:
+            await resume_recording(state.app, pending)
+        except asyncio.CancelledError:
+            # Recovery owns this immutable paused output. Stop retires this
+            # waiter; it must not enter normal finalization with a second output.
+            pass
         return False
     # iowarp/clio-agent#25: data branch reports which execution
     # path it took ("fast" or "expert_loop"). Empty when not
@@ -435,6 +440,7 @@ async def _run_turn_in_background(
         if not await _apply_turn_prediction(
             state, _drain_observed_tool_calls, _update_retry_attempt
         ):
+            turn_lm_ledger.close_ledger(lm_ledger_token)
             return
     except _TurnCancelled as exc:
         state.error_info = exc.error_info
