@@ -94,6 +94,16 @@ Not frozen. No replacement acceptance has run. No release is authorized until ev
 
 ## Owned qualification state
 
+R37 source construction addresses the combined R36 reviewer findings through
+the existing session worker, hook dispatcher/adapter, Core input/publication and
+child-preparation owners. Fresh cases cover startup cancellation phases, retained
+uncertainty with resume/restart, absent physical proof, partial durable attention
+publication, full-lane creation recovery and discovery outside the task writer.
+An actual-process regression is constructed for descendant/pipe settlement.
+All are unexecuted; source readiness and the corresponding acceptance rows remain
+blocked. Legacy architecture-test migration and F03 measurements remain pending.
+See task-replacement-r37-checks.json for scoped static construction results only.
+
 No replacement live acceptance has run. Two focused guard-test invocations failed in global setup before their test bodies: the first private Core could not bind its long Windows path; the short-root retry started Core, then encountered the deliberately removed workflow binding. Their fixture roots are absent and their processes have ended. These are setup failures, not acceptance passes. See task-replacement-cleanup-receipts.json. Prior prohibited/manual-only roots remain excluded; the c1 review cache is now also manual-only after automatic-review rejection.
 
 ## Replacement construction — first Core slice

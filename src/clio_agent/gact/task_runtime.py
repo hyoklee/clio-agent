@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import AsyncExitStack
+from functools import partial
 from typing import Any
 
 from clio_agent.arc.task_types import AssignmentDetails, SubmissionContext, TaskSnapshot
@@ -17,8 +18,8 @@ from clio_agent.gact.native_tools import NativeTools
 from clio_agent.gact.question_events import QuestionEvents
 from clio_agent.gact.question_surface import prepare_question_gate
 from clio_agent.gact.questions import QuestionCommands
-from clio_agent.gact.sessions import Session as StoredSession
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.spawn_context import prepare_child_session
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_operations import TaskOperations
@@ -130,76 +131,6 @@ async def start(app: Any) -> None:
 
     async def cancel_owned(task: TaskSnapshot) -> dict[str, Any]:
         return await cancel_owner(task, TaskCaller(task.owner.session_id, task.owner.human_id))
-
-    def create_child(
-        parent_id: str,
-        agent_id: str,
-        target_scope: dict[str, Any] | None,
-        creation_id: str,
-        creation_digest: str,
-        initial_metadata: dict[str, Any],
-        approval_profile: str | None,
-    ) -> StoredSession:
-        from clio_agent.gact.agents.resolution import _resolve_runtime_dynamic_agent
-
-        parent = session_store.get(parent_id)
-        if parent is None:
-            raise ValueError("Parent session is unavailable")
-        definition = (
-            _resolve_runtime_dynamic_agent(app, agent_id, session_id=parent_id)
-            if target_scope is None
-            else None
-        )
-        if target_scope is None and definition is None:
-            raise ValueError("Requested child agent is unavailable")
-        if target_scope is not None:
-            from clio_agent.gact.spawn_context import resolve_installed_blueprint_target
-
-            root, expected, title = resolve_installed_blueprint_target(
-                app,
-                str(target_scope.get("active_agent_blueprint_id", "")),
-                workspace_id=parent.workspace_id,
-            )
-            if root != agent_id or expected != target_scope:
-                raise ValueError("Commission target does not match trusted installed configuration")
-        else:
-            if definition is None:
-                raise ValueError("Requested child agent is unavailable")
-            title = definition.title
-        inherited = {
-            key: value
-            for key, value in parent.metadata.items()
-            if key.startswith(("agent_blueprint", "active_agent_blueprint_", "active_expert_pack_"))
-            or key in {"owner_human_id", "expert_pack_id", "workflow_id", "workflow_step"}
-        }
-        if target_scope is not None:
-            inherited.update(target_scope)
-        inherited.update(initial_metadata)
-        from clio_agent.gact.session_descendants import MAX_SPAWN_DEPTH
-
-        cursor, depth = app.state.task_history.latest_assignment(parent_id), 1
-        while cursor is not None and cursor.owner.parent_handle is not None:
-            depth += 1
-            cursor = app.state.task_history.task_snapshot(cursor.owner.parent_handle)
-        if depth > MAX_SPAWN_DEPTH:
-            raise ValueError("Subagent spawn depth exceeds the configured safety boundary")
-        return session_store.create(
-            workspace_id=parent.workspace_id,
-            title=title,
-            parent_session_id=parent_id,
-            model=dict(parent.model),
-            agent={"id": agent_id},
-            mode=parent.mode,
-            edit_mode=parent.edit_mode,
-            approval_mode="ask" if approval_profile is not None else parent.approval_mode,
-            approval_profile=parent.approval_profile
-            if approval_profile is None
-            else approval_profile,
-            metadata=inherited,
-            creation_id=creation_id,
-            creation_digest=creation_digest,
-            defer_initialization=True,
-        )
 
     async def run_segment(segment: ConversationSegment) -> ConversationOutcome:
         from clio_agent.gact.native_work import now
@@ -320,7 +251,7 @@ async def start(app: Any) -> None:
         )
 
     conversations = Conversations(
-        app, history, recovery, run_segment, cancel_owned, create_child, gate
+        app, history, recovery, run_segment, cancel_owned, partial(prepare_child_session, app), gate
     )
     app.state.conversations = conversations
 

@@ -475,6 +475,7 @@ async def _cancel_subtree(
     request_members: bool = True,
 ) -> None:
     self.require_execution_owner(assignment)
+    sid = assignment.owner.session_id
     previous_watch = self._cancel_watches.pop(assignment.handle, None)
     if previous_watch is not None:
         previous_watch()
@@ -498,7 +499,7 @@ async def _cancel_subtree(
 
     handles = tuple(sorted((await asyncio.to_thread(membership)) - {assignment.handle}))
     changed, loop = asyncio.Event(), asyncio.get_running_loop()
-    retirement = asyncio.create_task(self.runner.stop(assignment.owner.session_id))
+    retirement = asyncio.create_task(self.runner.stop(sid))
 
     def retired(_task: asyncio.Task[None]) -> None:
         loop.call_soon_threadsafe(changed.set)
@@ -550,26 +551,29 @@ async def _cancel_subtree(
 
     remove = self.history.listen(
         wake,
-        handles=tuple(handle for handle in handles if handle != assignment.handle),
+        handles=handles,
     )
     try:
         while True:
             changed.clear()
             states = await asyncio.to_thread(
-                lambda: [
-                    self.history.task_snapshot(handle)
-                    for handle in handles
-                    if handle != assignment.handle
-                ]
+                lambda: [self.history.task_snapshot(handle) for handle in handles]
             )
             retired_cleanly = (
                 retirement.done() and not retirement.cancelled() and retirement.exception() is None
             )
-            if retired_cleanly and all(
-                task is not None
-                and task.terminal_at is not None
-                and task.settlement in {"confirmed", "never_started"}
-                for task in states
+            startup_error = None
+            if retired_cleanly:
+                startup_error = await asyncio.to_thread(self.sessions.startup_retirement_error, sid)
+            if (
+                retired_cleanly
+                and not startup_error
+                and all(
+                    task is not None
+                    and task.terminal_at is not None
+                    and task.settlement in {"confirmed", "never_started"}
+                    for task in states
+                )
             ):
                 break
             uncertain = [
@@ -589,7 +593,7 @@ async def _cancel_subtree(
                 and retirement.exception() is not None
                 else "Parent retirement was interrupted"
                 if retirement.cancelled()
-                else None
+                else startup_error
             )
             current_errors = tuple(errors.values()) + (
                 ({"handle": assignment.handle, "error": retirement_error},)

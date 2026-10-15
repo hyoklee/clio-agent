@@ -1,40 +1,17 @@
-"""GACT v0.2 session registry for CLIO.
+"""Stable GACT session addresses and presentation/configuration metadata.
 
-Until session ownership moves into ARC, the GACT
-app owns a small registry of ``Session`` records:
-
-- in-memory dict keyed by session id
-- optional JSON persistence so sessions survive ``clio-agent-gact``
-  restarts (default: Agent ``state/server/sessions.json`` per
-  :func:`_default_store_path`; ``CLIO_SESSIONS_PATH`` overrides the full path)
-
-The registry is thread-safe for the workload we expect (FastAPI
-serves requests concurrently but each request either reads or writes
-the registry atomically; no coordinated multi-step state machines).
-
-Session shape mirrors GACT v0.2 §4.2:
-
-    {
-      "id": "sess_...",
-      "workspace_id": "ws_default",
-      "title": "...",
-      "status": "idle" | "running" | "waiting_permission" | "waiting_user" | "error",
-      "created_at": "<ISO-8601 UTC>",
-      "updated_at": "<ISO-8601 UTC>",
-      "message_count": 0,
-      "metadata": {...}
-    }
-
-Spec fields the scaffold doesn't populate yet (model, tokens,
-cost_usd, summary, archived_at, parent_session_id, agent) stay at
-their zero-values until their own items land. Clients tolerate
-absent-optional fields per §3.2.
+Tasks, assignment history, mail and input commitments live in the confirmed Core
+hierarchy. This thread-safe store supplies session metadata and trusted startup
+receipts, with optional JSON persistence at ``state/server/sessions.json``.
+``CLIO_SESSIONS_PATH`` overrides that path. Public wire fields are projected from
+the record; private approval and initialization fields never enter public updates.
 """
 
 from __future__ import annotations
 
 import asyncio
 import builtins
+import copy
 import hashlib
 import json
 import logging
@@ -294,15 +271,6 @@ class SessionStore:
         self._initializing: set[str] = set()
         if path is not None:
             self._load()
-            # #1115: a PERSISTENT session registry is the durable home for in-flight
-            # SEP-2663 task ids (RULE 4 - no fifth store). Publishing it here is what
-            # lets the tools layer reach a durable store without importing gact; an
-            # in-memory registry deliberately does not publish, because it would be
-            # claiming a crash-recovery guarantee it cannot keep.
-
-            # Retained so ``build_app`` can publish an APP-SCOPED handle: the
-            # process-global the install also sets is overwritten by the next
-            # registry constructed in this process.
 
     # ---- lifecycle ----------------------------------------------------
 
@@ -469,7 +437,7 @@ class SessionStore:
                 raise ValueError("Prepared session is unavailable")
             if not sess.creation_digest:
                 return sess
-            if sess.creation_hook_state == "completed":
+            if sess.creation_hook_state in {"completed", "interrupted"}:
                 if not sess.creation_lifecycle_confirmed:
                     raise ValueError("Session initialization receipts are inconsistent")
                 return sess
@@ -528,16 +496,25 @@ class SessionStore:
                     # seeing a persisted 'started' receipt remains uncertain.
                     sess.creation_hook_state = "pending"
                     raise
-        dispatch_session_start(
-            session_id=sid,
-            cancel_event=cancel_event,
-            payload={
-                "workspace_id": sess.workspace_id,
-                "parent_session_id": sess.parent_session_id,
-                "agent": dict(sess.agent),
-                "mode": sess.mode,
-            },
-        )
+        try:
+            dispatch_session_start(
+                session_id=sid,
+                cancel_event=cancel_event,
+                payload={
+                    "workspace_id": sess.workspace_id,
+                    "parent_session_id": sess.parent_session_id,
+                    "agent": dict(sess.agent),
+                    "mode": sess.mode,
+                },
+            )
+        except HookCancelled as error:
+            if trusted and error.cleanup_confirmed:
+                with self._lock:
+                    sess.creation_hook_state = (
+                        "pending" if error.invocation_started is False else "interrupted"
+                    )
+                    self._flush()
+            raise
         if trusted:
             with self._lock:
                 sess.creation_hook_state = "completed"
@@ -547,6 +524,22 @@ class SessionStore:
     def get(self, sid: str) -> Optional[Session]:
         with self._lock:
             return self._sessions.get(sid)
+
+    def snapshot(self, sid: str) -> Session | None:
+        """Return an independent, atomically captured metadata row for preparation."""
+        with self._lock:
+            session = self._sessions.get(sid)
+            return copy.deepcopy(session) if session is not None else None
+
+    def startup_retirement_error(self, sid: str) -> str | None:
+        """Report missing physical proof; unknown effects alone do not imply a live process."""
+        with self._lock:
+            session = self._sessions.get(sid)
+            if session is None:
+                return "Session startup evidence is unavailable; settlement remains unconfirmed."
+            if session.creation_digest and session.creation_hook_state == "started":
+                return "SessionStart process settlement is unconfirmed; no replay or successor was launched."
+        return None
 
     def list(
         self,

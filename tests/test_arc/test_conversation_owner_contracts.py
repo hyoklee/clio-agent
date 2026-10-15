@@ -33,6 +33,7 @@ from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.semantic_events import NoopSemanticTraceBackend, SemanticEventSink
 from clio_agent.gact.session_input import withdraw_message_inputs
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.spawn_context import CreatePreparedChild
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.turn_runner import TurnRunner
@@ -121,25 +122,29 @@ async def create_environment(
     async def cancel_work(task: TaskSnapshot) -> dict[str, Any]:
         pytest.fail(f"Unexpected cancellation dispatch: {task.handle}")
 
-    def create_child(
+    def prepare_child(
         parent: str,
         agent: str,
         scope: dict[str, Any] | None,
-        creation_id: str,
-        creation_digest: str,
-        initial_metadata: dict[str, Any],
-        approval_profile: str | None,
-    ) -> Any:
-        return app.state.sessions.create(
-            workspace_id="workspace",
-            parent_session_id=parent,
-            agent={"id": agent},
-            metadata={**(scope or {}), **initial_metadata},
-            approval_profile=approval_profile or "",
-            creation_id=creation_id,
-            creation_digest=creation_digest,
-            defer_initialization=True,
-        )
+    ) -> CreatePreparedChild:
+        def create(
+            creation_id: str,
+            creation_digest: str,
+            initial_metadata: dict[str, Any],
+            approval_profile: str | None,
+        ) -> Any:
+            return app.state.sessions.create(
+                workspace_id="workspace",
+                parent_session_id=parent,
+                agent={"id": agent},
+                metadata={**(scope or {}), **initial_metadata},
+                approval_profile=approval_profile or "",
+                creation_id=creation_id,
+                creation_digest=creation_digest,
+                defer_initialization=True,
+            )
+
+        return create
 
     app.state.turn_runner = TurnRunner(app, unavailable_admission)
     app.state.turn_runner.bind_loop(asyncio.get_running_loop())
@@ -149,7 +154,7 @@ async def create_environment(
         CoreRecovery(app.state.task_history),
         unavailable_model,
         cancel_work,
-        create_child,
+        prepare_child,
         lambda _sid: None,
     )
     app.state.conversations = owner

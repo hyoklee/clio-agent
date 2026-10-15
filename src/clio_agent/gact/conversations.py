@@ -32,8 +32,8 @@ from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_work import now
 from clio_agent.gact.session_input import input_delivery
 from clio_agent.gact.session_mail import SessionMail, StagedInput
-from clio_agent.gact.sessions import Session as StoredSession
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.spawn_context import PrepareChild
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 
@@ -50,9 +50,6 @@ class _InferenceGroup:
 
 RunSegment = Callable[[ConversationSegment], Awaitable[ConversationOutcome]]
 CancelWork = Callable[[TaskSnapshot], Awaitable[dict[str, Any]]]
-CreateChild = Callable[
-    [str, str, dict[str, Any] | None, str, str, dict[str, Any], str | None], StoredSession
-]
 ExecutionGate = Callable[[str], str | None]
 
 
@@ -66,13 +63,13 @@ class Conversations:
         recovery: CoreRecovery,
         run_segment: RunSegment,
         cancel_work: CancelWork,
-        create_child: CreateChild,
+        prepare_child: PrepareChild,
         execution_gate: ExecutionGate,
     ) -> None:
         self.app, self.history, self.recovery = app, history, recovery
         self.sessions: SessionStore = app.state.sessions
         self.run_segment, self.cancel_work = run_segment, cancel_work
-        self.create_child, self.execution_gate = create_child, execution_gate
+        self.prepare_child, self.execution_gate = prepare_child, execution_gate
         self.runner = app.state.turn_runner
         self.runner.admit = self._admit
         self.mail = SessionMail(history, self.eligible, self._input_committed)
@@ -730,6 +727,8 @@ class Conversations:
             self.runner.signal(sid)
 
     _retired_segment = conversation_recovery._retired_segment
+
+    note_startup_interruption = conversation_assignments.note_startup_interruption
 
     complete_deferred = conversation_assignments.complete_deferred
 

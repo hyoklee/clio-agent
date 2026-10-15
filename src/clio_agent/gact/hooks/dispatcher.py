@@ -136,9 +136,10 @@ class HookDispatcher:
         deny_capable = is_deny_capable(event)
         decisions: list[HookDecision] = []
         records: list[dict[str, Any]] = []
+        invoked = False
         for entry in self.matching(event, envelope):
             if cancel_event is not None and cancel_event.is_set():
-                raise HookCancelled(entry.id)
+                raise HookCancelled(entry.id, invocation_started=invoked, cleanup_confirmed=True)
             adapter = self._adapters.get(entry.run.type)
             record: dict[str, Any] = {
                 "hook_id": entry.id,
@@ -156,7 +157,14 @@ class HookDispatcher:
                 continue
             try:
                 decision = adapter.invoke(entry, envelope, cancel_event=cancel_event)
+            except HookCancelled as error:
+                raise HookCancelled(
+                    error.hook_id,
+                    invocation_started=invoked or error.invocation_started is not False,
+                    cleanup_confirmed=error.cleanup_confirmed,
+                ) from error
             except HookInfraError as exc:
+                invoked = True
                 record["status"] = "error"
                 record["error"] = str(exc)
                 record["reason"] = exc.reason
@@ -182,6 +190,7 @@ class HookDispatcher:
                 self._audit(event, envelope, record)
                 records.append(record)
                 continue
+            invoked = True
             record["status"] = "denied" if decision.decision == "deny" else "completed"
             record["decision"] = decision.decision
             if decision.reason:

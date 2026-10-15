@@ -1,15 +1,9 @@
 """Session-topology substrate: who descends from whom, and by which record.
 
-The agent-task registry and the session store are TWO substrates over one
-topology, and neither alone is it: the registry knows which child an
-:class:`~clio_agent.gact.agent_tasks.AgentTask` delegated but cannot see a user
-FORK, while the session store's ``parent_session_id`` sees the fork but cannot
-say which task owns a delegated child. Every read-side walk -- the interactions
-scope, the provenance lineage, the artifact aggregation -- goes through this ONE
-module so they cannot disagree about what a session's descendants are.
-
-Owner module (#775 no-accretion): this lived inside ``agent_tasks``, which is the
-record + registry + lifecycle owner and had no room for a second concern.
+Core task snapshots identify delegated children and their assignments. Session
+metadata also identifies user forks through ``parent_session_id``. This read-only
+walk combines those edges for interactions, provenance and artifact aggregation;
+it does not create tasks or decide their lifecycle.
 """
 
 from __future__ import annotations
@@ -28,7 +22,7 @@ logger = logging.getLogger(__name__)
 #: weight, not depth, so deep declared chains are legitimate. A spawn whose
 #: computed depth would exceed this is refused (``spawn_depth_exceeded``). Defined
 #: here, in the leaf module both the spawn path and every read-side walk import,
-#: rather than in ``turn_spawn`` (which imports this module).
+#: rather than duplicating it in the conversation owner.
 MAX_SPAWN_DEPTH = 8
 
 #: Ceiling on descendant-session traversal (:func:`descendant_sessions`,
@@ -40,7 +34,7 @@ MAX_SPAWN_DEPTH = 8
 #: about what the tree even is.
 _DEFAULT_DESCENDANT_DEPTH = MAX_SPAWN_DEPTH
 
-#: A descendant a durable :class:`AgentTask` delegated.
+#: A descendant delegated by a durable Core child assignment.
 AGENT_TASK_ATTRIBUTION = "agent_task"
 #: A descendant reached only through the session store's ``parent_session_id`` --
 #: a user fork, or a child whose task row is gone. Real topology that no task

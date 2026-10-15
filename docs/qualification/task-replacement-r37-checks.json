@@ -1,0 +1,33 @@
+{
+  "scope": "R37 combined-review corrections and regression construction; static checks only",
+  "core_parent": "35a2aa0ff390f95a2e1b05d215b0605c8ca37781",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751",
+  "execution_repository": "D:/Libraries/Documents/projects/clio-agent-task-qualification",
+  "checks": {
+    "scoped_ruff": {"files": 21, "result": "passed"},
+    "scoped_ruff_format": {"files": 21, "result": "passed"},
+    "scoped_linux_mypy": {"files": 21, "result": "passed, no issues"},
+    "removal_guard": {"violations": 0},
+    "size_guard": {"cap": 800, "result": "passed after removing redundant descendant filtering; unchanged threshold"},
+    "class_guard": "passed; unchanged threshold",
+    "hidden_swallow_guard": {"count": 481, "files": 201, "result": "passed; unchanged thresholds"},
+    "git_diff_check": "passed with repository newline configuration"
+  },
+  "constructed_regressions": [
+    "Complete-lane creation recovery, small chunks and concurrent initialization",
+    "Held target preparation with independent controls, revalidation and accepted identity reuse",
+    "Startup cancellation before, during and between observation hooks",
+    "Same-assignment resume and linked restart without effect replay",
+    "Lost parent attention publication reply before child input preparation",
+    "Unknown startup process settlement prevents a successor",
+    "Production hook process tree cancellation, explicit timeout and descendant settlement"
+  ],
+  "behavioral_tests": "unexecuted",
+  "native_model_browser_qualification": "unexecuted",
+  "core_or_product_process_launched": false,
+  "legacy_test_migration": "pending",
+  "F03_measurements": "pending",
+  "source_acceptance": "pending independent review",
+  "release_acceptance": false
+}

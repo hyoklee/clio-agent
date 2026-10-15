@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from clio_agent.arc.task_types import (
+    CoreReference,
     MailItem,
     MailKind,
     QuestionDefinition,
@@ -36,7 +37,13 @@ def task_owner_recipient(history: TaskHistory, current: TaskSnapshot) -> str | N
     return None
 
 
-def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode: str = "") -> None:
+def publish_task_notice(
+    history: TaskHistory,
+    current: TaskSnapshot,
+    *,
+    episode: str = "",
+    attention_content: CoreReference | None = None,
+) -> None:
     """Confirm an outcome/attention notification; reads and progress never acknowledge it."""
     with history.serialized():
         if current.terminal_at is not None:
@@ -53,7 +60,7 @@ def publish_task_notice(history: TaskHistory, current: TaskSnapshot, *, episode:
                 f"attention:{current.handle}:{episode}",
                 current.updated_at,
             )
-            content = None
+            content = attention_content
         else:
             return
         recipients: dict[str, str] = {}

@@ -10,11 +10,11 @@ active agent, builds its DSPy module and runs its ``forward`` lives here as
 * resolves ``state.active_agent_id`` / ``state.invocation_agent_id`` IN PLACE (the
   live token emitter bound over ``state`` before this seam reads them late);
 * runs the dynamic-agent (blueprint/prompt/tool) module's forward ONCE in the
-  turn's forward executor (live text streams through the LM token hooks), setting
+  session's exclusive worker (live text streams through the LM token hooks), setting
   ``state.prompt_resolution`` / ``state.dynamic_agent_used`` / ``state.agent_runtime``
   / ``state.pred`` as the original body did, and returns ``state.pred``. A react
-  main routes to its declared children by CALLING the spawn-runtime tools
-  (``spawn_agent_task`` / ``wait_agent_tasks``), so ``state.pred`` is already the
+  main routes to its declared children through ``spawn_agent`` and shared
+  ``wait_tasks`` controls, so ``state.pred`` is already the
   main's own answer — there is no post-forward settle/synthesis pass.
 
 The #714 danger set (the agent-builder + blueprint-runner seams and the executable
@@ -92,6 +92,7 @@ async def _run_module(state: "TurnState", module: Any, cancel: Callable[[], bool
             # Hooks run on this session's existing worker. They never hold the
             # shared task writer, and Stop waits for their physical retirement.
             state.app.state.sessions.initialize(state.sid, cancel_event=state.turn_cancel_event)
+            state.app.state.conversations.note_startup_interruption(state.sid)
             if cancel():
                 raise CancellationError("Session stopped during startup")
             with state.app.state.task_history.serialized():

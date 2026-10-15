@@ -56,6 +56,70 @@ class ConversationOutcome:
     input_hold: str | None = None
 
 
+def note_startup_interruption(self: Conversations, sid: str) -> None:
+    """Retain settled-but-uncertain startup effects in the ordinary Core input lane."""
+    session = self.sessions.get(sid)
+    if session is None or session.creation_hook_state != "interrupted":
+        return
+    with self.history.serialized(writing=True):
+        identity = "startup-interrupted:" + sid
+        current = self.history.latest_assignment(sid)
+        if current is None:
+            raise ValueError("Interrupted startup has no owning assignment")
+        original = self.history.mail_item(sid, identity)
+        if (
+            original is not None
+            and original.handle != current.handle
+            and self.history.mail_withdrawn(sid, identity)
+        ):
+            identity += ":" + current.handle
+        if self.history.mail_item(sid, identity) is not None:
+            return
+        message = (
+            "SessionStart observation hooks were interrupted. Their owned process work has settled, "
+            "but external effects may have occurred. Hooks were not replayed. Inspect the retained "
+            "startup evidence and environment before deliberately retrying or revising that work."
+        )
+        content = (
+            original.content
+            if original is not None
+            else self.history.write_content(
+                sid,
+                {
+                    "message": message,
+                    "session_id": sid,
+                    "hook_state": "interrupted",
+                    "effects": "unconfirmed",
+                    "cleanup": "confirmed",
+                },
+            )
+        )
+        if current.terminal_at is None:
+            observed = current
+            if current.progress.message != message:
+                observed = current.model_copy(
+                    update={
+                        "progress": current.progress.model_copy(update={"message": message}),
+                        "updated_at": now(),
+                    }
+                )
+                self.history.record_snapshot(observed, observation_id=uuid4().hex)
+            publish_task_notice(self.history, observed, episode=identity, attention_content=content)
+        # Last confirmed write: a retry must not mistake a partially published
+        # owner notice for a fully prepared input. The content is address-stable.
+        self.history.record_mail(
+            MailItem(
+                id=identity,
+                recipient_session=sid,
+                kind="attention",
+                content=content,
+                created_at=now(),
+                handle=current.handle,
+                episode=identity,
+            )
+        )
+
+
 def clear_model_context(self: Conversations, sid: str, question: str, boundary: str) -> None:
     """Confirm one exact Question epoch without erasing history or replaying accepted work."""
     with self.history.serialized():
@@ -421,6 +485,33 @@ async def spawn(
         "task_" + hashlib.sha256((caller.session_id + "\0" + invocation_id).encode()).hexdigest()
     )
 
+    def preflight() -> str | None:
+        with self.history.serialized():
+            if self.history.task_snapshot(handle) is not None:
+                return None  # Accepted identities never require target rediscovery.
+            parent = (
+                self.history.task_snapshot(parent_handle)
+                if parent_handle
+                else self.history.latest_assignment(caller.session_id)
+            )
+            if (
+                parent is None
+                or parent.terminal_at is not None
+                or parent.owner.session_id != caller.session_id
+                or parent.owner.human_id != caller.human_id
+            ):
+                raise ValueError("Spawning requires an active owning assignment")
+            self.require_admission(parent)
+            validate_assignment_evidence(self.history, caller, pins)
+            return parent.handle
+
+    prepared_parent = await asyncio.to_thread(preflight)
+    prepared_child = (
+        await asyncio.to_thread(self.prepare_child, caller.session_id, agent_id, target_scope)
+        if prepared_parent is not None
+        else None
+    )
+
     def create() -> TaskSnapshot:
         with self.history.serialized(writing=True):
             validate_assignment_evidence(self.history, caller, pins)
@@ -429,6 +520,7 @@ async def spawn(
                 session = self.sessions.get(existing.owner.session_id)
                 if (
                     existing.description != assignment
+                    or existing.owner.human_id != caller.human_id
                     or session is None
                     or session.agent.get("id") != agent_id
                 ):
@@ -457,6 +549,8 @@ async def spawn(
             ):
                 raise ValueError("Spawning requires an active owning assignment")
             self.require_admission(parent)
+            if prepared_parent is not None and parent.handle != prepared_parent:
+                raise ValueError("Owning assignment changed during child preparation")
             creation_digest = argument_digest(
                 {
                     "parent": parent.handle,
@@ -483,15 +577,14 @@ async def spawn(
             child = (
                 session
                 if existing is not None
-                else self.create_child(
-                    caller.session_id,
-                    agent_id,
-                    target_scope,
+                else prepared_child(
                     handle,
                     creation_digest,
                     initial_metadata,
                     approval_profile,
                 )
+                if prepared_child is not None
+                else None
             )
             if child is None:
                 raise ValueError("Accepted child session is no longer available")

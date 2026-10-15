@@ -2,10 +2,101 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
+
+from clio_agent.arc.task_types import argument_digest
+from clio_agent.gact.sessions import Session as StoredSession
+from clio_agent.gact.sessions import SessionStore
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+CreatePreparedChild = Callable[[str, str, dict[str, Any], str | None], StoredSession]
+PrepareChild = Callable[[str, str, dict[str, Any] | None], CreatePreparedChild]
+
+
+def _launch_context(parent: StoredSession) -> dict[str, Any]:
+    return {
+        "workspace_id": parent.workspace_id,
+        "model": parent.model,
+        "agent": parent.agent,
+        "mode": parent.mode,
+        "edit_mode": parent.edit_mode,
+        "approval_mode": parent.approval_mode,
+        "approval_profile": parent.approval_profile,
+        "metadata": {
+            key: value
+            for key, value in parent.metadata.items()
+            if key.startswith(("agent_blueprint", "active_agent_blueprint_", "active_expert_pack_"))
+            or key in {"owner_human_id", "expert_pack_id", "workflow_id", "workflow_step"}
+        },
+    }
+
+
+def prepare_child_session(
+    app: FastAPI, parent_id: str, agent_id: str, target_scope: dict[str, Any] | None
+) -> CreatePreparedChild:
+    """Resolve target configuration outside task locking; return finite acceptance metadata work."""
+    from clio_agent.gact.agents.resolution import _resolve_runtime_dynamic_agent  # noqa: PLC0415
+    from clio_agent.gact.session_descendants import MAX_SPAWN_DEPTH  # noqa: PLC0415
+
+    store: SessionStore = app.state.sessions
+    parent = store.snapshot(parent_id)
+    if parent is None:
+        raise ValueError("Parent session is unavailable")
+    launch = _launch_context(parent)
+    digest = argument_digest(launch)
+    if target_scope is None:
+        definition = _resolve_runtime_dynamic_agent(app, agent_id, session_id=parent_id)
+        if definition is None:
+            raise ValueError("Requested child agent is unavailable")
+        title = definition.title
+    else:
+        root, expected, title = resolve_installed_blueprint_target(
+            app,
+            str(target_scope.get("active_agent_blueprint_id", "")),
+            workspace_id=parent.workspace_id,
+        )
+        if root != agent_id or expected != target_scope:
+            raise ValueError("Commission target does not match trusted installed configuration")
+
+    def create(
+        creation_id: str,
+        creation_digest: str,
+        initial_metadata: dict[str, Any],
+        approval_profile: str | None,
+    ) -> StoredSession:
+        current = store.snapshot(parent_id)
+        if current is None or argument_digest(_launch_context(current)) != digest:
+            raise ValueError("Parent execution configuration changed during child preparation")
+        history = app.state.task_history
+        cursor, depth = history.latest_assignment(parent_id), 1
+        while cursor is not None and cursor.owner.parent_handle is not None:
+            depth += 1
+            cursor = history.task_snapshot(cursor.owner.parent_handle)
+        if depth > MAX_SPAWN_DEPTH:
+            raise ValueError("Subagent spawn depth exceeds the configured safety boundary")
+        inherited = {**launch["metadata"], **(target_scope or {}), **initial_metadata}
+        return store.create(
+            workspace_id=parent.workspace_id,
+            title=title,
+            parent_session_id=parent_id,
+            model=dict(parent.model),
+            agent={"id": agent_id},
+            mode=parent.mode,
+            edit_mode=parent.edit_mode,
+            approval_mode="ask" if approval_profile is not None else parent.approval_mode,
+            approval_profile=parent.approval_profile
+            if approval_profile is None
+            else approval_profile,
+            metadata=inherited,
+            creation_id=creation_id,
+            creation_digest=creation_digest,
+            defer_initialization=True,
+        )
+
+    return create
 
 
 def resolve_installed_blueprint_target(

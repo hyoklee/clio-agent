@@ -371,6 +371,7 @@ async def _retired_segment(
 
     def record() -> None:
         with self.history.serialized():
+            self.note_startup_interruption(sid)
             current = self.history.task_snapshot(handle)
             latest = self.history.latest_assignment(sid)
             if current is None or latest is None or latest.handle != handle:

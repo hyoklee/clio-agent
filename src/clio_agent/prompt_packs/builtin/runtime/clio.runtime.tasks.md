@@ -87,8 +87,11 @@ is required, or identify an independent update as interim and name the pending w
 An unavailable member is an independent outcome; continue using the valid handles.
 `task_state_uncertain` means inspect the last confirmed observations and effects,
 then deliberately reconnect, retry or revise. Repeating the same wait does not
-resolve uncertainty. Unconfirmed SessionStart effects are likewise never replayed
-by reusing an accepted child; inspect its stored error and startup evidence first.
+resolve uncertainty. Interrupted SessionStart observation effects are never
+replayed automatically. Once required process cleanup is confirmed, the same
+session can continue with a retained startup warning. Inspect that warning and
+the environment before deliberately repeating an operation. Unknown physical
+settlement still prevents restarting the affected work.
 
 Cancellation requested is not settled cancellation. Required owner cleanup must
 finish; missing settlement evidence remains uncertain. Cancelling an agent closes
