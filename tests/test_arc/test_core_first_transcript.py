@@ -408,9 +408,6 @@ async def test_final_recording_boundary_retains_original_confirmation_and_public
         pending = await asyncio.to_thread(prepare)
         assert pending.message == message and pending.after_confirmed is publish
         if withdraw:
-            assert retry_states == ["cancelled"]
-            assert app.state.sessions.get(sid).status == "idle"
-            assert sid not in app.state.cancel_events
             await asyncio.to_thread(session_store._delete_session_messages, app, sid)
         assert await transcript_recording.resume_recording(app, pending) is not withdraw
         assert publications == ([] if withdraw else [message.id])
@@ -418,6 +415,9 @@ async def test_final_recording_boundary_retains_original_confirmation_and_public
             [] if withdraw else [message]
         )
         if withdraw:
+            assert retry_states == ["cancelled"]
+            assert app.state.sessions.get(sid).status == "idle"
+            assert sid not in app.state.cancel_events
             assert all(
                 sid not in getattr(app.state, name)
                 for name in (
