@@ -215,6 +215,7 @@ async def collect_workspace_directory(
             additional = resolve_folder_location(root, directory)
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from exc
+        rows: Iterable[dict[str, Any]]
         if additional is not None:
             from clio_agent.tools.file_policy import FileAccessPolicy
 
@@ -231,7 +232,7 @@ async def collect_workspace_directory(
                 )
             )
         elif directory == ".clio-agent/inputs":
-            rows: Iterable[dict[str, Any]] = _uploads(app, workspace_id, root)
+            rows = _uploads(app, workspace_id, root)
         elif any(
             directory == group or directory.startswith(group + "/") for group in list(_GROUPS)[:2]
         ):
