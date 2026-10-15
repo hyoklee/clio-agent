@@ -2,6 +2,16 @@
 
 Revision: R2. Starting source: core `5475042feda49c1354f9f88b19051cb53d7fa740`; GACT `32044a387472b1495f60a24c862c6b9e4292abc3`. All evidence from earlier engines is a source/test lesson only, not replacement acceptance.
 
+Current source review: **Astra GO and Claude Code Fable GO** for core
+`e581cfd504d16ca4abc3e7c1c4ed1ea1f642e2be`, GACT
+`0a4ca5d5915a0add61cd5048b742161092468481`, marketplace
+`1a9b8d0337217950a2b44c303a8d22547d52d756`. This is source acceptance,
+not completion of the rows below. The two-hour implementation checkpoint was
+recorded **UNDONE** at 2026-10-15 21:45:05 UTC; Fable's final acceptance arrived
+at 21:45:08.409 UTC and does not change the deadline result. Current regression
+migration and qualification status is in
+[task-replacement-current-status.md](task-replacement-current-status.md).
+
 Status values: **blocked**, **failed**, **passed**. Initial production wiring is present; rows remain blocked until fresh replacement evidence is recorded. Removing an old test never removes its required behavior below. Source paths are relative to core unless marked GACT. Test doubles belong only in tests; live rows require actual production implementations and models.
 
 Each evidence entry must record candidate identity, invocation/handle, timestamps, raw outcome and bounded receipt path. Required unavailable/skipped cases remain blocked. Harness deadlines are diagnostics:120s native/Core,600s models,900s capacity/recovery. Expiry requires owned cancellation and physical settlement before another family. These are not product deadlines.
