@@ -401,40 +401,14 @@ def finalize_turn(
     if state.assistant_metadata:
         completed_payload["metadata"] = state.assistant_metadata
     state.app.state.turn_transcripts.close(state.sid)
-    from clio_agent.gact.transcript_projection import canonical_log_arc
-    from clio_agent.gact.transcript_recording import (
-        TranscriptRecordingPending,
-        record_message,
-        visibility_epoch,
+    persist_finalized_message(
+        state.app,
+        state.sid,
+        assistant_msg,
+        after_confirmed=lambda: publish_finalized_turn(
+            state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
+        ),
     )
-
-    arc = canonical_log_arc(state.app)
-    expected_visibility = visibility_epoch(arc, state.sid)
-
-    try:
-        persist_finalized_message(state.app, state.sid, assistant_msg)
-    except TranscriptRecordingPending as pending:
-        pending.after_confirmed = lambda: publish_finalized_turn(
-            state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
-        )
-        raise
-    try:
-        publish_finalized_turn(
-            state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
-        )
-    except Exception as error:
-        publication_pending = TranscriptRecordingPending(
-            assistant_msg,
-            lambda: record_message(
-                arc, state.sid, assistant_msg, expected_visibility=expected_visibility
-            )
-            != "withdrawn",
-            error,
-        )
-        publication_pending.after_confirmed = lambda: publish_finalized_turn(
-            state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
-        )
-        raise publication_pending from error
 
 
 def publish_finalized_turn(
@@ -695,12 +669,11 @@ def settle_failed_finalize(
         "cost_usd": turn_cost,
         "error_info": error_info.model_dump(exclude_none=True),
     }
-    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
-
-    try:
-        persist_finalized_message(app, sid, assistant_msg)
-    except TranscriptRecordingPending as pending:
-        pending.after_confirmed = lambda: publish_failed_finalize(
+    persist_finalized_message(
+        app,
+        sid,
+        assistant_msg,
+        after_confirmed=lambda: publish_failed_finalize(
             app,
             sid,
             assistant_msg,
@@ -709,17 +682,7 @@ def settle_failed_finalize(
             trace_id=trace_id,
             turn_cancel_event=turn_cancel_event,
             update_retry_attempt=update_retry_attempt,
-        )
-        raise
-    publish_failed_finalize(
-        app,
-        sid,
-        assistant_msg,
-        completed_payload,
-        turn_id=turn_id,
-        trace_id=trace_id,
-        turn_cancel_event=turn_cancel_event,
-        update_retry_attempt=update_retry_attempt,
+        ),
     )
 
 

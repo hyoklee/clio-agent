@@ -406,8 +406,10 @@ def transcript_sink(app: Any, session_id: str) -> Callable[[str, dict[str, Any],
     return _sink
 
 
-def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
-    """Confirm immutable final output in Core before publishing optional projections."""
+def persist_finalized_message(
+    app: Any, session_id: str, message: Any, *, after_confirmed: Callable[[], None] | None = None
+) -> None:
+    """Retain one confirmation/publication handoff for the immutable final output."""
     from clio_agent.errors import ClioError
     from clio_agent.gact.transcript_projection import canonical_log_arc
     from clio_agent.gact.transcript_recording import (
@@ -423,9 +425,12 @@ def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
     arc = canonical_log_arc(app)
     if arc is None:
         raise RuntimeError("Final output recording requires Core")
-    expected = minter.visibility_epoch if minter is not None else visibility_epoch(arc, session_id)
+    expected = minter.visibility_epoch if minter is not None else None
 
     def confirm() -> bool:
+        nonlocal expected
+        if expected is None:
+            expected = visibility_epoch(arc, session_id)
         if minter is not None:
             minter.barrier()
         recording = record_message(arc, session_id, frozen, expected_visibility=expected)
@@ -437,9 +442,18 @@ def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
         return True
 
     try:
-        confirm()
+        confirmed = confirm()
     except (ClioError, OSError, RuntimeError) as error:
-        raise TranscriptRecordingPending(frozen, confirm, error) from error
+        pending = TranscriptRecordingPending(frozen, confirm, error)
+        pending.after_confirmed = after_confirmed
+        raise pending from error
+    if confirmed and after_confirmed is not None:
+        try:
+            after_confirmed()
+        except Exception as error:
+            pending = TranscriptRecordingPending(frozen, confirm, error)
+            pending.after_confirmed = after_confirmed
+            raise pending from error
 
 
 def failed_finalize_identity(app: Any, session_id: str) -> tuple[str, list[Any]]:

@@ -43,14 +43,12 @@ def persist_paused_transcript(state: "TurnState") -> str:
         stop_reason="waiting_user",
         metadata=state.assistant_metadata,
     )
-    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
-
-    try:
-        persist_finalized_message(state.app, state.sid, message)
-    except TranscriptRecordingPending as pending:
-        pending.after_confirmed = lambda: publish_paused_transcript(state, message)
-        raise
-    publish_paused_transcript(state, message)
+    persist_finalized_message(
+        state.app,
+        state.sid,
+        message,
+        after_confirmed=lambda: publish_paused_transcript(state, message),
+    )
     return message.id
 
 

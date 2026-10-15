@@ -344,3 +344,56 @@ async def test_stopped_recording_waiter_retains_original_completion_and_cleanup(
     finally:
         await owner.shutdown()
         await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("phase", "withdraw"), [("visibility", False), ("publication", False), ("publication", True)]
+)
+async def test_final_recording_boundary_retains_original_confirmation_and_publication(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, phase: str, withdraw: bool
+) -> None:
+    """An initial epoch RPC or a later publication fault retains the same output."""
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    install(app, tmp_path)
+    message = retained(sid, "original-boundary-output", 10, role="assistant")
+    publications: list[str] = []
+    failed = False
+
+    def publish() -> None:
+        nonlocal failed
+        if phase == "publication" and not failed:
+            failed = True
+            raise OSError("Publication failed before effects")
+        publications.append(message.id)
+
+    epoch = transcript_recording.visibility_epoch
+
+    def unavailable_epoch(*args: Any, **kwargs: Any) -> str:
+        nonlocal failed
+        if phase == "visibility" and not failed:
+            failed = True
+            raise OSError("Epoch read temporarily unavailable")
+        return epoch(*args, **kwargs)
+
+    monkeypatch.setattr(transcript_recording, "visibility_epoch", unavailable_epoch)
+
+    def prepare() -> TranscriptRecordingPending:
+        with pytest.raises(TranscriptRecordingPending) as caught:
+            persist_finalized_message(app, sid, message, after_confirmed=publish)
+        return caught.value
+
+    try:
+        pending = await asyncio.to_thread(prepare)
+        assert pending.message == message and pending.after_confirmed is publish
+        if withdraw:
+            await asyncio.to_thread(session_store._delete_session_messages, app, sid)
+        assert await transcript_recording.resume_recording(app, pending) is not withdraw
+        assert publications == ([] if withdraw else [message.id])
+        assert await asyncio.to_thread(assemble_session_messages, arc, sid) == (
+            [] if withdraw else [message]
+        )
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
