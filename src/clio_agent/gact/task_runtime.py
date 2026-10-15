@@ -137,6 +137,8 @@ async def start(app: Any) -> None:
         target_scope: dict[str, Any] | None,
         creation_id: str,
         creation_digest: str,
+        initial_metadata: dict[str, Any],
+        approval_profile: str | None,
     ) -> StoredSession:
         from clio_agent.gact.agents.resolution import _resolve_runtime_dynamic_agent
 
@@ -172,6 +174,7 @@ async def start(app: Any) -> None:
         }
         if target_scope is not None:
             inherited.update(target_scope)
+        inherited.update(initial_metadata)
         from clio_agent.gact.session_descendants import MAX_SPAWN_DEPTH
 
         cursor, depth = app.state.task_history.latest_assignment(parent_id), 1
@@ -188,11 +191,14 @@ async def start(app: Any) -> None:
             agent={"id": agent_id},
             mode=parent.mode,
             edit_mode=parent.edit_mode,
-            approval_mode=parent.approval_mode,
-            approval_profile=parent.approval_profile,
+            approval_mode="ask" if approval_profile is not None else parent.approval_mode,
+            approval_profile=parent.approval_profile
+            if approval_profile is None
+            else approval_profile,
             metadata=inherited,
             creation_id=creation_id,
             creation_digest=creation_digest,
+            defer_initialization=True,
         )
 
     async def run_segment(segment: ConversationSegment) -> ConversationOutcome:

@@ -540,6 +540,7 @@ def dispatch_session_start(
     session_id: str = "",
     cwd: str = "",
     payload: Mapping[str, Any] | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> HookOutcome:
     """Fire ``SessionStart`` observation hooks when a session is created."""
 
@@ -552,7 +553,7 @@ def dispatch_session_start(
         cwd=cwd,
         payload=dict(payload or {}),
     )
-    return dispatcher.dispatch(SESSION_START, envelope)
+    return dispatcher.dispatch(SESSION_START, envelope, cancel_event=cancel_event)
 
 
 def dispatch_session_end(

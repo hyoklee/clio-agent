@@ -227,7 +227,7 @@ def build_task_tools() -> list[Any]:
                 "timeout_s": _TIMEOUT,
                 "notify": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "default": None},
             },
-            "Read incremental progress without consuming results. Without a pattern this returns immediately, regardless of timeout_s. With a pattern, wait for matching output or settlement; timeout_s ends only that wait. notify subscribes/unsubscribes this exact handle.",
+            "Read incremental progress without consuming results. Without a pattern this returns immediately, regardless of timeout_s. With a pattern, wait for matching output or settlement; timeout_s ends only that wait. Unavailable members return independent outcomes; continue with the valid handles. notify subscribes/unsubscribes this exact handle.",
         ),
         _tool(
             wait_tasks,
@@ -237,7 +237,7 @@ def build_task_tools() -> list[Any]:
                 "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"},
                 "timeout_s": _TIMEOUT,
             },
-            "Collect independent task outcomes. With return_when='any', a member error is an available outcome; other handles remain explicitly pending and continue running. Default wait is unbounded; zero snapshots; positive expiry or Stop ends only this waiter.",
+            "Collect independent task outcomes. With return_when='any', a member error is an available outcome; other handles remain explicitly pending and continue running. task_state_uncertain requires inspection, not repeated waits for the same receipt. Default wait is unbounded; zero snapshots; positive expiry or Stop ends only this waiter.",
         ),
         _tool(
             cancel_tasks,

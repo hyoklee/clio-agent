@@ -127,14 +127,18 @@ async def create_environment(
         scope: dict[str, Any] | None,
         creation_id: str,
         creation_digest: str,
+        initial_metadata: dict[str, Any],
+        approval_profile: str | None,
     ) -> Any:
         return app.state.sessions.create(
             workspace_id="workspace",
             parent_session_id=parent,
             agent={"id": agent},
-            metadata=scope or {},
+            metadata={**(scope or {}), **initial_metadata},
+            approval_profile=approval_profile or "",
             creation_id=creation_id,
             creation_digest=creation_digest,
+            defer_initialization=True,
         )
 
     app.state.turn_runner = TurnRunner(app, unavailable_admission)

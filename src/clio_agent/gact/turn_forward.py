@@ -80,6 +80,22 @@ async def _run_module(state: "TurnState", module: Any, cancel: Callable[[], bool
 
     def forward() -> Any:
         with cancellation_checker(cancel), _tool_session_context(state.sid, lease_fleet=False):
+            from clio_agent.errors import CancellationError
+
+            if cancel():
+                raise CancellationError("Session stopped before startup")
+            with state.app.state.task_history.serialized():
+                assignment = state.app.state.task_history.latest_assignment(state.sid)
+                if assignment is None:
+                    raise ValueError("Session assignment is unavailable before initialization")
+                state.app.state.conversations.require_admission(assignment)
+            # Hooks run on this session's existing worker. They never hold the
+            # shared task writer, and Stop waits for their physical retirement.
+            state.app.state.sessions.initialize(state.sid, cancel_event=state.turn_cancel_event)
+            if cancel():
+                raise CancellationError("Session stopped during startup")
+            with state.app.state.task_history.serialized():
+                state.app.state.conversations.require_admission(assignment)
             kwargs = {
                 "question": state.enriched_text,
                 "session_id": state.sid,

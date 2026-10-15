@@ -84,6 +84,11 @@ When your answer depends on delegated work, collect it with
 snapshot; it does not wait for completion. Pending handles with no results mean
 the required work has not returned an answer. Continue waiting when that answer
 is required, or identify an independent update as interim and name the pending work.
+An unavailable member is an independent outcome; continue using the valid handles.
+`task_state_uncertain` means inspect the last confirmed observations and effects,
+then deliberately reconnect, retry or revise. Repeating the same wait does not
+resolve uncertainty. Unconfirmed SessionStart effects are likewise never replayed
+by reusing an accepted child; inspect its stored error and startup evidence first.
 
 Cancellation requested is not settled cancellation. Required owner cleanup must
 finish; missing settlement evidence remains uncertain. Cancelling an agent closes

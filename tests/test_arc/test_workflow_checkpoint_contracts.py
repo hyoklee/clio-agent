@@ -14,15 +14,98 @@ from clio_agent.arc.task_types import AssignmentDetails, WorkflowCheckpoint, arg
 from clio_agent.gact.agents.clio_react_record import StepRecorder
 from clio_agent.gact.conversations import ConversationOutcome, ConversationSegment
 from clio_agent.gact.events import EventBus
+from clio_agent.gact.provenance_wiring import install_session_lifecycle_observer
+from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_operations import TaskOperations
 from clio_agent.gact.types import AgentDef
 from clio_agent.gact.workflows import STALL_CHILD_FAILED, run_declared_workflow
+from tests.test_arc.child_worker_helpers import execute_child
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 
 async def no_cancel(_task: Any, _caller: TaskCaller) -> dict[str, Any]:
     pytest.fail("Workflow inspection must not request cancellation")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reconstruct", [False, True])
+async def test_timed_workflow_reconciliation_keeps_prepared_deadline_and_child_identity(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reconstruct: bool
+) -> None:
+    app, owner, root = await create_environment(arc, tmp_path)
+    caller = TaskCaller(root.owner.session_id, "human")
+    app.state.task_operations = TaskOperations(owner.history, no_cancel)
+    agent = AgentDef(
+        id="main",
+        title="Timed workflow",
+        metadata={"workflow": {"steps": [{"id": "timed", "child": "worker", "timeout_s": 3600}]}},
+    )
+    original, failed = owner.history.record_snapshot, False
+
+    def record(snapshot: Any, **kwargs: Any) -> None:
+        nonlocal failed
+        if snapshot.kind == "Subagent" and not failed:
+            failed = True
+            raise OSError("Child assignment confirmation lost")
+        original(snapshot, **kwargs)
+
+    def prepare() -> None:
+        reference = owner.history.write_content(
+            caller.session_id, AssignmentDetails().model_dump(mode="json")
+        )
+        owner.history.record_snapshot(
+            root.model_copy(update={"details": reference}), observation_id="details"
+        )
+
+    monkeypatch.setattr(owner.history, "record_snapshot", record)
+    runs: list[str] = []
+
+    async def model(segment: ConversationSegment) -> ConversationOutcome:
+        def action() -> dict[str, Any]:
+            runs.append(segment.assignment.handle)
+            return {"workflow_state": {"result": "ready"}}
+
+        return await execute_child(app, segment, action)
+
+    try:
+        await asyncio.to_thread(prepare)
+        with pytest.raises(OSError, match="confirmation lost"):
+            await run_declared_workflow(app, caller, agent, "Original work", "first-call")
+        assert failed and owner.history.requires_recovery
+        child = next(row for row in app.state.sessions.list() if row.parent_session_id)
+        checkpoint = await asyncio.to_thread(owner.history.workflow_checkpoint, root.handle)
+        retained = await asyncio.to_thread(owner.history.read_content, checkpoint.content)
+        deadline = retained["prepared_deadlines"]["timed"]
+        assert deadline is not None and retained["steps"] == {}
+        await asyncio.to_thread(owner.history.restore)
+        if reconstruct:
+            app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+            owner.sessions = app.state.sessions
+            install_session_lifecycle_observer(app)
+        owner.run_segment = model
+        await owner.pause(TaskCaller(caller.session_id, "human", human_action=True), root.handle)
+        for job in tuple(owner._controls.values()):
+            await job
+        owner.start()
+        owner.recovery.on_ready = None
+        result = await asyncio.wait_for(
+            run_declared_workflow(app, caller, agent, "Original work", "resumed-call"), 10
+        )
+        assert result["status"] == "completed" and result["workflow_id"] == retained["id"]
+        current = await asyncio.to_thread(owner.history.latest_assignment, child.id)
+        details = AssignmentDetails.model_validate(
+            await asyncio.to_thread(owner.history.read_content, current.details)
+        )
+        assert details.execution_deadline == deadline and runs == [current.handle]
+        assert [row.id for row in app.state.sessions.list() if row.parent_session_id] == [child.id]
+        final = await asyncio.to_thread(owner.history.workflow_checkpoint, root.handle)
+        assert (await asyncio.to_thread(owner.history.read_content, final.content))[
+            "prepared_deadlines"
+        ]["timed"] == deadline
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
 
 
 @pytest.mark.asyncio

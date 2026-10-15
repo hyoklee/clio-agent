@@ -8,6 +8,7 @@ code, called from ``build_app`` / ``_lifespan`` as one-liners.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -41,6 +42,14 @@ def install_session_lifecycle_observer(app: Any) -> None:
     """
 
     def _observe_session_lifecycle(event_type: str, session: Session) -> None:
+        if session.creation_digest:
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                pass
+            else:
+                raise RuntimeError("Trusted lifecycle confirmation requires an off-loop owner")
+
         # #1334: ``SessionStore.create/delete`` are called inline by async routes; the
         # event's store RPC must not run on the loop thread, so it is dispatched off it
         # when a loop runs here (inline otherwise), failures audited + logged.

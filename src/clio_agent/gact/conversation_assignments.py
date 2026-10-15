@@ -475,30 +475,32 @@ async def spawn(
                     "resource": resource_id,
                 }
             )
+            initial_metadata = dict(session_metadata or {})
+            if normalized_strategy is not None:
+                initial_metadata["variant_strategy"] = normalized_strategy
+            if workflow_id is not None:
+                initial_metadata.update(workflow_id=workflow_id, workflow_step=workflow_step)
             child = (
                 session
                 if existing is not None
                 else self.create_child(
-                    caller.session_id, agent_id, target_scope, handle, creation_digest
+                    caller.session_id,
+                    agent_id,
+                    target_scope,
+                    handle,
+                    creation_digest,
+                    initial_metadata,
+                    approval_profile,
                 )
             )
             if child is None:
                 raise ValueError("Accepted child session is no longer available")
-            if approval_profile is not None:
-                self.sessions.update(
-                    child.id, approval_mode="ask", approval_profile=approval_profile
-                )
-            if session_metadata is not None:
-                if existing is not None and any(
-                    child.metadata.get(key) != value for key, value in session_metadata.items()
-                ):
-                    raise ValueError("Accepted child execution configuration changed")
-                if existing is None:
-                    self.sessions.update(child.id, metadata_patch=session_metadata)
-            if normalized_strategy is not None and existing is None:
-                self.sessions.update(
-                    child.id, metadata_patch={"variant_strategy": normalized_strategy}
-                )
+            if child.creation_digest and child.creation_digest != creation_digest:
+                raise ValueError("Session creation identity was reused with different work")
+            if approval_profile is not None and child.approval_profile != approval_profile:
+                raise ValueError("Accepted child approval profile changed")
+            if any(child.metadata.get(key) != value for key, value in initial_metadata.items()):
+                raise ValueError("Accepted child execution configuration changed")
             task = existing or self._new_assignment(
                 child.id,
                 assignment,
@@ -521,11 +523,6 @@ async def spawn(
                 if task.resource_id is None:
                     task = task.model_copy(update={"resource_id": resource_id})
                     self.history.record_snapshot(task, observation_id=uuid4().hex)
-            if workflow_id is not None:
-                self.sessions.update(
-                    child.id,
-                    metadata_patch={"workflow_id": workflow_id, "workflow_step": workflow_step},
-                )
             # Trusted delegation configuration grants only the return-message
             # channel. It conveys no ancestor read/observe/control rights.
             grant_id = "delegation-reply:" + task.handle

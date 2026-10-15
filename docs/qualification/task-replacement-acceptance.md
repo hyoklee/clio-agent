@@ -407,3 +407,36 @@ legacy tests remain pending. No R34/R35 behavioral, native/model/browser run or
 installed-state change occurred. Fable's remote review cache, controller and result
 settled and were removed. Existing manual-only/rejected roots were preserved;
 all future execution stays inside the D qualification repository.
+
+## R35 adjudication and R36 construction
+
+R35's final scoped Linux Mypy and declared Core/Web TypeScript passed. Astra and
+actual Claude Code Fable completed independent source reviews of core `182cde82`,
+GACT `41660185` and marketplace `999fdafa`. Architecture is supported; source and
+qualification acceptance remain NO-GO. Their reports and the combined adjudication
+are retained alongside this ledger.
+
+R36 removes startup hooks and lifecycle publication from the global task-writer
+critical section. Submission prepares complete child metadata and confirms the
+assignment/mail; the existing session worker initializes before model execution,
+with cancellation and admission checks on both sides. No new worker, scheduler or
+execution registry is introduced. Same-identity startup is guarded within the
+existing SessionStore; unknown admitted hook effects remain non-replayable.
+Initial approval profile/metadata are applied once, without resetting a reused
+child's human-edited approval mode. Declared workflows confirm their absolute
+prepared deadline in the existing checkpoint before creating child metadata.
+
+Bulk regressions are constructed for pre-acceptance faults, lost creation replies,
+unknown hook effects, same-identity concurrency, unrelated query/Question/control
+progress during a held startup, cancellation/physical retirement, rejection of
+loop-thread initialization before effects, approval preservation, timed-workflow
+reconciliation and admission-to-input budget exclusion/recovery. The tests use
+production Core/SessionStore/TurnRunner/recorder paths with test-only model/hook
+fault injection. They are unexecuted and are not live acceptance.
+
+Scoped Ruff/format, Linux Mypy for nine changed production files, removal, unchanged
+800-line size and class guards pass from D tooling. Renewed independent review,
+legacy-test migration, focused behavior execution, F03, exact-head CI and all
+required Q1–Q9/R1–R6 remain pending. Installed state and manual-only boundaries
+remain preserved. No R34/R35/R36 behavioral, native/model/browser qualification
+has run.

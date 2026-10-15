@@ -678,6 +678,16 @@ async def run_declared_workflow(
                     "observed": gate.observed,
                     "outcomes": outcomes,
                 }
+            deadlines = execution.setdefault("prepared_deadlines", {})
+            if step.id not in deadlines:
+                deadlines[step.id] = (
+                    (datetime.now(timezone.utc) + timedelta(seconds=step.timeout_s)).isoformat()
+                    if step.timeout_s > 0
+                    else None
+                )
+                # This is launch context, not an attempt budget: confirm it before
+                # child metadata so reconciliation uses the original deadline.
+                await asyncio.to_thread(save)
             spawned = await app.state.conversations.spawn(
                 caller,
                 _render_task(step, request),
@@ -686,11 +696,7 @@ async def run_declared_workflow(
                 workflow_id=execution["id"],
                 workflow_step=step.id,
                 launch_context={"workflow_state": dict(execution["state"])},
-                execution_deadline=(
-                    datetime.now(timezone.utc) + timedelta(seconds=step.timeout_s)
-                ).isoformat()
-                if step.timeout_s > 0
-                else None,
+                execution_deadline=deadlines[step.id],
             )
             if not spawned.get("accepted", False):
                 execution["status"] = STALL_SPAWN_REFUSED

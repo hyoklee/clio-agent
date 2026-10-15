@@ -33,6 +33,7 @@ absent-optional fields per §3.2.
 
 from __future__ import annotations
 
+import asyncio
 import builtins
 import hashlib
 import json
@@ -59,6 +60,14 @@ _SESSION_ID_PREFIX = "sess_"
 _SERVER_PROFILES = frozenset({"spotter-watcher", "read-only-side"})
 _TIME_LOCK = threading.Lock()
 _LAST_TIME: datetime | None = None
+
+
+def _require_creation_worker() -> None:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return
+    raise RuntimeError("Trusted session initialization must run off the event loop")
 
 
 def _utcnow_iso() -> str:
@@ -282,6 +291,7 @@ class SessionStore:
         # (:meth:`settle_interaction_times`); until then the field reads "" (unknown).
         self._interaction_unknown: set[str] = set()
         self._lifecycle_observer: Callable[[str, Session], None] | None = None
+        self._initializing: set[str] = set()
         if path is not None:
             self._load()
             # #1115: a PERSISTENT session registry is the durable home for in-flight
@@ -365,6 +375,7 @@ class SessionStore:
         approval_profile: str = "",
         creation_id: str = "",
         creation_digest: str = "",
+        defer_initialization: bool = False,
     ) -> Session:
         """Create a new session. Returns the freshly-minted record.
 
@@ -376,7 +387,8 @@ class SessionStore:
         request digest. A matching existing child is returned without replaying
         completed initialization or replacing human-edited settings. Known
         unfinished initialization resumes; an admitted hook without a confirmed
-        receipt reports uncertainty. This never starts or repeats model execution.
+        receipt reports uncertainty. Trusted children defer startup to their
+        session-owned worker; preparing a row never starts model execution.
         """
 
         if bool(creation_id) != bool(creation_digest) or (
@@ -387,6 +399,10 @@ class SessionStore:
             )
         ):
             raise ValueError("Reusable session creation requires its trusted identity and digest")
+        if defer_initialization and not creation_id:
+            raise ValueError("Deferred initialization requires trusted session creation")
+        if creation_id and not defer_initialization:
+            _require_creation_worker()
         sid = _SESSION_ID_PREFIX + (
             hashlib.sha256(creation_id.encode()).hexdigest()[:32]
             if creation_id
@@ -424,32 +440,70 @@ class SessionStore:
                     or existing.workspace_id != workspace_id
                     or existing.parent_session_id != parent_session_id
                     or existing.agent != sess.agent
+                    or existing.approval_profile != sess.approval_profile
                 ):
                     raise ValueError("Session creation identity was reused with different work")
                 # Reconfirm the original address, then resume only initialization
                 # that is known unfinished. Completed work is never repeated.
                 self._flush()
-                if existing.creation_hook_state == "completed":
-                    if not existing.creation_lifecycle_confirmed:
-                        raise ValueError("Session initialization receipts are inconsistent")
-                    return existing
                 sess = existing
             else:
                 self._sessions[sid] = sess
                 self._flush()
+        if defer_initialization:
+            return sess
+        if creation_id:
+            return self.initialize(sid)
+        return self._finish_creation(sess)
+
+    def initialize(self, sid: str, *, cancel_event: threading.Event | None = None) -> Session:
+        """Initialize a prepared child on its exclusive worker, without holding task locks.
+
+        An unconfirmed admitted hook is never replayed. Concurrent initialization
+        fails immediately instead of blocking a shared worker or repeating effects.
+        """
+        _require_creation_worker()
+        with self._lock:
+            sess = self._sessions.get(sid)
+            if sess is None:
+                raise ValueError("Prepared session is unavailable")
+            if not sess.creation_digest:
+                return sess
+            if sess.creation_hook_state == "completed":
+                if not sess.creation_lifecycle_confirmed:
+                    raise ValueError("Session initialization receipts are inconsistent")
+                return sess
+            if sid in self._initializing:
+                raise RuntimeError("Session initialization is already running")
+            self._initializing.add(sid)
         try:
-            if not creation_id or not sess.creation_lifecycle_confirmed:
-                if creation_id and self._lifecycle_observer is None:
+            return self._finish_creation(sess, cancel_event=cancel_event)
+        finally:
+            with self._lock:
+                self._initializing.discard(sid)
+
+    def _finish_creation(
+        self, sess: Session, *, cancel_event: threading.Event | None = None
+    ) -> Session:
+        sid, trusted = sess.id, bool(sess.creation_digest)
+        from clio_agent.gact.hooks import dispatch_session_start  # noqa: PLC0415
+        from clio_agent.gact.hooks.wire import HookCancelled  # noqa: PLC0415
+
+        if cancel_event is not None and cancel_event.is_set():
+            raise HookCancelled("session-start")
+        try:
+            if not trusted or not sess.creation_lifecycle_confirmed:
+                if trusted and self._lifecycle_observer is None:
                     raise RuntimeError("Trusted session creation requires its lifecycle observer")
                 self._observe_lifecycle("session.created", sess)
-                if creation_id:
+                if trusted:
                     with self._lock:
                         sess.creation_lifecycle_confirmed = True
                         self._flush()
         except BaseException:
             # Trusted task creation can already have a confirmed Core event
             # whose reply was lost. Retain its stable address for reconciliation.
-            if creation_id:
+            if trusted:
                 raise
             # No session exists that clio-core has no record of.
             with self._lock:
@@ -458,7 +512,9 @@ class SessionStore:
             raise
         # Reuse known-unattempted initialization. An admitted hook with no
         # completion receipt is uncertain and must never be replayed by reuse.
-        if creation_id:
+        if cancel_event is not None and cancel_event.is_set():
+            raise HookCancelled("session-start")
+        if trusted:
             with self._lock:
                 if sess.creation_hook_state != "pending":
                     raise RuntimeError(
@@ -472,18 +528,17 @@ class SessionStore:
                     # seeing a persisted 'started' receipt remains uncertain.
                     sess.creation_hook_state = "pending"
                     raise
-        from clio_agent.gact.hooks import dispatch_session_start  # noqa: PLC0415
-
         dispatch_session_start(
             session_id=sid,
+            cancel_event=cancel_event,
             payload={
-                "workspace_id": workspace_id,
-                "parent_session_id": parent_session_id,
+                "workspace_id": sess.workspace_id,
+                "parent_session_id": sess.parent_session_id,
                 "agent": dict(sess.agent),
                 "mode": sess.mode,
             },
         )
-        if creation_id:
+        if trusted:
             with self._lock:
                 sess.creation_hook_state = "completed"
                 self._flush()

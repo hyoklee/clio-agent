@@ -14,13 +14,15 @@ from clio_agent.gact.provenance_wiring import install_session_lifecycle_observer
 from clio_agent.gact.semantic_events import semantic_event_from_events_content
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskCaller
+from tests.test_arc.child_worker_helpers import execute_child
 from tests.test_arc.test_conversation_owner_contracts import create_environment
+from tests.test_arc.test_task_retirement_contracts import idle
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "fault",
-    ["session_flush", "before_observation", "session_observation", "before_task", "after_task"],
+    ["session_flush", "before_task", "after_task"],
 )
 @pytest.mark.parametrize("reconstruct", [False, True])
 async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_hooks(
@@ -29,7 +31,6 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
     app, owner, root = await create_environment(arc, tmp_path)
     caller = TaskCaller(root.owner.session_id, "human")
     original_snapshot, original_flush = owner.history.record_snapshot, app.state.sessions._flush
-    original_lifecycle = app.state.sessions._observe_lifecycle
     fired = False
     hooks: list[str] = []
 
@@ -54,19 +55,8 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
             fired = True
             raise OSError("task header reply lost after confirmation")
 
-    def lifecycle(event_type: str, session: Any) -> None:
-        nonlocal fired
-        if fault == "before_observation" and not fired:
-            fired = True
-            raise OSError("session observation unavailable before publication")
-        original_lifecycle(event_type, session)
-        if fault == "session_observation" and not fired:
-            fired = True
-            raise OSError("session observation reply unavailable")
-
     monkeypatch.setattr("clio_agent.gact.hooks.dispatch_session_start", hook)
     monkeypatch.setattr(app.state.sessions, "_flush", flush)
-    monkeypatch.setattr(app.state.sessions, "_observe_lifecycle", lifecycle)
     monkeypatch.setattr(owner.history, "record_snapshot", record)
     try:
         with pytest.raises(OSError, match="unavailable|reply lost"):
@@ -91,9 +81,7 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
                 install_session_lifecycle_observer(app)
 
         await asyncio.to_thread(recover)
-        if fault in {"before_task", "before_observation", "session_observation"} or (
-            fault == "session_flush" and not reconstruct
-        ):
+        if fault == "before_task" or (fault == "session_flush" and not reconstruct):
             with pytest.raises(ValueError, match="different work"):
                 await owner.spawn(caller, "Changed assignment", "worker", "original-invocation")
         accepted = await owner.spawn(caller, "Original assignment", "worker", "original-invocation")
@@ -113,6 +101,25 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
         assert [child.id for child in children] == [child_id]
         mail = await asyncio.to_thread(owner.history.pending_mail, child_id)
         assert len(mail) == 1 and mail[0].kind == "delegation" and mail[0].handle == current.handle
+        assert not hooks, "Acceptance must not run SessionStart on the shared task writer"
+
+        processed = asyncio.Event()
+
+        async def model(segment: Any) -> Any:
+            try:
+                return await execute_child(app, segment, lambda: {"answer": "Initialized once"})
+            finally:
+                processed.set()
+
+        owner.run_segment = model
+        await owner.pause(TaskCaller(caller.session_id, "human", human_action=True), root.handle)
+        for job in tuple(owner._controls.values()):
+            await job
+        owner.start()
+        owner.recovery.on_ready = None
+        owner.runner.signal(child_id)
+        await asyncio.wait_for(processed.wait(), 10)
+        await idle(owner, child_id)
         assert hooks == [child_id]
         creation = await asyncio.to_thread(arc.list_segments, child_id, "_events")
         events = [
@@ -168,9 +175,38 @@ async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
     monkeypatch.setattr("clio_agent.gact.hooks.dispatch_session_start", hook)
     monkeypatch.setattr(app.state.sessions, "_flush", flush)
     try:
-        with pytest.raises(OSError, match="unavailable"):
-            await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
-        assert effect.read_text() == "effect\n" and owner.history.requires_recovery
+        accepted = await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
+        assert accepted["accepted"] is True and not effect.exists()
+        models: list[str] = []
+        processed = asyncio.Event()
+
+        async def model(segment: Any) -> Any:
+            def action() -> dict[str, Any]:
+                models.append("ran")
+                return {}
+
+            try:
+                return await execute_child(app, segment, action)
+            finally:
+                processed.set()
+
+        owner.run_segment = model
+        await owner.pause(TaskCaller(caller.session_id, "human", human_action=True), root.handle)
+        for job in tuple(owner._controls.values()):
+            await job
+        owner.start()
+        owner.recovery.on_ready = None
+        owner.runner.signal(accepted["session_id"])
+        await asyncio.wait_for(processed.wait(), 10)
+        await idle(owner, accepted["session_id"])
+        assert effect.read_text() == "effect\n" and not models
+        outcome = await asyncio.to_thread(owner.history.task_snapshot, accepted["handle"])
+        assert outcome is not None and outcome.status == "failed" and outcome.result is not None
+        result = await asyncio.to_thread(owner.history.read_content, outcome.result)
+        assert "unavailable" in str(result)
+        assert any(
+            item.handle == outcome.handle for item in owner.history.pending_mail(caller.session_id)
+        )
         children = [
             child
             for child in app.state.sessions.list()
@@ -187,14 +223,17 @@ async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
                 install_session_lifecycle_observer(app)
 
         await asyncio.to_thread(recover)
+        reused = await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
+        assert reused == accepted, "A historical handle cannot start another model or hook"
         if fault == "hook_receipt" and not reconstruct:
-            accepted = await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
-            assert accepted["accepted"] is True and accepted["session_id"] == child_id
+            await asyncio.to_thread(app.state.sessions.initialize, child_id)
         else:
             with pytest.raises(RuntimeError, match="effects are unconfirmed"):
-                await owner.spawn(caller, "Original assignment", "worker", "hook-fault")
-            assert not owner.history.pending_mail(child_id)
-            assert await asyncio.to_thread(owner.history.latest_assignment, child_id) is None
+                await asyncio.to_thread(app.state.sessions.initialize, child_id)
+            pending = owner.history.pending_mail(child_id)
+            assert len(pending) == 1 and pending[0].delivery == "held"
+            assert pending[0].held_reason == "execution_failed_before_input_commit"
+            assert await asyncio.to_thread(owner.history.latest_assignment, child_id) == outcome
         assert effect.read_text() == "effect\n"
         assert (
             len(
