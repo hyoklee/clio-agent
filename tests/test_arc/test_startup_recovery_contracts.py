@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import MailItem
+from clio_agent.gact.conversation_assignments import _finish_segment
+from clio_agent.gact.conversations import ConversationOutcome, ConversationSegment
+from clio_agent.gact.native_work import now
+from clio_agent.gact.session_input import accept_session_input
+from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_operations import TaskOperations
@@ -44,20 +50,116 @@ async def test_startup_attention_recovers_after_parent_write_before_self_input(
         assert history.requires_recovery
         recovered = await asyncio.to_thread(TaskHistory, arc)
         owner.history = app.state.task_history = recovered
-        assert not [item for item in recovered.pending_mail(sid) if item.kind == "attention"]
+        owner.mail.history = owner.recovery.history = recovered
+        assert not [
+            item
+            for item in recovered.pending_mail(sid)
+            if item.id.startswith("startup-interrupted:")
+        ]
         await asyncio.to_thread(owner.note_startup_interruption, sid)
         await asyncio.to_thread(owner.note_startup_interruption, sid)
         parent_notices = [
             item for item in recovered.pending_mail(caller.session_id) if item.kind == "attention"
         ]
-        child_notices = [item for item in recovered.pending_mail(sid) if item.kind == "attention"]
+        child_notices = [
+            item
+            for item in recovered.pending_mail(sid)
+            if item.id.startswith("startup-interrupted:")
+        ]
         assert len(parent_notices) == len(child_notices) == 1
+        assert child_notices[0].kind == "hook"
         assert parent_notices[0].content == child_notices[0].content
         body = await asyncio.to_thread(recovered.read_content, child_notices[0].content)
         assert isinstance(body, dict)
         assert body["effects"] == "unconfirmed" and body["cleanup"] == "confirmed"
         assert not recovered.acknowledged_notifications(sid)
         assert not recovered.acknowledged_notifications(caller.session_id)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("legacy_terminal", [False, True])
+@pytest.mark.parametrize("reconstruct", [False, True])
+async def test_failed_startup_never_admits_a_successor_without_physical_proof(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    legacy_terminal: bool,
+    reconstruct: bool,
+) -> None:
+    """Exercise failure recording and both successor paths with retained Core data."""
+    app, owner, root = await create_environment(arc, tmp_path)
+    caller = TaskCaller(root.owner.session_id, "human", human_action=True)
+    accepted = await owner.spawn(
+        caller, "Startup effects need inspection", "worker", "failed-startup"
+    )
+    sid, handle = accepted["session_id"], accepted["handle"]
+    effect = tmp_path / "startup-effect.txt"
+
+    def failed_start(**_kwargs: Any) -> None:
+        effect.write_text("an effect occurred before the cleanup receipt was lost")
+        raise RuntimeError("startup cleanup receipt lost")
+
+    monkeypatch.setattr("clio_agent.gact.hooks.dispatch_session_start", failed_start)
+    try:
+        with pytest.raises(RuntimeError, match="cleanup receipt lost"):
+            await asyncio.to_thread(owner.sessions.initialize, sid)
+        assignment = await asyncio.to_thread(owner.history.task_snapshot, handle)
+        assert assignment is not None
+        trigger = (await asyncio.to_thread(owner.history.pending_mail, sid))[0]
+        await asyncio.to_thread(
+            _finish_segment,
+            owner,
+            ConversationSegment(sid, assignment, "startup-failed-turn", trigger, "original work"),
+            ConversationOutcome(
+                {}, error={"type": "RuntimeError", "message": "startup cleanup receipt lost"}
+            ),
+        )
+        failed = await asyncio.to_thread(owner.history.task_snapshot, handle)
+        assert failed is not None and failed.status == "task_state_uncertain"
+        assert failed.terminal_at is None and failed.settlement == "unknown"
+        assert failed.details is not None
+        if legacy_terminal:
+            # Preserve an older falsely-confirmed terminal outcome as historical
+            # data; even that row cannot authorize new execution in this session.
+            failed = failed.model_copy(
+                update={
+                    "status": "failed",
+                    "raw_status": "failed",
+                    "terminal_at": now(),
+                    "settlement": "confirmed",
+                }
+            )
+            await asyncio.to_thread(
+                owner.history.record_snapshot, failed, observation_id="legacy-terminal"
+            )
+        if reconstruct:
+            owner.sessions = app.state.sessions = await asyncio.to_thread(
+                SessionStore, path=tmp_path / "sessions.json"
+            )
+            owner.history = app.state.task_history = await asyncio.to_thread(TaskHistory, arc)
+            owner.mail.history = owner.recovery.history = owner.history
+            restored = owner.sessions.get(sid)
+            assert restored is not None and restored.creation_hook_state == "started"
+            assert (await asyncio.to_thread(owner.history.task_snapshot, handle)) == failed
+        app.state.task_operations = TaskOperations(owner.history, forbid_cancel)
+        before = await asyncio.to_thread(owner.history.task_handles, kind="Subagent")
+        message_id = await asyncio.to_thread(
+            accept_session_input, app, sid, "Inspect the retained failure", source="hook"
+        )
+        assert await owner._admit(sid) is None
+        acknowledgement = await owner.restart(caller, handle)
+        assert acknowledgement["restart_requested"]
+        await asyncio.gather(*tuple(owner._controls.values()), return_exceptions=True)
+        assert await owner._admit(sid) is None
+        assert await asyncio.to_thread(owner.history.task_handles, kind="Subagent") == before
+        latest = await asyncio.to_thread(owner.history.latest_assignment, sid)
+        assert latest is not None and latest.handle == handle
+        assert any(item.id == message_id for item in owner.history.pending_mail(sid))
+        assert effect.read_text() == "an effect occurred before the cleanup receipt was lost"
+        assert not owner.runner.busy(sid)
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

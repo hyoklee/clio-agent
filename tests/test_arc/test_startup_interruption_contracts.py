@@ -129,6 +129,7 @@ async def test_pause_resume_and_restart_preserve_startup_uncertainty_without_hoo
         assert paused is not None and paused.terminal_at is None and paused.activity == "paused"
         child = app.state.sessions.get(sid)
         assert child is not None
+        assert not owner.history.subscriptions(accepted["handle"])
         assert child.creation_hook_state == ("pending" if phase == "before" else "interrupted")
         if phase == "before":
             assert not effect.exists()

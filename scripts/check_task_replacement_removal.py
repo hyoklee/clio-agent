@@ -21,6 +21,7 @@ REMOVED_MODULES = frozenset(
         "clio_agent.gact.async_user_question",
         "clio_agent.gact.child_forward",
         "clio_agent.gact.core_task_journal",
+        "clio_agent.gact.delegation_return",
         "clio_agent.gact.human_task_intervention",
         "clio_agent.gact.loop_inbox",
         "clio_agent.gact.mcp_task_events",

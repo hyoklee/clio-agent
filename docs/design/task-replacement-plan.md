@@ -33,11 +33,15 @@ Initial removal manifest (module identifiers refer to src/clio_agent):
 | tools.native_task_host.NativeTaskHost's record/drive/settlement policy and gact.core_task_journal.CoreTaskJournal's native-row/cross-owner reconciliation | old native rows, owner orchestration, receipt-spin loops; retain useful native root configuration and confirmed Core/input-write algorithms |
 | gact.question_tasks and task-specific authority/delivery in user_question_ledger | parallel Question task mirror, agent blocking/async delivery variants and Question-only consumption; preserve permission/external-input gate semantics |
 | tools.mcp_tasks driving loops, tools.mcp_wait_ladder, tools.task_driver_lease, gact.task_mcp_owner and TaskSupervisor drivers | custom execution polling, lease renewal and alternate cancellation/settlement ladders; keep no generic old driver |
-| gact.child_forward terminal writers/timers; assignment-status admission in turn_spawn; turn_spawn_executor pools | independent terminal publication, deadlines and per-depth whole-turn scheduling |
+| gact.child_forward terminal writers/timers; orphan gact.delegation_return metadata writer; assignment-status admission in turn_spawn; turn_spawn_executor pools | independent terminal publication/message mutation, deadlines and per-depth whole-turn scheduling |
 | gact.task_projection owner joins; task_completion_wake/loop_inbox policy; composed composer idle hooks and old acceptance/consumption guards | full-registry reconstruction, competing spawn/wake decisions and read-time migration |
 | gact.task_relay_owner, relay_wiring, relay_expert_invoker/relay_invoker_runtime, special relay route/status/timeline and tools.relay_transport/console/CLI integration | placement registry, dedicated task observers, special waits/messages/install catalog entries and corresponding callbacks |
 
 Expand this manifest from production callers before deleting: classify each affected schema/config key as removed internal state, retained public/workload contract or legacy decoder. Explicitly retain native backend/concurrency settings, existing child inference/fanout budgets, mailbox pending-only settings, permissions and confinement. Old driver deadline/lease settings are removed, not silently repurposed.
+
+The retained gact.message_intents module is historical payload decoding only:
+PendingSteer, QueuedMessage and typed errors. MessageIntentStore and all mutable
+reserve/update/claim/consume/delivery behavior are removed and remain forbidden.
 
 Delete architecture-bound tests/fixtures and their obsolete generated expectations. Keep independent tests of preserved algorithms (confinement, bytes/hashes, manifests, atomic publication, output bounds, cleanup); rewrite coupled cases as fresh public-behavior tests from the ledger. Do not retain old stores only to satisfy tests.
 

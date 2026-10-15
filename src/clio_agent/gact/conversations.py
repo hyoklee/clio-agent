@@ -262,7 +262,10 @@ class Conversations:
                     or self._model_recording.get(sid)
                 ):
                     return None
-                if self.execution_gate(sid) is not None:
+                if (
+                    self.execution_gate(sid) is not None
+                    or self.sessions.startup_retirement_error(sid) is not None
+                ):
                     return None
                 caller = self.caller(sid)
                 # Trusted retry withdrawal precedes releasing the stopped trigger.
@@ -364,6 +367,7 @@ class Conversations:
                         self._closing
                         or self.history.requires_recovery
                         or self.execution_gate(sid) is not None
+                        or self.sessions.startup_retirement_error(sid) is not None
                     ):
                         return
                     if self.mail.stage(self.caller(sid)).items:

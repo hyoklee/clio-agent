@@ -1,0 +1,17 @@
+{
+  "core": "51c056fef7a13a80446ceefa06b4a49d139abf06",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751",
+  "models": [
+    "claude-fable-5-1"
+  ],
+  "session_id": "5f7ae482-70e9-4b2f-a339-01ce288205a9",
+  "terminal_reason": "completed",
+  "is_error": false,
+  "permission_denials": [],
+  "review": "task-replacement-fable-r37.md",
+  "read_only": true,
+  "behavioral_qualification": "unexecuted",
+  "source_verdict": "GO with explicit review scope exclusions; does not resolve Astra's independent R37 defects",
+  "combined_acceptance": "NO-GO"
+}

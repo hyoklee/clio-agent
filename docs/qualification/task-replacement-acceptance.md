@@ -94,6 +94,17 @@ Not frozen. No replacement acceptance has run. No release is authorized until ev
 
 ## Owned qualification state
 
+R38 follows both independent R37 reviews. Astra's own-session warning and
+failed-startup successor findings are addressed in the existing input/admission
+owners, with fresh unexecuted cases for reconstructed records and older terminal
+rows. The unused delegation metadata writer is deleted and denied by the guard.
+Fable's scope-limited architecture GO does not override Astra's source NO-GO or
+qualify any runtime behavior. F03 costs and the lingering-attention/known-cleanup
+wait observation remain explicit follow-ups. The first legacy-test batch leaves
+34 of the original 37 known removed-module import files; this is not a complete
+collection claim. Source readiness and all corresponding acceptance rows remain
+blocked pending corrected-tuple review, construction completion and execution.
+
 R37 source construction addresses the combined R36 reviewer findings through
 the existing session worker, hook dispatcher/adapter, Core input/publication and
 child-preparation owners. Fresh cases cover startup cancellation phases, retained

@@ -111,7 +111,7 @@ def note_startup_interruption(self: Conversations, sid: str) -> None:
             MailItem(
                 id=identity,
                 recipient_session=sid,
-                kind="attention",
+                kind="hook",
                 content=content,
                 created_at=now(),
                 handle=current.handle,
@@ -162,6 +162,9 @@ def _new_assignment(
     handle: str | None = None,
     initial_details: AssignmentDetails | None = None,
 ) -> TaskSnapshot:
+    startup_error = self.sessions.startup_retirement_error(sid)
+    if startup_error:
+        raise ValueError(startup_error)
     if predecessor is not None and predecessor.terminal_at is None:
         raise ValueError("An active assignment must settle before a successor is created")
     if predecessor is not None and parent is None and predecessor.owner.parent_handle:
@@ -330,8 +333,11 @@ def _finish_segment(
             and task.terminal_at is None
             for task in pending
         )
+        startup_error = self.sessions.startup_retirement_error(segment.session_id)
         disposition = (
-            "yield" if gated else outcome.disposition or ("yield" if has_work else "complete")
+            "yield"
+            if gated or startup_error
+            else outcome.disposition or ("yield" if has_work else "complete")
         )
         if disposition not in {"yield", "complete"}:
             raise ValueError("Invalid assignment disposition")
@@ -352,7 +358,15 @@ def _finish_segment(
             "updated_at": stamp,
             "details": detail_ref,
         }
-        if not gated and (outcome.error is not None or disposition == "complete"):
+        if startup_error:
+            updates.update(
+                status="task_state_uncertain",
+                raw_status="failed" if outcome.error is not None else current.raw_status,
+                settlement="unknown",
+                progress=current.progress.model_copy(update={"message": startup_error}),
+                attention_episode=current.attention_episode or uuid4().hex,
+            )
+        elif not gated and (outcome.error is not None or disposition == "complete"):
             updates.update(
                 status="failed" if outcome.error else "completed",
                 raw_status="failed" if outcome.error else "completed",
@@ -366,7 +380,11 @@ def _finish_segment(
         self.history.record_snapshot(observed, observation_id=uuid4().hex)
         if observed.terminal_at is not None and self._loop is not None:
             self._loop.call_soon_threadsafe(self.arm_deadline, observed.handle, None)
-        publish_task_notice(self.history, observed)
+        publish_task_notice(
+            self.history,
+            observed,
+            episode=observed.attention_episode or "" if startup_error else "",
+        )
 
 
 async def complete_deferred(

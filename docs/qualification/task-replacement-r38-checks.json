@@ -1,0 +1,37 @@
+{
+  "scope": "R38 initial source correction and regression construction, not behavioral acceptance",
+  "core_parent": "721106b9d83db9097a0e81d5fbc3be9f3f84ad3a",
+  "reviewed_core": "51c056fef7a13a80446ceefa06b4a49d139abf06",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751",
+  "execution_repository": "D:/Libraries/Documents/projects/clio-agent-task-qualification",
+  "checks": {
+    "scoped_ruff": {"files": 5, "result": "passed"},
+    "scoped_ruff_format": {"files": 5, "result": "passed"},
+    "scoped_linux_mypy": {"files": 5, "result": "passed, no issues"},
+    "removal_guard": {"violations": 0, "newly_denied_module": "clio_agent.gact.delegation_return"},
+    "size_guard": {"cap": 800, "result": "passed; unchanged threshold"},
+    "class_guard": "passed; unchanged threshold",
+    "hidden_swallow_guard": {"count": 480, "files": 200, "result": "passed; unchanged thresholds"}
+  },
+  "legacy_migration_static_checks": {
+    "files": 3,
+    "ruff_and_format": "passed",
+    "linux_mypy_including_untyped_bodies": "passed",
+    "remaining_original_known_missing_module_files": 34,
+    "complete_collection_claim": false
+  },
+  "regression_bodies": "unexecuted",
+  "native_model_browser_qualification": "unexecuted",
+  "source_reviews": {
+    "Astra_R37": "NO-GO, two actionable source defects",
+    "actual_Claude_Code_Fable_R37": "Architecture/source GO with explicit unread source areas; acceptance NO-GO",
+    "combined_R37": "NO-GO",
+    "corrected_tuple": "unreviewed"
+  },
+  "core_or_product_process_launched": false,
+  "review_processes": "settled",
+  "review_disposable_cleanup": "blocked by policy; exact D r37-local-51c056fe directory retained, no retry",
+  "F03_and_known_cleanup_attention_followup": "pending",
+  "release_acceptance": false
+}
