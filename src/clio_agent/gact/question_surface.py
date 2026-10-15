@@ -270,21 +270,22 @@ def resolve_plan_question(app: Any, task: TaskSnapshot) -> None:
     outcome = app.state.task_history.read_content(task.result) if task.result is not None else None
     if isinstance(outcome, dict) and outcome.get("reason") == "obsolete_gate":
         # Rebuilding a closed stale header cannot replay approval or touch a successor's gate.
-        session = app.state.sessions.get(task.owner.session_id)
-        if session is not None and session.metadata.get("execution_gate") == task.handle:
-            app.state.sessions.update(
-                session.id,
-                status="idle" if session.status == "waiting_user" else None,
-                metadata_patch={
-                    key: ""
-                    for key in (
-                        "execution_gate",
-                        "pending_user_question_id",
-                        "pending_defer_permission_id",
-                    )
-                    if session.metadata.get(key) == task.handle
-                },
-            )
+        with app.state.task_history.serialized():
+            session = app.state.sessions.get(task.owner.session_id)
+            if session is not None and session.metadata.get("execution_gate") == task.handle:
+                app.state.sessions.update(
+                    session.id,
+                    status="idle" if session.status == "waiting_user" else None,
+                    metadata_patch={
+                        key: ""
+                        for key in (
+                            "execution_gate",
+                            "pending_user_question_id",
+                            "pending_defer_permission_id",
+                        )
+                        if session.metadata.get(key) == task.handle
+                    },
+                )
         return
     if task.tool == "hook_defer":
         from clio_agent.gact.hooks.turn_approval import resolve

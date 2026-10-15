@@ -26,9 +26,11 @@ async def test_withdrawn_output_retires_without_goal_execution_or_plan_approval(
 ) -> None:
     """The callers must distinguish withdrawal from successful publication."""
     from clio_agent.gact import turn_finalize_goal
+    from clio_agent.gact.questions import QuestionCommands
 
     app, owner, root = await create_environment(arc, tmp_path)
     sid = root.owner.session_id
+    app.state.questions = QuestionCommands(owner.history)
     retired: list[str] = []
     state: Any = SimpleNamespace(
         app=app,

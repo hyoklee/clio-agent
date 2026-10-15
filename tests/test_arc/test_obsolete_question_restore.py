@@ -10,6 +10,7 @@ import pytest
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import QuestionDefinition, TaskSnapshot
 from clio_agent.gact.question_surface import prepare_question_gate, resolve_plan_question
+from clio_agent.gact.questions import QuestionCommands
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 
@@ -18,7 +19,8 @@ async def test_restore_closes_obsolete_approval_header_and_preserves_other_quest
     arc: ARCMemory, tmp_path: Path
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
-    commands = app.state.questions
+    commands = QuestionCommands(owner.history)
+    app.state.questions = commands
 
     def exercise() -> None:
         def unavailable(_task: TaskSnapshot, definition: QuestionDefinition) -> None:
@@ -29,7 +31,17 @@ async def test_restore_closes_obsolete_approval_header_and_preserves_other_quest
         with pytest.raises(OSError, match="Interrupted"):
             commands.create(
                 root.owner,
-                QuestionDefinition(prompt="Obsolete approval", source="plan_exit"),
+                QuestionDefinition(
+                    prompt="Obsolete approval",
+                    source="plan_exit",
+                    metadata={
+                        "plan_approval": {
+                            "assignment": "previous-assignment",
+                            "context_epoch": "original",
+                            "request": {"summary": "Original plan"},
+                        }
+                    },
+                ),
                 invocation_id="interrupted-approval",
                 handle="obsolete-approval",
             )
