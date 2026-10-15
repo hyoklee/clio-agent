@@ -20,10 +20,56 @@ from clio_agent.arc.task_types import (
 from clio_agent.gact.events import EventBus
 from clio_agent.gact.native_work import now
 from clio_agent.gact.plan_exit_resolution import PlanApproval
-from clio_agent.gact.question_surface import resolve_plan_question
+from clio_agent.gact.question_surface import question_row, resolve_plan_question
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.task_access import TaskCaller
 from tests.test_arc.test_conversation_owner_contracts import create_environment
+
+
+@pytest.mark.asyncio
+async def test_question_projection_preserves_optional_routing_contract(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """Ordinary questions omit routing fields; explicit decisions stay validated."""
+    from pydantic import ValidationError
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    questions = QuestionCommands(owner.history)
+    try:
+        for index, routing in enumerate(
+            [None, "", "elicitation_routed_to_agent", "agent_elicitation_fallback_to_human"]
+        ):
+            metadata = {} if routing is None else {"agent_elicitation_routing": routing}
+            task = await asyncio.to_thread(
+                questions.create,
+                root.owner,
+                QuestionDefinition(prompt="Choose a view", metadata=metadata),
+                invocation_id=f"routing-{index}",
+            )
+            row = await asyncio.to_thread(question_row, app, task.handle)
+            wire = row.model_dump(exclude_none=True)
+            if routing:
+                assert wire["agent_elicitation_routing"] == routing
+            else:
+                assert "agent_elicitation_routing" not in wire
+            assert "agent_elicitation_fallback_detail" not in wire
+            assert row.id == task.handle and row.status == "pending"
+            await asyncio.to_thread(questions.cancel, task.handle)
+
+        invalid = await asyncio.to_thread(
+            questions.create,
+            root.owner,
+            QuestionDefinition(
+                prompt="Invalid decision", metadata={"agent_elicitation_routing": "invalid"}
+            ),
+            invocation_id="routing-invalid",
+        )
+        with pytest.raises(ValidationError, match="agent_elicitation_routing"):
+            await asyncio.to_thread(question_row, app, invalid.handle)
+        await asyncio.to_thread(questions.cancel, invalid.handle)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
 
 
 @pytest.mark.asyncio

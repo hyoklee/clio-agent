@@ -88,8 +88,9 @@ def question_view(app: Any, task: TaskSnapshot) -> dict[str, Any]:
         "turn_id": str(metadata.get("source_user_message_id") or task.invocation_id),
         "attempt_id": str(metadata.get("attempt_id") or ""),
         "audience": metadata.get("audience"),
-        "agent_elicitation_routing": metadata.get("agent_elicitation_routing", ""),
-        "agent_elicitation_fallback_detail": metadata.get("agent_elicitation_fallback_detail", ""),
+        "agent_elicitation_routing": metadata.get("agent_elicitation_routing") or None,
+        "agent_elicitation_fallback_detail": metadata.get("agent_elicitation_fallback_detail")
+        or None,
         "answered_by": "agent"
         if answer.responder_session
         else "human"
