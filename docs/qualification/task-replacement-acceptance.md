@@ -356,3 +356,29 @@ changes. Core binding reference-leak warnings are retained, not called native cr
 or resource-growth acceptance. Test migration, full F03, exact-head CI and Q1–Q9/R1–R6
 remain outstanding. No model/product/browser qualification, release or installed-state
 change occurred in this packet.
+
+## R34 initial correction candidate
+
+The R34 correction batch and its bulk regressions are constructed. Compatibility
+routes and clients preserve continuation; pending Questions are selected through
+the active index before pagination. Work and Observability share one bounded
+task-page read, replacing the second child-task query. Trusted child creation
+reuses its original session address across recording faults, retaining uncertain
+rows rather than deleting them. Wait metadata, conversation survival after typed
+disclosure denial, partial-workflow presentation and Question guidance are updated
+through their existing owners.
+
+New cases cover session-flush/lifecycle/task-record faults, actual conversation
+continuation after revocation, wait permission metadata, retained Question history,
+projection pages, empty-page continuation, later-page errors and UI loading. These
+are constructed tests, not executed results. The launcher also forces pytest's
+own cache inside its disposable run directory before plugins load. All execution
+and writable runtime state remain in the D qualification repository.
+
+Scoped Python lint/format and Linux Mypy, removal/size/class/swallow guards, scoped
+frontend lint and the six frontend guards passed during construction. A private
+writer call and one over-limit UI file were corrected without relaxing guards.
+Final tuple type checks and renewed independent reviews follow the committed
+candidate. Behavioral checks, migrated legacy tests, F03, exact-head CI and every
+required Q1–Q9/R1–R6 gate remain pending. No R34 behavioral/model/native/browser
+qualification has run and there is no release acceptance.

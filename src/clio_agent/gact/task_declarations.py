@@ -64,6 +64,10 @@ def _collected(app: Any, caller: Any, value: dict[str, Any]) -> CollectedTaskRes
     if value.get("handle") and value.get("pending") is False:
         handles.add(value["handle"])
     read_handles = handles | ({value["handle"]} if value.get("handle") else set())
+    observe_handles: tuple[str, ...] = ()
+    if isinstance(value, CollectedTaskResult):
+        read_handles.update(value.read_handles)
+        observe_handles = value.observe_handles
     with app.state.task_history.serialized():
         for handle in handles:
             current = TaskAccess(app.state.task_history, caller).require(handle, "read")
@@ -73,7 +77,9 @@ def _collected(app: Any, caller: Any, value: dict[str, Any]) -> CollectedTaskRes
             for item in app.state.task_history.pending_mail(caller.session_id)
             if item.handle in handles and item.kind in {"task_result", "question_answer"}
         )
-    return CollectedTaskResult(value, identities, tuple(sorted(read_handles)))
+    return CollectedTaskResult(
+        value, identities, tuple(sorted(read_handles)), observe_handles=observe_handles
+    )
 
 
 def _task_read(value: dict[str, Any]) -> CollectedTaskResult:
@@ -221,7 +227,7 @@ def build_task_tools() -> list[Any]:
                 "timeout_s": _TIMEOUT,
                 "notify": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "default": None},
             },
-            "Read incremental progress without consuming results. A pattern waits for matching output or settlement. notify subscribes/unsubscribes this exact handle.",
+            "Read incremental progress without consuming results. Without a pattern this returns immediately, regardless of timeout_s. With a pattern, wait for matching output or settlement; timeout_s ends only that wait. notify subscribes/unsubscribes this exact handle.",
         ),
         _tool(
             wait_tasks,
@@ -428,6 +434,7 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
             {"results": value["outcomes"], **{k: v for k, v in value.items() if k != "outcomes"}},
             value.notification_ids,
             value.read_handles,
+            observe_handles=value.observe_handles,
         )
 
     async def observe_agent_tasks(
@@ -464,7 +471,10 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
     async def get_agent_task_output(task_id: str) -> dict[str, Any]:
         value = await canonical["get_task_result"](task_id)
         return CollectedTaskResult(
-            {**value, "task_id": task_id}, value.notification_ids, value.read_handles
+            {**value, "task_id": task_id},
+            value.notification_ids,
+            value.read_handles,
+            observe_handles=value.observe_handles,
         )
 
     async def message_agent(task_id: str, message: str) -> dict[str, Any]:
@@ -509,7 +519,7 @@ def build_task_compatibility_tools(requested: list[str]) -> list[Any]:
             function,
             name,
             args,
-            "Legacy delegate retained for one release cycle. Uses shared task authorization, current bounds and result references. Numeric observation cursor 1 starts Core history; returned string cursors resume it. Use the canonical task/session controls in new instructions.",
+            "Legacy delegate retained for one release cycle. Uses shared task authorization, current bounds and result references. Numeric observation cursor 1 starts Core history; returned string cursors resume it. Observation without a pattern returns immediately; timeout_s bounds pattern waiting only. Use the canonical task/session controls in new instructions.",
             read=read,
         )
         for function, name, args, read in declarations

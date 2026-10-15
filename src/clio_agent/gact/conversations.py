@@ -50,7 +50,7 @@ class _InferenceGroup:
 
 RunSegment = Callable[[ConversationSegment], Awaitable[ConversationOutcome]]
 CancelWork = Callable[[TaskSnapshot], Awaitable[dict[str, Any]]]
-CreateChild = Callable[[str, str, dict[str, Any] | None], StoredSession]
+CreateChild = Callable[[str, str, dict[str, Any] | None, str, str], StoredSession]
 ExecutionGate = Callable[[str], str | None]
 
 

@@ -23,6 +23,10 @@ def main() -> None:
 
     runtime = bootstrap_test_runtime(checkout)
     sys.argv[0] = "pytest"
+    # pytest's cache provider loads before the suite's configure hook. Keep its
+    # writes in the same disposable run even when an inherited option names a
+    # different cache directory.
+    sys.argv.extend(["-o", f"cache_dir={runtime.cache_dir / 'pytest'}"])
     try:
         runpy.run_module("pytest", run_name="__main__", alter_sys=True)
     finally:

@@ -14,7 +14,7 @@ from clio_agent.gact import context
 from clio_agent.gact.agents.clio_react_record import StepRecorder
 from clio_agent.gact.native_work import now
 from clio_agent.gact.questions import QuestionCommands
-from clio_agent.gact.task_access import TaskAccessDenied, TaskCaller
+from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_declarations import _collected, _task_read
 from clio_agent.gact.task_operations import TaskOperations
 from tests.test_arc.test_conversation_owner_contracts import create_environment
@@ -250,15 +250,16 @@ async def test_snapshot_revocation_before_input_commit_protects_data_without_str
                 )
                 context.set_react_run(-1)
                 recorder = StepRecorder(arc, sid, "main", expert_id="main")
-                with pytest.raises(TaskAccessDenied):
-                    recorder.step_done(
-                        0,
-                        "step",
-                        text="",
-                        thinking=(),
-                        calls=(ToolCallPart(id="snapshot", name=operation + "_tasks", input={}),),
-                        results={"snapshot": (read, False)},
-                    )
+                recorder.step_done(
+                    0,
+                    "step",
+                    text="",
+                    thinking=(),
+                    calls=(ToolCallPart(id="snapshot", name=operation + "_tasks", input={}),),
+                    results={"snapshot": (read, False)},
+                )
+                current = owner.history.task_snapshot(assignment)
+                assert current is not None and current.terminal_at is None
                 assert secret not in str(recorder.read_steps())
                 owner.history.record_mail(
                     MailItem(

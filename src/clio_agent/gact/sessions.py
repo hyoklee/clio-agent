@@ -34,6 +34,7 @@ absent-optional fields per §3.2.
 from __future__ import annotations
 
 import builtins
+import hashlib
 import json
 import logging
 import threading
@@ -211,6 +212,9 @@ class Session:
     # The public approval mode therefore remains truthful while the dedicated
     # SPOTTER watcher can contain an anomaly without acquiring blanket bypass.
     approval_profile: str = ""
+    # Trusted child creation identity; immutable through public session updates.
+    # It names creation metadata, never an execution/retry policy.
+    creation_digest: str = ""
     # Routing override. "auto" runs the LM-based router; "chat" forces
     # every turn through the chat path; "experts" rejects chat/none
     # routes (raises a routing error) so users can lock the session
@@ -234,6 +238,7 @@ class Session:
         wire["mode"] = normalize_stored_mode(self.mode)
         wire["status"] = normalize_stored_status(self.status)
         wire.pop("approval_profile", None)
+        wire.pop("creation_digest", None)
         # cost_known is bookkeeping, not part of the wire contract -- it
         # decides whether cost_usd is a real number or null, never rides
         # along itself (#775: no turn ever reporting a cost must read as
@@ -353,15 +358,34 @@ class SessionStore:
         routing_mode: str = "auto",
         approval_mode: str = "ask",
         approval_profile: str = "",
+        creation_id: str = "",
+        creation_digest: str = "",
     ) -> Session:
         """Create a new session. Returns the freshly-minted record.
 
         ``routing_mode`` mirrors the same validation as ``update()`` so a
         client can pre-lock a fresh session to a non-default routing mode
         (e.g. issue #25's ``reasoning_only``) without an extra PATCH.
+
+        Trusted conversation owners may supply a stable creation identity and
+        request digest. A matching existing child is returned without replaying
+        lifecycle hooks or replacing human-edited settings. This does not start
+        or repeat model execution.
         """
 
-        sid = _SESSION_ID_PREFIX + uuid.uuid4().hex[:12]
+        if bool(creation_id) != bool(creation_digest) or (
+            creation_digest
+            and (
+                len(creation_digest) != 64
+                or any(c not in "0123456789abcdef" for c in creation_digest)
+            )
+        ):
+            raise ValueError("Reusable session creation requires its trusted identity and digest")
+        sid = _SESSION_ID_PREFIX + (
+            hashlib.sha256(creation_id.encode()).hexdigest()[:32]
+            if creation_id
+            else uuid.uuid4().hex[:12]
+        )
         now = _utcnow_iso()
         valid_routing_modes = {"auto", "chat", "experts", "reasoning_only"}
         valid_approval_modes = {"ask", "auto-edits", "bypass", "ai-review", "spotter-ai"}
@@ -382,13 +406,32 @@ class SessionStore:
             routing_mode=routing_mode if routing_mode in valid_routing_modes else "auto",
             approval_mode=approval_mode if approval_mode in valid_approval_modes else "ask",
             approval_profile=(approval_profile if approval_profile in _SERVER_PROFILES else ""),
+            creation_digest=creation_digest,
         )
         with self._lock:
+            existing = self._sessions.get(sid)
+            if existing is not None:
+                if (
+                    not creation_id
+                    or existing.creation_digest != creation_digest
+                    or existing.workspace_id != workspace_id
+                    or existing.parent_session_id != parent_session_id
+                    or existing.agent != sess.agent
+                ):
+                    raise ValueError("Session creation identity was reused with different work")
+                # An earlier flush can fail before task acceptance. Reconfirm this
+                # existing address without firing creation hooks or model execution.
+                self._flush()
+                return existing
             self._sessions[sid] = sess
             self._flush()
         try:
             self._observe_lifecycle("session.created", sess)
         except BaseException:
+            # Trusted task creation can already have a confirmed Core event
+            # whose reply was lost. Retain its stable address for reconciliation.
+            if creation_id:
+                raise
             # No session exists that clio-core has no record of.
             with self._lock:
                 self._sessions.pop(sid, None)

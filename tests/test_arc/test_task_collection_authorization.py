@@ -152,15 +152,16 @@ async def test_revoked_member_cannot_enter_model_context_through_collection(
                 call = ToolCallPart(
                     id="collect", name="wait_tasks" if mixed else "get_task_result", input={}
                 )
-                with pytest.raises(ValueError, match="unavailable"):
-                    recorder.step_done(
-                        0,
-                        "step",
-                        text="",
-                        thinking=(),
-                        calls=(call,),
-                        results={"collect": (collected, False)},
-                    )
+                recorder.step_done(
+                    0,
+                    "step",
+                    text="",
+                    thinking=(),
+                    calls=(call,),
+                    results={"collect": (collected, False)},
+                )
+                current = owner.history.task_snapshot(assignment)
+                assert current is not None and current.terminal_at is None
                 messages = recorder.read_steps()
                 assert all(handle not in str(messages) for handle in handles)
                 assert not owner.history.committed_observations(sid, "main")

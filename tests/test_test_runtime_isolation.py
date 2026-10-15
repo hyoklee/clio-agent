@@ -133,7 +133,7 @@ def test_only_dead_owned_runs_are_stale(tmp_path: Path) -> None:
     assert unrelated not in stale
 
 
-def test_live_suite_runtime_is_not_system_temp() -> None:
+def test_live_suite_runtime_is_not_system_temp(pytestconfig: pytest.Config) -> None:
     runtime = Path(os.environ["CLIO_TEST_RUNTIME_DIR"]).resolve()
     checkout = Path(__file__).resolve().parents[1]
 
@@ -149,6 +149,8 @@ def test_live_suite_runtime_is_not_system_temp() -> None:
     assert Path(os.environ["PYTHONPYCACHEPREFIX"]).resolve().is_relative_to(runtime)
     assert Path(os.environ["XDG_CACHE_HOME"]).resolve().is_relative_to(runtime)
     assert Path(os.environ["XDG_STATE_HOME"]).resolve().is_relative_to(runtime)
+    assert pytestconfig.cache is not None
+    assert pytestconfig.cache._cachedir.resolve().is_relative_to(runtime)
 
 
 def test_launcher_isolates_plugin_imports_and_cleans_help_exit(tmp_path: Path) -> None:

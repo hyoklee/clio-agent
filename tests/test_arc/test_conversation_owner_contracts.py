@@ -112,12 +112,20 @@ async def create_environment(
     async def cancel_work(task: TaskSnapshot) -> dict[str, Any]:
         pytest.fail(f"Unexpected cancellation dispatch: {task.handle}")
 
-    def create_child(parent: str, agent: str, scope: dict[str, Any] | None) -> Any:
+    def create_child(
+        parent: str,
+        agent: str,
+        scope: dict[str, Any] | None,
+        creation_id: str,
+        creation_digest: str,
+    ) -> Any:
         return app.state.sessions.create(
             workspace_id="workspace",
             parent_session_id=parent,
             agent={"id": agent},
             metadata=scope or {},
+            creation_id=creation_id,
+            creation_digest=creation_digest,
         )
 
     app.state.turn_runner = TurnRunner(app, unavailable_admission)

@@ -132,7 +132,11 @@ async def start(app: Any) -> None:
         return await cancel_owner(task, TaskCaller(task.owner.session_id, task.owner.human_id))
 
     def create_child(
-        parent_id: str, agent_id: str, target_scope: dict[str, Any] | None = None
+        parent_id: str,
+        agent_id: str,
+        target_scope: dict[str, Any] | None,
+        creation_id: str,
+        creation_digest: str,
     ) -> StoredSession:
         from clio_agent.gact.agents.resolution import _resolve_runtime_dynamic_agent
 
@@ -187,6 +191,8 @@ async def start(app: Any) -> None:
             approval_mode=parent.approval_mode,
             approval_profile=parent.approval_profile,
             metadata=inherited,
+            creation_id=creation_id,
+            creation_digest=creation_digest,
         )
 
     async def run_segment(segment: ConversationSegment) -> ConversationOutcome:

@@ -240,23 +240,29 @@ def register_task_routes(app: FastAPI) -> None:
         return await asyncio.to_thread(project)
 
     @app.get("/v1/sessions/{sid}/async-processes")
-    async def processes(sid: str) -> dict[str, Any]:
+    async def processes(
+        sid: str, cursor: str | None = None, limit: int = 50, active_only: bool = False
+    ) -> dict[str, Any]:
+        page = await tasks(sid, cursor=cursor, limit=limit, active_only=active_only)
+
         def project() -> dict[str, Any]:
-            result = app.state.task_operations.query(caller(sid), limit=10000)
             return {
-                "processes": [process_view(app, row) for row in result["tasks"]],
-                "revision": result["revision"],
+                "processes": [process_view(app, row) for row in page["tasks"]],
+                **{key: value for key, value in page.items() if key != "tasks"},
             }
 
         return await asyncio.to_thread(project)
 
     @app.get("/v1/sessions/{sid}/agent-tasks")
-    async def agent_tasks(sid: str) -> dict[str, Any]:
+    async def agent_tasks(
+        sid: str, cursor: str | None = None, limit: int = 50, active_only: bool = False
+    ) -> dict[str, Any]:
+        page = await tasks(
+            sid, kind="Subagent", cursor=cursor, limit=limit, active_only=active_only
+        )
+
         def project() -> dict[str, Any]:
-            rows = app.state.task_operations.query(caller(sid), kind="Subagent", limit=10000)[
-                "tasks"
-            ]
-            return {"tasks": [agent_task_view(app, row) for row in rows]}
+            return {**page, "tasks": [agent_task_view(app, row) for row in page["tasks"]]}
 
         return await asyncio.to_thread(project)
 
@@ -322,39 +328,47 @@ def register_task_routes(app: FastAPI) -> None:
         }
 
     @app.get("/v1/sessions/{sid}/questions")
-    async def questions(sid: str, status: str | None = None) -> dict[str, Any]:
+    async def questions(
+        sid: str, status: str | None = None, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, Any]:
+        # The public Question state belongs to QuestionCommands. Select its
+        # effective state before paging; pending reads use the active index.
+        effective = {
+            "pending": "input_required",
+            "answered": "completed",
+            "cancelled": "cancelled",
+            "expired": "failed",
+        }.get(status or "", status)
+        page = await tasks(
+            sid,
+            kind="Question",
+            status=effective,
+            active_only=status == "pending",
+            cursor=cursor,
+            limit=limit,
+            scope="tree" if sid else "authorized",
+        )
+
         def project() -> dict[str, Any]:
-            rows = app.state.task_operations.query(caller(sid), kind="Question", limit=10000)[
-                "tasks"
-            ]
             values = [
                 question_view(app, app.state.task_history.task_snapshot(row["handle"]))
-                for row in rows
+                for row in page["tasks"]
             ]
             return {
-                "questions": [row for row in values if status is None or row["status"] == status]
+                "questions": [row for row in values if status is None or row["status"] == status],
+                **{key: value for key, value in page.items() if key != "tasks"},
             }
 
         return await asyncio.to_thread(project)
 
     @app.get("/v1/questions")
     async def all_questions(
-        session_id: str | None = None, status: str | None = None
+        session_id: str | None = None,
+        status: str | None = None,
+        cursor: str | None = None,
+        limit: int = 50,
     ) -> dict[str, Any]:
-        def project() -> dict[str, Any]:
-            history = app.state.task_history
-            handles = history.task_handles(
-                kind="Question", human_id=app.state.human_principal, active_only=status == "pending"
-            )
-            if session_id is not None:
-                handles.intersection_update(history.tree_handles(caller(session_id).session_id))
-            values = [question_view(app, history.task_snapshot(handle)) for handle in handles]
-            values.sort(key=lambda row: (row["created_at"], row["id"]))
-            return {
-                "questions": [row for row in values if status is None or row["status"] == status]
-            }
-
-        return await asyncio.to_thread(project)
+        return await questions(session_id or "", status=status, cursor=cursor, limit=limit)
 
     @app.post("/v1/sessions/{sid}/questions/{handle}/answer")
     async def answer(sid: str, handle: str, body: AnswerRequest) -> dict[str, Any]:

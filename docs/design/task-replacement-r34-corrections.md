@@ -12,13 +12,13 @@ readiness. Their R33 reports and Astra's combined adjudication are retained unde
 | Immediate disclosure denial fails an unrelated assignment. | StepRecorder handles only typed access denial, preserving the protected observation and continuing other results. Core/malformed-record failures remain strict. | Implemented, unexecuted. Existing assertions now require continuation and non-disclosure; a conversation-path survival regression is still required. |
 | Wait loses observe-only/uncertain/pending permission requirements. | The local wait-result wrapper retains each member's required right. Collection and compatibility aliases preserve it into the existing recipient-input commit. | Implemented; twelve canonical/alias running/uncertain/terminal revocation cases constructed, unexecuted. |
 | Runs calls a partial workflow completed. | Respect recorded predicate/stalled outcomes and require all declared steps launched before inferring completion. | Implemented; recorded and historical partial-workflow cases constructed, unexecuted. |
-| Compatibility projections discard continuation and filter Questions too late. | Use existing ordered/active indexes with bounded pages; retain response fields and expose/consume continuation. Apply pending selection before paging. | Pending implementation and public route/consumer regressions. No silent truncation or additional projection owner. |
-| Failed pre-assignment child creation abandons session rows. | Reuse the same child address for the same trusted spawn identity through existing session/conversation owners. Preserve uncertain custody. | Pending implementation and faults before/after durable task observation. Do not delete a potentially committed session or replay model execution. |
+| Compatibility projections discard continuation and filter Questions too late. | Use existing ordered/active indexes with bounded pages; retain response fields and expose/consume continuation. Apply pending selection before paging. | Implemented, unexecuted. Routes retain cursors; client array compatibility follows them; Work and Observability share one paginated active-task read with explicit continuation. Public route/client/UI regressions are being constructed. |
+| Failed pre-assignment child creation abandons session rows. | Reuse the same child address for the same trusted spawn identity through existing session/conversation owners. Preserve uncertain custody. | Implemented, unexecuted. The trusted invocation fixes the child address and creation digest. Session-flush and task-observation fault cases are constructed. No compensating deletion or replay of model execution. |
 | Question guidance incorrectly promises child failure. | Shared guidance separates Question and assignment outcomes, independent work, yield and explicit waiting. | Corrected in the Factorio guidance; regression constructed, unexecuted. Other matching obsolete wording was not found. |
 
 Observation without a pattern already returns immediately under R2. Its canonical
-description now explicitly says timeout bounds pattern waiting; the compatibility
-description still needs the same clarification. Do not add a long-poll mode.
+and compatibility descriptions explicitly say timeout bounds pattern waiting.
+Do not add a long-poll mode.
 
 Ungated model-segment errors currently finish that finite assignment as failed;
 accepted background work retains its separate lifecycle. Later eligible input can
@@ -52,3 +52,18 @@ F03, exact-head CI, Q1–Q9 and R1–R6 remain required. Fresh model/service/bro
 qualification has not run in this packet. Continue using the contained launcher
 and D environment, preserve all protected/manual-only boundaries, and retain
 bounded receipts rather than bulky exports or archives.
+
+## Test filesystem boundary
+
+Tests execute from `D:/Libraries/Documents/projects/clio-agent-task-qualification`.
+The C feature checkout is a source writer, not a Core deployment or test runtime.
+Use `scripts/run_tests.py`; it redirects temp, home, app-data, Core state and
+dependency caches before loading pytest plugins. Pytest's own cache is also forced
+inside the unique `.pytest-runtime/run-…` folder. External runtime-root overrides
+are rejected. Child process retirement precedes removal of that run folder.
+
+UI tests and qualification use the D checkout, with their home, temp, caches and
+browser data inside its `.pytest-runtime` folder. Static tools may read C source
+while their writable state stays in D. Existing manual-only/rejected roots remain
+excluded from cleanup. No C Core process or new product/test run was launched in
+this correction pass. R34 behavioral verification remains unexecuted.

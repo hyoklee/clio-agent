@@ -19,6 +19,7 @@ from clio_agent.arc.task_types import (
     MailItem,
     TaskOwner,
     TaskSnapshot,
+    argument_digest,
 )
 from clio_agent.gact.native_work import now
 from clio_agent.gact.session_input import input_delivery
@@ -421,7 +422,7 @@ async def spawn(
     )
 
     def create() -> TaskSnapshot:
-        with self.history.serialized():
+        with self.history.serialized(writing=True):
             validate_assignment_evidence(self.history, caller, pins)
             existing = self.history.task_snapshot(handle)
             if existing is not None:
@@ -456,10 +457,30 @@ async def spawn(
             ):
                 raise ValueError("Spawning requires an active owning assignment")
             self.require_admission(parent)
+            creation_digest = argument_digest(
+                {
+                    "parent": parent.handle,
+                    "human": caller.human_id,
+                    "assignment": assignment,
+                    "agent": agent_id,
+                    "scope": target_scope,
+                    "strategy": normalized_strategy,
+                    "launch_context": launch_context,
+                    "workflow": workflow_id,
+                    "step": workflow_step,
+                    "deadline": execution_deadline,
+                    "concurrency": inference_concurrency,
+                    "metadata": session_metadata,
+                    "approval_profile": approval_profile,
+                    "resource": resource_id,
+                }
+            )
             child = (
                 session
                 if existing is not None
-                else self.create_child(caller.session_id, agent_id, target_scope)
+                else self.create_child(
+                    caller.session_id, agent_id, target_scope, handle, creation_digest
+                )
             )
             if child is None:
                 raise ValueError("Accepted child session is no longer available")

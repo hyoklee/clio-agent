@@ -57,6 +57,21 @@ def _timeout(value: float | None) -> float | None:
     return value
 
 
+def _wait_value(
+    outcomes: list[dict[str, Any]], pending: list[str], *, timed_out: bool
+) -> CollectedTaskResult:
+    """Carry each disclosed wait outcome's permission to recipient-input commitment."""
+    rows = [row for row in outcomes if row.get("handle") and not row.get("error")]
+    reads = {row["handle"] for row in rows if row.get("pending") is False}
+    observations = {row["handle"] for row in rows} | set(pending)
+    return CollectedTaskResult(
+        {"outcomes": outcomes, "pending": pending, "timed_out": timed_out},
+        (),
+        tuple(sorted(reads)),
+        observe_handles=tuple(sorted(observations - reads)),
+    )
+
+
 class TaskOperations:
     """Common controls delegate execution; no task is driven or scheduled here."""
 
@@ -298,15 +313,15 @@ class TaskOperations:
                 outcomes, pending = await asyncio.to_thread(self._outcomes, caller, handles)
                 uncertain = any(item.get("status") == "task_state_uncertain" for item in outcomes)
                 if not pending or uncertain or (return_when == "any" and outcomes):
-                    return {"outcomes": outcomes, "pending": pending, "timed_out": False}
+                    return _wait_value(outcomes, pending, timed_out=False)
                 remaining = None if deadline is None else max(0.0, deadline - loop.time())
                 if remaining == 0:
-                    return {"outcomes": outcomes, "pending": pending, "timed_out": True}
+                    return _wait_value(outcomes, pending, timed_out=True)
                 try:
                     await asyncio.wait_for(changed.wait(), remaining)
                 except TimeoutError:
                     outcomes, pending = await asyncio.to_thread(self._outcomes, caller, handles)
-                    return {"outcomes": outcomes, "pending": pending, "timed_out": True}
+                    return _wait_value(outcomes, pending, timed_out=True)
         finally:
             remove()
 

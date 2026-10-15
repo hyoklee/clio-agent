@@ -623,9 +623,13 @@ class TaskHistory:
             return tuple(self._pending.get(session_id, {}).values())
 
     @contextmanager
-    def serialized(self) -> Iterator[None]:
-        """Serialize related owner reads/writes; each Core write still confirms separately."""
-        with self._lock:
+    def serialized(self, *, writing: bool = False) -> Iterator[None]:
+        """Serialize owner operations; durable admission also respects recording holds.
+
+        Each write confirms separately. This boundary is not a transaction and
+        cannot roll back a session or task observation whose reply was lost.
+        """
+        with self._writing() if writing else self._lock:
             yield
 
     def mail_item(self, session_id: str, identity: str) -> MailItem | None:

@@ -618,12 +618,16 @@ class StepRecorder:
             }
             observation_id = self._write("observation", observation, step, span)
             if notification_ids or read_handles or observe_handles:
-                self._commit_collection(
-                    observation_id,
-                    observation,
-                    tuple(notification_ids),
-                    call.id,
-                )
+                from clio_agent.gact.task_access import TaskAccessDenied
+
+                try:
+                    self._commit_collection(
+                        observation_id, observation, tuple(notification_ids), call.id
+                    )
+                except TaskAccessDenied:
+                    # The original observation stays protected by ContextReader.
+                    # Legitimate revocation does not fail the unrelated assignment.
+                    logger.info("Task disclosure withheld before input commit: %s", observation_id)
             rows.append(
                 {
                     "id": call.id,
