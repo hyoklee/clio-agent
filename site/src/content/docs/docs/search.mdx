@@ -1,0 +1,72 @@
+---
+title: Search your work
+description: Find matching conversation passages and files, or ask the read-only CLIO Search assistant.
+---
+
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
+import Capture from '../../../components/overview/Capture';
+import { captureImage } from '../../../lib/captures';
+import results from '../../../assets/captures/docs-search-results.png';
+import phrase from '../../../assets/captures/docs-search-phrase.png';
+import destination from '../../../assets/captures/docs-search-destination.png';
+import assistant from '../../../assets/captures/docs-search-assistant.png';
+
+<PreviewGuide features="Matching-passage navigation and the CLIO Search assistant" />
+
+Open **Search** in the sidebar or press **Ctrl+K** (**⌘K** on macOS).
+Type a name or paste a sentence from a conversation. Matching text appears in
+blue, and session matches appear before files.
+
+<Capture client:visible priority image={await captureImage(results)}
+  alt="Search for plant showing session titles first, a matching message excerpt, and a workspace file, with blue highlights"
+  caption="Session names, message passages and file paths show where your words matched. The message result also names its workspace and offers Open matching passage." />
+
+## Return to a matching passage
+
+Paste the sentence you remember. **Matching messages** shows the relevant
+passage rather than the beginning of a long answer. Choose the result to open
+that conversation at the matching message and highlight its text in blue.
+CLIO reveals the containing segment when it was collapsed.
+
+<Capture client:visible image={await captureImage(phrase)}
+  alt="A pasted sentence appears highlighted inside a message excerpt with an Open matching passage destination"
+  caption="The excerpt is centered on the pasted phrase, including when the stored answer uses Markdown emphasis. Opening it carries the message, part and search text to the conversation." />
+
+<Capture client:visible image={await captureImage(destination)}
+  alt="The matching sentence Share a plant with the reviewer highlighted in blue inside the original conversation, above its composer"
+  caption="After opening the result, the conversation scrolls to the matching sentence. The blue highlight stays on the source text so you can read the surrounding answer." />
+
+Ordinary search looks through retained messages and session names on the
+connected CLIO service. **Workspace files** matches paths in the workspace you
+are viewing. Use CLIO Search when you want an answer from file contents or help
+finding work across the service's other registered workspaces.
+
+## Ask CLIO Search
+
+1. Open Search and press **Tab**, or choose **Ask CLIO Search**.
+2. Enter an ordinary question, such as “Where did we discuss the reviewer
+   handoff?” Press **Enter** to submit it.
+3. Read the answer and open its source citations. A message citation returns to
+   its passage. A file citation opens the correct workspace's source panel at
+   the referenced line, with matching text highlighted.
+4. Ask a follow-up in the same search box. Press **Escape** to return to ordinary
+   search; press it again to close the menu.
+
+<Capture client:visible image={await captureImage(assistant)}
+  alt="CLIO Search displaying its Fleet model and an answer with clickable message and archived-file citations"
+  caption="CLIO Search uses a separate read-only conversation. Its source links navigate to the original work; the search exchange is not added to the conversation behind the menu." />
+
+Choose its model in **Settings → Fleet → CLIO Search**. Without an override it
+inherits the current conversation's model, then the service default. Entering
+Tab mode alone does not start a model request: submission starts the search.
+
+The dedicated **clio-search** blueprint can read registered conversations and
+workspace text files. It cannot edit them, run shell commands, or search another
+CLIO service. Closing search deletes its temporary conversation.
+
+File-content scans and source reads are bounded. The assistant should describe
+unreadable sources, shortened excerpts and incomplete scans when they affect an
+answer. A source that was not found in a limited scan is not proof that it does
+not exist. For a complete file view, choose that file in the source panel.
+
+For session-scoped recall and context summaries, see [What CLIO remembers](/docs/memory/).

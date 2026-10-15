@@ -60,7 +60,7 @@ def test_access_reuses_only_successful_unchanged_roots(
     monkeypatch.setattr(access, "_run_icacls", query)
     monkeypatch.setattr(access, "grant_fleet_runtime_access", apply)
     stages: list[str] = []
-    access.ensure_desktop_runtime_access(progress=stages.append)
+    access.ensure_runtime_access(progress=stages.append)
     if change == "acl":
         acl[0] = "permissions changed"
     elif change == "directory":
@@ -68,7 +68,7 @@ def test_access_reuses_only_successful_unchanged_roots(
         root.mkdir()
     elif change == "corrupt_receipt":
         (config / "sandbox" / "desktop-runtime-access.json").write_text("[]")
-    result = access.ensure_desktop_runtime_access(progress=stages.append)
+    result = access.ensure_runtime_access(progress=stages.append)
     assert len(applied) == (1 if change == "none" else 2)
     assert all(len(argv) == 2 for argv in queries)  # ACL reads never walk children.
     if change == "none":
@@ -89,8 +89,8 @@ def test_unreadable_acl_is_never_reused(tmp_path: Path, monkeypatch: pytest.Monk
         return [{"status": "granted"}]
 
     monkeypatch.setattr(access, "grant_fleet_runtime_access", apply)
-    access.ensure_desktop_runtime_access()
-    access.ensure_desktop_runtime_access()
+    access.ensure_runtime_access()
+    access.ensure_runtime_access()
     assert len(calls) == 2
 
 
@@ -110,7 +110,7 @@ def test_tool_cache_is_created_before_granting_future_children(
         return [{"status": "granted"}]
 
     monkeypatch.setattr(access, "grant_fleet_runtime_access", apply)
-    access.ensure_desktop_runtime_access()
+    access.ensure_runtime_access()
 
 
 @pytest.mark.parametrize("inherit", [True, False])
@@ -136,7 +136,6 @@ def test_combined_grant_visits_once_and_never_certifies_partial_success(
             "/grant",
             f"offline:{permission}",
             f"online:{permission}",
-            *(["/T"] if inherit else []),
             "/Q",
         ]
     ]

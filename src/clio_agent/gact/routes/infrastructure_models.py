@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import ntpath
@@ -17,6 +18,7 @@ from clio_agent.gact.infrastructure import node_models, reuse
 from clio_agent.gact.infrastructure.model_registry import (
     ModelAcquisition,
     ModelDownloadRequest,
+    model_details,
     search_models,
 )
 from clio_agent.gact.infrastructure.models import CommandSpec
@@ -29,6 +31,14 @@ from clio_agent.gact.infrastructure.terminal_output import structured_stdout
 _SHARED_CACHE_ROW = (
     "This model was found in a shared Hugging Face cache; CLIO holds no download for it. "
     "Download the revision through CLIO to retry, cancel or follow it here."
+)
+
+# Source travels over the existing stdin transport. Putting the growing worker
+# in python -c exceeded Windows' command-line limit even for a read-only list.
+_NODE_BOOTSTRAP = (
+    "import io,json,sys; request=json.load(sys.stdin); "
+    "program=request.pop('_node_program'); sys.stdin=io.StringIO(json.dumps(request)); "
+    "exec(compile(program,'<clio-model-operation>','exec'))"
 )
 
 
@@ -119,8 +129,8 @@ def register_infrastructure_model_routes(app: FastAPI) -> None:
                     else (
                         "python" if target.ssh and target.ssh.platform == "windows" else "python3"
                     ),
-                    args=["-c", script],
-                    stdin=json.dumps(payload),
+                    args=["-c", _NODE_BOOTSTRAP],
+                    stdin=json.dumps({**payload, "_node_program": script}),
                     timeout_seconds=30,
                 )
             )
@@ -150,7 +160,7 @@ def register_infrastructure_model_routes(app: FastAPI) -> None:
             raise HTTPException(409, str(exc)) from exc
 
     @app.get("/v1/infrastructure/models/search")
-    async def search(q: str = Query(min_length=1, max_length=180)) -> dict[str, Any]:
+    async def search(q: str = Query(default="", max_length=180)) -> dict[str, Any]:
         """Search the public registry; host credentials stay on the execution side."""
         try:
             return {"models": await search_models(q)}
@@ -158,6 +168,14 @@ def register_infrastructure_model_routes(app: FastAPI) -> None:
             raise HTTPException(
                 502, "Model registry is unavailable; retry or use an exact repository"
             ) from exc
+
+    @app.get("/v1/infrastructure/models/details")
+    async def details(repository: str = Query(min_length=1, max_length=180)) -> dict[str, Any]:
+        """Return registry card and capability evidence without loading or running weights."""
+        try:
+            return await asyncio.to_thread(model_details, repository)
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.get("/v1/infrastructure/targets/{target_id}/models")
     async def inventory(target_id: str) -> dict[str, Any]:
@@ -197,7 +215,11 @@ def register_infrastructure_model_routes(app: FastAPI) -> None:
                 errors.append({"storage_root": root, "error": exc.detail})
         return {
             "target_id": target_id,
-            "models": [row.model_dump() for row in store.model_acquisitions(target_id)],
+            "models": [
+                row.model_dump()
+                for row in store.model_acquisitions(target_id)
+                if row.state != "removed"
+            ],
             "errors": errors,
             "unavailable_reason": unavailable,
         }
@@ -223,6 +245,38 @@ def register_infrastructure_model_routes(app: FastAPI) -> None:
         if row.origin == "hf_cache":
             raise HTTPException(409, _SHARED_CACHE_ROW)
         return await execute(target_id, "cancel", {"id": job_id}, root=row.storage_root)
+
+    @app.post("/v1/infrastructure/targets/{target_id}/models/{job_id}/remove")
+    async def remove(target_id: str, job_id: str) -> dict[str, Any]:
+        """Remove owned model files after explicit UI confirmation, keeping operation history."""
+        store = app.state.infrastructure_store
+        row = next(
+            (item for item in store.model_acquisitions(target_id) if item.id == job_id), None
+        )
+        if row is None:
+            raise HTTPException(404, "Model operation not found on this execution host")
+        if row.origin == "hf_cache":
+            raise HTTPException(
+                409, "Shared Hugging Face cache files must be managed by their owner"
+            )
+        module = ntpath if ntpath.splitdrive(row.destination)[0] else posixpath
+        destination = module.normcase(module.normpath(row.destination))
+        for service in store.services():
+            if service.target_id != target_id or service.state == "not_installed":
+                continue
+            for key in ("model", "model_path", "hf_model"):
+                configured = service.configuration.get(key, "")
+                path = module.normcase(module.normpath(configured)) if configured else ""
+                if (
+                    configured == row.repository
+                    or configured.startswith(row.repository + ":")
+                    or path == destination
+                    or path.startswith(destination + module.sep)
+                ):
+                    raise HTTPException(
+                        409, f"Remove the {service.service_id} runtime using this model first"
+                    )
+        return await execute(target_id, "remove", {"id": job_id}, root=row.storage_root)
 
     @app.get("/v1/infrastructure/targets/{target_id}/models/{job_id}/log")
     async def download_log(target_id: str, job_id: str, offset: int = 0) -> dict[str, Any]:

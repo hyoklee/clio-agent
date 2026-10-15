@@ -1,30 +1,54 @@
 ---
-title: Connect a model
+title: Choose a model
 description: Choose where CLIO gets its language model, from a local server to a cloud API or a subscription.
 ---
 
 import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import ConnectionDiagram from '../../../components/docs/ConnectionDiagram.astro';
 
-CLIO does not ship a model. It connects to one you already have: a model running on your machine, a cloud API, or a subscription you pay for. You choose the provider once, and you can change it at any time.
+The **model** is the AI that interprets your question and plans the work. CLIO
+runs the tools and keeps the results. Installing CLIO does not supply a model,
+a provider account or model usage.
+
+<ConnectionDiagram />
+
+Use the connection you already have:
+
+| You have | What to choose |
+| --- | --- |
+| A lab-provided model | Ask your administrator for its provider, address and model name. |
+| A supported subscription | Choose Codex or Claude Code and follow its sign-in flow. |
+| A cloud API account | Choose that provider and supply its API key. Provider charges and limits apply. |
+| A model running on your computer | Start its local server, then choose LM Studio, Ollama, llama.cpp or vLLM. |
+
+You can change models later. For a first analysis, choose a model that supports
+using tools, rather than one limited to text completion.
 
 ## Choose a provider in the app
 
-The first time an interface connects to the backend, CLIO asks you to choose a provider. Pick one, fill in what it asks for (an API key, a base URL, or nothing), and save.
+In Desktop or the web workspace, open **Settings → Models**:
 
-To change it later:
+1. Under **Provider and model**, choose the provider.
+2. Complete its sign-in or key fields. An **Endpoint / API base** is the address
+   of the model service; use your lab's address or the local server's address.
+3. Choose a model. **Refresh model catalog** reloads the models the provider reports.
+4. Choose **Apply provider and model**. The model control below the message box
+   shows the connection used for that conversation.
 
-- In the terminal UI, press Ctrl+S to open Settings, choose Model, then choose Change provider.
-- In the desktop app and the web UI, open the model settings and choose a provider from the list.
+In the terminal interface, press **Ctrl+S**, choose **Model**, then **Change provider**.
 
 CLIO discovers the available models from the provider when it can. You can also type a model id yourself. CLIO has no built-in model list to go stale.
 
 ## Providers
 
-CLIO supports 16 providers.
+The supported connections below have different account and setup requirements.
 
 ### On your machine
 
-These run on your own hardware. Nothing about your prompts leaves the computer. Start the server before you connect.
+These providers can run on your own hardware. With a local server address, model
+requests go to that local server. Tools can still contact outside services when
+your task needs them; see [Where your data goes](/docs/privacy/). Start the model
+server before you connect.
 
 | Provider | What it needs | Default address |
 |---|---|---|
@@ -88,7 +112,7 @@ CLIO signs in through Globus. Authenticate once per machine. The install script 
 
 On Windows, use `%LOCALAPPDATA%\clio\clio-agent\.venv\Scripts\python.exe` in place of that path. Tokens refresh automatically afterward.
 
-## Environment variables
+## For administrators: environment variables
 
 For a headless server or a Docker container, set the provider before the backend starts.
 
@@ -105,7 +129,7 @@ Provider ids: `lm_studio`, `ollama`, `llama_cpp`, `vllm`, `openai`, `anthropic`,
 CLIO_LM_PROVIDER=openai OPENAI_API_KEY=sk-... clio start
 ```
 
-## Configuration file
+## For administrators: configuration files
 
 You can also set the provider in `config.yaml` with the keys `lm.provider`, `lm.api_base`, and `lm.model`. A value in the file wins over the environment variable. API keys are never read from config files. See [Configuration](/docs/configuration/).
 
@@ -124,6 +148,6 @@ Saved keys are stored as plain text in that file, protected by file permissions.
 ## Next steps
 
 <CardGrid>
-  <LinkCard title="Configuration" description="Where settings live and which variables matter." href="/docs/configuration/" />
+  <LinkCard title="Your first analysis" description="Try one small, checkable question with a fictional CSV." href="/docs/examples/check-a-dataset/" />
   <LinkCard title="Troubleshooting" description="Fix a provider that will not connect." href="/docs/troubleshooting/" />
 </CardGrid>

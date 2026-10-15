@@ -1,12 +1,15 @@
 ---
-title: Marketplaces and blueprints
-description: Find the right agent blueprint, inspect what it uses, and understand workspace access.
+title: Choose a specialist agent
+description: Find an agent for your workflow, inspect what it can use, and choose it for a conversation.
 ---
 
 import WidgetRecording from '../../../../components/WidgetRecording.astro';
 import GuideScreenshot from '../../../../components/GuideScreenshot.astro';
 
-A **marketplace** is a collection of agent blueprints. A **blueprint** describes an agent's instructions, experts, tools, and defaults. An **installed copy** is the version available to start a conversation on this CLIO.
+A specialist agent brings instructions and tools for a particular workflow.
+In CLIO, its saved configuration is called a **blueprint**. A **marketplace**
+is a collection of blueprints, and an **installed copy** is the version available
+to start a conversation on the connected CLIO service.
 
 Open **Settings → Marketplaces & blueprints**. Use **Installed** to find an agent you can use; use **Marketplaces** to browse and manage the collections it comes from.
 
@@ -24,7 +27,19 @@ Click the blueprint name or **Details**. The three tabs answer different questio
 | **Instructions** | The blueprint's readable instructions and documentation. |
 | **Installation** | Where the installed copy came from and the recorded installation details. |
 
-Installing a blueprint does not start a conversation. Choose it when creating a session; it then supplies the agent configuration for that session. See [Sessions and modes](/docs/sessions/).
+Installing a blueprint does not start a conversation. Choose it when creating a session; it then supplies the agent configuration for that session. See [Start and steer a conversation](/docs/sessions/).
+
+## Choose a blueprint for a conversation
+
+1. Inspect its **Overview**, requirements and connected services.
+2. If it is only available in a marketplace, install the copy you want to use.
+3. Create a conversation and choose it under **Agent blueprint**.
+4. Select a configured model, add the relevant files and describe the task.
+
+Installing a blueprint does not supply credentials or access to a lab service.
+Use the general-purpose agent for an ordinary file question when you do not need
+a specialist. [Install and update blueprints](/docs/marketplaces/manage/) covers
+the installation controls.
 
 ## Workspace view is about access
 

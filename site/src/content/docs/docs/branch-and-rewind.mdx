@@ -1,9 +1,10 @@
 ---
-title: Branch and rewind conversations
-description: Try an alternative without losing your original conversation, or remove later messages and continue from an earlier point.
+title: "Try another approach"
+description: Keep the original conversation while exploring another direction, or rewind with care.
 ---
 
-import { Aside, Steps } from "@astrojs/starlight/components";
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
+import { Steps } from "@astrojs/starlight/components";
 import Capture from "../../../components/overview/Capture";
 import { captureImage } from "../../../lib/captures";
 import menu from "../../../assets/captures/docs-conversation-menu.png";
@@ -16,6 +17,9 @@ import familyGantt from "../../../assets/captures/docs-conversation-family-gantt
 import relationships from "../../../assets/captures/docs-conversation-relationships.png";
 import outputLineage from "../../../assets/captures/docs-conversation-output-lineage.png";
 
+
+<PreviewGuide features="The conversation-family and rewind controls pictured here" />
+
 **Branch** when you want to compare approaches and keep both conversations.
 **Rewind** when you want to remove later messages from the current conversation
 and continue from an earlier point.
@@ -25,12 +29,6 @@ and continue from an earlier point.
 | Try an alternative from an earlier answer | **Branch from here** below that message | A new conversation copies the history through that message, including it. The original remains available. |
 | Continue a copy of the entire conversation | **… → Branch into a new session** in the session header | A new conversation copies the current history through its end. |
 | Replace the later direction of this conversation | **Rewind to here** below a message | After confirmation, later messages leave this conversation and its working context. The selected message stays. |
-
-<Aside type="note" title="Development build, real interactions">
-These captures use a local development build and real Codex/Luna responses with
-fictional calibration readings. The controls and behavior were checked in the
-browser and through the service; the screenshots contain no private research data.
-</Aside>
 
 ## Branch to compare an approach
 
@@ -138,12 +136,9 @@ as newly produced outputs.
   caption="Conversation relationships explain which discussion explored an alternative. Artifact lineage explains the declared inputs and versions behind its output."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
-These four captures were taken on **11 October 2026** from a running development
-service with real Codex/Luna responses and fictional calibration data. The family
-views include an additional real delegated check from a separate validation run;
-the checkpoint and output-lineage captures retain the earlier calculation run. The nested
-branch changes the offset to +5 (mean **17**); the sibling excludes the flagged
-reading (mean **11**). No private research sessions were used.
+In the family views, the nested branch changes the offset to +5 (mean **17**);
+the sibling excludes the flagged reading (mean **11**). Open each conversation
+to inspect its method and result.
 
 ## Rewind and continue from an earlier point
 
@@ -169,7 +164,7 @@ to discard the later filtering discussion.
 
 <Capture client:visible image={await captureImage(rewindResult)}
   alt="After rewind, the conversation continues using the original readings and answers Mean 12"
-  caption="The later filter has left the working context. This is a new model response after the rewind."
+  caption="After rewind, the next answer uses the original readings and mean of 12. The later filter has left the working context."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 Rewinding a parent does not rewind an existing branch. Repeated rewinds work on
@@ -197,18 +192,3 @@ record. It also does not erase separately saved [memory](/docs/memory/).
 If you may need the later discussion, **branch or [export it](/docs/exports/)
 before rewinding**. There is no restore-later-messages action. Make separate file
 copies or use version control when comparing changes to the data itself.
-
-## What we checked live
-
-The development acceptance used real model continuations to distinguish methods:
-baseline **12**, filtered parent **11**, offset branch **14**, nested offset branch
-**17**. It covered branching at a message and at the end, nested and empty branches,
-independent continuation, repeated rewind, a user-message endpoint, continuation
-after compaction and rewind, and transcript/model-context persistence across a
-service restart. Browser checks covered navigation, cancellation and confirmation,
-reload, and a branch surviving its parent's rewind.
-
-Additional service checks covered copied file references, shared file contents,
-rejection during an active response, and unknown or foreign message targets.
-These checks cover regular conversations. Separate asynchronous work is outside
-this guide's acceptance scope.

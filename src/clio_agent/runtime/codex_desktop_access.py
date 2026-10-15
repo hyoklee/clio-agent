@@ -1,4 +1,4 @@
-"""Reuse Desktop runtime grants only while their directory identity and ACL agree."""
+"""Shared runtime-access receipts for startup, installer, button and CLI setup."""
 
 from __future__ import annotations
 
@@ -40,14 +40,12 @@ def _identity(grant: FleetGrant) -> dict[str, Any] | None:
         return None
 
 
-def ensure_desktop_runtime_access(
-    *, progress: Callable[[str], None] | None = None
-) -> list[dict[str, Any]]:
+def ensure_runtime_access(*, progress: Callable[[str], None] | None = None) -> list[dict[str, Any]]:
     """Reuse successful grants for unchanged roots; repair changed or unknown roots.
 
     This receipt covers read/execute access only. The separate sandbox gate must
-    still establish account presence and verified write confinement. Explicit
-    ``clio sandbox setup`` retains its unconditional repair behavior.
+    still establish account presence and verified write confinement. Every setup
+    entry point uses this path; unchanged roots never need another grant operation.
     """
     receipt = paths.user_config_dir() / "sandbox" / "desktop-runtime-access.json"
     receipt.parent.mkdir(parents=True, exist_ok=True)

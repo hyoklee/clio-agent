@@ -1,8 +1,9 @@
 ---
-title: Dashboards
-description: Build a report from your data, explore linked views, and save an image or an interactive HTML copy.
+title: "Explore charts and dashboards"
+description: Read a finding alongside linked plots, maps and the underlying table.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { Aside, Steps } from "@astrojs/starlight/components";
 import Capture from "../../../components/overview/Capture";
 import WidgetRecording from "../../../components/WidgetRecording.astro";
@@ -15,12 +16,7 @@ A dashboard brings a finding, its figures, and the underlying records into one
 report beside your conversation. Use it when a colleague needs to explore an
 analysis rather than read a single answer.
 
-<Aside type="note" title="Development preview">
-  The saved-dashboard and export controls shown here are not included in beta 5.2.
-  Captures use the development build and fictional bike-station data. The report
-  was prepared through CLIO's production tools; its export demonstrations are real
-  interactions with that report, rather than a new model analysis.
-</Aside>
+<PreviewGuide features="The saved-dashboard and export controls" />
 
 ## Build a report from a file
 
@@ -46,7 +42,7 @@ analysis rather than read a single answer.
 
 <Capture client:visible image={await captureImage(dashboard)}
   alt="Fictional bike-station dashboard with the finding, two charts, map, and five-station comparison visible"
-  caption="The complete report overview. Fernhill first reaches zero at 8:15 am; Hill loses 37 bikes while Downtown gains 37. The counts alone do not identify journeys. Select the image to inspect it at full size."
+  caption="The complete report overview. Fernhill first reaches zero at 8:15 am; Hill loses 37 bikes while Downtown gains 37. The counts alone do not identify journeys."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 ## Explore and revise the same report
@@ -95,13 +91,12 @@ downloaded image for readable labels and complete figures before sharing it.
 
 ### A report your colleague can explore
 
-Choose **HTML dashboard**, then open the downloaded file in a browser. In this
-recording, networking is disabled before the file opens. Selecting Fernhill still
-updates the captured charts and tables.
+Choose **HTML dashboard**, then open the downloaded file in a browser. Selecting
+Fernhill updates the saved charts and tables, including when you are offline.
 
 <WidgetRecording name="docs-dashboard-html"
   title="Download the report. Explore the saved HTML."
-  caption="The actual HTML download reopens offline. All five fictional stations and their counts remain available, and selection reaches both charts. External map tiles are not bundled: the map reports that its background is unavailable while its station markers remain usable."
+  caption="All five stations and their counts remain available offline, and selection reaches both charts. External map tiles are not bundled: the map reports that its background is unavailable while its station markers remain usable."
   timingNote="Continuous recording; normal-speed actions."
   pointerGuide />
 
@@ -126,5 +121,5 @@ and overlapping legends. Keep the source data intact, correct unclear views,
 and tell me which views you actually inspected.
 ```
 
-Continue with [Exports and downloads](/docs/exports/) to send the investigation,
-or [Evidence and lineage](/docs/evidence/) to follow its history.
+Continue with [Save and share your work](/docs/exports/) to send the investigation,
+or [Check answers and sources](/docs/evidence/) to follow its history.

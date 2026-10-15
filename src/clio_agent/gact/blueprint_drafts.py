@@ -25,10 +25,10 @@ from clio_agent.gact.agent_blueprints import (
     read_install_metadata,
     validate_agent_blueprint_path,
 )
+from clio_agent.gact.blueprint_coordination import blueprint_write_roots, check_registry_claim
 from clio_agent.gact.blueprint_identity import identity_fields
 from clio_agent.gact.blueprint_install_files import blueprint_files, copy_blueprint_tree
 from clio_agent.gact.blueprint_ledgers import write_json_atomic
-from clio_agent.gact.blueprint_mutations import BLUEPRINT_MUTATION_LOCK
 from clio_agent.platform_paths import (
     rename_extended,
     win_extended_path,
@@ -54,7 +54,7 @@ def draft_view(root: Path) -> Path:
 
 def read_draft(root: Path, relative: str) -> dict[str, str]:
     """Return editable content and its byte hash for optimistic concurrency."""
-    with BLUEPRINT_MUTATION_LOCK:
+    with blueprint_write_roots(root.parent):
         view = draft_view(root)
         if view != root:
             _refresh_clean_files(root, view)
@@ -122,7 +122,7 @@ def _refresh_clean_files(root: Path, draft: Path) -> None:
 
 def authoring_state(root: Path) -> dict[str, Any]:
     """Describe saved authoring work separately from the applied runtime tree."""
-    with BLUEPRINT_MUTATION_LOCK:
+    with blueprint_write_roots(root.parent):
         owner = draft_directory(root)
         draft = owner / "tree"
         install = read_install_metadata(root)
@@ -171,7 +171,7 @@ def save_draft(
     Invalid drafts can be saved for repair. The publish operation independently
     requires a valid complete tree. An expected hash protects concurrent editors.
     """
-    with BLUEPRINT_MUTATION_LOCK:
+    with blueprint_write_roots(root.parent):
         if Path(relative).name == ".clio-install.md":
             raise ValueError("Installation provenance is managed by CLIO, not the draft editor")
         owner = draft_directory(root)
@@ -237,7 +237,8 @@ def publish_draft(
     A retry accepts this operation's already-written bytes and resumes remaining
     files, so a partial disk failure cannot silently lose the draft.
     """
-    with BLUEPRINT_MUTATION_LOCK:
+    source = authoring_root(root, checkout=checkout)
+    with blueprint_write_roots(root.parent, source.parent):
         if push and not commit_message.strip():
             raise ValueError("Select Git publication and provide a commit message before pushing")
         owner = draft_directory(root)
@@ -254,7 +255,8 @@ def publish_draft(
         original = parse_agent_blueprint_root(root, scope="install")
         if validation["agent_blueprint"]["id"] != original.id:
             raise ValueError("Renaming the blueprint requires registering a new blueprint")
-        source = authoring_root(root, checkout=checkout)
+        if authoring_root(root, checkout=checkout).resolve() != source.resolve():
+            raise ValueError("Authoring source changed during publication; inspect again")
         if source.resolve() == root.resolve():
             raise ValueError("Register this authoring folder as a marketplace before publishing")
         baseline: dict[str, str] = manifest["baseline"]
@@ -265,6 +267,7 @@ def publish_draft(
         # Check every file before writing any. External writers can still race;
         # each file is checked again immediately before its atomic replacement.
         for name in changed:
+            check_registry_claim(source.parent)
             target = resolve_blueprint_file_path(source, name)
             observed = _hash(target.read_bytes()) if target.is_file() else None
             accepted = {baseline.get(name)}
@@ -286,6 +289,7 @@ def publish_draft(
             if name not in published:
                 published.append(name)
             write_json_atomic(owner / "manifest.json", {**manifest, "published": published})
+            check_registry_claim(source.parent)
             write_blueprint_text_file(source, name, text)
         last_published = changed or list(manifest.get("last_published", []))
         write_json_atomic(

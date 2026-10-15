@@ -17,6 +17,55 @@ class DocumentError(RuntimeError):
     """A document operation failed without producing verified output."""
 
 
+def _windows_dacl_protected(path: Path) -> bool:
+    """Inspect one directory's ACL without walking its descendants."""
+    if sys.platform != "win32":
+        return False
+    import ctypes
+    from ctypes import wintypes
+
+    api = ctypes.WinDLL("advapi32", use_last_error=True)
+    get_security = api.GetFileSecurityW
+    get_security.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    get_security.restype = wintypes.BOOL
+    needed = wintypes.DWORD()
+    get_security(str(path), 4, None, 0, ctypes.byref(needed))
+    if not needed.value:
+        raise DocumentError(f"Cannot inspect document-directory permissions: {ctypes.WinError()}")
+    descriptor = ctypes.create_string_buffer(needed.value)
+    if not get_security(str(path), 4, descriptor, needed.value, ctypes.byref(needed)):
+        raise DocumentError(f"Cannot read document-directory permissions: {ctypes.WinError()}")
+    get_control = api.GetSecurityDescriptorControl
+    get_control.argtypes = [
+        wintypes.LPVOID,
+        ctypes.POINTER(wintypes.WORD),
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    get_control.restype = wintypes.BOOL
+    control, revision = wintypes.WORD(), wintypes.DWORD()
+    if not get_control(descriptor, ctypes.byref(control), ctypes.byref(revision)):
+        raise DocumentError(f"Cannot inspect document ACL inheritance: {ctypes.WinError()}")
+    return bool(control.value & 0x1000)  # SE_DACL_PROTECTED
+
+
+def inherit_parent_access(path: Path) -> None:
+    """Keep published document directories accessible under their parent's existing grants.
+
+    Windows Python 3.13+ creates private temporary directories with a protected
+    ACL. That is appropriate for an Office profile, but excludes the host or
+    sandbox user from shared output/cache directories. Only protected roots need
+    repair; ordinary calls never recursively reapply permissions.
+    """
+    if _windows_dacl_protected(path):
+        run(["icacls", str(path), "/inheritancelevel:e", "/Q"], cwd=path, timeout=30)
+
+
 def scratch_root(workspace: Path, *, create: bool = True) -> Path:
     """Create workspace-owned scratch storage without following an escaping link."""
     workspace = workspace.resolve()
@@ -135,6 +184,12 @@ def office_convert(
     """Convert a copy using a fresh LibreOffice profile; never overwrite the source."""
     executable = executable_path or find_native("soffice")
     if not executable:
+        if os.environ.get("CLIO_DOCUMENT_CONFINED") == "1":
+            raise DocumentError(
+                "The prepared Office renderer is unavailable to the confined worker; "
+                "repair renderer access on the CLIO host before retrying. "
+                "Renderer installation cannot run inside document execution."
+            )
         root = os.environ.get("CLIO_DOCUMENT_OFFICE_ROOT", "")
         if not root:
             raise DocumentError(
@@ -157,6 +212,10 @@ def office_convert(
         profile_root = Path(os.environ.get("CLIO_DOCUMENT_SHORT_TEMP", tempfile.gettempdir()))
     temporary = tempfile.TemporaryDirectory(prefix="lo-", dir=profile_root)
     try:
+        if execute is not None:
+            # A host-created profile must be reachable by the confined executor.
+            # Profiles created inside the worker keep their private ACL instead.
+            inherit_parent_access(Path(temporary.name))
         profile = Path(temporary.name).resolve() / "profile"
         profile.mkdir()
         (profile / "registrymodifications.xcu").write_text(

@@ -14,10 +14,14 @@ engine changes only the transport:
   tool list, an idle or aged socket) sends the full input, typed on the
   ``provider.stateful`` audit row. Outside a loop every call is a full send on a
   short-lived socket.
-* **One build per call.** The wire request is built once; the delta is a slice of its
+* **One build per attempt.** The wire request is built once; the delta is a slice of its
   input items. Whether the kept conversation continues is decided by the item count
   it was sent and a running sha256 over those items (never an element-wise compare
   of the message history).
+* **Recoverable file preparation.** A backend file-preparation refusal before any
+  model output retries once with an honest observation replacing the rejected
+  document. The agent can then extract text or inspect page images. Refused bytes
+  are not reattached by later steps; recorded context and source files stay intact.
 * **ARC ops reset typed.** The engine takes part in the per-forward scope registry
   (:func:`~clio_agent.providers.stateful_common.register_scope_registry`): an ARC op
   on a forward (compaction, delete) drops the conversations it drove, and the next
@@ -49,7 +53,6 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
-import hashlib
 import json
 import logging
 import queue
@@ -79,7 +82,15 @@ from clio_agent.providers.codex.audit import (
     emit_completed_tool_call,
     emit_raw_event,
 )
+from clio_agent.providers.codex.audit import usage_row as _usage_row
 from clio_agent.providers.codex.errors import CodexPlanLimitError, is_usage_limit_text
+from clio_agent.providers.codex.file_inputs import (
+    DocumentInputRecovery,
+    FilePreparationUnsupportedError,
+    is_file_preparation_refusal,
+    report_file_recovery,
+)
+from clio_agent.providers.codex.request_options import PreparedRequest, prepare_request
 from clio_agent.providers.codex.shutdown import close_kept_sockets
 from clio_agent.providers.codex.stream_errors import (
     CallOutcome,
@@ -131,50 +142,6 @@ class _WireEvent:
 
     event: str
     data: str
-
-
-class PreparedRequest:
-    """One call's wire request, built once, with a running sha256 over its input items.
-
-    Attributes:
-        body: The full Responses payload (``input`` holds every item).
-        headers: The transport headers.
-        system: The instructions the payload carries.
-        tools: The payload's tool list, serialized (the identity a continuation needs).
-        items: The full input items.
-    """
-
-    def __init__(self, body: dict[str, Any], headers: dict[str, str]) -> None:
-        """Wrap a built payload (see :func:`prepare_request`)."""
-        self.body = body
-        self.headers = headers
-        self.system = str(body.get("instructions") or "")
-        self.tools = json.dumps(body.get("tools") or [])
-        self.items: list[Any] = list(body.get("input") or [])
-        self._hasher = hashlib.sha256()
-        self._hashed = 0
-
-    def digest_at(self, count: int) -> str:
-        """sha256 over the first ``count`` items (each as compact JSON), hashed once.
-
-        Raises:
-            ValueError: ``count`` is behind a point already hashed past, or past the end.
-        """
-        if count < self._hashed or count > len(self.items):
-            raise ValueError(f"digest at {count}: hashed {self._hashed} of {len(self.items)}")
-        for item in self.items[self._hashed : count]:
-            self._hasher.update(
-                json.dumps(item, separators=(",", ":"), ensure_ascii=False).encode()
-            )
-            self._hasher.update(b"\n")
-        self._hashed = count
-        return self._hasher.copy().hexdigest()
-
-
-def prepare_request(wire: Any, request: Request) -> PreparedRequest:
-    """Build ``request``'s wire payload -- the ONE build of a call."""
-    wire_request = wire.build_request(request, stream=True)
-    return PreparedRequest(json.loads(wire_request.body), dict(wire_request.headers))
 
 
 def _from_assistant(item: Any) -> bool:
@@ -299,6 +266,7 @@ class AsyncCodexDirectEngine:
                 originator=self.wire.originator,
                 client_version=self.wire.client_version,
             )
+        self._file_inputs = DocumentInputRecovery()
 
     async def complete(self, request: Request) -> Response:
         """Run one call and return the assembled response."""
@@ -337,16 +305,31 @@ class AsyncCodexDirectEngine:
         try:
             _check_media(request)  # typed refusal of oversized attachments before any send
             request = _with_reasoning_summary(request)
-            if self.http:
-                await self._http(request, out)
-                return
-            await self._run(request, key, out)
+            request = self._file_inputs.prepare(request)
+            try:
+                await self._send(request, key, out)
+            except FilePreparationUnsupportedError:
+                # A changed input, once, before output; never replay model actions.
+                self._file_inputs.reject(request)
+                if key is not None:
+                    await _drop(key)
+                logger.warning(
+                    "codex native file refused reason=codex_file_preparation_unsupported"
+                )
+                report_file_recovery()
+                await self._send(self._file_inputs.prepare(request), key, out)
         except BaseException as exc:  # noqa: BLE001 - surfaced on the caller's loop
             if key is not None:
                 await _drop(key)
             out.put(exc)
         finally:
             out.put(_END)
+
+    async def _send(self, request: Request, key: tuple[str, ...] | None, out: StreamSink) -> None:
+        if self.http:
+            await self._http(request, out)
+        else:
+            await self._run(request, key, out)
 
     async def _run(self, request: Request, key: tuple[str, ...] | None, out: StreamSink) -> None:
         # The backend takes the bare model id, whatever the dspy.LM model string is.
@@ -399,6 +382,7 @@ class AsyncCodexDirectEngine:
         wire = self.http_wire
         if wire is None:
             raise RuntimeError("The Codex HTTP transport was not initialized")
+        output_started = False
         try:
             assembler = ToolCallAssembler()
             async with contextlib.aclosing(
@@ -406,10 +390,20 @@ class AsyncCodexDirectEngine:
             ) as events:
                 async for event in events:
                     for assembled in assembler.stream((event,)):
+                        if assembled.type == "error" and not output_started:
+                            if is_file_preparation_refusal(request, assembled.error.message or ""):
+                                raise FilePreparationUnsupportedError(assembled.error.message)
+                        output_started |= assembled.type == "delta"
                         out.put(assembled)
         except RateLimitError as exc:
             if is_usage_limit_text(str(exc)):
                 raise CodexPlanLimitError(str(exc)) from exc
+            raise
+        except FilePreparationUnsupportedError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - translate only this explicit input refusal
+            if not output_started and is_file_preparation_refusal(request, str(exc)):
+                raise FilePreparationUnsupportedError(str(exc)) from exc
             raise
 
 
@@ -630,6 +624,9 @@ async def _exchange(
     streamed: list[bool] = []  # set once any event of the reply reached the caller
     try:
         return await _stream(wire, request, socket, frame, out, call_id, call_index, streamed)
+    except FilePreparationUnsupportedError:
+        await socket.close()
+        raise
     except websockets.ConnectionClosed as exc:
         if kept and not streamed:
             raise _ConnectionLost from exc
@@ -652,6 +649,7 @@ async def _stream(
 ) -> tuple[str, tuple[str, ...]]:
     """The body of :func:`_exchange`: send the frame and forward the reply's events."""
     first = True
+    output_started = False
     usage: Any = None
     calls: list[str] = []
     tool_calls = ToolCallAssembler()
@@ -666,6 +664,8 @@ async def _stream(
         parsed: Any = None
         if kind in {"error", "response.failed"}:
             message = _error_message(payload)
+            if not output_started and is_file_preparation_refusal(request, message):
+                raise FilePreparationUnsupportedError(message)
             if is_usage_limit_text(message):
                 # The account's plan window is exhausted: terminal, never retried.
                 raise CodexPlanLimitError(message, code=_error_code(payload))
@@ -681,6 +681,7 @@ async def _stream(
         if parsed is None:
             parsed = tool_calls.parse(wire, request, _WireEvent(event=kind, data=raw))
         for event in parsed:
+            output_started |= event.type == "delta"
             if first and event.type == "delta":
                 first = False
                 emit_raw_event(
@@ -717,19 +718,6 @@ def _next_call_index() -> int:
     with _CALL_INDEX_LOCK:
         _CALL_INDEX += 1
         return _CALL_INDEX
-
-
-def _usage_row(usage: Any) -> dict[str, int]:
-    """lm15 usage in the audit's ``usage_*`` keys (the Claude Code engine's names)."""
-    if usage is None:
-        return {}
-    fields = {
-        "input_tokens": usage.input_tokens,
-        "cached_input_tokens": usage.cache_read_tokens,
-        "output_tokens": usage.output_tokens,
-        "reasoning_output_tokens": usage.reasoning_tokens,
-    }
-    return {k: int(v) for k, v in fields.items() if v is not None}
 
 
 class _ContinuationLost(Exception):

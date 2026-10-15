@@ -460,6 +460,64 @@ def _cancel_locked(root: Path, job_id: str) -> dict[str, Any]:
     return public(job)
 
 
+def remove(root: Path, job_id: str) -> dict[str, Any]:
+    """Remove only an inactive, receipt-owned model directory and retain its audit receipt."""
+    if not re.fullmatch(r"[a-f0-9]{24}", job_id):
+        raise ValueError("Invalid model operation")
+    with control_lock(root):
+        receipt = root / job_id / "receipt.json"
+        job = json.loads(receipt.read_text(encoding="utf-8"))
+        if alive(job) or job["state"] in {"queued", "running"}:
+            raise ValueError("Cancel the download before removing its files")
+        destination = Path(job["destination"])
+        if not destination.is_absolute() or destination == Path(destination.anchor):
+            raise ValueError("The model destination is not an owned directory")
+        paths = [destination, *destination.parents]
+        if any(
+            path.is_symlink() or getattr(path, "is_junction", lambda: False)() for path in paths
+        ):
+            raise ValueError("Model removal does not follow links or directory junctions")
+        destination = destination.resolve()
+        if destination == root.resolve() or root.resolve().is_relative_to(destination):
+            raise ValueError("Model removal cannot include its operation receipts")
+        if any(part.startswith("models--") for part in destination.parts) or is_hub_cache(
+            destination
+        ):
+            raise ValueError("Shared Hugging Face cache files must be managed by their owner")
+        if job["state"] == "removed" and not destination.exists():
+            return public(job)
+        for peer_receipt in root.glob("*/receipt.json"):
+            if peer_receipt == receipt:
+                continue
+            peer = json.loads(peer_receipt.read_text(encoding="utf-8"))
+            if peer.get("state") == "removed":
+                continue
+            peer_destination = Path(peer["destination"]).resolve()
+            if destination.is_relative_to(peer_destination) or peer_destination.is_relative_to(
+                destination
+            ):
+                raise ValueError("Another acquisition also owns files in this model directory")
+        marker = destination / ".clio-model.json"
+        owner = json.loads(marker.read_text(encoding="utf-8"))
+        if owner.get("job_id") != job_id or owner.get("operation_root") != str(root):
+            raise ValueError("This model directory belongs to another acquisition or host")
+        if any(
+            path.is_symlink() or getattr(path, "is_junction", lambda: False)()
+            for path in destination.rglob("*")
+        ):
+            raise ValueError("Model removal does not follow links or directory junctions")
+        shutil.rmtree(destination)
+        job.update(
+            state="removed",
+            phase="Model files removed",
+            bytes_done=0,
+            updated_at=time.time(),
+            error=None,
+        )
+        write_json(receipt, job)
+        return public(job)
+
+
 def supervise(receipt: Path, command: list[str]) -> int:
     """Run the worker and type its failure when it ends without a terminal receipt."""
     try:
@@ -689,6 +747,8 @@ def main() -> None:
         result = start(root, request, request["script"])
     elif action == "cancel":
         result = cancel(root, request["id"])
+    elif action == "remove":
+        result = remove(root, request["id"])
     elif action == "log":
         result = read_log(root, request["id"], int(request.get("offset") or 0))
     else:

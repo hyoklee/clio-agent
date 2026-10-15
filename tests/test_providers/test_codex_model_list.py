@@ -218,11 +218,11 @@ def test_missing_runtime_version_is_typed(monkeypatch: pytest.MonkeyPatch) -> No
 
 
 # --------------------------------------------------------------------------- #
-# Direct: discovery rows (labels, PDF transport fact, unknown output limit)
+# Direct: discovery rows (reported modalities, unknown output limit)
 # --------------------------------------------------------------------------- #
 
 
-def test_discover_codex_rows_carry_live_facts_and_the_pdf_transport_fact(
+def test_discover_codex_rows_carry_live_facts_without_inventing_pdf_support(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     listing = parse_model_list(_recorded("models_client_0.157.1.json"), client_version="0.157.1")
@@ -236,11 +236,11 @@ def test_discover_codex_rows_carry_live_facts_and_the_pdf_transport_fact(
     assert result.default_model == "gpt-6-astra"
     assert [row["id"] for row in result.discovered] == _VISIBLE_0157
     sol = next(row for row in result.discovered if row["id"] == "gpt-6-sol")
-    assert sol["capabilities"] == ["text", "image", "pdf"]
+    assert sol["capabilities"] == ["text", "image"]
     evidence = sol["capability_evidence"]
     assert evidence["source"] == "codex_direct_model_list"
     assert evidence["reason"] == "modality_reported"
-    assert evidence["added"]["pdf"]["source"] == "codex_direct_input_file"
+    assert "pdf" not in evidence.get("added", {})
     assert sol["context_window"] == 272000
     assert sol["output_limit"] is None  # not reported; never guessed
     assert sol["supported_reasoning_efforts"][-1] == "ultra"

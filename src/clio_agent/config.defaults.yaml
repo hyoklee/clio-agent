@@ -417,6 +417,13 @@ agents.react_extract.enabled: true
 # writes this mapping.
 # fleet.judges:  # computed at runtime: {}
 
+# CLIO_FLEET_SEARCH  (str)  <- src/clio_agent/gact/fleet_settings.py
+# Provider and model for the read-only CLIO Search assistant, as a
+# provider_id/model_id mapping. Null inherits the current conversation
+# model, then service defaults. CLIO_FLEET_SEARCH accepts JSON. Settings
+# Fleet writes this choice independently of judges.
+# fleet.search:  # default unset; resolved in code
+
 # CLIO_GOAL_JUDGE_MODEL  (str)  <- src/clio_agent/gact/goal.py
 # Legacy goal judge model override on the caller provider; Fleet goals
 # selection takes precedence, including an explicit null to inherit the

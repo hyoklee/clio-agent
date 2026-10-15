@@ -16,6 +16,7 @@ import platform
 import re
 import shutil
 import subprocess
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any, Protocol
@@ -32,6 +33,12 @@ from clio_agent.tools.builtin_annotations import (
     SHELL_TOOL_ANNOTATIONS as SHELL_TOOL_ANNOTATIONS,
 )
 from clio_agent.tools.file_policy import FileAccessPolicy, FilePolicyError
+from clio_agent.tools.servers.shell_commands import (
+    SCRIPT_FILE_GUIDANCE,
+    command_length_error,
+    is_command_length_exception,
+    windows_launch_error,
+)
 from clio_agent.tools.servers.shell_output import (
     ProgressReporter,
     StreamCapture,
@@ -49,21 +56,21 @@ from clio_agent.tools.servers.shell_spill_store import (
 shell_server = FastMCP("shell")
 logger = logging.getLogger(__name__)
 
-# Declared MCP ToolAnnotations — the SINGLE source of truth for the shell tool's
+# Declared MCP ToolAnnotations â€” the SINGLE source of truth for the shell tool's
 # effect class (#1061). ``bash`` runs an arbitrary command whose writes/egress
 # the gate cannot bound (they live behind the OS fence, not a gate-side parser),
 # so it declares the most-restrictive open-world destructive hints: NOT read-only
 # and openWorldHint=True. This projects to NO catalog read/write tag (effectful/
-# unclassifiable) — preserving the pre-#1061 "no read tag => never read-only, and
+# unclassifiable) â€” preserving the pre-#1061 "no read tag => never read-only, and
 # not an fs-write the auto-edits mode may auto-approve" classification.
 
 
 # POSIX text utilities the model tends to reach for (and improvises `wsl bash -c`
-# to get on Windows, booting a resident VM — iowarp/clio-agent#898). Their real
+# to get on Windows, booting a resident VM â€” iowarp/clio-agent#898). Their real
 # presence on the host PATH is probed, not assumed.
 _POSIX_TEXT_TOOLS = ("cut", "sed", "awk", "grep")
 
-# Operational caps — resolved file → env → default (see clio_agent.conf).
+# Operational caps â€” resolved file â†’ env â†’ default (see clio_agent.conf).
 # Timeouts: 0 means none. A command runs until it exits (a conversion, a batch
 # job, a long `df`), the human cancels the turn, or the MODEL passes its own
 # positive ``timeout_s``. An operator may still set a ceiling via
@@ -99,11 +106,10 @@ def resolve_shell_limits() -> ShellLimits:
     Defaults, and why:
 
     * ``shell_max_command_chars`` 16,000 (was 4,000, which rejected ordinary
-      heredoc profiling scripts). On Windows the command rides the PowerShell /
-      cmd command line, which CreateProcess caps at 32,767 characters; 16,000
-      stays under that even if quoting doubled every character, and covers a
-      ~200-line inline script. Past it, the rejection tells the model to write
-      the script to a file and run the file.
+      heredoc profiling scripts). This is the CLIO input budget; Windows launchers
+      can reject smaller commands, particularly cmd/.cmd/.bat at 8,191 characters.
+      Quoting and wrapper arguments also count. Programs belong in workspace
+      script files; the native launch string is checked separately.
     * ``shell_default_output_bytes`` 8,192 per stream (was 16,384). The result
       must fit the downstream 12,000-character tool-result bounds or it gets
       rewrapped into a truncated JSON-in-JSON preview (#887); 16 KiB made that
@@ -165,7 +171,7 @@ def _resolve_cwd(cwd: str | None) -> Path:
     process's own current directory. A single managed backend process outlives
     its boot-time cwd and can serve sessions across multiple workspaces, so
     falling back to ``Path.cwd()`` let commands without an explicit ``cwd``
-    run outside the session's own workspace (iowarp/clio-agent — desktop
+    run outside the session's own workspace (iowarp/clio-agent â€” desktop
     ``sensor_readings_*.md`` files landing in the install directory instead of
     the workspace). ``Path.cwd()`` remains the last-resort fallback for the
     app-less CLI grounding path where no workspace is bound.
@@ -283,9 +289,9 @@ class ShellEnvFacts:
     """Host facts the shell tool description is computed from (#898).
 
     The tool description the model reads must describe the environment the
-    command ACTUALLY executes in — the model improvised ``wsl bash -c "cut ..."``
+    command ACTUALLY executes in â€” the model improvised ``wsl bash -c "cut ..."``
     on Windows precisely because the tool called itself a *bash* and the host was
-    not one. This is grounding, not a behavioural handcuff (CLAUDE.md ⚑ #3).
+    not one. This is grounding, not a behavioural handcuff (CLAUDE.md âš‘ #3).
     """
 
     is_windows: bool
@@ -340,9 +346,9 @@ def _limits_text(limits: ShellLimits) -> str:
     """Model-facing statement of the effective limits and the spill behaviour."""
 
     return (
-        f"Limits: the command may be up to {limits.max_command_chars} characters; for a "
-        "longer script, write it to a file in the workspace first and run that file (for "
-        "example `uv run python analysis.py`). stdout and stderr each return inline up to "
+        f"Limits: CLIO accepts up to {limits.max_command_chars} command characters, but native "
+        "shells/launchers can impose smaller bounds, even below this budget. "
+        f"{SCRIPT_FILE_GUIDANCE} stdout and stderr each return inline up to "
         f"max_output_bytes (default {limits.default_output_bytes}, at most "
         f"{limits.max_output_bytes}) and the whole result stays under "
         f"{limits.result_chars} characters. Output beyond that is not lost: the complete "
@@ -395,12 +401,12 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
             f"{invocation}"
             f"{tools_line} "
             "Do NOT assume WSL exists: do not invoke `wsl`, `wsl bash -c`, or POSIX "
-            "pipelines to reach cut/sed/awk/grep — on a WSL-less host they fail, and the "
+            "pipelines to reach cut/sed/awk/grep â€” on a WSL-less host they fail, and the "
             "first `wsl` call boots a utility VM that stays resident holding gigabytes. "
             "Paths use Windows conventions (drive letters, backslashes) unless the bash "
             "backend is active. For tabular, "
             "CSV, or columnar work (column selection, filtering, joins) use the pandas "
-            "MCP tool when available instead of shell text pipelines — it is portable and "
+            "MCP tool when available instead of shell text pipelines â€” it is portable and "
             "spawns no VM. The working directory must be inside CLIO_ALLOWED_ROOTS. "
             "A command can retrieve public HTTPS data when network policy permits; "
             "inspect its returned status and output before concluding access failed. "
@@ -426,22 +432,19 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
 _SHELL_TOOL_DESCRIPTION = build_shell_tool_description(_detect_shell_env())
 
 
-def _kill_process_tree(pid: int) -> None:
-    """Kill ``pid`` and every descendant (``uv run`` and shells spawn children)."""
-
-    import psutil  # noqa: PLC0415
-
-    try:
-        root = psutil.Process(pid)
-        victims = [*root.children(recursive=True), root]
-    except psutil.NoSuchProcess:
-        return
-    for proc in victims:
-        try:
-            proc.kill()
-        except psutil.NoSuchProcess:
-            continue
-    psutil.wait_procs(victims, timeout=5)
+def _log_shell_phase(
+    call_id: str, phase: str, started: float, *, outcome: str = "completed"
+) -> float:
+    """Log wall time for one call stage without adding command contents to diagnostics."""
+    finished = time.perf_counter()
+    logger.info(
+        "shell_phase call=%s phase=%s outcome=%s elapsed_ms=%.3f",
+        call_id,
+        phase,
+        outcome,
+        (finished - started) * 1000,
+    )
+    return finished
 
 
 @shell_server.tool(description=_SHELL_TOOL_DESCRIPTION, annotations=_BASH_ANNOTATIONS)
@@ -506,19 +509,11 @@ async def execute_shell(
     command = command.strip()
     max_chars = _SHELL_LIMITS.max_command_chars
     if len(command) > max_chars:
-        next_action = (
-            "Split the script into shorter shell calls that write a file inside the workspace, "
-            "then run that file with a short command (for example `uv run python analysis.py`). "
-            "fs_propose_edit only stages a reviewable diff; it does not write the file."
-        )
-        return _error(
-            "command_too_long",
-            f"command is {len(command)} characters; the limit is {max_chars}. {next_action}",
-            details={
-                "received_chars": len(command),
-                "max_chars": max_chars,
-                "next_action": next_action,
-            },
+        return command_length_error(
+            command,
+            f"command is {len(command)} characters; the limit is {max_chars}.",
+            bound="clio_input",
+            max_chars=max_chars,
         )
     try:
         timeout = float(timeout_s)
@@ -542,6 +537,8 @@ async def execute_shell(
             f"max_output_bytes must be > 0 and <= {ceiling_bytes}.",
             details={"received": max_output_bytes, "max_output_bytes": ceiling_bytes},
         )
+    call_id = new_call_id()
+    phase_started = time.perf_counter()
     try:
         safe_cwd = _resolve_cwd(cwd)
         from clio_agent.runtime.execution_environment import shell_environment
@@ -549,28 +546,38 @@ async def execute_shell(
         prepared = shell_environment(_spill_root(safe_cwd))
         argv = _shell_argv(command, prepared_environment=prepared)
     except FilePolicyError as exc:
+        _log_shell_phase(call_id, "environment", phase_started, outcome="denied")
         return exc.to_result()
     except Exception as exc:  # noqa: BLE001
+        _log_shell_phase(call_id, "environment", phase_started, outcome="failed")
         return _error("shell_unavailable", str(exc))
+    phase_started = _log_shell_phase(call_id, "environment", phase_started)
 
     # #975: route the shell subprocess through the single confinement composer with the
     # per-invocation `shell` profile (write territory computed from THIS command's cwd).
-    # Floor-first — the backend is passthrough this slice, so argv/env are byte-identical;
+    # Floor-first â€” the backend is passthrough this slice, so argv/env are byte-identical;
     # the shell seam carries no pdeathsig today, so it stays off here.
     from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
-    confined = sandbox.wrap_confined(
-        argv[0],
-        argv[1:],
-        write_roots=sandbox.effective_write_roots(
-            sandbox.PROFILE_SHELL, workspace_root=str(safe_cwd)
-        ),
-        net_policy=sandbox.NET_ALLOW_RECORD,
-        profile=sandbox.PROFILE_SHELL,
-        pdeathsig=False,
-        cwd=safe_cwd,
-    )
+    try:
+        confined = sandbox.wrap_confined(
+            argv[0],
+            argv[1:],
+            write_roots=sandbox.effective_write_roots(
+                sandbox.PROFILE_SHELL, workspace_root=str(safe_cwd)
+            ),
+            net_policy=sandbox.NET_ALLOW_RECORD,
+            profile=sandbox.PROFILE_SHELL,
+            pdeathsig=False,
+            cwd=safe_cwd,
+        )
+    except Exception:
+        _log_shell_phase(call_id, "confinement", phase_started, outcome="failed")
+        raise
+    phase_started = _log_shell_phase(call_id, "confinement", phase_started)
     run_argv = [confined.command, *confined.args]
+    if os.name == "nt" and (launch_error := windows_launch_error(run_argv, command)):
+        return launch_error
     run_env = {**os.environ, **prepared, "PYTHONUTF8": "1", **confined.env_overlay}
     # The model's shell is not the authenticated human control channel.
     for internal_credential in ("CLIO_AUTH_TOKEN", "CLIO_GACT_BEARER_TOKEN"):
@@ -586,7 +593,6 @@ async def execute_shell(
 
     spill_root = _spill_root(safe_cwd)
     spill_dir = spill_directory(spill_root, session_id=active_session_id())
-    call_id = new_call_id()
     captures = [
         StreamCapture(
             name,
@@ -612,7 +618,7 @@ async def execute_shell(
                 # Give the child an immediately-EOF stdin. Without this the spawned
                 # shell inherits clio-agent's own stdin (a pipe the parent holds open
                 # and never closes), and PowerShell/cmd block at startup waiting on
-                # that stream — every command then hits the timeout with empty output.
+                # that stream â€” every command then hits the timeout with empty output.
                 stdin=subprocess.DEVNULL,
             )
         )
@@ -628,7 +634,11 @@ async def execute_shell(
     except Exception as exc:  # noqa: BLE001
         if cleanup is not None:
             cleanup.confirm_cleanup()
+        _log_shell_phase(call_id, "process_start", phase_started, outcome="failed")
+        if is_command_length_exception(exc):
+            return command_length_error(command, str(exc), bound="native_spawn")
         return _error("execution_failed", str(exc), details={"command": command})
+    phase_started = _log_shell_phase(call_id, "process_start", phase_started)
 
     assert process.stdout is not None
     assert process.stderr is not None
@@ -666,6 +676,7 @@ async def execute_shell(
         await settle()
         physical_settlement = True
     except BaseException:
+        _log_shell_phase(call_id, "child_lifetime", phase_started, outcome="interrupted")
         # The registered worker's cleanup receipt is valid only after the
         # process tree and output readers have actually settled.
         await asyncio.to_thread(tree.terminate)
@@ -673,8 +684,19 @@ async def execute_shell(
         physical_settlement = True
         raise
     finally:
+        phase_started = _log_shell_phase(
+            call_id,
+            "child_lifetime",
+            phase_started,
+            outcome="timed_out"
+            if timed_out
+            else "completed"
+            if physical_settlement
+            else "unsettled",
+        )
         try:
             await asyncio.gather(*readers)
+            _log_shell_phase(call_id, "output_drain", phase_started)
         finally:
             tree.close()
             if physical_settlement:

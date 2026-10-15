@@ -475,7 +475,12 @@ def prepare_office_runtime() -> str:
     from clio_agent.runtime.document_stack.office import ensure_office
     from clio_agent.runtime.document_stack.process import find_native
 
-    return find_native("soffice") or ensure_office(office_runtime_root())
+    managed_root = office_runtime_root()
+    native = find_native("soffice")
+    if native and not Path(native).resolve().is_relative_to(managed_root.resolve()):
+        return native
+    # A discovered managed executable still needs its host-side access repair.
+    return ensure_office(managed_root)
 
 
 def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) -> dict[str, Any]:
@@ -483,6 +488,15 @@ def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) 
     from clio_agent.runtime import sandbox
 
     command = [*runtime["helper_argv"], *args]
+    environment = {**os.environ, **runtime.get("shell_environment", {})}
+    if args and (
+        args[0] == "recalculate"
+        or (args[0] == "render" and len(args) > 1 and Path(args[1]).suffix.lower() != ".pdf")
+    ):
+        # The trusted host owns renderer provisioning. A confined document worker
+        # must consume the verified executable, never run Windows Installer.
+        environment["CLIO_DOCUMENT_SOFFICE"] = prepare_office_runtime()
+    environment["CLIO_DOCUMENT_CONFINED"] = "1"
     confined = sandbox.wrap_confined(
         command[0],
         command[1:],
@@ -496,8 +510,7 @@ def run_document_helper(runtime: dict[str, Any], args: list[str], *, cwd: Path) 
             [confined.command, *confined.args],
             cwd=cwd,
             env={
-                **os.environ,
-                **runtime.get("shell_environment", {}),
+                **environment,
                 **confined.env_overlay,
                 **{
                     key: value

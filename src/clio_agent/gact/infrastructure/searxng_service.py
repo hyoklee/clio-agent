@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import ntpath
 import posixpath
 from collections.abc import Callable
 from pathlib import Path
@@ -48,7 +49,7 @@ VARIANT_ID = "native"
 SEARXNG_COMMIT = "e8e710e42a3ab2bce27d1f97e51d8d4ccaa80871"
 SEARXNG_VERSION = "2026.8.11+e8e710e42"
 SEARXNG_SOURCE_URL = f"https://github.com/searxng/searxng/archive/{SEARXNG_COMMIT}.tar.gz"
-DEFINITION_VERSION = "searxng-native-1"
+DEFINITION_VERSION = "searxng-native-2"
 #: requirements.txt and requirements-server.txt at SEARXNG_COMMIT, exactly. Granian is
 #: SearXNG's own pinned server; its ``[pname]`` extra (process renaming) is left out.
 SEARXNG_REQUIREMENTS: tuple[str, ...] = (
@@ -95,13 +96,10 @@ def _stored_engine_key(engine: str) -> str:
 def compatibility(facts: TargetFacts) -> tuple[bool, str]:
     """Whether the native variant can run on this host, and why (shown in the catalog)."""
 
-    if facts.os == "windows":
-        return False, (
-            "Not available on Windows yet: CLIO's native service supervisor is POSIX-only. "
-            "Use search.backend: clio_web_search. (Windows is not live-tested on this host.)"
-        )
-    if facts.os not in {"linux", "macos"} or facts.arch not in {"x86_64", "aarch64"}:
-        return False, "Requires Linux or macOS on x86_64 or aarch64."
+    if facts.os not in {"linux", "macos", "windows"} or facts.arch not in {"x86_64", "aarch64"}:
+        return False, "Requires Linux, macOS or Windows on x86_64 or aarch64."
+    if facts.os == "windows" and facts.arch != "x86_64":
+        return False, "Native Windows SearXNG requires x86_64 dependency wheels."
     if not facts.uv_available:
         return False, "Requires uv on this execution host to build SearXNG's own environment."
     if facts.os == "macos":
@@ -266,10 +264,13 @@ def searxng_plan(
     """Compile one lifecycle action of the native SearXNG deployment."""
 
     compatible, reason = compatibility(facts)
-    if facts.os == "windows" or (action in {"install", "reinstall", "start"} and not compatible):
+    if action in {"install", "reinstall", "start"} and not compatible:
         raise ValueError(reason)
     target = target or InfrastructureTarget(id=facts.target_id, label=facts.label, kind="local")
-    directory = configuration.get("storage.service_directory") or posixpath.join(
+    if facts.os == "windows" and target.kind != "local":
+        raise ValueError("Native Windows SearXNG runs beside the active CLIO agent")
+    paths = ntpath if facts.os == "windows" else posixpath
+    directory = configuration.get("storage.service_directory") or paths.join(
         resolved_locations(target, facts).service_data,
         facts.hostname or facts.target_id,
         SERVICE_ID,
@@ -324,7 +325,7 @@ def searxng_plan(
         "language": settings.language,
         "request_timeout_s": str(settings.request_timeout_s),
         "storage.service_directory": directory,
-        "storage.captures": posixpath.join(directory, "evidence"),
+        "storage.captures": paths.join(directory, "evidence"),
         "compatibility_profile": DEFINITION_VERSION,
         "native_owner": ownership,
     }
@@ -337,4 +338,5 @@ def searxng_plan(
         label="SearXNG",
         configuration=resolved,
         secret_env=secret_env,
+        windows=facts.os == "windows",
     )

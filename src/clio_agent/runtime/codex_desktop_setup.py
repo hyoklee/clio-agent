@@ -18,16 +18,12 @@ def prepare_existing_windows_fence(
     """
     if sys.platform != "win32":
         return {"status": "not_required"}
-    from clio_agent.runtime.codex_desktop_access import (
-        ensure_desktop_runtime_access,  # noqa: PLC0415
-    )
     from clio_agent.runtime.sandbox_cli import provision_codex_windows  # noqa: PLC0415
     from clio_agent.runtime.sandbox_codex import REASON_CODEX_WINDOWS_UNPROVISIONED  # noqa: PLC0415
 
     result = provision_codex_windows(
         allow_elevation=allow_elevation,
         progress=progress,
-        grantor=lambda: ensure_desktop_runtime_access(progress=progress),
     )
     if result.reason == REASON_CODEX_WINDOWS_UNPROVISIONED:
         return {"status": "setup_required", "next_action": result.next_action}

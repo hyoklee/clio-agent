@@ -163,6 +163,9 @@ async def process_arc_off_loop(app: "FastAPI") -> Any:
         The ``ARCMemory`` stored on ``app.state.arc``; ``None`` in the loud History mode
         (:mod:`clio_agent.arc.history_mode`), decided once and cached like an ARC.
     """
+    from clio_agent.gact.sandbox_setup import prepare_sandbox_before_tools  # noqa: PLC0415
+
+    await prepare_sandbox_before_tools(app)
     task: asyncio.Task[Any] | None = getattr(app.state, "arc_boot_task", None)
     if task is not None and not task.done():
         return await asyncio.shield(task)

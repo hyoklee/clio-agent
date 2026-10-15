@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import session_store, transcript_recording
@@ -233,6 +234,10 @@ async def test_boot_captures_legacy_before_reconciling_and_reads_metrics_from_co
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
+    boot_app = FastAPI()
+    for name, value in vars(app.state).items():
+        setattr(boot_app.state, name, value)
+    app = boot_app
     sid = root.owner.session_id
     cache = install(app, tmp_path)
 

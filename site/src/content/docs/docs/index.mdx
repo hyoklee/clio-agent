@@ -1,73 +1,76 @@
 ---
-title: What CLIO is
-description: CLIO is an open-source AI workspace that finds scientific data, runs the analysis with expert agents, and keeps the evidence for every result.
+title: Start here
+description: A practical introduction to CLIO for researchers, from a first question to a result you can inspect and share.
 ---
 
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
-import TaskLinks from '../../../components/TaskLinks.astro';
+import Capture from '../../../components/overview/Capture';
+import { captureImage } from '../../../lib/captures';
+import report from '../../../assets/captures/current-report.png';
 
-CLIO is an open-source AI workspace for scientific data. You describe a question in plain language. CLIO finds the data, runs the analysis, shows you the results, and keeps a record of what it read, what it ran, and what it produced.
+CLIO is a workspace where you can ask questions about your data, work through an
+analysis, and create reports in a conversation. You describe the question and
+provide the relevant material. CLIO uses an AI model and tools to do the work.
+You review the assumptions, sources and results before using the findings.
 
-<TaskLinks docs />
+Start with a spreadsheet, a folder of measurements, research notes, or a document
+you want to revise. You do not need to write a Python script to ask a question.
+Some tasks still need a specialist tool, access to a service, or help from your
+lab's administrator.
 
-New to CLIO? [Install it](/docs/install/), [connect a model](/docs/connect-a-model/), then follow [your first analysis](/tutorials/guides/first-analysis/). Already have a dataset? Attach it in a workspace and start a session there.
+## Try one small investigation
 
-## How a session works
+1. [Install and open CLIO](/docs/install/), then [choose a model](/docs/connect-a-model/).
+2. Create a conversation and attach a small dataset.
+3. Ask a specific question. Answer any clarification or permission request.
+4. Open the result, check the source and assumptions, then ask for a correction or save it.
 
-Work happens in sessions, and each session belongs to a workspace, which is a folder on your computer.
+The [first analysis](/docs/examples/check-a-dataset/) gives you a small fictional
+dataset and a request you can adapt. It explains what to check if your answer
+looks different from the example.
 
-1. You ask a question, for example "Find the five EarthScope GNSS stations nearest Palm Springs, California, show them on a map, and wait for me to choose one."
-2. The agent for that session plans the work. Each session runs one [agent blueprint](/docs/blueprints/), which defines the agent's instructions, its tools, and the expert agents it can call on.
-3. The agent calls tools to read files, query data sources, and run analyses. When a task suits a domain expert, it hands that task to one of the expert agents its blueprint declares. Each expert runs as its own child session, and several can work at the same time.
-4. When a choice is yours to make, the agent stops and asks you. The question can be free text, a list of choices, a confirmation, or an interactive view such as a map.
-5. Results come back with their evidence: the files that were read, the changes that were proposed, and the artifacts that were created. See [Evidence and lineage](/docs/evidence/).
-
-The model decides what to do next. CLIO does not route your request with keyword rules, and an agent can only call the experts its blueprint declares.
-
-## Compare, assemble, and share
+<Capture client:visible image={await captureImage(report)}
+  alt="A saved findings report in CLIO, with a conclusion, limitations and links to supporting tables"
+  caption="A result should give you something to inspect: a finding, its limits and the supporting records. This example report was prepared in CLIO with fictional station counts."
+/>
 
 For long operations, the [background work guides](/docs/tasks/) explain the
 development build's task handles, progress, automatic result delivery and
-subagent controls. [Messages and feedback](/docs/tasks/messages/) covers
-coordination between permitted sessions. [Session coordination](/docs/tasks/session-coordination/)
-explains finite run handles, peer observations and independent result subscriptions.
+subagent controls. [Session coordination](/docs/tasks/session-coordination/)
+covers messages, observations and waits between permitted sessions.
 
-Use [Best of N](/docs/best-of-n/) to compare independent attempts or refine one
-answer with feedback. Ask the agent to build a [dashboard](/docs/dashboards/) when
-several views need one structure, shared controls, and explanations. Use
-[exports and downloads](/docs/exports/) to send one output or retain the whole
-investigation. Each guide identifies the development features that are not
-included in beta 5.2.
+## Choose the guide that matches your work
 
-## Where it runs
-
-CLIO runs on your computer. The same backend is available through several interfaces:
-
-- The desktop app for Windows, macOS, and Linux.
-- A web interface, opened in your browser.
-- A terminal interface.
-- Docker images, for running the workspace on a server.
-
-See [Install](/docs/install/) for each option.
-
-## Models
-
-CLIO does not ship a model. You connect one: a model running on your machine through LM Studio, Ollama, llama.cpp, or vLLM; a cloud API; a Claude Code or Codex subscription; or an ALCF system. Prompts go only to the provider you choose. See [Connect a model](/docs/connect-a-model/).
-
-## What makes it different
-
-- Evidence and provenance. Every tool call is recorded, proposed file edits wait for your approval, and each artifact has a content hash with versions and lineage.
-- Your models. You choose where the model runs, and you can switch at any time.
-- Blueprints you can read. An agent is a folder of Markdown files, not a hidden configuration. You can open one, change it, or write your own.
-- Permissions you control. Reading is always allowed. Writing, running commands, and network access ask first unless you have allowed them. See [Permissions and sandbox](/docs/permissions/).
-
-CLIO is in beta and releases ship often.
-
-## Next steps
-
+<nav aria-label="Choose a CLIO guide">
 <CardGrid>
-	<LinkCard title="Install" description="Get the desktop app, the web interface, or Docker running." href="/docs/install/" />
-	<LinkCard title="Connect a model" description="Choose a local model, a cloud API, or a subscription." href="/docs/connect-a-model/" />
-	<LinkCard title="Your first analysis" description="Find GNSS stations near Palm Springs and chart their motion." href="/tutorials/guides/first-analysis/" />
-	<LinkCard title="Working with files" description="Open files, read previews, and download the originals." href="/docs/working-with-files/" />
+  <LinkCard title="Bring your data" href="/docs/files/" description="Add files and folders, connect a source, or refer to something already in CLIO." />
+  <LinkCard title="Work with CLIO" href="/docs/sessions/" description="Ask a useful question, steer the work and respond when CLIO needs you." />
+  <LinkCard title="Check a result" href="/docs/evidence/" description="Inspect the source, recorded actions and saved versions behind an answer." />
+  <LinkCard title="Follow a worked example" href="/docs/examples/" description="Explore data or notes, then create a report or presentation." />
 </CardGrid>
+</nav>
+
+## Four words you will see
+
+| In CLIO | What it means for you |
+| --- | --- |
+| **Model** | The AI you choose to interpret requests and propose the next step. It can run locally, in your institution, or through a cloud provider. |
+| **Workspace** | The project folder available to the connected CLIO service. It holds the files used for that body of work. |
+| **Session** | One saved conversation in a workspace. You can return to it and ask follow-up questions. |
+| **Artifact** | A saved output, such as a plot, table or report, with a recorded version you can open. |
+
+The CLIO service runs the tools. The model supplies the reasoning. They may run
+on different machines: a desktop window connected to a lab server uses the lab
+server's files and computing environment. [Your workspace](/docs/workspace-panels/)
+explains how to find the conversation, files and results.
+
+## Know what to trust
+
+An answer can be incomplete or wrong. A successful command does not establish
+that its interpretation is scientifically sound. Ask CLIO to identify missing
+information and link its evidence, then inspect the relevant files yourself.
+For consequential analyses, use your normal scientific validation procedures.
+
+CLIO is in beta. These guides include newer development features, marked where
+they occur. If a control is missing from your app, check
+[Features and versions](/docs/versions/) before spending time looking for it.

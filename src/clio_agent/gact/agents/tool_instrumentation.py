@@ -55,6 +55,7 @@ bridge, so a future tool cannot be born invisible.
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import functools
 import inspect
@@ -496,6 +497,39 @@ def observed_tool_callable(func: Callable[..., Any], tool_name: str) -> Callable
     call whose cleanup was somehow skipped anyway must never survive to be
     read as if it belonged to THIS call).
     """
+
+    if inspect.iscoroutinefunction(func):
+
+        @functools.wraps(func)
+        async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
+            from clio_agent.tools import execution as _execution  # noqa: PLC0415
+
+            bound = inspect.signature(func).bind(*call_args, **call_kwargs)
+            bound.apply_defaults()
+            args = dict(bound.arguments)
+            _execution.notify_global_tool_observer(tool_name, args, "started")
+            pop_declared_structured_content()
+            try:
+                result = await func(*call_args, **call_kwargs)
+            except (Exception, asyncio.CancelledError) as exc:
+                try:
+                    _execution.notify_global_tool_observer(
+                        tool_name, args, "completed", error=str(exc) or type(exc).__name__
+                    )
+                finally:
+                    pop_declared_structured_content()
+                raise
+            try:
+                _execution.notify_global_tool_observer(tool_name, args, "completed", result=result)
+            finally:
+                pop_declared_structured_content()
+            return result
+
+        # DSPy and ClioReAct select acall from the callable's coroutine identity.
+        # A synchronous wrapper would finish observation before the body ran and
+        # make DSPy reject this native tool through its synchronous __call__.
+        setattr(async_wrapper, TOOL_OBSERVED_ATTR, True)
+        return async_wrapper
 
     @functools.wraps(func)
     def wrapper(*call_args: Any, **call_kwargs: Any) -> Any:

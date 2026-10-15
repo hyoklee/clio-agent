@@ -112,7 +112,15 @@ def monitoring_definitions(facts: TargetFacts) -> list[ManagedServiceDefinition]
                         compatible=compatible,
                         reason="Ready on this host."
                         if compatible
-                        else f"Requires Linux, uv and usable {runtimes} on this execution host.",
+                        else (
+                            "CLIO's managed monitoring launcher currently runs on Linux only. "
+                            "Docker Desktop does not make this launcher Windows-compatible. "
+                            "Choose a Linux computer or connect an existing service."
+                            if facts.os != "linux"
+                            else "Install uv on this computer."
+                            if not facts.uv_available
+                            else f"Start or install {runtimes} on this computer, then inspect again."
+                        ),
                     )
                 ],
                 configuration_fields=[

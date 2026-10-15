@@ -1,104 +1,171 @@
 ---
 title: Answering CLIO's questions
-description: Answer in text, choose an option, or respond through a visual form while keeping track of open questions.
+description: See the different question types, add context to a choice, and find questions that still need your answer.
 ---
 
-import { Aside, CardGrid, LinkCard } from "@astrojs/starlight/components";
-import Capture from "../../../components/overview/Capture";
-import { captureImage } from "../../../lib/captures";
-import confirmation from "../../../assets/captures/docs-question-confirmation.png";
-import textResponse from "../../../assets/captures/docs-question-text.png";
-import visualQuestion from "../../../assets/captures/docs-visual-question.png";
-import openQuestions from "../../../assets/captures/docs-open-questions.png";
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Capture from '../../../components/overview/Capture';
+import QuestionGallery from '../../../components/docs/QuestionGallery';
+import { captureImage } from '../../../lib/captures';
+import confirmation from '../../../assets/captures/docs-question-confirmation-current.png';
+import textResponse from '../../../assets/captures/docs-question-text-current.png';
+import selectedChoice from '../../../assets/captures/docs-question-choice-current.png';
+import choiceComment from '../../../assets/captures/docs-question-comment-current.png';
+import differentAnswer from '../../../assets/captures/docs-question-different-answer-current.png';
+import multiple from '../../../assets/captures/docs-question-multiple-current.png';
+import form from '../../../assets/captures/docs-question-form-current.png';
+import link from '../../../assets/captures/docs-question-link-current.png';
+import visualQuestion from '../../../assets/captures/docs-visual-question.png';
+import openQuestions from '../../../assets/captures/docs-open-questions.png';
 import taskWait from "../../../assets/captures/tasks/question-wait-desktop.png";
 import taskAnswer from "../../../assets/captures/tasks/question-answer-phone.png";
 import taskCancel from "../../../assets/captures/tasks/question-cancel-confirmation-desktop.png";
 
-When CLIO needs your judgment, it can ask a question in the conversation. Open the
-question, read its context, and answer using the offered controls. Your answer
-stays associated with that question, including when a delegated agent asked it.
+<PreviewGuide features="The compact question controls, per-choice comments and pending-question list" />
 
-<Capture
-  client:visible
-  priority
-  image={await captureImage(confirmation)}
-  alt="CLIO asks whether to keep a capacity-check table, with Yes, No and Send response controls"
-  caption="A confirmation asks for one decision. Choose Yes or No, then Send response. Answer when ready means the question can stay open while independent work continues."
-/>
+When CLIO needs your judgment, it can ask a question in the conversation. Your
+answer stays with that question and goes to the agent that asked it, including
+when a delegated agent needs your input.
 
-These screenshots use the development interface and a fictional bike-station
-example. Click an image to enlarge it. The questions were authored through
-CLIO's real tools; no new model analysis was run.
+## See the different question types
 
-## Ways to answer
+Choose a tab or use the arrows to browse seven question types.
 
-| What you see                            | How to respond                                                                                                        | Example                                                |
-| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
-| A text question                         | Type in **Your response**, or choose **Answer in message box** to use the composer.                                   | “What timezone should I use?”                          |
-| A list of choices                       | Choose the option that fits. An **Other** answer is available when the question allows it.                            | “Compare by station or by day?”                        |
-| A confirmation                          | Choose the offered response.                                                                                          | “Keep this version of the report?”                     |
-| Checkboxes or a multiple-selection list | Select the requested items, then submit.                                                                              | “Which measurements should the export include?”        |
-| A form from a connected tool            | Fill in the named fields and choose **Send response**. Required fields and invalid values are identified in the form. | A location, date range, and output format.             |
-| A request to open a link                | Read the destination, then choose **Open link** or **Decline**.                                                       | A connected service asks you to finish a browser step. |
-| A visual question                       | Inspect the accompanying image, chart, table, or form, then use its answer control.                                   | “Which of these plots should go in the report?”        |
+<QuestionGallery client:visible version="Development preview · UI f3bac76f · 13 October 2026" examples={[
+  {
+    id: 'choice', label: 'Choice',
+    explanation: 'Choose one offered option. Use its + to add a clarification or change to that choice, then Send response.',
+    image: await captureImage(selectedChoice), previewHeight: 389,
+    alt: 'A flat question with Treatment groups and Changes over time, each with a plus control, and Something else below',
+    caption: 'Both offered choices have a +. Opening one selects that choice and reveals its comment field.',
+  },
+  {
+    id: 'text', label: 'Text',
+    explanation: 'Write an answer in Your response. You can include a condition or explanation along with the requested detail.',
+    image: await captureImage(textResponse), previewHeight: 291,
+    alt: 'A text question with America/Chicago and a request to keep original recorded timestamps in the response',
+    caption: 'This answer gives the timezone and asks CLIO to retain the original timestamps. It is still a draft.',
+  },
+  {
+    id: 'confirmation', label: 'Confirmation',
+    explanation: 'Choose Yes or No, or another offered confirmation. Use + if the decision needs context, such as keeping a table but moving it to the appendix.',
+    image: await captureImage(confirmation), previewHeight: 280,
+    alt: 'A confirmation asking whether to keep a missing-value table, with Yes selected and plus controls beside Yes and No',
+    caption: 'Selecting Yes alone does not send the answer. Add context if needed, then Send response.',
+  },
+  {
+    id: 'multiple', label: 'Multiple choices',
+    explanation: 'Select more than one item when a connected tool offers checkboxes. Each option has its own + for a comment.',
+    image: await captureImage(multiple), previewHeight: 409,
+    alt: 'Table and Plot both selected in a multiple-choice question, with a comment attached to Table',
+    caption: 'Both outputs are selected. The instruction about empty cells belongs to Table; it does not replace the selection of Plot.',
+  },
+  {
+    id: 'form', label: 'Form',
+    explanation: 'A connected tool can group related details into one form. Review its fields, change the values you need, then Send response.',
+    image: await captureImage(form), previewHeight: 408,
+    alt: 'A connected-tool form with dates to include, a grouping choice and a switch to keep missing measurements visible',
+    caption: 'The dates, grouping and switch are submitted together. The connected tool determines the available fields and required values.',
+  },
+  {
+    id: 'link', label: 'Link',
+    explanation: 'A connected service may ask you to finish a step in your browser. Read the destination before choosing Open link or Decline.',
+    image: await captureImage(link), previewHeight: 226,
+    alt: 'A browser sign-in request showing the full example.org destination with Decline and Open link controls',
+    caption: 'Read the full destination before choosing Open link or Decline.',
+  },
+  {
+    id: 'visual', label: 'Visual question',
+    explanation: 'Inspect the accompanying chart, image or table, then answer using the controls provided with it.',
+    image: await captureImage(visualQuestion),
+    version: 'Earlier demo · 12 October 2026 · before the compact question controls',
+    alt: 'A visual question with a bike-station chart, Hill and Downtown choices and an optional comment',
+    caption: 'The chart supplies context for a decision. Hill stations and a comment are drafted; the answer has not been sent.',
+  },
+]} />
 
-The agent's ordinary questions support text, a single choice, and confirmations.
-Connected tools can also request structured forms and multiple selections. A
-visual question can combine several controls in one view; the available inputs
-depend on the question and the connected tool.
+CLIO's ordinary questions support text, a single choice and confirmations.
+Connected tools can also request multiple selections, structured forms and browser
+steps. Visual context can accompany a question; it is independent of the answer
+format and whether the agent waits for you.
 
 Several open questions are separate decisions. A form groups related fields into
 one response; multiple selection lets you choose several items for one question.
-These are different from having several independent questions waiting at once.
 
-### Write an answer
+## Keep a choice and add context
 
-For a text question, open it and type in **Your response**. Read the question
-above the field before sending, especially when several decisions are open.
-**Answer in message box** moves the response into the conversation's composer.
+You do not need to choose **Something else** just to explain or amend one of
+CLIO's suggestions. In choice, confirmation and multiple-choice questions, each
+option has a **+** at its right edge, including before you have selected it.
 
-<Capture
-  client:visible
-  image={await captureImage(textResponse)}
-  alt="A timezone question with a written America/Chicago response ready to send"
-  caption="The question and your draft stay together. This example is ready to send; the screenshot does not show a submitted answer."
+1. Choose **+** beside the option you want. It selects that option and opens its
+   comment field.
+2. Write the clarification or change. For example, “Compare the groups, but show
+   missing measurements before drawing conclusions.”
+3. Check the selected option and comment, then choose **Send response**.
+
+<Capture client:visible image={await captureImage(choiceComment)} previewHeight={475}
+  version="Development preview · UI f3bac76f · 13 October 2026"
+  alt="Treatment groups selected with its comment open, a clarification about missing measurements, and a plus still available on Changes over time"
+  caption="The choice and its comment are sent together. The minus folds the comment field; switching choices preserves each draft."
 />
+
+| What you mean | How to answer |
+| --- | --- |
+| “Option 1, with this clarification.” | Use **+** on that option and add the clarification. |
+| “Option 2, but change this part.” | Use **+** on that option and describe the change. |
+| “Neither option; take a different approach.” | Choose **Something else**, when offered, and write the alternative. |
+
+For multiple selections, each selected option keeps its own comment. Comments
+on options you leave unselected are not included in the submitted answer.
+Switching choices or folding a field keeps its draft; selecting an option or
+writing a comment does not submit it by itself.
+
+Questions render emphasis, code, links and equations. Long prompts scroll within
+the heading so you can reach the answer controls. Read the full question before
+sending, especially when several decisions are open.
+
+## Give a different answer
+
+If none of the choices fits and **Something else** is offered, select it and
+write your answer in **Your response**. Here, the answer asks CLIO to inspect
+missing measurements before deciding which comparison to make.
+
+<Capture client:visible image={await captureImage(differentAnswer)} previewHeight={479}
+  version="Development preview · UI f3bac76f · 13 October 2026"
+  alt="Something else selected with a written answer asking to inspect missing measurements before choosing a comparison"
+  caption="This proposes a different next step. To keep an offered option and add a condition, use that option's + instead."
+/>
+
+For a text question, type directly in **Your response**. Where **Answer in message
+box** is offered, it moves your answer into the conversation's composer. Check
+which question is selected before sending.
 
 ## Questions with images and interactive views
 
 CLIO can put visual evidence beside a question. This is sometimes called an
 **A2UI question**: the agent supplies an interactive view as part of the question.
-You can ask for this in ordinary language:
+You can ask in ordinary language:
 
 ```text
 Compare these two plots. Show both images and ask me which one to keep, with space for a comment.
 ```
 
 Other useful combinations include a chart with a choice of time ranges, a table
-with checkboxes, or an image with a text field for your explanation. These are
-examples of requests, rather than guaranteed layouts: CLIO chooses from the
-controls available in the current workspace.
+with checkboxes, or an image with a text field for your explanation. The layout
+and available controls depend on the question and connected tool.
 
-### Inspect the view, choose, then add context
+In the gallery's **Visual question** example, the chart shows morning changes at
+fictional bike stations. Inspect it, choose **Hill stations** or **Downtown
+stations**, add a comment if useful, then use **Send response**.
 
-In this example, the chart shows morning changes at fictional bike stations.
-The question asks which station group the report should focus on. Select
-**Hill stations** or **Downtown stations**, add an optional comment, and use
-**Send response** when the decision is ready.
-
-<Capture
-  client:visible
-  image={await captureImage(visualQuestion)}
-  alt="An unanswered visual question containing a bike-station bar chart, Hill and Downtown choices, an optional comment and Send response"
-  caption="One complete visual question: evidence, a choice and an explanation in the same view. Hill stations is selected and a comment is drafted; no answer has been submitted."
-/>
-
-Changing a filter, zooming a plot, or adjusting a field does not by itself answer
-the question. Use the question's submit or answer control when ready. A completed
-chart or dashboard can remain interactive after the question is answered.
+Changing a filter, zooming a plot or adjusting a field does not by itself answer
+the question. Use its submit or answer control when ready. A completed chart or
+dashboard can remain interactive after the question is answered.
 
 Try the [choice picker](/docs/widgets/choice-picker/),
-[checkbox](/docs/widgets/check-box/), and
+[checkbox](/docs/widgets/check-box/) and
 [text field](/docs/widgets/text-field/) examples. To send a selection from a
 finished view back to CLIO, see [Human-agent interaction](/docs/widgets/interaction/).
 
@@ -169,37 +236,22 @@ from answering “No” or stopping the current turn.
 Hover over or open the question count near the conversation to see **Open questions**.
 Each entry has a short preview, a control to show the full question, and actions
 to answer or go to its location in the conversation. The list also appears in
-the full **Work** view, so opening the right-hand panel keeps questions accessible.
+the full **Work** view.
 
-<Capture
-  client:visible
-  image={await captureImage(openQuestions)}
-  alt="Open questions list with three previews and the third question expanded to show its full prompt and Read and answer button"
+<Capture client:visible image={await captureImage(openQuestions)}
+  alt="Open questions list with three previews and the third expanded to show its full prompt and Read and answer button"
   caption="Three independent decisions remain open. The arrow expands a clipped preview; Read and answer opens that question's response controls."
 />
 
-When answering in the composer, check which question is selected before sending.
-After submission, its recorded answer remains in the conversation. A question
+After submission, the recorded answer remains in the conversation. A question
 from a delegated agent identifies its owner; the response goes back to that agent.
 
-Permission requests, plan review, and choosing between generated drafts have
+Permission requests, plan review and choosing between generated drafts have
 their own controls. A normal confirmation question does not replace approval
 for a protected action.
 
 <CardGrid>
-  <LinkCard
-    title="Follow tools and tasks"
-    href="/docs/following-work/"
-    description="Tell a running operation from a checklist item or a completed result."
-  />
-  <LinkCard
-    title="Permissions"
-    href="/docs/permissions/"
-    description="Review an action before allowing it to run."
-  />
-  <LinkCard
-    title="Compare generated drafts"
-    href="/docs/best-of-n/"
-    description="Inspect alternatives and choose the draft to keep."
-  />
+  <LinkCard title="Follow work in progress" href="/docs/following-work/" description="Tell a running operation from a checklist item or a completed result." />
+  <LinkCard title="Permissions" href="/docs/permissions/" description="Review an action before allowing it to run." />
+  <LinkCard title="Compare generated drafts" href="/docs/best-of-n/" description="Inspect alternatives and choose the draft to keep." />
 </CardGrid>

@@ -27,10 +27,11 @@ def replace_installed_blueprint(
     failed final rename restores it. This is a per-blueprint transaction, not a
     promise that a multi-blueprint marketplace changes atomically.
     """
+    from clio_agent.gact.blueprint_coordination import blueprint_write_roots
     from clio_agent.gact.blueprint_install_files import read_install_metadata
     from clio_agent.gact.default_registry_migration import replace_pack_atomically
 
-    with BLUEPRINT_MUTATION_LOCK:
+    with blueprint_write_roots(destination.parent):
         checksum, repair = validate_install_destination(
             destination,
             metadata,

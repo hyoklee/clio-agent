@@ -14,11 +14,14 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from filelock import FileLock, Timeout
+
 from clio_agent import paths
 
 logger = logging.getLogger(__name__)
 MXC_MIN_VERSION = (0, 162, 1)
 _RECEIPT_VERSION = 2
+_SETUP_LOCK_TIMEOUT_S = 35.0  # The native probe itself has a 30-second deadline.
 _CHECKS = {
     "workspace_write",
     "outside_write_denied",
@@ -157,6 +160,8 @@ def prepare_mxc(
     Never falls back after a user command starts. Unsupported or unverified MXC
     is rejected during setup; the caller may then qualify legacy elevated mode.
     Failed probes are cached too, so unsupported hosts do not repeat slow probes.
+    Processes sharing this user's receipt serialize verification and reread the
+    result after acquiring ownership. A busy verifier never triggers legacy setup.
     """
     from clio_agent.runtime.sandbox_codex import parse_version  # noqa: PLC0415
 
@@ -166,6 +171,43 @@ def prepare_mxc(
     if cached and not force:
         if progress:
             progress(f"Protected execution: MXC {cached['status']} (cached check).")
+        return {"status": cached["status"], "reason": cached["reason"]}
+    try:
+        receipt = _receipt_path()
+        receipt.parent.mkdir(parents=True, exist_ok=True)
+        lock = FileLock(str(receipt.with_suffix(".lock")), timeout=_SETUP_LOCK_TIMEOUT_S)
+        try:
+            lock.acquire(timeout=0)
+        except Timeout:
+            if progress:
+                progress(
+                    "Another CLIO process is verifying protected execution; waiting for its result..."
+                )
+            lock.acquire()
+        try:
+            return _prepare_mxc_locked(binary, version, progress=progress, probe=probe, force=force)
+        finally:
+            lock.release()
+    except Timeout:
+        return {"status": "busy", "reason": "codex_mxc_setup_in_progress"}
+    except OSError as exc:
+        logger.warning("MXC setup coordination unavailable: %s", type(exc).__name__)
+        return {"status": "unavailable", "reason": "codex_mxc_probe_failed"}
+
+
+def _prepare_mxc_locked(
+    binary: str,
+    version: str,
+    *,
+    progress: Callable[[str], None] | None,
+    probe: Callable[[str], bool] | None,
+    force: bool,
+) -> dict[str, Any]:
+    """Reuse the preceding owner's result or qualify once while holding the lock."""
+    cached = _matching_receipt(binary, version)
+    if cached and not force:
+        if progress:
+            progress(f"Protected execution: MXC {cached['status']} (shared check).")
         return {"status": cached["status"], "reason": cached["reason"]}
     if progress:
         progress("Checking native Windows protected execution (MXC; no administrator setup)...")

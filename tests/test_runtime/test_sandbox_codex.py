@@ -433,18 +433,34 @@ def test_detect_windows_wheel_without_manifest_or_path(tmp_path: Path) -> None:
     assert detection.binary_path == str(binary) and seen == [str(binary)]
 
 
-def test_detect_windows_path_precedes_active_wheel() -> None:
-    """The wheel fallback does not replace an already resolved host client."""
+def test_detect_windows_managed_wheel_precedes_ambient_path(tmp_path: Path) -> None:
+    """An older host client must not force CLIO back to legacy ACL setup."""
 
-    def unexpected_wheel() -> None:
-        raise AssertionError("The active wheel should not be queried when PATH resolves")
+    def unexpected_path(_name: str) -> None:
+        raise AssertionError("PATH should not mask CLIO's own installed runtime")
 
+    binary = tmp_path / "codex.exe"
+    seen: list[str] = []
+    detection = sc.detect_codex(
+        which=unexpected_path,
+        platform="win32",
+        bundled_root=lambda: None,
+        wheel_binary=lambda: binary,
+        version_reader=lambda path: seen.append(path) or "0.162.1",
+    )
+    assert detection.installed and detection.source == sc.CODEX_SOURCE_BUNDLED
+    assert detection.binary_path == str(binary) and seen == [str(binary)]
+    assert detection.version == "0.162.1"
+
+
+def test_detect_windows_path_when_managed_runtime_is_absent() -> None:
+    """A plain installation retains its launchable host-client fallback."""
     detection = sc.detect_codex(
         which=_fake_which({"codex.cmd": "C:/test/codex.cmd"}),
         platform="win32",
         bundled_root=lambda: None,
-        wheel_binary=unexpected_wheel,
-        version_reader=lambda _path: "0.161.0",
+        wheel_binary=lambda: None,
+        version_reader=lambda _path: "0.157.1",
     )
     assert detection.installed and detection.source == sc.CODEX_SOURCE_PATH
     assert detection.binary_path == "C:/test/codex.cmd"

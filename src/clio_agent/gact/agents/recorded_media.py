@@ -41,8 +41,12 @@ def result_part(call_id: str, name: str, value: Any, is_error: bool) -> ToolResu
     content: tuple[Any, ...] = (
         (media,) if media is not None else (TextPart(text=_observation_text(value)),)
     )
-    if media is not None and isinstance(value, Mapping) and value.get("capture"):
-        # Pixels remain ephemeral provider media; their compact, exact provenance
+    if (
+        media is not None
+        and isinstance(value, Mapping)
+        and (value.get("capture") or isinstance(media, DocumentPart))
+    ):
+        # Provider media remain ephemeral; their compact, exact provenance
         # must also reach the model instead of being lost during hydration.
         content += (
             TextPart(

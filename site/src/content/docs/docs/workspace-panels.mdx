@@ -1,8 +1,9 @@
 ---
-title: Using the right-hand panels
-description: Use the compact Data and Work summaries, then open Evidence, Timeline, Gantt, Context, or a file for detail.
+title: "Your workspace: conversation, data and results"
+description: Find your files, open a result beside the conversation and keep track of work that needs you.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import Capture from '../../../components/overview/Capture';
 import { captureImage } from '../../../lib/captures';
@@ -11,6 +12,8 @@ import evidence from '../../../assets/captures/docs-panel-evidence.png';
 import gantt from '../../../assets/captures/docs-conversation-family-gantt.png';
 import work from '../../../assets/captures/docs-work-questions-todos.png';
 import preview from '../../../assets/captures/docs-panel-file-preview.png';
+
+<PreviewGuide features="The compact Data/Work layouts pictured here" />
 
 The conversation explains the work. The right-hand area lets you inspect its
 files, ongoing operations, context, and results without leaving the conversation.
@@ -21,10 +24,6 @@ when you need more room.
   alt="Compact Work summary with three open questions, three of five current todos and Show completed"
   caption="The compact Work summary keeps unanswered questions and current todos beside the conversation. Use the open-view control in its header when you need the full Work tab."
 />
-
-The images use the development interface and fictional examples. The bike-station
-workspace was authored through CLIO's real tools without a new model analysis.
-Click an image to enlarge it.
 
 ## The compact summaries
 
@@ -63,7 +62,7 @@ proof that no work occurred; some connected services provide less detail.
 />
 
 Open a file or artifact to read it in its own tab. Where available, **Lineage**
-shows declared input and output relationships. See [Evidence and lineage](/docs/evidence/)
+shows declared input and output relationships. See [Check answers and sources](/docs/evidence/)
 for the difference between a recorded relationship and a verified conclusion.
 
 <Capture client:visible image={await captureImage(gantt)}
@@ -104,7 +103,7 @@ agent operation.
 />
 
 <CardGrid>
-  <LinkCard title="Follow tools and tasks" href="/docs/following-work/" description="Distinguish execution, checklist status, and returned evidence." />
+  <LinkCard title="Follow work in progress" href="/docs/following-work/" description="Distinguish execution, checklist status, and returned evidence." />
   <LinkCard title="Answering questions" href="/docs/questions/" description="Find and answer the questions still open in this conversation." />
-  <LinkCard title="Working with files" href="/docs/working-with-files/" description="Preview, edit, and reference documents in the workspace." />
+  <LinkCard title="Open and edit documents" href="/docs/working-with-files/" description="Preview, edit, and reference documents in the workspace." />
 </CardGrid>

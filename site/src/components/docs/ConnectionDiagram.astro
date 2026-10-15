@@ -1,0 +1,49 @@
+<figure class="connection-map">
+  <div class="connection-path" aria-label="Your CLIO window connects to a CLIO service, which calls the model you choose.">
+    <div class="connection-place">
+      <span class="connection-label">Your window</span>
+      <strong>CLIO Desktop or browser</strong>
+      <p>You ask, review and steer.</p>
+    </div>
+    <span class="connection-arrow" aria-hidden="true">↔</span>
+    <div class="connection-place">
+      <span class="connection-label">Where the work runs</span>
+      <strong>CLIO service</strong>
+      <p>Reads files, runs tools and saves results.</p>
+    </div>
+    <span class="connection-arrow" aria-hidden="true">↔</span>
+    <div class="connection-place">
+      <span class="connection-label">The AI you choose</span>
+      <strong>Model provider</strong>
+      <p>Interprets requests and plans actions.</p>
+    </div>
+  </div>
+  <figcaption>
+    These can run on different machines. For example, your laptop can connect to
+    a lab CLIO service that uses your institution's model. Files and tools belong
+    to the service's computing environment.
+  </figcaption>
+</figure>
+
+<style>
+  .connection-map { margin-block: 1.5rem; }
+  .connection-path { display: flex; align-items: stretch; gap: .5rem; }
+  .connection-place {
+    flex: 1;
+    min-width: 0;
+    padding: 1rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: .5rem;
+    background: var(--sl-color-gray-7, var(--sl-color-black));
+    font-size: .9rem;
+  }
+  .connection-label { display: block; margin-bottom: .35rem; color: var(--sl-color-gray-2); font-size: .8rem; }
+  strong { display: block; line-height: 1.4; }
+  .connection-place p { margin: .5rem 0 0; line-height: 1.5; }
+  .connection-arrow { align-self: center; color: var(--sl-color-text-accent); font-size: 1.3rem; }
+  figcaption { margin-top: .75rem; font-size: .85rem; color: var(--sl-color-gray-2); line-height: 1.6; }
+  @media (max-width: 40rem) {
+    .connection-path { flex-direction: column; gap: .35rem; }
+    .connection-arrow { transform: rotate(90deg); }
+  }
+</style>

@@ -12,4 +12,7 @@ test('the server-rendered image stays readable while its expand action waits for
 	expect(html).toContain('src="/report.webp"');
 	expect(html).toContain('alt="Station report"');
 	expect(html).toContain('Five fictional stations.');
+	const caption = html.match(/<figcaption[^>]*>([\s\S]*?)<\/figcaption>/)?.[1];
+	expect(caption).toContain('Five fictional stations.');
+	expect(caption).toMatch(/<button[^>]*disabled=""[^>]*>Click to enlarge\.<\/button>/);
 });

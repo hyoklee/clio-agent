@@ -200,8 +200,8 @@ class FleetGrant:
         label: A machine-stable name for the path (e.g. ``uv_tool_bin``) — carried into the reason.
         path: The filesystem path the restricted users need read+exec on.
         users: The codex restricted users to grant (both offline + online).
-        inherit: ``True`` → ``(OI)(CI)(RX)`` container/object inheritance + ``/T`` recursion for a
-            whole dir tree; ``False`` → a bare ``(RX)`` traverse grant on the dir itself (Temp).
+        inherit: ``True`` → ``(OI)(CI)(RX)`` container/object inheritance for the runtime tree;
+            ``False`` → a bare ``(RX)`` traverse grant on the dir itself (Temp).
         exists: Whether the path currently exists (a missing path is a typed skip, never a failure).
     """
 
@@ -212,18 +212,18 @@ class FleetGrant:
     exists: bool
 
     def icacls_argv(self, *, combine_users: bool = False) -> list[list[str]]:
-        """Build grants, optionally applying all users in one quiet traversal.
+        """Build root grants, optionally applying all users in one quiet operation.
 
-        Recursive-inherit grants emit ``icacls <path> /grant "<User>:(OI)(CI)(RX)" /T``; a
-        traverse-only grant emits ``icacls <path> /grant "<User>:(RX)"`` (no inheritance, no ``/T``).
+        Windows propagates inheritable root ACEs to existing and future children.
+        Adding ``/T`` also rewrites an explicit ACE at every descendant, repeatedly
+        propagating through nested trees. Keep inheritance barriers intact instead.
+        A traverse-only grant has neither inheritance flag.
         """
         perm = "(OI)(CI)(RX)" if self.inherit else "(RX)"
         if combine_users:
             if not self.users:
                 return []
             argv = ["icacls", self.path, "/grant", *(f"{user}:{perm}" for user in self.users)]
-            if self.inherit:
-                argv.append("/T")
             # Suppress success lines for every dependency file, retaining errors
             # and the summary. Permissions are identical to the per-user form.
             argv.append("/Q")
@@ -231,8 +231,6 @@ class FleetGrant:
         cmds: list[list[str]] = []
         for user in self.users:
             argv = ["icacls", self.path, "/grant", f"{user}:{perm}"]
-            if self.inherit:
-                argv.append("/T")
             cmds.append(argv)
         return cmds
 
@@ -260,8 +258,8 @@ def _resolve_fleet_runtime_paths() -> list[tuple[str, str, bool]]:
 
     Bundled Desktop uses its runtime and managed tool cache. Other installations use
     the uv tool bin dir (the clio-kit launcher), uv tools/Python trees and clio-kit's cache.
-    These get ``(OI)(CI)(RX)`` ``/T``;
-    a bare ``(RX)`` traverse (no ``/T``) on per-user Temp (the confined workspace lives under
+    These get ``(OI)(CI)(RX)`` inherited from each root;
+    a bare ``(RX)`` traverse on per-user Temp (the confined workspace lives under
     it). Grant only the runtime tree, never the adjacent private Desktop data/config. Paths resolve
     via env vars / ``Path.home``
     robustly; a path that does not currently exist is STILL returned (the executor skips it with a
@@ -354,10 +352,9 @@ def grant_fleet_runtime_access(
     fleet execs (the per-user profile tree denies them by default). This runs ``icacls`` per path
     per user (:meth:`FleetGrant.icacls_argv`), emitting a STRUCTURED reason record per grant
     (``granted`` / ``skipped_missing`` / ``failed`` / ``skipped_not_windows``) — never a silent
-    step, never fails setup. A missing path is a typed skip; a non-zero ``icacls`` is a typed
-    failure that is logged and stepped past (the paths that DID grant still help; a residual
-    denial surfaces loudly at spawn, never swallowed here). ``runner`` / ``plan`` are injected by
-    tests so no real ``icacls`` runs. ``combine_users`` grants all users during one traversal;
+    step. A missing path is a typed skip; a non-zero ``icacls`` is a typed failure that is
+    logged and returned for setup to reject. ``runner`` / ``plan`` are injected by
+    tests so no real ``icacls`` runs. ``combine_users`` grants all users in one operation;
     any failure marks every user unsuccessful so a partial operation cannot be cached.
     Returns the per-grant reason records (for the caller/trace).
     """
@@ -476,7 +473,7 @@ def provision_codex_windows(
 
     if scx.parse_version(det.version) >= MXC_MIN_VERSION:
         mxc = (mxc_preparer or prepare_mxc)(
-            det.binary_path, det.version, progress=progress, force=allow_elevation
+            det.binary_path, det.version, progress=progress, force=False
         )
         if mxc["status"] == "verified":
             return CodexProvisionResult(
@@ -487,11 +484,22 @@ def provision_codex_windows(
                 next_action="No action required.",
                 extra={"implementation": "mxc"},
             )
+        if mxc["status"] == "busy":
+            return CodexProvisionResult(
+                ok=False,
+                status=OUTCOME_SETUP_FAILED,
+                reason=mxc["reason"],
+                detail="Another CLIO process is still verifying native protected execution.",
+                next_action="Wait for that setup to finish, then retry Set up protected execution.",
+                extra={"implementation": "mxc"},
+            )
         if progress:
             progress(
                 f"Native MXC unavailable ({mxc['reason']}); checking legacy protected execution..."
             )
-    grant_fn = grantor if grantor is not None else grant_fleet_runtime_access
+    from clio_agent.runtime.codex_desktop_access import ensure_runtime_access  # noqa: PLC0415
+
+    grant_fn = grantor if grantor is not None else lambda: ensure_runtime_access(progress=progress)
     if det.source == scx.CODEX_SOURCE_BUNDLED:
         from clio_agent.runtime.codex_windows_helpers import (  # noqa: PLC0415
             CodexWindowsHelpersError,
@@ -515,12 +523,11 @@ def provision_codex_windows(
     )
     if ready:
         if progress:
-            progress("Reusing the existing protected execution sandbox.")
-        # Idempotent: already provisioned + enforcement-verified. STILL (re)apply the fleet-runtime
-        # RX grants — a box provisioned by a PRIOR clio version has the accounts but NOT the grants,
-        # so its confined fleet children fail CreateProcessAsUserW/WinError 5 until granted. icacls RX
-        # is idempotent (no-op when already present), so this is a safe, prompt-free upgrade path.
+            progress("Checking runtime access for the existing protected execution sandbox...")
+        # All entry points reuse validated access receipts, repairing only changed roots.
         grant_reasons = grant_fn()
+        if failed := _runtime_access_failure(grant_reasons):
+            return failed
         logger.info(
             "fleet-runtime grants (already-provisioned) statuses=%s",
             [r.get("status") for r in grant_reasons],
@@ -544,7 +551,7 @@ def provision_codex_windows(
                 status=OUTCOME_SETUP_FAILED,
                 reason=scx.REASON_CODEX_WINDOWS_UNPROVISIONED,
                 detail="Windows protected execution requires its one-time account setup.",
-                next_action="Open Infrastructure > Agent > Protected execution and select Set up protected execution.",
+                next_action="Open Infrastructure > CLIO hosts > Protected execution and select Set up protected execution.",
             )
         elevate = elevator if elevator is not None else _elevated_codex_setup
         if progress:
@@ -566,7 +573,11 @@ def provision_codex_windows(
     # launch (the launcher + uv-managed python/tools + clio-kit cache + Temp traverse) BEFORE the
     # enforcement probe spawns a confined child — CreateProcessAsUserW fails WinError 5 otherwise
     # (proven live). Own-profile DACL edit → no admin. Structured reasons kept on the result.
+    if progress:
+        progress("Preparing protected access to CLIO's runtime packages...")
     grant_reasons = grant_fn()
+    if failed := _runtime_access_failure(grant_reasons, elevated=elevated):
+        return failed
     logger.info(
         "fleet-runtime grants applied statuses=%s",
         [r.get("status") for r in grant_reasons],
@@ -622,6 +633,22 @@ def provision_codex_windows(
 # --------------------------------------------------------------------------- #
 
 
+def _runtime_access_failure(
+    grants: list[dict[str, Any]], *, elevated: bool = False
+) -> CodexProvisionResult | None:
+    if not any(item.get("status") == "failed" for item in grants):
+        return None
+    return CodexProvisionResult(
+        ok=False,
+        status=OUTCOME_SETUP_FAILED,
+        reason="fleet_runtime_access_failed",
+        detail="Could not prepare protected access to CLIO's runtime packages.",
+        next_action="Retry Set up protected execution and inspect Technical details if it fails again.",
+        elevated=elevated,
+        extra={"fleet_runtime_grants": grants},
+    )
+
+
 def run_sandbox_cli(
     action: Optional[str], *, json_output: bool = False, assume_yes: bool = False
 ) -> int:
@@ -673,7 +700,9 @@ def _sandbox_setup_cli(*, json_output: bool) -> int:
             msg, json_output, payload={"status": STATUS_NOT_WINDOWS, "reason": REASON_NOT_WINDOWS}
         )
         return 0
-    result = provision_codex_windows()
+    result = provision_codex_windows(
+        progress=lambda detail: print(detail, file=sys.stderr, flush=True)
+    )
     if json_output:
         import json  # noqa: PLC0415
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import time
 from typing import TYPE_CHECKING, Any
 
@@ -32,24 +33,30 @@ def recording_blueprint_tool(tool: Any) -> Any:
     desc = str(getattr(tool, "desc", "") or getattr(tool, "__doc__", "") or name)
     args = getattr(tool, "args", None) or {}
 
-    def call_tool(**kwargs: Any) -> Any:
-        started_at = time.perf_counter()
-        rows = _ctx.active_blueprint_tool_rows()
-        try:
-            result = tool(**kwargs)
-        except BaseException as exc:  # noqa: BLE001
-            if rows is not None:
-                rows.append(
-                    {
-                        "name": name,
-                        "args": dict(kwargs),
-                        "ok": False,
-                        "duration_ms": (time.perf_counter() - started_at) * 1000,
-                        "error": str(exc),
-                        "telemetry_source": "blueprint_react_tool_wrapper",
-                    }
-                )
-            raise
+    def record_failure(
+        rows: list[dict[str, Any]] | None,
+        kwargs: dict[str, Any],
+        started_at: float,
+        exc: BaseException,
+    ) -> None:
+        if rows is not None:
+            rows.append(
+                {
+                    "name": name,
+                    "args": dict(kwargs),
+                    "ok": False,
+                    "duration_ms": (time.perf_counter() - started_at) * 1000,
+                    "error": str(exc),
+                    "telemetry_source": "blueprint_react_tool_wrapper",
+                }
+            )
+
+    def record_result(
+        rows: list[dict[str, Any]] | None,
+        kwargs: dict[str, Any],
+        started_at: float,
+        result: Any,
+    ) -> None:
         tool_error = structured_tool_result_error(result)
         row_result = _bounded_tool_call_result(result)
         if rows is not None:
@@ -64,6 +71,33 @@ def recording_blueprint_tool(tool: Any) -> Any:
             if tool_error is not None:
                 row["error"] = tool_error
             rows.append(row)
+
+    if inspect.iscoroutinefunction(getattr(tool, "func", None)):
+
+        async def async_call_tool(**kwargs: Any) -> Any:
+            started_at = time.perf_counter()
+            rows = _ctx.active_blueprint_tool_rows()
+            try:
+                result = await tool.acall(**kwargs)
+            except BaseException as exc:  # noqa: BLE001 - record cancellation, then propagate
+                record_failure(rows, kwargs, started_at, exc)
+                raise
+            record_result(rows, kwargs, started_at, result)
+            return result
+
+        async_call_tool.__name__ = name
+        async_call_tool.__doc__ = desc
+        return rebuilt_tool(tool, async_call_tool, name=name, desc=desc, args=args)
+
+    def call_tool(**kwargs: Any) -> Any:
+        started_at = time.perf_counter()
+        rows = _ctx.active_blueprint_tool_rows()
+        try:
+            result = tool(**kwargs)
+        except BaseException as exc:  # noqa: BLE001
+            record_failure(rows, kwargs, started_at, exc)
+            raise
+        record_result(rows, kwargs, started_at, result)
         return result
 
     call_tool.__name__ = name

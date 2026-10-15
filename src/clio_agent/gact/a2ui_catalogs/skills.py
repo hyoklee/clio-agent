@@ -144,9 +144,10 @@ def generate_catalog_skill_body(entry: "CatalogEntry", *, is_default: bool = Fal
     Frontmatter (``name``/``description`` from the catalog file's own
     ``title``/``description``), then the catalog's own ``catalogId`` and
     whether it is this agent's default catalog (v15 S8: its first declared
-    one), then the sidecar ``instructions.md`` verbatim, then a generated
-    index (components, functions, declared events), then the exact
-    ``load_skill(...)`` call for one component's schema -- never the
+    one), then schema lookup guidance and the generated function/component
+    index, then the sidecar ``instructions.md`` verbatim and declared events.
+    The bounded tool preview must expose exact lookup paths before long
+    producer guidance -- never the
     component shapes themselves (the catalog file is the allowlist, S2).
     Cached by ``(checksum, is_default)``.
     """
@@ -193,12 +194,7 @@ def _render_catalog_skill_body(entry: "CatalogEntry", *, is_default: bool = Fals
         f"# {title}",
         "",
         *_catalog_identity_lines(entry, is_default=is_default),
-        entry.instructions.strip(),
     ]
-    lines.extend(_component_lines(file))
-    lines.extend(_function_lines(file))
-    lines.extend(_event_lines(entry))
-    lines.extend(media_source_lines(file))
     lines.extend(
         [
             "",
@@ -210,10 +206,18 @@ def _render_catalog_skill_body(entry: "CatalogEntry", *, is_default: bool = Fals
                 'components, use ONE call with files=["catalog.json#/components/<Name>", '
                 "...] and omit file. Include the layout container and any other "
                 "components whose property shapes you need; do not guess optional "
-                "property values. Each returned schema includes its referenced $defs."
+                "property values. Include needed action functions in that same batch "
+                'with "catalog.json#/functions/<Name>" from the function index. '
+                "Each returned schema includes its referenced $defs; do not invent "
+                "additional definition paths."
             ),
         ]
     )
+    lines.extend(_function_lines(file))
+    lines.extend(_component_lines(file))
+    lines.extend(["", entry.instructions.strip()])
+    lines.extend(_event_lines(entry))
+    lines.extend(media_source_lines(file))
     return "\n".join(lines).strip() + "\n"
 
 

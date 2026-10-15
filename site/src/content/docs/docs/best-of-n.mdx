@@ -1,8 +1,9 @@
 ---
-title: Compare and refine answers
+title: Compare alternative answers
 description: Compare independent drafts with Best of N, check the criteria, and choose one to continue or improve with feedback.
 ---
 
+import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
 import { Aside, Steps, Tabs, TabItem } from "@astrojs/starlight/components";
 import Capture from "../../../components/overview/Capture";
 import WidgetRecording from "../../../components/WidgetRecording.astro";
@@ -16,14 +17,10 @@ wording is a choice**: a report introduction, an explanation for a different
 audience, or competing analysis plans. **Best of N** runs independent attempts
 at the same task, then lets you or the model choose one.
 
-You can return to this workflow after [your first analysis](/tutorials/guides/first-analysis/).
+You can return to this workflow after [your first analysis](/docs/examples/ground-motion/).
 It is an optional way to improve a result, not a step required to use CLIO.
 
-<Aside type="note" title="Development preview">
-  The individual candidate tabs, separate reasoning, and evaluation controls
-  shown here are not included in beta 5.2. This guide uses the development build.
-  The demonstration uses fictional station counts, rather than private research.
-</Aside>
+<PreviewGuide features="The independent draft tabs and evaluation controls" />
 
 ## Compare three introductions
 
@@ -52,7 +49,7 @@ Fernhill empty at 8:15. No trip inference. Let me choose.
 
 <Capture client:visible image={await captureImage(candidates)}
   alt="Alternative drafts with three candidate tabs, evaluation criteria, and the Pick Draft control"
-  caption="The actual candidate comparison from a Codex/Luna run using fictional counts. Switch tabs to compare the complete drafts; Pick Draft chooses the currently displayed candidate."
+  caption="Switch tabs to compare the complete drafts. Pick Draft chooses the currently displayed candidate."
   sizes="(min-width: 50rem) 46rem, 100vw" />
 
 <WidgetRecording name="docs-best-of-n"
@@ -132,7 +129,7 @@ Start with concise technical wording. Let me comment before accepting.
 
 <WidgetRecording name="docs-refinement"
   title="Comment on a draft. Inspect the revision. Accept it."
-  caption="A separate real Codex/Luna refinement run. Watch the feedback change the action to Refine Draft, then inspect the revised candidate and accept it without another comment."
+  caption="Watch the feedback change the action to Refine Draft, then inspect the revised candidate and accept it without another comment."
   timingNote="Typing and generation are accelerated where labelled; feedback, review, and acceptance remain visible."
   pointerGuide />
 
@@ -156,6 +153,6 @@ Tell CLIO where the selected introduction belongs: revise a document, use it in 
 [dashboard](/docs/dashboards/), or develop the chosen plan. Selection does not
 independently approve a protected change or publish work outside the workspace.
 
-[Exports and downloads](/docs/exports/) explains how to share the recorded
-conversation. [Evidence and lineage](/docs/evidence/) shows where to
+[Save and share your work](/docs/exports/) explains how to share the recorded
+conversation. [Check answers and sources](/docs/evidence/) shows where to
 inspect its inputs, artifacts, and history.

@@ -546,6 +546,11 @@ KEY_NOTES: dict[str, str] = {
         "null to inherit the conversation model, or a provider_id/model_id mapping; the "
         "CLIO_FLEET_JUDGES environment value uses JSON. Settings Fleet writes this mapping."
     ),
+    "fleet.search": (
+        "Provider and model for the read-only CLIO Search assistant, as a provider_id/model_id "
+        "mapping. Null inherits the current conversation model, then service defaults. "
+        "CLIO_FLEET_SEARCH accepts JSON. Settings Fleet writes this choice independently of judges."
+    ),
     "hooks.allow_managed_only": (
         "Lockdown flag dropping every non-managed (user/project) hook source, keeping only "
         "admin-managed hooks; enable for a locked-down deployment."

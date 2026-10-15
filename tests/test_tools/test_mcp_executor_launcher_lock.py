@@ -187,15 +187,19 @@ async def test_the_real_async_lock_serializes_two_concurrent_cold_spawns(
     monkeypatch.setattr(_mcp_config, "_mcp_uv_cache_dir", lambda: tmp_path)
 
     order: list[str] = []
+    holder_acquired = asyncio.Event()
 
     async def _holder() -> None:
         async with aacquire_launcher_cache_lock("geo", timeout_s=10.0):
             order.append("a-start")
+            holder_acquired.set()
             await asyncio.sleep(0.3)
             order.append("a-end")
 
     async def _waiter() -> None:
-        await asyncio.sleep(0.05)  # let the holder acquire first, deterministically
+        # A thread-pool acquisition can take longer than a fixed sleep under CI
+        # load. Wait for actual ownership before testing contention and order.
+        await holder_acquired.wait()
         async with aacquire_launcher_cache_lock("geo", timeout_s=10.0):
             order.append("b-start")
 

@@ -178,7 +178,9 @@ def test_provider_model_id_reaches_the_wire_verbatim(provider_id: str, model: st
         api_key="test",
     )
     wire_model, litellm_provider, _key, _base = get_llm_provider(_resolve_model_name(config))
-    assert litellm_provider == get_provider(provider_id).litellm_prefix
+    provider = get_provider(provider_id)
+    assert provider is not None
+    assert litellm_provider == provider.litellm_prefix
     assert wire_model == model
 
 
@@ -234,6 +236,8 @@ def test_provider_options_reject_unknown_keys() -> None:
         "vllm",
         "argonne_sophia",
         "argonne_metis",
+        "argonne_minerva",
+        "argonne_tara",
         "llama_cpp",
     ],
 )

@@ -34,6 +34,7 @@ from clio_agent.gact.sandbox_setup import (
     run_sandbox_setup,
     setup_in_progress,
 )
+from clio_agent.gact.sandbox_setup_progress import setup_progress
 from clio_agent.runtime import sandbox_cli
 from clio_agent.runtime.sandbox_doctor import probe_sandbox
 
@@ -71,6 +72,7 @@ def sandbox_row_wire(row: Any) -> dict[str, Any]:
     details = row.details if isinstance(row.details, dict) else {}
     codex_details = details.get("codex")
     wire["setup_in_progress"] = setup_in_progress()
+    wire["setup_progress"] = setup_progress()
     wire["reason"] = str(details.get("reason", ""))
     wire["codex_source"] = (
         (codex_details.get("source") or None) if isinstance(codex_details, dict) else None

@@ -16,6 +16,7 @@ from clio_agent.gact.agent_blueprint_files import (
 from clio_agent.gact.agent_blueprints import (
     runtime_tool_names_for_validation,
 )
+from clio_agent.gact.blueprint_cas import BlueprintCoordinationError
 from clio_agent.gact.blueprint_drafts import authoring_state, publish_draft, read_draft, save_draft
 from clio_agent.gact.events import Event
 from clio_agent.gact.off_loop import run_off_loop
@@ -49,7 +50,10 @@ def register_blueprint_file_write_route(app: FastAPI) -> None:
         )
         if root is None:
             _raise(404, "not_found", f"agent blueprint not found: {blueprint_id}", False)
-        return await run_off_loop(lambda: authoring_state(root))
+        try:
+            return await run_off_loop(lambda: authoring_state(root))
+        except BlueprintCoordinationError as exc:
+            _raise(409, "blueprint_coordination_unavailable", str(exc), True)
 
     @app.put("/v1/agent-blueprints/{blueprint_id}/files/write")
     async def write_agent_blueprint_file(
@@ -126,6 +130,8 @@ def register_blueprint_file_write_route(app: FastAPI) -> None:
             _raise(415, "unsupported_media_type", "file is not editable UTF-8 text", False)
         except BlueprintFileTooLargeError:
             _raise(413, "content_too_large", _too_large_message(), False)
+        except BlueprintCoordinationError as exc:
+            _raise(409, "blueprint_coordination_unavailable", str(exc), True)
 
     @app.post("/v1/agent-blueprints/{blueprint_id}/publish")
     async def publish_agent_blueprint_draft(

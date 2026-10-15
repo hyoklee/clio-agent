@@ -95,12 +95,15 @@ def bounded_model_tool_result(
     )
     from clio_agent.tools import injections  # noqa: PLC0415
 
-    injections.note("result_spilled", note)
     head = text[: max(0, max_chars - len(note) - 2)]
     cut = head.rfind("\n")
     if cut > len(head) // 2:
         head = head[:cut]  # end on a whole line when one is near
-    return f"{note}\n\n{head}"
+    projection = f"{note}\n\n{head}"
+    # Details must include the head promised by the notice, exactly as returned
+    # to the model. Recording only `note` silently loses that part of the view.
+    injections.note("result_spilled", projection)
+    return projection
 
 
 def _spill(text: str, *, root: str | Path | None = None, session_id: str | None = None) -> Path:

@@ -88,9 +88,8 @@ def test_the_catalog_offers_a_native_variant_gated_by_host_facts() -> None:
     windows = next(
         item for item in service_definitions(facts(os="windows")) if item.id == SERVICE_ID
     )
-    assert not windows.variants[0].compatible
-    assert "not live-tested" in windows.variants[0].reason
-    assert "clio_web_search" in windows.variants[0].reason
+    assert windows.variants[0].compatible
+    assert "no container" in windows.variants[0].reason
     no_uv = next(
         item for item in service_definitions(facts(uv_available=False)) if item.id == SERVICE_ID
     )
@@ -98,9 +97,17 @@ def test_the_catalog_offers_a_native_variant_gated_by_host_facts() -> None:
     assert SERVICE_ID in LOOPBACK_ONLY_SERVICES
 
 
-def test_windows_lifecycle_is_refused_with_the_reason() -> None:
-    with pytest.raises(ValueError, match="POSIX-only"):
-        searxng_plan("install", {}, facts(os="windows"), None)
+def test_windows_lifecycle_uses_native_paths_and_stdin_instead_of_a_long_command_line() -> None:
+    windows = facts(os="windows", agent_data_root="C:\\Users\\test\\clio-data")
+    compiled = searxng_plan("install", {}, windows, None)
+    assert (
+        compiled.configuration["storage.service_directory"]
+        == "C:\\Users\\test\\clio-data\\services\\node\\searxng"
+    )
+    for command in compiled.commands:
+        assert len(" ".join(command.args)) < 2000
+        assert body(command)["platform_helper"]
+        assert "def control(" in body(command)["script"]
 
 
 def test_install_builds_searxng_in_its_own_pinned_environment() -> None:
@@ -261,7 +268,8 @@ async def finish(runtime: InfrastructureRuntime, action: str) -> str:
 def host(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> FakeHost:
     async def probe(target: Any, execute: Any = None) -> TargetFacts:
         del target, execute
-        return facts(agent_data_root=str(tmp_path / "clio"))
+        # This fake host is Linux even when the controller's pytest runs on Windows.
+        return facts(agent_data_root="/data/clio")
 
     monkeypatch.setattr("clio_agent.gact.infrastructure.runtime.probe_target", probe)
     return FakeHost()

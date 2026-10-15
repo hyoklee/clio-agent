@@ -7,7 +7,6 @@ import hashlib
 import json
 import math
 import sys
-import tempfile
 import uuid
 from pathlib import Path
 from typing import Any
@@ -130,7 +129,11 @@ def prepare(
     if output_dir == source or output_dir.is_relative_to(source):
         raise DocumentError("Output directory cannot be the source file")
     output_dir.mkdir(parents=True, exist_ok=True)
-    run_dir = Path(tempfile.mkdtemp(prefix="document-", dir=output_dir)).resolve()
+    run_dir = output_dir / f"document-{uuid.uuid4().hex}"
+    # Windows private temp directories exclude the host or sandbox account.
+    # Inherit the already-authorized output parent's ACL at creation instead.
+    run_dir.mkdir(mode=0o777 if sys.platform == "win32" else 0o700)
+    run_dir = run_dir.resolve()
     manifest: dict[str, Any] = {
         "schema": "clio.document-preparation.v1",
         "action": action,
@@ -138,6 +141,7 @@ def prepare(
         "source_sha256": _hash(source),
         "source_bytes": source.stat().st_size,
         "status": "processing",
+        "visual_review": "not performed",
         "run_directory": str(run_dir),
         "manifest": str(run_dir / "manifest.json"),
     }

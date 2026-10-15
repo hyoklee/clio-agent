@@ -26,6 +26,19 @@ _PROVIDER = "codex_direct"
 _TRANSPORT = "websocket"
 
 
+def usage_row(usage: Any) -> dict[str, int]:
+    """Normalize lm15 usage to the shared provider audit's token keys."""
+    if usage is None:
+        return {}
+    fields = {
+        "input_tokens": usage.input_tokens,
+        "cached_input_tokens": usage.cache_read_tokens,
+        "output_tokens": usage.output_tokens,
+        "reasoning_output_tokens": usage.reasoning_tokens,
+    }
+    return {key: int(value) for key, value in fields.items() if value is not None}
+
+
 def emit_call_started(*, call_id: str, call_index: int, model: str, prompt: str) -> None:
     """Emit a ``provider.call_started`` row when a ``response.create`` frame is sent."""
     if not stream_audit_enabled():

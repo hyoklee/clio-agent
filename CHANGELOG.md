@@ -4,9 +4,80 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
-## Unreleased
+## [0.9.5-beta.7.1] - 2026-10-15
 
 ### Added
+
+- Redesign all six Infrastructure views with the topology graph, consistent host
+  selection, direct service actions, progressive configuration, searchable tools
+  and filtered activity with actionable failures.
+- Reuse model capability tags in discovery, show popular models and model cards,
+  expose download progress, and safely remove owned downloads with audit receipts.
+- Support native Windows SearXNG installation and service supervision through the
+  existing compatibility launcher, independently of the optional PDF service.
+
+### Fixed
+
+- Include MAG, Minerva and Tara in Windows installer choices and preserve their
+  visibility when migrating saved provider selections.
+- Protect and round-trip long Windows credentials beyond the native single-value
+  limit, including long MAG tokens.
+- Send model-operation programs through stdin and use noninteractive SSH pipes
+  for large command input instead of exceeding platform command-line limits.
+- Restore question resizing/fullscreen, clear selection on reference/image entry,
+  reference selected Mermaid text, and retain editable queued-message semantics.
+- Queue on Enter and steer on Ctrl+Enter while running; send with either when
+  paused, with the submit control reflecting the state and Ctrl key.
+
+This beta retains beta.7's dashboards, knowledge bases, fork/rewind, LaTeX,
+document previews, global search and media. Desktop/web/phone review and local
+Windows/Homelab lifecycle evidence are retained. Google Drive sign-in and full
+Ares/Polaris/Homelab topology acceptance remain unverified. Separate task-system
+and diagnostic work remains excluded.
+
+## [0.9.5-beta.7] - 2026-10-14
+
+### Fixed
+
+- Publish the merged Carousel/Video schema as clio-schemas0.6.0b9 and require
+  that version in Python package metadata. Preserve the exact reviewed schema
+  Git revision in the development uv source override and lockfile. PyPI rejects
+  direct Git dependencies in published metadata; the versioned dependency is
+  installable through the normal package index.
+- Keep runtime, project and lock versions aligned at0.9.5b7.
+
+Includes all beta.6 features below. Beta.6's runtime mismatch is corrected, and
+beta.6.1's CLI smoke passed before PyPI rejected its direct schema dependency.
+Both earlier tags remain unchanged. The user explicitly authorized this beta
+without waiting for remaining test CI or live acceptance.
+
+## [0.9.5-beta.6.1] - 2026-10-14
+
+### Fixed
+
+- Match the runtime and CLI version to the package version. Beta.6's package
+  metadata was updated while its runtime constant still reported beta.5.2;
+  the release smoke check correctly rejected that mismatch before PyPI upload.
+- Add a source regression requiring runtime, project and lock versions to agree.
+
+This beta includes all beta.6 features below. It supersedes beta.6 without
+rewriting its tag. CI and remaining live acceptance are still deferred under
+the user's explicit beta release approval; no unperformed checks are claimed.
+
+## [0.9.5-beta.6] - 2026-10-14
+
+### Added
+
+- American Science Cloud MAG provider with project-specific model discovery,
+  unchanged gateway model IDs and Personal Access Token authentication.
+- ALCF Minerva and Tara using the existing shared Globus login. The model picker
+  groups Sophia, Metis, Minerva and Tara under an expandable ALCF inference row
+  while retaining separate server identities, model lists and status.
+- Global search across workspaces, Settings, Infrastructure and Runs, with
+  immediate keyboard focus, inline search model selection, guarded file handoff
+  and temporary read-only agent search.
+- Composable Carousel and Video views, documentation media guides and workflow
+  images with accessible enlargement controls.
 
 - Connect Obsidian vaults as knowledge sources, with a graph/files workbench,
   note reader, immutable chat attachments, and capability-gated knowledge tools.
@@ -15,6 +86,16 @@ TUI/HTTP surface aren't tracked here.
   and note permissions, with private client setup on the CLIO host.
 
 ### Fixed
+
+- Office binary transport, automatic PDF preview and retained conversion on
+  Refresh; complete-page PDF fitting and document-scoped wheel zoom.
+- Sign-in listener continuity, steering transcript anchors, aligned todo controls
+  and one HTML Preview/Source/action toolbar.
+- Async native search tools and Fleet lease acquisition no longer block the
+  server event loop. Spill details retain the bounded prefix shown to the model.
+- Distinguish a gateway network-policy block from a rejected MAG API key.
+- Save long shell programs through builder files and retain required visual review
+  guidance for generated documents.
 
 - Resource derivative storage uses Windows extended paths throughout, so captured
   resources remain readable under deep workspace and custody paths.
@@ -49,6 +130,18 @@ TUI/HTTP surface aren't tracked here.
   tests on deprecation warnings.
 - Update clio-core to 2.3.1, including Windows sparse backing files and storage
   correctness fixes.
+
+### Beta qualification
+
+- Released under explicit user approval without waiting for all GitHub checks or
+  remaining live acceptance. CI continues; pending and failing results remain
+  recorded separately from completed static and live verification.
+- MAG catalog access succeeded with the user's token on another Windows machine.
+  This machine is blocked by the gateway's current network restrictions; no MAG
+  inference is claimed. ALCF authenticated Minerva/Tara acceptance remains for
+  user testing with the appropriate access.
+- Opt-in shared blueprint coordination needs a compatible Core package exposing
+  the merged conditional-write API. This beta does not publish or install Core.
 
 ## [0.9.5-beta.5.2] - 2026-10-08
 

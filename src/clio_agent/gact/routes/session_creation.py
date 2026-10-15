@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from clio_agent.gact import session_warmup
 from clio_agent.gact.protocol_v3 import project_for_request, session_to_v3
 from clio_agent.gact.routes.blueprint_selection import prepare_session_blueprint
+from clio_agent.gact.routes.search_assistant import register_search_assistant_routes
 from clio_agent.gact.runtime import bringup_timing
 from clio_agent.gact.session_defaults import apply_default_effort
 from clio_agent.gact.spotter_watcher import sync_watcher_for_mode
@@ -18,6 +19,7 @@ from clio_agent.gact.types import CreateSessionRequest, ErrorEnvelope, ErrorInfo
 
 def register_session_creation_route(app: FastAPI) -> None:
     """Register creation only after selected blueprint preparation succeeds."""
+    register_search_assistant_routes(app)
 
     @app.post("/v1/sessions", response_model=Session)
     async def create_session(req: CreateSessionRequest, request: Request) -> Session | JSONResponse:
