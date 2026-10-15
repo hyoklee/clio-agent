@@ -47,6 +47,7 @@ from clio_agent.providers.capabilities.hf_modalities import (
     PROCESSOR_FILES,
     modalities_from_repo,
 )
+from clio_agent.providers.capabilities.model_facts import positive_int
 from clio_agent.providers.capabilities.records import (
     Fact,
     ModelCapabilities,
@@ -427,6 +428,11 @@ def scan_tool_support(template: str) -> bool:
 # --------------------------------------------------------------------------- HfRepoSource
 
 
+def fetch_model_card(resolution: RepoResolution, *, allow_fetch: bool = True) -> str | None:
+    """Read a model's README at its resolved SHA through the shared catalog cache."""
+    return _fetch_text(resolution, "README.md", allow_fetch=allow_fetch)
+
+
 class HfRepoCatalogSource:
     """The real :class:`~clio_agent.providers.capabilities.model_sources.HfRepoSource`.
 
@@ -447,6 +453,12 @@ class HfRepoCatalogSource:
         resolution = resolve_repo(self._repo_id or model_key, allow_fetch=self._allow_fetch)
         if resolution is None:
             return None
+        return self.facts_from_resolution(model_key, resolution)
+
+    def facts_from_resolution(
+        self, model_key: str, resolution: RepoResolution, *, read_files: bool = True
+    ) -> ModelCapabilities | None:
+        """Reuse known registry metadata, fetching pinned files only when this source permits it."""
         observed_at = _now_iso()
         detail_repo = (
             resolution.repo
@@ -455,23 +467,35 @@ class HfRepoCatalogSource:
         )
 
         sampling: dict[str, float] = {}
-        generation_config = fetch_generation_config(resolution, allow_fetch=self._allow_fetch)
+        generation_config = (
+            fetch_generation_config(resolution, allow_fetch=self._allow_fetch)
+            if read_files
+            else None
+        )
         if generation_config is not None:
             sampling = sampling_from_generation_config(generation_config)
 
         thinking: ThinkingSpec | None = None
         tools_known = False
         tools_value = False
-        template = fetch_chat_template(resolution, allow_fetch=self._allow_fetch)
+        template = (
+            fetch_chat_template(resolution, allow_fetch=self._allow_fetch) if read_files else None
+        )
         if template is not None:
             thinking = scan_chat_template(template)
             tools_known = True
             tools_value = scan_tool_support(template)
 
-        config = fetch_json_file(resolution, "config.json", allow_fetch=self._allow_fetch)
+        config = (
+            fetch_json_file(resolution, "config.json", allow_fetch=self._allow_fetch)
+            if read_files
+            else resolution.metadata.get("config")
+        )
+        if not isinstance(config, dict):
+            config = None
         processor: dict[str, Any] | None = None
         params: dict[str, Any] | None = None
-        if config is None:
+        if config is None and read_files:
             # Gated (401 anonymously) or absent: fall back to the processor
             # config / Mistral params the commit ships, when readable.
             for name in PROCESSOR_FILES:
@@ -490,12 +514,19 @@ class HfRepoCatalogSource:
         )
 
         descriptive = metadata_facts(resolution, config=config, observed_at=observed_at)
+        text_config = config.get("text_config", config) if config else {}
+        context = (
+            positive_int(text_config.get("max_position_embeddings"))
+            if isinstance(text_config, dict)
+            else None
+        )
         if (
             not sampling
             and thinking is None
             and modalities is None
             and not type_fact.known
             and not descriptive
+            and context is None
         ):
             return None
 
@@ -503,6 +534,14 @@ class HfRepoCatalogSource:
         return ModelCapabilities(
             model_key=model_key,
             task=type_fact,
+            context_max=Fact(
+                context,
+                "hf_repo",
+                observed_at,
+                f"{detail_repo}@{resolution.sha[:12]}: config.max_position_embeddings",
+            )
+            if context is not None
+            else unknown(),
             input_modalities=(
                 Fact(
                     modalities,
@@ -548,6 +587,7 @@ __all__ = [
     "fetch_chat_template",
     "fetch_generation_config",
     "fetch_json_file",
+    "fetch_model_card",
     "is_repo_id",
     "resolve_repo",
     "sampling_from_generation_config",
