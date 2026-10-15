@@ -178,6 +178,8 @@ def test_launcher_isolates_plugin_imports_and_cleans_help_exit(tmp_path: Path) -
             "-B",
             str(checkout / "scripts/run_tests.py"),
             "--help",
+            # This probe targets pre-plugin containment, not application fixture startup.
+            "--noconftest",
             "-p",
             "clio_bootstrap_probe",
         ],
