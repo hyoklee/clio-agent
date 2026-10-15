@@ -132,8 +132,13 @@ async def _apply_turn_prediction(
     # Ordinary Questions are immediate tools. Plan exit retains its explicit
     # human approval gate and yields through the same conversation owner.
     from clio_agent.gact.plan_mode import maybe_pause_for_plan_exit  # noqa: PLC0415
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending, resume_recording
 
-    if await _run_turn_setup_off_loop(state, lambda: maybe_pause_for_plan_exit(state)):
+    try:
+        if await _run_turn_setup_off_loop(state, lambda: maybe_pause_for_plan_exit(state)):
+            return False
+    except TranscriptRecordingPending as pending:
+        await resume_recording(state.app, pending)
         return False
     # iowarp/clio-agent#25: data branch reports which execution
     # path it took ("fast" or "expert_loop"). Empty when not

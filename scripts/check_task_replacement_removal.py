@@ -120,6 +120,10 @@ REMOVED_MODULES = frozenset(
 )
 REMOVED_NAMES = frozenset(
     {
+        "_repair_divergent_lane",
+        "_schedule_lane_mint",
+        "_backfill_or_serve",
+        "run_transcript_job",
         "resume_turn_defer",
         "_stage_resume_turn",
         "_resume_user_prompt_defer",

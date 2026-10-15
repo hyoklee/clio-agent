@@ -36,8 +36,10 @@ async def start(app: Any) -> None:
     arc = await process_arc_off_loop(app)
     if arc is None:
         raise RuntimeError("Durable tasks require clio-core; History mode cannot accept them")
-    history = TaskHistory(arc)
-    await asyncio.to_thread(history.restore)
+    history = getattr(app.state, "task_history", None)
+    if history is None:
+        history = TaskHistory(arc)
+        await asyncio.to_thread(history.restore)
     recovery = CoreRecovery(history)
     app.state.task_history, app.state.task_recovery = history, recovery
     app.state.human_principal = "human:" + str(app.state.connected_storage.store.clio_id)

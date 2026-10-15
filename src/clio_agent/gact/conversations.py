@@ -721,6 +721,28 @@ class Conversations:
             self._model_recording.setdefault(sid, set()).add("finish:" + segment.turn_id)
             self.recovery.defer("conversation-finish:" + handle + ":" + segment.turn_id, finish)
 
+    async def confirm_transcript_recording(self, pending: Any) -> bool:
+        """Retry only an immutable completed message through existing CoreRecovery.
+
+        Keep this session held until recording confirms or a later intentional
+        transcript mutation withdraws it. Cancellation of the waiter cannot
+        discard the recording evidence or repeat model execution.
+        """
+        sid = pending.message.session_id
+        identity = "transcript:" + str(pending.message.turn_id or pending.message.id)
+        self._model_recording.setdefault(sid, set()).add(identity)
+        self.history.requires_recovery = True
+        future: asyncio.Future[bool] = asyncio.get_running_loop().create_future()
+
+        async def confirm() -> None:
+            confirmed = await asyncio.to_thread(self.history.confirm_write, pending.confirm)
+            self._recording_confirmed(sid, identity)
+            if not future.done():
+                future.set_result(confirmed)
+
+        self.recovery.defer("conversation-" + identity + ":" + sid, confirm)
+        return await asyncio.shield(future)
+
     def _recording_confirmed(self, sid: str, identity: str) -> None:
         pending = self._model_recording.get(sid)
         if pending is not None:

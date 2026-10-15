@@ -1,38 +1,7 @@
-"""Finalize seam for the GACT turn engine (#767 Phase B).
+"""Assemble turn output once, confirm Core recording, then publish and settle it.
 
-Slice 6 of the ``turn.py`` decomposition — the last and most entangled. Three
-free functions taking :class:`~clio_agent.gact.turn_state.TurnState` first (the
-gact seam convention) move here:
-
-* :func:`maybe_pause_for_user` — the ask-user early-return path. When the
-  prediction carries an ``ask_user`` action and the turn has no error, it mints
-  the :class:`~clio_agent.gact.types.UserQuestion`, flips the session to
-  ``waiting_user``, settles the ledger, and returns ``True`` so the orchestrator
-  returns before the finalize region. Otherwise it returns ``False`` and the
-  turn proceeds.
-* :func:`finalize_turn` — everything after the forward except-chain: answer
-  grounding, assistant-part assembly (route banner, wrap-up thinking, canonical
-  answer channel, file diffs), diff indexing, nanoagent spawn, the terminal
-  publishes, persistence, retry bookkeeping, and the post_message hook. The
-  orchestrator runs THIS under the #756 ``try/except finalize_exc`` envelope; a
-  crash here is settled by :func:`settle_failed_finalize`.
-* :func:`settle_failed_finalize` — the #756 error envelope for a finalize-region
-  crash (relocated verbatim from ``turn.py``): structured log, ``turn.failed``
-  semantic event, ``message.completed`` with ``stop_reason=error``, a persisted
-  assistant error message, ledger freeze/retire, and a terminal
-  ``session.status_changed``. Nothing degrades silently.
-
-Behavior is byte-for-byte identical to the former in-``turn.py`` body. The two
-small per-turn closures the orchestrator still owns —
-``_drain_observed_tool_calls`` and ``_update_retry_attempt`` (both read by the
-body AND by finalize) — are threaded in by reference, exactly as
-``settle_failed_finalize`` already took ``update_retry_attempt`` (the #714 seam
-pattern).
-
-The #714 danger set (``_append_session_message`` /
-``_enrich_cancellation_error_info``, retargeted by ~83 ``app._X`` test
-monkeypatches) is resolved through ``app`` via a *function-local* import at each
-call site so those monkeypatches keep intercepting with zero test edits.
+Recording failures retain the completed message for owner-local recovery.
+Execution failures retain their original error outcome.
 """
 
 from __future__ import annotations
@@ -113,19 +82,10 @@ def finalize_turn(
     drain_observed_tool_calls: "Callable[[list[dict[str, Any]]], list[dict[str, Any]]]",
     update_retry_attempt: "Callable[..., None]",
 ) -> None:
-    """Assemble, publish, and persist the turn's assistant message (#767 Phase B).
+    """Assemble the original assistant output, then record it before publication.
 
-    Everything after the forward except-chain: answer grounding, assistant-part
-    assembly (route banner, wrap-up thinking, the canonical answer channel, file
-    diffs), diff indexing, nanoagent spawn, the terminal semantic + bus
-    publishes, persistence + settle, retry bookkeeping, and the post_message
-    hook. Byte-for-byte the former in-``turn.py`` finalize body.
-
-    The orchestrator runs this UNDER the #756 ``try/except finalize_exc``
-    envelope; an exception escaping here is settled by
-    :func:`settle_failed_finalize`. ``drain_observed_tool_calls`` and
-    ``update_retry_attempt`` are the orchestrator's per-turn closures, threaded
-    in by reference (both are also read by the linear body).
+    Provider execution is already finished. Recording retry must never repeat
+    grounding, artifact creation, prediction processing or tool execution.
     """
 
     # #714 danger set: bind through app at call time so test monkeypatches of
@@ -490,7 +450,28 @@ def finalize_turn(
     # GET of this message id. #1339: close the registry FIRST -- persist's mint_remainder
     # RPC can release the GIL while the message is already visible (#1334 append-first).
     state.app.state.turn_transcripts.close(state.sid)
-    persist_finalized_message(state.app, state.sid, assistant_msg)  # #1334: barrier first
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
+
+    try:
+        persist_finalized_message(state.app, state.sid, assistant_msg)
+    except TranscriptRecordingPending as pending:
+        pending.after_confirmed = lambda: publish_finalized_turn(
+            state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
+        )
+        raise
+    publish_finalized_turn(
+        state, assistant_msg, completed_payload, update_retry_attempt=update_retry_attempt
+    )
+
+
+def publish_finalized_turn(
+    state: "TurnState",
+    assistant_msg: Message,
+    completed_payload: dict[str, Any],
+    *,
+    update_retry_attempt: "Callable[..., None]",
+) -> None:
+    """Publish one already-recorded result; never rebuild the prediction or execute it again."""
     # #737 S5: the final_message byte-copy rides the DURABLE turn.completed only under
     # the LEGACY regime; the atoms regime derives it from the message_part atoms so the
     # byte-copy dies (embed -> {}). SSE strips it either way (SENSITIVE_KEYS).
@@ -643,19 +624,10 @@ def settle_failed_finalize(
     update_retry_attempt: "Callable[..., None]",
     exc: BaseException,
 ) -> None:
-    """#756: the turn's error envelope for a finalize-region crash.
+    """Record the original finalize error and preserve already-streamed parts.
 
-    The finalize region runs inside a fire-and-forget task; an exception escaping it
-    used to die silently (no ``message.completed`` / ``session.status_changed``, the
-    session wedged in ``running``). This settles the turn instead: structured log,
-    ``turn.failed`` semantic event, ``message.completed`` with ``stop_reason=error`` +
-    ``error_info``, a persisted assistant error message (visible on reload, not just
-    live; #1337: carrying the parts already sealed) and a terminal status. Nothing
-    degrades silently: every best-effort step below logs its reason when it fails.
-    ``persist_finalized_message`` binds ``gact.app._append_session_message`` at call
-    time so the live==reload test monkeypatches keep intercepting. #1339 / L1: ``exc``
-    may carry ``settle_reason``/``settle_error_code`` (turn_prologue_guard) instead.
-    Every branch closes the turn minter -- never skipped regardless of session status.
+    A recording outage retains this exact message. It does not create another
+    execution failure or silently discard the output.
     """
 
     reason = getattr(exc, "settle_reason", "turn_finalize_error")
@@ -727,15 +699,51 @@ def settle_failed_finalize(
         "cost_usd": turn_cost,
         "error_info": error_info.model_dump(exclude_none=True),
     }
-    bus: EventBus = app.state.bus
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
+
     try:
-        persist_finalized_message(app, sid, assistant_msg)  # before the completion events
-    except Exception:  # noqa: BLE001 - persistence degraded; the status flip must still happen
-        logger.exception(
-            "assistant error-message persistence failed during finalize settle: session=%s turn=%s",
+        persist_finalized_message(app, sid, assistant_msg)
+    except TranscriptRecordingPending as pending:
+        pending.after_confirmed = lambda: publish_failed_finalize(
+            app,
             sid,
-            turn_id,
+            assistant_msg,
+            completed_payload,
+            turn_id=turn_id,
+            trace_id=trace_id,
+            turn_cancel_event=turn_cancel_event,
+            update_retry_attempt=update_retry_attempt,
         )
+        raise
+    publish_failed_finalize(
+        app,
+        sid,
+        assistant_msg,
+        completed_payload,
+        turn_id=turn_id,
+        trace_id=trace_id,
+        turn_cancel_event=turn_cancel_event,
+        update_retry_attempt=update_retry_attempt,
+    )
+
+
+def publish_failed_finalize(
+    app: "FastAPI",
+    sid: str,
+    assistant_msg: Message,
+    completed_payload: dict[str, Any],
+    *,
+    turn_id: str,
+    trace_id: str,
+    turn_cancel_event: threading.Event,
+    update_retry_attempt: "Callable[..., None]",
+) -> None:
+    """Publish the already-recorded error outcome without rebuilding or re-executing it."""
+    error_info = assistant_msg.error_info
+    if error_info is None:
+        raise ValueError("Failed-finalize output has no original error")
+    bus: EventBus = app.state.bus
+    sess = app.state.sessions.get(sid)
     try:
         _emit_semantic_event(
             app,

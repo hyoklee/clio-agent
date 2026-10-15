@@ -29,8 +29,6 @@ def persist_paused_transcript(state: "TurnState") -> str:
     if not state.transcript.snapshot():
         return ""
     message_id = state.transcript.ensure_message()
-    if any(m.id == message_id for m in state.app.state.messages.get(state.sid, [])):
-        return message_id
     now = datetime.now(timezone.utc).isoformat()
     message = Message(
         id=message_id,
@@ -45,7 +43,19 @@ def persist_paused_transcript(state: "TurnState") -> str:
         stop_reason="waiting_user",
         metadata=state.assistant_metadata,
     )
-    persist_finalized_message(state.app, state.sid, message)
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
+
+    try:
+        persist_finalized_message(state.app, state.sid, message)
+    except TranscriptRecordingPending as pending:
+        pending.after_confirmed = lambda: publish_paused_transcript(state, message)
+        raise
+    publish_paused_transcript(state, message)
+    return message.id
+
+
+def publish_paused_transcript(state: "TurnState", message: Message) -> None:
+    """Publish the original input-required output after its Core recording confirms."""
     payload = {
         "turn_id": state.turn_id,
         "message_id": message.id,
@@ -71,4 +81,3 @@ def persist_paused_transcript(state: "TurnState") -> str:
     # do not adopt and re-append this already persisted message as an in-flight one.
     for name in ("live_assistant_message_ids", "live_assistant_parts", "live_assistant_part_keys"):
         getattr(state.app.state, name, {}).pop(state.sid, None)
-    return message.id

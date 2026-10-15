@@ -22,6 +22,8 @@ from clio_agent.gact.part_atoms import (
     build_sealed_part_atom,
     message_stub,
 )
+from clio_agent.gact.resident_ledgers import build_resident_ledger_set
+from clio_agent.gact.transcript_file import RegistryTranscriptIndex
 from clio_agent.gact.transcript_projection import assemble_session_messages
 from clio_agent.gact.types import Message, Part
 from tests.test_arc.test_conversation_owner_contracts import create_environment
@@ -228,15 +230,78 @@ async def test_cache_failure_after_core_splice_recovers_without_another_native_w
 
         with monkeypatch.context() as faults:
             faults.setattr(store, "_flush_locked", fail_cache)
-            with pytest.raises(OSError, match="JSON copy failure"):
-                session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+            session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
         assert assemble_session_messages(arc, sid) == [target, existing]
-        assert app.state.messages[sid] == [existing]
+        assert app.state.messages[sid] == [target, existing]
         assert store.load_session(sid) == [existing]
         generation = current_generation(arc._segments, sid, MESSAGE_PART_SCOPE)
         session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
         assert current_generation(arc._segments, sid, MESSAGE_PART_SCOPE) == generation
         assert app.state.messages[sid] == store.load_session(sid) == [target, existing]
+        assert owner.history.pending_mail(sid) == (item,)
+        assert not owner.history.acknowledged_notifications(sid)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cache_fault", [False, True])
+async def test_production_cold_loader_preserves_partial_output_through_input_repair(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cache_fault: bool
+) -> None:
+    """Exercise the production loader, including a cache miss after canonical confirmation."""
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    store = wire_transcripts(app, arc, tmp_path / "messages", True)
+    app.state.transcript_file = True
+    app.state.transcript_index = RegistryTranscriptIndex(app.state.sessions)
+    app.state.messages = build_resident_ledger_set(app)
+
+    def exercise() -> None:
+        earlier, target = retained(sid, "earlier", 10), retained(sid, "pending", 12)
+        session_store._append_session_message(app, sid, earlier)
+        partial = retained(sid, "streaming", 11, role="assistant")
+        stub = message_stub(
+            message_id=partial.id,
+            turn_id=partial.turn_id,
+            session_id=sid,
+            created_at=partial.created_at,
+        )
+        stub["role"] = "assistant"
+        sealed = build_sealed_part_atom(
+            stub, partial.parts[0].model_dump(), 0, sealed_at=partial.updated_at, seal_source="live"
+        )
+        append_part_atom(arc._segments, sid, sealed)
+        before = raw_atoms(arc, sid)
+        item = accept(app, sid, target)
+        if cache_fault:
+
+            def fail_cache(*_args: Any, **_kwargs: Any) -> None:
+                raise OSError("Cache unavailable after canonical splice")
+
+            with monkeypatch.context() as faults:
+                faults.setattr(store, "_flush_locked", fail_cache)
+                session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+        app.state.messages.discard(sid)
+        session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+        after = raw_atoms(arc, sid)
+        assert [atom for atom in after if atom["message_id"] != target.id] == before
+        assert sealed in after
+        assert [row.id for row in app.state.messages[sid]] == [earlier.id, partial.id, target.id]
+        assert (
+            next(row for row in app.state.messages[sid] if row.id == partial.id).metadata[
+                "transcript_incomplete"
+            ]
+            is True
+        )
+        generation = current_generation(arc._segments, sid, MESSAGE_PART_SCOPE)
+        session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+        assert current_generation(arc._segments, sid, MESSAGE_PART_SCOPE) == generation
+        assert raw_atoms(arc, sid) == after
         assert owner.history.pending_mail(sid) == (item,)
         assert not owner.history.acknowledged_notifications(sid)
 

@@ -1,0 +1,51 @@
+{
+  "purpose": "Independent actual Claude Code R47 source review",
+  "core": "34a8f9cd501cbe71b0f1effda91552a7570e4f2c",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "state": "settled",
+  "started_at": 1792087126.483974,
+  "source_cache_created": false,
+  "debug_log_enabled": false,
+  "retention": "Bounded selected reviewer identity receipt; no disposable output/debug/session export",
+  "profile": "D:\\Libraries\\Documents\\projects\\clio-agent-task-qualification\\.pytest-runtime\\review\\r47-isolated",
+  "auth_identity": {
+    "source_sha256": "8830485e3b22baff39ee44e97a51966e0ee31ac6e22d6dc4b3f45b9303ab04f5",
+    "valid_for_seconds": 26505.648629188538,
+    "refresh_disabled": true,
+    "original_authentication_written": false
+  },
+  "c_review_metadata_removal": {
+    "state": "rejected",
+    "reason": "blocked by policy",
+    "executed": false,
+    "human_manual_only": true,
+    "targets": [
+      "C:\\Users\\jaime\\.claude\\sessions\\38864.json",
+      "C:\\Users\\jaime\\.claude\\sessions\\38864.f5e1803782d7ee7a61aba41d467f3068ebde32c6c3885839ce121ceb6bd8a454.key"
+    ]
+  },
+  "pid": 43968,
+  "exit_code": 0,
+  "finished_at": 1792088048.866916,
+  "original_authentication_hash_unchanged": true,
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 386,
+      "outputTokens": 47953,
+      "cacheReadInputTokens": 1429685,
+      "cacheCreationInputTokens": 195074,
+      "webSearchRequests": 0,
+      "costUSD": 6.660411249999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 32384,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "session": "0e91174f-79d4-4ebf-8428-cb8d4c6bcbab",
+  "is_error": false,
+  "subtype": "success"
+}

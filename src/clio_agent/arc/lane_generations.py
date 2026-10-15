@@ -173,7 +173,13 @@ def current_base(store: "SegmentStore", session_id: str, base: str) -> str:
     return generation_base(base, current_generation(store, session_id, base))
 
 
-def _write_pointer(store: "SegmentStore", session_id: str, base: str, generation: int) -> None:
+def _write_pointer(
+    store: "SegmentStore",
+    session_id: str,
+    base: str,
+    generation: int,
+    metadata: dict[str, Any] | None = None,
+) -> None:
     """Put the pointer record naming ``generation`` -- ONE store write.
 
     On a failed put the store discards its in-memory copy (the next read reloads the
@@ -183,10 +189,13 @@ def _write_pointer(store: "SegmentStore", session_id: str, base: str, generation
     scope = pointer_scope(base)
     with store._lock_for(session_id, scope):
         segs = store._segs(session_id, scope)
+        retained = dict(segs[0].content) if segs else {}
+        retained.update(metadata or {})
+        retained["generation"] = generation
         pointer = Segment(
             scope=scope,
             kind=GENERATION_KIND,
-            content={"generation": generation},
+            content=retained,
             session_id=session_id,
             step=-1,
             order=1.0,
@@ -211,6 +220,8 @@ def replace_lane(
     session_id: str,
     base: str,
     write: Callable[[str], Any],
+    *,
+    metadata: dict[str, Any] | None = None,
 ) -> int:
     """Replace lane ``base`` whole, atomically for its readers.
 
@@ -242,7 +253,7 @@ def replace_lane(
             stage = "write"
             write(new_base)
             stage = "switch"
-            _write_pointer(store, session_id, base, target)
+            _write_pointer(store, session_id, base, target, metadata)
             stream_audit(
                 LANE_GENERATION_SWITCHED,
                 session_id=session_id,

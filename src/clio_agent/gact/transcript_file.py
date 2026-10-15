@@ -1,50 +1,8 @@
-"""The transcript FILE copy switch: ``transcript.file`` (owner module).
+"""Optional JSON projection; canonical transcript reads and boot use Core.
 
-Every gact message is minted as ``message_part`` atoms on clio-core's canonical
-``_events/m`` lane -- the transcript's source of truth
-(:mod:`clio_agent.gact.transcript_projection`). Next to the atoms the server also
-keeps a whole-ledger JSON copy per session under ``messages/<sid>.json``
-(:class:`~clio_agent.gact.messages.MessageStore`), which today is the boot index,
-the repair/backfill source, and History mode's only durable transcript.
-
-``transcript.file`` (env ``CLIO_TRANSCRIPT_FILE``, default ``true``) switches that
-file copy. It is resolved ONCE, at app build, by :func:`boot_transcript_store`:
-
-* **on** -- exactly the pre-switch behaviour: the file is written and read as before.
-* **off** -- clio-core is the ONLY transcript store. No ``messages/`` file is
-  written or read:
-
-  - the session index (``in`` / iteration / ``len`` of ``app.state.messages`` and
-    ``has_session``) comes from the session registry (:class:`RegistryTranscriptIndex`),
-    so a registered session with no messages reads as ``[]``;
-  - a cold read assembles the atoms only (:func:`materialize_from_atoms`): no
-    repair or backfill from a file. A busy lane is waited for off the loop, and is
-    a typed retryable :class:`TranscriptNotReadyError` on a loop thread (never a
-    blocked loop -- ``arc.loop_guard``, #1334);
-  - the restart reconciliation, the metrics seed and the interaction time of a
-    session row older than ``last_interaction_at`` (its last atom message, else its
-    creation) read the atoms, at build when the ARC is already bound, else right
-    after the process ARC attaches (:func:`on_process_arc_bound`); ``GET
-    /v1/metrics`` is a typed retryable error until then;
-  - a whole-transcript replace (undo, rewind, fork, compact, import, clear) is
-    atomic: a new lane generation, then one pointer switch
-    (:mod:`clio_agent.arc.lane_generations`); when it fails the previous transcript
-    stays and the session's in-memory ledger is dropped
-    (:func:`reload_resident_on_failure`) so reads serve what clio-core kept;
-  - an atom mint is the durable write: when it fails the message is taken back
-    out of the in-memory ledger (:func:`forget_unminted_on_failure`) and the
-    typed error propagates.
-
-With either setting, erasing a session's transcript (``DELETE`` / ``/clear``) runs
-against clio-core FIRST; when clio-core cannot finish it, :class:`TranscriptEraseError`
-(a retryable 503) is raised before anything else is removed, so a deleted session
-never leaves its clio-core data behind unreported, and retrying finishes the erase.
-
-  History mode (no clio-core binding) keeps the transcript only in the file, so
-  ``off`` there is a typed boot error (:class:`TranscriptFileRequiredError`).
-
-The switch exists so the file copy can be retired once clio-core writes its
-content down as files itself; until then it stays on by default.
+Legacy source is retained once before normal admission. JSON failures never
+replace Core content or become execution failures. A cold read during attach
+or a busy canonical lane returns the existing retryable readiness error.
 """
 
 from __future__ import annotations
@@ -205,6 +163,17 @@ def _canonical_log_arc(app: "FastAPI", session_id: str) -> Any:
 
     from clio_agent.gact.transcript_projection import canonical_log_arc  # noqa: PLC0415
 
+    ready = getattr(app.state, "transcript_boot_ready", None)
+    if (
+        ready is not None
+        and not ready.is_set()
+        and getattr(app.state, "transcript_boot_thread_id", None) != threading.get_ident()
+    ):
+        raise TranscriptNotReadyError(
+            session_id,
+            STORE_NOT_ATTACHED_REASON,
+            "Canonical conversation history is still attaching. Retry shortly.",
+        )
     arc = canonical_log_arc(app)
     if arc is not None:
         return arc
@@ -268,59 +237,28 @@ def materialize_from_atoms(app: "FastAPI", session_id: str) -> Optional[list["Me
 
 
 def load_durable_transcript(app: "FastAPI", session_id: str) -> Optional[list["Message"]]:
-    """The durable transcript of one session: the file when on, the atoms when off."""
+    """Read canonical Core history regardless of the optional file-cache setting."""
 
-    if file_transcript_enabled(app):
-        store = getattr(app.state, "message_store", None)
-        return None if store is None else store.load_session(session_id)
     return materialize_from_atoms(app, session_id)
 
 
 def has_durable_transcript_store(app: "FastAPI") -> bool:
-    """Whether this app has a durable transcript to read (always, with the file off)."""
-
-    if file_transcript_enabled(app):
-        return getattr(app.state, "message_store", None) is not None
-    return True
-
-
-@contextmanager
-def forget_unminted_on_failure(
-    app: "FastAPI", session_id: str, message: "Message"
-) -> Iterator[None]:
-    """Wrap a message's atom mint; with the file off, a failed mint un-appends it.
-
-    With no file copy the atoms are the only durable record, so a message whose
-    mint failed must not stay in the in-memory ledger (it would vanish on the next
-    eviction). It is removed -- by identity -- and the mint's error propagates. With
-    the file on this is a pass-through.
-    """
-
-    try:
-        yield
-    except BaseException:
-        if not file_transcript_enabled(app):
-            _forget_in_memory(app, session_id, message)
-        raise
+    """Canonical history requires the process Core attachment."""
+    return getattr(app.state, "arc", None) is not None
 
 
 @contextmanager
 def reload_resident_on_failure(app: "FastAPI", session_id: str) -> Iterator[None]:
-    """Wrap a durable transcript write; with the file off, a failure drops memory.
+    """Discard a projection after a failed canonical mutation, then re-seed metrics.
 
-    The replace / extend seams update the in-memory ledger before (or apart from) the
-    clio-core write. With no file copy the atoms are the only durable record, so when
-    that write fails the session's resident ledger is dropped and its metrics
-    re-seeded from what clio-core holds -- the next read serves the durable
-    transcript, never rows that were not stored. The write's error propagates
-    unchanged. With the file on this is a pass-through.
+    The original write error propagates. A future read materializes the confirmed
+    Core generation, never an unconfirmed cache replacement.
     """
 
     try:
         yield
     except BaseException as failure:
-        if not file_transcript_enabled(app):
-            _reload_resident(app, session_id, failure)
+        _reload_resident(app, session_id, failure)
         raise
 
 
@@ -348,18 +286,6 @@ def _reload_resident(app: "FastAPI", session_id: str, failure: BaseException) ->
         )
         return
     counters.set_session(session_id, durable)
-
-
-def _forget_in_memory(app: "FastAPI", session_id: str, message: "Message") -> None:
-    messages = app.state.messages
-    get_if_resident = getattr(messages, "get_if_resident", None)
-    rows = get_if_resident(session_id) if callable(get_if_resident) else messages.get(session_id)
-    if rows is None:
-        return
-    rows[:] = [row for row in rows if row is not message]
-    counters = getattr(app.state, "metrics_counters", None)
-    if counters is not None:
-        counters.set_session(session_id, rows)
 
 
 def seeded_metrics_counters(app: "FastAPI") -> Any:
@@ -393,13 +319,7 @@ def _last_interaction(rows: list["Message"], created_at: str) -> str:
 
 
 def _seed_from_atoms(app: "FastAPI") -> None:
-    """Metrics seed + legacy interaction times, from ONE atom read per session.
-
-    A session row persisted before ``last_interaction_at`` existed gets it from its
-    last atom message (``created_at`` when it has none) -- the file-off counterpart
-    of the ``messages/`` file mtime the file-on boot reads. ``messages/`` is never
-    touched.
-    """
+    """Seed metrics and missing interaction times from one Core read per session."""
 
     counters = app.state.metrics_counters
     sessions = app.state.sessions
@@ -413,26 +333,20 @@ def _seed_from_atoms(app: "FastAPI") -> None:
     sessions.settle_interaction_times(times)
 
 
-def _settle_interaction_from_files(app: "FastAPI") -> None:
-    """File on: a legacy row's interaction time is its ``messages/`` file's mtime."""
-
-    store = app.state.message_store
-    sessions = app.state.sessions
-    sessions.settle_interaction_times(
-        {
-            row.id: store.modified_at(row.id) or row.created_at
-            for row in sessions.sessions_without_interaction_time()
-        }
-    )
-
-
 def _atom_boot(app: "FastAPI") -> None:
-    """Restart reconciliation + metrics seed from the atoms (file off, ARC bound)."""
+    """Retain legacy evidence, reconcile interruptions and seed canonical metrics."""
 
     from clio_agent.gact.session_store import (  # noqa: PLC0415 - import cycle
         _reconcile_restart_interrupted_sessions,
     )
+    from clio_agent.gact.task_history import TaskHistory
+    from clio_agent.gact.transcript_migration import migrate_transcripts
 
+    if getattr(app.state, "task_history", None) is None:
+        history = TaskHistory(app.state.arc)
+        history.restore()
+        app.state.task_history = history
+    migrate_transcripts(app)  # Capture legacy content before any reconciliation/cache update.
     _reconcile_restart_interrupted_sessions(app)
     _seed_from_atoms(app)
     app.state.transcript_boot_ready.set()
@@ -448,13 +362,17 @@ def on_process_arc_bound(app: "FastAPI") -> None:
     """
 
     ready = getattr(app.state, "transcript_boot_ready", None)
-    if ready is None or ready.is_set() or file_transcript_enabled(app):
+    if ready is None or ready.is_set():
         return
+    app.state.transcript_boot_thread_id = threading.get_ident()
     try:
         _atom_boot(app)
+        app.state.transcript_boot_error = ""
     except Exception as exc:
         app.state.transcript_boot_error = repr(exc)
         raise
+    finally:
+        app.state.transcript_boot_thread_id = None
 
 
 def _refuse_history_mode(app: "FastAPI") -> None:
@@ -536,31 +454,17 @@ def install_transcript_error_handler(app: "FastAPI") -> None:
 
 
 def boot_transcript_store(app: "FastAPI", root: Path) -> None:
-    """Wire the app's transcript store, index, metrics seed and resident set.
+    """Install a registry index, optional JSON cache and empty resident projection.
 
-    Resolves ``transcript.file`` once (``app.state.transcript_file``). With it on,
-    the sequence is the pre-switch one: the ``messages/`` store under ``root``, the
-    restart reconciliation, the retention state, the metrics seed, the resident set.
-    With it off there is no file store (``app.state.message_store`` is ``None``), the
-    index is the session registry, and the reconciliation + seed read the atoms
-    (now when the ARC is bound, else from :func:`on_process_arc_bound`).
-
-    Raises:
-        TranscriptFileRequiredError: Off, with no ARC bound, in History mode.
-        ConfigError: ``transcript.file`` is not a boolean.
+    Canonical migration/reconciliation/metrics run in the process ARC attachment
+    before normal admission. File contents never drive normal materialization.
     """
 
     from clio_agent.gact.messages import MessageStore  # noqa: PLC0415
     from clio_agent.gact.metrics_counters import MetricsCounters  # noqa: PLC0415
-    from clio_agent.gact.resident_ledgers import (  # noqa: PLC0415
-        build_resident_ledger_set,
-        seed_metrics_counters,
-    )
-    from clio_agent.gact.runtime.retention import init_retention_state  # noqa: PLC0415
-    from clio_agent.gact.session_store import (  # noqa: PLC0415 - import cycle
-        _reconcile_restart_interrupted_sessions,
-    )
-    from clio_agent.gact.transcript_projection import canonical_log_arc  # noqa: PLC0415
+    from clio_agent.gact.resident_ledgers import build_resident_ledger_set
+    from clio_agent.gact.runtime.retention import init_retention_state
+    from clio_agent.gact.transcript_projection import canonical_log_arc
 
     file_on = resolve_transcript_file()
     if not file_on:
@@ -568,32 +472,14 @@ def boot_transcript_store(app: "FastAPI", root: Path) -> None:
     app.state.transcript_file = file_on
     app.state.transcript_boot_ready = threading.Event()
     install_transcript_error_handler(app)
-    # #1334 F2: placeholder for the reconciliation's _replace_session_messages write.
     app.state.messages = {}
-    if file_on:
-        # Durable per-session message log: per-session JSON ledgers so adapter
-        # deletion/redeploy preserves transcripts.
-        app.state.message_store = MessageStore(path=root / "messages")
-        app.state.transcript_index = app.state.message_store
-        _settle_interaction_from_files(app)
-        _reconcile_restart_interrupted_sessions(app)
-    else:
-        app.state.message_store = None
-        app.state.transcript_index = RegistryTranscriptIndex(app.state.sessions)
-    # #770 C3: bounded eviction-audit trail (init before the resident set).
+    app.state.message_store = MessageStore(path=root / "messages") if file_on else None
+    app.state.transcript_index = RegistryTranscriptIndex(app.state.sessions)
     init_retention_state(app)
-    # #770 C3 / #889: running metrics aggregate, seeded by a streaming parse-and-
-    # DISCARD walk so the metrics wire stays byte-identical across a restart WITHOUT
-    # pinning every transcript in RAM.
     app.state.metrics_counters = MetricsCounters()
-    if file_on:
-        seed_metrics_counters(app.state.message_store, app.state.metrics_counters)
-        app.state.transcript_boot_ready.set()
-    elif canonical_log_arc(app) is not None:
-        _atom_boot(app)
-    # #889: BOUNDED (LRU + byte cap + idle-TTL) resident projection over the store --
-    # boots empty (index only), materializes lazily. See gact.resident_ledgers.
     app.state.messages = build_resident_ledger_set(app)
+    if canonical_log_arc(app) is not None:
+        on_process_arc_bound(app)
 
 
 __all__ = [
@@ -609,7 +495,6 @@ __all__ = [
     "TranscriptNotReadyError",
     "boot_transcript_store",
     "file_transcript_enabled",
-    "forget_unminted_on_failure",
     "has_durable_transcript_store",
     "install_transcript_error_handler",
     "load_durable_transcript",

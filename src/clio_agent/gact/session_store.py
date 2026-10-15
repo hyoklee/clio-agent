@@ -127,26 +127,16 @@ def _append_session_message(
     and the local message store are written here. Explicit, never inferred.
     """
 
-    app.state.messages.setdefault(session_id, []).append(message)
-    counters = _metrics_counters(app)
-    if counters is not None:
-        counters.add_message(session_id, message)
-    store = getattr(app.state, "message_store", None)
-    if store is not None:
-        store.append(session_id, message)
-    # #737 S5: the single append-one persist seam mints the message's ``message_part``
-    # atoms onto the canonical ARC log -- the transcript's source of truth (must-succeed,
-    # §3.4). With ``transcript.file`` off they are the only durable copy, so a failed
-    # mint takes the message back out of the in-memory ledger before the error propagates.
-    from clio_agent.gact.transcript_file import (  # noqa: PLC0415 - lazy: keep leaf
-        forget_unminted_on_failure,
-    )
-    from clio_agent.gact.transcript_projection import (  # noqa: PLC0415 - lazy: keep leaf
-        on_message_appended,
-    )
+    from clio_agent.gact.transcript_projection import canonical_log_arc
+    from clio_agent.gact.transcript_recording import project_message, record_message
 
-    with forget_unminted_on_failure(app, session_id, message):
-        on_message_appended(app, session_id, message, atoms_minted=atoms_minted)
+    arc = canonical_log_arc(app)
+    if arc is None:
+        raise RuntimeError("Transcript recording requires the canonical Core store")
+    recording = "recorded" if atoms_minted else record_message(arc, session_id, message)
+    if recording == "withdrawn":
+        return
+    project_message(app, session_id, message, newly_recorded=recording == "recorded")
     from clio_agent.gact.storage.drafts import retain_message_sources
 
     retain_message_sources(app, message)
@@ -305,21 +295,8 @@ def _extend_session_messages(
 ) -> None:
     """Append several chronological messages to memory and disk."""
 
-    if not messages:
-        return
-    app.state.messages.setdefault(session_id, []).extend(messages)
-    counters = _metrics_counters(app)
-    if counters is not None:
-        counters.add_messages(session_id, messages)
-    store = getattr(app.state, "message_store", None)
-    if store is not None:
-        store.extend(session_id, messages)
-    # #737 S5: mirror the extend onto the canonical atom lane (no-op under legacy).
-    from clio_agent.gact.transcript_projection import (  # noqa: PLC0415 - lazy: keep leaf
-        on_messages_extended,
-    )
-
-    on_messages_extended(app, session_id, messages)
+    for message in messages:
+        _append_session_message(app, session_id, message)
 
 
 def _replace_session_messages(
@@ -335,22 +312,27 @@ def _replace_session_messages(
     the loop thread; see :func:`_append_session_message`.
     """
 
-    app.state.messages[session_id] = list(messages)
-    counters = _metrics_counters(app)
-    if counters is not None:
-        counters.set_session(session_id, messages)
-    store = getattr(app.state, "message_store", None)
-    if store is not None:
-        store.replace_session(session_id, list(messages))
-    # #737 S5: re-materialize the atom lane to the replaced ledger (undo/rewind/fork/
-    # compact/import). Transcript-projection-scoped only; ARC memory untouched. No-op
-    # under legacy.
-    from clio_agent.gact.transcript_projection import (  # noqa: PLC0415 - lazy: keep leaf
-        on_ledger_replaced,
-    )
+    from clio_agent.gact.part_atoms import MESSAGE_PART_SCOPE
+    from clio_agent.gact.transcript_projection import canonical_log_arc, on_ledger_replaced
 
-    if not atoms_minted:
-        on_ledger_replaced(app, session_id, list(messages))
+    arc = canonical_log_arc(app)
+    if arc is None:
+        raise RuntimeError("Transcript mutation requires the canonical Core store")
+    with arc._segments._lock_for(session_id, MESSAGE_PART_SCOPE):
+        if not atoms_minted:
+            on_ledger_replaced(app, session_id, list(messages))
+        app.state.messages[session_id] = list(messages)
+        counters = _metrics_counters(app)
+        if counters is not None:
+            counters.set_session(session_id, messages)
+        store = getattr(app.state, "message_store", None)
+        if store is not None:
+            try:
+                store.replace_session(session_id, list(messages))
+            except (OSError, RuntimeError, ValueError):
+                logger.exception(
+                    "Transcript cache lag after Core replacement session=%s", session_id
+                )
 
 
 def _delete_session_messages(app: "FastAPI", session_id: str) -> None:
@@ -389,7 +371,10 @@ def _delete_session_messages(app: "FastAPI", session_id: str) -> None:
         counters.remove_session(session_id)
     store = getattr(app.state, "message_store", None)
     if store is not None:
-        store.delete_session(session_id)
+        try:
+            store.delete_session(session_id)
+        except (OSError, RuntimeError):
+            logger.exception("Transcript cache lag after Core erase session=%s", session_id)
 
 
 def _release_session_arc(app: "FastAPI", session_id: str) -> None:

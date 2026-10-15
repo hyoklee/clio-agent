@@ -1,37 +1,8 @@
-"""Per-turn transcript minter: the FIFO that persists a session's transcript atoms off
-the loop thread (#1334) and, since #1337, persists each part WHEN IT BECOMES FINAL.
+"""Per-turn FIFO writer for streaming part seals on the canonical Core lane.
 
-Why: every transcript persist is a synchronous ARC store RPC. Issued from the loop thread
-(the user message minted inside ``POST /messages`` before its response, a steer appended
-mid-turn) each one froze the server for its duration; and the assistant message used to
-be minted as ONE batch at finalize (~30 writes on a 9-tool turn) although every part had
-already streamed to the UI as it completed and the event log had recorded each tool call
-incrementally. This module owns ONE consumer thread per turn that drains persist jobs in
-order, so the loop never waits on the store, the atoms of one session land in append
-order (the lane grouping relies on it), and finalize writes only what is not yet sealed
-plus the envelope.
-
-Contract:
-
-* :func:`open_turn_minter` / :func:`close_turn_minter` bracket a turn (opened in the
-  turn's off-loop prologue, closed when the transcript settles).
-* :func:`transcript_sink` is the ``TurnTranscript`` seal hook: non-blocking, it queues
-  one sealed part atom (``part_atoms.build_sealed_part_atom``) per part that became
-  final; the minted dump is remembered so :meth:`PartAtomMinter.mint_remainder` can tell
-  "never sealed" and "sealed then mutated" apart with one comparison.
-* :func:`run_transcript_job` is the entry for whole-message deferred persists (the user
-  message, a steer, an a2ui part): the open minter takes the job; without one the job is
-  dispatched off the loop with a typed audit on failure.
-* :func:`persist_finalized_message` is the finalize gate, on the finalize executor: the
-  barrier (every queued job landed or its failure re-raised), the remainder (unsealed or
-  mutated parts + the envelope atom), then the in-memory ledger + local store append
-  through the ``clio_agent.gact.app`` seam (bound at call time so the #714 test
-  monkeypatches keep intercepting). The must-succeed contract of
-  ``transcript_projection.on_message_appended`` (a failed mint fails the turn, never a
-  half-committed transcript) is unchanged, only moved to this boundary.
-
-Deliberately a dedicated thread, not the shared depth-keyed agent-task executor: a slot
-parked in ~90 ms RPCs for a whole turn would starve child forwards at the same depth.
+The consumer keeps finite store RPCs off the application loop. Final output is
+recorded through transcript_recording after this FIFO drains. Recording failure
+retains the original completed message through application recovery.
 """
 
 from __future__ import annotations
@@ -43,10 +14,8 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Optional
 
 from clio_agent.errors import ClioError
-from clio_agent.gact.off_loop import schedule_off_loop
 from clio_agent.gact.part_atoms import (
     append_part_atom,
-    build_envelope_atom,
     build_sealed_part_atom,
     message_stub,
 )
@@ -100,6 +69,10 @@ class PartAtomMinter:
         self.session_id = session_id
         self.turn_id = turn_id
         self.arc = arc
+        from clio_agent.gact.transcript_recording import visibility_epoch
+
+        self.visibility_epoch = visibility_epoch(arc, session_id) if arc is not None else ""
+
         self.opened_at = _now_iso()
         self._queue: queue.SimpleQueue[Any] = queue.SimpleQueue()
         self._failures: list[tuple[str, Callable[[], Any], BaseException]] = []
@@ -329,36 +302,6 @@ class PartAtomMinter:
             )
             fn()  # raises through the finalize envelope when it fails again
 
-    def mint_remainder(self, message: Any) -> int:
-        """Mint what the seals did not: unsealed or since-mutated parts, then the envelope.
-
-        Returns the number of atoms written. Runs synchronously on the caller's thread
-        (the finalize executor); any failure raises so the turn fails typed.
-        """
-
-        if self.arc is None:
-            return 0
-        self.barrier()
-        stub = message_stub(
-            message_id=message.id,
-            turn_id=self.turn_id,
-            session_id=self.session_id,
-            created_at=self.opened_at,
-        )
-        written = 0
-        landed = self.minted()
-        for index, part in enumerate(message.parts):
-            dump = part.model_dump()
-            if landed.get(str(part.id or "")) == dump:
-                continue
-            content = build_sealed_part_atom(
-                stub, dump, index, sealed_at=_now_iso(), seal_source="finalize"
-            )
-            append_part_atom(self.arc._segments, self.session_id, content)
-            written += 1
-        append_part_atom(self.arc._segments, self.session_id, build_envelope_atom(message))
-        return written + 1
-
     def wait_closed(self) -> None:
         """Block until this minter closed and its consumer drained (the turn settled).
 
@@ -463,48 +406,40 @@ def transcript_sink(app: Any, session_id: str) -> Callable[[str, dict[str, Any],
     return _sink
 
 
-def run_transcript_job(app: Any, session_id: str, label: str, fn: Callable[[], Any]) -> None:
-    """Persist a transcript job off the loop thread.
-
-    Order of preference: the session's open minter (FIFO, covered by the finalize
-    barrier); else :func:`schedule_off_loop` (inline without a loop on this thread,
-    otherwise dispatched with a typed audit on failure).
-    """
-
-    minter = turn_minter(app, session_id)
-    if minter is not None and minter.enqueue(label, fn):
-        return
-    schedule_off_loop(fn, label=label)
-
-
 def persist_finalized_message(app: Any, session_id: str, message: Any) -> None:
-    """Finalize's persist (on the finalize executor): barrier, remainder, then the append.
-
-    With an open minter that has an ARC, the atoms are minted here (the eager profile:
-    sealed parts already landed, the remainder + envelope now) and the append skips its
-    own mint; without one the append mints the inline profile as before.
-    """
-
-    from clio_agent.gact.app import _append_session_message  # noqa: PLC0415
-    from clio_agent.gact.transcript_projection import (  # noqa: PLC0415
-        record_state_merge_best_effort,
+    """Confirm immutable final output in Core before publishing optional projections."""
+    from clio_agent.errors import ClioError
+    from clio_agent.gact.transcript_projection import canonical_log_arc
+    from clio_agent.gact.transcript_recording import (
+        TranscriptRecordingPending,
+        project_message,
+        record_message,
+        visibility_epoch,
     )
+    from clio_agent.gact.workflow_state.state_merge import record_state_merge_best_effort
 
+    frozen = message.model_copy(deep=True)
     minter = turn_minter(app, session_id)
-    if minter is None or minter.arc is None:
+    arc = canonical_log_arc(app)
+    if arc is None:
+        raise RuntimeError("Final output recording requires Core")
+    expected = minter.visibility_epoch if minter is not None else visibility_epoch(arc, session_id)
+
+    def confirm() -> bool:
         if minter is not None:
             minter.barrier()
-        _append_session_message(app, session_id, message)
-        return
-    # The in-memory ledger + local store copy lands FIRST — the order
-    # ``_append_session_message`` has always used (append, then mint). That retained
-    # copy is the documented re-derivable fallback ``mint_atoms_from_ledger`` backfills
-    # the atom lane from, so a failing store RPC in the mint below must degrade to
-    # "atoms missing, message present", never to "the turn's message is gone from every
-    # ledger". The must-succeed contract is unchanged: the mint still raises here.
-    _append_session_message(app, session_id, message, atoms_minted=True)
-    minter.mint_remainder(message)
-    record_state_merge_best_effort(minter.arc, session_id, message)
+        recording = record_message(arc, session_id, frozen, expected_visibility=expected)
+        close_turn_minter(app, session_id)
+        if recording == "withdrawn":
+            return False
+        project_message(app, session_id, frozen, newly_recorded=recording == "recorded")
+        record_state_merge_best_effort(arc, session_id, frozen)
+        return True
+
+    try:
+        confirm()
+    except (ClioError, OSError, RuntimeError) as error:
+        raise TranscriptRecordingPending(frozen, confirm, error) from error
 
 
 def failed_finalize_identity(app: Any, session_id: str) -> tuple[str, list[Any]]:
@@ -555,7 +490,6 @@ __all__ = [
     "failed_finalize_identity",
     "open_turn_minter",
     "persist_finalized_message",
-    "run_transcript_job",
     "transcript_sink",
     "turn_minter",
 ]

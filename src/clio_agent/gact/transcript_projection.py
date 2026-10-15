@@ -1,65 +1,18 @@
-"""The gact-visible transcript as a PROJECTION of the ``message_part`` atoms (#737 S5).
+"""Core owns transcript content; resident rows and optional JSON are projections.
 
-S4 (:mod:`clio_agent.gact.part_atoms`) provisioned a wire-identity atom family on the
-canonical ``_events/m`` log, **dual-written** alongside the ``final_message`` byte-copy
-and the messages-store ledger, with *no* reader consuming it. This slice (design
-``docs/design/unified-arc-highway.md`` §2.8c, §4.2 step 5) flips the read regime: under
-the **atoms** regime a session's transcript is *assembled by reference* from those
-atoms — ``GET /messages`` and every ``app.state.messages`` reader materialize the
-ledger from the log, the ``final_message`` byte-copy in ``turn_finalize`` is no longer
-emitted, and the atom lane becomes the single source of truth for the transcript.
-
-**Single regime (v0.8.0 cleanup):** the atoms ARE the transcript semantics on any
-app with a canonical-log substrate. The strangler flag
-(``CLIO_TRANSCRIPT_PROJECTION``) and the per-session regime pin were deleted with
-the legacy read branch; pre-atom sessions migrate transparently on first touch via
-the retained-ledger backfill (:func:`mint_atoms_from_ledger`, loud per-message).
-The messages-store read survives ONLY as the no-substrate degenerate case (an app
-without ARC has exactly one storage). With ``transcript.file`` off
-(:mod:`clio_agent.gact.transcript_file`) there is no messages-store copy at all: the
-atoms are read alone, with no file repair or backfill.
-
-Design decisions (each answering a named constraint):
-
-* **The projection IS ``assemble(atoms).to_wire()`` (design (a), §2.8c).** A ``Message``
-  is its grouped part atoms in append order, reproduced via the S4-proven
-  :func:`~clio_agent.gact.part_atoms.reproduce_message_wire`. Byte-equal to today under
-  the §4.1.A normalizer because the atoms carry the WHOLE part + message dumps minted
-  once at persist (never re-minted on read — the ``reload == live`` identity pin).
-* **The MessageStore ledger is RETAINED as a re-derivable atom-fold cache + boot index
-  (design (e), §3.2).** It is NOT the atoms-regime read source — the atoms are — but it
-  is kept: (1) as the ``#889`` boot index (``session_ids`` / ``has_session``, no body
-  read); (2) as the legacy-regime store and the rollback read path (§4.3 dual-write
-  window, F2); (3) as the backfill SOURCE for pre-atom ledgers (:func:`mint_atoms_from_ledger`);
-  (4) as a warm, re-derivable materialization of the same projection. Demoting it from
-  source-of-truth to cache — rather than deleting it in this one slice — keeps the
-  session-scoped rollback trivially sound and the boot index unchanged. Documented here
-  as the residency choice §3.2/(e) asks for.
-* **The atom lane IS the gact-visible transcript projection, distinct from ARC memory
-  (frozen (f), §2.5 ``transcript_delete``).** Undo/rewind/``DELETE``/fork/compact/import
-  re-materialize the ``_events/m`` lane (:func:`on_ledger_replaced` /
-  :func:`on_ledger_deleted`) and NEVER touch the ARC working-set scopes — so
-  ``memory_scope:"gact_visible_transcript_only"`` holds by construction (the sabotage-c
-  guard: a transcript delete that reached ARC memory would fail its frozen test).
-* **No silent fallback; must-succeed under atoms-regime (§3.4).** Once the atoms are the
-  ONE copy, a dropped mint is permanent transcript loss, so under the atoms regime a
-  mint failure raises a typed :class:`TranscriptIngestError` (fails the turn, loud).
-  Under the legacy regime the messages-store copy is still authoritative, so minting
-  stays best-effort-but-loud exactly as S4 landed it.
-
-Evidence trail for the switch (recorded, #893/#737): reload==live green on the
-full real-session corpus (:mod:`tests.test_equivalence`), scripted live turns
-byte-match (:mod:`tests.test_gact.test_transcript_projection`), and the final live
-web gate ran the whole stack on this path before the v0.7.x release train.
+Normal materialization never imports, repairs or writes history. Legacy file
+migration is an explicit startup operation. Intentional undo/clear/import still
+use the existing atomic lane-generation writer.
 """
 
 from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING, Any, Optional
+from uuid import uuid4
 
 from clio_agent.arc.lane_chunking import lane_has_segments, lane_segments
-from clio_agent.arc.lane_generations import current_base, erase_lane, replace_lane
+from clio_agent.arc.lane_generations import current_base, replace_lane
 from clio_agent.errors import ClioError
 from clio_agent.gact.messages import retained_message_position
 from clio_agent.gact.part_atoms import (
@@ -74,7 +27,6 @@ from clio_agent.gact.part_atoms import (
 )
 from clio_agent.gact.transcript_file import (
     TranscriptEraseError,
-    file_transcript_enabled,
     materialize_from_atoms,
     reload_resident_on_failure,
 )
@@ -84,7 +36,6 @@ from clio_agent.gact.workflow_state.state_merge import (
     materialize_state_merge_projection,
     record_state_merge_best_effort,
 )
-from clio_agent.runtime.stream_audit import stream_audit
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -147,15 +98,7 @@ def _sessions(app: "FastAPI") -> Any:
 
 
 def _arc(app: "FastAPI") -> Any:
-    """The process ARC memory ONLY when it can hold the canonical log, else ``None``.
-
-    Returns the ARC only if it exposes the segment store the atom lane needs
-    (``_segments``); an app with no ARC (minimal test wiring) OR a metrics-only / degraded
-    ARC stub without a segment store has NO canonical log to project, so the atoms regime
-    cannot engage — the pin refuses atoms and every write/read seam falls back to the
-    legacy messages-store path. This is a capability gate (like the LocalFS degradation),
-    not a silent scrub: without a segment store there is simply no log to write or read.
-    """
+    """Return the process Core substrate only when it exposes canonical segments."""
 
     arc = getattr(getattr(app, "state", None), "arc", None)
     return arc if getattr(arc, "_segments", None) is not None else None
@@ -250,6 +193,8 @@ def ensure_accepted_message(app: "FastAPI", session_id: str, message: Message) -
     if message.session_id != session_id or message.role != "user":
         raise ValueError("Accepted message belongs to another session or role")
     arc = _arc(app)
+    if arc is None:
+        raise RuntimeError("Accepted input projection requires Core")
     if arc is not None:
         store = arc._segments
         with store._lock_for(session_id, MESSAGE_PART_SCOPE):
@@ -322,23 +267,9 @@ def ensure_accepted_message(app: "FastAPI", session_id: str, message: Message) -
                         append_part_atom(store, session_id, atom, lane=lane)
 
                 replace_lane(store, session_id, MESSAGE_PART_SCOPE, write)
-    copy = getattr(app.state, "message_store", None)
-    if copy is not None:
-        copy.ensure_message(session_id, message)
-    rows = app.state.messages.setdefault(session_id, [])
-    existing = [row for row in rows if row.id == message.id]
-    if existing:
-        if len(existing) != 1 or existing[0] != message:
-            raise ValueError("Accepted message conflicts with the resident transcript")
-        return
-    rows.insert(
-        retained_message_position((row.created_at for row in rows), message.created_at), message
-    )
-    from clio_agent.gact.session_store import _metrics_counters
+    from clio_agent.gact.transcript_recording import project_message
 
-    counters = _metrics_counters(app)
-    if counters is not None:
-        counters.add_message(session_id, message)
+    project_message(app, session_id, message, newly_recorded=not complete, ordered=True)
 
 
 def has_atoms(arc: Any, session_id: str) -> bool:
@@ -359,18 +290,10 @@ def has_atoms(arc: Any, session_id: str) -> bool:
 
 
 def mint_atoms_from_ledger(arc: Any, session_id: str, messages: list[Message]) -> None:
-    """Mint the ``message_part`` atoms for a ledger that PREDATES the atom family.
+    """Mint explicit supplied data for import/equivalence tooling, never from a read.
 
-    The documented migration seam (design (d)): the local 60-ledger corpus (and any
-    pre-S5 install session) has messages-store rows but no atoms, so the atoms-regime
-    read path backfills them once from the ledger before assembling. Minting is
-    per-message and raises a typed :class:`TranscriptBackfillError` on the FIRST
-    un-mintable message — never a silent skip that would serve a truncated transcript.
-
-    Args:
-        arc: The process ARC memory.
-        session_id: Owning session.
-        messages: The ledger rows to provision atoms for (in chronological order).
+    Runtime migration retains ambiguous legacy content separately. Only a caller
+    that deliberately owns an import may use this raw, per-message algorithm.
     """
 
     for message in messages:
@@ -389,245 +312,13 @@ def mint_atoms_from_ledger(arc: Any, session_id: str, messages: list[Message]) -
 
 
 def materialize_ledger(app: "FastAPI", session_id: str) -> Optional[list[Message]]:
-    """Materialize a session's ledger for the resident set (the read-path switch).
-
-    Repoints :class:`~clio_agent.gact.resident_ledgers.ResidentLedgerSet` rehydration:
-    under the **atoms** regime the ledger is assembled from the canonical log
-    (:func:`assemble_session_messages`), backfilling once from the RETAINED messages-store
-    ledger (:func:`mint_atoms_from_ledger`) when the atom lane is absent because the
-    session predates the atoms (migration), and repairing a divergent lane from it. Without
-    an ARC it falls through to ``MessageStore.load_session``. With ``transcript.file``
-    off there is no retained ledger: :func:`~clio_agent.gact.transcript_file.
-    materialize_from_atoms` reads the atoms alone.
-
-    Preserves the store's contract precisely: ``None`` => the session has no ledger (a
-    cache-miss ``KeyError`` upstream), ``[]`` => an existing-but-empty ledger,
-    :class:`LedgerReadError` propagates (never cached as an empty transcript, §3.3).
-
-    Args:
-        app: The FastAPI app.
-        session_id: The session to materialize.
-
-    Returns:
-        The session's ``list[Message]``, or ``None`` when it has never been persisted.
-    """
-
-    if not file_transcript_enabled(app):
-        return materialize_from_atoms(app, session_id)
-    store = getattr(getattr(app, "state", None), "message_store", None)
-    arc = _arc(app)
-    if arc is None:
-        # No canonical-log substrate on this app: the retained store is the
-        # only storage (structural degenerate case, not a regime).
-        return None if store is None else store.load_session(session_id)
-
-    # A cache miss can arrive concurrently from independent request surfaces. The
-    # has-atoms / no-atoms DECISION for this one transcript lane is made under the
-    # per-scope lane lock; the actual (re)mint work never runs while that lock is
-    # held by this call — it is dispatched through ``_schedule_lane_mint``, whose
-    # off-loop worker re-takes the SAME lock only around the mint itself (#1334: a
-    # store RPC must never be awaited from the server loop thread). Without the
-    # lock here, two cold readers could both observe an empty lane and mint the
-    # same retained ledger; their per-part appends would then interleave, so every
-    # ``part_index == 0`` is mistaken for another message boundary on reload.
-    #
-    # The acquire is NON-BLOCKING (#1334 review round): this exact RLock is also
-    # held by ``part_atoms._append_segment_raw`` around every atom append (a store
-    # RPC) and by the off-loop mint/repair worker around a whole backfill. A
-    # blocking acquire here would let a read on the server loop wait behind a
-    # store write in progress -- precisely the stall class #1334 forbids. A busy
-    # lane serves the retained ledger (a file read, never the store append path)
-    # with a typed audit reason; the next read retries once the writer releases.
-    lane_lock = arc._segments._lock_for(session_id, MESSAGE_PART_SCOPE)
-    if not lane_lock.acquire(blocking=False):
-        stream_audit(
-            "transcript.lane_busy_served_retained",
-            session_id=session_id,
-            source="materialize_ledger",
-        )
-        return None if store is None else store.load_session(session_id)
-    try:
-        atoms_present = has_atoms(arc, session_id)
-        assembled = assemble_session_messages(arc, session_id) if atoms_present else None
-        ledger = None if store is None else store.load_session(session_id)
-    finally:
-        lane_lock.release()
-
-    if atoms_present:
-        assert assembled is not None  # narrows for the type checker
-        # Repair lanes written by the pre-lock race. The retained message ledger is
-        # the only trustworthy source for repairing a structurally divergent lane.
-        # This is exact wire comparison, never text heuristics.
-        if ledger is None or [m.model_dump(exclude_none=True) for m in assembled] == [
-            m.model_dump(exclude_none=True) for m in ledger
-        ]:
-            return assembled
-        logger.error(
-            "transcript_projection: repairing divergent atom lane session=%s "
-            "assembled_messages=%d retained_messages=%d reason=concurrent_backfill_race",
-            session_id,
-            len(assembled),
-            len(ledger),
-        )
-        return _repair_divergent_lane(arc, session_id, ledger)
-
-    # Atoms regime, but no atoms yet: either a brand-new session (no ledger) or a
-    # pre-atom ledger to backfill once. Distinguish via the store (LedgerReadError
-    # propagates — never a silent empty).
-    if not ledger:
-        return ledger  # None (never persisted) or [] (empty) — both pass through
-    return _backfill_or_serve(arc, session_id, ledger)
-
-
-_LANE_MINT_IN_FLIGHT: set[str] = set()
-
-
-def _schedule_lane_mint(
-    arc: Any, session_id: str, ledger: list[Message], *, repair: bool
-) -> Optional[list[Message]]:
-    """Dedup-schedule a (re)mint of ``session_id``'s atom lane off the loop.
-
-    #1334: a rehydrate/repair happens INSIDE a read that may run on the loop thread
-    (``GET /messages`` on an evicted, pre-atom, or divergent session), and the mint is
-    one store write per message -- for a repair, a whole-lane replace
-    (:func:`replace_atom_lane`: a new generation, then one pointer switch). The
-    per-scope lane lock is held ONLY around this scheduling decision (acquire, decide,
-    release) — never around the mint itself, which the off-loop worker below re-takes
-    the SAME lock for. With a loop running on this thread the retained ledger is served
-    as-is and the mint is dispatched off the loop (one in flight per session; a failure
-    is audited + logged with its typed reason and the next read retries, since the lane
-    is still absent/divergent). Without a loop (boot, tests, worker threads)
-    ``schedule_off_loop`` runs the worker inline before returning, so the caller's own
-    read is already joined to the completed mint.
-
-    Returns the served ledger when a mint is already in flight or was just dispatched,
-    or ``None`` when the worker ran inline (the caller re-assembles from the now-minted
-    lane).
-    """
-
-    from clio_agent.gact.off_loop import schedule_off_loop  # noqa: PLC0415
-
-    lane_lock = arc._segments._lock_for(session_id, MESSAGE_PART_SCOPE)
-    with lane_lock:
-        if session_id in _LANE_MINT_IN_FLIGHT:
-            return list(ledger)  # someone else's mint is already scheduled/running
-        _LANE_MINT_IN_FLIGHT.add(session_id)
-
-    def _mint() -> None:
-        worker_lock = arc._segments._lock_for(session_id, MESSAGE_PART_SCOPE)
-        with worker_lock:
-            try:
-                if repair:
-                    replace_atom_lane(arc, session_id, ledger)
-                else:
-                    mint_atoms_from_ledger(arc, session_id, ledger)
-            finally:
-                _LANE_MINT_IN_FLIGHT.discard(session_id)
-
-    label = f"transcript.{'repair' if repair else 'backfill'}:{session_id}"
-    future = schedule_off_loop(_mint, label=label)
-    if future is not None:
-        return list(ledger)  # dispatched; on-loop caller never waits
-    return None  # ran inline; already joined
-
-
-def _backfill_or_serve(arc: Any, session_id: str, ledger: list[Message]) -> list[Message]:
-    """Backfill the atom lane from the retained ledger, then assemble from it."""
-
-    served = _schedule_lane_mint(arc, session_id, ledger, repair=False)
-    if served is not None:
-        return served
-    return assemble_session_messages(arc, session_id)
-
-
-def _repair_divergent_lane(arc: Any, session_id: str, ledger: list[Message]) -> list[Message]:
-    """Drop + re-mint a structurally divergent atom lane from the retained ledger."""
-
-    served = _schedule_lane_mint(arc, session_id, ledger, repair=True)
-    if served is not None:
-        return served
-    return assemble_session_messages(arc, session_id)
+    """Read canonical history without consulting or repairing a file cache."""
+    return materialize_from_atoms(app, session_id)
 
 
 # --------------------------------------------------------------------------- #
 # Write-seam hooks — keep the atom lane the source of truth (design (b))
 # --------------------------------------------------------------------------- #
-
-
-def on_message_appended(
-    app: "FastAPI", session_id: str, message: Message, *, atoms_minted: bool = False
-) -> None:
-    """Persist-seam hook: pin the regime (first message) + mint the message's atoms.
-
-    Called from ``session_store._append_session_message`` — the single append-one
-    persist choke point. On message #1 it resolves + pins the session regime; then it
-    mints the ``message_part`` atoms. Under the **atoms** regime the mint is
-    MUST-SUCCEED (a failure raises :class:`TranscriptIngestError` and fails the turn —
-    the atoms are the one copy, §3.4); under the **legacy** regime the messages-store
-    copy is still authoritative so the mint is best-effort-but-loud, exactly as S4
-    landed it.
-
-    ``atoms_minted=True`` (#1334): the caller runs this hook itself later, off the loop
-    thread (``part_atom_minter.run_transcript_job`` / the turn's off-loop setup), so the
-    append returns without touching the store. Nothing is skipped, only deferred.
-
-    Args:
-        app: The FastAPI app (``app.state.arc`` is the canonical-log home).
-        session_id: Owning session.
-        message: The just-persisted gact message.
-        atoms_minted: The caller owns the (deferred) mint of this message.
-    """
-
-    if atoms_minted:
-        return
-    arc = _arc(app)
-    if arc is None:
-        logger.debug(
-            "transcript_projection: no ARC on app.state; skipping mint (session=%s message=%s)",
-            session_id,
-            getattr(message, "id", ""),
-        )
-        return
-    try:
-        mint_message_part_atoms(arc, session_id, message)
-    except Exception as exc:  # noqa: BLE001 - the atoms are the ONE copy: fail loud
-        logger.error(
-            "transcript_projection: mint FAILED reason=%s session=%s message=%s "
-            "(the turn fails; no half-committed transcript is served)",
-            INGEST_FAILED_REASON,
-            session_id,
-            getattr(message, "id", ""),
-            exc_info=True,
-        )
-        raise TranscriptIngestError(session_id, getattr(message, "id", ""), exc) from exc
-    # #737 S6: the mint landed — record the delegated-turn workflow_state as a
-    # state_merge op. Best-effort-but-loud: the verbatim message-part copy is
-    # the frozen fallback (§3.4).
-    record_state_merge_best_effort(arc, session_id, message)
-
-
-def on_messages_extended(app: "FastAPI", session_id: str, messages: list[Message]) -> None:
-    """Extend-seam hook: mint atoms for each appended message under the atoms regime.
-
-    Backs ``session_store._extend_session_messages`` (nanoagent sub-turn ledgers). Under
-    the legacy regime this is a no-op (the messages-store copy is authoritative); under
-    the atoms regime each message is minted so the assembled projection is complete.
-    With ``transcript.file`` off a failed mint drops the session's in-memory ledger,
-    so the next read serves exactly what clio-core holds.
-    """
-
-    if not messages:
-        return
-    arc = _arc(app)
-    if arc is None:
-        return
-    with reload_resident_on_failure(app, session_id):
-        for message in messages:
-            try:
-                mint_message_part_atoms(arc, session_id, message)
-            except Exception as exc:  # noqa: BLE001 - atoms are the one copy under this regime
-                raise TranscriptIngestError(session_id, getattr(message, "id", ""), exc) from exc
-            record_state_merge_best_effort(arc, session_id, message)  # #737 S6
 
 
 def replace_atom_lane(arc: Any, session_id: str, messages: list[Message]) -> None:
@@ -652,7 +343,13 @@ def replace_atom_lane(arc: Any, session_id: str, messages: list[Message]) -> Non
             except Exception as exc:  # noqa: BLE001 - re-raised typed, per message
                 raise TranscriptIngestError(session_id, getattr(message, "id", ""), exc) from exc
 
-    replace_lane(arc._segments, session_id, MESSAGE_PART_SCOPE, _mint_into)
+    replace_lane(
+        arc._segments,
+        session_id,
+        MESSAGE_PART_SCOPE,
+        _mint_into,
+        metadata={"transcript_visibility": uuid4().hex},
+    )
     drop_state_merge_lane(arc, session_id)
     for message in messages:
         record_state_merge_best_effort(arc, session_id, message)
@@ -702,7 +399,13 @@ def on_ledger_deleted(app: "FastAPI", session_id: str) -> None:
         return
     try:
         with reload_resident_on_failure(app, session_id):
-            erase_lane(arc._segments, session_id, MESSAGE_PART_SCOPE)
+            replace_lane(
+                arc._segments,
+                session_id,
+                MESSAGE_PART_SCOPE,
+                lambda _lane: None,
+                metadata={"transcript_visibility": uuid4().hex},
+            )
             drop_state_merge_lane(arc, session_id)  # #737 S6: the op lane goes with it
     except (ClioError, OSError, RuntimeError) as exc:
         raise TranscriptEraseError(session_id, exc) from exc
@@ -747,7 +450,5 @@ __all__ = [
     "mint_atoms_from_ledger",
     "on_ledger_deleted",
     "on_ledger_replaced",
-    "on_message_appended",
-    "on_messages_extended",
     "replace_atom_lane",
 ]

@@ -50,13 +50,21 @@ async def finalize_turn_async(
 ) -> None:
     """Finalize off-loop, apply output stops, then await the independent goal judge."""
 
-    await join_off_loop(
-        finalize_turn,
-        state,
-        pred,
-        drain_observed_tool_calls=drain_observed_tool_calls,
-        update_retry_attempt=update_retry_attempt,
-    )
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending, resume_recording
+    from clio_agent.gact.turn_stream import settle_turn_transcript
+
+    try:
+        await join_off_loop(
+            finalize_turn,
+            state,
+            pred,
+            drain_observed_tool_calls=drain_observed_tool_calls,
+            update_retry_attempt=update_retry_attempt,
+        )
+    except TranscriptRecordingPending as pending:
+        if not await resume_recording(state.app, pending):
+            await join_off_loop(settle_turn_transcript, state)
+            return  # An intentional clear/rewind withdrew this exact output.
     from clio_agent.gact.autonomy_output import observe_control_output
     from clio_agent.gact.goal_control import pause_failed_goal, retain_shutdown_goal
 

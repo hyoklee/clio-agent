@@ -194,6 +194,8 @@ class TaskAccess:
     def view(self, task: TaskSnapshot) -> dict[str, object]:
         """Observe-only grants expose safe counts/status, never descriptions or output."""
         rights = self.rights(task)
+        if self.history.requires_recovery:
+            task = task.model_copy(update={"recording": "unconfirmed"})
         if "read" in rights:
             result = task.model_dump(mode="json")
             required = {

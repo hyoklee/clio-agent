@@ -74,12 +74,14 @@ def process_arc(app: "FastAPI") -> Any:
     it; rebuilt only if the app has none yet (first build). ``None`` in History mode
     (:mod:`clio_agent.arc.history_mode`): the platform cannot run clio-core.
     """
-    arc = getattr(getattr(app, "state", None), "arc", None)
-    if arc is not None:
-        return arc
-    with _PROCESS_ARC_LOCK:  # single-flight: the boot attach and a first event never race
+    with _PROCESS_ARC_LOCK:
         arc = getattr(getattr(app, "state", None), "arc", None)
-        return arc if arc is not None else _construct_process_arc(app)
+        if arc is None:
+            return _construct_process_arc(app)
+        from clio_agent.gact.transcript_file import on_process_arc_bound
+
+        on_process_arc_bound(app)
+        return arc
 
 
 def arc_for_first_event(app: Any, event_type: str, sid: str) -> Any:
@@ -161,10 +163,13 @@ async def process_arc_off_loop(app: "FastAPI") -> Any:
         The ``ARCMemory`` stored on ``app.state.arc``; ``None`` in the loud History mode
         (:mod:`clio_agent.arc.history_mode`), decided once and cached like an ARC.
     """
-    arc = getattr(app.state, "arc", None)
-    if arc is not None:
-        return arc
     task: asyncio.Task[Any] | None = getattr(app.state, "arc_boot_task", None)
+    if task is not None and not task.done():
+        return await asyncio.shield(task)
+    arc = getattr(app.state, "arc", None)
+    ready = getattr(app.state, "transcript_boot_ready", None)
+    if arc is not None and (ready is None or ready.is_set()):
+        return arc
     if task is None or (task.done() and (task.cancelled() or task.exception() is not None)):
         task = asyncio.get_running_loop().create_task(_construct(app))
         app.state.arc_boot_task = task

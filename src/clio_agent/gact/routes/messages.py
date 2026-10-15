@@ -67,6 +67,15 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
     """
     register_response_feedback_routes(app)
 
+    @app.get("/v1/sessions/{sid}/legacy-transcript")
+    async def read_legacy_transcript(sid: str) -> dict[str, Any]:
+        """Inspect retained legacy variants without restoring them as visible conversation."""
+        from clio_agent.gact.transcript_migration import legacy_transcript
+
+        if app.state.sessions.get(sid) is None:
+            raise _session_not_found(sid)
+        return {"legacy_transcript": await run_off_loop(legacy_transcript, app, sid)}
+
     def _session_not_found(sid: str) -> HTTPException:
         return HTTPException(
             status_code=404,

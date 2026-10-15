@@ -74,6 +74,17 @@ class MessageStore:
                 rows[sid] = messages
         return rows
 
+    def read_source(self, session_id: str) -> str | None:
+        """Read a legacy source verbatim for startup custody, never for normal recovery."""
+        if self._path is None:
+            return None
+        path = self._path / f"{session_id}.json"
+        with self._lock:
+            try:
+                return path.read_text(encoding="utf-8")
+            except FileNotFoundError:
+                return None
+
     def session_ids(self) -> list[str]:
         """Return the ids of every persisted session ledger (the boot index).
 

@@ -500,23 +500,11 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     if not isinstance(pending, Mapping) or not pending or pending.get("surfaced"):
         return False
 
-    from clio_agent.arc.task_types import (
-        AssignmentDetails,
-        QuestionDefinition,
-        QuestionOption,
-        TaskOwner,
-    )
-    from clio_agent.gact.enrichment import _finalize_context_frame  # noqa: PLC0415
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-    from clio_agent.gact.paused_transcript import persist_paused_transcript  # noqa: PLC0415
-    from clio_agent.gact.plan_exit_resolution import PlanApproval
+    from clio_agent.gact.paused_transcript import persist_paused_transcript
     from clio_agent.gact.plan_reuse import save_approved_plan  # noqa: PLC0415
-    from clio_agent.gact.question_surface import question_row
     from clio_agent.gact.runtime.globals import (  # noqa: PLC0415
-        _emit_semantic_event,
         _new_question_id,
     )
-    from clio_agent.gact.turn_stream import settle_turn_transcript  # noqa: PLC0415
     from clio_agent.gact.types import UserQuestion  # noqa: PLC0415
 
     plan_file = str(pending.get("plan_file") or recorded_plan_file(session) or "")
@@ -563,7 +551,43 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
             "source_user_message_id": state.user_msg.id,
         },
     )
-    assistant_message_id = persist_paused_transcript(state)
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
+
+    try:
+        assistant_message_id = persist_paused_transcript(state)
+    except TranscriptRecordingPending as recording:
+        first_publication = recording.after_confirmed
+        retained_message_id = recording.message.id
+
+        def publish() -> None:
+            if first_publication is not None:
+                first_publication()
+            complete_plan_exit_pause(state, pending, question, retained_message_id)
+
+        recording.after_confirmed = publish
+        raise
+    complete_plan_exit_pause(state, pending, question, assistant_message_id)
+    return True
+
+
+def complete_plan_exit_pause(
+    state: "TurnState", pending: Mapping[str, Any], question: Any, assistant_message_id: str
+) -> None:
+    """Post the prepared approval after the original output confirms; never replay its setup."""
+    from clio_agent.arc.task_types import (
+        AssignmentDetails,
+        QuestionDefinition,
+        QuestionOption,
+        TaskOwner,
+    )
+    from clio_agent.gact.enrichment import _finalize_context_frame
+    from clio_agent.gact.events import Event
+    from clio_agent.gact.plan_exit_resolution import PlanApproval
+    from clio_agent.gact.question_surface import question_row
+    from clio_agent.gact.runtime.globals import _emit_semantic_event
+    from clio_agent.gact.turn_stream import settle_turn_transcript
+
+    app = state.app
     # Retire the paused turn's ledger BEFORE the question becomes answerable: an
     # answer arriving right after the status event starts the resume turn, whose
     # transcript a late settle here would close.
@@ -649,7 +673,6 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
             },
         )
     )
-    return True
 
 
 def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, question: Any) -> None:

@@ -251,7 +251,7 @@ async def dispatch_action(
             reason="a2ui_event_context_invalid",
             http_status=422,
         )
-        existing = persist_new_record(app, failed_record)
+        existing = await run_off_loop(persist_new_record, app, failed_record)
         if existing is not None:
             return _duplicate_result(
                 app, sid, existing, name=name, destination="agent", surface=surface
@@ -359,7 +359,7 @@ async def dispatch_action(
     # Finding #1 (BLOCKING): the REAL idempotency decision. Persist and check
     # atomically, under the store's per-session lock -- a concurrent
     # duplicate racing the peek above is still caught here.
-    existing = persist_new_record(app, record)
+    existing = await run_off_loop(persist_new_record, app, record)
     if existing is not None:
         retry = ActionRecord.from_wire(existing)
         if (
@@ -428,7 +428,7 @@ async def _deliver_permission(
         failed = record.transition(
             state="failed", delivery="rejected", reason="validation_error", http_status=422
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         _publish(app, sid, failed)
         raise _error(
             422,
@@ -448,7 +448,7 @@ async def _deliver_permission(
             reason="a2ui_permission_out_of_scope",
             http_status=404,
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         _publish(app, sid, failed)
         raise _error(404, "not_found", f"permission not found: {permission_id}")
     try:
@@ -456,13 +456,13 @@ async def _deliver_permission(
             lambda: resolve_permission(app, permission_id, decision, grantor=GRANTOR_USER)
         )
     except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-        fail_and_publish(app, sid, record, exc)
+        await run_off_loop(fail_and_publish, app, sid, record, exc)
         raise
     if row is None and pending is None:
         failed = record.transition(
             state="failed", delivery="rejected", reason="not_found", http_status=404
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         _publish(app, sid, failed)
         raise _error(404, "not_found", f"permission not found: {permission_id}")
     delivered = record.transition(
@@ -470,7 +470,7 @@ async def _deliver_permission(
         delivery="permission",
         correlation={"permission_id": permission_id, "decision": decision},
     )
-    persist_transition(app, delivered)
+    await run_off_loop(persist_transition, app, delivered)
     _publish(app, sid, delivered)
     return delivered
 
@@ -493,7 +493,7 @@ async def _deliver_run(
         try:
             await cancel_session_state_async(app, deps, sid)
         except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-            fail_and_publish(app, sid, record, exc)
+            await run_off_loop(fail_and_publish, app, sid, record, exc)
             raise
         delivered = record.transition(state="delivered", delivery="run_cancel")
     elif operation == "retry":
@@ -509,7 +509,7 @@ async def _deliver_run(
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-            fail_and_publish(app, sid, record, exc)
+            await run_off_loop(fail_and_publish, app, sid, record, exc)
             raise
         delivered = record.transition(
             state="delivered", delivery="run_retry", correlation={"attempt_id": attempt.id}
@@ -518,10 +518,10 @@ async def _deliver_run(
         delivered = record.transition(
             state="failed", delivery="rejected", reason="a2ui_validation_failed", http_status=422
         )
-        persist_transition(app, delivered)
+        await run_off_loop(persist_transition, app, delivered)
         _publish(app, sid, delivered)
         raise _error(422, "validation_error", "run destination requires a declared operation")
-    persist_transition(app, delivered)
+    await run_off_loop(persist_transition, app, delivered)
     _publish(app, sid, delivered)
     return delivered
 

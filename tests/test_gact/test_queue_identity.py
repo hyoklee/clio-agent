@@ -237,3 +237,34 @@ def test_promotion_rechecks_identity_after_an_intervening_public_acceptance(
     assert inserted and client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == inserted
     assert client.get(endpoint).json()["queued_messages"] == [queued]
     assert not _app(client).state.task_history.acknowledged_notifications(sid)
+
+
+def test_legacy_transcript_identity_cannot_be_replaced_by_new_acceptance(
+    paused: tuple[TestClient, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Historical transcript presence cannot imply permission to replay or overwrite it."""
+    from clio_agent.gact import message_submission, session_store
+    from clio_agent.gact.types import Message, Part
+
+    client, sid = paused
+    app = _app(client)
+    legacy = Message(
+        id="legacy-user",
+        session_id=sid,
+        role="user",
+        created_at="2026-10-01T12:00:00Z",
+        updated_at="2026-10-01T12:00:00Z",
+        parts=[Part(type="text", text="Retained historical instruction")],
+    )
+    session_store._append_session_message(app, sid, legacy)
+    before = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+    assignment = app.state.task_history.latest_assignment(sid)
+    monkeypatch.setattr(message_submission, "_new_message_id", lambda _role: legacy.id)
+    refused = client.post(
+        f"/v1/sessions/{sid}/messages", json={"text": "Would rewrite existing history"}
+    )
+    assert refused.status_code == 409, refused.text
+    assert "without a confirmed acceptance" in refused.json()["detail"]
+    assert client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == before
+    assert not app.state.task_history.pending_mail(sid)
+    assert app.state.task_history.latest_assignment(sid) == assignment

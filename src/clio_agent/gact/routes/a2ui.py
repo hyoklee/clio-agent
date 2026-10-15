@@ -17,6 +17,7 @@ from clio_agent.gact.a2ui import (
 from clio_agent.gact.a2ui_actions.dispatcher import dispatch_action
 from clio_agent.gact.a2ui_catalogs.routes.a2ui_capabilities import register_a2ui_capabilities_routes
 from clio_agent.gact.a2ui_catalogs.routes.a2ui_catalogs import register_a2ui_catalog_routes
+from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.protocol_v3 import A2UI_V091
 from clio_agent.gact.routes._body import json_body
 from clio_agent.gact.routes.a2ui_visual import register_a2ui_visual_routes
@@ -61,7 +62,9 @@ def register_a2ui_routes(app: FastAPI, deps: "GactDeps") -> None:
 
         require_session(sid)
         try:
-            surfaces, degradations = app.state.a2ui_store.list_wire_with_degradations(sid)
+            surfaces, degradations = await run_off_loop(
+                app.state.a2ui_store.list_wire_with_degradations, sid
+            )
         except ClioError as exc:
             surfaces = []
             degradations = [
@@ -107,12 +110,14 @@ def register_a2ui_routes(app: FastAPI, deps: "GactDeps") -> None:
             for message in messages:
                 if not isinstance(message, Mapping):
                     raise A2UIValidationError("A2UI message must be an object")
-            outcome = app.state.a2ui_store.apply_batch_outcome(
-                sid,
-                messages,
-                run_id=str(correlation.get("run_id") or ""),
-                message_id=str(correlation.get("message_id") or ""),
-                part_id=str(correlation.get("part_id") or ""),
+            outcome = await run_off_loop(
+                lambda: app.state.a2ui_store.apply_batch_outcome(
+                    sid,
+                    messages,
+                    run_id=str(correlation.get("run_id") or ""),
+                    message_id=str(correlation.get("message_id") or ""),
+                    part_id=str(correlation.get("part_id") or ""),
+                )
             )
         except A2UICatalogUnknownError as exc:
             app.state.a2ui_catalogs.record_session_reason(
