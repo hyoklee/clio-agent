@@ -170,7 +170,7 @@ async def test_stop_retirement_preserves_buffered_feedback_without_replaying_com
         )
         assert observed == expected
         assert owner.history.acknowledged_notifications(sid) == frozenset({"original", "feedback"})
-        assert not owner.history.pending_mail(sid)
+        assert not await asyncio.to_thread(owner.history.pending_mail, sid)
         assert not owner._model_recording.get(sid)
         latest = owner.history.latest_assignment(sid)
         assert latest is not None and latest.handle == root.handle
@@ -352,7 +352,7 @@ async def test_cancel_after_stop_uses_persisted_exact_admission_and_preserves_ot
         assert owner.history.mail_withdrawn(sid, "original") is not revised
         assert not owner.history.mail_withdrawn(sid, "other")
         assert not owner.history.acknowledged_notifications(sid)
-        retained = {item.id for item in owner.history.pending_mail(sid)}
+        retained = {item.id for item in await asyncio.to_thread(owner.history.pending_mail, sid)}
         assert retained == ({"original", "other"} if revised else {"other"})
     finally:
         release.set()

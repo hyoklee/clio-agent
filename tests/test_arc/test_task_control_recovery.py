@@ -48,7 +48,9 @@ async def test_applied_stop_completion_repairs_only_its_original_gate_after_rest
         assert (
             terminal is not None and terminal.status == "completed" and terminal.result is not None
         )
-        assert owner.history.read_content(terminal.result) == {"answer": "Approved exact output"}
+        assert await asyncio.to_thread(owner.history.read_content, terminal.result) == {
+            "answer": "Approved exact output"
+        }
         assert app.state.sessions.get(root.owner.session_id).metadata["execution_gate"] == handle
         frozen = app.state.questions.resolution(handle)
         restored = TaskHistory(arc)
@@ -97,7 +99,9 @@ async def test_pause_resume_then_cancel_clears_own_question_gate_and_resume_inst
         assert app.state.sessions.get(sid).metadata["agent_paused_assignment"] == ""
         assert app.state.sessions.get(sid).metadata["execution_gate"] == question
         resume = next(
-            item for item in owner.history.pending_mail(sid) if item.id.startswith("resume:")
+            item
+            for item in await asyncio.to_thread(owner.history.pending_mail, sid)
+            if item.id.startswith("resume:")
         )
         assert (await owner.cancel(caller, root.handle))["cancellation_requested"]
         settled = await operations.wait(caller, root.handle)
@@ -128,7 +132,9 @@ async def test_cancelled_queued_child_does_not_relaunch_from_its_retained_delega
         )
         sid, handle = child["session_id"], child["handle"]
         delegation = next(
-            item for item in owner.history.pending_mail(sid) if item.kind == "delegation"
+            item
+            for item in await asyncio.to_thread(owner.history.pending_mail, sid)
+            if item.kind == "delegation"
         )
         caller = TaskCaller(root.owner.session_id, "human")
         operations = TaskOperations(
@@ -157,7 +163,8 @@ async def test_cancelled_queued_child_does_not_relaunch_from_its_retained_delega
         assert owner.history.mail_withdrawn(sid, delegation.id)
         assert delegation.id not in owner.history.acknowledged_notifications(sid)
         assert any(
-            item.handle == handle for item in owner.history.pending_mail(root.owner.session_id)
+            item.handle == handle
+            for item in await asyncio.to_thread(owner.history.pending_mail, root.owner.session_id)
         )
     finally:
         await owner.shutdown()
