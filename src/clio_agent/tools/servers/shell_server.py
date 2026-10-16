@@ -664,7 +664,7 @@ async def execute_shell(
 
     async def settle() -> None:
         await process.wait()
-        while await asyncio.to_thread(tree.active):
+        while tree.active():
             await asyncio.sleep(0.05)
 
     try:
@@ -672,14 +672,14 @@ async def execute_shell(
         physical_settlement = True
     except TimeoutError:
         timed_out = True
-        await asyncio.to_thread(tree.terminate)
+        tree.terminate()
         await settle()
         physical_settlement = True
     except BaseException:
         _log_shell_phase(call_id, "child_lifetime", phase_started, outcome="interrupted")
-        # The registered worker's cleanup receipt is valid only after the
-        # process tree and output readers have actually settled.
-        await asyncio.to_thread(tree.terminate)
+        # Signal the owned OS tree directly; Core I/O may occupy the executor.
+        # The receipt still follows actual process exit and output-reader retirement.
+        tree.terminate()
         await settle()
         physical_settlement = True
         raise
@@ -730,9 +730,9 @@ async def _cancel_pending_spawn(spawn: asyncio.Task[asyncio.subprocess.Process])
         tree = None
         try:
             tree = TaskProcessTree(process.pid)
-            await asyncio.to_thread(tree.terminate)
+            tree.terminate()
             await process.wait()
-            while await asyncio.to_thread(tree.active):
+            while tree.active():
                 await asyncio.sleep(0.05)
         finally:
             if tree is not None:

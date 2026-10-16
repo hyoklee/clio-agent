@@ -9,6 +9,26 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R151 retained a stricter outage failure on frozen `f4a5d05f` / `401efcfe`
+(production code unchanged from R149). Actual Codex/Luna root and child ran
+native Shell with a descendant under a one-worker default I/O executor. During
+the private Core suspension, child pause acknowledged in 3.62 ms and accepted
+Shell output continued. Separate Shell cancellation acknowledged in 5.69 ms,
+recording unconfirmed, but neither physical process stopped before Core resumed.
+The shell workload had queued its OS-tree termination behind Core I/O in that
+same executor. The scoped R149 pass with ordinary executor capacity remains
+valid, but does not satisfy this stricter gate.
+
+The correction removes that executor hop for the existing OS-container signal
+and query calls. Process exit, output-reader retirement and Core cleanup receipts
+remain awaited. No execution registry, scheduler, new pool or library change is
+added. A real-process occupied-executor regression is constructed for CI, not
+executed locally. Scoped Ruff/Mypy pass; fresh R152 qualification is pending.
+R150's earlier helper-argument setup failure occurred before model submission.
+Both failed families exited normally and their exact profiles/temp roots are
+removed, with no owned process/listener residue (`r150-cleanup.json`,
+`r151-cleanup.json`).
+
 R149 passed the scoped actual-model Shell outage correction on frozen clio-agent
 `2d7bc72d41d13051322b6a7284e60bad5247be17` / GACT `401efcfe`. Actual
 Codex/Luna (`gpt-6-luna`, direct WebSocket bridge) again delegated Shell despite

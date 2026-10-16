@@ -27,9 +27,9 @@ async def native_owner(
     arc: ARCMemory, monkeypatch: pytest.MonkeyPatch, *, kind: TaskKind = "Shell"
 ) -> tuple[NativeTools, CoreRecovery]:
     """Construct production recording/recovery without opening execution transports."""
-    for kind in ("SHELL", "STORAGE"):
-        monkeypatch.setenv(f"CLIO_TASKS_{kind}_URL", "memory://")
-        monkeypatch.setenv(f"CLIO_TASKS_{kind}_QUEUE", "")
+    for root_kind in ("SHELL", "STORAGE"):
+        monkeypatch.setenv(f"CLIO_TASKS_{root_kind}_URL", "memory://")
+        monkeypatch.setenv(f"CLIO_TASKS_{root_kind}_QUEUE", "")
     history = TaskHistory(arc)
     stamp = now()
     await asyncio.to_thread(

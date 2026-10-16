@@ -121,9 +121,8 @@ async def test_pause_and_human_notice_do_not_wait_for_pending_core_writer(
         assert notice is not None and notice.sender_human == "human"
         body = await asyncio.to_thread(owner.history.read_content, notice.content)
         assert body["handle"] == child["handle"] and body["action"] == "pause"
-        assert [item.id for item in owner.history.pending_mail(root.owner.session_id)] == [
-            notice_id
-        ]
+        pending = await asyncio.to_thread(owner.history.pending_mail, root.owner.session_id)
+        assert [item.id for item in pending] == [notice_id]
     finally:
         await owner.shutdown()
         await owner.recovery.drain()
