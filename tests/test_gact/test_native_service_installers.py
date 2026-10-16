@@ -213,6 +213,12 @@ def test_database_mode_switch_preserves_managed_passwords(tmp_path: Path) -> Non
     site.chmod(0o600)
     private(tmp_path, {**manifest, "database_mode": "site", "database_settings_path": str(site)})
     assert private(tmp_path, manifest) == first
+    moved = private(
+        tmp_path, {**manifest, "redis_port": 16380, "mongo_port": 37018, "postgres_port": 15433}
+    )
+    assert moved["password"] == first["password"]
+    assert ":16380/" in moved["redis_url"] and ":37018/" in moved["mongodb_uri"]
+    assert moved["POSTGRES_PORT"] == "15433"
 
 
 @pytest.mark.parametrize(

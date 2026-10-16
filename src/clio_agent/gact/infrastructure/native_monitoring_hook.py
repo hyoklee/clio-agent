@@ -80,7 +80,9 @@ def private(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
     elif path.exists() and "password" in json.loads(path.read_text(encoding="utf-8")):
         values = json.loads(path.read_text(encoding="utf-8"))
     else:
-        password = secrets.token_urlsafe(32)
+        values = {"password": secrets.token_urlsafe(32)}
+    if manifest["database_mode"] == "managed":
+        password = values["password"]
         values = {
             "password": password,
             "redis_url": f"redis://:{password}@127.0.0.1:{manifest['redis_port']}/0",
@@ -91,7 +93,6 @@ def private(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
             "POSTGRES_PASSWORD": password,
             "POSTGRES_DB": "clio",
         }
-    if manifest["database_mode"] == "managed":
         managed.write_text(json.dumps(values), encoding="utf-8")
         managed.chmod(0o600)
     path.write_text(json.dumps(values), encoding="utf-8")
