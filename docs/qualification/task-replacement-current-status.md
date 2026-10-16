@@ -9,6 +9,20 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+The R148 correction is implemented in clio-agent only; `iowarp-core` remains
+2.3.1, with no dependency or library changes. Confirmed task/ownership reads use
+a short projection lock independently of Core I/O. Restore builds a data-only
+replacement view and publishes it only after complete replay. Verified native
+cancellation and conversation pause/subtree controls close admission and act
+before recording; their acknowledgements explicitly report recording unconfirmed.
+The existing application recovery worker confirms the intent/effect and parent
+notice later. No new scheduler, task authority or delivery owner was introduced.
+Shell cancellation also avoids the storage lookup and shared I/O executor for
+its verified identity checks. Four pending-writer/restoration regressions are
+constructed for CI; they have not been executed locally. Scoped Ruff, Linux
+Mypy (ten production files), and the removal/size/class/vocabulary/instrumentation
+guards pass. Fresh actual-model R149 acceptance is pending; R148 remains failed.
+
 R148 on frozen `578d2e91` / `401efcfe` exposed a real Core-outage control
 dependency. Actual Codex/Luna initiated native background Shell work with a
 recorded process and descendant. The root delegated despite the direct-execution

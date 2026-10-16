@@ -67,6 +67,7 @@ class TaskHistory:
         self.observation_committed: Callable[[TaskSnapshot], None] | None = None
         self._requires_recovery = False
         self._lock = threading.RLock()
+        self._view_lock = threading.RLock()
         self._tasks: dict[str, TaskSnapshot] = {}
         self._aliases: dict[str, dict[str, TaskAlias]] = {}
         self._mail: dict[str, dict[str, MailItem]] = {}
@@ -468,12 +469,12 @@ class TaskHistory:
 
     def task_snapshot(self, handle: str) -> TaskSnapshot | None:
         """Read the internal passive view; public controls must authorize first."""
-        with self._lock:
+        with self._view_lock:
             return self._tasks.get(handle)
 
     def resolve_handle(self, value: str) -> str | None:
         """Resolve an exact public handle or an unambiguous historical alias only."""
-        with self._lock:
+        with self._view_lock:
             aliases = self._aliases.get(value)
             handles = {row.handle for row in aliases.values()} if aliases else set()
             if value in self._tasks:
@@ -579,13 +580,13 @@ class TaskHistory:
 
     def latest_assignment(self, session_id: str) -> TaskSnapshot | None:
         """Resolve a stable session's latest finite assignment from its passive Core index."""
-        with self._lock:
+        with self._view_lock:
             handle = self._assignments.get(session_id)
             return self._tasks.get(handle) if handle is not None else None
 
     def coordination_grants(self, recipient_session: str) -> tuple[CoordinationGrant, ...]:
         """Read exact human/configuration relationships for one recipient."""
-        with self._lock:
+        with self._view_lock:
             return tuple(
                 self._grants[key] for key in self._recipient_grants.get(recipient_session, set())
             )
@@ -611,6 +612,12 @@ class TaskHistory:
         assert_store_write_off_loop("task.mail.read")
         with self._lock:
             return tuple(self._pending.get(session_id, {}).values())
+
+    @contextmanager
+    def read_view(self) -> Iterator[None]:
+        """Read last-confirmed indexes without waiting for an in-flight Core RPC."""
+        with self._view_lock:
+            yield
 
     @contextmanager
     def serialized(self, *, writing: bool = False) -> Iterator[None]:
@@ -751,7 +758,11 @@ class TaskHistory:
             raise
 
     def _project(self, event_type: str, payload: dict[str, Any]) -> None:
-        return task_history_projection._project(self, event_type, payload)
+        snapshot = None
+        if event_type == "task.observed":
+            snapshot = task_history_projection._prepare_snapshot(self, payload)
+        with self._view_lock:
+            task_history_projection._project(self, event_type, payload, snapshot=snapshot)
 
     def context_inputs(self, session_id: str, scope: str) -> dict[str, RecipientInput]:
         """Read proven model inputs for one fixed Core context scope."""

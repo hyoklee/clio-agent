@@ -47,6 +47,19 @@ class CoreRecovery:
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._recover())
 
+    def defer_recording(self, identity: str, operation: Callable[[], object]) -> None:
+        """Retain a verified control's recording without delaying its owner effect.
+
+        The caller reports recording unconfirmed until the existing recovery
+        worker confirms this write. This is volatile evidence, never acceptance
+        of new durable work or proof that physical cleanup has settled.
+        """
+
+        async def record() -> None:
+            await asyncio.to_thread(operation)
+
+        self.defer(identity, record)
+
     @property
     def pending(self) -> tuple[str, ...]:
         """Expose recording/reattachment holds without inventing task completion."""

@@ -107,7 +107,7 @@ async def intervene(
     """Apply an authenticated human action and queue its attributed parent notice."""
     history = app.state.task_history
     caller = TaskCaller("", app.state.human_principal, human_action=True)
-    current = await asyncio.to_thread(TaskAccess(history, caller).require, handle, "control")
+    current = TaskAccess(history, caller).require(handle, "control")
     if action == "stop" and not stop_reservation_captured:
         stop_reservation = app.state.turn_runner.request_stop(current.owner.session_id)
     identity, stamp = "intervention_" + uuid4().hex, now()
@@ -123,13 +123,10 @@ async def intervene(
     def record(phase: str, effect: dict[str, Any] | None = None) -> None:
         _record_intervention(history, current, intent, phase, effect)
 
-    recording = "confirmed"
-    try:
+    critical = action in {"pause", "cancel", "stop"}
+    if not critical:
+        # New steering/resume/restart work requires confirmed durable intent.
         await asyncio.to_thread(record, "intent")
-    except Exception:
-        if action not in {"pause", "cancel", "stop"}:
-            raise  # never accept undurable new steering/restart work
-        recording = "unconfirmed"
 
     if action == "cancel":
         effect = (await app.state.task_operations.cancel(caller, handle))["outcomes"][0]
@@ -174,9 +171,19 @@ async def intervene(
     else:
         raise ValueError("Unknown human task control")
 
+    if critical:
+
+        def reconcile_control() -> None:
+            record("intent")
+            record("effect", effect)
+
+        app.state.task_recovery.defer_recording(identity, reconcile_control)
+        return {**effect, "intervention_id": identity, "recording": "unconfirmed"}
+
     async def confirm() -> None:
         await asyncio.to_thread(record, "effect", effect)
 
+    recording = "confirmed"
     try:
         await confirm()
     except Exception as error:

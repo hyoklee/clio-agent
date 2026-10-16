@@ -184,7 +184,7 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
             if (
                 isinstance(structured, dict)
                 and structured.get("state") == "cancelled"
-                and current.cancellation_requested_at
+                and (current.cancellation_requested_at or current.handle in self._control_holds)
             ):
                 status = "cancelled"
             elif result.get("isError") or (
@@ -197,7 +197,9 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
                 )
             ):
                 status = "failed"
-        withdrawn = current.cancellation_requested_at is not None and not attempts
+        withdrawn = (
+            current.cancellation_requested_at is not None or current.handle in self._control_holds
+        ) and not attempts
         if withdrawn:
             status = "cancelled"
         stamp = now()
@@ -220,38 +222,40 @@ async def cancel(
     self: NativeTools, handle: str, *, caller: TaskCaller | None = None
 ) -> dict[str, Any]:
     """Close owned admission before native cancellation; acknowledgement is not settlement."""
-    current = await asyncio.to_thread(self._current, handle)
-    if caller is None and current.terminal_at is not None:
+    with self.history.read_view():
+        current = (
+            TaskAccess(self.history, caller).require(handle, "control")
+            if caller is not None
+            else self._current(handle)
+        )
+        if current.terminal_at is None:
+            self._control_holds.add(handle)
+    if current.terminal_at is not None:
         return {"handle": handle, "cancellation_requested": False, "status": current.status}
-
-    authorized = False
+    requested_at = current.cancellation_requested_at or now()
 
     def intent() -> None:
-        nonlocal current, authorized
         with self.history.serialized():
-            if caller is not None and not authorized:
-                TaskAccess(self.history, caller).require(handle, "control")
-            authorized = True
             current = self._current(handle)
-            if current.terminal_at is None:
-                self._control_holds.add(handle)
-            if current.terminal_at is None and current.cancellation_requested_at is None:
+            if current.cancellation_requested_at is None:
                 self.history.record_snapshot(
                     current.model_copy(
                         update={
-                            "cancellation_requested_at": now(),
-                            "activity": "cancelling",
+                            "cancellation_requested_at": requested_at,
+                            "activity": "cancelling"
+                            if current.terminal_at is None
+                            else current.activity,
                             "updated_at": now(),
                         }
                     ),
                     observation_id=uuid4().hex,
                 )
 
-    await self._record_or_defer("native-cancel:" + handle, intent)
-    if current.terminal_at is not None:
-        return {"handle": handle, "cancellation_requested": False, "status": current.status}
+    # The verified owner closes admission above and sends cancellation below.
+    # A pending Core RPC cannot become a prerequisite for either operation.
+    self.recovery.defer_recording("native-cancel:" + handle, intent)
     provider_owned = False
-    if self.provider_cancel is not None:
+    if current.kind == "Download" and self.provider_cancel is not None:
         try:
             provider_owned = await self.provider_cancel(current)
         except Exception as error:
@@ -266,13 +270,18 @@ async def cancel(
 
             self.recovery.defer("provider-cancel-delivery:" + handle, retry_provider_cancel)
             reason = str(error)
-            await self._record_or_defer(
+            self.recovery.defer_recording(
                 "provider-cancel-attention:" + handle,
                 lambda: self._uncertain(
                     handle, "Provider cancellation delivery is unconfirmed: " + reason
                 ),
             )
-            return {"handle": handle, "cancellation_requested": True, "settlement": "unknown"}
+            return {
+                "handle": handle,
+                "cancellation_requested": True,
+                "settlement": "unknown",
+                "recording": "unconfirmed",
+            }
     if provider_owned:
         live_leg = handle in self._calls
         recover_provider = self.provider_recovery
@@ -318,7 +327,7 @@ async def cancel(
         self.recovery.defer(
             "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
         )
-        await self._record_or_defer(
+        self.recovery.defer_recording(
             "native-cancel-unknown:" + handle,
             lambda: self._uncertain(
                 handle,
@@ -327,7 +336,12 @@ async def cancel(
                 else "Cancellation admission is closed, but backend acceptance remains uncertain.",
             ),
         )
-        return {"handle": handle, "cancellation_requested": True, "settlement": "unknown"}
+        return {
+            "handle": handle,
+            "cancellation_requested": True,
+            "settlement": "unknown",
+            "recording": "unconfirmed",
+        }
 
     try:
         if not await self._deliver_cancel(handle):
@@ -342,7 +356,7 @@ async def cancel(
             "native-cancel-delivery:" + handle, partial(self._deliver_cancel, handle)
         )
         reason = str(error)
-        await self._record_or_defer(
+        self.recovery.defer_recording(
             "native-cancel-attention:" + handle,
             lambda: self._uncertain(handle, "Cancellation delivery is unconfirmed: " + reason),
         )
@@ -359,7 +373,7 @@ async def _deliver_cancel(self: NativeTools, handle: str) -> bool:
     """Retry cancellation only against this submission's adopted native identity."""
     if self._resources_closed:
         return True  # durable intent survives; closed RPC resources cannot deliver it
-    current = await asyncio.to_thread(self._current, handle)
+    current = self._current(handle)
     if current.terminal_at is not None:
         return True
     if (

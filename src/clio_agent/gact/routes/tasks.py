@@ -288,7 +288,7 @@ def register_task_routes(app: FastAPI) -> None:
     @app.post("/v1/sessions/{sid}/tasks/cancel")
     @app.post("/v1/sessions/{sid}/async-tasks/cancel")
     async def cancel(sid: str, body: SelectedTasks) -> dict[str, Any]:
-        await asyncio.to_thread(caller, sid)
+        caller(sid)
         selected = [body.tasks] if isinstance(body.tasks, str) else body.tasks
         results, errors = [], []
         for handle in selected:
@@ -312,11 +312,9 @@ def register_task_routes(app: FastAPI) -> None:
     async def control(
         sid: str, handle: str, action: Literal["pause", "resume", "restart"]
     ) -> dict[str, Any]:
-        identity = await asyncio.to_thread(caller, sid)
+        identity = caller(sid)
         try:
-            task = await asyncio.to_thread(
-                TaskAccess(app.state.task_history, identity).require, handle, "control"
-            )
+            task = TaskAccess(app.state.task_history, identity).require(handle, "control")
         except ValueError as error:
             raise HTTPException(404, "Task is unavailable") from error
         try:

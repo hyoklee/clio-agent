@@ -11,6 +11,7 @@ from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import (
     BackendReference,
     SubmissionContext,
+    TaskKind,
     TaskOwner,
     TaskSnapshot,
     argument_digest,
@@ -23,7 +24,7 @@ from clio_agent.tools.task_client import TaskSubmission
 
 
 async def native_owner(
-    arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
+    arc: ARCMemory, monkeypatch: pytest.MonkeyPatch, *, kind: TaskKind = "Shell"
 ) -> tuple[NativeTools, CoreRecovery]:
     """Construct production recording/recovery without opening execution transports."""
     for kind in ("SHELL", "STORAGE"):
@@ -35,7 +36,7 @@ async def native_owner(
         history.record_snapshot,
         TaskSnapshot(
             handle="task_cancel",
-            kind="Shell",
+            kind=kind,
             owner=TaskOwner(human_id="human", session_id="owner", assignment_id="assignment_owner"),
             label="Command",
             tool="bash",
@@ -99,7 +100,9 @@ async def test_native_cancel_rpc_failure_retries_original_handle(
         current.handle, current.tool, reference, None, None, context.argument_digest
     )
     native._calls["task_cancel"] = SimpleNamespace(
-        submission=submission, task=SimpleNamespace(task_id="native-job", cancel=cancel)
+        submission=submission,
+        task=SimpleNamespace(task_id="native-job"),
+        request_cancel=cancel,
     )
     acknowledged = await native.cancel("task_cancel")
     assert acknowledged["cancellation_requested"] is True
@@ -116,7 +119,7 @@ async def test_provider_cancel_delivery_failure_keeps_owner_retry_pending(
     arc: ARCMemory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    native, recovery = await native_owner(arc, monkeypatch)
+    native, recovery = await native_owner(arc, monkeypatch, kind="Download")
     attempts = 0
 
     async def cancel_provider(task: TaskSnapshot) -> bool:

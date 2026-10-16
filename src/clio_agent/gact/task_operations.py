@@ -575,9 +575,7 @@ class TaskOperations:
         outcomes = []
         for handle in _handles(tasks):
             try:
-                current = await asyncio.to_thread(
-                    TaskAccess(self.history, caller).require, handle, "control"
-                )
+                current = TaskAccess(self.history, caller).require(handle, "control")
                 outcomes.append(await self.cancel_owner(current, caller))
             except Exception as error:
                 logger.exception(

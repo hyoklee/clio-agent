@@ -159,7 +159,7 @@ def _legacy_workflow(self: TaskHistory, snapshot: TaskSnapshot) -> None:
 
 def tree_handles(self: TaskHistory, session_id: str, *, active_only: bool = False) -> set[str]:
     """Return the stable session's work and delegated descendants, never its ancestors."""
-    with self._lock:
+    with self._view_lock:
         if active_only:
             return set(self._active_trees.get(session_id, ()))
         handles = set(self._session_tasks.get(session_id, set()))
@@ -174,7 +174,7 @@ def tree_handles(self: TaskHistory, session_id: str, *, active_only: bool = Fals
 
 def session_handles(self: TaskHistory, session_id: str) -> set[str]:
     """Read the passive session index without loading or scanning task history."""
-    with self._lock:
+    with self._view_lock:
         return set(self._session_tasks.get(session_id, set()))
 
 
@@ -187,7 +187,7 @@ def task_handles(
     active_only: bool = False,
 ) -> set[str]:
     """Read passive Core indexes; callers authorize before disclosing selected rows."""
-    with self._lock:
+    with self._view_lock:
         indexes = (
             (kind, self._kind_tasks),
             (human_id, self._human_tasks),
@@ -203,7 +203,7 @@ def task_handles(
 
 def resource_handles(self: TaskHistory, resource_id: str) -> set[str]:
     """Read owner-published resource associations from a passive Core index."""
-    with self._lock:
+    with self._view_lock:
         return set(self._resource_tasks.get(resource_id, ()))
 
 
@@ -223,7 +223,7 @@ def task_order(
 
 def session_tree_ids(self: TaskHistory, session_id: str, *, human_id: str = "") -> set[str]:
     """Read stable descendant addresses without enumerating their retained assignments."""
-    with self._lock:
+    with self._view_lock:
         return set(self._tree_sessions.get((session_id, human_id), ()))
 
 
@@ -290,58 +290,52 @@ def _index_task_order(self: TaskHistory, snapshot: TaskSnapshot, *, known: bool)
 logger = logging.getLogger(__name__)
 
 
+_PROJECTION_FIELDS = (
+    "_tasks",
+    "_aliases",
+    "_mail",
+    "_pending",
+    "_inputs",
+    "_latest_inputs",
+    "_notification_inputs",
+    "_iterations",
+    "_input_locations",
+    "_acknowledged",
+    "_observation_inputs",
+    "_withdrawn",
+    "_grants",
+    "_submissions",
+    "_attempts",
+    "_deduplicated",
+    "_session_tasks",
+    "_kind_tasks",
+    "_human_tasks",
+    "_active_tasks",
+    "_query_order",
+    "_active_trees",
+    "_tree_sessions",
+    "_resource_tasks",
+    "_assignments",
+    "_children",
+    "_recipient_grants",
+    "_subscriptions",
+    "_workflow_bindings",
+    "_workflow_executions",
+    "_workflow_latest",
+    "_workflow_dirty",
+    "_workflow_unresolved",
+)
+
+
 def restore(self: TaskHistory) -> None:
-    """Replay Core once at startup, including interrupted recipient-input commits."""
+    """Rebuild Core indexes off to the side; readers retain the last confirmed view."""
     assert_store_write_off_loop("task.restore")
     started = time.monotonic()
     with self._lock:
-        tasks, mail, inputs = self._tasks, self._mail, self._inputs
-        latest_inputs = self._latest_inputs
-        aliases = self._aliases
-        pending, previous_revision = self._pending, self.revision
-        acknowledgements, withdrawn, grants = self._acknowledged, self._withdrawn, self._grants
-        observation_inputs = self._observation_inputs
-        notification_inputs = self._notification_inputs
-        iterations, locations = self._iterations, self._input_locations
-        submissions, attempts = self._submissions, self._attempts
-        deduplicated = self._deduplicated
-        session_tasks, children = self._session_tasks, self._children
-        kind_tasks, human_tasks, active_tasks = (
-            self._kind_tasks,
-            self._human_tasks,
-            self._active_tasks,
-        )
-        resource_tasks = self._resource_tasks
-        query_order, active_trees = self._query_order, self._active_trees
-        tree_sessions = self._tree_sessions
-        assignments = self._assignments
-        recipient_grants, subscriptions = self._recipient_grants, self._subscriptions
-        workflows = self._workflow_bindings, self._workflow_executions, self._workflow_latest
-        workflow_dirty = self._workflow_dirty
-        workflow_unresolved = self._workflow_unresolved
-        self._tasks, self._mail, self._inputs = {}, {}, {}
-        self._latest_inputs = {}
-        self._aliases = {}
-        self._pending, self.revision = {}, 0
-        self._acknowledged, self._withdrawn, self._grants = {}, {}, {}
-        self._observation_inputs = {}
-        self._notification_inputs = {}
-        self._iterations, self._input_locations = {}, {}
-        self._submissions, self._attempts = {}, {}
-        self._deduplicated = {}
-        self._session_tasks, self._children = {}, {}
-        self._kind_tasks, self._human_tasks, self._active_tasks = {}, {}, set()
-        self._resource_tasks = {}
-        self._query_order, self._active_trees = {}, {}
-        self._tree_sessions = {}
-        self._assignments = {}
-        self._recipient_grants, self._subscriptions = {}, {}
-        self._workflow_bindings, self._workflow_executions, self._workflow_latest = {}, {}, {}
-        self._workflow_dirty = set()
-        self._workflow_unresolved = {}
+        candidate = type(self)(self.arc)
         try:
-            self._replaying = True
-            for content in self.arc._live.iter_event_contents():
+            candidate._replaying = True
+            for content in candidate.arc._live.iter_event_contents():
                 event_type = str(content.get("event_type", ""))
                 payload = content.get("payload") or {}
                 if (
@@ -364,58 +358,31 @@ def restore(self: TaskHistory) -> None:
                     if "schema_version" in payload:
                         raise ValueError("Task history observation envelope is incomplete")
                     continue  # unversioned historical formats are decoded at startup migration
-                self._project(event_type, payload)
+                candidate._project(event_type, payload)
             # Build from latest observations once, with complete parent identities.
             # Startup order may group sessions rather than follow global creation time.
-            for snapshot in self._tasks.values():
-                _index_task_order(self, snapshot, known=True)
-            for ordering in self._query_order.values():
+            for snapshot in candidate._tasks.values():
+                _index_task_order(candidate, snapshot, known=True)
+            for ordering in candidate._query_order.values():
                 ordering.sort()
             scopes: dict[tuple[str, str], dict[str, RecipientInput]] = {}
-            for locator in self._input_locations.values():
+            for locator in candidate._input_locations.values():
                 key = (locator["session_id"], locator["scope"])
                 if key not in scopes:
-                    scopes[key] = self.context_inputs(*key)
+                    scopes[key] = candidate.context_inputs(*key)
                 recovered = scopes[key].get(locator["id"])
                 if recovered is not None:
-                    _accept_input(self, recovered)
-            _repair_indexes(self)
+                    _accept_input(candidate, recovered)
+            _repair_indexes(candidate)
         except Exception:
-            self._replaying = False
             self.requires_recovery = True
-            self._tasks, self._mail, self._inputs = tasks, mail, inputs
-            self._latest_inputs = latest_inputs
-            self._aliases = aliases
-            self._pending, self.revision = pending, previous_revision
-            self._acknowledged, self._withdrawn, self._grants = (
-                acknowledgements,
-                withdrawn,
-                grants,
-            )
-            self._observation_inputs = observation_inputs
-            self._notification_inputs = notification_inputs
-            self._iterations, self._input_locations = iterations, locations
-            self._submissions, self._attempts = submissions, attempts
-            self._deduplicated = deduplicated
-            self._session_tasks, self._children = session_tasks, children
-            self._kind_tasks, self._human_tasks, self._active_tasks = (
-                kind_tasks,
-                human_tasks,
-                active_tasks,
-            )
-            self._resource_tasks = resource_tasks
-            self._query_order, self._active_trees = query_order, active_trees
-            self._tree_sessions = tree_sessions
-            self._assignments = assignments
-            self._recipient_grants, self._subscriptions = recipient_grants, subscriptions
-            self._workflow_bindings, self._workflow_executions, self._workflow_latest = workflows
-            self._workflow_dirty = workflow_dirty
-            self._workflow_unresolved = workflow_unresolved
             raise
-        self.replay_seconds = time.monotonic() - started
-        self.revision = max(previous_revision, self.revision) + 1
-        self.requires_recovery = False
-        self._replaying = False
+        with self._view_lock:
+            for name in _PROJECTION_FIELDS:
+                setattr(self, name, getattr(candidate, name))
+            self.revision = max(self.revision, candidate.revision) + 1
+            self.replay_seconds = time.monotonic() - started
+            self.requires_recovery = False
     _notify(self, restored=True)
 
 
@@ -461,7 +428,29 @@ def _repair_indexes(self: TaskHistory) -> None:
         )
 
 
-def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> None:
+def _prepare_snapshot(self: TaskHistory, payload: dict[str, Any]) -> TaskSnapshot:
+    """Resolve content before publishing; legacy vocabulary belongs to replay only."""
+    record = payload.get("record", payload)
+    snapshot = (
+        TaskSnapshot.read_history(record)
+        if self._replaying
+        else TaskSnapshot.model_validate(record)
+    )
+    if snapshot.description_reference is not None:
+        description = self.read_content(snapshot.description_reference)
+        if not isinstance(description, str):
+            raise ValueError("Task assignment content must be text")
+        snapshot = snapshot.model_copy(update={"description": description})
+    return snapshot
+
+
+def _project(
+    self: TaskHistory,
+    event_type: str,
+    payload: dict[str, Any],
+    *,
+    snapshot: TaskSnapshot | None = None,
+) -> None:
     if "observation_id" in payload and "record" in payload:
         if payload.get("schema_version") != 1:
             raise ValueError("Unsupported task observation version; migration required")
@@ -470,12 +459,8 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
         alias = TaskAlias.model_validate(payload)
         self._aliases.setdefault(alias.alias, {})[alias.source_identity] = alias
     elif event_type == "task.observed":
-        snapshot = TaskSnapshot.read_history(payload)
-        if snapshot.description_reference is not None:
-            description = self.read_content(snapshot.description_reference)
-            if not isinstance(description, str):
-                raise ValueError("Task assignment content must be text")
-            snapshot = snapshot.model_copy(update={"description": description})
+        if snapshot is None:
+            raise ValueError("Task projection requires its prepared confirmed snapshot")
         known = snapshot.handle in self._tasks
         self._tasks[snapshot.handle] = snapshot
         if self._replaying and snapshot.kind in {"Session", "Subagent"} and snapshot.details:

@@ -114,9 +114,7 @@ async def start(app: Any) -> None:
             raise PermissionError("Execution permissions changed; obtain new approval")
 
     async def cancel_owner(task: TaskSnapshot, caller: TaskCaller) -> dict[str, Any]:
-        current = await asyncio.to_thread(
-            TaskAccess(history, caller).require, task.handle, "control"
-        )
+        current = TaskAccess(history, caller).require(task.handle, "control")
         if current.kind in {"Session", "Subagent"}:
             return await app.state.conversations.cancel(caller, current.handle)
         if current.kind == "Question":

@@ -75,7 +75,7 @@ class TaskAccess:
 
     def rights(self, task: TaskSnapshot) -> frozenset[CoordinationRight]:
         """Keep control, messaging, observation and content rights independent."""
-        with self.history.serialized():
+        with self.history.read_view():
             if self.caller.human_action and task.owner.human_id == self.caller.human_id:
                 return ALL_RIGHTS
             if task.owner.human_id == self.caller.human_id and self._in_session_tree(
