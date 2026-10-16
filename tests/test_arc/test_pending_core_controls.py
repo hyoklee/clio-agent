@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import BackendReference, CoreReference
+from clio_agent.arc.task_types import BackendReference
 from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
@@ -53,7 +53,9 @@ async def test_native_cancel_reaches_bound_owner_while_core_writer_is_pending(
     backend = BackendReference(
         owner="native", server="shell", session="native-session", task_id="original-task"
     )
-    reference = CoreReference(session_id="owner", scope="submission", content_id="original")
+    reference = await asyncio.to_thread(
+        native.history.write_content, "owner", {"original_task_id": backend.task_id}
+    )
     await asyncio.to_thread(
         native.history.record_snapshot,
         original.model_copy(update={"backend": backend, "submission": reference}),
