@@ -44,7 +44,7 @@ def begin_goal_check(app: Any, sid: str, goal: dict[str, Any], turn_id: str, tra
         )
     except Exception:
         logger.warning(
-            "goal checking activity delivery failed; retained phase remains available",
+            "reason=goal_activity_delivery_failed retained checking phase remains available",
             exc_info=True,
         )
     return True
