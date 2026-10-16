@@ -31,7 +31,7 @@ def build_create_a2ui_surface_tool() -> Any:
         """Create or update an inline interactive view or widget in this conversation.
 
         Use focused views for evidence and drafts; retain units and identifiers.
-        Find views with ``session_surface_ids``; read them with ``inspect_a2ui_surface``.
+        Find ``session_surface_ids``, call ``inspect_a2ui_surface``, then revise it in place.
         Pass exactly one of ``components`` or ``components_path``.
         Load ``a2ui-catalog-<slug>`` and inspect ``catalog.json#/components/<ExactComponentId>``.
         Connect every component to ``id=root``; use a layout for several views.
