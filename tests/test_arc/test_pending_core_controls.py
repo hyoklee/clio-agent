@@ -13,7 +13,9 @@ from typing import Any
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import BackendReference
+from clio_agent.arc.task_types import BackendReference, TaskOwner, TaskSnapshot
+from clio_agent.gact.core_recovery import CoreRecovery
+from clio_agent.gact.external_tasks import ExternalConnection, ExternalTasks
 from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
@@ -219,3 +221,67 @@ async def test_failed_restore_keeps_the_last_confirmed_control_identity(
             await asyncio.wait_for(restoring, 5)
         assert history.task_snapshot(original.handle) == original
         await recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_external_cancel_reaches_verified_sdk_owner_while_writer_is_pending(
+    arc: ARCMemory,
+) -> None:
+    """A blocked writer cannot delay an authorized external cancellation RPC."""
+    history = TaskHistory(arc)
+    recovery = CoreRecovery(history)
+    external = ExternalTasks(
+        SimpleNamespace(state=SimpleNamespace(task_history=history, task_recovery=recovery))
+    )
+    stamp = now()
+    backend = BackendReference(
+        owner="external_mcp",
+        server="owned-server",
+        session="original-session",
+        task_id="original-task",
+        auth_scope="verified-scope",
+        transport="StreamableHttpTransport",
+    )
+    current = TaskSnapshot(
+        handle="task_external_cancel",
+        kind="MCP",
+        owner=TaskOwner(human_id="human", session_id="owner", assignment_id="assignment"),
+        backend=backend,
+        tool="controlled",
+        label="External work",
+        invocation_id="external-cancel",
+        created_at=stamp,
+        updated_at=stamp,
+        status="running",
+        raw_status="working",
+    )
+    await history.io.run(history.record_snapshot, current, observation_id="accepted")
+    delivered = asyncio.Event()
+
+    async def request_cancel() -> None:
+        delivered.set()
+
+    connection = ExternalConnection(backend.model_copy(update={"task_id": ""}))
+    connection.calls[backend.task_id] = SimpleNamespace(
+        submission=SimpleNamespace(handle=current.handle),
+        task=SimpleNamespace(task_id=backend.task_id),
+        request_cancel=request_cancel,
+    )
+    external.connections["verified"] = connection
+    try:
+        async with pending_writer(history):
+            acknowledgement = await asyncio.wait_for(
+                external.cancel(current.handle, caller=TaskCaller("owner", "human")), 2
+            )
+            assert delivered.is_set() and acknowledgement["cancellation_requested"]
+            assert acknowledgement["recording"] == "unconfirmed"
+            assert acknowledgement["settlement"] == "external_acknowledged"
+            assert history.task_snapshot(current.handle) == current
+        await recovery.drain()
+        confirmed = history.task_snapshot(current.handle)
+        assert confirmed is not None and confirmed.cancellation_requested_at is not None
+        assert confirmed.backend == backend and confirmed.terminal_at is None
+        assert confirmed.raw_status == "working"  # The RPC is not a cleanup receipt.
+    finally:
+        await recovery.drain()
+        await history.io.close()

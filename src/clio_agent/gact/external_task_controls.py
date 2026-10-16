@@ -20,16 +20,21 @@ logger = logging.getLogger(__name__)
 async def cancel(
     owner: ExternalTasks, handle: str, *, caller: TaskCaller | None = None
 ) -> dict[str, Any]:
-    """Record intent and deliver to the original identity; never infer cleanup."""
-
-    authorized = False
+    """Control the verified SDK owner without making Core recording a prerequisite."""
+    with owner.history.read_view():
+        current = (
+            TaskAccess(owner.history, caller).require(handle, "control")
+            if caller is not None
+            else owner.history.task_snapshot(handle)
+        )
+    if current is None:
+        raise ValueError("External task is unavailable")
+    if current.terminal_at is not None:
+        return {"handle": handle, "cancellation_requested": False, "status": current.status}
+    requested_at = current.cancellation_requested_at or now()
 
     def intent() -> None:
-        nonlocal authorized
         with owner.history.serialized():
-            if caller is not None and not authorized:
-                TaskAccess(owner.history, caller).require(handle, "control")
-            authorized = True
             selected = owner.history.task_snapshot(handle)
             if selected is None:
                 raise ValueError("External task is unavailable")
@@ -37,7 +42,7 @@ async def cancel(
                 owner.history.record_snapshot(
                     selected.model_copy(
                         update={
-                            "cancellation_requested_at": now(),
+                            "cancellation_requested_at": requested_at,
                             "activity": "cancelling",
                             "updated_at": now(),
                         }
@@ -45,10 +50,7 @@ async def cancel(
                     observation_id=uuid4().hex,
                 )
 
-    await owner._record_or_defer("external-cancel:" + handle, intent)
-    current = await owner.history.io.run(owner.history.task_snapshot, handle)
-    if current is not None and current.terminal_at is not None:
-        return {"handle": handle, "cancellation_requested": False, "status": current.status}
+    owner.recovery.defer_recording("external-cancel:" + handle, intent)
     for host in owner.connections.values():
         call = next((row for row in host.calls.values() if row.submission.handle == handle), None)
         if call is None:
@@ -58,7 +60,12 @@ async def cancel(
         async def deliver(
             bound: AcceptedNativeCall = bound_call, connection: ExternalConnection = host
         ) -> bool:
-            latest = await owner.history.io.run(owner.history.task_snapshot, handle)
+            with owner.history.read_view():
+                latest = (
+                    TaskAccess(owner.history, caller).require(handle, "control")
+                    if caller is not None
+                    else owner.history.task_snapshot(handle)
+                )
             if (
                 owner._closing
                 or connection.calls.get(bound.task.task_id) is not bound
@@ -69,6 +76,10 @@ async def cancel(
                 )
             ):
                 return False  # adoption arms delivery; old RPC custody ends without an ACK
+            if latest is None or latest.backend != connection.backend.model_copy(
+                update={"task_id": bound.task.task_id}
+            ):
+                raise ValueError("External cancellation differs from its original SDK identity")
             await bound.request_cancel()
             return True
 
@@ -83,21 +94,30 @@ async def cancel(
                 type(error).__name__,
             )
             owner.recovery.defer("external-cancel-delivery:" + handle, retry_delivery)
-            await owner._record_or_defer(
+            owner.recovery.defer_recording(
                 "external-cancel-attention:" + handle,
                 partial(
                     owner._attention, handle, str(error), lost=False, episode="cancel:" + handle
                 ),
             )
-            return {"handle": handle, "cancellation_requested": True, "settlement": "unknown"}
+            return {
+                "handle": handle,
+                "cancellation_requested": True,
+                "settlement": "unknown",
+                "recording": "unconfirmed",
+            }
         return {
             "handle": handle,
             "cancellation_requested": True,
             "settlement": "external_acknowledged" if acknowledged else "unknown",
+            "recording": "unconfirmed"
+            if "external-cancel:" + handle in owner.recovery.pending
+            else "confirmed",
         }
     return {
         "handle": handle,
         "cancellation_requested": True,
         "settlement": "unknown",
+        "recording": "unconfirmed",
         "error": "Original task transport is unavailable",
     }

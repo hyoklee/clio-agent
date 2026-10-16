@@ -61,6 +61,28 @@ processes/listeners were absent before disposal; the 584,170,704-byte profile an
 No installed/authentication/default state or Core library changed. R154 is one
 scoped pass, not final repeated-race or all-owner outage acceptance.
 
+R155 on `9dfb4a25` exercised the corresponding actual external HTTP MCP owner,
+using production FastMCP/Docket and the production confined Shell algorithm.
+Pause returned in 3.67 ms and accepted work continued. Cancellation waited
+13.33 seconds, returning only after Core resumed; both physical processes were
+still present before recovery. The external owner awaited its intent write and
+another queued snapshot read before issuing the SDK request. The correction now
+authorizes from the confirmed passive view, defers recording through the existing
+Core recovery resource, and sends against the original full SDK identity. Error
+attention recording also cannot block the control. Ruff/format, scoped Linux Mypy
+and all seven guards pass; a pending-writer external-owner regression is built
+for CI. Fresh actual-model proof of this correction remains pending.
+
+The external server subsequently confirmed its own cleanup, and both services
+exited zero. CLIO honestly retained `task_state_uncertain` / raw `cancelled` with
+no terminal timestamp, because a remote cancellation ACK is not physical-cleanup
+proof. The harness's initial zero-active-task teardown expectation did not fit
+that contract. Independent PID/creation-time, process-tree, listener, worker and
+server-retirement evidence permitted removal of only this disposable profile;
+the uncertainty is preserved in bounded `r155-retained-uncertainty.json`, the
+original failed-run receipt and cleanup audit. Both exact temporary roots are
+absent. No task was rewritten to terminal to satisfy cleanup or acceptance.
+
 Committed-head CI `38952642117` at `bca4e2d7` completed red. Python 3.14 shard 1
 recorded 187 failed, 3942 passed and 21 skipped. Earlier `f5d0ae42` CI
 `38950482103` recorded 188 failed, 3941 passed and 21 skipped in shard 1, and
@@ -73,6 +95,15 @@ is retained unchanged; R154 now supplies scoped actual-model notice acceptance.
 CI `38957377864` on `4ee9ee81` remains in progress: all three lint jobs and both
 native lifecycle jobs passed; all nine interpreter/shard jobs remain running at
 this snapshot, with no observed failure. It is not a passing regression baseline.
+
+Subsequently `4ee9ee81` Python 3.14 shard 1 failed with 191 failed, 3940 passed and
+21 skipped. The newly built native-I/O case had omitted its required confirmed
+assignment; `9dfb4a25` fixes that fixture while retaining custody enforcement.
+CI `38958744016` on that test-only correction is running. The common test turn
+helper now expects the implemented new-message HTTP 202 acknowledgement and
+requires its assignment handle, then retains the original event-driven completion
+wait. Other regression failures remain unresolved; neither live evidence nor
+these migrations constitute a passing CI baseline.
 
 R151 retained a stricter outage failure on frozen `f4a5d05f` / `401efcfe`
 (production code unchanged from R149). Actual Codex/Luna root and child ran
