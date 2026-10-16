@@ -9,6 +9,17 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+CI `38936588153` subsequently reported current-head shard failures. Python 3.14
+shard 1 has 188 failures/3,940 passes/21 exclusions, versus 191/3,937/21 on the
+previous head. The held-result recovery assertion correctly exposed a test
+setup omission: a new TaskHistory is empty until its explicit startup restore,
+as the production lifespan performs. The regression now calls that real restore
+before asserting recovered acknowledgements; all its existing assertions remain.
+Other failures include an A2UI private-source login path still writing transcript
+atoms on the application loop and older waiting-user/turn-admission fixtures.
+These remain outstanding; the renderer-error correction is not a claim that all
+A2UI store callers or required CI have passed.
+
 R147 on frozen clio-agent `30a769f2` / GACT `401efcfe` passed actual Claude
 `claude-haiku-5-5` child Question/lifecycle qualification. The model created one
 child and one Question; both parent and child yielded under their original

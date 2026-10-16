@@ -519,6 +519,7 @@ def test_explicit_collection_of_held_result_uses_its_durable_observation(arc: AR
     assert history.pending_mail("owner") == ()
     assert held.id in history.acknowledged_notifications("owner")
     restored = TaskHistory(arc)
+    restored.restore()
     assert restored.pending_mail("owner") == ()
     assert held.id in restored.acknowledged_notifications("owner")
     assert restored.committed_observations("owner", "main") == frozenset({"collect"})
