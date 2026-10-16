@@ -17,6 +17,7 @@ SABOTAGE (each run manually, each went RED, then was restored):
 from __future__ import annotations
 
 from collections.abc import Iterator
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,7 @@ from clio_agent.gact.protocol.v3.message import part_to_v3_block
 from clio_agent.gact.session_store import _append_session_message
 from clio_agent.gact.types import Message, Part
 from tests._scripted_engine import Reply, routed_lm
+from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_variant_drafts import (
     ASK,
     RUN0,
@@ -46,9 +48,11 @@ from tests.test_gact.test_variant_drafts import (
 @pytest.fixture
 def world(tmp_path: Path) -> Iterator[World]:
     """One app on real clio-core with a session (as in ``test_variant_drafts``)."""
-    app, arc, events = _app(tmp_path / "sessions.json")
-    sid = app.state.sessions.create(workspace_id="ws_default", title="runs").id
-    yield World(app, arc, sid, events, tmp_path / "sessions.json")
+    with ExitStack() as lifespans:
+        app, arc, events = _app(tmp_path / "sessions.json", lifespans=lifespans)
+        sid = app.state.sessions.create(workspace_id="ws_default", title="runs").id
+        record_assignment_fixture(app, sid)
+        yield World(app, arc, sid, events, tmp_path / "sessions.json", lifespans)
 
 
 def _runs(app: Any, sid: str) -> dict[str, Any]:
@@ -121,7 +125,8 @@ def test_runs_are_served_from_clio_core_with_each_trys_steps_after_a_restart(
     ]
     assert second["tries"][0]["steps"][-1]["parts"][-1]["text"] == "Draft C"
 
-    restarted, _arc, _events = _app(world.sessions_path)
+    world.lifespans.close()
+    restarted, _arc, _events = _app(world.sessions_path, lifespans=world.lifespans)
     assert _runs(restarted, world.sid) == live
 
 

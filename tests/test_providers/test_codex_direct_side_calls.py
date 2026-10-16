@@ -46,11 +46,10 @@ def search(q: str) -> str:
 @pytest.fixture
 def session(clio_core_plane: Any) -> Iterator[None]:
     """A GACT session around the plane: the engine keys its conversations on it."""
-    token = gact_context.set_session_id("sess-side")
-    try:
-        yield
-    finally:
-        gact_context.reset(token)
+    assert gact_context.active_app() is clio_core_plane
+    assert clio_core_plane.state.sessions.get(gact_context.active_session_id()) is not None
+    assert gact_context.active_assignment_handle()
+    yield
 
 
 @pytest.fixture

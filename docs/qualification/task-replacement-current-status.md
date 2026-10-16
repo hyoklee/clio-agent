@@ -63,6 +63,33 @@ flake-hunt, Flowcept and Windows/Linux native-service lifecycle jobs passed.
 CI `38895429794` tests the production correction at `dcdc640e`; regression
 jobs were still running at the R125 cleanup checkpoint.
 
+R126 on clio-agent `6972ce34` / GACT `cecfb4ee` repeated the actual two-workflow
+case with real GACT controls. Desktop UI granted only read/observe/message;
+the model discovered, observed, waited on and messaged the peer, while its
+cancellation was denied. Phone UI revoked that exact grant and the model's
+subsequent discovery/observation disclosed no peer task. Restoring sender rights
+delivered the retained reply automatically. Both workflow runners completed;
+owner/subscriber commits remained independent. The UI sent exactly one grant
+and one revoke, both HTTP 200. At 390×844 the row and controls were contained
+with document width 390; keyboard selection/toggling displayed the descendant
+control warning and left control unselected. No page exception occurred.
+Four actual light-mode screenshots were inspected. Initial browser setup
+failed before service readiness; that attempt is retained separately and its
+context retired before the successful browser. Connection/provenance console
+errors remain recorded, including HTTP 503: this is scoped grant/revoke
+acceptance, not a full error-free Q9 pass. Both services and browser exited zero;
+`r126-cleanup.json` proves disposable profile/temp roots absent. Receipts are
+`r126-live-workflows.json`, `r126-browser-custody.json` and `r126-ui-keyboard.json`.
+
+CI `38896134178` on `6972ce34` still has failing regressions. Its completed
+Python 3.14 shard 1 reports 201 failed, 3,924 passed, 21 skipped and one setup
+error; these are one shard's counts, not the whole suite. The variant route
+fixture now owns the same real application lifespan and confirmed assignment
+as its shared draft fixture, including shutdown before restart. The Codex side
+call fixture retains the real bound session instead of replacing its ID with
+an unrecorded string. Original behavior assertions remain intact. These two
+test-only corrections pass scoped Ruff/format/Mypy and await CI execution.
+
 - R103, clio-agent `57c00ddc`: actual Codex/Luna accepted a Question, read a file
   while it was pending, yielded, received its idle answer wake and collected the
   original result. The family failed its post-Stop harness gate because the
