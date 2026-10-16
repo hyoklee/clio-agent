@@ -7,6 +7,12 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+The current clio-agent source is `a557c991`; GACT is `954a2a33`. The locked
+clio-core package remains `iowarp-core==2.3.1`. The new read correction is in
+clio-agent's ARC framing adapter, not the clio-core library. Ruff/format, scoped
+Mypy and unchanged removal/size/class/silent-fallback guards pass. The reader
+regressions are in CI, not claimed locally executed.
+
 - R103, clio-agent `57c00ddc`: actual Codex/Luna accepted a Question, read a file
   while it was pending, yielded, received its idle answer wake and collected the
   original result. The family failed its post-Stop harness gate because the
@@ -24,6 +30,26 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
   Real-service desktop connection/transcript/Work-menu inspection occurred, but
   the UI family timed out before cancellation and phone acceptance. Q9 remains
   incomplete. Retained screenshots are inspection evidence, not a UI pass.
+- R106, clio-agent `c3466fec`: actual Codex/Luna indexing accepted a handle,
+  continued independent work and produced the exact 48,098-entry manifest.
+  The family then failed an obsolete harness result-field lookup before Download.
+- R107's full 48,000-file transfer exceeded its 600-second harness diagnostic
+  window while making byte progress. It was explicitly cancelled and physically
+  settled. This stress case remains failed; no product deadline was changed.
+- R108 failed startup while reading retained history. R109's read-only native
+  probe proved that the stored frame was intact but its reported size was stale:
+  29,070 reported/read bytes versus 33,482 required and successfully read bytes.
+  clio-agent now retries the exact framed length once and still rejects genuinely
+  truncated or malformed data. No stored data or clio-core dependency changed.
+- R110, clio-agent `1303830b` / GACT `954a2a33`: the service reopened that history,
+  preserved the original completed Indexing and cancelled Download, and actual
+  Codex/Luna submitted a new selected-path Download with a new handle. Acceptance,
+  independent work while running, common controls and completed physical ownership
+  were recorded. A separate immutable-receipt derivation proves exactly 1,003
+  manifest entries, 1,001 files and 2,772,063 bytes, with every hash matching and
+  unselected folders excluded. Its original family receipt remains failed because
+  the harness read an obsolete operation manifest field. The derived proof is
+  `r110-canonical-download-proof.json`; it is not a full Q1–Q9 or final-race pass.
 
 R103–R105 services exited with code zero and no active owned tasks. Their
 disposable profile/data and short-temp roots are actually absent; bounded live,
@@ -32,23 +58,31 @@ hashes and production source hashes stayed unchanged within each run. The failed
 browser launch was settled before the installed test browser was used with a
 repository-contained profile. No installed Desktop or clio-core change occurred.
 
+After R110, the retained R106–R110 profile, source inputs, copied data/cache and
+short-temp root were also removed. The cleanup receipt confirms both roots are
+absent and no active owned tasks or private listeners remain. Bounded original,
+derived-proof and cleanup receipts remain; no archive was created.
+
 `c564083c` repairs pending-assignment empty-presentation handling, preserves real
 execution failures, fixes the regression fixture's owner entry point, and repairs
 the Stop-status harness check. Scoped Ruff/format pass; fresh source review and
 full regression passing are not claimed.
 
-GACT `592013b3` includes the unknown-state fixture correction and raw-state
-preservation; the original stronger assertion exposed metadata coercion and was
-retained. Its native updater now uses stable `~2.12.0` (zip 4) with its declared
-Rust floor `1.77.2`, replacing a resolution onto yanked zip 2. CI must establish
-build/type/test acceptance; no local native launch or installation was performed.
+GACT retains the unknown-state fixture correction and raw-state preservation;
+the original stronger assertion exposed metadata coercion and was retained.
+The attempted updater dependency change did not fix native builds: the zip 4
+versions also resolve only to yanked releases. `954a2a33` removes that ineffective
+change. The native build gate remains failed, and eight web regressions remain
+failed; no native launch or installation was performed.
 
 The initial main clio-agent regression run reached tests after the marketplace
 commit was published. Python 3.14's three shards reported 11,582 passed, 714 failed,
 56 errors and 53 skipped. The suite still contains obsolete fixture/import calls;
 these counts do not identify that many distinct runtime defects. The newer
 [clio-agent CI](https://github.com/iowarp/clio-agent/actions/runs/38852002469) is not
-green. The [finite nine-family plan](task-replacement-live-experiments.md) and its
+green. Current clio-agent [CI on `a557c991`](https://github.com/iowarp/clio-agent/actions/runs/38858339870)
+was dispatched after the framing extraction; superseded runs were cancelled, not
+counted as passes. The [finite nine-family plan](task-replacement-live-experiments.md) and its
 six five-repeat race obligations remain the acceptance scope.
 
 All sections below are earlier snapshots, not the current CI or qualification
