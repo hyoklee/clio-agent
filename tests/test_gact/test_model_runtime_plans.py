@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
@@ -529,14 +530,21 @@ def test_native_windows_llama_passes_server_parameters_to_the_process() -> None:
         target=local,
     )
 
-    script = plan.commands[-1].args[-1]
-    # Values are PowerShell literals inside the script, never trailing args
-    # (-Command does not bind them to $args).
-    assert plan.commands[-1].args[:3] == ["-NoProfile", "-NonInteractive", "-Command"]
-    assert (
-        "@('-m','C:/models/q.gguf','--host','127.0.0.1','--port','8088','--parallel','3')" in script
-    )
-    assert "$args" not in script
+    # The detached launcher receives exact argv through JSON and closes all
+    # other handles; model serving must not hold the operation's output pipes.
+    assert plan.commands[-1].args[0] == "-c"
+    request = json.loads(plan.commands[-1].args[-1])
+    assert request["arguments"] == [
+        "-m",
+        "C:/models/q.gguf",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "8088",
+        "--parallel",
+        "3",
+    ]
+    assert "close_fds=True" in plan.commands[-1].args[1]
 
 
 def test_every_container_image_is_digest_pinned() -> None:

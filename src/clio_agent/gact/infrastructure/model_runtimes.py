@@ -54,8 +54,6 @@ from clio_agent.gact.infrastructure.context_sizing.deployment import (
 )
 from clio_agent.gact.infrastructure.llama_native_windows import (
     LLAMA_BUILD,
-    LLAMA_WINDOWS_CPU_ARCHIVE,
-    NATIVE_PORT,
     native_windows_llama_plan,
 )
 from clio_agent.gact.infrastructure.model_instances import engine_of, instance_container_name
@@ -80,6 +78,10 @@ from clio_agent.gact.infrastructure.models import (
     ServiceConfigurationField,
     ServiceVariant,
     TargetFacts,
+)
+from clio_agent.gact.infrastructure.native_model_services import (
+    native_model_plan,
+    native_model_variants,
 )
 from clio_agent.gact.infrastructure.native_vllm import (
     NATIVE_VARIANTS,
@@ -232,8 +234,6 @@ def engine_spec(service_id: str) -> EngineSpec:
 def service_port(service_id: str, configuration: dict[str, str], variant_id: str = "") -> int:
     """The target loopback port a model runtime listens on (configurable for containers)."""
 
-    if variant_id == "native-windows-cpu":
-        return NATIVE_PORT
     raw = configuration.get(PORT_FIELD, "").strip()
     if not raw:
         return engine_spec(service_id).port
@@ -293,26 +293,8 @@ def model_runtime_definition(service_id: str, facts: TargetFacts) -> ManagedServ
     variants: list[ServiceVariant] = []
     if service_id == "vllm":
         variants.extend(native_variants(facts))
-    native = (
-        service_id == "llama_cpp"
-        and facts.target_id == "local"
-        and facts.os == "windows"
-        and facts.arch == "x86_64"
-    )
-    if service_id == "llama_cpp":
-        variants.append(
-            ServiceVariant(
-                id="native-windows-cpu",
-                label="Windows CPU (native)",
-                version=LLAMA_BUILD,
-                install_type="native_archive",
-                artifact=LLAMA_WINDOWS_CPU_ARCHIVE,
-                compatible=native,
-                reason="Ready for native installation; no container runtime is needed."
-                if native
-                else "Requires the CLIO host to be 64-bit Windows.",
-            )
-        )
+    if service_id in {"llama_cpp", "ollama"}:
+        variants.extend(native_model_variants(service_id, facts))
     for variant in spec.variants:
         compatible, reason = _variant_compatible(variant, facts)
         variants.append(
@@ -327,8 +309,6 @@ def model_runtime_definition(service_id: str, facts: TargetFacts) -> ManagedServ
             )
         )
     recommended = next((row.id for row in variants if row.compatible), "cpu")
-    if native:
-        recommended = "native-windows-cpu"
     runtime_options = usable_runtimes(_runtimes(facts))
     fields = [
         *spec.fields,
@@ -585,13 +565,38 @@ def build_model_runtime_plan(
         )
     if api_key and spec.engine not in KEY_VARIABLES:
         raise ValueError(f"{spec.label} has no API key support")
-    if spec.engine == "llama_cpp" and variant_id == "native-windows-cpu":
+    if (
+        spec.engine == "llama_cpp"
+        and variant_id == "native-windows-cpu"
+        and action not in {"install", "reinstall"}
+        and not configuration.get("native_owner")
+    ):
         flags = (
             compile_parameters("llama_cpp", "cpu", configuration).flags if action == "start" else ()
         )
         return native_windows_llama_plan(
             action, configuration.get("model_path", "").strip(), target, flags, api_key
         )
+    if spec.engine in {"llama_cpp", "ollama"} and variant_id.startswith("native-"):
+        plan = native_model_plan(
+            spec.engine,
+            spec.container_name,
+            action,
+            variant_id,
+            configuration,
+            facts,
+            target,
+            api_key,
+        )
+        if (
+            spec.engine == "llama_cpp"
+            and variant_id == "native-windows-cpu"
+            and action == "reinstall"
+            and not configuration.get("native_owner")
+        ):
+            legacy = native_windows_llama_plan("stop", "", target)
+            return dataclasses.replace(plan, commands=(*legacy.commands, *plan.commands))
+        return plan
     variant = next((row for row in spec.variants if row.id == variant_id), None)
     if variant is None:
         raise ValueError(f"Unknown {service_id} variant {variant_id!r}")

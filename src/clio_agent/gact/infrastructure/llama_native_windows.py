@@ -7,6 +7,10 @@ as a PowerShell literal (:mod:`clio_agent.gact.infrastructure.powershell`);
 
 from __future__ import annotations
 
+import json
+import sys
+from pathlib import Path
+
 from clio_agent.gact.infrastructure import powershell
 from clio_agent.gact.infrastructure.model_runtime_installation import runtime_observation
 from clio_agent.gact.infrastructure.model_runtime_readiness import (
@@ -137,18 +141,17 @@ def native_windows_llama_plan(
         str(NATIVE_PORT),
         *extra_flags,
     ]
-    # Start-Process joins -ArgumentList with spaces and does not quote: a path
-    # with a space must carry its own quotes.
-    server_args = [f'"{arg}"' if " " in arg else arg for arg in server_args]
-    launch = powershell.command(
-        "$ErrorActionPreference='Stop'; "
-        + prefix
-        + "$exe=Get-ChildItem -LiteralPath $root -Filter 'llama-server.exe' -Recurse | "
-        "Select-Object -First 1; if (!$exe) { throw 'Install llama.cpp before starting it' }; "
-        "$stdout=Join-Path $root 'server.log'; $stderr=Join-Path $root 'server-error.log'; "
-        f"$process=Start-Process -FilePath $exe.FullName -ArgumentList {powershell.array(server_args)} "
-        "-RedirectStandardOutput $stdout -RedirectStandardError $stderr -WindowStyle Hidden "
-        "-PassThru; Set-Content -LiteralPath (Join-Path $root 'server.pid') -Value $process.Id"
+    # Start-Process can inherit extra pipe handles even with redirected output,
+    # leaving the caller waiting for EOF until the server stops. Python supplies
+    # an explicit child handle list and quotes model paths with spaces correctly.
+    launch = CommandSpec(
+        program=sys.executable,
+        args=[
+            "-c",
+            _LEGACY_LAUNCH,
+            json.dumps({"root": target.install_root.strip(), "arguments": server_args}),
+        ],
+        timeout_seconds=120,
     )
     # The server process inherits the key from this PowerShell's environment.
     commands.append(_stop(prefix))
@@ -181,13 +184,52 @@ def native_windows_llama_plan(
 def _stop(prefix: str) -> CommandSpec:
     return powershell.command(
         prefix + "$pidFile=Join-Path $root 'server.pid'; if (Test-Path -LiteralPath $pidFile) { "
-        "Stop-Process -Id (Get-Content -LiteralPath $pidFile) -ErrorAction SilentlyContinue; "
+        "$process=Get-Process -Id (Get-Content -LiteralPath $pidFile) -ErrorAction SilentlyContinue; "
+        "if ($process) { $handle=$process.Handle; "
+        "$info=Get-CimInstance Win32_Process -Filter ('ProcessId='+$process.Id); "
+        "$base=[IO.Path]::GetFullPath($root).TrimEnd('\\')+'\\'; "
+        "if (!$info.ExecutablePath -or !$info.ExecutablePath.StartsWith($base,[StringComparison]::OrdinalIgnoreCase) "
+        "-or [IO.Path]::GetFileName($info.ExecutablePath) -ne 'llama-server.exe' "
+        f"-or $info.CommandLine -notmatch '--port[ =]+{NATIVE_PORT}(?:\\s|$)') {{ "
+        "throw 'The saved PID belongs to another process; it was not stopped' }; "
+        "$process.Kill(); $process.WaitForExit(15000) | Out-Null }; "
         "Remove-Item -LiteralPath $pidFile -Force }"
     )
 
 
+_LEGACY_LAUNCH = """\
+import json, os, subprocess, sys
+from pathlib import Path
+request = json.loads(sys.argv[1])
+data = os.environ.get('CLIO_AGENT_DATA_DIR')
+if not data:
+    data = str(Path(os.environ['CLIO_AGENT_HOME']) / 'data') if os.environ.get('CLIO_AGENT_HOME') else str(Path(os.environ['LOCALAPPDATA']) / 'clio-agent/data')
+root = Path(request['root'] or str(Path(data) / 'services/llama.cpp/b11206')).resolve()
+matches = [path for path in root.rglob('llama-server.exe') if path.is_file()]
+if len(matches) != 1 or not matches[0].resolve().is_relative_to(root):
+    raise ValueError('Install llama.cpp before starting it; expected one owned executable')
+with (root/'server.log').open('wb') as output, (root/'server-error.log').open('wb') as errors:
+    process = subprocess.Popen([str(matches[0]), *request['arguments']], stdin=subprocess.DEVNULL,
+        stdout=output, stderr=errors, close_fds=True, creationflags=0x8 | 0x200)
+(root/'server.pid').write_text(str(process.pid), encoding='ascii')
+"""
+
+
 def _remove(prefix: str) -> CommandSpec:
+    files = Path(__file__).with_name("llama_windows_cpu_files.json").read_text(encoding="utf-8")
+    inventory = powershell.literal(json.dumps(json.loads(files)))
     return powershell.command(
-        prefix
-        + "if (Test-Path -LiteralPath $root) { Remove-Item -Recurse -Force -LiteralPath $root }"
+        "$ErrorActionPreference='Stop'; " + prefix + f"$inventory=ConvertFrom-Json {inventory}; "
+        "$base=[IO.Path]::GetFullPath($root).TrimEnd('\\')+'\\'; "
+        "foreach ($entry in $inventory.PSObject.Properties) { "
+        "$path=[IO.Path]::GetFullPath((Join-Path $root $entry.Name)); "
+        "if (!$path.StartsWith($base,[StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe release member' }; "
+        "if (Test-Path -LiteralPath $path -PathType Leaf) { "
+        "$item=Get-Item -LiteralPath $path; "
+        "if ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Release member is a link' }; "
+        "$stream=[IO.File]::OpenRead($path); $sha=[Security.Cryptography.SHA256]::Create(); "
+        "try { $digest=([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-','').ToLowerInvariant() } "
+        "finally { $sha.Dispose(); $stream.Dispose() }; "
+        "if ($digest -eq $entry.Value) { "
+        "Remove-Item -LiteralPath $path -Force } } }"
     )
