@@ -24,6 +24,7 @@ addEventListener('message', function receive(event) {
   if (event.source !== parent || event.data?.type !== 'clio.html-preview' ||
       typeof event.data.html !== 'string') return;
   removeEventListener('message', receive);
+  parent.postMessage({type: 'clio.html-preview.ready'}, '*');
   document.open(); document.write(event.data.html); document.close();
 });
 </script></body></html>"""
