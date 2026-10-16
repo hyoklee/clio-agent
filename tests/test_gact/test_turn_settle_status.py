@@ -262,6 +262,7 @@ def test_idle_is_not_observable_while_the_finalize_tail_holds_the_slot(
         second = c.post(
             f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "two"}]}
         )
-        assert second.status_code == 200, second.text
+        assert second.status_code == 202, second.text
+        assert second.json()["task_handle"]
         assert second.json()["delivery"] == "start"
         assert wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor) == "idle"

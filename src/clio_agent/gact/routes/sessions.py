@@ -29,7 +29,7 @@ from clio_agent.gact.mcp_apps import cleanup_session_mcp_apps
 from clio_agent.gact.message_marks import validated_session_metadata
 from clio_agent.gact.message_submission import _apply_a2ui_client_metadata_guards
 from clio_agent.gact.messaging import raise_on_reserved_metadata
-from clio_agent.gact.off_loop import run_off_loop
+from clio_agent.gact.off_loop import join_off_loop, run_off_loop
 from clio_agent.gact.protocol_v3 import project_for_request, session_to_v3
 from clio_agent.gact.routes._body import NonObjectBodyError, json_body
 from clio_agent.gact.routes.dashboard_reports import register_dashboard_report_routes
@@ -802,7 +802,8 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                 context_reference_retry.message_text(source_user), req.notes
             )
             assert retry_parts is not None
-            retry_user_msg = deps.start_background_user_turn(
+            retry_user_msg = await join_off_loop(
+                deps.start_background_user_turn,
                 sid,
                 sess,
                 retry_text,
@@ -836,8 +837,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         )
         return attempt
 
-    # A2UI actions use this exact service seam so retry provenance, busy gates,
-    # provider checks, and source-user recovery cannot drift from the REST route.
+    # A2UI shares REST retry provenance, busy/provider gates and source-user recovery.
     app.state.retry_turn_action = retry_turn
 
     # ---- POST /v1/sessions/{sid}/cancel (BBB20) -----------------------

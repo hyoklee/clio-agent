@@ -7,6 +7,53 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### R158 retained mailbox and restart diagnostic
+
+R158 used actual Codex/Luna and the production service on `75bafce8` / GACT
+`401efcfe`; production code was identical to `fe705077`. The model received its
+Question handle, freshly read a file while the answer was pending, and entered
+an unbounded wait. Human pause retired its worker. All 1,005 subsequent public
+human messages were accepted under the original Session assignment; Core retained
+1,006 mail items at the paused checkpoint, with every new message pending and no
+new recipient-input commitment. This is human-input retention, not the separate
+positive pending-peer-capacity gate.
+
+After answering and resuming, the actual model processed bounded batches and
+completed the original assignment with the real Question answer, random end
+marker, fresh sentinel and expected count. All 1,005 message IDs were acknowledged
+exactly once across 22 original-assignment input records. The Question outcome
+appeared once; no pending input or model worker remained. Core retained 1,009
+mail items. Ten production query/pending reads took 4.37 ms total and made no
+store calls; this measurement excludes transport/audit writes. A fresh data-only
+projection restored the full retained history and acknowledgements in 59.26 s.
+
+The whole family is **failed, not qualified**: the attempt exceeded its 900-second
+diagnostic budget during actual service restart, and readiness independently
+expired after its 120-second limit. Normal shutdown was signalled when the budget
+overrun was observed at 938.69 s. No restarted-model/no-duplicate-wake acceptance
+is claimed. The original controller also failed its cleanup HTTP read after the
+service had shut down; independent retained-process handles confirmed both API
+runs exited zero. All original tasks were terminal before restart. PID/creation
+time, listener, private-Core and path audits found no owned live process before
+disposal. The 818,499,745-byte profile and 1,073,741,824-byte temporary data are
+removed; both exact roots are absent. Original auth and production hashes match.
+Bounded receipts are `r158-live-mailbox-retention.json`, `r158-budget-expiry.json`,
+`r158-cleanup-audit.json` and `r158-cleanup.json` under the execution checkout's
+`.pytest-runtime/static`. No archive or Core-library change was made.
+
+Exact-head CI `38965450538` supplies per-case XML for `75bafce8`. Of the 21 cases
+containing the 24 migrated acknowledgement assertions, 17 passed and four failed
+on Python 3.14. Remaining failures are not dismissed as stale tests. The retry
+route performed its confirmed input write on the application loop; it now joins
+the existing finite off-loop helper before returning, retaining input custody
+across cancellation. The second fresh-message assertion now requires HTTP 202
+and a handle; all its existing idle/delivery assertions remain. The running
+message-count and queued-message creation-status failures remain unresolved.
+These corrections await CI; no local pytest/vitest ran. The overall regression
+baseline, restart performance, final tuple and final repeated races remain open.
+Scoped Ruff/format, Linux Mypy for the retry route and all seven source guards
+pass without changing guard budgets or assertions.
+
 ### Capacity and Question UI checkpoint
 
 R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
