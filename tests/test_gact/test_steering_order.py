@@ -242,6 +242,7 @@ def test_steer_arriving_during_judge_discards_the_stale_verdict(
     assert asyncio.run(dispatch_goal_at_finalize(app, session_id=sid, turn_id="t")) is None
     goal = goal_mod._get_goal(app, sid)
     assert goal["active"] and goal["iters_elapsed"] == 0
+    assert goal["phase"] == "working"
     assert not app.state.loop_inboxes
 
 

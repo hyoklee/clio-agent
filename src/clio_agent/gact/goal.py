@@ -575,6 +575,8 @@ def _settle_goal_decision(
         )
         if pending_steer(app, session_id):
             if limit.reason not in {"goal_budget", "goal_max_iters"}:
+                goal["phase"] = "working"
+                _put_goal(app, session_id, goal)
                 return None
             decision = limit
         else:

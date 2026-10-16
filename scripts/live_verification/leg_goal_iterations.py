@@ -121,14 +121,14 @@ def run(provider: str, model: str, out: Path) -> dict[str, Any]:
         goal = result.get("goal", {})
         result["checks"] = {
             "goal_met": goal.get("met") is True,
-            "four_separate_iterations": int(goal.get("iters_elapsed") or 0) >= 4,
+            "four_separate_iterations": int(goal.get("iters_elapsed") or 0) == 4,
             "all_files": all(result["files"].values()),
             "checking_visible": any(s["goal"].get("phase") == "judging" for s in samples),
             "no_judge_failure": goal.get("clear_reason") != "goal_judge_unavailable",
         }
         result["pass"] = all(result["checks"].values())
     except Exception as exc:
-        result.update(pass_=False, error=f"{type(exc).__name__}: {exc}")
+        result.update({"pass": False, "error": f"{type(exc).__name__}: {exc}"})
     finally:
         dump_json(out / "transitions.json", samples)
         result["elapsed_s"] = round(time.monotonic() - started, 1)
