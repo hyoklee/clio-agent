@@ -27,11 +27,39 @@ of asyncio's transport pool. Core retains record authority; Docket retains nativ
 execution and cancellation. Shutdown drains the writer and awaits actual thread
 retirement. No Core library, dependency, execution policy or backend was changed.
 Ruff/format, scoped Linux Mypy and guards pass; two resource regressions and a real
-native cancellation regression are built for CI, not executed locally. Fresh R154
-actual-model acceptance of this correction has not started. Core remains 2.3.1.
+native cancellation regression are built for CI, not executed locally. Core
+remains 2.3.1.
 Both R152/R153 exited normally, all owned work settled after Core recovery, and
 their exact disposable roots are removed. Bounded diagnostics remain; no bulk
 profile or archive is retained.
+
+R154 on `4ee9ee81` / GACT `401efcfe` passed the scoped actual Codex/Luna outage,
+owner-notice and restart check. With the default executor limited to one worker,
+pause acknowledged recording-unconfirmed in 4.07 ms; Shell output continued while
+the child was held. Explicit cancellation acknowledged in 5.59 ms, and both the
+actual Python parent and descendant exited before the private Core process
+resumed. After recording recovered, the same child remained paused with unchanged
+input IDs and no model worker. Resume completed the original child and parent;
+fresh `get_task_result` calls on the original handles each have confirmed tool
+observations. Pause/resume/cancel notices and the two terminal results each appear
+once in their owning recipients' input records. No generic duplicate pause notice
+was present. Service restart preserved those exact IDs with no pending input or
+automatic duplicate turn.
+
+The run needed an explicitly recorded pre-outage intervention: the model chose a
+foreground Shell for its independent file read, which queued behind the held
+native slot. Normal Stop withdrew that queued command as never-started while the
+original background process continued. Feedback retained the original child
+assignment; its actual file tool then read the sentinel while Shell still ran.
+This intervention is part of the evidence, not an unchanged-scenario claim.
+
+Bounded receipts are `r154-live-core-outage.json`, `r154-pre-outage-steering.json`,
+`r154-scoped-audit.json`, diagnostics and cleanup receipts under the execution
+checkout's `.pytest-runtime/static/`. Both service runs exited zero. Actual owned
+processes/listeners were absent before disposal; the 584,170,704-byte profile and
+1,073,741,824-byte temporary data were removed, with both exact roots absent.
+No installed/authentication/default state or Core library changed. R154 is one
+scoped pass, not final repeated-race or all-owner outage acceptance.
 
 Committed-head CI `38952642117` at `bca4e2d7` completed red. Python 3.14 shard 1
 recorded 187 failed, 3942 passed and 21 skipped. Earlier `f5d0ae42` CI
@@ -41,7 +69,10 @@ The new pending-writer pause case exposed two human pause notices: the generic
 engine outcome plus the attributed intervention. Human synchronous controls now
 use only the intervention notice; agent controls and asynchronous restart's
 successor/failure outcome remain published. The existing one-notice regression
-is retained unchanged; fresh CI/live acceptance of that correction is pending.
+is retained unchanged; R154 now supplies scoped actual-model notice acceptance.
+CI `38957377864` on `4ee9ee81` remains in progress: all three lint jobs and both
+native lifecycle jobs passed; all nine interpreter/shard jobs remain running at
+this snapshot, with no observed failure. It is not a passing regression baseline.
 
 R151 retained a stricter outage failure on frozen `f4a5d05f` / `401efcfe`
 (production code unchanged from R149). Actual Codex/Luna root and child ran
