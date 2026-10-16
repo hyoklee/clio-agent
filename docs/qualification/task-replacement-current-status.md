@@ -9,6 +9,38 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R140 continued R139's original profile on corrected source `527a302e`; it did
+not recreate the Question or assignment. Startup succeeded, the dormant
+Question and previous input IDs were unchanged, and service recovery alone did
+not wake a model worker. Unrelated-session answer/cancel requests returned 404.
+Invalid answers through both HTTP views returned 422. All four rejections left
+the Question snapshot unchanged. The valid answer returned 200, woke actual
+Codex/Luna, and the model collected the original handle plus fresh file content
+before completing the original assignment. Core records one answer delivery
+and one ask invocation. Another normal API/native-lifespan restart retained the
+terminal result and input IDs without another wake or delivery.
+
+`r140-scoped-audit.json` and the original failed R139 receipt retain those
+distinct outcomes. Both corrected service cycles exited normally. The custody
+audit found no owned processes/listeners or active tasks; `r140-cleanup.json`
+confirms removal of the shared R139/R140 profile and temp data. This qualifies
+the owner-selection and response-binding corrections, plus scoped graceful
+recovery. Hard-crash/input-commit faults, uncertain effects, Core-outage controls,
+retention over 1,000 messages and final repeated races remain pending.
+
+GACT `401efcfe` web CI completed successfully: 311 app tests, 3,558 web tests,
+133 main browser cases and the subsequent 15/2 web check families passed.
+Native builds and fixture WebView build prerequisites remain failed. R141
+reproduced Cargo's dependency failure using actual tracked native source in
+owned D-only copies. Changing the Rust minimum did not resolve it. Explicit
+stable updater 2.12.0 and 2.14.0 proposals both require `zip ^4`; every listed
+compatible version is yanked. The earlier automatic selection reports the same
+problem for `zip ^2`. No production dependency, updater capability or check was
+changed. All five proposals remained failures, and the copied source/registry
+cache was removed (`r141-native-cleanup.json`); bounded logs/hashes remain.
+clio-agent CI `38929794407` at `527a302e` remains failed across test shards.
+Passing source/lifecycle/coverage jobs do not make it accepted.
+
 R139 used actual Codex/Luna on `a295d54f` to create a Question, read the real file
 and yield. Its first API/native-lifespan retirement completed normally. Startup
 of the same profile then failed before readiness: NativeTools.restore decoded
@@ -21,9 +53,9 @@ The correction checks a known backend owner before decoding native submission
 content, preserving recovery of native acceptance whose backend identity is
 still unknown. A regression restores native execution with a real pending
 Question and requires its identity/state to remain with the Question owner.
-The original R139 failure remains failed. Its dormant records/profile are
-retained only for immediate same-profile recovery and settlement, rather than
-resubmitting the Question. Fresh corrected recovery and CI remain pending.
+The original R139 failure remains failed. R140 recovered and settled its
+original records without resubmission, then removed the disposable profile.
+Wider recovery and required CI acceptance remain incomplete.
 
 The next candidate corrects the remaining Question response findings from CI.
 Compatibility answer/cancel URLs now bind the selected session tree through the
@@ -33,7 +65,8 @@ returning 422 for invalid input and 409 for already-settled work. The normalized
 interaction feed reports typed A2UI read degradation while retaining other
 Questions/permissions. Public regressions now cover denied answer/cancel,
 parent answers through both views, and invalid-answer retention through both
-views. Scoped source checks pass; CI and live recovery qualification are pending.
+views. Scoped source checks pass. R140 supplies scoped live response/recovery
+evidence; required CI and the wider recovery matrix remain incomplete.
 
 R138 freshly qualified the native child-provenance correction on clio-agent
 `4a92f32c` / GACT `401efcfe`. Both root-only and child-inclusive native queries
