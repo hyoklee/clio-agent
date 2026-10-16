@@ -1,20 +1,9 @@
-"""Managed model servers -- vLLM, llama.cpp and Ollama -- in any negotiated container runtime.
+"""Managed native and container vLLM, llama.cpp and Ollama deployments.
 
-One driver serves the three engines. Each is declared by an :class:`EngineSpec`
-(pinned images per variant, port, health path, container name) plus its typed
-server parameters (:mod:`clio_agent.gact.infrastructure.server_parameters`).
-A deployment:
-
-1. negotiates the container runtime with the target
-   (:func:`~clio_agent.gact.infrastructure.container_runtime.negotiate_runtime`);
-2. removes CLIO's own leftover container of the same name (never anything
-   else) and refuses a port another process holds, with a typed reason;
-3. creates the service directory, pulls the pinned image and starts the
-   server bound to the target's loopback -- recording each thing it created in
-   the service's ledger (:mod:`clio_agent.gact.infrastructure.resource_ledger`);
-4. waits for the server to answer (no fixed deadline: a server that exits is
-   reported with its logs, the person's cancel stops a slow load), then pulls
-   the Ollama model when the engine is Ollama.
+Declarative engine variants share typed server parameters and host qualification.
+Native variants delegate to their owned supervisor; containers negotiate the
+usable engine, retain resource-ledger ownership and wait for identity-proven
+readiness. Package installation is separate from model loading.
 
 Model servers listen on the target's loopback only and are reached through the
 SSH forward (or loopback locally): on a shared cluster login or compute node a
