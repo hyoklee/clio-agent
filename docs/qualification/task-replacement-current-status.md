@@ -123,6 +123,41 @@ screenshots remain under the execution repository's `.pytest-runtime/static`.
 Original authentication and production hashes match. The `iowarp-core` library
 and lock remain 2.3.1; only clio-agent integration and GACT changed.
 
+### R165 actual integrated assignment passed
+
+R165 passed on clio-agent `800858505ae3d0553cf561340e9121a7895c3cd6` / GACT
+`0f9c00a47e0aac05b676a4c5fd13c34a6677b7c0`, Python 3.14.6 and unchanged
+`iowarp-core` 2.3.1. Actual Codex/Luna received the Shell and Subagent handles,
+then independently read the source while the parser ran. The production UI
+answered its asynchronous Question at the original handle, preserved the selected
+choice across 390/1440-pixel viewports, and showed canonical byte progress and
+keyboard-accessible assignment/identity disclosure. No connected UI console or
+page errors were recorded.
+
+The original Session assignment `task_5343df970345468496af82a26a690bce` and
+accepted child completed. Each Shell, child and Question result was included once
+in the parent's confirmed inputs; neither session had pending input. The actual
+model's final report contained the verified source head/run, all four counts and
+three exact reviewed case IDs. The 614-row CSV and JSON/Markdown/SVG outputs
+matched independently checked counts and hashes. Report review passed at both
+widths. This triages existing CI evidence, not a new test run or passing baseline.
+
+Both API and browser exited zero, and parser/private-Core/process/listener audits
+were clear before disposal. The 574,463,413-byte profile, 1,073,741,824-byte temp
+root and 29,037,620-byte UI build are removed; all three exact roots are absent.
+The bounded 521,079-byte run receipt, UI/control/cleanup receipts and inspected
+selected screenshots remain in `.pytest-runtime/static/r165-*`. Original auth
+and production hashes match. This passes the scoped integrated assignment;
+required CI, wider recovery/capacity gates and final-candidate repeated races
+remain incomplete.
+
+Between runs, three context-reference regressions were migrated without changing
+their behavioral assertions: two fresh-message admissions require HTTP 202 plus
+a task handle, and the route-only app uses the actual owner's Starlette State
+instead of nesting its private dictionary. Scoped Ruff/format passes. These
+changes await CI, and no local pytest/vitest was run. CI `38975839687` is testing
+the production fix at `80085850`; its incomplete run is not a passing baseline.
+
 R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
 R153 repeated the unchanged scenario with Core-free async/thread stack capture
 and identified the actual bottleneck: both native Docket cancellation listeners

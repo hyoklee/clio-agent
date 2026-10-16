@@ -28,7 +28,13 @@ scoped byte-progress, keyboard disclosure and actual desktop/phone Question-answ
 evidence, but failed on a real interactions API 500 while a Question reservation
 was not yet posted. Its API correction and regression require CI and a fresh live
 repeat. Every owned run process and disposable root, including the reused UI
-build, is retired/removed. GACT workspace CI passed; clio-agent CI is red.
+build, is retired/removed. R165 on clio-agent `80085850` / GACT `0f9c00a4` then
+passed the actual Codex/Luna integrated CI-triage assignment: accepted work and
+independent action, original-handle completion, one result per confirmed parent
+input, verified reports, and desktop/phone Question/progress/keyboard interaction
+without UI errors. Its service/browser/processes retired and profile/temp/build
+are absent. This is scoped evidence, not final-candidate acceptance. GACT
+workspace CI passed; a passing clio-agent regression baseline remains absent.
 The two-hour implementation checkpoint was
 recorded **UNDONE** at 2026-10-15 21:45:05 UTC; Fable's final acceptance arrived
 at 21:45:08.409 UTC and does not change the deadline result. Current regression

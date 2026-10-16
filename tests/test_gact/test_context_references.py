@@ -582,8 +582,7 @@ def test_reference_route_accepts_csv_kinds_and_query(tmp_path: Path) -> None:
     target.parent.mkdir(parents=True)
     target.write_text("notes", encoding="utf-8")
     route_app = FastAPI()
-    for key, value in owner.state.__dict__.items():
-        setattr(route_app.state, key, value)
+    route_app.state = owner.state
     register_reference_routes(route_app)
 
     with TestClient(route_app) as client:
@@ -961,7 +960,8 @@ def test_queue_context_refs_authorize_edit_reorder_and_retain_stale_promotion(
             f"/v1/sessions/{session_id}/messages",
             json={"parts": [{"type": "text", "text": "hold the slot"}]},
         )
-        assert started.status_code == 200, started.text
+        assert started.status_code == 202, started.text
+        assert started.json()["task_handle"]
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline and not app.state.turn_runner.busy(session_id):
             time.sleep(0.02)
@@ -1046,13 +1046,12 @@ def test_context_only_busy_steer_idle_redrive_preserves_parts_and_model_text(
 
     with TestClient(app) as client:
         session_id = client.post("/v1/sessions", json={"title": "Idle redrive"}).json()["id"]
-        assert (
-            client.post(
-                f"/v1/sessions/{session_id}/messages",
-                json={"parts": [{"type": "text", "text": "first"}]},
-            ).status_code
-            == 200
+        started = client.post(
+            f"/v1/sessions/{session_id}/messages",
+            json={"parts": [{"type": "text", "text": "first"}]},
         )
+        assert started.status_code == 202, started.text
+        assert started.json()["task_handle"]
         deadline = time.monotonic() + 3
         while not app.state.turn_runner.busy(session_id) and time.monotonic() < deadline:
             time.sleep(0.02)
