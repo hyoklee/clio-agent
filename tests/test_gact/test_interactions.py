@@ -6,7 +6,6 @@ asserted independently of removed registries and blocking ask modes.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -27,16 +26,6 @@ from tests.test_gact.task_records import (
 )
 
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
-
-
-@pytest.fixture
-def world(tmp_path: Path) -> Iterator[tuple[Any, TestClient, str]]:
-    """One isolated production application and a confirmed owner assignment."""
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    with TestClient(app) as client:
-        sid = client.post("/v1/sessions", json={"title": "Questions"}).json()["id"]
-        record_assignment_fixture(app, sid)
-        yield app, client, sid
 
 
 def post_question(app: Any, sid: str, prompt: str = "Which sample?") -> Any:

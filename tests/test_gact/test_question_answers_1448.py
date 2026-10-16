@@ -31,7 +31,7 @@ def test_each_answer_is_queued_while_other_questions_remain_open(
             == answer
         )
     notices = [
-        item for item in app.state.task_history.pending_mail(sid) if item.kind == "task_result"
+        item for item in app.state.task_history.pending_mail(sid) if item.kind == "question_answer"
     ]
     assert {item.handle for item in notices} == {first, second}
     assert len(notices) == 2
@@ -70,7 +70,7 @@ def test_question_answer_preserves_attachment_identity(
         for part in reply.parts
     )
     [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.handle == handle]
-    assert notice.kind == "task_result" and notice.id.startswith("outcome:")
+    assert notice.kind == "question_answer" and notice.id.startswith("outcome:")
 
 
 def test_question_answer_does_not_wait_for_another_plain_question(

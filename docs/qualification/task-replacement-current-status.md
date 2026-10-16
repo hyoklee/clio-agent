@@ -113,6 +113,27 @@ regressions are in CI, not claimed locally executed.
   service exited zero with no active owned tasks. Browser context closed, its
   idle controller was retired, and profile/temp roots are absent. Bounded
   receipts and five selected screenshots remain; no archive was created.
+- R120, clio-agent `c3835984` / GACT `cecfb4ee`, recorded an actual external
+  MCP handle, independent model work, input-required and expired waiting. Its
+  harness looked only at recipient-input tool observations and missed ordinary
+  MCP observations in the same Core context lane. The failed receipt remains.
+  A read-only audit found the original accepted receipt and all seven tool
+  call/observation pairs. Cancellation honestly retained uncertainty after the
+  external server reported cancelled. Normal service/stdio shutdown retired the
+  owned processes; physical custody and cleanup are separately recorded without
+  promoting historical uncertain task rows to settled outcomes. The disposable
+  profile/temp roots are absent.
+- R121 on the same pair passed the corrected external MCP input case with actual
+  Codex/Luna, native FastMCP Tasks and stdio. The explicitly synthetic workload
+  uses the production server, SDK, CLIO task boundary and model bridge. The model
+  received a handle while input remained open, read the sentinel, queried and
+  observed the task, expired a 0.1-second wait without cancellation, and invoked
+  a separate inline MCP tool. After the operator supplied an unpredictable value
+  through the native input Question, the model woke and freshly read the original
+  task result containing that value. Core records one final-outcome input commit
+  and one original model submission. This does not prove partial/lost-update
+  input, reconnect or persistent provider jobs. Service and transports exited
+  normally; the cleanup receipt records actual disposable-root removal.
 
 The correction relays confirmed human/composer input through the existing human
 control recorder. It uses the accepted input's pinned assignment and stable notice
@@ -135,6 +156,17 @@ assertions remain; the inline telemetry case now uses an actual FastMCP server
 and SDK transport, preserving complete spill data, output bounds, structured
 evidence and private-metadata exclusion. No production or dependency change
 is part of this regression migration; passing execution is not yet claimed.
+
+The subsequent CI run `38889866678` on `c3835984` passed flake-hunt, including
+the repaired actual-SDK telemetry scenario. Lint, dependency resolution,
+filesystem/Flowcept checks and both native service-lifecycle jobs also passed;
+the regression shards were still running at this observation. This is not
+full CI acceptance. Further confirmed fixture-scope errors are repaired by
+making the existing real Core ARC and watcher fixtures visible to GACT tests
+and moving the existing Question application fixture into their shared conftest.
+Question answer assertions now require the canonical `question_answer` mail kind,
+retaining exact identity/count/backpressure assertions. These fixture changes
+have scoped Ruff/format checks; their execution is left to CI.
 
 R103–R105 services exited with code zero and no active owned tasks. Their
 disposable profile/data and short-temp roots are actually absent; bounded live,

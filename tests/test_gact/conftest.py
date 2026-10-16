@@ -13,10 +13,27 @@ import time
 from collections.abc import Iterator
 from contextlib import ExitStack
 from functools import wraps
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+
+from tests.test_arc.conftest import core_arc as core_arc
+from tests.test_gact.spotter_records import watcher_world as watcher_world
+
+
+@pytest.fixture(name="world")
+def question_world(tmp_path: Path) -> Iterator[tuple[Any, TestClient, str]]:
+    """Share the actual Question application fixture with its answer regressions."""
+    from clio_agent.gact.app import build_app
+    from tests.test_gact.task_records import record_assignment_fixture
+
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Questions"}).json()["id"]
+        record_assignment_fixture(app, sid)
+        yield app, client, sid
 
 
 @pytest.fixture(autouse=True)
