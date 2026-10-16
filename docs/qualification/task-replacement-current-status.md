@@ -86,6 +86,33 @@ regressions are in CI, not claimed locally executed.
   in the paused child, but its parent had no attributed notice. The immutable
   reproduction is `r116-human-notice-defect.json`; the family remains failed.
   Owned tasks and service settled, and its disposable profile/temp roots are absent.
+- R117, clio-agent `50e1fdeb` / GACT `cecfb4ee`, failed because the model
+  supplied a nonexistent working directory. The native Shell honestly settled
+  `cwd_not_found`; no task-code change was made for that model error. The original
+  failed receipt and independent final-custody receipt remain. Its disposable
+  profile/temp roots are absent.
+- R118 on the same pair passed actual Codex/Luna pause, steering, resume and
+  restart. Background Shell completed while the child stayed paused; queued
+  steering and the original result reached the resumed model under its original
+  assignment handle. Restart used a new handle in the same session and made a
+  fresh result read on the inherited Shell. The command ran once. Core capture
+  proves attributed parent steering content existed. A separate read-only
+  parent-response audit exited without a completed proof, so actual parent
+  acknowledgement of that steering is unverified. The service exited zero;
+  tasks settled and the profile/temp roots are absent.
+- R119 on that pair passed real-service desktop/390px phone cancellation.
+  The identifying dialog warned about descendants, kept assignment text behind
+  disclosure, and remained inside the phone viewport when expanded. Keeping
+  work running issued no control request; confirmation issued exactly one.
+  The child and its native background Shell settled cancelled after the original
+  process and its recorded grandchild retired. Actual Codex/Luna woke, collected
+  the cancelled child and acknowledged the human action. The attributed notice
+  has exactly one Core recipient-input commitment and no pending duplicate.
+  This is scoped cancellation acceptance: native provenance returned errors in
+  the isolated bare-Core configuration, so full Q9 remains incomplete. The
+  service exited zero with no active owned tasks. Browser context closed, its
+  idle controller was retired, and profile/temp roots are absent. Bounded
+  receipts and five selected screenshots remain; no archive was created.
 
 The correction relays confirmed human/composer input through the existing human
 control recorder. It uses the accepted input's pinned assignment and stable notice
@@ -93,8 +120,21 @@ identity; acceptance replay repairs a missing derived notice without duplicating
 child input or targeting a successor. Human controls keep the same recorder and
 parent-mail format. No execution owner, scheduler, dependency or clio-core change
 was introduced. Six regression cases are constructed for CI. Scoped Ruff/format,
-Mypy and unchanged removal/size/class/silent-fallback guards pass; fresh model
-qualification of this correction is pending.
+Mypy and unchanged removal/size/class/silent-fallback guards pass. R118 provides
+the scoped correction evidence above; complete Q3/Q4 and final races remain pending.
+
+The `50e1fdeb` CI run `38865042758` finished failed. Lint, dependency resolution,
+filesystem/Flowcept checks and Windows/Linux native service lifecycle jobs passed;
+regression shards and flake-hunt failed. The 3.14 shard-zero result is
+262 failed / 3,859 passed / 19 skipped / 13 collection errors; these are one
+shard's counts, not full-suite totals. Failure and exclusion counts remain failures
+or exclusions. Two confirmed obsolete arrangements are being repaired for CI:
+the schema suite's removed-invoker generator/callers, and a telemetry fixture's
+non-native client. Shared package schema equality and its shadow-detection
+assertions remain; the inline telemetry case now uses an actual FastMCP server
+and SDK transport, preserving complete spill data, output bounds, structured
+evidence and private-metadata exclusion. No production or dependency change
+is part of this regression migration; passing execution is not yet claimed.
 
 R103–R105 services exited with code zero and no active owned tasks. Their
 disposable profile/data and short-temp roots are actually absent; bounded live,

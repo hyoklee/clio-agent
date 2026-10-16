@@ -14,11 +14,12 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from fastmcp import Client, FastMCP
+from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -325,44 +326,6 @@ class _RootExecutionResult(BaseModel):
     payload: str
 
 
-class _RootDataClient:
-    """Return a parsed FastMCP result whose public JSON is available via data."""
-
-    def __init__(self, root: _RootExecutionResult) -> None:
-        self.root = root
-
-    async def __aenter__(self) -> "_RootDataClient":
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        return None
-
-    async def list_tools(self) -> list[Any]:
-        return [
-            SimpleNamespace(
-                name="relay_jarvis_get_execution",
-                description="Query one durable JARVIS execution.",
-                inputSchema={"properties": {"execution_id": {"type": "string"}}},
-            )
-        ]
-
-    async def call_tool(
-        self, name: str, arguments: dict[str, Any], *, progress_handler: Any = None
-    ) -> Any:
-        return SimpleNamespace(
-            content=[TextContent(type="text", text=f"Root({self.root!s})")],
-            structured_content=None,
-            data=self.root,
-            is_error=False,
-            meta={"private": {"capability": "must-not-enter-telemetry"}},
-        )
-
-    async def read_resource(self, uri: str) -> list[Any]:
-        """Satisfy the workspace bridge client protocol for this tool-only test."""
-
-        raise AssertionError(f"unexpected resource read: {uri}")
-
-
 class _LiveWorkspaceMcpRootDataAgent:
     """Drive the same workspace MCP bridge used by blueprint tools in production."""
 
@@ -375,17 +338,30 @@ class _LiveWorkspaceMcpRootDataAgent:
         )
         self.model_text = ""
         self.workspace = workspace
+        self.server = FastMCP("structured-result-contract")
+
+        @self.server.tool(
+            name="relay_jarvis_get_execution",
+            output_schema=_RootExecutionResult.model_json_schema(),
+        )
+        def read_execution(execution_id: str) -> ToolResult:
+            """Return actual MCP content and structured data through the native SDK."""
+            assert execution_id == self.root.execution_id
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Root({self.root!s})")],
+                structured_content=self.root.model_dump(mode="json", by_alias=True),
+                meta={"private": {"capability": "must-not-enter-telemetry"}},
+            )
 
     def forward(self, question: str, session_id: str) -> object:
         from clio_agent.tools.execution import SyncMCPToolExecutor, tool_workspace_context
 
-        client = _RootDataClient(self.root)
         with (
             tool_workspace_context(str(self.workspace)),
             SyncMCPToolExecutor(
-                object(),
+                self.server,
                 timeout=2.0,
-                client_factory=lambda _server: client,
+                client_factory=Client,
                 permission_gate=lambda _name, _args: "allow",
             ) as executor,
         ):
@@ -762,8 +738,6 @@ def test_live_observer_keeps_exact_large_mcp_structured_content(tmp_path: Path) 
 def test_workspace_mcp_root_data_reaches_exact_gact_structured_content(tmp_path: Path) -> None:
     """The wire keeps exact Root/data while the model receives a bounded projection."""
 
-    from clio_agent.tools.mcp_result_json import pydantic_json_default
-
     from .conftest import complete_turn
 
     agent = _LiveWorkspaceMcpRootDataAgent(tmp_path / "workspace")
@@ -780,17 +754,14 @@ def test_workspace_mcp_root_data_reaches_exact_gact_structured_content(tmp_path:
             and event.payload.get("part", {}).get("type") == "tool_result"
         )
 
-        model_input = json.dumps(
-            agent.root,
-            allow_nan=False,
-            default=pydantic_json_default,
-        )
+        expected = agent.root.model_dump(mode="json", by_alias=True)
+        model_input = json.dumps(expected, allow_nan=False)
         assert agent.model_text.startswith(
             f"[clio: result_spilled] This result is {len(model_input):,} characters"
         )
         spilled = re.search(r"the full result is in `([^`]+)`", agent.model_text)
         assert spilled, agent.model_text[:400]
-        assert Path(spilled.group(1)).read_text(encoding="utf-8") == model_input
+        assert json.loads(Path(spilled.group(1)).read_text(encoding="utf-8")) == expected
         assert len(agent.model_text) <= 12_000
         assert tool_result["metadata"]["result"]["truncated"] is True
         # #1190: the structured copy is served at the part TOP LEVEL (the UI
@@ -808,9 +779,9 @@ def test_workspace_mcp_root_data_reaches_exact_gact_structured_content(tmp_path:
         # the exact structuredContent payload the wire part carries. The complete
         # structured copy is trace/UI-only.
         assert json.dumps(tool_result["structured_content"]) not in agent.model_text
-        # The shown head is the ``.data`` serialization (snake_case keys), never the
-        # structuredContent twin (camelCase ``schedulerNativeId``).
-        assert '"schedulerNativeId"' not in agent.model_text  # no JSON-keyed twin
+        # The native SDK derives data from the declared output schema, including
+        # its public alias. The bounded model preview retains that actual key.
+        assert '"schedulerNativeId"' in agent.model_text
 
 
 def test_live_observer_preserves_failed_structured_tool_result_evidence(tmp_path: Path) -> None:
