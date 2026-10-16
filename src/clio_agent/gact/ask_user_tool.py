@@ -140,6 +140,7 @@ def build_ask_user_tool(agent_def: Any) -> Any:
         answer_action: str = "question.submit",
         response_mode: str = "blocking",
         surface_presentation: str = "linked",
+        questions: list[dict[str, Any]] | None = None,
     ) -> str:
         """Ask the user for intent, an explanation, or a choice.
 
@@ -158,6 +159,11 @@ def build_ask_user_tool(agent_def: Any) -> Any:
         omit surface_id for text-only questions.
         Leave pause and queue explanations to the native question UI; the A2UI
         surface supplies visual context and controls, not the question lifecycle.
+        To ask related questions together, pass questions=[{id, question, kind,
+        options, allowFreeform}, ...] and use question as the bundle heading.
+        The user reviews all questions and submits every answer together once.
+        With questions present, each item defines its own kind/options/allowFreeform;
+        the top-level single-question fields are ignored.
         """
 
         app = _ctx.active_app()
@@ -184,10 +190,17 @@ def build_ask_user_tool(agent_def: Any) -> Any:
             ):
                 raise AskUserError("This surface already belongs to an open question.")
         prompt = _validated_question(question)
-        normalized_kind = str(kind or "freeform").strip().lower()
+        bundle = None
+        if questions is not None:
+            from clio_agent.gact.question_bundle import normalize_question_bundle
+
+            if surface_id:
+                raise AskUserError("A bundle cannot also specify a visual surface.")
+            bundle = normalize_question_bundle(questions)
+        normalized_kind = "freeform" if bundle else str(kind or "freeform").strip().lower()
         if normalized_kind not in _KINDS:
             raise AskUserError("ask_user kind must be freeform, choice, or confirmation.")
-        normalized_options = _normalize_options(list(options or []))
+        normalized_options = [] if bundle else _normalize_options(list(options or []))
         if normalized_kind == "choice" and not normalized_options:
             raise AskUserError("ask_user choice questions require at least one option.")
         if normalized_kind == "confirmation" and not normalized_options:
@@ -207,7 +220,7 @@ def build_ask_user_tool(agent_def: Any) -> Any:
             "question": prompt,
             "kind": normalized_kind,
             "choices": normalized_options,
-            "allow_freeform": bool(allowFreeform),
+            "allow_freeform": False if bundle else bool(allowFreeform),
             "reason": str(reason or "").strip(),
             "expires_at": expires_at,
             "owner_session_id": owner,
@@ -220,6 +233,7 @@ def build_ask_user_tool(agent_def: Any) -> Any:
             "a2ui_surface_id": str(surface_id or "").strip(),
             "a2ui_answer_action": answer_action.strip(),
             "a2ui_presentation": surface_presentation,
+            "metadata": {"question_bundle": bundle} if bundle else {},
         }
         if response_mode == "async":
             from clio_agent.gact.async_user_question import publish_async_question
@@ -243,6 +257,32 @@ def build_ask_user_tool(agent_def: Any) -> Any:
         desc=ask_user.__doc__,
         title="Ask User",
         args={
+            "questions": {
+                "type": "array",
+                "description": "Related questions submitted together as one answer; question is the heading.",
+                "items": {
+                    "type": "object",
+                    "required": ["id", "question"],
+                    "properties": {
+                        "id": {"type": "string"},
+                        "question": {"type": "string"},
+                        "kind": {"type": "string", "enum": ["freeform", "choice", "confirmation"]},
+                        "allowFreeform": {"type": "boolean"},
+                        "options": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "label": {"type": "string"},
+                                    "value": {"type": "string"},
+                                    "description": {"type": "string"},
+                                },
+                                "required": ["label"],
+                            },
+                        },
+                    },
+                },
+            },
             "response_mode": {
                 "type": "string",
                 "enum": ["blocking", "async"],
@@ -382,6 +422,7 @@ def restore_pending_ask_user_questions(app: Any) -> int:
                 expires_at=str(pending_raw.get("expires_at") or ""),
                 source="native",
                 metadata={
+                    **dict(pending_raw.get("metadata") or {}),
                     "reason": str(pending_raw.get("reason") or ""),
                     "caller": dict(caller),
                     "task_id": str(pending_raw.get("task_id") or ""),

@@ -105,7 +105,8 @@ def publish_async_question(app: Any, pending: dict[str, Any], turn_id: str) -> U
         expires_at=pending["expires_at"],
         source="native",
         turn_id=turn_id,
-        metadata={
+        metadata=dict(pending.get("metadata") or {})
+        | {
             key: pending[key]
             for key in (
                 "reason",

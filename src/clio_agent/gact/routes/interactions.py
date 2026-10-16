@@ -162,6 +162,12 @@ def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingIntera
     downgraded = is_mcp and not task_id
     elicitation = question.metadata.get("elicitation")
     elicitation = dict(elicitation) if isinstance(elicitation, Mapping) else {}
+    bundle = question.metadata.get("question_bundle")
+    form = (
+        {"mode": "form", "fields": bundle["fields"], "additional_properties": False}
+        if isinstance(bundle, Mapping)
+        else elicitation
+    )
     agent_answer_task = _agent_answer_task_projection(
         app, question.metadata.get("agent_answer_task")
     )
@@ -223,9 +229,9 @@ def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingIntera
                 "agent_answer_task": agent_answer_task,
                 "expires_at": question.expires_at,
                 "input_key": correlation["input_key"],
-                "mode": elicitation.get("mode"),
-                "fields": elicitation.get("fields"),
-                "additional_properties": elicitation.get("additional_properties"),
+                "mode": form.get("mode"),
+                "fields": form.get("fields"),
+                "additional_properties": form.get("additional_properties"),
                 "url": elicitation.get("url"),
                 "container": elicitation.get("container"),
                 "plan_exit": plan_exit_payload(question) if is_plan_exit else None,
