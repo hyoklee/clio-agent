@@ -40,6 +40,7 @@ def call_lm(lm: Any, request: Request) -> Response:
         response: Response | None = None
         failure: Exception | None = None
         router = stream.StreamRouter()
+        consumed = anyio.Event()
 
         async def consume() -> None:
             async with receive:
@@ -47,6 +48,7 @@ def call_lm(lm: Any, request: Request) -> Response:
                     progress.emitted = True
                     stream.route_pieces(progress.observe(router.feed(chunk)))
             stream.route_pieces(progress.observe(router.finish()), unclosed=router.incomplete)
+            consumed.set()
 
         async def watch_cancel() -> None:
             # A cancel lands mid-call too (F038): raising here cancels the call's
@@ -68,12 +70,18 @@ def call_lm(lm: Any, request: Request) -> Response:
                 try:
                     with dspy.context(send_stream=send):
                         response = await lm.acall(request)
-                except Exception as exc:  # noqa: BLE001 - re-raised unchanged after draining chunks
+                except Exception as exc:
                     failure = exc
                     logger.warning(
                         "model stream failed reason=lm_stream_drain_before_raise error_type=%s",
                         type(exc).__name__,
                     )
+                    # Let the consumer finish before this error cancels the task
+                    # group. Keep a direct re-raise: failures never become results.
+                    finished.set()
+                    await send.aclose()
+                    await consumed.wait()
+                    raise
                 finally:
                     finished.set()
                     await send.aclose()
@@ -82,12 +90,14 @@ def call_lm(lm: Any, request: Request) -> Response:
             # The task group wraps the call's own error; the caller handles it typed.
             # (Not ``from None``: that would erase the leaf's own ``__cause__``.)
             leaf = _sole(group_error)
+            if (
+                leaf is failure
+                and isinstance(leaf, Exception)
+                and (interrupted := interrupted_stream(lm, request, progress, leaf))
+            ):
+                raise interrupted from leaf
             leaf.__suppress_context__ = True
             raise leaf  # noqa: B904 - the leaf keeps its own cause chain
-        if failure is not None:
-            if interrupted := interrupted_stream(lm, request, progress, failure):
-                raise interrupted from failure
-            raise failure
         if response is None and handle is not None and handle.aborted:
             raise _turn_cancelled()  # the session cancel closed the stream (abort handle)
         assert response is not None
