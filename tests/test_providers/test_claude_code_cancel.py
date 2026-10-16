@@ -9,8 +9,9 @@ and cancelling that session terminates ONLY that stream's subprocess (typed
 in-flight stream.
 
 These are HERMETIC: a fake in-flight stream (a background thread emitting "ops" until its
-abort fires) stands in for the real CLI subprocess, so the registry + cancel wiring is
-proven without the SDK. The structural claim — after the kill, NO further callbacks fire
+abort fires) stands in for the real CLI subprocess, so provider-owned abort isolation is
+proven without the SDK. Conversation cancellation/retirement is checked separately
+through the common owner and the required live control matrix. The structural claim — after the kill, NO further callbacks fire
 for the cancelled session — is proven by the fake's op count freezing.
 """
 
@@ -19,10 +20,6 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from pathlib import Path
-from typing import Any
-
-from fastapi.testclient import TestClient
 
 from clio_agent.providers.claude_code_cancel import (
     CANCELLED_TRANSPORT_KILLED,
@@ -148,50 +145,3 @@ def test_unregister_drops_the_handle_so_cancel_finds_nothing() -> None:
     assert active_stream_sessions() == set()
     assert abort_session_streams("sess_X") == 0
     assert calls == []
-
-
-class _Agent:
-    def forward(self, question: str, session_id: str, **_kw: Any) -> Any:
-        return type("P", (), {"answer": "ok", "selected_expert": "", "routing_rationale": ""})()
-
-
-def test_cancel_agent_task_kills_the_child_sdk_stream(tmp_path: Path, caplog) -> None:
-    """End-to-end through the cancel primitive: cancelling a child task terminates that
-    child SESSION's in-flight SDK stream (typed reason) while an UNRELATED session's stream
-    survives — the exact seam the workflow-stall cancel / cancel cascade drives (#993)."""
-    from clio_agent.gact.agent_tasks import seed_agent_task
-    from clio_agent.gact.app import build_app
-    from clio_agent.gact.turn_spawn import cancel_agent_task
-
-    _reset_for_tests()
-    app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent())
-    with TestClient(app) as client:
-        parent = client.post("/v1/sessions", json={"title": "p"}).json()["id"]
-        task = seed_agent_task(app, parent_session_id=parent, agent_ref={"expert_id": "x"})
-        child_sid = task.child_session_id
-
-        child_stream, other_stream = _FakeStream(), _FakeStream()
-        child_stream.start()
-        other_stream.start()
-        register_sdk_stream(child_sid, child_stream.abort)
-        register_sdk_stream("unrelated_session", other_stream.abort)
-        _settle()
-
-        with caplog.at_level(logging.WARNING):
-            assert cancel_agent_task(app, task.task_id) is True
-
-    assert child_stream.killed is True
-    assert other_stream.killed is False
-    assert any(CANCELLED_TRANSPORT_KILLED in rec.getMessage() for rec in caplog.records)
-    # The cancelled child's task is terminal (cancelled), and its stream is gone.
-    assert app.state.agent_task_registry.get(task.task_id).status == "cancelled"
-    assert child_sid not in active_stream_sessions()
-
-    child_stream.join()
-    frozen = len(child_stream.ops)
-    _settle()
-    assert len(child_stream.ops) == frozen, "cancelled child stream produced ops after the kill"
-
-    # Cleanup the survivor's thread (its registration is dropped by the next _reset_for_tests).
-    other_stream.abort()
-    other_stream.join()

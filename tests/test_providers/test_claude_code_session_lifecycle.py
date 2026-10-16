@@ -1,70 +1,88 @@
-"""S2 (B1) + #1305 owner ruling: connection lifetime = subagent lifetime.
+"""Provider pool algorithms and release after actual session-worker retirement.
 
-A subagent's provider connection must die DETERMINISTICALLY the moment its
-work is done -- never left to the idle-TTL sweep alone. This module pins the
-generic seam (:mod:`clio_agent.providers.session_lifecycle`), its claude_code
-consumer (:meth:`ClaudeStreamClientPool.release_session_resources`, the
-non-blocking, in-flight-safe ABNORMAL-termination backstop --
-:mod:`clio_agent.providers.claude_code_lifecycle`), and the FOUR GACT-level
-terminal paths that dispatch it via the shared
-``gact/turn_spawn.py::finalize_child_task_terminal`` helper (#1305 review
-round F3: the completion fold, the cancel cascade, and both
-``child_forward.py`` HITL-edge terminals). Each pin carries an inline
-SABOTAGE note.
-
-S2 rekeyed the pool by GACT session id directly (B1) -- there is at most ONE
-entry per session id, and it IS the dict entry at that key -- so the pre-S2
-scope<->session ownership bookkeeping (``_session_scopes``/``_scope_session``)
-this file used to pin no longer exists: ``release_session_resources`` is now
-a single dict pop at the session's own key, not a lookup through a separate
-registry. The correctness guarantees (non-blocking, in-flight-safe, F6b
-dead-marking, the stateful-delta hazard notification) are unchanged and
-re-pinned below against the simpler shape.
+Normal completion, failure and Stop share the conversation runner's retirement
+boundary. The retained pool tests cover nonblocking eviction, in-flight safety
+and provider dispatch independently of deleted task folds.
 """
 
 from __future__ import annotations
 
-from dataclasses import asdict, replace
-from pathlib import Path
+import asyncio
+import threading
+from collections.abc import Coroutine
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
-import clio_agent.gact.agent_tasks as agent_tasks
-import clio_agent.gact.child_forward as child_forward
-import clio_agent.gact.task_fold as task_fold
-import clio_agent.gact.turn_spawn as turn_spawn
-from clio_agent.gact.agent_tasks import (
-    STATUS_CANCELLED,
-    STATUS_COMPLETED,
-    STATUS_RUNNING,
-    AgentTask,
-    seed_agent_task,
-)
-from clio_agent.gact.agents.invoker import TaskEvent
-from clio_agent.gact.app import build_app
+from clio_agent.gact.turn_runner import TurnRunner
 from clio_agent.providers import claude_code_lifecycle as cc_lifecycle
 from clio_agent.providers import claude_code_sessions as ccs
 from clio_agent.providers import session_lifecycle
 
 
-class _Agent:
-    """Minimal host agent; folded tasks never launch an in-process child turn."""
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["normal", "failure", "stop"])
+async def test_turn_retirement_releases_provider_once_after_worker_exit(
+    outcome: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cancelled waiter cannot release provider ownership while its worker lives."""
+    app = SimpleNamespace(state=SimpleNamespace())
+    entered, released = asyncio.Event(), asyncio.Event()
+    work_release, worker_returned = threading.Event(), threading.Event()
+    loop = asyncio.get_running_loop()
+    calls: list[str] = []
+    admitted = False
+    sid = "retirement_child"
 
-    def forward(self, question: str, session_id: str, **_kwargs: object) -> object:
-        return SimpleNamespace(answer="ok", selected_expert="", routing_rationale="")
+    def work() -> None:
+        try:
+            loop.call_soon_threadsafe(entered.set)
+            if outcome == "stop" and not work_release.wait(5):
+                raise TimeoutError("The test did not release the owned worker")
+            if outcome == "failure":
+                raise RuntimeError("Injected model failure")
+        finally:
+            worker_returned.set()
 
+    def release(session_id: str) -> None:
+        assert worker_returned.is_set()
+        assert not any(
+            thread.is_alive() and thread.name == "clio-session-" + sid
+            for thread in threading.enumerate()
+        )
+        calls.append(session_id)
+        loop.call_soon_threadsafe(released.set)
 
-def _task_event(task: AgentTask, *, session_id: str | None = None) -> TaskEvent:
-    return TaskEvent(
-        event_type=agent_tasks.AGENT_TASK_EVENTS[task.status],
-        task_id=task.task_id,
-        session_id=session_id or task.child_session_id,
-        status=task.status,
-        payload=asdict(task),
-    )
+    async def run() -> None:
+        await runner.run_sync(sid, work)
+
+    async def admit(session_id: str) -> tuple[str, Coroutine[Any, Any, None]] | None:
+        nonlocal admitted
+        assert session_id == sid
+        if admitted:
+            return None
+        admitted = True
+        return "retirement_turn", run()
+
+    monkeypatch.setattr(session_lifecycle, "release_session_resources", release)
+    runner = TurnRunner(app, admit)
+    runner.bind_loop(loop)
+    runner.signal(sid)
+    try:
+        await asyncio.wait_for(entered.wait(), 2)
+        if outcome == "stop":
+            stopping = asyncio.create_task(runner.stop(sid))
+            await asyncio.sleep(0)
+            assert calls == [] and not stopping.done()
+            work_release.set()
+            await stopping
+        await asyncio.wait_for(released.wait(), 2)
+    finally:
+        work_release.set()
+        runner.close_admission()
+        await runner.drain()
+    assert calls == [sid] and not runner.busy(sid)
 
 
 @pytest.fixture(autouse=True)
@@ -226,8 +244,8 @@ async def test_released_session_resurrects_and_reconnects_live(
             return None
 
     fake_sdk = ModuleType("claude_agent_sdk")
-    fake_sdk.ClaudeAgentOptions = FakeOptions
-    fake_sdk.ClaudeSDKClient = FakeClient
+    monkeypatch.setattr(fake_sdk, "ClaudeAgentOptions", FakeOptions, raising=False)
+    monkeypatch.setattr(fake_sdk, "ClaudeSDKClient", FakeClient, raising=False)
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_sdk)
 
     pool = ccs.ClaudeStreamClientPool(max_concurrent=2)
@@ -326,8 +344,7 @@ async def test_dead_entry_refuses_a_connect_after_being_released_mid_flight() ->
 # F2 (strand fix, structural pin): STREAM_END must be queued strictly BEFORE
 # the abnormal-end reset in _pump's finally -- a cross-thread lifecycle
 # release stopping the owner loop mid-reset must never be able to prevent
-# END from ever being queued (permanently stranding the consumer's
-# unbounded ``chunks.get()`` worker thread).
+# END from ever being published to the asynchronous stream consumer.
 # --------------------------------------------------------------------------- #
 async def test_pump_queues_stream_end_before_the_abnormal_end_reset(
     monkeypatch: pytest.MonkeyPatch,
@@ -336,9 +353,10 @@ async def test_pump_queues_stream_end_before_the_abnormal_end_reset(
     first, END second) -> the recorded call order comes out
     ["reset", "end"] instead of ["end", "reset"] -> this goes red.
     """
-    import queue as queue_module
     import sys
     from types import ModuleType
+
+    from clio_agent.providers import stream_queue
 
     class FakeOptions:
         def __init__(self, **kwargs: Any) -> None:
@@ -362,8 +380,8 @@ async def test_pump_queues_stream_end_before_the_abnormal_end_reset(
             yield  # pragma: no cover - never reached
 
     fake_sdk = ModuleType("claude_agent_sdk")
-    fake_sdk.ClaudeAgentOptions = FakeOptions
-    fake_sdk.ClaudeSDKClient = FakeClient
+    monkeypatch.setattr(fake_sdk, "ClaudeAgentOptions", FakeOptions, raising=False)
+    monkeypatch.setattr(fake_sdk, "ClaudeSDKClient", FakeClient, raising=False)
     monkeypatch.setitem(sys.modules, "claude_agent_sdk", fake_sdk)
 
     entry = ccs._StreamClientEntry()
@@ -377,22 +395,14 @@ async def test_pump_queues_stream_end_before_the_abnormal_end_reset(
 
     monkeypatch.setattr(entry, "_areset_client", spy_areset_client)
 
-    # queue.SimpleQueue is a C type that refuses direct attribute
-    # reassignment ("immutable type"), and the real ``queue`` module is
-    # shared process-wide (asyncio/concurrent.futures use it internally too)
-    # -- subclass SimpleQueue and swap ONLY the ``queue`` NAME BOUND inside
-    # claude_code_sessions's own module namespace (a proxy object), leaving
-    # the real stdlib module (and everyone else's binding to it) untouched.
-    class _SpySimpleQueue(queue_module.SimpleQueue):
-        def put(self, item: Any, *a: Any, **kw: Any) -> Any:  # noqa: D102
+    class SpyStreamQueue(stream_queue.AsyncStreamQueue[tuple[Any, Any]]):
+        def put(self, item: tuple[Any, Any]) -> None:
+            """Record publication order while retaining the real queue behavior."""
             if item[0] is ccs._STREAM_END:
                 calls.append("end")
-            return super().put(item, *a, **kw)
+            super().put(item)
 
-    class _QueueModuleProxy:
-        SimpleQueue = _SpySimpleQueue
-
-    monkeypatch.setattr(ccs, "queue", _QueueModuleProxy)
+    monkeypatch.setattr(stream_queue, "AsyncStreamQueue", SpyStreamQueue)
 
     with pytest.raises(RuntimeError, match="boom"):
         out: list[Any] = []
@@ -489,211 +499,3 @@ def test_release_session_resources_logs_typed_reason_with_zero_providers(
         session_lifecycle.NO_PROVIDERS_REGISTERED_REASON in record.getMessage()
         for record in caplog.records
     )
-
-
-# --------------------------------------------------------------------------- #
-# #1305 review round F3: the shared terminal-effects helper
-# (turn_spawn.finalize_child_task_terminal) is what dispatches release --
-# task_fold.finish_agent_task_transition is only ONE of FOUR paths that call
-# it (the completion fold); the other three (the cancel cascade and both
-# child_forward.py HITL-edge terminals) previously bypassed it entirely.
-# --------------------------------------------------------------------------- #
-def test_finish_agent_task_transition_releases_the_childs_session_resources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A subagent reaching STATUS_COMPLETED must have its provider connection
-    released deterministically -- RED before the fix (no such call existed;
-    a child's connection lingered until the idle-TTL sweep alone).
-    """
-    calls: list[str] = []
-    monkeypatch.setattr(
-        session_lifecycle, "release_session_resources", lambda sid: calls.append(sid)
-    )
-
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())
-    with TestClient(app) as client:
-        parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        running = seed_agent_task(
-            app,
-            parent_session_id=parent,
-            agent_ref={"expert_id": "remote", "requesting_expert_id": "main"},
-            status=STATUS_RUNNING,
-        )
-        completed = replace(
-            running,
-            status=STATUS_COMPLETED,
-            result={"message_ref": "m1", "answer_excerpt": "ok", "workflow_state": {}},
-            notify_pending=True,
-            updated_at="2026-09-03T00:00:00+00:00",
-        )
-
-        outcome = task_fold.fold_agent_task_event(app, _task_event(completed))
-
-        assert outcome.applied is True
-        # SABOTAGE: drop the release_session_resources call from
-        # finish_agent_task_transition -> calls stays empty -> red.
-        assert calls == [running.child_session_id]
-
-
-def test_finish_agent_task_transition_releases_on_failure_too(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A FAILED terminal (not just COMPLETED) also releases -- the hook is
-    keyed on ``is_terminal``, never on success specifically."""
-    calls: list[str] = []
-    monkeypatch.setattr(
-        session_lifecycle, "release_session_resources", lambda sid: calls.append(sid)
-    )
-
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())
-    with TestClient(app) as client:
-        parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        running = seed_agent_task(
-            app,
-            parent_session_id=parent,
-            agent_ref={"expert_id": "remote", "requesting_expert_id": "main"},
-            status=STATUS_RUNNING,
-        )
-        failed = replace(
-            running,
-            status="failed",
-            error_reason="agent_error",
-            notify_pending=True,
-            updated_at="2026-09-03T00:00:01+00:00",
-        )
-
-        task_fold.fold_agent_task_event(app, _task_event(failed))
-
-        assert calls == [running.child_session_id]
-
-
-def test_finish_agent_task_transition_never_double_releases_a_race_loser(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A duplicate terminal fold (already-terminal race loser) must not
-    re-trigger the release -- mirrors the existing exactly-once guard."""
-    calls: list[str] = []
-    monkeypatch.setattr(
-        session_lifecycle, "release_session_resources", lambda sid: calls.append(sid)
-    )
-
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())
-    with TestClient(app) as client:
-        parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        running = seed_agent_task(
-            app,
-            parent_session_id=parent,
-            agent_ref={"expert_id": "remote", "requesting_expert_id": "main"},
-            status=STATUS_RUNNING,
-        )
-        completed = replace(
-            running,
-            status=STATUS_COMPLETED,
-            result={"message_ref": "m1", "answer_excerpt": "ok", "workflow_state": {}},
-            notify_pending=True,
-            updated_at="2026-09-03T00:00:00+00:00",
-        )
-
-        first = task_fold.fold_agent_task_event(app, _task_event(completed))
-        second = task_fold.fold_agent_task_event(app, _task_event(completed))
-
-        assert first.applied is True
-        assert second.applied is False and second.reason == "already_terminal"
-        # SABOTAGE: call release_session_resources even for a no-op race loser
-        # -> calls has two entries -> red.
-        assert calls == [running.child_session_id]
-
-
-def test_cancelled_child_task_releases_its_session_resources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """F3: the cancel cascade (``turn_spawn._cancel_one_child_task``)
-    previously bypassed the completion fold entirely -- a cancelled child's
-    provider connection was left ENTIRELY to the idle-TTL sweep, with no
-    SubagentStop hook either. RED before the fix: neither fired.
-
-    SABOTAGE: drop the ``finalize_child_task_terminal`` call from
-    ``_cancel_one_child_task`` -> ``calls`` stays empty -> red.
-    """
-    calls: list[str] = []
-    monkeypatch.setattr(
-        session_lifecycle, "release_session_resources", lambda sid: calls.append(sid)
-    )
-
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())
-    with TestClient(app) as client:
-        parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        running = seed_agent_task(
-            app,
-            parent_session_id=parent,
-            agent_ref={"expert_id": "remote", "requesting_expert_id": "main"},
-            status=STATUS_RUNNING,
-        )
-        reg = app.state.agent_task_registry
-
-        updated = turn_spawn._cancel_one_child_task(app, reg, running)
-
-        assert updated is not None
-        assert updated.status == STATUS_CANCELLED
-        assert calls == [running.child_session_id]
-
-
-def test_fail_child_task_releases_its_session_resources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """F3: ``child_forward.fail_child_task`` (the HITL-edge "cannot proceed"
-    terminal) previously fired SubagentStop but never released.
-
-    SABOTAGE: drop the ``finalize_child_task_terminal`` call -> ``calls``
-    stays empty -> red.
-    """
-    calls: list[str] = []
-    monkeypatch.setattr(
-        session_lifecycle, "release_session_resources", lambda sid: calls.append(sid)
-    )
-
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())
-    with TestClient(app) as client:
-        parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        running = seed_agent_task(
-            app,
-            parent_session_id=parent,
-            agent_ref={"expert_id": "remote", "requesting_expert_id": "main"},
-            status=STATUS_RUNNING,
-        )
-
-        child_forward.fail_child_task(
-            app, running, running.child_session_id, "child_question_forward_failed", "async"
-        )
-
-        assert calls == [running.child_session_id]
-
-
-def test_complete_forwarded_task_releases_its_session_resources(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """F3: ``child_forward._complete_forwarded_task`` (a forwarded HITL
-    question answered + honored with no follow-on turn) previously fired
-    SubagentStop but never released.
-
-    SABOTAGE: drop the ``finalize_child_task_terminal`` call -> ``calls``
-    stays empty -> red.
-    """
-    calls: list[str] = []
-    monkeypatch.setattr(
-        session_lifecycle, "release_session_resources", lambda sid: calls.append(sid)
-    )
-
-    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_Agent())
-    with TestClient(app) as client:
-        parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        running = seed_agent_task(
-            app,
-            parent_session_id=parent,
-            agent_ref={"expert_id": "remote", "requesting_expert_id": "main"},
-            status=STATUS_RUNNING,
-        )
-
-        child_forward._complete_forwarded_task(app, running)
-
-        assert calls == [running.child_session_id]

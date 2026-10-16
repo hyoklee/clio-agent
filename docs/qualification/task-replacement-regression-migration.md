@@ -122,3 +122,31 @@ of duplicate user publication/retired input metadata, absent client ID handling
 and generated identity renumbering. The earlier MCP test timeout is retained
 in R74; its process family and runtime root are settled and removed. Nineteen
 other test files still require migration, and no full-suite or CI pass is claimed.
+
+## Removed owner policies and retained algorithms
+
+- The former Relay capability/reachability/attach routes have no compatibility
+  obligation in R2. Their tests are removed; a new public route check requires
+  the execution surface to remain unavailable. Generic runtime-tool catalog
+  validation and semantic trace reads are retained.
+- Old task-fold terminal writes and lazy transcript repair are not recreated.
+  A fresh Core-backed read test requires unchanged historical handoffs across
+  repeated reads, no task-lifecycle write and no assignment/model admission.
+  Terminal publication remains covered by common Core/owner contracts and Q4;
+  removing old fold tests does not waive that required behavior.
+- Claude pool eviction, stateful resend, sibling isolation, in-flight safety and
+  SDK abort primitives remain independent regressions. Six deleted GACT fold/
+  forwarded-child paths are replaced by the actual session worker's normal,
+  failure and Stop retirement cases, requiring provider release once and only
+  after thread exit. The obsolete seeded-registry cancellation test is removed;
+  composed cancellation must still pass common-owner checks and real Claude Q4
+  transport/subtree qualification, which remain required and unqualified.
+
+Thirteen selected cases passed individually and sequentially in this batch;
+the minimum retired-binding inventory now contains sixteen test files. The
+initial stream-order regression failed because its fixture referenced the
+removed blocking `queue.SimpleQueue` binding. The replacement fixture observes
+the real asynchronous stream queue and retains the exact end-before-reset
+assertion. That case passes; the initial failure remains in R87. No production
+change or timeout increase was made. Scoped Ruff/format and lifecycle-test Mypy
+checks pass. R84–R88 record the executed cases and absent disposable runtime roots.

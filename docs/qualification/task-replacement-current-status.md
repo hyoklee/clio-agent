@@ -121,6 +121,20 @@ recorded; production was not changed to restore them.
 
 ## Qualification still required
 
+The fourth regression migration removes special Relay expectations and retired
+task-fold fixtures while retaining generic catalog/trace reads and Claude pool
+algorithms. Fresh tests require historical transcript reads to remain immutable
+and provider release to occur exactly once after physical worker retirement in
+normal, failed and stopped turns. Thirteen selected cases passed individually
+and sequentially. The first stream-order attempt still targeted a deleted
+blocking queue; its migrated asynchronous-queue observation passes with the
+same exact end-before-reset assertion. The initial failure is retained in R87.
+The minimum obsolete-binding inventory now contains sixteen files. Scoped
+Ruff/format and lifecycle-test Mypy checks pass; production remains ff9dc136.
+Receipts: `r84-wire-contract-migration.json`, `r85-provider-retirement-migration.json`,
+`r86-provider-abort-and-collection.json`, `r86-retired-test-bindings.json`,
+`r87-provider-sdk-fixtures.json` and `r88-provider-stream-order.json`.
+
 The full acceptance ledger remains authoritative. Q1–Q9, R1–R6 repeated five
 times, migration idempotence, current-head CI and real-service desktop/phone
 review remain incomplete for the reviewed tuple. R53's actual Codex/Luna Shell

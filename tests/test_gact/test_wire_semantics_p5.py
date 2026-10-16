@@ -1,8 +1,7 @@
-"""P5 semantic-trace read and relay-reachability wire contracts."""
+"""Semantic trace reads, ordinary runtime catalogs and immutable transcript views."""
 
 from __future__ import annotations
 
-from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -10,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
 from clio_agent.gact.semantic_events import SemanticEvent
+from clio_agent.gact.types import Message, Part
 
 
 def _client(tmp_path: Path) -> tuple[TestClient, object]:
@@ -135,144 +135,8 @@ def test_trace_scope_and_limit_keep_latest_matches_oldest_first(tmp_path: Path) 
     assert [event["event_type"] for event in response.json()["events"]] == ["tool.call.completed"]
 
 
-def test_capabilities_carries_unconfigured_relay_block(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Capabilities reports endpoint configuration without probing relay."""
-    monkeypatch.delenv("CLIO_RELAY_MCP_URL", raising=False)
-    client, _state = _client(tmp_path)
-
-    response = client.get("/v1/capabilities")
-
-    assert response.status_code == 200, response.text
-    assert response.json()["relay"] == {
-        "configured": False,
-        "host": None,
-        "reason": "relay_tools_not_configured",
-        "details": {"missing": ["api_token", "http_url", "mcp_url"]},
-    }
-
-
-def test_relay_status_unconfigured_is_not_probed(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """An absent relay endpoint is explicit and has no fabricated reachability."""
-    monkeypatch.delenv("CLIO_RELAY_MCP_URL", raising=False)
-    client, _state = _client(tmp_path)
-
-    response = client.get("/v1/relay/status")
-
-    assert response.status_code == 200, response.text
-    assert response.json() == {
-        "configured": False,
-        "host": None,
-        "reachable": None,
-        "checked_at": None,
-        "detail": "relay_tools_not_configured: relay transport configuration is incomplete",
-        "reason": "relay_tools_not_configured",
-        "details": {"missing": ["api_token", "http_url", "mcp_url"]},
-        "mcp_url": None,
-        "http_url": None,
-        "credential_configured": False,
-        "configuration_scope": "none",
-        "can_manage": True,
-    }
-
-
-def test_relay_status_reports_mocked_tcp_reachability(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Configured status reports the result of the bounded TCP probe."""
-    monkeypatch.setenv("CLIO_RELAY_MCP_URL", "http://relay.example:18783/mcp")
-    monkeypatch.setenv("CLIO_RELAY_HTTP_URL", "http://relay.example:8765")
-    monkeypatch.setenv("CLIO_RELAY_API_TOKEN", "relay-secret")
-
-    async def _reachable(host: str, port: int, timeout_seconds: float) -> None:
-        assert (host, port, timeout_seconds) == ("relay.example", 18783, 3.0)
-
-    monkeypatch.setattr("clio_agent.gact.relay_status._tcp_connect", _reachable)
-    client, _state = _client(tmp_path)
-
-    response = client.get("/v1/relay/status")
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["configured"] is True
-    assert body["host"] == "relay.example"
-    assert body["reachable"] is True
-    assert datetime.fromisoformat(body["checked_at"])
-    assert body["detail"] == "TCP connect to relay.example:18783 succeeded"
-    assert body["mcp_url"] == "http://relay.example:18783/mcp"
-    assert body["http_url"] == "http://relay.example:8765"
-    assert body["credential_configured"] is True
-    assert body["configuration_scope"] == "server"
-    assert "relay-secret" not in response.text
-
-
-def test_relay_runtime_connection_can_be_attached_and_detached(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """The management route applies a non-persistent connection without echoing its secret."""
-    monkeypatch.delenv("CLIO_RELAY_MCP_URL", raising=False)
-    monkeypatch.delenv("CLIO_RELAY_HTTP_URL", raising=False)
-    monkeypatch.delenv("CLIO_RELAY_API_TOKEN", raising=False)
-
-    async def _reachable(host: str, port: int, timeout_seconds: float) -> None:
-        assert (host, port, timeout_seconds) == ("relay.lan", 18783, 3.0)
-
-    monkeypatch.setattr("clio_agent.gact.relay_status._tcp_connect", _reachable)
-    client, _state = _client(tmp_path)
-
-    attached = client.put(
-        "/v1/relay/configuration",
-        json={
-            "mcp_url": "http://relay.lan:18783/mcp",
-            "http_url": "http://relay.lan:8765",
-            "access_token": "runtime-secret",
-        },
-    )
-
-    assert attached.status_code == 200, attached.text
-    assert attached.json()["reachable"] is True
-    assert attached.json()["configuration_scope"] == "agent_run"
-    assert attached.json()["credential_configured"] is True
-    assert "runtime-secret" not in attached.text
-
-    detached = client.delete("/v1/relay/configuration")
-
-    assert detached.status_code == 200, detached.text
-    assert detached.json()["configured"] is False
-    assert detached.json()["configuration_scope"] == "agent_run"
-    assert detached.json()["credential_configured"] is False
-
-
-@pytest.mark.parametrize(
-    "field,value",
-    [
-        ("mcp_url", "file:///relay.sock"),
-        ("http_url", "http://user:secret@relay.lan:8765"),
-    ],
-)
-def test_relay_runtime_connection_rejects_unsafe_addresses(
-    tmp_path: Path, field: str, value: str
-) -> None:
-    """Relay management accepts network URLs and refuses embedded credentials."""
-    client, _state = _client(tmp_path)
-    payload = {
-        "mcp_url": "http://relay.lan:18783/mcp",
-        "http_url": "http://relay.lan:8765",
-        "access_token": "runtime-secret",
-    }
-    payload[field] = value
-
-    response = client.put("/v1/relay/configuration", json=payload)
-
-    assert response.status_code == 422
-    assert "runtime-secret" not in response.text
-
-
-def test_blueprint_tools_validate_against_serve_runtime_catalog(tmp_path):
-    """Declared serve-mounted tools (relay/federation) validate ONLY with the runtime catalog (#P5 run-2 gap)."""
+def test_blueprint_tools_validate_against_serve_runtime_catalog(tmp_path: Path) -> None:
+    """Ordinary MCP tools validate against the explicitly supplied runtime catalog."""
     from pathlib import Path
 
     from clio_agent.gact.agent_blueprints import validate_agent_blueprint_path
@@ -339,271 +203,55 @@ def test_post_message_missing_parts_is_typed_400_validation_error(tmp_path: Path
     assert client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == []
 
 
-def _seed_stranded_handoff(
-    client: TestClient, state: object, *, task_id: str
-) -> tuple[str, object]:
-    """Seed a parent session whose turn already ended with a spawned child's
-    delegate.started expert_handoff part committed to a STORED message -- the
-    "main ended on the circuit breaker without waiting" shape (round-9 wire
-    defect, observed live in session sess_539d24da07bf)."""
-
-    from clio_agent.gact.agent_tasks import STATUS_RUNNING, seed_agent_task
-    from clio_agent.gact.types import Message, Part
-
-    app = client.app
-    parent = _session(client)
-    running = seed_agent_task(
-        app,
-        parent_session_id=parent,
-        agent_ref={"expert_id": "ndp_worker", "requesting_expert_id": "main"},
-        status=STATUS_RUNNING,
-        task_id=task_id,
-    )
-    now = "2026-08-04T12:00:00+00:00"
-    state.messages[parent] = [
-        Message(
-            id="msg_parent_turn",
-            session_id=parent,
-            turn_id="msg_parent_turn",
+def test_transcript_reads_preserve_historical_handoffs_without_task_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reading history cannot invent terminal output or start a missing legacy owner."""
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app) as client:
+        sid = _session(client)
+        session = app.state.sessions.get(sid)
+        original = Message(
+            id="historical_message",
+            session_id=sid,
+            turn_id="historical_turn",
             role="assistant",
-            created_at=now,
-            updated_at=now,
+            created_at=session.created_at,
+            updated_at=session.updated_at,
             parts=[
                 Part(
-                    id="part_handoff_started",
+                    id="historical_handoff",
                     type="expert_handoff",
-                    agent_id="main",
-                    parent_agent="main",
-                    child_agent="ndp_worker",
+                    handle_id="legacy_missing",
+                    child_agent="worker",
                     stage="delegate.started",
                     status="running",
-                    handle_id=running.handle_id,
-                    text="main -> ndp_worker",
-                    metadata={"question": "profile the dataset"},
+                    text="Delegated original analysis",
                 )
             ],
         )
-    ]
-    return parent, running
+        app.state.messages[sid] = [original]
+        writes: list[str] = []
+
+        def forbidden_write(*args: object, **kwargs: object) -> None:
+            writes.append("unexpected task repair")
+            pytest.fail("A transcript read attempted to write task lifecycle")
+
+        monkeypatch.setattr(app.state.task_history, "record_snapshot", forbidden_write)
+        first = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        second = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        assert first == second and len(first) == 1
+        handoff = first[0]["parts"][0]
+        assert handoff["handle_id"] == "legacy_missing"
+        assert handoff["stage"] == "delegate.started" and handoff["status"] == "running"
+        assert handoff["text"] == "Delegated original analysis"
+        assert writes == [] and not app.state.turn_runner.busy(sid)
+        assert app.state.task_history.latest_assignment(sid) is None
 
 
-def _fold_completed(app: object, running: object, *, answer: str) -> object:
-    """Fold ``running`` to completed via the SAME transport-fold seam a relay
-    completion (or the local done-callback) uses -- ``task_fold.fold_agent_task_event``
-    runs the winning transition + ALL terminal effects (task_fold.finish_agent_task_transition)."""
-
-    import dataclasses
-
-    from clio_agent.gact import agent_tasks
-    from clio_agent.gact.agents.invoker import TaskEvent
-    from clio_agent.gact.task_fold import fold_agent_task_event
-
-    completed = dataclasses.replace(
-        running,
-        status="completed",
-        live_state="completed",
-        result={"message_ref": "", "answer_excerpt": answer, "workflow_state": {}},
-        notify_pending=True,
-        updated_at="2026-08-04T12:07:31+00:00",
-    )
-    event = TaskEvent(
-        event_type=agent_tasks.AGENT_TASK_EVENTS[completed.status],
-        task_id=completed.task_id,
-        session_id=completed.child_session_id,
-        status=completed.status,
-        payload=dataclasses.asdict(completed),
-    )
-    return fold_agent_task_event(app, event)
-
-
-def test_terminal_task_fold_appends_return_after_stored_start(tmp_path: Path) -> None:
-    """Round-9 wire defect: a parent turn that ends WITHOUT waiting on a spawned
-    child leaves that child's delegate.started expert_handoff part stuck
-    "running" forever on the parent's STORED message once the child later
-    completes -- neither the next-turn notification drain
-    (enrichment.consume_pending_agent_task_notifications) nor a mid-turn inbox
-    drain (loop_inbox) ever runs for a parent that gets no further turn. The
-    task-terminal-transition seam (task_fold.finish_agent_task_transition ->
-    background_exit.reconcile_stored_handoff_part) must append the return to the
-    STORED ledger and publish message.part.added so an already-open client sees
-    the completed lifecycle without history being rewritten."""
-
-    client, state = _client(tmp_path)
-    parent, running = _seed_stranded_handoff(client, state, task_id="task_stranded")
-
-    outcome = _fold_completed(client.app, running, answer="3 stations profiled")
-    assert outcome.applied is True
-
-    started, returned = state.messages[parent][0].parts
-    assert started.id == "part_handoff_started"
-    assert started.stage == "delegate.started"
-    assert started.metadata["question"] == "profile the dataset"
-    assert "output" not in started.metadata
-    assert returned.stage == "delegate.completed"
-    assert returned.status == "completed"
-    assert returned.metadata["output"] == "3 stations profiled"
-    assert "question" not in returned.metadata
-
-    # A client already watching the session gets the correction pushed over SSE.
-    additions = [e for e in state.bus._history.get(parent, []) if e.type == "message.part.added"]
-    assert len(additions) == 1
-    assert additions[0].payload["message_id"] == "msg_parent_turn"
-    assert additions[0].payload["part"]["stage"] == "delegate.completed"
-
-    # GET /messages agrees -- no more lying "running" render on a fresh load.
-    fetched = client.get(f"/v1/sessions/{parent}/messages").json()["messages"]
-    handoffs = [p for m in fetched for p in m["parts"] if p["type"] == "expert_handoff"]
-    assert [row["stage"] for row in handoffs] == ["delegate.started", "delegate.completed"]
-    assert handoffs[1]["status"] == "completed"
-
-
-def test_terminal_task_fold_stored_handoff_writeback_is_idempotent(tmp_path: Path) -> None:
-    """A later fold/wait reaching the SAME terminal task must not double-write or
-    double-publish the stored parent message's terminal handoff part."""
-
-    from clio_agent.gact.background_exit import reconcile_stored_handoff_part
-
-    client, state = _client(tmp_path)
-    parent, running = _seed_stranded_handoff(client, state, task_id="task_stranded_idem")
-
-    outcome = _fold_completed(client.app, running, answer="done")
-    assert outcome.applied is True
-    before_additions = len(
-        [e for e in state.bus._history.get(parent, []) if e.type == "message.part.added"]
-    )
-
-    # Simulate a later consumer reaching this SAME terminal task again (a
-    # retried fold, or a duplicate transport observation).
-    again = reconcile_stored_handoff_part(client.app, outcome.task)
-
-    after_additions = len(
-        [e for e in state.bus._history.get(parent, []) if e.type == "message.part.added"]
-    )
-    assert again is False
-    assert after_additions == before_additions
-    assert len(state.messages[parent][0].parts) == 2
-    assert [part.stage for part in state.messages[parent][0].parts] == [
-        "delegate.started",
-        "delegate.completed",
-    ]
-
-
-def _seed_historically_stale_handoff(client: TestClient, *, task_id: str) -> tuple[str, object]:
-    """Seed a parent session shaped like it PREDATES the terminal-transition
-    writeback (f7066068) entirely: the child task is already terminal in the
-    agent-task registry (seeded straight to ``completed``, bypassing
-    ``fold_agent_task_transition``/``finish_agent_task_transition`` so
-    ``reconcile_stored_handoff_part`` never ran for it), and its
-    ``delegate.started`` part is written through the REAL durable session
-    store -- not just the resident cache -- so a cold-start reload actually
-    rehydrates it from disk, exactly like a real historical session would."""
-
-    from clio_agent.gact.agent_tasks import STATUS_COMPLETED, seed_agent_task
-    from clio_agent.gact.session_store import _replace_session_messages
-    from clio_agent.gact.types import Message, Part
-
-    app = client.app
-    parent = _session(client)
-    completed = seed_agent_task(
-        app,
-        parent_session_id=parent,
-        agent_ref={"expert_id": "ndp_worker", "requesting_expert_id": "main"},
-        status=STATUS_COMPLETED,
-        task_id=task_id,
-    )
-    now = "2026-08-04T10:10:47+00:00"
-    _replace_session_messages(
-        app,
-        parent,
-        [
-            Message(
-                id="msg_parent_turn",
-                session_id=parent,
-                turn_id="msg_parent_turn",
-                role="assistant",
-                created_at=now,
-                updated_at=now,
-                parts=[
-                    Part(
-                        id="part_handoff_started",
-                        type="expert_handoff",
-                        agent_id="main",
-                        parent_agent="main",
-                        child_agent="ndp_worker",
-                        stage="delegate.started",
-                        status="running",
-                        handle_id=completed.handle_id,
-                        text="main -> ndp_worker",
-                        metadata={"question": "profile the dataset"},
-                    )
-                ],
-            )
-        ],
-    )
-    return parent, completed
-
-
-def test_stale_handoff_reconciled_lazily_on_session_load(tmp_path: Path) -> None:
-    """D1: a session whose child completed BEFORE the terminal-transition
-    writeback existed keeps a delegate.started expert_handoff part frozen
-    "running" forever -- GET /messages never re-runs
-    task_fold.finish_agent_task_transition, so the live writeback (f7066068)
-    never reaches it. The lazy reconcile-on-load sweep
-    (background_exit.sweep_stale_handoff_parts, wired at ResidentLedgerSet's
-    on_rehydrate seam) must close it the first time the session is (re)loaded
-    after a cold start -- simulated here via discard() (drop the resident copy
-    only) + a real GET, which forces rehydration from the durable store -- and
-    record ONE typed handoff.reconciled.stale provenance row."""
-
-    client, state = _client(tmp_path)
-    parent, completed = _seed_historically_stale_handoff(client, task_id="task_predates_writeback")
-
-    assert list(getattr(state, "handoff_reconciliations", [])) == []
-
-    # Cold-start simulation: only the RESIDENT copy is dropped -- the durable
-    # store (what a real restart rehydrates from) still has the stale part.
-    state.messages.discard(parent)
-
-    fetched = client.get(f"/v1/sessions/{parent}/messages").json()["messages"]
-    handoffs = [p for m in fetched for p in m["parts"] if p["type"] == "expert_handoff"]
-    assert [row["stage"] for row in handoffs] == ["delegate.started", "delegate.completed"]
-    assert handoffs[1]["status"] == "completed"
-
-    events = list(state.handoff_reconciliations)
-    assert len(events) == 1
-    assert events[0]["event"] == "handoff.reconciled.stale"
-    assert events[0]["session_id"] == parent
-    assert events[0]["handle_id"] == completed.handle_id
-    assert events[0]["task_status"] == "completed"
-
-
-def test_stale_handoff_reconcile_sweep_is_idempotent_across_reloads(tmp_path: Path) -> None:
-    """The sweep must not re-fire (double-write the part or double-record the
-    typed event) on a session that was already reconciled by an earlier load
-    -- the idempotency twin of the reconcile-on-load test above."""
-
-    client, state = _client(tmp_path)
-    parent, completed = _seed_historically_stale_handoff(client, task_id="task_predates_idem")
-
-    state.messages.discard(parent)
-    first = client.get(f"/v1/sessions/{parent}/messages").json()["messages"]
-    first_handoffs = [p for m in first for p in m["parts"] if p["type"] == "expert_handoff"]
-    assert [row["stage"] for row in first_handoffs] == [
-        "delegate.started",
-        "delegate.completed",
-    ]
-    assert len(state.handoff_reconciliations) == 1
-
-    # A second cold load of the SAME (now-reconciled, durably-persisted) session.
-    state.messages.discard(parent)
-    second = client.get(f"/v1/sessions/{parent}/messages").json()["messages"]
-    second_handoffs = [p for m in second for p in m["parts"] if p["type"] == "expert_handoff"]
-
-    assert [row["stage"] for row in second_handoffs] == [
-        "delegate.started",
-        "delegate.completed",
-    ]
-    assert second_handoffs[1]["status"] == "completed"
-    # No re-write, no second typed event.
-    assert len(state.handoff_reconciliations) == 1
-    assert state.handoff_reconciliations[0]["handle_id"] == completed.handle_id
+def test_special_relay_routes_are_unavailable(tmp_path: Path) -> None:
+    """Removed Relay execution is not revived through a capability or status route."""
+    with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as client:
+        capabilities = client.get("/v1/capabilities").json()["capabilities"]
+        assert "relay" not in capabilities
+        assert client.get("/v1/relay/status").status_code == 404
