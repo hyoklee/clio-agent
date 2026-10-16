@@ -7,7 +7,7 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-The current clio-agent source is `a557c991`; GACT is `954a2a33`. The locked
+The latest production-changing clio-agent commit is `a557c991`; GACT is `954a2a33`. The locked
 clio-core package remains `iowarp-core==2.3.1`. The new read correction is in
 clio-agent's ARC framing adapter, not the clio-core library. Ruff/format, scoped
 Mypy and unchanged removal/size/class/silent-fallback guards pass. The reader
@@ -50,6 +50,18 @@ regressions are in CI, not claimed locally executed.
   unselected folders excluded. Its original family receipt remains failed because
   the harness read an obsolete operation manifest field. The derived proof is
   `r110-canonical-download-proof.json`; it is not a full Q1–Q9 or final-race pass.
+- R111's Claude attempt stopped before inference because the harness gave provider
+  setup only five seconds. Normal shutdown and actual cleanup completed. R112
+  uses the plan's 120-second setup diagnostic; product timeouts are unchanged.
+- R112, clio-agent `66dba3d6` / GACT `954a2a33`: actual Claude/Haiku (configured
+  resolution `claude-haiku-5-5`) passed both idle and post-Stop Question cases.
+  The model received immediate handles, did independent work while idle-case
+  input remained pending, resumed automatically after answers, collected original
+  results, and completed later ordinary turns. Each answer has exactly one Core
+  recipient-input commitment. Both case verdicts pass. The original overall
+  receipt stays failed because a one-case total remained in a two-case harness;
+  `r112-canonical-question-proof.json` records the separate two-case derivation.
+  These scoped cases do not pass all Q3 delivery modes or final race repeats.
 
 R103–R105 services exited with code zero and no active owned tasks. Their
 disposable profile/data and short-temp roots are actually absent; bounded live,
@@ -62,6 +74,9 @@ After R110, the retained R106–R110 profile, source inputs, copied data/cache a
 short-temp root were also removed. The cleanup receipt confirms both roots are
 absent and no active owned tasks or private listeners remain. Bounded original,
 derived-proof and cleanup receipts remain; no archive was created.
+R111/R112 services also exited normally, original authentication and production
+source stayed unchanged within each run, and their disposable profile/temp roots
+are absent. The R112 cleanup additionally checked process working directories.
 
 `c564083c` repairs pending-assignment empty-presentation handling, preserves real
 execution failures, fixes the regression fixture's owner entry point, and repairs
