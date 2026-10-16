@@ -35,6 +35,36 @@ Exact-head CI `38901643638` at `0e57be74` is failed. For example, the Python 3.1
 shard 1 executed 3,925 passed / 202 failed / 21 skipped; that is one shard, not
 the complete suite. Required failures and exclusions remain outstanding.
 
+R133 freshly ran clio-agent `097e9f87` / GACT `cecfb4ee`. The actual phone
+interaction response returned HTTP 200; the model freshly collected the answer,
+reported its unpredictable nonce and completed the original assignment. Core
+records one Question-answer input commit and no assignment replacement. This
+qualifies the specific interaction-route correction, not the entire UI matrix.
+Scoped lint/format/Mypy and size/class guards passed; no local pytest was run.
+
+The same run again proved native pool separation and queued cancellation. Its
+parent Question wait remained active for 441 seconds. The peer initially chose
+a foreground Shell read, which correctly queued behind the held worker. Two
+explicit Stops withdrew those foreground calls with confirmed never-started
+settlement; cancellation results woke the peer. Revised human feedback queued
+before the second Stop directed it to the FS tool, after which it completed its
+file read and authorized query while the parent still waited. Those actual
+interventions and observations are retained; they are not a clean autonomous
+peer-route pass. The held command reached its explicit 600-second limit before
+the delayed Question answer, and the model reported its failure honestly.
+The controller's expected-cancelled assertion therefore remains failed.
+
+`r133-final-audit.json` separates the scoped Question pass from failed full
+capacity/UI acceptance. It confirms both sessions terminal, original process
+identities retired and independent result commitment. `r133-cleanup.json` proves
+the service/browser stopped and disposable roots removed. The original failed
+controller/audit attempts remain unchanged. A real resize check also reproduced
+loss of an unsent Question answer between phone and desktop layouts;
+`r133-question-draft-resize.json` records it. That GACT defect remains to fix.
+CI `38909154359` at `097e9f87` is still red: Python 3.14 shard 1 executed
+3,927 passed / 201 failed / 21 skipped, with other shards still running at this
+checkpoint. clio-core and dependency pins remain unchanged.
+
 clio-agent now includes the human-steering and grant-wake corrections below; GACT is `cecfb4ee`
 (test changes only after `954a2a33`). The locked
 clio-core package remains `iowarp-core==2.3.1`. The new read correction is in
