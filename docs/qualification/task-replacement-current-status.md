@@ -103,6 +103,37 @@ busy reservations. The bounded `r156-retained-failure.json` preserves the incorr
 published state. Disposable profile cleanup proceeds only from those independent
 physical-retirement checks; the failed acceptance result remains failed.
 
+R157 on `fe705077` / GACT `401efcfe` passed the corrected scoped external-owner
+case. Pause returned recording-unconfirmed in 3.37 ms and accepted work continued;
+cancellation returned in 145.27 ms. Both actual processes and the external
+workload's cleanup finished before private Core recovery. After recovery, the
+original child remained paused with unchanged input IDs. Resume delivered the
+attributed cancellation notice and one attention episode. Its fresh result read
+reported `task_state_uncertain`, raw `cancelled`, pending true, settlement unknown
+and explicitly nonfinal backend evidence. Its zero-timeout wait returned the
+original handle pending/uncertain. No outcome notification or acknowledgement was
+created for that handle. The original child explicitly completed its assignment
+while retaining the unresolved external task.
+
+The parent initially produced a plain final response and default-yielded with
+uncertain descendant work. One recorded human completion follow-up went through
+the normal mailbox under the same original root assignment. The model then used
+`submit(assignment_disposition='complete')`. This cue is part of the experiment;
+it is not a zero-intervention autonomy claim. The parent collected the actual
+child result; all three attributed control notices were committed exactly once.
+Service restart preserved all original input IDs and the full external backend
+identity, with no pending messages or duplicate wakes. The external body executed
+once across both service launches. The task remained honestly uncertain after
+reconnection rather than being rewritten as a completed cancellation.
+
+The audit is `r157-scoped-audit.json`; the parent cue, original run, retained
+uncertainty and cleanup have separate bounded receipts in `.pytest-runtime/static`.
+Both API runs and the external server exited zero. No model workers, owned
+processes or listeners remained. The 554,129,856-byte profile and 1,073,741,824-byte
+temporary data were removed, with both exact roots absent. R155/R156 disposable
+roots are also absent, with their failures preserved. This is scoped external
+control/uncertainty/delivery/reconnect acceptance, not full Q6/Q7 or final races.
+
 Committed-head CI `38952642117` at `bca4e2d7` completed red. Python 3.14 shard 1
 recorded 187 failed, 3942 passed and 21 skipped. Earlier `f5d0ae42` CI
 `38950482103` recorded 188 failed, 3941 passed and 21 skipped in shard 1, and
@@ -124,6 +155,12 @@ helper now expects the implemented new-message HTTP 202 acknowledgement and
 requires its assignment handle, then retains the original event-driven completion
 wait. Other regression failures remain unresolved; neither live evidence nor
 these migrations constitute a passing CI baseline.
+
+Current production-candidate CI `38961211259` on `fe705077` is running. All three
+lint jobs, both native lifecycle jobs, filesystem contract, bundle-lock resolution,
+Flowcept integration and flake-hunt passed; all nine interpreter/shard jobs remain
+running at this snapshot, with no observed current-head failure. Earlier red runs
+remain failures. No local pytest/vitest ran during these corrections.
 
 R151 retained a stricter outage failure on frozen `f4a5d05f` / `401efcfe`
 (production code unchanged from R149). Actual Codex/Luna root and child ran
