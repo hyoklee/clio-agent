@@ -51,15 +51,21 @@ def test_windows_native_llama_remains_available_when_docker_is_stopped() -> None
     assert catalog["llama_cpp"].recommended_variant == "native-windows-cpu"
 
 
-def test_no_usable_method_reports_the_cpu_runtime_requirement_not_an_unrelated_gpu() -> None:
+def test_native_cpu_services_remain_usable_without_containers_or_a_gpu() -> None:
     catalog = {row.id: row for row in service_definitions(facts("linux"))}
-    for service in ("vllm", "llama_cpp", "ollama"):
+    for service in ("llama_cpp", "ollama"):
         definition = catalog[service]
         selected = next(
             row for row in definition.variants if row.id == definition.recommended_variant
         )
-        assert selected.id == "cpu"
-        assert "No container runtime" in selected.reason
+        assert selected.id == "native-linux-cpu"
+        assert selected.compatible
+        assert selected.install_type == "native_uv"
+    selected = next(
+        row for row in catalog["vllm"].variants if row.id == catalog["vllm"].recommended_variant
+    )
+    assert selected.id == "cpu"
+    assert "No container runtime" in selected.reason
 
 
 def test_windows_ollama_cpu_plan_uses_powershell_readiness_and_no_posix_user_mapping() -> None:

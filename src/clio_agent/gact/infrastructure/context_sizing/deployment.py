@@ -96,6 +96,11 @@ GPU_VARIANTS = frozenset(
         "native-cuda-attention",
         "native-xpu",
         "native-xpu-attention",
+        *(
+            f"native-{platform}-{backend}"
+            for platform in ("windows", "linux", "macos")
+            for backend in ("vulkan", "rocm", "cuda", "metal")
+        ),
     }
 )
 #: vLLM's own --gpu-memory-utilization default.

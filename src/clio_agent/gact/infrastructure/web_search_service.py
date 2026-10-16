@@ -36,6 +36,7 @@ from clio_agent.gact.infrastructure.models import (
     ServiceVariant,
     TargetFacts,
 )
+from clio_agent.gact.infrastructure.native_web_search import native_web_plan, native_web_variant
 from clio_agent.gact.infrastructure.plan import DriverPlan
 
 WEB_SEARCH_VERSION = "0.3.2"
@@ -169,7 +170,10 @@ def web_search_port(configuration: dict[str, str] | None = None) -> int:
     """The gateway port: configurable on Apptainer (host network), fixed when published."""
 
     configuration = configuration or {}
-    if configuration.get(RUNTIME_FIELD) != "apptainer":
+    if (
+        configuration.get(RUNTIME_FIELD) != "apptainer"
+        and configuration.get("installation_method") != "native"
+    ):
         return WEB_SEARCH_PORT
     value = configuration.get("port", "").strip() or str(WEB_SEARCH_PORT)
     if not value.isdigit() or not 1024 <= int(value) <= 65535:
@@ -188,13 +192,15 @@ def web_search_definition(facts: TargetFacts) -> ManagedServiceDefinition:
     except RuntimeUnavailableError as exc:
         compatible, reason = False, str(exc)
     default = web_search_image({})
+    native = native_web_variant(facts)
     return ManagedServiceDefinition(
         id="web_search",
         category="scientific_service",
         label="CLIO Web Search",
         description="Private web search; PDF/document conversion is optional.",
-        recommended_variant="container",
+        recommended_variant="native" if native.compatible else "container",
         variants=[
+            native,
             ServiceVariant(
                 id="container",
                 label="Container",
@@ -203,7 +209,7 @@ def web_search_definition(facts: TargetFacts) -> ManagedServiceDefinition:
                 artifact=default.pinned if options[:1] == ["apptainer"] else default.reference,
                 compatible=compatible,
                 reason=reason,
-            )
+            ),
         ],
         configuration_fields=[
             _field(
@@ -213,6 +219,12 @@ def web_search_definition(facts: TargetFacts) -> ManagedServiceDefinition:
                 ["off", "on"],
             ),
             _field("contact_email", "Publication metadata email", "scientist@example.org"),
+            ServiceConfigurationField(
+                id="grobid_url",
+                label="Native GROBID URL (for documents)",
+                placeholder="http://127.0.0.1:18070",
+                variants=["native"],
+            ),
             _field("task_backend_port", "Document task port", "8090"),
             _field(LISTEN_FIELD, "Listen address", "127.0.0.1 (0.0.0.0 serves every network)"),
             _field(
@@ -247,9 +259,12 @@ def build_web_search_plan(
     facts: TargetFacts,
     target: InfrastructureTarget | None,
     owned: list[OwnedResource] | None,
+    variant_id: str = "container",
 ) -> DriverPlan:
     """Compile one lifecycle action in the deployment's container runtime."""
 
+    if variant_id == "native":
+        return native_web_plan(action, configuration, facts, target)
     runtime = _runtime(action, configuration, facts)
     if runtime == "apptainer":
         from clio_agent.gact.infrastructure.web_search_apptainer import (  # noqa: PLC0415
