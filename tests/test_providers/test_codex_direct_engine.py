@@ -31,7 +31,7 @@ import asyncio
 import builtins
 import dataclasses
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import pytest
@@ -179,8 +179,28 @@ def _wire() -> OpenAICodexLM:
     return OpenAICodexLM(api_key="test", account_id="acct")
 
 
+class _AsyncHttpWire:
+    """Expose the finite scripted HTTP responses through the required async wire."""
+
+    def __init__(self, wire: Any) -> None:
+        self.wire = wire
+
+    async def stream(self, request: Request) -> AsyncIterator[Any]:
+        events = self.wire.stream(request)
+        try:
+            for event in events:
+                yield event
+        finally:
+            close = getattr(events, "close", None)
+            if close is not None:
+                close()
+
+
 def _engine(**kwargs: Any) -> AsyncCodexDirectEngine:
-    return AsyncCodexDirectEngine(MODEL, wire=kwargs.pop("wire", None) or _wire(), **kwargs)
+    wire = kwargs.pop("wire", None) or _wire()
+    if kwargs.get("http") and "http_wire" not in kwargs:
+        kwargs["http_wire"] = _AsyncHttpWire(wire)
+    return AsyncCodexDirectEngine(MODEL, wire=wire, **kwargs)
 
 
 HEAD = Message.user("what?")
@@ -513,6 +533,13 @@ class _HttpWire:
                 usage=Usage(input_tokens=10, output_tokens=2),
             )
         )
+
+
+def test_custom_http_wire_requires_explicit_async_counterpart() -> None:
+    wire = _HttpWire()
+    with pytest.raises(ValueError, match="explicit asynchronous counterpart"):
+        AsyncCodexDirectEngine(MODEL, wire=wire, http=True)
+    assert wire.requests == []
 
 
 def test_http_mode_streams_lm15_http_without_a_socket(harness: Harness, loop_scope: None) -> None:

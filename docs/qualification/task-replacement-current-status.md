@@ -7,6 +7,50 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### R170/R171 historical migration and real-model recovery
+
+R171 passed the scoped startup-migration experiment on clio-agent `2c7469c2` /
+GACT `0f9c00a4`, using the unchanged production source from `38a8794b`. Fixture
+data used retained legacy semantic-event, context and JSON formats through the
+real Core writer; no historical execution owner was imported. Two normal
+production-service restarts preserved nine historical tasks, stable handles and
+lineage, terminal results, proven input acknowledgements, pending mail, a Question
+and a disabled subscription. Identical external task IDs with distinct full
+server/session/auth identities remained distinct; their ambiguous short alias
+did not resolve. Missing legacy descriptions remained explicitly identified.
+
+The first attempt, R170, failed a harness expectation: its unpaused future queue
+correctly promoted a queued message. R171 set the authenticated future-queue Stop
+policy before seeding, included the historical child's proven result delivery,
+and submitted its human mission as steering. Both corrected migration passes
+were stable and made zero native submissions. This is scoped migration evidence,
+not acceptance of every historical provider/metadata variant or active job.
+
+Actual Codex/Luna queried the historical results, inspected both identity-bound
+MCP outcomes, and yielded on the retained Question under Session assignment
+`task_9b58e94f052246e786ed4cbd5a7dc83b`. A real human answer to
+`task_migrated_9dd6fbaa76b36c807db2bb5f58982ecb402740d7b469596a31a035b5b8ef7510`
+woke that same assignment and reached its confirmed input once. The model
+completed with the stored results and actual answer. The future queue remained
+paused and its queued/held records stayed retained; no old operation replayed.
+
+All three R171 service runs exited zero. PID/creation-time and listener audits
+found no owned processes before disposal. Its 554,065,510-byte profile and
+1,073,741,824-byte temp root are absent. R170's corresponding 550,074,013-byte
+profile and 1,073,741,824-byte temp root are also absent. Original auth and
+production hashes match. Bounded evidence is `r171-live-migration.json`, both
+families' cleanup receipts, and the original failed `r170-live-migration.json`
+under the execution checkout's `.pytest-runtime/static`.
+
+Exact-head Python 3.14 CI for `2c7469c2` passed the seven repaired approval-input
+cases, retry-context case and single-call prompt case. The complete artifact set
+still contains 593 failures, four errors and 53 skips: it is not a regression
+pass. The next test-only correction gives scripted HTTP fixtures the explicit
+async wire required by the provider contract, preserving parser/usage/recovery
+assertions and adding a negative case for a missing async counterpart. Scoped
+Ruff/format passed; these new changes have not run locally and await CI. No
+clio-core source or dependency changed.
+
 ### R158 retained mailbox and restart diagnostic
 
 R158 used actual Codex/Luna and the production service on `75bafce8` / GACT
