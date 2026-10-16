@@ -57,7 +57,7 @@ def built(monkeypatch: pytest.MonkeyPatch) -> list[_HostAgent]:
 
     hosts: list[_HostAgent] = []
 
-    async def _construct(app: Any, *, arc: Any, provider_config: Any) -> _HostAgent:
+    def _construct(*, verbose: bool, arc: Any, provider_config: Any) -> _HostAgent:
         host = _HostAgent(provider_config)
         hosts.append(host)
         return host
@@ -65,7 +65,7 @@ def built(monkeypatch: pytest.MonkeyPatch) -> list[_HostAgent]:
     async def _arc(app: Any) -> None:
         return None
 
-    monkeypatch.setattr(session_host_agent, "construct_agent_with_relay", _construct)
+    monkeypatch.setattr("clio_agent.agent.ClioAgent", _construct)
     monkeypatch.setattr(session_host_agent, "process_arc_off_loop", _arc)
     return hosts
 
@@ -152,13 +152,13 @@ def test_no_model_anywhere_still_reports_no_agent(
 def test_a_failed_host_build_is_a_typed_refusal(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    async def _boom(app: Any, *, arc: Any, provider_config: Any) -> Any:
+    def _boom(*, verbose: bool, arc: Any, provider_config: Any) -> Any:
         raise RuntimeError("provider exploded")
 
     async def _arc(app: Any) -> None:
         return None
 
-    monkeypatch.setattr(session_host_agent, "construct_agent_with_relay", _boom)
+    monkeypatch.setattr("clio_agent.agent.ClioAgent", _boom)
     monkeypatch.setattr(session_host_agent, "process_arc_off_loop", _arc)
     sid = _session(client)
     resp = client.post(

@@ -9,7 +9,7 @@ from clio_agent.gact.attention.content_references import message_content_referen
 from clio_agent.gact.attention.finding_evidence import finding_attention_action
 from clio_agent.gact.attention.lookup import lookup_attention
 from clio_agent.gact.parts import Part
-from tests.test_gact.test_action_cards import _register_fake_child_task
+from tests.test_gact.task_records import record_delegation_fixture
 from tests.test_gact.test_attention._support import _message
 
 
@@ -26,7 +26,9 @@ def add_reviewer_fixture(app: FastAPI, session_id: str) -> None:
         None,
     )
     if task is None:
-        task = _register_fake_child_task(app, parent_sid=session_id, blueprint_id="spotter-ai")
+        task = record_delegation_fixture(
+            app, session_id, handle="task_recorded_review_" + session_id, agent="spotter_watcher"
+        )
     task = task.model_copy(update={"label": "Recorded SPOTTER review", "activity": "yielded"})
     history.record_snapshot(task, observation_id="recorded-reviewer:" + task.handle)
     app.state.sessions.update(task.owner.session_id, title="Recorded reviewer (no inference)")
