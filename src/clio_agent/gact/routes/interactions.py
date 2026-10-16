@@ -331,6 +331,8 @@ def _question_interaction(app: FastAPI, question: UserQuestion) -> PendingIntera
             "answer_metadata": question.answer_metadata,
             **(question.metadata.get("elicitation") or {}),
             **(plan_exit_payload(question) if is_plan_exit_question(question) else {}),
+            "task_handle": question.task_handle,
+            "response_mode": question.response_mode,
         },
         actions=["answer", "cancel"] if question.status == "pending" else [],
     )

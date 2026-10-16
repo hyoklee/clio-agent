@@ -55,6 +55,9 @@ def test_ask_returns_a_durable_handle_without_waiting(world: tuple[Any, TestClie
     listed = client.get(f"/v1/sessions/{sid}/interactions").json()["interactions"]
     row = next(row for row in listed if row["id"] == "question:" + current.handle)
     assert row["owner_session_id"] == sid and row["status"] == "pending"
+    assert row["task_id"] == current.handle
+    assert row["payload"]["task_handle"] == current.handle
+    assert row["payload"]["response_mode"] == "async"
 
 
 @pytest.mark.parametrize("decision", ["answer", "cancel"])
@@ -79,6 +82,8 @@ def test_root_question_interaction_response_uses_the_same_core_owner(
     assert interaction["id"] == "question:" + handle
     assert interaction["owner_session_id"] == sid
     assert interaction["status"] == current.raw_status
+    assert interaction["payload"]["task_handle"] == handle
+    assert interaction["payload"]["response_mode"] == "async"
     if decision == "answer":
         assert (
             QuestionReply.model_validate(app.state.task_history.read_content(current.result)).answer
@@ -155,6 +160,9 @@ def test_child_question_has_exact_owner_and_parent_attribution(
     row = next(row for row in rows if row["id"] == "question:" + handle)
     assert row["owner_session_id"] == child.owner.session_id
     assert row["attended_session_id"] == sid
+    assert row["task_id"] == handle
+    assert row["payload"]["task_handle"] == handle
+    assert row["payload"]["response_mode"] == "async"
     response = client.post(
         f"/v1/sessions/{sid}/interactions/{row['id']}/respond", json={"answer": "child sample"}
     )

@@ -9,6 +9,15 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+The next candidate also preserves the existing Question task handle and
+asynchronous response marker in the normalized interaction payload. The typed
+UI row previously discarded the marker, and the interaction projection omitted
+both fields. GACT therefore displayed legacy waiting guidance and direct
+dismissal controls for task Questions. The correction changes presentation
+bindings only; the same Core Question and response owner remain authoritative.
+Root/child public-route regressions now assert those fields. Scoped lint/format
+and Mypy pass; regression execution stays in CI and live UI acceptance is pending.
+
 The current live tuple is clio-agent `bf2df179` / GACT `6669ac3a`, with the
 unchanged `iowarp-core==2.3.1` library. GACT preserves unsent Question values in
 the existing session Question context across layout remounts. Six constructed
