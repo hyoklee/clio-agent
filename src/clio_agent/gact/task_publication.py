@@ -187,7 +187,14 @@ def publish_control_outcome(
     outcome: dict[str, Any],
     identity: str,
 ) -> None:
-    """Relay an observed control outcome to the owning parent through Core mail."""
+    """Relay agent controls and deferred restart outcomes through Core mail.
+
+    Human synchronous controls already have their attributed intervention notice.
+    Restart additionally needs the later successor/failure outcome, which was not
+    available in its initial acknowledgement.
+    """
+    if caller.human_action and action != "restart":
+        return
     recipient = task_owner_recipient(history, task)
     if recipient is None or history.mail_item(recipient, identity) is not None:
         return

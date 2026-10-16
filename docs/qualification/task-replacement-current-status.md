@@ -9,6 +9,33 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
+R153 repeated the unchanged scenario with Core-free async/thread stack capture
+and identified the actual bottleneck: both native Docket cancellation listeners
+were awaiting `burner-redis 0.1.7` pub/sub `_queue_get` through `asyncio.to_thread`,
+while the sole default I/O worker waited on Core. The native Shell worker and
+body both had cancellation count zero; the body remained in subprocess wait.
+The native cancel RPC had acknowledged without a delivery-error retry. Thus the
+OS-control hop correction alone was insufficient: native notification receipt
+was starved before the body received cancellation.
+
+`r153-root-cause.json` records matching handles, native identity, actual frames,
+backend version/source hash and the executor thread. The next correction must
+separate blocking Core I/O from the shared finite-I/O executor under the existing
+application-owned Core writer, retaining native Docket control. No such resource
+correction or fresh acceptance is claimed yet. The library remains Core 2.3.1.
+Both R152/R153 exited normally, all owned work settled after Core recovery, and
+their exact disposable roots are removed. Bounded diagnostics remain; no bulk
+profile or archive is retained.
+
+Current-head CI `38950482103` is red. Python 3.14 shard 1 recorded 188 failed,
+3941 passed and 21 skipped; shard 2 recorded 216 failed, 3913 passed and 13 skipped.
+The new pending-writer pause case exposed two human pause notices: the generic
+engine outcome plus the attributed intervention. Human synchronous controls now
+use only the intervention notice; agent controls and asynchronous restart's
+successor/failure outcome remain published. The existing one-notice regression
+is retained unchanged; fresh CI/live acceptance of that correction is pending.
+
 R151 retained a stricter outage failure on frozen `f4a5d05f` / `401efcfe`
 (production code unchanged from R149). Actual Codex/Luna root and child ran
 native Shell with a descendant under a one-worker default I/O executor. During
