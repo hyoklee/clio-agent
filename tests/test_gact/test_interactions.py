@@ -58,6 +58,35 @@ def test_ask_returns_a_durable_handle_without_waiting(world: tuple[Any, TestClie
 
 
 @pytest.mark.parametrize("decision", ["answer", "cancel"])
+def test_root_question_interaction_response_uses_the_same_core_owner(
+    world: tuple[Any, TestClient, str], decision: str
+) -> None:
+    """The UI response route must read and settle real Core content off the loop."""
+    app, client, sid = world
+    handle = post_question(app, sid)["handle"]
+    response = client.post(
+        f"/v1/sessions/{sid}/interactions/question:{handle}/respond",
+        json={"action": decision, "answer": "sample A"}
+        if decision == "answer"
+        else {"action": decision},
+    )
+    assert response.status_code == 200, response.text
+    current = app.state.task_history.task_snapshot(handle)
+    assert current is not None and current.terminal_at is not None
+    assert current.settlement == "confirmed"
+    assert current.raw_status == ("answered" if decision == "answer" else "cancelled")
+    interaction = response.json()["interaction"]
+    assert interaction["id"] == "question:" + handle
+    assert interaction["owner_session_id"] == sid
+    assert interaction["status"] == current.raw_status
+    if decision == "answer":
+        assert (
+            QuestionReply.model_validate(app.state.task_history.read_content(current.result)).answer
+            == "sample A"
+        )
+
+
+@pytest.mark.parametrize("decision", ["answer", "cancel"])
 def test_question_response_settles_the_same_core_identity(
     world: tuple[Any, TestClient, str], decision: str
 ) -> None:

@@ -7,6 +7,34 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Capacity and Question UI checkpoint
+
+R129–R131 failed harness setup/order assumptions, not product acceptance.
+Their services, processes and disposable roots are settled and removed; original
+failed receipts remain. R132 on clio-agent `0e57be74` / GACT `cecfb4ee` proved
+independent single-worker Shell/storage queues: the held Shell ran, the second
+Shell remained queued, and Indexing published the exact 514-entry manifest.
+Actual phone UI cancellation withdrew the queued command without starting it;
+Keep running issued no cancellation. The parent received the attributed control
+and entered an unbounded Question wait. An independent Codex/Luna session made
+progress with the shared finite-I/O executor limited to one worker. The parent
+wait remained active for another 82 seconds with the Shell still running.
+
+The actual phone Question answer then returned HTTP 500: the interaction route
+called `question_row` on the application loop. The real Core read raised
+`LoopThreadStoreWrite` before accepting the answer. The correction moves scope
+and Question lookup through the route's existing thread-pool helper; two root
+answer/cancel regressions supplement the existing child response case. No
+clio-core, task owner, schema, timeout or budget change is introduced.
+The correction awaits fresh live acceptance and CI. R132 is failed overall;
+its independent audit and UI response preserve the exact error. Both sessions
+and physical workloads are settled, the browser exited normally, and
+`r132-cleanup.json` proves profile/temp roots absent. No operation was replayed.
+
+Exact-head CI `38901643638` at `0e57be74` is failed. For example, the Python 3.14
+shard 1 executed 3,925 passed / 202 failed / 21 skipped; that is one shard, not
+the complete suite. Required failures and exclusions remain outstanding.
+
 clio-agent now includes the human-steering and grant-wake corrections below; GACT is `cecfb4ee`
 (test changes only after `954a2a33`). The locked
 clio-core package remains `iowarp-core==2.3.1`. The new read correction is in

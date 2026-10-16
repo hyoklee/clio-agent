@@ -460,8 +460,8 @@ def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
     ) -> dict[str, Any]:
         if app.state.sessions.get(root_session_id) is None:
             raise _error(404, "not_found", f"session not found: {root_session_id}")
-        scope = _session_scope(app, root_session_id, True)
-        question = _question_from_interaction_id(app, interaction_id)
+        scope = await run_in_threadpool(_session_scope, app, root_session_id, True)
+        question = await run_in_threadpool(_question_from_interaction_id, app, interaction_id)
         if question is not None:
             if (
                 question.session_id not in scope
