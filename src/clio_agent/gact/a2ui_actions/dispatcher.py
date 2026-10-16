@@ -384,7 +384,9 @@ async def dispatch_action(
     elif destination == "client":
         from clio_agent.gact.a2ui_actions.source_login import deliver_source_login
 
-        delivered = deliver_source_login(app, sid, record, context, publish=_publish)
+        delivered = await run_off_loop(
+            lambda: deliver_source_login(app, sid, record, context, publish=_publish)
+        )
     else:
         delivered = await deliver_to_agent(
             app, sid, record, narration=record.narration, context=context

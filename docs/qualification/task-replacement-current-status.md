@@ -9,6 +9,15 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+The A2UI persistence audit found the same loop-blocking transcript write in the
+private-source sign-in destination. The dispatcher now awaits the existing
+off-loop helper around that finite owner operation. Ownership validation,
+idempotency, client-only sign-in handling and credential restrictions are
+unchanged. Existing public tests cover three providers plus foreign-owner and
+extra-parameter rejection; none of their assertions was changed. Scoped
+Ruff/format, Linux Mypy and the existing size/class/removal/hidden-swallow guards
+pass. Required regression execution remains delegated to CI.
+
 CI `38936588153` subsequently reported current-head shard failures. Python 3.14
 shard 1 has 188 failures/3,940 passes/21 exclusions, versus 191/3,937/21 on the
 previous head. The held-result recovery assertion correctly exposed a test
