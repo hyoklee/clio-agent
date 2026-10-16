@@ -469,7 +469,7 @@ async def complete_deferred(
                 self._loop.call_soon_threadsafe(self.arm_deadline, settled.handle, None)
             publish_task_notice(self.history, settled)
 
-    await asyncio.to_thread(complete)
+    await self.history.io.run(complete)
 
 
 async def spawn(
@@ -501,7 +501,7 @@ async def spawn(
     if not isinstance(raw_evidence, list):
         raise ValueError("Delegation evidence must be an immutable reference list")
     pins = tuple(AssignmentEvidence.model_validate(value) for value in raw_evidence)
-    await asyncio.to_thread(validate_assignment_evidence, self.history, caller, pins)
+    await self.history.io.run(validate_assignment_evidence, self.history, caller, pins)
     normalized_strategy = None
     if strategy is not None:
         from clio_agent.gact.agents.module_variants import strategy_module
@@ -534,9 +534,9 @@ async def spawn(
             validate_assignment_evidence(self.history, caller, pins)
             return parent.handle
 
-    prepared_parent = await asyncio.to_thread(preflight)
+    prepared_parent = await self.history.io.run(preflight)
     prepared_child = (
-        await asyncio.to_thread(self.prepare_child, caller.session_id, agent_id, target_scope)
+        await self.history.io.run(self.prepare_child, caller.session_id, agent_id, target_scope)
         if prepared_parent is not None
         else None
     )
@@ -693,7 +693,7 @@ async def spawn(
                 raise ValueError("Accepted child launch context changed")
             return task
 
-    task = await asyncio.to_thread(create)
+    task = await self.history.io.run(create)
     return {
         "handle": task.handle,
         "kind": "Subagent",

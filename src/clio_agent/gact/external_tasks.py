@@ -81,14 +81,14 @@ class ExternalTasks:
         selected = (
             handles
             if handles is not None
-            else await asyncio.to_thread(self.history.task_handles, kind="MCP", active_only=True)
+            else await self.history.io.run(self.history.task_handles, kind="MCP", active_only=True)
         )
         for handle in selected:
-            current = await asyncio.to_thread(self.history.task_snapshot, handle)
+            current = await self.history.io.run(self.history.task_snapshot, handle)
             if current is None or current.submission is None:
                 continue
             submission = SubmissionContext.model_validate(
-                await asyncio.to_thread(self.history.read_content, current.submission)
+                await self.history.io.run(self.history.read_content, current.submission)
             )
             if submission.backend.owner != "external_mcp":
                 continue
@@ -116,13 +116,13 @@ class ExternalTasks:
             ) -> bool:
                 if self._closing:
                     return True
-                task = await asyncio.to_thread(self.history.task_snapshot, handle)
+                task = await self.history.io.run(self.history.task_snapshot, handle)
                 if task is None or task.terminal_at is not None:
                     return True
                 if self.app.state.agent is None:
                     return False
                 try:
-                    configured = await asyncio.to_thread(self._recovery_client, task)
+                    configured = await self.history.io.run(self._recovery_client, task)
                     host = await self.connection(
                         task.backend.server,
                         configured,
@@ -250,7 +250,7 @@ class ExternalTasks:
         if component is None:
             raise ValueError("Tool is unavailable on the selected server")
         sid, invocation = context.active_session_id(), TASK_CALL.get().invocation_id or uuid4().hex
-        assignment = await asyncio.to_thread(self.history.latest_assignment, sid)
+        assignment = await self.history.io.run(self.history.latest_assignment, sid)
         if assignment is None:
             raise ValueError("MCP calls require an owning assignment")
         session = self.app.state.sessions.get(sid)
@@ -308,7 +308,7 @@ class ExternalTasks:
 
         if self._closing:
             raise ValueError("External task observation is closing")
-        content = await asyncio.to_thread(confirm)
+        content = await self.history.io.run(confirm)
         if host.isolated:
             if host.invocation is not None:
                 raise ValueError("An invocation-bound transport cannot serve another submission")
@@ -400,7 +400,7 @@ class ExternalTasks:
                     }
                 )
         accepted = (
-            await asyncio.to_thread(self.history.task_snapshot, handle)
+            await self.history.io.run(self.history.task_snapshot, handle)
         ).backend is not None or any(
             call.submission.handle == handle for call in host.calls.values()
         )
@@ -446,7 +446,7 @@ class ExternalTasks:
             async def deliver_cancel() -> None:
                 if self._closing:
                     return
-                task = await asyncio.to_thread(self.history.task_snapshot, call.submission.handle)
+                task = await self.history.io.run(self.history.task_snapshot, call.submission.handle)
                 if (
                     task is not None
                     and task.terminal_at is None
@@ -473,7 +473,7 @@ class ExternalTasks:
                 async def reconnect() -> bool:
                     if self._closing:
                         return True  # confirmed Core visibility is retained for startup recovery
-                    task = await asyncio.to_thread(
+                    task = await self.history.io.run(
                         self.history.task_snapshot, call.submission.handle
                     )
                     if task is not None and (
@@ -520,7 +520,7 @@ class ExternalTasks:
         task.add_done_callback(self._retiring.discard)
 
     async def _retire_resources(self, host: ExternalConnection, call: AcceptedNativeCall) -> None:
-        current = await asyncio.to_thread(self.history.task_snapshot, call.submission.handle)
+        current = await self.history.io.run(self.history.task_snapshot, call.submission.handle)
         driver = host.drivers.get(call.task.task_id)
         if (
             current is None
@@ -533,7 +533,7 @@ class ExternalTasks:
             and any(error.accepted is call for error in host.client.unconfirmed_adoptions)
         ):
             return
-        raw = await asyncio.to_thread(self.history.read_content, current.backend_observation)
+        raw = await self.history.io.run(self.history.read_content, current.backend_observation)
         reply = ClientGetTaskResult.model_validate(raw)
         if (
             current.submission != call.submission.context
@@ -688,7 +688,7 @@ class ExternalTasks:
 
     async def _record_or_defer(self, identity: str, write: Any, *, retire: Any = None) -> None:
         async def record() -> None:
-            await asyncio.to_thread(write)
+            await self.history.io.run(write)
             if retire is not None:
                 await retire()
 

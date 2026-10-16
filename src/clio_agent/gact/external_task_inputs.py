@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
@@ -182,7 +181,7 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
         with self.history.serialized():
             return resolve_locked()
 
-    task, key, raw = await asyncio.to_thread(resolve)
+    task, key, raw = await self.history.io.run(resolve)
 
     def question() -> tuple[str, Any | None]:
         with self.history.serialized():
@@ -257,7 +256,7 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
                 )
             return qid, None
 
-    qid, previous = await asyncio.to_thread(question)
+    qid, previous = await self.history.io.run(question)
     if previous is not None:
         return mcp_types.ElicitResult.model_validate(previous)
     from clio_agent.gact.agent_elicitation import audience_hint, await_question_input
@@ -297,4 +296,4 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
             )
             return value
 
-    return await asyncio.to_thread(answer)
+    return await self.history.io.run(answer)

@@ -99,7 +99,7 @@ class NativeWork:
         )
         # Admission itself must finish before cancellation can release the wrapper.
         admission = asyncio.create_task(
-            asyncio.to_thread(self._admit, reference, tool, arguments, attempt)
+            self.history.io.run(self._admit, reference, tool, arguments, attempt)
         )
         cancelled: asyncio.CancelledError | None = None
         while True:
@@ -149,7 +149,7 @@ class NativeWork:
 
             async def finish() -> None:
                 async def record() -> None:
-                    await asyncio.to_thread(self._finished, admitted, outcome, evidence)
+                    await self.history.io.run(self._finished, admitted, outcome, evidence)
                     await self.cleanup_observer(admitted.handle)
 
                 try:

@@ -126,7 +126,7 @@ async def intervene(
     critical = action in {"pause", "cancel", "stop"}
     if not critical:
         # New steering/resume/restart work requires confirmed durable intent.
-        await asyncio.to_thread(record, "intent")
+        await history.io.run(record, "intent")
 
     if action == "cancel":
         effect = (await app.state.task_operations.cancel(caller, handle))["outcomes"][0]
@@ -167,7 +167,7 @@ async def intervene(
             )
             return {"message_id": accepted.id, "accepted": True}
 
-        effect = await asyncio.to_thread(steer)
+        effect = await history.io.run(steer)
     else:
         raise ValueError("Unknown human task control")
 
@@ -181,7 +181,7 @@ async def intervene(
         return {**effect, "intervention_id": identity, "recording": "unconfirmed"}
 
     async def confirm() -> None:
-        await asyncio.to_thread(record, "effect", effect)
+        await history.io.run(record, "effect", effect)
 
     recording = "confirmed"
     try:
@@ -195,7 +195,7 @@ async def intervene(
     if recording == "unconfirmed":
 
         async def reconcile() -> None:
-            await asyncio.to_thread(record, "intent")
+            await history.io.run(record, "intent")
             await confirm()
 
         app.state.task_recovery.defer(identity, reconcile)

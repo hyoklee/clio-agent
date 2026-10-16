@@ -20,16 +20,23 @@ OS-control hop correction alone was insufficient: native notification receipt
 was starved before the body received cancellation.
 
 `r153-root-cause.json` records matching handles, native identity, actual frames,
-backend version/source hash and the executor thread. The next correction must
-separate blocking Core I/O from the shared finite-I/O executor under the existing
-application-owned Core writer, retaining native Docket control. No such resource
-correction or fresh acceptance is claimed yet. The library remains Core 2.3.1.
+backend version/source hash and the executor thread. The resource correction now
+routes blocking task-history calls through one lazy application-owned writer I/O
+thread. Existing store helpers use the pinned FastMCP SDK's I/O resource instead
+of asyncio's transport pool. Core retains record authority; Docket retains native
+execution and cancellation. Shutdown drains the writer and awaits actual thread
+retirement. No Core library, dependency, execution policy or backend was changed.
+Ruff/format, scoped Linux Mypy and guards pass; two resource regressions and a real
+native cancellation regression are built for CI, not executed locally. Fresh R154
+actual-model acceptance of this correction has not started. Core remains 2.3.1.
 Both R152/R153 exited normally, all owned work settled after Core recovery, and
 their exact disposable roots are removed. Bounded diagnostics remain; no bulk
 profile or archive is retained.
 
-Current-head CI `38950482103` is red. Python 3.14 shard 1 recorded 188 failed,
-3941 passed and 21 skipped; shard 2 recorded 216 failed, 3913 passed and 13 skipped.
+Committed-head CI `38952642117` at `bca4e2d7` completed red. Python 3.14 shard 1
+recorded 187 failed, 3942 passed and 21 skipped. Earlier `f5d0ae42` CI
+`38950482103` recorded 188 failed, 3941 passed and 21 skipped in shard 1, and
+216 failed, 3913 passed and 13 skipped in shard 2.
 The new pending-writer pause case exposed two human pause notices: the generic
 engine outcome plus the attributed intervention. Human synchronous controls now
 use only the intervention notice; agent controls and asynchronous restart's

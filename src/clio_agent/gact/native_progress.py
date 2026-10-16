@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from typing import Any
@@ -74,7 +73,7 @@ class NativeProgress:
                 )
 
         async def confirm() -> None:
-            await asyncio.to_thread(record)
+            await self.work.history.io.run(record)
 
         try:
             await confirm()

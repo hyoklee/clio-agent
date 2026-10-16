@@ -22,7 +22,9 @@ import asyncio
 import concurrent.futures
 import contextvars
 import logging
-from typing import Any, Callable, Optional, TypeVar
+from typing import Any, Callable, Optional, TypeVar, cast
+
+from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
 
 from clio_agent.runtime.stream_audit import stream_audit
 
@@ -37,12 +39,19 @@ async def run_off_loop(
     fn: Callable[..., T],
     *args: Any,
     executor: Optional[concurrent.futures.Executor] = None,
+    **kwargs: Any,
 ) -> T:
-    """Await ``fn(*args)`` on ``executor`` (default pool) with contextvars copied."""
+    """Await blocking work on an explicit executor or the native SDK's I/O resource.
 
+    The asyncio default executor also carries memory-backend task notifications;
+    store/preparation work must not occupy that transport resource.
+    """
+
+    if executor is None:
+        return cast(T, await call_sync_fn_in_threadpool(fn, *args, **kwargs))
     loop = asyncio.get_running_loop()
     ctx = contextvars.copy_context()
-    return await loop.run_in_executor(executor, lambda: ctx.run(fn, *args))
+    return await loop.run_in_executor(executor, lambda: ctx.run(fn, *args, **kwargs))
 
 
 async def join_off_loop(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
@@ -51,7 +60,7 @@ async def join_off_loop(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     This is for store/preparation operations, never unbounded queue/lock waits.
     It does not turn a cancelled waiter into proof that its thread has exited.
     """
-    worker = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
+    worker = asyncio.create_task(call_sync_fn_in_threadpool(fn, *args, **kwargs))
     cancellation: asyncio.CancelledError | None = None
     while True:
         try:
@@ -107,8 +116,7 @@ def schedule_off_loop(fn: Callable[[], Any], *, label: str) -> Optional["asyncio
     except RuntimeError:
         fn()
         return None
-    ctx = contextvars.copy_context()
-    return loop.run_in_executor(None, lambda: ctx.run(_audited(label, fn)))
+    return loop.create_task(call_sync_fn_in_threadpool(_audited(label, fn)))
 
 
 __all__ = [

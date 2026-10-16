@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from functools import partial
 from typing import TYPE_CHECKING, Any
@@ -47,7 +46,7 @@ async def cancel(
                 )
 
     await owner._record_or_defer("external-cancel:" + handle, intent)
-    current = await asyncio.to_thread(owner.history.task_snapshot, handle)
+    current = await owner.history.io.run(owner.history.task_snapshot, handle)
     if current is not None and current.terminal_at is not None:
         return {"handle": handle, "cancellation_requested": False, "status": current.status}
     for host in owner.connections.values():
@@ -59,7 +58,7 @@ async def cancel(
         async def deliver(
             bound: AcceptedNativeCall = bound_call, connection: ExternalConnection = host
         ) -> bool:
-            latest = await asyncio.to_thread(owner.history.task_snapshot, handle)
+            latest = await owner.history.io.run(owner.history.task_snapshot, handle)
             if (
                 owner._closing
                 or connection.calls.get(bound.task.task_id) is not bound

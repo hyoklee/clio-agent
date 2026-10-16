@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from contextlib import AsyncExitStack
 from functools import partial
@@ -39,13 +38,13 @@ async def start(app: Any) -> None:
     history = getattr(app.state, "task_history", None)
     if history is None:
         history = TaskHistory(arc)
-        await asyncio.to_thread(history.restore)
+        await history.io.run(history.restore)
     recovery = CoreRecovery(history)
     app.state.task_history, app.state.task_recovery = history, recovery
     app.state.human_principal = "human:" + str(app.state.connected_storage.store.clio_id)
     from clio_agent.gact.task_migration import migrate_history
 
-    await asyncio.to_thread(migrate_history, app)
+    await history.io.run(migrate_history, app)
     app.state.questions = QuestionCommands(history)
     app.state.question_events = QuestionEvents(app)
     app.state.questions.on_change = app.state.question_events.changed
@@ -118,7 +117,7 @@ async def start(app: Any) -> None:
         if current.kind in {"Session", "Subagent"}:
             return await app.state.conversations.cancel(caller, current.handle)
         if current.kind == "Question":
-            settled = await asyncio.to_thread(
+            settled = await history.io.run(
                 app.state.questions.cancel, current.handle, caller=caller
             )
             return {
@@ -237,9 +236,9 @@ async def start(app: Any) -> None:
                 model_text,
             )
 
-        message, agent, model_text = await asyncio.to_thread(prepare)
+        message, agent, model_text = await history.io.run(prepare)
         app.state.cancel_flags.discard(segment.session_id)
-        await asyncio.to_thread(session_store.update, segment.session_id, status="running")
+        await history.io.run(session_store.update, segment.session_id, status="running")
         outcome = await _run_turn_in_background(app, segment.session_id, model_text, message, agent)
         return (
             outcome
@@ -339,7 +338,7 @@ async def start(app: Any) -> None:
         conversations.start()
         await conversations.restore()
         if not history.requires_recovery:
-            await asyncio.to_thread(app.state.questions.restore)
+            await history.io.run(app.state.questions.restore)
             await app.state.question_events.restore()
             conversations.signal_pending()
     except BaseException as error:
@@ -383,4 +382,9 @@ async def close(app: Any) -> tuple[BaseException, ...]:
     history = getattr(app.state, "task_history", None)
     if history is not None:
         history.observation_committed = None
+        try:
+            await history.io.close()
+        except BaseException as error:
+            logger.exception("Task runtime Core I/O retirement failed")
+            errors.append(error)
     return tuple(errors)

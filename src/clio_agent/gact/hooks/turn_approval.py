@@ -348,7 +348,7 @@ def resolve(app: Any, task: TaskSnapshot) -> None:
                     context_epoch=captured.context_epoch,
                     completion=captured.completion,
                 )
-                await asyncio.to_thread(release)
+                await history.io.run(release)
 
             async def finish() -> None:
                 try:

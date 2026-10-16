@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
 from collections.abc import Iterable
@@ -333,7 +332,7 @@ async def search_workspace_references(
     # so a search on a busy workspace stalled the whole server. They now run in
     # ONE worker thread (not one per kind: they share the same in-memory state and
     # fanning them out would only multiply the GIL churn).
-    results: list[dict[str, Any]] = await asyncio.to_thread(
+    results: list[dict[str, Any]] = await app.state.task_history.io.run(
         _collect_reference_results,
         app,
         workspace_id,

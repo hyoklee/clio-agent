@@ -441,7 +441,7 @@ def register_native_storage(
                     )
 
                     async def retry() -> None:
-                        await asyncio.to_thread(record)
+                        await work.history.io.run(record)
 
                     loop.call_soon_threadsafe(
                         work.recovery.defer, "storage-progress:" + context.handle, retry
@@ -553,7 +553,7 @@ def register_native_storage(
                 )
 
                 async def retry() -> None:
-                    await asyncio.to_thread(record)
+                    await work.history.io.run(record)
 
                 loop.call_soon_threadsafe(
                     work.recovery.defer, "storage-progress:" + context.handle, retry

@@ -104,9 +104,9 @@ class Conversations:
                 await self.restore()
             if self.history.requires_recovery:
                 return
-            await asyncio.to_thread(self.app.state.questions.restore)
+            await self.history.io.run(self.app.state.questions.restore)
             await self.app.state.question_events.restore()
-            await asyncio.to_thread(self._restore_input_projections)
+            await self.history.io.run(self._restore_input_projections)
             self.signal_pending()
 
         self.recovery.on_ready = ready
@@ -357,7 +357,7 @@ class Conversations:
                     details.context_epoch_after,
                 )
 
-        segment = await asyncio.to_thread(select)
+        segment = await self.history.io.run(select)
         if segment is None:
 
             def prepare_queue() -> None:
@@ -375,8 +375,8 @@ class Conversations:
                         return
                 promote_next(self.app, sid)
 
-            await asyncio.to_thread(prepare_queue)
-            segment = await asyncio.to_thread(select)
+            await self.history.io.run(prepare_queue)
+            segment = await self.history.io.run(select)
         if segment is None:
             return None
 
@@ -512,7 +512,7 @@ class Conversations:
                 raise
 
             async def confirm() -> None:
-                await asyncio.to_thread(record)
+                await self.history.io.run(record)
 
             self._loop.call_soon_threadsafe(
                 self.recovery.defer, "conversation-progress:" + source.content_id, confirm
@@ -578,7 +578,7 @@ class Conversations:
             return level, parent, details.inference_concurrency
 
         async def acquire() -> tuple[Callable[[], None], ...]:
-            level, parent, fanout = await asyncio.to_thread(limits)
+            level, parent, fanout = await self.history.io.run(limits)
             if level == 0:
                 return ()  # roots retain their provider's existing budgets
             capacity = conf.resolve(
@@ -655,7 +655,7 @@ class Conversations:
                 )
 
         try:
-            await asyncio.to_thread(record)
+            await self.history.io.run(record)
         except Exception as error:
             logger.exception(
                 "Task boundary reason=stopping_recording_unconfirmed error_type=%s",
@@ -663,7 +663,7 @@ class Conversations:
             )
 
             async def confirm() -> None:
-                await asyncio.to_thread(record)
+                await self.history.io.run(record)
 
             self.recovery.defer("conversation-stopping:" + sid, confirm)
 
@@ -682,7 +682,7 @@ class Conversations:
                     observation_id=uuid4().hex,
                 )
 
-        await _confirm_segment_write(lambda: activity("busy"))
+        await _confirm_segment_write(self.history, lambda: activity("busy"))
         context.set_turn_identity(
             app=self.app,
             session_id=sid,
@@ -710,7 +710,8 @@ class Conversations:
 
         async def finish() -> None:
             await _confirm_segment_write(
-                lambda: conversation_assignments._finish_segment(self, segment, outcome)
+                self.history,
+                lambda: conversation_assignments._finish_segment(self, segment, outcome),
             )
             self._recording_confirmed(sid, "finish:" + segment.turn_id)
 
@@ -737,9 +738,9 @@ class Conversations:
         publication_context = contextvars.copy_context()
 
         async def confirm() -> None:
-            confirmed = await asyncio.to_thread(self.history.confirm_write, pending.confirm)
+            confirmed = await self.history.io.run(self.history.confirm_write, pending.confirm)
             if confirmed and pending.after_confirmed is not None:
-                await asyncio.to_thread(publication_context.run, pending.after_confirmed)
+                await self.history.io.run(publication_context.run, pending.after_confirmed)
             self._recording_confirmed(sid, identity)
             if not future.done():
                 future.set_result(confirmed)

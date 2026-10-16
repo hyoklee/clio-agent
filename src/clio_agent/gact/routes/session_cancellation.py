@@ -24,12 +24,12 @@ async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str,
     runner = app.state.turn_runner
     reservation = runner.request_stop(sid)
     stopping = reservation is not None
-    await asyncio.to_thread(stop_session_loop, app, sid)
-    await asyncio.to_thread(stop_session_goal, app, sid)
-    await asyncio.to_thread(stop_session_composer_autostart, app, sid)
+    await app.state.task_history.io.run(stop_session_loop, app, sid)
+    await app.state.task_history.io.run(stop_session_goal, app, sid)
+    await app.state.task_history.io.run(stop_session_composer_autostart, app, sid)
     if assignment is None:
         effect = {"status": "stopping" if stopping else "idle", "accepted_tasks_continue": True}
-        await asyncio.to_thread(app.state.sessions.update, sid, status=effect["status"])
+        await app.state.task_history.io.run(app.state.sessions.update, sid, status=effect["status"])
 
         async def retire() -> None:
             await runner.stop(sid, reservation=reservation)
@@ -47,7 +47,7 @@ async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str,
                         )
                     )
 
-            await asyncio.to_thread(project_idle)
+            await app.state.task_history.io.run(project_idle)
 
         if stopping:
             app.state.conversations.retain_control(
@@ -62,7 +62,7 @@ async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str,
     effect = await intervene(
         app, assignment.handle, "stop", stop_reservation=reservation, stop_reservation_captured=True
     )
-    await asyncio.to_thread(app.state.sessions.update, sid, status=effect["status"])
+    await app.state.task_history.io.run(app.state.sessions.update, sid, status=effect["status"])
     app.state.bus.publish(
         Event(type="session.status_changed", session_id=sid, payload={"session_id": sid, **effect})
     )

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 from uuid import uuid4
 
@@ -62,7 +61,7 @@ async def submit_source_action(
         workspace = app.state.workspaces.get(workspace_id)
         return assignment, record, workspace, permission_snapshot(app, session_id)
 
-    assignment, record, workspace, permissions = await asyncio.to_thread(prepare)
+    assignment, record, workspace, permissions = await app.state.task_history.io.run(prepare)
     from clio_agent.gact.native_storage import source_submission_identity
 
     public = {"source_id": arguments["source_id"]}
@@ -89,7 +88,7 @@ async def submit_source_action(
         + record.source.label,
     )
     task = app.state.task_history.task_snapshot(receipt["handle"])
-    view = await asyncio.to_thread(operation_view, app, task, record.source.id)
+    view = await app.state.task_history.io.run(operation_view, app, task, record.source.id)
     return {**view, "acceptance": receipt}
 
 

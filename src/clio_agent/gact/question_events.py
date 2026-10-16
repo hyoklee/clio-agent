@@ -38,11 +38,13 @@ class QuestionEvents:
             )
 
             async def repair() -> None:
-                current = await asyncio.to_thread(
+                current = await self.app.state.task_history.io.run(
                     self.app.state.task_history.task_snapshot, task.handle
                 )
                 if current is not None:
-                    projected = await asyncio.to_thread(question_view, self.app, current)
+                    projected = await self.app.state.task_history.io.run(
+                        question_view, self.app, current
+                    )
                     self._publish(current, projected)
 
             self.loop.call_soon_threadsafe(
@@ -75,7 +77,7 @@ class QuestionEvents:
         ):
 
             async def resolve() -> None:
-                await asyncio.to_thread(resolve_plan_question, self.app, task)
+                await self.app.state.task_history.io.run(resolve_plan_question, self.app, task)
 
             async def repair() -> None:
                 try:
@@ -106,7 +108,7 @@ class QuestionEvents:
 
         async def expire() -> None:
             try:
-                await asyncio.to_thread(self.app.state.questions.expire, handle)
+                await self.app.state.task_history.io.run(self.app.state.questions.expire, handle)
             except Exception as error:
                 logger.exception(
                     "Task boundary reason=question_expiry_recording_unconfirmed error_type=%s",
@@ -114,7 +116,9 @@ class QuestionEvents:
                 )
 
                 async def recover() -> None:
-                    await asyncio.to_thread(self.app.state.questions.expire, handle)
+                    await self.app.state.task_history.io.run(
+                        self.app.state.questions.expire, handle
+                    )
 
                 self.app.state.task_recovery.defer("question-expiry:" + handle, recover)
 
@@ -147,7 +151,7 @@ class QuestionEvents:
                 if task is not None and task.kind == "Question" and task.terminal_at is not None:
                     self.changed(task)
 
-        await asyncio.to_thread(replay)
+        await self.app.state.task_history.io.run(replay)
 
     async def close(self) -> None:
         """Retire hints while leaving accepted open Questions durable."""

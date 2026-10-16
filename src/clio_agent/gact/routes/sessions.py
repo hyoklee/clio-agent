@@ -11,7 +11,6 @@ Shared route dependencies travel on :class:`GactDeps`.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -125,7 +124,8 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     )
                 ).model_dump(exclude_none=True),
             )
-        await asyncio.to_thread(sync_watcher_for_mode, app, sess, prior_approval_mode=prior_mode)
+        io = app.state.task_history.io
+        await io.run(sync_watcher_for_mode, app, sess, prior_approval_mode=prior_mode)
         # Publish so live SSE subscribers see mode flips immediately.
         app.state.bus.publish(
             Event(

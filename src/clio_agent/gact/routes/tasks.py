@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any, Literal
 from uuid import uuid4
 
@@ -158,9 +157,9 @@ def register_task_routes(app: FastAPI) -> None:
         active_only: bool = False,
     ) -> dict[str, Any]:
         try:
-            return await asyncio.to_thread(
+            return await app.state.task_history.io.run(
                 app.state.task_operations.query,
-                await asyncio.to_thread(caller, sid),
+                await app.state.task_history.io.run(caller, sid),
                 kind=kind,
                 status=status,
                 cursor=cursor,
@@ -190,7 +189,7 @@ def register_task_routes(app: FastAPI) -> None:
     async def observe(sid: str, body: ObserveRequest) -> dict[str, Any]:
         try:
             return await app.state.task_operations.observe(
-                await asyncio.to_thread(caller, sid), **body.model_dump()
+                await app.state.task_history.io.run(caller, sid), **body.model_dump()
             )
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
@@ -199,7 +198,7 @@ def register_task_routes(app: FastAPI) -> None:
     async def wait(sid: str, body: WaitRequest) -> dict[str, Any]:
         try:
             return await app.state.task_operations.wait(
-                await asyncio.to_thread(caller, sid), **body.model_dump()
+                await app.state.task_history.io.run(caller, sid), **body.model_dump()
             )
         except ValueError as error:
             raise HTTPException(400, str(error)) from error
@@ -207,9 +206,9 @@ def register_task_routes(app: FastAPI) -> None:
     @app.get("/v1/sessions/{sid}/tasks/{handle}/result")
     async def result(sid: str, handle: str, cursor: str | None = None) -> dict[str, Any]:
         try:
-            return await asyncio.to_thread(
+            return await app.state.task_history.io.run(
                 app.state.task_operations.result,
-                await asyncio.to_thread(caller, sid),
+                await app.state.task_history.io.run(caller, sid),
                 handle,
                 cursor,
             )
@@ -218,7 +217,7 @@ def register_task_routes(app: FastAPI) -> None:
 
     @app.get("/v1/sessions/{sid}/tasks/mailbox")
     async def mailbox(sid: str) -> dict[str, Any]:
-        selected = await asyncio.to_thread(caller, sid)
+        selected = await app.state.task_history.io.run(caller, sid)
 
         def project() -> dict[str, Any]:
             owner = app.state.conversations
@@ -239,7 +238,7 @@ def register_task_routes(app: FastAPI) -> None:
                 ]
             }
 
-        return await asyncio.to_thread(project)
+        return await app.state.task_history.io.run(project)
 
     @app.get("/v1/sessions/{sid}/async-processes")
     async def processes(
@@ -253,7 +252,7 @@ def register_task_routes(app: FastAPI) -> None:
                 **{key: value for key, value in page.items() if key != "tasks"},
             }
 
-        return await asyncio.to_thread(project)
+        return await app.state.task_history.io.run(project)
 
     @app.get("/v1/sessions/{sid}/agent-tasks")
     async def agent_tasks(
@@ -266,7 +265,7 @@ def register_task_routes(app: FastAPI) -> None:
         def project() -> dict[str, Any]:
             return {**page, "tasks": [agent_task_view(app, row) for row in page["tasks"]]}
 
-        return await asyncio.to_thread(project)
+        return await app.state.task_history.io.run(project)
 
     @app.get("/v1/agent-tasks/{handle}")
     async def agent_task(handle: str) -> dict[str, Any]:
@@ -281,7 +280,7 @@ def register_task_routes(app: FastAPI) -> None:
             return agent_task_view(app, access.view(task))
 
         try:
-            return await asyncio.to_thread(project)
+            return await app.state.task_history.io.run(project)
         except ValueError as error:
             raise HTTPException(404, str(error)) from error
 
@@ -359,7 +358,7 @@ def register_task_routes(app: FastAPI) -> None:
                 **{key: value for key, value in page.items() if key != "tasks"},
             }
 
-        return await asyncio.to_thread(project)
+        return await app.state.task_history.io.run(project)
 
     @app.get("/v1/questions")
     async def all_questions(
@@ -389,16 +388,16 @@ def register_task_routes(app: FastAPI) -> None:
             current = answer_question_response(app, caller(sid), authorized.handle, reply)
             return question_view(app, current)
 
-        return await asyncio.to_thread(apply)
+        return await app.state.task_history.io.run(apply)
 
     @app.post("/v1/sessions/{sid}/questions/{handle}/cancel")
     async def cancel_question(sid: str, handle: str) -> dict[str, Any]:
-        current = await asyncio.to_thread(session_question, sid, handle)
+        current = await app.state.task_history.io.run(session_question, sid, handle)
         try:
             await intervene(app, current.handle, "cancel")
         except ValueError as error:
             raise HTTPException(409, str(error)) from error
-        return await asyncio.to_thread(
+        return await app.state.task_history.io.run(
             lambda: question_view(app, app.state.task_history.task_snapshot(current.handle))
         )
 
@@ -412,8 +411,8 @@ def register_task_routes(app: FastAPI) -> None:
     @app.get("/v1/sessions/{sid}/coordination-grants")
     async def grants(sid: str, request: Request) -> dict[str, Any]:
         authenticated_human(request)
-        await asyncio.to_thread(caller, sid)
-        return await asyncio.to_thread(
+        await app.state.task_history.io.run(caller, sid)
+        return await app.state.task_history.io.run(
             lambda: {
                 "grants": [
                     row.model_dump(mode="json")
@@ -425,7 +424,7 @@ def register_task_routes(app: FastAPI) -> None:
     @app.post("/v1/sessions/{sid}/coordination-grants")
     async def grant(sid: str, body: GrantRequest, request: Request) -> dict[str, Any]:
         authenticated_human(request)
-        await asyncio.to_thread(caller, sid)
+        await app.state.task_history.io.run(caller, sid)
         if body.recipient_session != sid:
             raise HTTPException(status_code=400, detail="Grant recipient differs from this session")
 
@@ -450,12 +449,12 @@ def register_task_routes(app: FastAPI) -> None:
             app.state.task_history.record_grant(row, observation_id=uuid4().hex)
             return row.model_dump(mode="json")
 
-        return await asyncio.to_thread(apply)
+        return await app.state.task_history.io.run(apply)
 
     @app.delete("/v1/sessions/{sid}/coordination-grants/{identity}")
     async def revoke(sid: str, identity: str, request: Request) -> dict[str, Any]:
         authenticated_human(request)
-        await asyncio.to_thread(caller, sid)
+        await app.state.task_history.io.run(caller, sid)
 
         def apply() -> dict[str, Any]:
             row = next(
@@ -474,4 +473,4 @@ def register_task_routes(app: FastAPI) -> None:
             app.state.task_history.record_grant(revoked, observation_id=uuid4().hex)
             return revoked.model_dump(mode="json")
 
-        return await asyncio.to_thread(apply)
+        return await app.state.task_history.io.run(apply)

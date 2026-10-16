@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
 from typing import TYPE_CHECKING, Any, Mapping
 
@@ -129,7 +128,7 @@ async def deliver_to_agent(
             )
 
     try:
-        await asyncio.to_thread(accept)
+        await app.state.task_history.io.run(accept)
     except (ClioError, OSError, TimeoutError, RecordingUnconfirmed) as error:
         # Keep the domain record received. Retrying the same action identity is
         # safe; an uncertain Core write must not be advertised as a clean rejection.
@@ -145,7 +144,7 @@ async def deliver_to_agent(
             },
         ) from error
     except Exception as error:
-        await asyncio.to_thread(fail_and_publish, app, session_id, record, error)
+        await app.state.task_history.io.run(fail_and_publish, app, session_id, record, error)
         raise
 
     def project() -> ActionRecord:
@@ -168,11 +167,11 @@ async def deliver_to_agent(
         return observed
 
     try:
-        observed = await asyncio.to_thread(project)
+        observed = await app.state.task_history.io.run(project)
     except (ClioError, OSError, TimeoutError):
 
         async def retry_projection() -> None:
-            confirmed = await asyncio.to_thread(project)
+            confirmed = await app.state.task_history.io.run(project)
             _publish(app, session_id, confirmed)
 
         app.state.task_recovery.defer("a2ui-projection:" + record.id, retry_projection)

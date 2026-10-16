@@ -15,7 +15,6 @@ keeps only the concern-private retention estimates and route projections.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections.abc import Mapping
@@ -28,6 +27,7 @@ from clio_agent.arc import history_mode
 from clio_agent.errors import MCP_TASK_RECORD_STORE_ABSENT
 from clio_agent.gact.composer_runtime import resource_capabilities
 from clio_agent.gact.context_references import CONTEXT_REFERENCE_CAPABILITY
+from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.protocol_v3 import capabilities_to_v3, project_for_request
 from clio_agent.gact.provenance.child_projection import CHILD_ACTIVITY_PROJECTION_CAPABILITY
 from clio_agent.gact.providers.boot_selection import explicit_lm_provider
@@ -366,9 +366,7 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
             # While the boot collection runs, answer at once (health_boot); else collect.
             pending = health_boot.pending_report(app)
             report = (
-                pending
-                if pending is not None
-                else await asyncio.to_thread(collect_health_report, app)
+                pending if pending is not None else await run_off_loop(collect_health_report, app)
             )
             integrations = list(report.integrations)
         except Exception as exc:  # noqa: BLE001 - surfaced as a degraded doctor row (see comment)
@@ -581,7 +579,7 @@ def register_system_routes(app: FastAPI, deps: "GactDeps") -> None:
         )
         # Catalog discovery may initialize installed blueprint snapshots. Keep all
         # filesystem work off the request loop so health/SSE remain responsive.
-        return await asyncio.to_thread(
+        return await run_off_loop(
             project_for_request,
             request,
             v3=lambda: JSONResponse(

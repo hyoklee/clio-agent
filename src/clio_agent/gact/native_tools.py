@@ -233,9 +233,9 @@ class NativeTools:
             tool_version=component.version,
             output_schema=component.output_schema,
             backend=self.backends[root],
-            local_runtime=await asyncio.to_thread(local_runtime_identity),
+            local_runtime=await self.history.io.run(local_runtime_identity),
         )
-        content = await asyncio.to_thread(self._confirm, context, kind, description)
+        content = await self.history.io.run(self._confirm, context, kind, description)
         if isinstance(content, TaskSnapshot):
             return {
                 "handle": content.handle,
@@ -302,7 +302,7 @@ class NativeTools:
                 "handle": handle,
                 "status": current.status,
                 "pending": current.terminal_at is None,
-                "result": await asyncio.to_thread(self.history.read_content, current.result)
+                "result": await self.history.io.run(self.history.read_content, current.result)
                 if current.result is not None
                 else None,
             }
@@ -453,7 +453,7 @@ class NativeTools:
         self, root: NativeRootKind, accepted: AcceptedNativeCall
     ) -> AcceptedTaskResult:
         context = SubmissionContext.model_validate(
-            await asyncio.to_thread(self.history.read_content, accepted.submission.context)
+            await self.history.io.run(self.history.read_content, accepted.submission.context)
         )
         backend = context.backend.model_copy(update={"task_id": accepted.task.task_id})
         if context.backend != self.backends[root]:
@@ -476,8 +476,8 @@ class NativeTools:
                 self.history.record_snapshot(adopted, observation_id=uuid4().hex)
                 return adopted
 
-        adopted = await asyncio.to_thread(confirm)
-        await asyncio.to_thread(self._settle, adopted, accepted)
+        adopted = await self.history.io.run(confirm)
+        await self.history.io.run(self._settle, adopted, accepted)
         return accepted_result(
             {
                 "handle": adopted.handle,
@@ -503,7 +503,7 @@ class NativeTools:
             async def reconnect() -> bool:
                 if self._resources_closed:
                     return True
-                current = await asyncio.to_thread(self._current, handle)
+                current = await self.history.io.run(self._current, handle)
                 if current.terminal_at is not None or current.connection_freshness == "fresh":
                     return True
                 original_backend = current.backend
@@ -612,7 +612,7 @@ class NativeTools:
         self, identity: str, operation: Callable[[], None], *, handle: str | None = None
     ) -> None:
         async def record() -> None:
-            await asyncio.to_thread(operation)
+            await self.history.io.run(operation)
             if handle is not None:
                 await self._retire_resources(handle)
 
@@ -635,9 +635,9 @@ class NativeTools:
 
     async def _retire_resources(self, handle: str) -> None:
         """Release live SDK resources after confirmed settlement and observer exit."""
-        current = await asyncio.to_thread(self.history.task_snapshot, handle)
+        current = await self.history.io.run(self.history.task_snapshot, handle)
         driver, rpc = self._drivers.get(handle), self._rpc.get(handle)
-        provider_retired = self._closing and await asyncio.to_thread(
+        provider_retired = self._closing and await self.history.io.run(
             native_task_settlement.provider_locally_retired, self, handle
         )
         if (
@@ -692,7 +692,7 @@ class NativeTools:
                 ):
                     raise ValueError("Native custody differs from the SDK resource being retired")
 
-            await asyncio.to_thread(verify)
+            await self.history.io.run(verify)
             if self._calls.get(handle) is not accepted:
                 return
         retired_call = self._calls.pop(handle, None)

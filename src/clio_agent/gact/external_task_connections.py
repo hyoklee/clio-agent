@@ -81,7 +81,7 @@ async def connection(
                             "Task update differs from confirmed canonical input responses"
                         )
 
-                await asyncio.to_thread(validate)
+                await self.history.io.run(validate)
 
             async def accepted(call: AcceptedNativeCall) -> Any:
                 previous = host.calls.get(call.task.task_id)
@@ -90,7 +90,7 @@ async def connection(
                 host.calls[call.task.task_id] = call  # retain custody before persistence
 
                 async def adopt() -> Any:
-                    return await asyncio.to_thread(self._adopt, host, call)
+                    return await self.history.io.run(self._adopt, host, call)
 
                 try:
                     receipt = await adopt()
@@ -158,7 +158,7 @@ async def retire_connection(
             if self.history.requires_recovery or host.calls:
                 return
             if host.invocation is not None:
-                current = await asyncio.to_thread(
+                current = await self.history.io.run(
                     self.history.task_snapshot, host.invocation.handle
                 )
                 if current is None or (

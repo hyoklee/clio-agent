@@ -35,10 +35,10 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
     selected = (
         handles
         if handles is not None
-        else tuple(await asyncio.to_thread(self.history.task_handles, active_only=True))
+        else tuple(await self.history.io.run(self.history.task_handles, active_only=True))
     )
     for handle in selected:
-        current = await asyncio.to_thread(self._current, handle)
+        current = await self.history.io.run(self._current, handle)
         if (
             current.terminal_at is not None
             or current.submission is None
@@ -50,7 +50,7 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
         # Other owners retain their own submission content, including Question
         # definitions. Unknown native acceptance still resolves its saved context.
         submission = SubmissionContext.model_validate(
-            await asyncio.to_thread(self.history.read_content, current.submission)
+            await self.history.io.run(self.history.read_content, current.submission)
         )
         if submission.backend.owner != "native":
             continue
@@ -71,7 +71,7 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
         if (
             root == "storage"
             and self.provider_recovery is not None
-            and await asyncio.to_thread(provider_locally_retired, self, handle)
+            and await self.history.io.run(provider_locally_retired, self, handle)
         ):
             if await self.provider_recovery(current, submission):
                 continue
@@ -156,7 +156,7 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
                         attempt.model_copy(update={"cleanup_state": "unknown"})
                     )
 
-        await asyncio.to_thread(lost_attempts)
+        await self.history.io.run(lost_attempts)
         binding = TaskSubmission(
             handle,
             submission.tool,
@@ -195,8 +195,8 @@ async def continue_provider(
     if self._closing and not continuation.cancellation_only:
         raise ValueError("Provider observation admission is closed")
     if not (
-        await asyncio.to_thread(local_runtime_gone, original.local_runtime)
-        or await asyncio.to_thread(provider_locally_retired, self, current.handle)
+        await self.history.io.run(local_runtime_gone, original.local_runtime)
+        or await self.history.io.run(provider_locally_retired, self, current.handle)
     ):
         raise ValueError("Previous local runtime loss is not confirmed")
     if (
@@ -231,7 +231,7 @@ async def continue_provider(
             "output_schema": component.output_schema,
             "backend": self.backends[root],
             "provider_continuation": continuation,
-            "local_runtime": await asyncio.to_thread(local_runtime_identity),
+            "local_runtime": await self.history.io.run(local_runtime_identity),
         }
     )
 
@@ -275,7 +275,7 @@ async def continue_provider(
 
     async def attempt() -> dict[str, Any]:
         nonlocal dispatched
-        content = await asyncio.to_thread(confirm)
+        content = await self.history.io.run(confirm)
         dispatched = True  # from here, lost acceptance is never retried
         return await self._invoke(root, context, content, wire, background=True)
 

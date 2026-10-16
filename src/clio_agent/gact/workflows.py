@@ -498,7 +498,6 @@ async def run_declared_workflow(
     Stopping this tool stops its wait, leaves accepted children running, and permits
     a later call to inspect and continue the same declared execution.
     """
-    import asyncio
     import hashlib
     from dataclasses import asdict
     from datetime import datetime, timedelta, timezone
@@ -585,13 +584,15 @@ async def run_declared_workflow(
                 False,
             )
 
-    owner_handle, execution, replay = await asyncio.to_thread(load)
+    owner_handle, execution, replay = await app.state.task_history.io.run(load)
     if replay:
         recorded_outcomes = []
         for row in execution["steps"].values():
             try:
                 recorded_outcomes.append(
-                    await asyncio.to_thread(app.state.task_operations.result, caller, row["handle"])
+                    await app.state.task_history.io.run(
+                        app.state.task_operations.result, caller, row["handle"]
+                    )
                 )
             except ValueError:
                 recorded_outcomes.append({"handle": row["handle"], "error": "task_unavailable"})
@@ -649,7 +650,7 @@ async def run_declared_workflow(
             )
             history.workflow_reference_repaired(owner_handle)
 
-    await asyncio.to_thread(save)
+    await app.state.task_history.io.run(save)
     completed: set[str] = set()
     outcomes: list[dict[str, Any]] = []
     for index, step in enumerate(workflow.steps):
@@ -660,7 +661,7 @@ async def run_declared_workflow(
             and any(later.id in execution["steps"] for later in workflow.steps[index + 1 :])
         ):
             row["merged"] = True
-            await asyncio.to_thread(save)
+            await app.state.task_history.io.run(save)
         if row is not None and row.get("merged"):
             completed.update({step.id, step.child})
             continue
@@ -668,7 +669,7 @@ async def run_declared_workflow(
             gate = evaluate_step_gate(step, execution["state"], completed)
             if not gate.satisfied:
                 execution["status"] = STALL_PREDICATE_UNSATISFIED
-                await asyncio.to_thread(save)
+                await app.state.task_history.io.run(save)
                 return {
                     "workflow_id": execution["id"],
                     "status": STALL_PREDICATE_UNSATISFIED,
@@ -687,7 +688,7 @@ async def run_declared_workflow(
                 )
                 # This is launch context, not an attempt budget: confirm it before
                 # child metadata so reconciliation uses the original deadline.
-                await asyncio.to_thread(save)
+                await app.state.task_history.io.run(save)
             spawned = await app.state.conversations.spawn(
                 caller,
                 _render_task(step, request),
@@ -700,7 +701,7 @@ async def run_declared_workflow(
             )
             if not spawned.get("accepted", False):
                 execution["status"] = STALL_SPAWN_REFUSED
-                await asyncio.to_thread(save)
+                await app.state.task_history.io.run(save)
                 return {
                     "workflow_id": execution["id"],
                     "status": STALL_SPAWN_REFUSED,
@@ -712,12 +713,12 @@ async def run_declared_workflow(
                 }
             row = {"handle": spawned["handle"], "session": spawned["session_id"]}
             execution["steps"][step.id] = row
-            await asyncio.to_thread(save)
+            await app.state.task_history.io.run(save)
         waited = await app.state.task_operations.wait(caller, row["handle"], "all")
         outcomes.extend(waited["outcomes"])
         if waited["pending"]:
             execution["status"] = "task_state_uncertain"
-            await asyncio.to_thread(save)
+            await app.state.task_history.io.run(save)
             return {
                 "workflow_id": execution["id"],
                 "status": "task_state_uncertain",
@@ -726,10 +727,10 @@ async def run_declared_workflow(
                 "steps": _step_references(workflow, execution),
                 "outcomes": outcomes,
             }
-        child = await asyncio.to_thread(history.task_snapshot, row["handle"])
+        child = await app.state.task_history.io.run(history.task_snapshot, row["handle"])
         child_details = (
             AssignmentDetails.model_validate(
-                await asyncio.to_thread(history.read_content, child.details)
+                await app.state.task_history.io.run(history.read_content, child.details)
             )
             if child is not None and child.details is not None
             else AssignmentDetails()
@@ -756,7 +757,7 @@ async def run_declared_workflow(
                 execution["status"] = (
                     STALL_STEP_TIMEOUT if deadline_exceeded else STALL_CHILD_FAILED
                 )
-                await asyncio.to_thread(save)
+                await app.state.task_history.io.run(save)
             return {
                 "workflow_id": execution["id"],
                 "status": "task_state_uncertain"
@@ -772,7 +773,7 @@ async def run_declared_workflow(
                 "outcomes": outcomes,
             }
         result = (
-            await asyncio.to_thread(history.read_content, child.result)
+            await app.state.task_history.io.run(history.read_content, child.result)
             if child.result is not None
             else {}
         )
@@ -782,11 +783,11 @@ async def run_declared_workflow(
         _merge_step_state(execution["state"], state)
         row["merged"] = True
         completed.update({step.id, step.child})
-        await asyncio.to_thread(save)
+        await app.state.task_history.io.run(save)
     execution["complete"] = True
     execution["finished"] = True
     execution["status"] = "completed"
-    await asyncio.to_thread(save)
+    await app.state.task_history.io.run(save)
     return {
         "workflow_id": execution["id"],
         "root_handle": owner_handle,

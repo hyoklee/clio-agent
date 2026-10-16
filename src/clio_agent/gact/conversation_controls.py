@@ -94,7 +94,7 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
                     )
 
         async def confirm() -> None:
-            await asyncio.to_thread(settle)
+            await self.history.io.run(settle)
 
         try:
             await confirm()
@@ -133,12 +133,12 @@ async def pause(self: Conversations, caller: TaskCaller, handle: str) -> dict[st
 
 async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Release the model hold without replaying accepted operations."""
-    current = await asyncio.to_thread(TaskAccess(self.history, caller).require, handle, "control")
+    current = await self.history.io.run(TaskAccess(self.history, caller).require, handle, "control")
     self.require_execution_owner(current)
     if current.kind not in {"Session", "Subagent"} or current.terminal_at is not None:
         raise ValueError("Resume requires the current active assignment")
     sid = current.owner.session_id
-    latest = await asyncio.to_thread(self.history.latest_assignment, sid)
+    latest = await self.history.io.run(self.history.latest_assignment, sid)
     session = self.sessions.get(sid)
     if latest is None or latest.handle != handle or current.cancellation_requested_at is not None:
         raise ValueError("Resume requires the current uncancelled assignment")
@@ -231,7 +231,7 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
             self._paused.pop(sid, None)
         self._pause_tokens.pop(sid, None)
 
-    await asyncio.to_thread(inject)
+    await self.history.io.run(inject)
     self.runner.signal(sid)
     return {"handle": handle, "resumed": True}
 
@@ -310,13 +310,13 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
 
 async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[str, Any]:
     """Request a linked assignment after known cancellation/worker settlement."""
-    current = await asyncio.to_thread(TaskAccess(self.history, caller).require, handle, "control")
+    current = await self.history.io.run(TaskAccess(self.history, caller).require, handle, "control")
     self.require_execution_owner(current)
     if current.kind not in {"Session", "Subagent"}:
         raise ValueError("Only conversation assignments restart")
     if handle in self._restarting:
         return {"handle": handle, "restart_requested": True, "pending": True}
-    latest = await asyncio.to_thread(self.history.latest_assignment, current.owner.session_id)
+    latest = await self.history.io.run(self.history.latest_assignment, current.owner.session_id)
     if latest is None or latest.handle != handle:
         raise ValueError("Historical assignment already has a successor")
     if current.terminal_at is None:
@@ -329,7 +329,7 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
             await self.app.state.task_operations.wait(
                 TaskCaller("", current.owner.human_id, human_action=True), handle
             )
-            settled = await asyncio.to_thread(self.history.task_snapshot, handle)
+            settled = await self.history.io.run(self.history.task_snapshot, handle)
             if (
                 settled is None
                 or settled.terminal_at is None
@@ -391,7 +391,7 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
                     "restart-outcome:" + task.handle,
                 )
 
-        await asyncio.to_thread(create)
+        await self.history.io.run(create)
 
     self._restarting.add(handle)
 
@@ -402,7 +402,7 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
             reason = str(error)
 
             async def report() -> None:
-                await asyncio.to_thread(
+                await self.history.io.run(
                     publish_control_outcome,
                     self.history,
                     caller,
@@ -461,7 +461,7 @@ async def _cancel_subtree(
     if members is not None:
         selected_members = set(members)
     else:
-        selected_members = await asyncio.to_thread(membership)
+        selected_members = await self.history.io.run(membership)
     handles = tuple(sorted(selected_members - {assignment.handle}))
     changed, loop = asyncio.Event(), asyncio.get_running_loop()
     retirement = asyncio.create_task(self.runner.stop(sid))
@@ -497,7 +497,9 @@ async def _cancel_subtree(
             if self.history.requires_recovery:
 
                 async def retry_recording() -> bool:
-                    latest = await asyncio.to_thread(self.history.task_snapshot, assignment.handle)
+                    latest = await self.history.io.run(
+                        self.history.task_snapshot, assignment.handle
+                    )
                     if latest is None or latest.terminal_at is not None:
                         return True
                     await request_member(handle)
@@ -527,7 +529,9 @@ async def _cancel_subtree(
             )
             startup_error = None
             if retired_cleanly:
-                startup_error = await asyncio.to_thread(self.sessions.startup_retirement_error, sid)
+                startup_error = await self.history.io.run(
+                    self.sessions.startup_retirement_error, sid
+                )
             if (
                 retired_cleanly
                 and not startup_error
@@ -634,7 +638,7 @@ async def _cancel_subtree(
                             if unconfirmed:
                                 publish_task_notice(self.history, observed, episode=episode or "")
 
-                    await asyncio.to_thread(record)
+                    await self.history.io.run(record)
 
                 try:
                     await record_cancellation_state()
@@ -749,7 +753,7 @@ async def _cancel_subtree(
                 publish_task_notice(self.history, settled)
 
         async def confirm_finish() -> None:
-            await asyncio.to_thread(finish)
+            await self.history.io.run(finish)
             # Confirmed settlement makes previously vetoed mailbox arrivals eligible.
             self.runner.signal(sid)
 

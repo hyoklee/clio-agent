@@ -6,7 +6,6 @@ protocol replies. No inline inference, alternate turn runner or dispatch pool.
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import logging
@@ -232,8 +231,8 @@ async def await_question_input(
             )
             return helper, invocation, text, decision.depth
 
-    prepared = await asyncio.to_thread(prepare)
-    question = await asyncio.to_thread(history.task_snapshot, question_handle)
+    prepared = await history.io.run(prepare)
+    question = await history.io.run(history.task_snapshot, question_handle)
     caller = owner.caller(question.owner.session_id)
     if prepared is None:
         await app.state.task_operations.wait(caller, question_handle)
@@ -250,7 +249,7 @@ async def await_question_input(
         )
 
     try:
-        session = await asyncio.to_thread(app.state.sessions.get, question.owner.session_id)
+        session = await history.io.run(app.state.sessions.get, question.owner.session_id)
         if session is None:
             raise ValueError("Answering session is unavailable")
         await owner.spawn(
@@ -267,7 +266,7 @@ async def await_question_input(
             },
         )
     except ValueError:
-        await asyncio.to_thread(fallback, "spawn_refused")
+        await history.io.run(fallback, "spawn_refused")
         await app.state.task_operations.wait(caller, question_handle)
         return
 
@@ -304,8 +303,8 @@ async def await_question_input(
                 return False
             return True
 
-    if await asyncio.to_thread(propose):
-        assignment = await asyncio.to_thread(history.task_snapshot, helper)
+    if await history.io.run(propose):
+        assignment = await history.io.run(history.task_snapshot, helper)
         if assignment is not None and assignment.terminal_at is None:
             await owner.cancel(caller, helper)
         return

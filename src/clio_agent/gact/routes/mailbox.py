@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 from typing import Any
 from uuid import uuid4
@@ -217,7 +216,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
     @app.get("/v1/sessions/{sid}/queued-messages")
     async def list_queued(sid: str) -> dict[str, Any]:
         require_session(sid)
-        return await asyncio.to_thread(
+        return await app.state.task_history.io.run(
             lambda: {"queued_messages": [wire(app, item) for item in queued(app, sid)]}
         )
 
@@ -276,7 +275,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
                 history.record_mail(item)
                 return wire(app, item)
 
-        return await asyncio.to_thread(accept)
+        return await app.state.task_history.io.run(accept)
 
     @app.post("/v1/sessions/{sid}/queued-messages/reorder")
     async def reorder(sid: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -304,7 +303,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
                     )
                 return {"queued_messages": [wire(app, item) for item in queued(app, sid)]}
 
-        return await asyncio.to_thread(apply)
+        return await app.state.task_history.io.run(apply)
 
     @app.patch("/v1/sessions/{sid}/queued-messages/{identity}")
     async def edit(sid: str, identity: str, body: dict[str, Any]) -> dict[str, Any]:
@@ -343,7 +342,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
                 )
                 return wire(app, edited)
 
-        return await asyncio.to_thread(apply)
+        return await app.state.task_history.io.run(apply)
 
     @app.delete("/v1/sessions/{sid}/queued-messages/{identity}")
     async def delete(sid: str, identity: str, revision: int) -> Response:
@@ -356,10 +355,10 @@ def register_mailbox_routes(app: FastAPI) -> None:
                     raise HTTPException(status_code=409, detail="Queued message revision changed")
                 app.state.task_history.withdraw_mail(sid, identity)
 
-        await asyncio.to_thread(apply)
+        await app.state.task_history.io.run(apply)
         return Response(status_code=204)
 
     @app.post("/v1/sessions/{sid}/queued-messages/{identity}/promote")
     async def send_now(sid: str, identity: str, body: PromoteRequest) -> dict[str, Any]:
         require_session(sid)
-        return await asyncio.to_thread(promote, app, sid, identity, body.revision)
+        return await app.state.task_history.io.run(promote, app, sid, identity, body.revision)

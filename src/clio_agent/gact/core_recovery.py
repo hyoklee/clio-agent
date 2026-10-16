@@ -56,7 +56,7 @@ class CoreRecovery:
         """
 
         async def record() -> None:
-            await asyncio.to_thread(operation)
+            await self.history.io.run(operation)
 
         self.defer(identity, record)
 
@@ -78,12 +78,12 @@ class CoreRecovery:
         while self._pending:
             await asyncio.sleep(delay)
             try:
-                await asyncio.to_thread(
+                await self.history.io.run(
                     self.history.arc._store.exists, INDEX_KIND, "__recovery_probe__"
                 )
                 restored = self.history.requires_recovery
                 if self.history.requires_recovery:
-                    await asyncio.to_thread(self.history.restore)
+                    await self.history.io.run(self.history.restore)
                 for identity, action in tuple(self._pending.items()):
                     try:
                         confirmed = await action()

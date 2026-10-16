@@ -33,6 +33,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.errors import ClioError
 from clio_agent.gact import task_history_projection
+from clio_agent.gact.core_io import CoreIO
 from clio_agent.gact.task_history_projection import INDEX_KIND, _encoded
 
 if TYPE_CHECKING:
@@ -62,6 +63,7 @@ class TaskHistory:
 
     def __init__(self, arc: ARCMemory) -> None:
         self.arc = arc
+        self.io = CoreIO()
         self._replaying = False
         self.recovery_requested: Callable[[], None] | None = None
         self.observation_committed: Callable[[TaskSnapshot], None] | None = None

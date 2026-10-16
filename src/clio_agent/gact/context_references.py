@@ -11,7 +11,6 @@ The model-facing DELIVERY of an admitted part lives in its own owner module,
 
 from __future__ import annotations
 
-import asyncio
 import json
 import os
 from collections.abc import Iterable
@@ -737,7 +736,7 @@ async def authorize_context_reference_parts(
 ) -> list[Part]:
     """Authorize references off the event loop using the synchronous admission seam."""
 
-    return await asyncio.to_thread(
+    return await app.state.task_history.io.run(
         authorize_context_reference_parts_sync, app, session, list(parts)
     )
 

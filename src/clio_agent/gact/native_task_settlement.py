@@ -288,7 +288,7 @@ async def cancel(
         if not live_leg and recover_provider is not None:
 
             async def reconnect_cancel() -> bool:
-                latest = await asyncio.to_thread(self._current, handle)
+                latest = await self.history.io.run(self._current, handle)
                 if latest.terminal_at is not None or handle in self._calls:
                     return True
                 if latest.submission is None:
@@ -301,7 +301,7 @@ async def cancel(
                     )
                     return True
                 context = SubmissionContext.model_validate(
-                    await asyncio.to_thread(self.history.read_content, latest.submission)
+                    await self.history.io.run(self.history.read_content, latest.submission)
                 )
                 if not await recover_provider(latest, context):
                     await self._record_or_defer(
@@ -403,11 +403,11 @@ async def await_settlement(
     try:
         while True:
             changed.clear()
-            current = await asyncio.to_thread(self._current, handle)
+            current = await self.history.io.run(self._current, handle)
             if current.terminal_at is not None:
                 return current
             if not allow_uncertainty and current.cancellation_requested_at is not None:
-                attempts = await asyncio.to_thread(self.history.native_attempts, handle)
+                attempts = await self.history.io.run(self.history.native_attempts, handle)
                 if attempts and all(
                     attempt.cleanup_state in {"confirmed", "never_started"} for attempt in attempts
                 ):
@@ -433,13 +433,13 @@ async def settle_shutdown(self: NativeTools) -> tuple[BaseException, ...]:
     while self._calls:
         await self.recovery.drain()
         for handle in tuple(self._calls):
-            current = await asyncio.to_thread(self._current, handle)
+            current = await self.history.io.run(self._current, handle)
             remote = self.provider_shutdown is not None and await self.provider_shutdown(current)
             driver = self._drivers.get(handle)
             if remote and driver is not None:
                 await asyncio.shield(driver)
                 await self.recovery.drain()
-            if not remote or not await asyncio.to_thread(provider_locally_retired, self, handle):
+            if not remote or not await self.history.io.run(provider_locally_retired, self, handle):
                 await self.await_settlement(handle, allow_uncertainty=False)
             if driver is not None:
                 await asyncio.shield(driver)
@@ -463,7 +463,7 @@ async def request_shutdown(self: NativeTools) -> None:
     self._closing = True
 
     def reserved() -> set[str]:
-        with self.history.serialized():
+        with self.history.read_view():
             return {
                 handle
                 for handle in self.history.task_handles(active_only=True)
@@ -482,11 +482,11 @@ async def request_shutdown(self: NativeTools) -> None:
                 )
             }
 
-    handles = set(self._calls) | set(self._rpc) | await asyncio.to_thread(reserved)
+    handles = set(self._calls) | set(self._rpc) | reserved()
 
     async def request(handle: str) -> None:
         try:
-            current = await asyncio.to_thread(self._current, handle)
+            current = self._current(handle)
             if self.provider_shutdown is not None and await self.provider_shutdown(current):
                 if current.cancellation_requested_at is None:
                     return  # workload retires its local observation cooperatively

@@ -955,7 +955,7 @@ async def _construct_agent_async(app: "FastAPI") -> None:
     starting = getattr(app.state, "task_runtime_start", None)
     if starting is not None:
         await asyncio.shield(starting)
-        for sid in await asyncio.to_thread(app.state.task_history.pending_sessions):
+        for sid in await app.state.task_history.io.run(app.state.task_history.pending_sessions):
             app.state.turn_runner.signal(sid)
 
     # #972: enforce the CAS store byte budget across every workspace at boot (off-loop,

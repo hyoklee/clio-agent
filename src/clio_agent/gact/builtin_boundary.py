@@ -60,12 +60,12 @@ class BuiltinTool(Tool):
             or invocation.submission.tool != self._public_name
         ):
             raise PermissionError("Unknown or mismatched built-in invocation")
-        saved = await asyncio.to_thread(
+        saved = await self._boundary.app.state.task_history.io.run(
             self._boundary.app.state.task_history.submission_context, reference
         )
         if saved != invocation.submission or saved.argument_digest != argument_digest(supplied):
             raise PermissionError("Built-in arguments differ from trusted request context")
-        await asyncio.to_thread(self._boundary.authorize, saved)
+        await self._boundary.app.state.task_history.io.run(self._boundary.authorize, saved)
         invocation.claimed = True
         try:
             if inspect.iscoroutinefunction(invocation.function):
@@ -140,7 +140,9 @@ class BuiltinBoundary:
         schema["additionalProperties"] = False
         Draft202012Validator(schema).validate(arguments)
         sid = captured.run(context.active_session_id)
-        assignment = await asyncio.to_thread(self.app.state.task_history.latest_assignment, sid)
+        assignment = await self.app.state.task_history.io.run(
+            self.app.state.task_history.latest_assignment, sid
+        )
         if assignment is None:
             raise ValueError("Built-in calls require an owning assignment")
         session = self.app.state.sessions.get(sid)
@@ -172,7 +174,9 @@ class BuiltinBoundary:
             execution_limits={},
             backend=BackendReference(owner="conversation", server="clio-builtins"),
         )
-        await asyncio.to_thread(self.app.state.task_history.record_submission, submission)
+        await self.app.state.task_history.io.run(
+            self.app.state.task_history.record_submission, submission
+        )
         identity = (
             tool.name
             + ":"
@@ -244,7 +248,9 @@ class BuiltinBoundary:
         if decision != "allow":
             raise PermissionError("Task submission was not approved")
         sid = captured.run(context.active_session_id)
-        assignment = await asyncio.to_thread(self.app.state.task_history.latest_assignment, sid)
+        assignment = await self.app.state.task_history.io.run(
+            self.app.state.task_history.latest_assignment, sid
+        )
         if assignment is None:
             raise ValueError("Task submission requires a confirmed assignment")
         session = self.app.state.sessions.get(sid)
@@ -261,7 +267,7 @@ class BuiltinBoundary:
         if root == "storage" and "source_id" in public:
             from clio_agent.gact.native_storage import source_submission_identity
 
-            record = await asyncio.to_thread(
+            record = await self.app.state.task_history.io.run(
                 self.app.state.connected_storage.get, session.workspace_id, public["source_id"]
             )
             attribution["source_identity"] = source_submission_identity(record)
@@ -292,7 +298,7 @@ class BuiltinBoundary:
         ):
             from clio_agent.gact.task_declarations import _collected
 
-            return await asyncio.to_thread(
+            return await self.app.state.task_history.io.run(
                 _collected, self.app, self.app.state.conversations.caller(sid), value
             )
         return value

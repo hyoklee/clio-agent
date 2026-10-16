@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
@@ -128,7 +127,7 @@ def build_task_tools() -> list[Any]:
         scope: str = "tree",
     ) -> dict[str, Any]:
         app, caller = _runtime()
-        value = await asyncio.to_thread(
+        value = await app.state.task_history.io.run(
             app.state.task_operations.query,
             caller,
             kind,
@@ -161,7 +160,7 @@ def build_task_tools() -> list[Any]:
     ) -> dict[str, Any]:
         app, caller = _runtime()
         value = await app.state.task_operations.wait(caller, tasks, return_when, timeout_s)
-        return await asyncio.to_thread(_collected, app, caller, value)
+        return await app.state.task_history.io.run(_collected, app, caller, value)
 
     async def cancel_tasks(tasks: str | list[str]) -> dict[str, Any]:
         app, caller = _runtime()
@@ -169,8 +168,10 @@ def build_task_tools() -> list[Any]:
 
     async def get_task_result(handle: str, cursor: str | None = None) -> dict[str, Any]:
         app, caller = _runtime()
-        value = await asyncio.to_thread(app.state.task_operations.result, caller, handle, cursor)
-        return await asyncio.to_thread(_collected, app, caller, value)
+        value = await app.state.task_history.io.run(
+            app.state.task_operations.result, caller, handle, cursor
+        )
+        return await app.state.task_history.io.run(_collected, app, caller, value)
 
     async def send_agent_message(
         target: str, message: str, reply_to: str | None = None
@@ -199,7 +200,7 @@ def build_task_tools() -> list[Any]:
             )
             return {"message_id": mail.id, "session_id": mail.recipient_session, "accepted": True}
 
-        return await asyncio.to_thread(send)
+        return await app.state.task_history.io.run(send)
 
     tools = [
         _tool(
@@ -377,7 +378,7 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
                     "question": question,
                 }
 
-        return await asyncio.to_thread(post)
+        return await app.state.task_history.io.run(post)
 
     return _tool(
         ask_user,
@@ -559,10 +560,10 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
         from clio_agent.gact.agents.blueprint_commission import resolve_commission_target
         from clio_agent.gact.assignment_evidence import select_assignment_evidence
 
-        target, scope, _, _ = await asyncio.to_thread(
+        target, scope, _, _ = await app.state.task_history.io.run(
             resolve_commission_target, app, caller.session_id, agent, blueprint_id
         )
-        pins = await asyncio.to_thread(
+        pins = await app.state.task_history.io.run(
             select_assignment_evidence, app.state.task_history, caller, input_task_ids
         )
         result = await app.state.conversations.spawn(
@@ -703,7 +704,7 @@ def build_spawn_runtime_tools(base_agent: Any, agent_def: Any, **options: Any) -
             value = await run_declared_workflow(
                 app, caller, agent_def, request, TASK_CALL.get().invocation_id or uuid4().hex
             )
-            return await asyncio.to_thread(_collected, app, caller, value)
+            return await app.state.task_history.io.run(_collected, app, caller, value)
 
         tools.append(
             _tool(

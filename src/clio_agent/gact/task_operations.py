@@ -297,7 +297,7 @@ class TaskOperations:
         if return_when not in {"all", "any"}:
             raise ValueError("return_when must be all or any")
         handles, timeout = (
-            await asyncio.to_thread(self._canonical_observed, caller, _handles(tasks)),
+            await self.history.io.run(self._canonical_observed, caller, _handles(tasks)),
             _timeout(timeout_s),
         )
         deadline = None if timeout is None else asyncio.get_running_loop().time() + timeout
@@ -310,7 +310,7 @@ class TaskOperations:
         try:
             while True:
                 changed.clear()
-                outcomes, pending = await asyncio.to_thread(self._outcomes, caller, handles)
+                outcomes, pending = await self.history.io.run(self._outcomes, caller, handles)
                 uncertain = any(item.get("status") == "task_state_uncertain" for item in outcomes)
                 if not pending or uncertain or (return_when == "any" and outcomes):
                     return _wait_value(outcomes, pending, timed_out=False)
@@ -320,7 +320,7 @@ class TaskOperations:
                 try:
                     await asyncio.wait_for(changed.wait(), remaining)
                 except TimeoutError:
-                    outcomes, pending = await asyncio.to_thread(self._outcomes, caller, handles)
+                    outcomes, pending = await self.history.io.run(self._outcomes, caller, handles)
                     return _wait_value(outcomes, pending, timed_out=True)
         finally:
             remove()
@@ -406,7 +406,7 @@ class TaskOperations:
         include_state: bool = False,
     ) -> dict[str, Any]:
         """Read available changes immediately, or explicitly await output/settlement."""
-        handles = await asyncio.to_thread(self._canonical_observed, caller, _handles(tasks))
+        handles = await self.history.io.run(self._canonical_observed, caller, _handles(tasks))
         timeout, previous = _timeout(timeout_s), _decode(cursor)
         search_start = _cursor(previous) if previous else None
         scanned_pages = 0
@@ -422,13 +422,13 @@ class TaskOperations:
 
         remove = self.history.listen(wake, handles=handles, recipient_session=caller.session_id)
         try:
-            initial: dict[str, Any] | None = await asyncio.to_thread(
+            initial: dict[str, Any] | None = await self.history.io.run(
                 self._observations, caller, handles, previous, row_limit, include_state, expression
             )
             if self.refresh_owner is not None:
                 for handle in handles:
                     try:
-                        task = await asyncio.to_thread(
+                        task = await self.history.io.run(
                             TaskAccess(self.history, caller).require, handle, "observe"
                         )
                     except ValueError:
@@ -437,7 +437,7 @@ class TaskOperations:
                         self.refresh_owner(task)
             subscription_errors = []
             if notify is not None:
-                subscription_errors = await asyncio.to_thread(
+                subscription_errors = await self.history.io.run(
                     self._subscribe, caller, handles, notify
                 )
             while True:
@@ -445,7 +445,7 @@ class TaskOperations:
                     result, initial = initial, None
                 else:
                     changed.clear()
-                    result = await asyncio.to_thread(
+                    result = await self.history.io.run(
                         self._observations,
                         caller,
                         handles,
@@ -481,7 +481,7 @@ class TaskOperations:
                     await asyncio.wait_for(changed.wait(), remaining)
                 except TimeoutError:
                     return {
-                        **await asyncio.to_thread(
+                        **await self.history.io.run(
                             self._observations,
                             caller,
                             handles,
