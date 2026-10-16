@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from collections.abc import Callable
 from typing import Any
 
@@ -13,6 +14,7 @@ from clio_agent.arc.task_types import (
     BackendReference,
     ContextBoundary,
     CoordinationGrant,
+    CoreReference,
     NativeAttempt,
     QuestionDefinition,
     QuestionReply,
@@ -25,7 +27,7 @@ from clio_agent.arc.task_types import (
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.session_mail import SessionMail
 from clio_agent.gact.task_access import TaskCaller
-from clio_agent.gact.task_history import TaskHistory
+from clio_agent.gact.task_history import TaskHistory, _encoded
 from clio_agent.gact.task_operations import TaskOperations
 from clio_agent.gact.task_publication import publish_task_notice
 
@@ -499,16 +501,24 @@ def test_explicit_collection_of_held_result_uses_its_durable_observation(arc: AR
     mailbox = SessionMail(history, lambda _sid, _item: False)
     assert mailbox.stage(caller).items == ()
     staged = mailbox.collection(caller, (held.id,))
-    observation = history.write_content(
-        "owner", {"handle": task.handle, "output": "Already collected"}
-    )
+    body = {"call_id": "collect", "text": "Already collected", "notification_ids": [held.id]}
+    observation = arc.append_segment("owner", "main", "observation", body)
     mailbox.commit(
         caller,
         staged,
         assignment_id="assignment",
         iteration_id="collection",
         boundary=ContextBoundary(session_id="owner", scope="main", logical_time=0),
-        tool_observation=observation,
+        tool_observation=CoreReference(
+            session_id="owner",
+            scope="main",
+            content_id=str(observation.id),
+            sha256=hashlib.sha256(_encoded(body)).hexdigest(),
+        ),
     )
     assert history.pending_mail("owner") == ()
     assert held.id in history.acknowledged_notifications("owner")
+    restored = TaskHistory(arc)
+    assert restored.pending_mail("owner") == ()
+    assert held.id in restored.acknowledged_notifications("owner")
+    assert restored.committed_observations("owner", "main") == frozenset({"collect"})

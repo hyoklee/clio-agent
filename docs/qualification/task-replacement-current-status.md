@@ -9,6 +9,39 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R145 on frozen clio-agent `0755ba0a` / GACT `401efcfe` passed two actual
+Codex/Luna production-service recovery cases. The harness exited the isolated
+API immediately before the answer's recipient-input write (exit 86), then
+immediately after its confirmed write but before returning to model execution
+(exit 87). The first answer remained unacknowledged; the second exact input
+record remained confirmed. Both original assignments recovered, collected their
+original Question answers, read the real sentinel again and completed. Each
+retains one Question invocation and one answer-delivery record. The after-write
+input is byte-equivalent to its recovered typed record. No replacement Question,
+assignment or accepted operation was submitted. This is one case per boundary,
+not final five-repeat race acceptance or Core-outage/uncertain-effect evidence.
+
+The final API/native-lifespan exit was normal. `r145-scoped-audit.json` retains
+the identities/input/results; `r145-cleanup.json` confirms profile/temp roots
+absent, no owned processes/listeners, and unchanged production source and user
+auth. R143/R144 remain failed setups as described below.
+
+CI at `527a302e` reports 191 failures/3,937 passes/21 exclusions on Python 3.14
+shard 1, and 232 failures/3,905 passes/19 exclusions plus one error on shard 0.
+These are per-shard counts, not suite acceptance. One confirmed route failure
+is A2UI client-error ingestion persisting transcript records directly on the
+application loop. Its correction awaits the existing off-loop helper for the
+surface read and every record/transition write. The regression now requires all
+three rejected ghost-surface reports to retain both received/failed records
+without starting a turn. A held-result regression also now writes an actual
+observation in its recipient context instead of supplying unrelated task-content
+storage, and checks acknowledgement recovery. No assertion or guard is weakened;
+these regressions are delegated to CI rather than claimed locally executed.
+Scoped Ruff/format, Linux-platform Mypy for the changed production module, and
+size/class/removal/hidden-swallow guards pass. The first Windows Mypy invocation
+reported six POSIX-API diagnostics in unchanged imported infrastructure modules;
+that invocation remains failed. No type or guard configuration was changed.
+
 R143/R144 did not execute the intended recipient-input crash scenarios. The
 generated harness omitted process initialization, then omitted its service-run
 list. R143 failed before launching a service. Automatic approval review rejected

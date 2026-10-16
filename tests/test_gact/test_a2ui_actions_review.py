@@ -225,6 +225,17 @@ def test_three_ghost_surface_errors_are_three_two_hundreds_zero_turns(
         assert r.json()["reason"] == "a2ui_error_surface_unknown"
         assert r.json()["delivery"] in ("", "rejected")
     assert not spawned
+    records = [
+        part.a2ui_action_record
+        for message in app.state.messages[sid]
+        for part in message.parts
+        if part.type == "a2ui_action"
+    ]
+    assert len(records) == 6
+    for response in responses:
+        lifecycle = [row for row in records if row["id"] == response.json()["action_id"]]
+        assert [row["state"] for row in lifecycle] == ["received", "failed"]
+        assert lifecycle[-1]["reason"] == "a2ui_error_surface_unknown"
 
 
 # --------------------------------------------------------------------------- #
