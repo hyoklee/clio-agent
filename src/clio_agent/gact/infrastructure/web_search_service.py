@@ -193,7 +193,7 @@ def web_search_definition(facts: TargetFacts) -> ManagedServiceDefinition:
         compatible, reason = False, str(exc)
     default = web_search_image({})
     native = native_web_variant(facts)
-    return ManagedServiceDefinition(
+    definition = ManagedServiceDefinition(
         id="web_search",
         category="scientific_service",
         label="CLIO Web Search",
@@ -225,6 +225,15 @@ def web_search_definition(facts: TargetFacts) -> ManagedServiceDefinition:
                 placeholder="http://127.0.0.1:18070",
                 variants=["native"],
             ),
+            ServiceConfigurationField(
+                id="engines",
+                label="Engines",
+                placeholder="duckduckgo,brave,mojeek,qwant,startpage",
+                variants=["native"],
+            ),
+            ServiceConfigurationField(
+                id="opt_in_engines", label="Opt-in engines", variants=["native"]
+            ),
             _field("task_backend_port", "Document task port", "8090"),
             _field(LISTEN_FIELD, "Listen address", "127.0.0.1 (0.0.0.0 serves every network)"),
             _field(
@@ -233,12 +242,22 @@ def web_search_definition(facts: TargetFacts) -> ManagedServiceDefinition:
                 f"Automatic ({RUNTIME_LABELS[options[0]]})" if options else "No usable runtime",
                 list(options),
             ),
-            _field("port", "Search port (Apptainer)", str(WEB_SEARCH_PORT)),
-            _field("searxng_port", "Private SearXNG port (Apptainer)", "18888"),
+            _field("port", "Gateway port", str(WEB_SEARCH_PORT)),
+            _field("searxng_port", "Private SearXNG port", "18888"),
             _field("grobid_port", "Private GROBID port (Apptainer)", "18070"),
             _field("grobid_admin_port", "Private GROBID admin port (Apptainer)", "18071"),
         ],
     )
+    for field in definition.configuration_fields:
+        if field.id in {
+            "container_runtime",
+            "task_backend_port",
+            "listen_address",
+            "grobid_port",
+            "grobid_admin_port",
+        }:
+            field.variants = ["container"]
+    return definition
 
 
 def _runtime(action: str, configuration: dict[str, str], facts: TargetFacts) -> RuntimeName:

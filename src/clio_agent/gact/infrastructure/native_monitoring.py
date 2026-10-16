@@ -70,13 +70,16 @@ def native_monitoring_plan(
         service, facts, target
     )
     owner = hashlib.sha256(f"{facts.target_id}:{facts.hostname}:{directory}".encode()).hexdigest()
-    dependencies = (
-        ["httpx==0.28.1"]
-        if service == "cmf"
-        else [
-            f"flowcept[extras,webservice] @ git+https://github.com/spotter-ai-genesis/flowcept.git@{FLOWCEPT_REVISION}"
-        ]
-    )
+    dependencies = [
+        "httpx==0.28.1",
+        *(
+            []
+            if service == "cmf"
+            else [
+                f"flowcept[extras,webservice] @ git+https://github.com/spotter-ai-genesis/flowcept.git@{FLOWCEPT_REVISION}"
+            ]
+        ),
+    ]
     python = "3.10" if service == "cmf" else "3.12"
     here = Path(__file__).parent
     files = {
@@ -108,6 +111,7 @@ def native_monitoring_plan(
         "identity": {"kind": "components", "hook": "native_monitoring_hook.py"},
         "database_mode": mode,
         "database_settings_path": settings_path,
+        "credential_fields": ["password", "redis_url", "mongodb_uri", "POSTGRES_PASSWORD"],
         "redis_port": redis,
         "mongo_port": mongo,
         "postgres_port": postgres,
@@ -125,6 +129,15 @@ def native_monitoring_plan(
             **configuration,
             "database_mode": mode,
             "storage.service_directory": directory,
+            "storage.captures": directory + "/evidence",
+            **(
+                {
+                    "flowcept_settings": directory + "/settings.yaml",
+                    "persistence_owner": "collector",
+                }
+                if service == "flowcept"
+                else {}
+            ),
             "native_owner": owner,
             "compatibility_profile": PROFILE,
             "installation_method": "native",

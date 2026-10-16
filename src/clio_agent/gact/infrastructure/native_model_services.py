@@ -6,13 +6,17 @@ import hashlib
 import json
 import ntpath
 import posixpath
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from clio_agent.gact.infrastructure.context_sizing.deployment import sizing_request
 from clio_agent.gact.infrastructure.models import InfrastructureTarget, ServiceVariant, TargetFacts
+from clio_agent.gact.infrastructure.ollama_context_apply import ollama_context_hook
 from clio_agent.gact.infrastructure.plan import DriverPlan
-from clio_agent.gact.infrastructure.server_parameters import compile_parameters
+from clio_agent.gact.infrastructure.server_parameters import EngineId, compile_parameters
 from clio_agent.gact.infrastructure.service_paths import service_directory
+from clio_agent.gact.infrastructure.storage import resolved_locations
 from clio_agent.gact.infrastructure.supervised_service import supervised_plan
 
 LLAMA_REVISION = "2b129ccfa03aea330d2d9ac4650a10de393dbe3a"
@@ -146,9 +150,11 @@ def native_model_variants(engine: str, facts: TargetFacts) -> list[ServiceVarian
                 ),
             )
         )
-    # Prefer the broadly supported Vulkan driver for AMD, CUDA for NVIDIA.
+    # Windows Radeon drivers expose Vulkan directly; Linux compute hosts use ROCm.
     preferred = (
-        "vulkan"
+        "rocm"
+        if facts.accelerator == "amd" and facts.os == "linux"
+        else "vulkan"
         if facts.accelerator in {"amd", "intel"}
         else "cuda"
         if facts.accelerator == "nvidia"
@@ -161,7 +167,7 @@ def native_model_variants(engine: str, facts: TargetFacts) -> list[ServiceVarian
 
 
 def native_model_plan(
-    engine: str,
+    engine: EngineId,
     service_name: str,
     action: str,
     variant: str,
@@ -225,6 +231,13 @@ def native_model_plan(
     directory = configuration.get("storage.service_directory") or service_directory(
         service_name, facts, target
     )
+    model_cache = configuration.get("storage.model_cache") or (
+        paths.join(resolved_locations(target, facts).models, service_name)
+        if target and any(target.storage.model_dump().values())
+        else paths.join(directory, "data", "models")
+    )
+    if not paths.isabs(model_cache) or any(ord(character) < 32 for character in model_cache):
+        raise ValueError("Model cache must be an absolute path on the execution host")
     port = int(configuration.get("port") or ("8088" if engine == "llama_cpp" else "11434"))
     if not 1024 <= port <= 65535:
         raise ValueError("Port must be between 1024 and 65535")
@@ -238,11 +251,21 @@ def native_model_plan(
     if action == "start" and engine == "llama_cpp":
         model = configuration.get("model_path", "").strip()
         hf = configuration.get("hf_model", "").strip()
-        if not model and not hf:
-            raise ValueError("Choose a GGUF model path or Hugging Face GGUF before starting")
+        if bool(model) == bool(hf):
+            raise ValueError(
+                "Choose exactly one GGUF model path or Hugging Face GGUF before starting"
+            )
+        if any(
+            character in value for value in (model, hf) for character in ("\0", "\r", "\n")
+        ) or hf.startswith("-"):
+            raise ValueError(
+                "Model references cannot contain control characters or option prefixes"
+            )
         if model and not paths.isabs(model):
             raise ValueError("GGUF model path must be absolute on the execution host")
         served = configuration.get("served_model_name") or (paths.basename(model) if model else hf)
+        if served.startswith("-") or any(character in served for character in ("\0", "\r", "\n")):
+            raise ValueError("Served model name is not valid")
         flags = ["-m", model] if model else ["-hf", hf]
         flags += ["--alias", served, *(compiled.flags if compiled else ())]
         if backend != "cpu" and not configuration.get("param.gpu_layers"):
@@ -277,7 +300,7 @@ def native_model_plan(
             + (".exe" if windows else ""),
         },
     }
-    return supervised_plan(
+    plan = supervised_plan(
         action,
         directory=directory,
         ownership=ownership,
@@ -287,6 +310,7 @@ def native_model_plan(
         configuration={
             **configuration,
             "storage.service_directory": directory,
+            "storage.model_cache": model_cache,
             "native_owner": ownership,
             "compatibility_profile": PROFILE,
             "port": str(port),
@@ -301,6 +325,7 @@ def native_model_plan(
                     "backend": backend,
                     "environment": dict(compiled.env) if compiled else {},
                     "model": configuration.get("model", "").strip(),
+                    "model_cache": model_cache,
                     "context_length": (compiled.values.get("context_length") if compiled else None),
                 }
             ),
@@ -308,3 +333,16 @@ def native_model_plan(
         },
         windows=windows,
     )
+    if engine == "ollama" and action == "start" and configuration.get("model") and plan.readiness:
+        return replace(
+            plan,
+            after_ready_hook=ollama_context_hook(
+                port,
+                configuration["model"],
+                plan.readiness.logs,
+                windows,
+                sizing_request("ollama", configuration),
+                cpu_threads=backend == "cpu",
+            ),
+        )
+    return plan

@@ -11,10 +11,12 @@ from typing import Any
 
 import pytest
 
+from clio_agent.gact.infrastructure.context_sizing.target_probe import parse_llama_devices
 from clio_agent.gact.infrastructure.drivers import build_driver_plan, service_definitions
 from clio_agent.gact.infrastructure.models import InfrastructureTarget, TargetFacts
 from clio_agent.gact.infrastructure.native_archive import digest, extract
 from clio_agent.gact.infrastructure.native_model_services import native_model_plan
+from clio_agent.gact.infrastructure.native_monitoring_hook import mongo_platform, private
 from clio_agent.gact.infrastructure.probe import _amd_gpu
 
 
@@ -195,3 +197,83 @@ def test_site_databases_require_a_host_private_settings_path() -> None:
             facts=host(),
             target=InfrastructureTarget(id="local", label="Native", kind="local"),
         )
+
+
+def test_database_mode_switch_preserves_managed_passwords(tmp_path: Path) -> None:
+    manifest = {
+        "database_mode": "managed",
+        "service": "flowcept",
+        "redis_port": 16379,
+        "mongo_port": 37017,
+        "postgres_port": 15432,
+    }
+    first = private(tmp_path, manifest)
+    site = tmp_path / "site.json"
+    site.write_text(json.dumps({"redis_url": "redis://site:6379", "mongodb_uri": "mongodb://site"}))
+    site.chmod(0o600)
+    private(tmp_path, {**manifest, "database_mode": "site", "database_settings_path": str(site)})
+    assert private(tmp_path, manifest) == first
+
+
+@pytest.mark.parametrize(
+    "release,platform",
+    [
+        ('ID=ubuntu\nVERSION_ID="24.04"', "ubuntu2404"),
+        ('ID=debian\nVERSION_ID="12"', "debian12"),
+        ('ID=rocky\nVERSION_ID="8.10"', "rhel8"),
+    ],
+)
+def test_native_mongo_chooses_host_libc_build(release: str, platform: str) -> None:
+    assert mongo_platform(release) == platform
+
+
+def test_native_mongo_refuses_unknown_distribution() -> None:
+    with pytest.raises(RuntimeError, match="site databases"):
+        mongo_platform('ID=unknown\nVERSION_ID="99"')
+
+
+def test_native_llama_device_memory_and_source_mtimes(tmp_path: Path) -> None:
+    assert parse_llama_devices("Vulkan0: AMD Radeon (16384 MiB, 14200 MiB free)") == [
+        {"total": 16384 << 20, "free": 14200 << 20}
+    ]
+    archive = tmp_path / "source.tar"
+    with tarfile.open(archive, "w") as bundle:
+        for name, stamp in [("configure.ac", 1_000_000), ("Makefile.in", 1_000_001)]:
+            member = tarfile.TarInfo(name)
+            member.size, member.mtime = 4, stamp
+            bundle.addfile(member, io.BytesIO(b"data"))
+    staging = tmp_path / "staging"
+    extract(archive, staging)
+    assert (staging / "configure.ac").stat().st_mtime < (staging / "Makefile.in").stat().st_mtime
+
+
+def test_native_model_honors_shared_cache_without_transferring_delete_ownership() -> None:
+    plan = native_model_plan(
+        "ollama",
+        "clio-ollama",
+        "start",
+        "native-linux-cpu",
+        {"storage.model_cache": "/scratch/models/ollama"},
+        host(),
+        None,
+        None,
+    )
+    assert plan.configuration["storage.model_cache"] == "/scratch/models/ollama"
+    assert (
+        json.loads(request(plan)["runtime_files"]["runtime.json"])["model_cache"]
+        == "/scratch/models/ollama"
+    )
+
+
+def test_native_monitoring_exposes_real_producer_settings_and_capture_directory() -> None:
+    plan = build_driver_plan(
+        service_id="flowcept",
+        action="install",
+        variant_id="native",
+        configuration={},
+        facts=host(),
+        target=InfrastructureTarget(id="local", label="Native", kind="local"),
+    )
+    assert plan.configuration["flowcept_settings"].endswith("/settings.yaml")
+    assert plan.configuration["persistence_owner"] == "collector"
+    assert plan.configuration["storage.captures"].endswith("/evidence")

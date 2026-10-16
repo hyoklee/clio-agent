@@ -110,6 +110,10 @@ def _tar(stream: IO[bytes], destination: Path, mode: str) -> None:
                     raise ValueError("Archive file has no content")
                 with content:
                     _write(destination, member.name, content, member.mode)
+                # Preserve source ordering for generated Autotools files. Giving
+                # every extracted file a new mtime triggers unneeded regeneration
+                # with whatever automake happens to be installed on the host.
+                os.utime(path, (member.mtime, member.mtime))
             elif member.issym() or member.islnk():
                 links.append((path, member.linkname, member.issym()))
             else:

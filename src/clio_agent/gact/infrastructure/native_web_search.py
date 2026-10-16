@@ -15,12 +15,15 @@ from clio_agent.gact.infrastructure.searxng_service import (
     SEARXNG_REQUIREMENTS,
     SEARXNG_SOURCE_URL,
     SEARXNG_VERSION,
+    _stored_engine_key,
     compatibility,
     effective_settings,
+    engine_key_variable,
     searxng_settings,
 )
 from clio_agent.gact.infrastructure.service_paths import service_directory
 from clio_agent.gact.infrastructure.supervised_service import supervised_plan
+from clio_agent.search.settings import API_KEY_ENGINES
 
 REVISION = "306806e9c9a8ba11ec67aa3896bdf3d29a9768bd"
 PROFILE = "web-search-native-1"
@@ -67,6 +70,18 @@ def native_web_plan(
     )
     owner = hashlib.sha256(f"{facts.target_id}:{facts.hostname}:{directory}".encode()).hexdigest()
     settings = effective_settings({**configuration, "port": str(private)})
+    keyed = {
+        name: engine_key_variable(name) for name in settings.engines if name in API_KEY_ENGINES
+    }
+    secret_env = {}
+    if action == "start":
+        for name, variable in keyed.items():
+            key = _stored_engine_key(name)
+            if not key:
+                raise ValueError(
+                    f"Search engine {name} requires its saved API key, or remove it from this service"
+                )
+            secret_env[variable] = key
     here = Path(__file__).parent
     names = (
         "native_web_search_hook.py",
@@ -112,8 +127,8 @@ def native_web_plan(
             "source_url": SEARXNG_SOURCE_URL,
             "settings": searxng_settings(settings, private),
             "verify_query": "HDF5 hierarchical data format",
-            "engine_keys": {},
-            "engine_key_settings": {},
+            "engine_keys": keyed,
+            "engine_key_settings": {name: API_KEY_ENGINES[name] for name in keyed},
         },
     }
     return supervised_plan(
@@ -124,6 +139,7 @@ def native_web_plan(
         port=port,
         label="CLIO Web Search",
         windows=facts.os == "windows",
+        secret_env=secret_env,
         configuration={
             **configuration,
             "port": str(port),

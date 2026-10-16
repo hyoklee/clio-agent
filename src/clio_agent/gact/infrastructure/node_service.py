@@ -282,7 +282,7 @@ def serves_identity(root: Path, receipt: dict[str, Any], key: str = "") -> bool:
             return False
         try:
             completed = subprocess.run(
-                [sys.executable, str(script), "running"],
+                [str(environment_python(root)), str(script), "running"],
                 cwd=root,
                 capture_output=True,
                 timeout=60,
@@ -387,7 +387,10 @@ def launch(root: Path, request: dict[str, Any]) -> None:
         if (
             current.get("configuration_revision") == revision
             and current["phase"] == wanted
-            and (action == "install" or current.get("launch_revision") == launch_revision)
+            and (
+                action == "install"
+                or current.get("launch_revision", launch_revision) == launch_revision
+            )
         ):
             return
         raise ValueError("Stop the current operation before changing native service configuration")
@@ -612,13 +615,20 @@ def worker(root: Path, action: str, generation: str) -> None:
     credentials = root / "credentials.json"
     if credentials.is_file():
         secrets.extend(
-            str(value) for value in json.loads(credentials.read_text()).values() if value
+            str(value)
+            for name, value in json.loads(credentials.read_text()).items()
+            if value
+            and (not manifest.get("credential_fields") or name in manifest["credential_fields"])
         )
     settings = manifest.get("database_settings_path")
     if manifest.get("database_mode") == "site" and settings:
         source = Path(settings)
         if source.is_file() and not source.is_symlink():
-            secrets.extend(str(value) for value in json.loads(source.read_text()).values() if value)
+            secrets.extend(
+                str(value)
+                for name, value in json.loads(source.read_text()).items()
+                if value and name in manifest.get("credential_fields", [])
+            )
     log = root / "logs" / ("install.log" if action == "install" else "server.log")
     try:
         rotate_log(log)

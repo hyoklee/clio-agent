@@ -578,7 +578,7 @@ def build_model_runtime_plan(
             action, configuration.get("model_path", "").strip(), target, flags, api_key
         )
     if spec.engine in {"llama_cpp", "ollama"} and variant_id.startswith("native-"):
-        return native_model_plan(
+        plan = native_model_plan(
             spec.engine,
             spec.container_name,
             action,
@@ -588,6 +588,15 @@ def build_model_runtime_plan(
             target,
             api_key,
         )
+        if (
+            spec.engine == "llama_cpp"
+            and variant_id == "native-windows-cpu"
+            and action == "reinstall"
+            and not configuration.get("native_owner")
+        ):
+            legacy = native_windows_llama_plan("stop", "", target)
+            return dataclasses.replace(plan, commands=(*legacy.commands, *plan.commands))
+        return plan
     variant = next((row for row in spec.variants if row.id == variant_id), None)
     if variant is None:
         raise ValueError(f"Unknown {service_id} variant {variant_id!r}")

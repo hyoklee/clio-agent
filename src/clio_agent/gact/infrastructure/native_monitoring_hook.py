@@ -19,16 +19,37 @@ VALKEY_URL = "https://github.com/valkey-io/valkey/archive/refs/tags/8.1.3.tar.gz
 VALKEY_SHA = "8f862b3b0a72fd40587793964539589f6f83d01361ca1598b370cfaa301e0ec0"
 POSTGRES_URL = "https://ftp.postgresql.org/pub/source/v17.6/postgresql-17.6.tar.bz2"
 POSTGRES_SHA = "e0630a3600aea27511715563259ec2111cd5f4353a4b040e0be827f94cd7a8b0"
+BUILD_TOOLS = (
+    (
+        "m4",
+        "https://ftp.gnu.org/gnu/m4/m4-1.4.20.tar.xz",
+        "e236ea3a1ccf5f6c270b1c4bb60726f371fa49459a8eaaebc90b216b328daf2b",
+    ),
+    (
+        "bison",
+        "https://ftp.gnu.org/gnu/bison/bison-3.8.2.tar.xz",
+        "9bba0214ccf7f1079c5d59210045227bcf619519840ebfa80cd3849cff5a5bf2",
+    ),
+    (
+        "flex",
+        "https://github.com/westes/flex/releases/download/v2.6.4/flex-2.6.4.tar.gz",
+        "e87aae032bf07c26f85ac0ed3250998c37621d95f8bd748b31f15b33c45ee995",
+    ),
+)
 MONGO_SHA = {
+    "ubuntu2004": "df64db0da70f23dcfcdf7e859600b45669f993082d19dc7f08586b66fea9f684",
     "ubuntu2204": "de1f62df4710cf6094c75f7ab160a1818f0cc41bbde763b428582069b9dcfda7",
     "ubuntu2404": "9e6a8332ef0eddb52f7869d4363212b3ca379955fd70d80840d1b7fa6f5cb54b",
+    "debian12": "c13e85583fc393e0b9f47911797f4e0f724cd6a563cd719ee3360aa592a96f16",
+    "rhel8": "94a5f1bb0ec0bcf2d372e787b6bb39ed8662cc073f31271dc57a0c1c3f803dd2",
 }
 
 
 def private(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
     """Read host-private credentials; never return them through lifecycle receipts."""
     path = root / "credentials.json"
-    if path.is_symlink():
+    managed = root / "managed-credentials.json"
+    if path.is_symlink() or managed.is_symlink():
         raise ValueError("Native database credentials cannot be a symlink")
     if manifest["database_mode"] == "site":
         source = Path(manifest["database_settings_path"])
@@ -54,8 +75,10 @@ def private(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
             raise ValueError("Site database settings are missing required connection values")
         # Retain a private redaction inventory for the common supervisor's log pump.
         values = {key: values[key] for key in required}
-    elif path.exists():
-        return json.loads(path.read_text(encoding="utf-8"))
+    elif managed.exists():
+        values = json.loads(managed.read_text(encoding="utf-8"))
+    elif path.exists() and "password" in json.loads(path.read_text(encoding="utf-8")):
+        values = json.loads(path.read_text(encoding="utf-8"))
     else:
         password = secrets.token_urlsafe(32)
         values = {
@@ -68,6 +91,9 @@ def private(root: Path, manifest: dict[str, Any]) -> dict[str, str]:
             "POSTGRES_PASSWORD": password,
             "POSTGRES_DB": "clio",
         }
+    if manifest["database_mode"] == "managed":
+        managed.write_text(json.dumps(values), encoding="utf-8")
+        managed.chmod(0o600)
     path.write_text(json.dumps(values), encoding="utf-8")
     path.chmod(0o600)
     return values
@@ -140,8 +166,7 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
                 ["make", "-j" + jobs, "MALLOC=libc", "BUILD_TLS=no"], cwd=source, check=True
             )
             shutil.copy2(source / "src/valkey-server", binaries / "valkey-server")
-            release = Path("/etc/os-release").read_text()
-            platform = "ubuntu2404" if 'VERSION_ID="24.04"' in release else "ubuntu2204"
+            platform = mongo_platform(Path("/etc/os-release").read_text())
             source = unpack(
                 root,
                 "mongodb",
@@ -152,6 +177,7 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
             subprocess.run([str(binaries / "mongod"), "--version"], check=True)
             flowcept_settings(root, credentials)
         else:
+            environment = build_tools(root)
             source = unpack(root, "postgres", POSTGRES_URL, POSTGRES_SHA)
             subprocess.run(
                 [
@@ -162,14 +188,55 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
                     "--without-zlib",
                 ],
                 cwd=source,
+                env=environment,
                 check=True,
             )
-            subprocess.run(["make", "-j" + jobs], cwd=source, check=True)
-            subprocess.run(["make", "install"], cwd=source, check=True)
+            subprocess.run(["make", "-j" + jobs], cwd=source, env=environment, check=True)
+            subprocess.run(["make", "install"], cwd=source, env=environment, check=True)
     if manifest["service"] == "flowcept":
         flowcept_settings(root, credentials)
     else:
         install_cmf(root, manifest)
+
+
+def build_tools(root: Path) -> dict[str, str]:
+    """Bootstrap missing PostgreSQL parser tools into this owned environment."""
+    prefix = root / "environment/build-tools"
+    environment = {**os.environ, "PATH": str(prefix / "bin") + os.pathsep + os.environ["PATH"]}
+    for name, url, checksum in BUILD_TOOLS:
+        if shutil.which(name, path=environment["PATH"]):
+            continue
+        source = unpack(root, name + "-build", url, checksum)
+        subprocess.run(
+            [str(source / "configure"), "--prefix=" + str(prefix), "--disable-nls"],
+            cwd=source,
+            env=environment,
+            check=True,
+        )
+        subprocess.run(["make", "-j2"], cwd=source, env=environment, check=True)
+        subprocess.run(["make", "install"], cwd=source, env=environment, check=True)
+    return environment
+
+
+def mongo_platform(release: str) -> str:
+    """Choose a compatible verified MongoDB build or require site databases."""
+    fields = dict(line.split("=", 1) for line in release.splitlines() if "=" in line)
+    system = fields.get("ID", "").strip('"')
+    version = fields.get("VERSION_ID", "").strip('"')
+    selected = {
+        ("ubuntu", "20.04"): "ubuntu2004",
+        ("ubuntu", "22.04"): "ubuntu2204",
+        ("ubuntu", "24.04"): "ubuntu2404",
+        ("debian", "12"): "debian12",
+    }.get((system, version))
+    if system in {"rhel", "rocky", "almalinux", "centos"} and version.split(".")[0] == "8":
+        selected = "rhel8"
+    if selected is None:
+        raise RuntimeError(
+            "No verified managed MongoDB binary for this Linux distribution; "
+            "choose site databases and provide Redis/MongoDB connection settings."
+        )
+    return selected
 
 
 def install_cmf(root: Path, manifest: dict[str, Any]) -> None:
@@ -292,6 +359,8 @@ def databases(root: Path, manifest: dict[str, Any], credentials: dict[str, str])
                 database = data / "postgres"
                 if not (database / "PG_VERSION").exists():
                     password = root / "pg-password"
+                    if password.is_symlink():
+                        raise ValueError("PostgreSQL initialization password cannot be a symlink")
                     password.write_text(credentials["POSTGRES_PASSWORD"], encoding="utf-8")
                     password.chmod(0o600)
                     try:
@@ -329,8 +398,9 @@ def databases(root: Path, manifest: dict[str, Any], credentials: dict[str, str])
                 ]
             for role, command, port in commands:
                 with socket.socket() as listener:
-                    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                    listener.bind(("127.0.0.1", port))
+                    listener.settimeout(0.5)
+                    if listener.connect_ex(("127.0.0.1", port)) == 0:
+                        raise RuntimeError(f"Native {role} port {port} already has a listener")
                 output = (root / "logs" / f"{role}.log").open("a", encoding="utf-8")
                 logs.append(output)
                 process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT)
@@ -357,6 +427,23 @@ def databases(root: Path, manifest: dict[str, Any], credentials: dict[str, str])
                 env = {**os.environ, "PGPASSWORD": credentials["POSTGRES_PASSWORD"]}
                 pg = binaries / "postgres/bin"
                 common = ["-h", "127.0.0.1", "-p", str(manifest["postgres_port"]), "-U", "clio"]
+                deadline = time.monotonic() + 90
+                while True:
+                    ready = subprocess.run(
+                        [str(pg / "pg_isready"), *common, "-t", "1"],
+                        capture_output=True,
+                        env=env,
+                        check=False,
+                    )
+                    if ready.returncode == 0:
+                        break
+                    if time.monotonic() >= deadline or any(
+                        child.poll() is not None for child in children
+                    ):
+                        raise RuntimeError(
+                            "Native PostgreSQL did not finish recovery; inspect postgres.log"
+                        )
+                    time.sleep(0.2)
                 exists = subprocess.run(
                     [
                         str(pg / "psql"),

@@ -10,6 +10,7 @@ import sys
 import time
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener
 
 
@@ -83,6 +84,9 @@ def install(root: Path, manifest: dict[str, Any]) -> None:
         raise RuntimeError(f"Native runtime did not install one {spec['executable']}")
     executable = matches[0]
     env = binary_environment(root, executable)
+    if spec["engine"] == "ollama":
+        # --version must never connect to a separately installed user daemon.
+        env["OLLAMA_HOST"] = "127.0.0.1:1"
     subprocess.run([str(executable), "--version"], env=env, check=True, timeout=60)
     if spec["engine"] == "llama_cpp" and spec["backend"] != "cpu":
         devices = subprocess.run(
@@ -130,12 +134,13 @@ def serve(root: Path, manifest: dict[str, Any]) -> None:
         raise ValueError("Native runtime executable escapes its owned environment")
     env = binary_environment(root, executable)
     env.update(launch.get("environment", {}))
+    cache = Path(launch["model_cache"])
+    cache.mkdir(parents=True, exist_ok=True)
+    env["LLAMA_CACHE"] = str(cache)
     # Runtime libraries shipped beside the executable retain their relative lookup.
     env["PATH"] = str(executable.parent) + os.pathsep + env.get("PATH", "")
     if spec["engine"] == "ollama":
-        env.update(
-            OLLAMA_HOST=f"127.0.0.1:{manifest['port']}", OLLAMA_MODELS=str(root / "data" / "models")
-        )
+        env.update(OLLAMA_HOST=f"127.0.0.1:{manifest['port']}", OLLAMA_MODELS=str(cache))
         if spec["backend"] == "cpu":
             env.update(
                 CUDA_VISIBLE_DEVICES="-1", ROCR_VISIBLE_DEVICES="-1", GGML_VK_VISIBLE_DEVICES="-1"
@@ -161,7 +166,12 @@ def serve(root: Path, manifest: dict[str, Any]) -> None:
                     raise RuntimeError("Native Ollama exited before becoming ready")
                 model = launch.get("model")
                 if model:
-                    subprocess.run([str(executable), "pull", model], env=env, check=True)
+                    try:
+                        _ollama(manifest["port"], "/api/show", {"model": model})
+                    except HTTPError as error:
+                        if error.code != 404:
+                            raise
+                        subprocess.run([str(executable), "pull", model], env=env, check=True)
                     options = {}
                     if launch.get("context_length"):
                         options["num_ctx"] = int(launch["context_length"])
