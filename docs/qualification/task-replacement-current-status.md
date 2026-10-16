@@ -9,6 +9,33 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R147 on frozen clio-agent `30a769f2` / GACT `401efcfe` passed actual Claude
+`claude-haiku-5-5` child Question/lifecycle qualification. The model created one
+child and one Question; both parent and child yielded under their original
+assignment handles. Human pause held the child without a model worker. Its
+Question answered successfully while paused, but no answer input was committed
+until resume. The parent was busy when Stop was requested; accepted child work
+was not cancelled. Resume let the child collect its original answer and fresh
+file text. The parent woke, collected the original child result and completed.
+
+The independent `r147-scoped-audit.json` requires one answer commitment to the
+child, one child-result commitment to the parent, and separate attributed human
+pause/resume notices committed exactly once to the original parent's model
+input. Both assignments completed without a cancellation request. This proves
+the scoped Claude route, not all Q3/Q4 variants, UI or final repeated races.
+Original auth and production hashes remained unchanged. Normal API/native
+shutdown exited zero, and `r147-cleanup.json` confirms both disposable roots
+absent with no owned processes/listeners.
+
+R146's earlier setup remains failed: its explicit blueprint declaration of
+`spawn_agent_task` was invalid. The corrected fixture retains its original child
+hierarchy and automatic delegation controls. R146 submitted no model work;
+normal service shutdown and `r146-cleanup.json` confirm its disposable state is
+also removed. No production change was made for that harness configuration.
+CI `38936588153` is running on `30a769f2`: nine non-shard jobs successful, nine
+test shards running and no observed current-head failure at this checkpoint.
+The prior failed CI remains failed; pending shards are not acceptance.
+
 R145 on frozen clio-agent `0755ba0a` / GACT `401efcfe` passed two actual
 Codex/Luna production-service recovery cases. The harness exited the isolated
 API immediately before the answer's recipient-input write (exit 86), then
