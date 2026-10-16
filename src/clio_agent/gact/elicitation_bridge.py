@@ -52,6 +52,7 @@ from clio_agent.gact.elicitation_schema import (
     validate_elicitation_answer,
 )
 from clio_agent.gact.permission_delivery import attended_session_id
+from clio_agent.gact.question_bundle import validate_question_answer
 from clio_agent.gact.task_input_questions import (
     TaskInputIdentityError,
     cancel_published_task_input,
@@ -224,10 +225,7 @@ def claim_question_transition(
             return None
         update: dict[str, Any] = {"status": new_status, "updated_at": _now_iso()}
         if new_status == "answered":
-            from clio_agent.gact.question_bundle import validate_bundle_answer
-
-            bundle_answer = validate_bundle_answer(row, dict(answer_metadata or {}))
-            update["answer"] = bundle_answer if bundle_answer is not None else answer
+            update["answer"] = validate_question_answer(row, answer, dict(answer_metadata or {}))
             update["selected_options"] = list(selected_options or [])
             update["answer_metadata"] = dict(answer_metadata or {})
             if answered_by:

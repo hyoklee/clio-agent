@@ -74,15 +74,15 @@ def normalize_question_bundle(questions: list[dict[str, Any]]) -> dict[str, Any]
     return {"questions": normalized, "fields": fields}
 
 
-def validate_bundle_answer(question: Any, metadata: dict[str, Any]) -> str | None:
+def validate_question_answer(question: Any, answer: str, metadata: dict[str, Any]) -> str:
     """Reject partial/invalid submissions before the pending-to-answered claim.
 
-    Return the complete human-readable answer for the owning agent, or None for
-    an ordinary question. Legacy clients can submit the projected flat fields.
+    Return the complete human-readable answer for a bundle, preserving the text
+    of ordinary questions. Legacy clients can submit the projected flat fields.
     """
     bundle = question.metadata.get("question_bundle")
     if not isinstance(bundle, Mapping):
-        return None
+        return answer
     items = bundle["questions"]
     answers = metadata.get("answers")
     if answers is None:

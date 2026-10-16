@@ -24,7 +24,7 @@ Qualification evidence is retained in
 
 - `backend-qualified.log`: 131 backend cases passed, including bundle validation,
   recovery, one queued delivery, duplicate refusal, ordinary questions and elicitation.
-- `ui-qualification-tests.log`: 87 focused interaction, navigation, scope, draft and
+- `ui-qualification-tests.log`: 88 focused interaction, navigation, scope, draft and
   responsive remount tests. Root lint, type checks and production/offline builds
   are recorded separately.
 - `browser-final-all.log` plus `browser-final-repaired.log`: all 30 production
@@ -53,4 +53,9 @@ workspace blueprint. MAG was not used for this live acceptance.
 These changes are source/PR work. This handoff does not claim a release or an
 installed Desktop update.
 
-The backend pins UI commit `6aaa3d5fa7c3f941bc1a266bb46d8897cff263f2`.
+The backend pins UI commit `8b26a5698f55aa6bf26e995f686e61790761e328`.
+
+The final bridge refactor keeps canonical answer validation in the bundle module;
+`backend-cap-repair.log` records 72 passing bundle/elicitation cases after it, and
+the unchanged file-size guard passes. `ui-id-regression.log` adds coverage for
+question ids matching Object property names.
