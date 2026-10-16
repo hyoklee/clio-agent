@@ -9,6 +9,19 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R143/R144 did not execute the intended recipient-input crash scenarios. The
+generated harness omitted process initialization, then omitted its service-run
+list. R143 failed before launching a service. Automatic approval review rejected
+its guarded cleanup as "blocked by policy"; the command did not run. The exact
+`.pytest-runtime/live/r143-input-crash` and `.r143-live-tmp` residual roots under
+the D qualification checkout are now manual-only: never retry, bypass or
+delegate their removal. The rejection receipt is `r143-cleanup-rejection.json`.
+R144 started an isolated source service but submitted no session or model work.
+Its verified source API and private Core process were retired; the no-follow
+audit and `r144-cleanup.json` confirm both disposable roots absent and no owned
+processes/listeners. These are failed harness setups, not product acceptance.
+Production source and iowarp-core 2.3.1 were unchanged.
+
 R140 continued R139's original profile on corrected source `527a302e`; it did
 not recreate the Question or assignment. Startup succeeded, the dormant
 Question and previous input IDs were unchanged, and service recovery alone did
