@@ -1,5 +1,25 @@
 # Tasks replacement status — October 15
 
+## Regression CI started; live experiments designed
+
+The constructed core/GACT test commits are pushed to
+`codex/agent-facing-async-tasks`: core `f9538f3f`, GACT `0795157b`.
+[Core CI](https://github.com/iowarp/clio-agent/actions/runs/38846834707) is running;
+[GACT workspace CI](https://github.com/iowarp/gact-tui/actions/runs/38846793266)
+is queued. No pass is claimed. Core PR 1704 is closed, so its existing CI workflow
+was explicitly dispatched on the feature branch; GACT PR 590 remains draft/open.
+
+The interrupted local collection completed with exit 0 and no residual run root.
+It executed no test bodies. The human replaced the local regression sequence
+with CI; no further local tests or live qualification were launched. The
+[nine live experiment families](task-replacement-live-experiments.md) distinguish
+actual-model, physical/backend and real-service UI acceptance.
+
+Implementation and test construction are done. Regression passing, remaining
+bug corrections, final source acceptance and live qualification are separate
+outstanding stages. Earlier migration counts below are historical snapshots;
+they do not mean test construction is still incomplete.
+
 ## Test construction completed after the renewed deadline
 
 Initial production implementation is done. Regression test construction is now
@@ -87,11 +107,11 @@ qualify a release. The human renewed the checkpoint for 2026-10-16 01:14:18 UTC
 / October 15 8:14:18 PM Chicago. That checkpoint checks implementation convergence,
 executed regression checks and actual-model verification separately.
 
-## Regression migration
+## Regression migration — historical construction snapshots
 
-The current-source audit found 35 test files still naming removed modules or
+Before construction completed, the source audit found 35 test files naming removed modules or
 controls, plus test-helper references. This is a regression-suite migration
-backlog, not evidence that those deleted owners remain in production.
+snapshot, not a current backlog or evidence that deleted owners remain in production.
 
 The first batch replaces old registry/inbox arrangements with actual Core
 assignment records and the recipient-input commit. It retains card, feedback,
