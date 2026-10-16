@@ -147,6 +147,10 @@ def create_lm(config: LMProviderConfig) -> dspy.LM:
     lm._clio_tool_result_media = (
         "native" if _resolved_litellm_prefix(config) == "anthropic" else "user_message"
     )
+    # These stateless chat requests propose local function calls; the loop
+    # executes them only after receiving a complete response. SDK/native-tool
+    # engines retain their own recovery policy.
+    lm._clio_stream_recovery = _resolved_litellm_prefix(config) == "openai"
     return _record_identity(lm, config)
 
 
