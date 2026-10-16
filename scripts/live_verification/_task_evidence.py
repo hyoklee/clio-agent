@@ -49,12 +49,12 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
             )
         if part.get("tool_name") in {"query_tasks", "observe_tasks"}:
             for task in data.get("tasks", []):
-                if task.get("task_kind") == kind and task.get("effective_status") not in {
-                    "completed",
-                    "failed",
-                    "cancelled",
-                    "interrupted",
-                }:
+                if (
+                    task.get("kind") == kind
+                    and task.get("status") in {"submitted", "queued", "running", "active"}
+                    and task.get("terminal_at") is None
+                    and task.get("recording") == "confirmed"
+                ):
                     running_observations.append(
                         {
                             "handle": task.get("handle"),

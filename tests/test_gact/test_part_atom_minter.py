@@ -61,11 +61,11 @@ from clio_agent.gact.part_atoms import (
     message_stub,
     reproduce_message_wire,
 )
+from clio_agent.gact.paused_transcript import persist_paused_transcript
 from clio_agent.gact.transcript import EventBusTranscriptPublisher, TurnTranscript
 from clio_agent.gact.transcript_projection import assemble_session_messages
 from clio_agent.gact.turn_state import TurnState
 from clio_agent.gact.types import Message, Part, Tokens
-from clio_agent.gact.user_question_pause import maybe_pause_for_user
 from tests.equivalence import normalizers as N
 from tests.turn_signals import wait_for_terminal_status
 
@@ -753,9 +753,12 @@ def test_failed_finalize_keeps_the_streamed_parts_and_reload_equals_live(
 
 
 def test_paused_transcript_persists_only_the_remainder(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
+    client = TestClient(app)
+    client.__enter__()
+    request.addfinalizer(lambda: client.__exit__(None, None, None))
     session = app.state.sessions.create(workspace_id="ws_default", title="pause", mode="chat")
     app.state.sessions.update(
         session.id,
@@ -812,19 +815,16 @@ def test_paused_transcript_persists_only_the_remainder(
     assert minter.drain()
 
     calls: list[str] = []
-    real_append = part_atom_minter.append_part_atom
+    from clio_agent.gact import transcript_recording
+
+    real_append = transcript_recording.append_part_atom
 
     def _counting(store: Any, sid: str, content: dict[str, Any]) -> Any:
         calls.append(str(content.get("atom_role")))
         return real_append(store, sid, content)
 
-    monkeypatch.setattr(part_atom_minter, "append_part_atom", _counting)
-    monkeypatch.setattr(
-        "clio_agent.gact.user_question_pause._finalize_context_frame", lambda *a, **k: None
-    )
-    monkeypatch.setattr("clio_agent.gact.enrichment._finalize_context_frame", lambda *a, **k: None)
-
-    assert maybe_pause_for_user(state, SimpleNamespace(), update_retry_attempt=lambda *a, **k: None)
+    monkeypatch.setattr(transcript_recording, "append_part_atom", _counting)
+    assert persist_paused_transcript(state)
 
     # The remainder: the never-sealed tool_result + the envelope = 2 atoms written here.
     assert len(calls) == 2

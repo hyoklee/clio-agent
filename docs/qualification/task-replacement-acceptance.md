@@ -3,7 +3,7 @@
 Revision: R2. Starting source: core `5475042feda49c1354f9f88b19051cb53d7fa740`; GACT `32044a387472b1495f60a24c862c6b9e4292abc3`. All evidence from earlier engines is a source/test lesson only, not replacement acceptance.
 
 Current source review: **Astra GO and Claude Code Fable GO** for core
-`e581cfd504d16ca4abc3e7c1c4ed1ea1f642e2be`, GACT
+`ff9dc136630a5f329afa27a8ea0263dbe2fbb343`, GACT
 `0a4ca5d5915a0add61cd5048b742161092468481`, marketplace
 `1a9b8d0337217950a2b44c303a8d22547d52d756`. This is source acceptance,
 not completion of the rows below. The two-hour implementation checkpoint was
@@ -62,8 +62,8 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | U02 | Authenticated session grant/revoke UI; no model intent or assignment grant expansion | gact/routes/agent_tasks.py; task_permissions.py | Existing authenticated controls | Read/observe/message/control independently allowed/denied and revoked before injection | blocked — fresh replacement evidence pending |
 | D01 | Capable root/child/marketplace prompts and tool descriptions explain async/wait/yield/wake/uncertainty | prompt_packs/builtin/runtime/clio.runtime.tasks.md; gact/agents/task_guidance.py | Replacement contracts and capable marketplace roots | Catalog/prompt guard plus actual model actions | blocked — fresh replacement evidence pending |
 | D02 | Website walkthroughs use real replacement-service desktop/phone screenshots | site and GACT actual UI | Q9 accepted replacement | Readable walkthroughs with bounded selected media; no old-engine screenshot acceptance | blocked — fresh replacement evidence pending |
-| Q1 | Codex/Luna all seven kinds: handle running then independent model action; valid inline MCP | R2 finite live matrix Q1 | All relevant owners available | Source/runtime/model/invocation/handle/timestamp/transcript/backend outcome | blocked — fresh replacement evidence pending |
-| Q2 | Codex/Luna mixed progress, cursor/pattern, any/all/expired wait, failure and uncertainty | R2 finite live matrix Q2 | Q1 and shared controls | Real pending work continues; honest per-member outcomes | blocked — fresh replacement evidence pending |
+| Q1 | Codex/Luna all seven kinds: handle running then independent model action; valid inline MCP | R2 finite live matrix Q1 | All relevant owners available | Source/runtime/model/invocation/handle/timestamp/transcript/backend outcome | blocked — R79 proves one native-family Shell handle plus independent model work on ff9dc136; remaining kinds/routes still pending |
+| Q2 | Codex/Luna mixed progress, cursor/pattern, any/all/expired wait, failure and uncertainty | R2 finite live matrix Q2 | Q1 and shared controls | Real pending work continues; honest per-member outcomes | blocked — R79 proves single-handle progress/expired wait/continuing work/unbounded collection; mixed members, any/all, cursor/pattern and uncertainty still pending |
 | Q3 | Codex/Luna and Claude distinct delivery routes, goal/Question/child combinations | R2 finite live matrix Q3 | Usable actual provider profiles | Busy/idle/postStop/pause input evidence with no ordinary duplicate | blocked — fresh replacement evidence pending |
 | Q4 | Codex/Luna and Claude child/control routes and inherited subtree settlement | R2 finite live matrix Q4 | Q3 and child lifecycle | Same child handle; human notices and physical descendant outcomes | blocked — fresh replacement evidence pending |
 | Q5 | Independent sessions and two actual declared workflows | gact/workflows.py; R2 Q5 | Authenticated grants and existing runner | Discovery/replies/observe/wait/subscription/denied control; provenance root/step/session links | blocked — fresh replacement evidence pending |

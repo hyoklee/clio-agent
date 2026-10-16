@@ -93,3 +93,32 @@ assertion. An unchanged rerun, with admission-state diagnostics added to that
 assertion, passed. Its cause also remains unproven; no timeout or production
 policy was changed. Both initial failures remain evidence, rather than being
 erased by their subsequent passes.
+
+## Transcript and MCP input migration
+
+- Transcript acceptance now requires HTTP 202 and an assignment handle, then
+  verifies that the original human notification and content reference occur in
+  the confirmed Core recipient-input record. The deleted native journal and its
+  projection metadata are not reconstructed. Existing strict transcript goldens
+  still need reviewed updates for the changed acceptance surface.
+- Ordinary async Questions no longer pause a model turn. The retained
+  input-required transcript check uses a real plan approval, asserts original
+  tool content and presentation, and repeats the public approval boundary to
+  prove it does not publish a second Question or output. The separate common
+  Question tests retain asynchronous posting, answer collection and Stop rules.
+- The retained atom-writing regression instruments the confirmed recorder's
+  actual append seam, preserving the assertion that a sealed part is not
+  rewritten and only the remaining part plus envelope are appended.
+- External MCP input now reaches the application's Question owner; a configured
+  test client's automatic callback is deliberately replaced by that production
+  handler. The public test answers the actual Questions. Exhausting an input
+  driver after dispatch returns an uncertain handle with retry_safe=false and
+  one attention notice, rather than a falsely clean rejection. Direct executor
+  tests retain typed round-limit errors and malformed-wire protections.
+
+These public checks and all three strict golden comparisons now pass. The
+captured trace changes were inspected and mechanically restricted to removal
+of duplicate user publication/retired input metadata, absent client ID handling
+and generated identity renumbering. The earlier MCP test timeout is retained
+in R74; its process family and runtime root are settled and removed. Nineteen
+other test files still require migration, and no full-suite or CI pass is claimed.
