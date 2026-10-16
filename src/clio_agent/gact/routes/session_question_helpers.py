@@ -23,13 +23,31 @@ from clio_agent.gact.types import (
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from clio_agent.arc.task_types import QuestionReply, TaskSnapshot
+    from clio_agent.gact.task_access import TaskCaller
+
 __all__ = [
+    "answer_question_response",
     "normalize_question_options",
     "pending_user_questions",
     "question_already_resolved",
     "question_not_found",
     "question_surface_ids",
 ]
+
+
+def answer_question_response(
+    app: "FastAPI", caller: TaskCaller, handle: str, reply: QuestionReply
+) -> TaskSnapshot:
+    """Map the shared Question owner's errors consistently for both HTTP views."""
+    from clio_agent.gact.question_surface import answer_question
+
+    try:
+        return answer_question(app, caller, handle, reply)
+    except ValueError as error:
+        latest = app.state.task_history.task_snapshot(handle)
+        status = 404 if latest is None else 409 if latest.terminal_at is not None else 422
+        raise HTTPException(status, "Question answer was not accepted: " + str(error)) from error
 
 
 def question_not_found(sid: str, question_id: str) -> HTTPException:

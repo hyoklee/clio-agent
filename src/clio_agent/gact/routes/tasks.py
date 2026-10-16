@@ -12,11 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from clio_agent.arc.task_types import (
     CoordinationGrant,
     QuestionReply,
+    TaskSnapshot,
 )
 from clio_agent.gact.auth import configured_bearer_token, has_valid_bearer
 from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.native_work import now
-from clio_agent.gact.question_surface import answer_question, question_view
+from clio_agent.gact.question_surface import question_view
+from clio_agent.gact.routes.session_question_helpers import answer_question_response
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 
 
@@ -370,41 +372,30 @@ def register_task_routes(app: FastAPI) -> None:
     ) -> dict[str, Any]:
         return await questions(session_id or "", status=status, cursor=cursor, limit=limit)
 
+    def session_question(sid: str, handle: str) -> TaskSnapshot:
+        """Bind a compatibility Question address to its selected session tree."""
+        access = TaskAccess(app.state.task_history, caller(sid))
+        try:
+            current = access.require(handle, "control")
+            if current.kind != "Question" or not access.in_scope(current, "tree"):
+                raise ValueError("Question unavailable")
+        except ValueError as error:
+            raise HTTPException(404, "Question is unavailable") from error
+        return current
+
     @app.post("/v1/sessions/{sid}/questions/{handle}/answer")
     async def answer(sid: str, handle: str, body: AnswerRequest) -> dict[str, Any]:
         def apply() -> dict[str, Any]:
             reply = QuestionReply(**body.model_dump(), responder_human=app.state.human_principal)
-            try:
-                authorized = TaskAccess(app.state.task_history, caller(sid)).require(
-                    handle, "control"
-                )
-                if authorized.kind != "Question":
-                    raise ValueError("Question unavailable")
-            except ValueError as error:
-                raise HTTPException(404, "Question is unavailable") from error
-            try:
-                current = answer_question(app, caller(sid), authorized.handle, reply)
-            except ValueError as error:
-                latest = app.state.task_history.task_snapshot(authorized.handle)
-                raise HTTPException(
-                    409 if latest is not None and latest.terminal_at is not None else 400,
-                    "Question answer was not accepted: " + str(error),
-                ) from error
+            authorized = session_question(sid, handle)
+            current = answer_question_response(app, caller(sid), authorized.handle, reply)
             return question_view(app, current)
 
         return await asyncio.to_thread(apply)
 
     @app.post("/v1/sessions/{sid}/questions/{handle}/cancel")
     async def cancel_question(sid: str, handle: str) -> dict[str, Any]:
-        identity = await asyncio.to_thread(caller, sid)
-        try:
-            current = await asyncio.to_thread(
-                TaskAccess(app.state.task_history, identity).require, handle, "control"
-            )
-            if current.kind != "Question":
-                raise ValueError("Question unavailable")
-        except ValueError as error:
-            raise HTTPException(404, "Question is unavailable") from error
+        current = await asyncio.to_thread(session_question, sid, handle)
         try:
             await intervene(app, current.handle, "cancel")
         except ValueError as error:

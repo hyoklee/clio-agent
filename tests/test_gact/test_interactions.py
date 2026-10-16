@@ -129,24 +129,30 @@ def test_stop_does_not_cancel_an_open_question(world: tuple[Any, TestClient, str
     assert not app.state.turn_runner.busy(sid)
 
 
-def test_unrelated_session_cannot_answer_or_observe_question(
+@pytest.mark.parametrize("decision", ["answer", "cancel"])
+def test_unrelated_session_cannot_answer_cancel_or_observe_question(
     world: tuple[Any, TestClient, str],
+    decision: str,
 ) -> None:
     app, client, sid = world
     other = client.post("/v1/sessions", json={"title": "Other"}).json()["id"]
     record_assignment_fixture(app, other)
     handle = post_question(app, sid)["handle"]
+    before = app.state.task_history.task_snapshot(handle)
     listed = client.get(f"/v1/sessions/{other}/interactions").json()["interactions"]
     assert not any(row["id"] == "question:" + handle for row in listed)
     denied = client.post(
-        f"/v1/sessions/{other}/questions/{handle}/answer", json={"answer": "forged"}
+        f"/v1/sessions/{other}/questions/{handle}/{decision}",
+        json={"answer": "forged"} if decision == "answer" else None,
     )
     assert denied.status_code in {403, 404}, denied.text
-    assert app.state.task_history.task_snapshot(handle).raw_status == "pending"
+    assert app.state.task_history.task_snapshot(handle) == before
 
 
+@pytest.mark.parametrize("route", ["interaction", "question"])
 def test_child_question_has_exact_owner_and_parent_attribution(
     world: tuple[Any, TestClient, str],
+    route: str,
 ) -> None:
     app, client, sid = world
     child = record_delegation_fixture(app, sid, handle="task_child_question")
@@ -163,9 +169,12 @@ def test_child_question_has_exact_owner_and_parent_attribution(
     assert row["task_id"] == handle
     assert row["payload"]["task_handle"] == handle
     assert row["payload"]["response_mode"] == "async"
-    response = client.post(
-        f"/v1/sessions/{sid}/interactions/{row['id']}/respond", json={"answer": "child sample"}
+    path = (
+        f"/v1/sessions/{sid}/interactions/{row['id']}/respond"
+        if route == "interaction"
+        else f"/v1/sessions/{sid}/questions/{handle}/answer"
     )
+    response = client.post(path, json={"answer": "child sample"})
     assert response.status_code == 200, response.text
     assert app.state.task_history.task_snapshot(handle).raw_status == "answered"
     assert not any(item.handle == handle for item in app.state.task_history.pending_mail(sid))
@@ -193,8 +202,10 @@ def test_core_restore_preserves_open_and_answered_question_identity(
     assert restored.task_snapshot(open_handle).raw_status == "pending"
 
 
+@pytest.mark.parametrize("route", ["question", "interaction"])
 def test_invalid_answer_retains_the_question_and_prefill(
     world: tuple[Any, TestClient, str],
+    route: str,
 ) -> None:
     app, client, sid = world
     task = app.state.questions.create(
@@ -207,8 +218,13 @@ def test_invalid_answer_retains_the_question_and_prefill(
         ),
         invocation_id="validated-choice",
     )
+    path = (
+        f"/v1/sessions/{sid}/questions/{task.handle}/answer"
+        if route == "question"
+        else f"/v1/sessions/{sid}/interactions/question:{task.handle}/respond"
+    )
     denied = client.post(
-        f"/v1/sessions/{sid}/questions/{task.handle}/answer",
+        path,
         json={"selected_options": ["unknown"], "answer": "preserve me"},
     )
     assert denied.status_code == 422, denied.text

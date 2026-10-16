@@ -9,6 +9,16 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+The next candidate corrects the remaining Question response findings from CI.
+Compatibility answer/cancel URLs now bind the selected session tree through the
+existing TaskAccess scope check; the authenticated human's broader shared-task
+controls are unchanged. Both Question HTTP views use one response adapter,
+returning 422 for invalid input and 409 for already-settled work. The normalized
+interaction feed reports typed A2UI read degradation while retaining other
+Questions/permissions. Public regressions now cover denied answer/cancel,
+parent answers through both views, and invalid-answer retention through both
+views. Scoped source checks pass; CI and live recovery qualification are pending.
+
 R138 freshly qualified the native child-provenance correction on clio-agent
 `4a92f32c` / GACT `401efcfe`. Both root-only and child-inclusive native queries
 returned HTTP 200; the latter retained the actual child's task handle, session,

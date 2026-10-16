@@ -11,12 +11,13 @@ from starlette.concurrency import run_in_threadpool
 
 from clio_agent import conf
 from clio_agent.arc.task_types import QuestionReply
+from clio_agent.errors import ClioError
 from clio_agent.gact.a2ui_actions.record import last_action_wire
 from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.permission_delivery import attended_session_id
 from clio_agent.gact.permission_gate import GRANTOR_USER, resolve_permission
-from clio_agent.gact.question_surface import answer_question, question_row
+from clio_agent.gact.question_surface import question_row
 from clio_agent.gact.routes.interaction_surface_projection import (
     _latest_action_record as _latest_action_record,
 )
@@ -27,7 +28,10 @@ from clio_agent.gact.routes.interaction_surface_projection import (
     _task_id_for_owner as _task_id_for_owner,
 )
 from clio_agent.gact.routes.plan_interactions import is_plan_exit_question, plan_exit_payload
-from clio_agent.gact.routes.session_question_helpers import question_surface_ids
+from clio_agent.gact.routes.session_question_helpers import (
+    answer_question_response,
+    question_surface_ids,
+)
 from clio_agent.gact.session_descendants import descendant_session_ids
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.types import (
@@ -195,7 +199,10 @@ def _a2ui_interactions(
     poll cost O(surfaces x tasks) on top of two ledger walks.
     """
 
-    surfaces, quarantined = app.state.a2ui_store.list_wire_with_degradations(owner)
+    try:
+        surfaces, quarantined = app.state.a2ui_store.list_wire_with_degradations(owner)
+    except ClioError as error:
+        return [], [{"reason": error.error_type, "owner_session_id": owner, "detail": str(error)}]
     rows: list[PendingInteraction] = []
     if not surfaces:
         return rows, list(quarantined)
@@ -493,7 +500,7 @@ def register_interaction_routes(app: FastAPI, deps: "GactDeps") -> None:
                 await intervene(app, question.id, "cancel")
             elif action == "answer":
                 await run_in_threadpool(
-                    answer_question,
+                    answer_question_response,
                     app,
                     TaskCaller(root_session_id, app.state.human_principal, human_action=True),
                     question.id,
