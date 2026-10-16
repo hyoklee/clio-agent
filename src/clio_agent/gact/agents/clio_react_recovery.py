@@ -131,7 +131,7 @@ def recover_stream(
         except InterruptedModelStream as exc:
             check_cancel()
             if attempt == maximum:
-                raise exc.original from exc
+                raise exc.original from exc.original.__cause__
             delay = min(2.0**attempt, 8.0)
             stream_audit(
                 "lm.stream.retry",

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import Any
 
@@ -13,6 +14,8 @@ from dspy.utils.exceptions import LMUnexpectedError
 from clio_agent.gact.agents import clio_react_stream as stream
 from clio_agent.gact.agents.clio_react_recovery import StreamProgress, interrupted_stream
 from clio_agent.lm.engines.lm_loop import run_on_lm_loop
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------- #
 # The streamed LM call                                                        #
@@ -65,8 +68,12 @@ def call_lm(lm: Any, request: Request) -> Response:
                 try:
                     with dspy.context(send_stream=send):
                         response = await lm.acall(request)
-                except Exception as exc:  # Drain queued chunks before classifying the failure.
+                except Exception as exc:  # noqa: BLE001 - re-raised unchanged after draining chunks
                     failure = exc
+                    logger.warning(
+                        "model stream failed reason=lm_stream_drain_before_raise error_type=%s",
+                        type(exc).__name__,
+                    )
                 finally:
                     finished.set()
                     await send.aclose()

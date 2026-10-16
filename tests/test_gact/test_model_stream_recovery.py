@@ -190,11 +190,13 @@ def test_recovery_is_bounded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     ):
         lm = lm_for(base)
         try:
-            with dspy.context(lm=lm), pytest.raises(LMTransportError, match="mid-chunk"):
+            with dspy.context(lm=lm), pytest.raises(LMTransportError, match="mid-chunk") as failed:
                 ClioReAct("question -> answer", tools=[])(question="Answer")
         finally:
             run_on_lm_loop(lm.aclose)
         assert len(requests) == 2
+        assert failed.value.__cause__ is not None
+        assert not isinstance(failed.value.__cause__, InterruptedModelStream)
 
 
 def test_cancel_during_backoff_prevents_another_request(monkeypatch: pytest.MonkeyPatch) -> None:
