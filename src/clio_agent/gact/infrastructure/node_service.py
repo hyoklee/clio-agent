@@ -345,6 +345,8 @@ def stop(root: Path) -> None:
         platform_helper().stop(receipt)
     elif alive(receipt):
         platform_helper().stop_posix(receipt, alive)
+    if sys.platform == "win32":
+        platform_helper().wait_launcher_exit(receipt)
     hook(root, "stop")
     receipt.update(
         phase="not_installed" if receipt["phase"] == "not_installed" else "stopped",
@@ -483,6 +485,7 @@ def launch(root: Path, request: dict[str, Any]) -> None:
             close_fds=True,
         )
     if os.name == "nt":
+        receipt.update(launcher_pid=process.pid, launcher_identity=identity(process.pid))
         receipt.update(platform_helper().await_worker(root, generation))
     else:
         receipt.update(pid=process.pid, process_identity=identity(process.pid))

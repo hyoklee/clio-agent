@@ -337,6 +337,19 @@ def stop(receipt: dict[str, Any]) -> None:
         kernel.CloseHandle(process)
 
 
+def wait_launcher_exit(receipt: dict[str, Any]) -> None:
+    """Await the venv broker outside the job before deleting its mapped executable."""
+    pid = receipt.get("launcher_pid", 0)
+    expected = receipt.get("launcher_identity", "")
+    if not pid or not expected:
+        return
+    deadline = time.monotonic() + 10
+    while identity(pid) == expected:
+        if time.monotonic() >= deadline:
+            raise RuntimeError("Native Python launcher did not exit; runtime files retained")
+        time.sleep(0.02)
+
+
 def release_children() -> None:
     """Reap descendants after the server exits, before declaring its worker stopped."""
     kernel = _kernel()
