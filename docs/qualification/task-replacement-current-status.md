@@ -56,6 +56,37 @@ pass without changing guard budgets or assertions.
 
 ### Capacity and Question UI checkpoint
 
+R159/R160 attempted an integrated assignment over the actual `75bafce8` CI XML:
+11,786 passed cases, 609 failures, five errors and 53 skips on Python 3.14. This
+was triage of retained evidence, not fresh test execution. A native background
+parser would produce CSV/Markdown/SVG while a child independently reviewed six
+real diagnostic samples and the parent requested the human's preferred focus.
+
+R159 failed its browser preflight before model submission: the interactive driver
+exited on stdin EOF, and the browser-connected diagnostic expired. The source API
+and both browser attempts retired normally. R160 replaced that interactive driver
+with application-owned automatic browser launch. Actual Codex/Luna accepted the
+Question, Shell and Subagent handles, then freshly read the CI source file while
+the parser was running. The UI driver failed because its unscoped Question locator
+matched both the evidence panel and the Open questions dialog. No complete
+assignment, Question answer or report acceptance is claimed. Cleanup closed
+admission, cancelled the original task trees and confirmed zero active tasks.
+The actual parser process, browser children, API and private Core were absent
+before disposal. Both profile/temp roots and the old 29,037,249-byte UI build are
+removed; original authentication and production hashes match. Bounded receipts
+and the inspected real Work screenshot remain under `.pytest-runtime/static`.
+
+That screenshot independently exposed a product defect: compact Shell progress
+displayed a raw `clio.terminal.chunk` envelope. GACT's formatter handled legacy
+counter names but ignored the shared record's `completed`/`unit` fields. GACT
+`0f9c00a4` now formats those canonical owner-reported counters before message
+fallback, preserving legacy progress. Four new regression cases cover byte
+output, download totals, indexing counts and missing units. They are built for
+CI and have not run locally. The next actual-service repeat must verify the
+canonical progress label and the completed CI-triage assignment at desktop and
+phone widths; it will scope Question controls to their actual dialog. This is a
+presentation correction, with no new task owner, backend or Core-library change.
+
 R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
 R153 repeated the unchanged scenario with Core-free async/thread stack capture
 and identified the actual bottleneck: both native Docket cancellation listeners
