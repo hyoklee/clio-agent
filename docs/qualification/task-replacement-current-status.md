@@ -112,8 +112,11 @@ change. `cecfb4ee` repairs the eight observed web regressions: tests now select 
 assert the owning conversation for storage work, preserve the missing-owner
 rejection, await actual query/UI updates, and no longer infer child completion
 from a workflow tool call. No production code, assertion budget or timeout changed.
-Scoped formatting/lint and all six guards pass; the fresh workspace CI is running.
-The native build gate remains failed; no Desktop launch or installation occurred.
+Scoped formatting/lint and all six guards pass. Fresh workspace CI
+[`38861125366`](https://github.com/iowarp/gact-tui/actions/runs/38861125366)
+passes lint, types, unit/integration tests and the production build. Browser
+e2e/accessibility/visual checks are still running. The three native build gates
+remain failed; no Desktop launch or installation occurred.
 
 The initial main clio-agent regression run reached tests after the marketplace
 commit was published. Python 3.14's three shards reported 11,582 passed, 714 failed,
@@ -121,7 +124,7 @@ commit was published. Python 3.14's three shards reported 11,582 passed, 714 fai
 these counts do not identify that many distinct runtime defects. The newer
 [clio-agent CI](https://github.com/iowarp/clio-agent/actions/runs/38852002469) is not
 green. Current clio-agent [CI on `a557c991`](https://github.com/iowarp/clio-agent/actions/runs/38858339870)
-was dispatched after the framing extraction; superseded runs were cancelled, not
+completed with regression failures after the framing extraction; superseded runs were cancelled, not
 counted as passes. The [finite nine-family plan](task-replacement-live-experiments.md) and its
 six five-repeat race obligations remain the acceptance scope.
 
