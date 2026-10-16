@@ -7,12 +7,41 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-clio-agent now includes the human-steering correction below; GACT is `cecfb4ee`
+clio-agent now includes the human-steering and grant-wake corrections below; GACT is `cecfb4ee`
 (test changes only after `954a2a33`). The locked
 clio-core package remains `iowarp-core==2.3.1`. The new read correction is in
 clio-agent's ARC framing adapter, not the clio-core library. Ruff/format, scoped
 Mypy and unchanged removal/size/class/silent-fallback guards pass. The reader
 regressions are in CI, not claimed locally executed.
+
+### Latest two-workflow finding
+
+R122–R124 ran on clio-agent `89f89770` / GACT `cecfb4ee` with actual Codex/Luna
+and two distinct declared workflows using the existing runner. Both workflows
+created their own child and Question. Discovery, observation, a subscription,
+expired waiting, denied cancellation and busy/idle peer messages were exercised.
+R122 failed an out-of-order harness observation lookup. R123 revoked the
+receiver's read grant while leaving the sender's message grant valid; delivery
+was correct and its failed assertion was a harness error. Neither is a full pass.
+
+R124 correctly revoked the sender's message right before receiver injection.
+The accepted reply stayed pending. Restoring only that right made it eligible,
+but the idle receiver did not wake during the 90-second diagnostic window.
+`r124-grant-wake-defect.json` records the real failure. The correction signals
+the affected target mailboxes from the existing Core-backed target/lineage
+indexes after a confirmed grant change. Existing staging still rechecks rights;
+the hint contains no message or permission. No scheduler, registry, schema or
+clio-core change is introduced. Five constructed regressions cover session,
+tree, exact-handle and read-only hints plus actual queue/input commitment.
+They remain unexecuted locally and await CI. The existing elicitation parser
+tests now use its retained public function, with their assertions unchanged.
+
+All three services exited normally, and their disposable profile/temp roots
+were removed after physical custody checks. Bounded failed receipts remain.
+The corrected live recheck and broader Q5 acceptance are still pending.
+Exact-head CI `38891321674` finished failed; regression shards and Python 3.12
+coverage remain failed/cancelled, while lint, dependency resolution, filesystem,
+flake-hunt, Flowcept and Windows/Linux native-service lifecycle jobs passed.
 
 - R103, clio-agent `57c00ddc`: actual Codex/Luna accepted a Question, read a file
   while it was pending, yielded, received its idle answer wake and collected the

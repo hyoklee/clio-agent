@@ -549,12 +549,30 @@ def _project(self: TaskHistory, event_type: str, payload: dict[str, Any]) -> Non
         return
     handle = payload.get("handle")
     recipient = payload.get("recipient_session")
+    mail_targets: tuple[str, ...] = ()
+    if event_type == "session.coordination.grant":
+        changed_grant = self._grants[str(payload["id"])]
+        if "message" in changed_grant.rights:
+            # Sending rights change on the grantee; retained peer input lives
+            # in the target's mailbox and needs the same admission recheck.
+            targets = {changed_grant.target_session}
+            if changed_grant.target_handle is not None:
+                target = self._tasks.get(changed_grant.target_handle)
+                targets = {target.owner.session_id} if target is not None else set()
+            elif changed_grant.target_scope == "tree":
+                targets.update(
+                    self.session_tree_ids(
+                        changed_grant.target_session, human_id=changed_grant.granting_human
+                    )
+                )
+            mail_targets = tuple(sorted(target for target in targets if self._pending.get(target)))
     _notify(
         self,
         handle=handle,
         recipient=recipient,
         mail_changed=event_type.startswith("session.mail.")
         or event_type == "session.coordination.grant",
+        mail_targets=mail_targets,
     )
 
 
@@ -565,6 +583,7 @@ def _notify(
     recipient: Any = None,
     restored: bool = False,
     mail_changed: bool = False,
+    mail_targets: tuple[str, ...] = (),
 ) -> None:
     """Signal indexes once after replay, rather than waking on historical rows."""
     with self._listener_lock:
@@ -587,13 +606,13 @@ def _notify(
                 "Task boundary reason=task_wake_hint_failed error_type=%s", type(error).__name__
             )
             logger.warning("Task wake hint failed after Core commit: %s", type(error).__name__)
-    for pending_recipient in (
+    changed_recipients = (str(recipient),) if recipient and mail_changed else ()
+    pending_recipients = (
         self.pending_sessions()
         if restored
-        else (str(recipient),)
-        if recipient and mail_changed
-        else ()
-    ):
+        else tuple(dict.fromkeys((*changed_recipients, *mail_targets)))
+    )
+    for pending_recipient in pending_recipients:
         for mail_listener in mail_listeners:
             try:
                 mail_listener(pending_recipient)

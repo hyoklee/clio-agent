@@ -172,19 +172,19 @@ def test_decide_routing_max_depth_is_configurable(monkeypatch: pytest.MonkeyPatc
 
 
 def test_parse_agent_reply_accepts_answer_object() -> None:
-    parsed = ae._parse_agent_reply('{"answer": {"nonce": "xyz"}}')
+    parsed = ae.parse_agent_reply('{"answer": {"nonce": "xyz"}}')
     assert parsed == {"answer": {"nonce": "xyz"}}
 
 
 def test_parse_agent_reply_accepts_decline() -> None:
-    parsed = ae._parse_agent_reply('{"decline": true, "reason": "no context"}')
+    parsed = ae.parse_agent_reply('{"decline": true, "reason": "no context"}')
     assert parsed is not None
     assert parsed.get("decline") is True
 
 
 def test_parse_agent_reply_tolerates_fenced_code_block() -> None:
     text = '```json\n{"answer": {"nonce": "xyz"}}\n```'
-    assert ae._parse_agent_reply(text) == {"answer": {"nonce": "xyz"}}
+    assert ae.parse_agent_reply(text) == {"answer": {"nonce": "xyz"}}
 
 
 @pytest.mark.parametrize(
@@ -204,7 +204,7 @@ def test_parse_agent_reply_rejects_anything_not_the_declared_contract(text: str)
     reply, an empty answer, or a wrong JSON shape is ``None`` — a typed
     fallback, never a guessed answer."""
 
-    assert ae._parse_agent_reply(text) is None
+    assert ae.parse_agent_reply(text) is None
 
 
 def test_parse_agent_reply_extracts_json_prefaced_by_reasoning_prose() -> None:
@@ -218,12 +218,12 @@ def test_parse_agent_reply_extracts_json_prefaced_by_reasoning_prose() -> None:
         "I need to remember this nonce and call the tool with no arguments, "
         'then report exactly what it returns.{"answer": {"nonce": "xyz-42"}}'
     )
-    assert ae._parse_agent_reply(text) == {"answer": {"nonce": "xyz-42"}}
+    assert ae.parse_agent_reply(text) == {"answer": {"nonce": "xyz-42"}}
 
 
 def test_parse_agent_reply_extracts_json_followed_by_trailing_prose() -> None:
     text = '{"answer": {"nonce": "xyz-42"}} Let me know if that is not correct.'
-    assert ae._parse_agent_reply(text) == {"answer": {"nonce": "xyz-42"}}
+    assert ae.parse_agent_reply(text) == {"answer": {"nonce": "xyz-42"}}
 
 
 def test_parse_agent_reply_ignores_braces_inside_json_string_values() -> None:
@@ -231,7 +231,7 @@ def test_parse_agent_reply_ignores_braces_inside_json_string_values() -> None:
     balanced-depth count (the structural, never-regex guarantee)."""
 
     text = 'prose before {"answer": {"nonce": "a{b}c"}} prose after'
-    assert ae._parse_agent_reply(text) == {"answer": {"nonce": "a{b}c"}}
+    assert ae.parse_agent_reply(text) == {"answer": {"nonce": "a{b}c"}}
 
 
 @pytest.mark.parametrize(
@@ -247,7 +247,7 @@ def test_parse_agent_reply_prose_without_a_valid_block_stays_unparseable(text: s
     block is STILL a typed fallback -- the extraction only locates a
     structurally valid candidate, it never fabricates one."""
 
-    assert ae._parse_agent_reply(text) is None
+    assert ae.parse_agent_reply(text) is None
 
 
 def _text_part(field: str, text: str) -> Part:
@@ -309,7 +309,7 @@ def test_answer_field_text_is_untruncated_behind_a_long_reasoning_block() -> Non
     result = ae._answer_field_text(app, "sid1", "msg_b")
 
     assert result == answer_json
-    parsed = ae._parse_agent_reply(result)
+    parsed = ae.parse_agent_reply(result)
     assert parsed == {"answer": {"code_word": long_code_word}}
 
 

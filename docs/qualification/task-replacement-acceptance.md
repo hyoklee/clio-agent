@@ -1,18 +1,21 @@
 # Tasks replacement acceptance ledger
 
-Regression test construction is complete; execution remains pending. See the
-[test construction map](task-replacement-test-construction.md). No row below
-becomes passed from writing a test or passing static checks. The latest
-production correction at `00b3092d` has Astra GO and Claude Fable NO-GO; the
-predecessor acceptance recorded below is historical.
+Initial production implementation and regression construction are complete.
+Regression execution, repairs and actual-model qualification are underway; see
+[current status](task-replacement-current-status.md) and the
+[test construction map](task-replacement-test-construction.md). Scoped passes
+below do not pass a broader row or the final frozen-candidate race matrix.
 
 Revision: R2. Starting source: core `5475042feda49c1354f9f88b19051cb53d7fa740`; GACT `32044a387472b1495f60a24c862c6b9e4292abc3`. All evidence from earlier engines is a source/test lesson only, not replacement acceptance.
 
-Current source review: **Astra GO and Claude Code Fable GO** for core
+Initial production source review: **Astra GO and Claude Code Fable GO** for clio-agent
 `ff9dc136630a5f329afa27a8ea0263dbe2fbb343`, GACT
 `0a4ca5d5915a0add61cd5048b742161092468481`, marketplace
 `1a9b8d0337217950a2b44c303a8d22547d52d756`. This is source acceptance,
-not completion of the rows below. The two-hour implementation checkpoint was
+not completion of the rows below or a fresh review of later live corrections.
+The latest live source was clio-agent `89f89770`, GACT `cecfb4ee`; the grant-wake
+correction awaits a fresh exact-head live recheck. clio-core remains
+`iowarp-core==2.3.1`. The two-hour implementation checkpoint was
 recorded **UNDONE** at 2026-10-15 21:45:05 UTC; Fable's final acceptance arrived
 at 21:45:08.409 UTC and does not change the deadline result. Current regression
 migration and qualification status is in
@@ -68,15 +71,15 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | U02 | Authenticated session grant/revoke UI; no model intent or assignment grant expansion | gact/routes/agent_tasks.py; task_permissions.py | Existing authenticated controls | Read/observe/message/control independently allowed/denied and revoked before injection | blocked — fresh replacement evidence pending |
 | D01 | Capable root/child/marketplace prompts and tool descriptions explain async/wait/yield/wake/uncertainty | prompt_packs/builtin/runtime/clio.runtime.tasks.md; gact/agents/task_guidance.py | Replacement contracts and capable marketplace roots | Catalog/prompt guard plus actual model actions | blocked — fresh replacement evidence pending |
 | D02 | Website walkthroughs use real replacement-service desktop/phone screenshots | site and GACT actual UI | Q9 accepted replacement | Readable walkthroughs with bounded selected media; no old-engine screenshot acceptance | blocked — fresh replacement evidence pending |
-| Q1 | Codex/Luna all seven kinds: handle running then independent model action; valid inline MCP | R2 finite live matrix Q1 | All relevant owners available | Source/runtime/model/invocation/handle/timestamp/transcript/backend outcome | blocked — R79 proves one native-family Shell handle plus independent model work on ff9dc136; remaining kinds/routes still pending |
-| Q2 | Codex/Luna mixed progress, cursor/pattern, any/all/expired wait, failure and uncertainty | R2 finite live matrix Q2 | Q1 and shared controls | Real pending work continues; honest per-member outcomes | blocked — R79 proves single-handle progress/expired wait/continuing work/unbounded collection; mixed members, any/all, cursor/pattern and uncertainty still pending |
-| Q3 | Codex/Luna and Claude distinct delivery routes, goal/Question/child combinations | R2 finite live matrix Q3 | Usable actual provider profiles | Busy/idle/postStop/pause input evidence with no ordinary duplicate | blocked — fresh replacement evidence pending |
-| Q4 | Codex/Luna and Claude child/control routes and inherited subtree settlement | R2 finite live matrix Q4 | Q3 and child lifecycle | Same child handle; human notices and physical descendant outcomes | blocked — fresh replacement evidence pending |
-| Q5 | Independent sessions and two actual declared workflows | gact/workflows.py; R2 Q5 | Authenticated grants and existing runner | Discovery/replies/observe/wait/subscription/denied control; provenance root/step/session links | blocked — fresh replacement evidence pending |
-| Q6 | Actual external MCP/provider input/reconnect/surviving job | R2 Q6 | Available actual MCP and approved provider | Original immutable task/input/job identities; partial/lost-update answers | blocked — fresh replacement evidence pending |
+| Q1 | Codex/Luna all seven kinds: handle running then independent model action; valid inline MCP | R2 finite live matrix Q1 | All relevant owners available | Source/runtime/model/invocation/handle/timestamp/transcript/backend outcome | blocked — scoped Shell/Question/Subagent/Indexing/Download evidence in R104–R118; R121 proves external task acceptance, independent work and valid inline MCP. Final tuple/all-route acceptance remains pending |
+| Q2 | Codex/Luna mixed progress, cursor/pattern, any/all/expired wait, failure and uncertainty | R2 finite live matrix Q2 | Q1 and shared controls | Real pending work continues; honest per-member outcomes | blocked — R113 canonical proof records mixed Shell/Subagent/Question, progress, any/all/expired waits and partial failure. Pattern/cursor recovery, uncertainty and final repeats remain pending |
+| Q3 | Codex/Luna and Claude distinct delivery routes, goal/Question/child combinations | R2 finite live matrix Q3 | Usable actual provider profiles | Busy/idle/postStop/pause input evidence with no ordinary duplicate | blocked — R104 and R112 prove Codex/Claude idle/post-Stop Question wakes and committed nonduplicate answers; R118 proves pause retention. Full goal/child combinations and final repeats remain pending |
+| Q4 | Codex/Luna and Claude child/control routes and inherited subtree settlement | R2 finite live matrix Q4 | Q3 and child lifecycle | Same child handle; human notices and physical descendant outcomes | blocked — R118 proves pause/steer/resume/restart/inherited result reads; R119 proves actual UI cancellation, original/grandchild retirement and parent model acknowledgement. Claude differences and final repeats remain pending |
+| Q5 | Independent sessions and two actual declared workflows | gact/workflows.py; R2 Q5 | Authenticated grants and existing runner | Discovery/replies/observe/wait/subscription/denied control; provenance root/step/session links | failed — R124 retained a revoked sender's reply correctly, but restoring its message grant did not wake the idle recipient. Existing target-index wake correction awaits actual-model recheck; R122/R123 harness failures are retained. UI grants and full workflow completion remain unverified. |
+| Q6 | Actual external MCP/provider input/reconnect/surviving job | R2 Q6 | Available actual MCP and approved provider | Original immutable task/input/job identities; partial/lost-update answers | blocked — R121 proves actual-model native stdio task/input/result round trip and one final input commit, using an explicitly synthetic workload. Partial/lost-update input, reconnect and persistent provider jobs remain pending |
 | Q7 | Isolated Core/native outage, migration twice, input crash and lost result after effects | R2 Q7 | Owned isolated runtime; restart permissions | Honest uncertainty, agent inspection and deliberate linked retry; attention then final | blocked — fresh replacement evidence pending |
 | Q8 | Native pool isolation, capacity-one children/peers, constrained executor and resource cleanup | R2 Q8 | Independent native roots; actual models | No starvation; worker exit before next turn and bounded owned residue | blocked — fresh replacement evidence pending |
-| Q9 | Production service/GACT desktop and phone Questions/grants/cancel | R2 Q9 | Integrated frozen core/GACT pair | Rendered interactions with correct physical outcomes and no UI errors | blocked — fresh replacement evidence pending |
+| Q9 | Production service/GACT desktop and phone Questions/grants/cancel | R2 Q9 | Integrated frozen core/GACT pair | Rendered interactions with correct physical outcomes and no UI errors | blocked — R119 passes desktop/390px phone cancellation/disclosure and physical subtree outcomes. Native provenance errors, Question/grant UI and full integrated acceptance remain unresolved |
 | R1 | Stop/acceptance repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
 | R2 | Late-start/cancel repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
 | R3 | Busy-to-idle arrival repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
@@ -106,7 +109,13 @@ The independent removal reviews identified the following retained behavioral req
 | M07 | Preserve future-composer edit/order/revision/promotion/pause behavior over Core | 5475042f MessageIntentStore queued-message methods and existing composer UI tests | Single Core mailbox and TurnRunner | Public queue operations, stale revision refusal, explicit promotion and independent pause retained; deleting undelivered input withdraws it, committed input cannot be silently withdrawn; no JSON pending-steer authority Retain idempotent POST replay, one revision-race promotion retry, typed terminal-head failure without spin, pending-Question promotion gates. Old default100 future-message and lifetime idempotency caps are removed; the reviewed Core limit applies only to undelivered peer messages, human input is exempt. | blocked — fresh replacement evidence pending |
 | N17 | Preserve native queue identity and all URL/QUEUE/CONCURRENCY environment overrides | 5475042f NativeTaskHost.__init__; CLIO_TASKS_{SHELL,STORAGE}_{URL,QUEUE,CONCURRENCY} | Independent native roots | Memory defaults clio-<root>-<incarnation>; persistent defaults stable clio-<root>; explicit configured queue unchanged | blocked — fresh replacement evidence pending |
 
-Not frozen. No replacement acceptance has run. No release is authorized until every required row passes and both independent implementation/removal reviews are resolved. Freeze includes core, actual GACT gitlink, dependencies, schema and runtime. Record impact and repeat affected gates after any later change.
+Not frozen. Replacement live acceptance has begun, as indexed above; the full
+matrix, current-head CI and final five-repeat races remain incomplete. No release
+is authorized until every required row passes and both independent
+implementation/removal reviews are resolved. Freeze includes clio-agent, actual
+GACT gitlink, dependencies, schema and runtime. Record impact and repeat affected
+gates after any later change. Original failed receipts remain failures, and
+separately derived scoped proofs are labelled as such in current status.
 
 ## Owned qualification state
 
