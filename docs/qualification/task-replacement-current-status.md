@@ -158,6 +158,29 @@ instead of nesting its private dictionary. Scoped Ruff/format passes. These
 changes await CI, and no local pytest/vitest was run. CI `38975839687` is testing
 the production fix at `80085850`; its incomplete run is not a passing baseline.
 
+### R166 fault-harness failure and confirmed message-count defect
+
+R166 on `2cf82aa8` failed its 120-second fault-boundary diagnostic. The original
+Shell ran normally: a reused helper section reassigned `server_code` after the
+new native fault hook was constructed. No crash happened, so no recovery pass is
+claimed. The corrected harness selects helper function definitions through AST,
+asserts a single server definition, and records entry into the intended worker.
+R166's API exited zero; all accepted work and owned processes retired. Its
+552,129,538-byte profile and 1,073,741,824-byte temporary root are removed and
+both exact roots are absent. Bounded failed-run and cleanup receipts remain.
+
+A separate authenticated live read confirmed CI's running-session count failure:
+`sess_b4156e17e8a4` reported `message_count=0` while its transcript already held
+the accepted user message and its model was running. The transcript projection
+folded the existing metrics aggregate but did not refresh session metadata until
+finalization. It now derives that cache field from the same folded count after
+Core confirmation, without loading an evicted message cache or introducing a
+new count owner. Cache-write failure remains projection lag, not loss of the
+confirmed input. The existing public running/cold-session regression retains all
+its assertions. Scoped Ruff/format and Linux Mypy pass; regression CI and the
+fresh actual-service repeat remain pending. No local pytest/vitest ran and the
+Core library/dependency is unchanged.
+
 R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
 R153 repeated the unchanged scenario with Core-free async/thread stack capture
 and identified the actual bottleneck: both native Docket cancellation listeners

@@ -112,6 +112,11 @@ class MetricsCounters:
 
     # ---- read side ------------------------------------------------------ #
 
+    def session_count(self, session_id: str) -> int:
+        """Read a session's folded transcript count without loading its message cache."""
+        aggregate = self._per_session.get(session_id)
+        return aggregate.count if aggregate is not None else 0
+
     def role_counts(self) -> dict[str, int]:
         """Non-zero per-role message counts (wire ``messages.by_role``)."""
 

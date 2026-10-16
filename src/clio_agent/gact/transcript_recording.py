@@ -176,6 +176,24 @@ def project_message(
         from clio_agent.gact.transcript_projection import assemble_session_messages
 
         counters.set_session(session_id, assemble_session_messages(app.state.arc, session_id))
+    sessions = getattr(app.state, "sessions", None)
+    count = (
+        counters.session_count(session_id)
+        if counters is not None
+        else len(rows)
+        if rows is not None
+        else None
+    )
+    if sessions is not None and count is not None:
+        current = sessions.get(session_id)
+        if current is not None and current.message_count != count:
+            try:
+                sessions.update(session_id, message_count=count)
+            except (OSError, RuntimeError, ValueError):
+                logger.exception(
+                    "Session count cache lag session=%s; canonical Core output is retained",
+                    session_id,
+                )
     cache = getattr(app.state, "message_store", None)
     if cache is not None:
         try:
