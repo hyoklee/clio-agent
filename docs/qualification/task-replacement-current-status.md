@@ -9,6 +9,28 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R149 passed the scoped actual-model Shell outage correction on frozen clio-agent
+`2d7bc72d41d13051322b6a7284e60bad5247be17` / GACT `401efcfe`. Actual
+Codex/Luna (`gpt-6-luna`, direct WebSocket bridge) again delegated Shell despite
+the root-only fixture change; this does not prove direct-root Shell submission.
+While the verified private Core 2.3.1 process was suspended for 15 seconds,
+authenticated cancellation returned in 28.19 ms with recording unconfirmed.
+The actual Shell process and its descendant were both absent before Core resumed;
+the static API probe remained responsive. The same Core identity recovered, and
+the model collected the original native cancelled result through `wait_tasks`
+and a separate fresh `get_task_result`, each with a confirmed input record.
+The original root assignment completed. The owning child's control-notice/input
+readback was not captured before normal shutdown and remains unverified here.
+This is one scoped cycle, not full N14/Q7 or the final repeated race matrix.
+
+`r149-scoped-audit.json` records identities, timestamps, RPC latency and actual
+collection commitments. All owned tasks settled, normal API/native shutdown
+exited zero, original auth/source were unchanged, and the exact new profile and
+temp roots were removed. `r149-cleanup.json` confirms absence and no owned
+process/listener residue. Exact production-head CI `38947497486` had eight
+successful jobs and ten running at the post-family checkpoint; regression
+outcomes and overall CI acceptance remain pending.
+
 The R148 correction is implemented in clio-agent only; `iowarp-core` remains
 2.3.1, with no dependency or library changes. Confirmed task/ownership reads use
 a short projection lock independently of Core I/O. Restore builds a data-only
@@ -21,7 +43,7 @@ Shell cancellation also avoids the storage lookup and shared I/O executor for
 its verified identity checks. Four pending-writer/restoration regressions are
 constructed for CI; they have not been executed locally. Scoped Ruff, Linux
 Mypy (ten production files), and the removal/size/class/vocabulary/instrumentation
-guards pass. Fresh actual-model R149 acceptance is pending; R148 remains failed.
+guards pass. R149's scoped results are recorded above; R148 remains failed.
 
 R148 on frozen `578d2e91` / `401efcfe` exposed a real Core-outage control
 dependency. Actual Codex/Luna initiated native background Shell work with a
