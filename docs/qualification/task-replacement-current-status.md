@@ -7,7 +7,8 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-The latest production-changing clio-agent commit is `a557c991`; GACT is `954a2a33`. The locked
+The latest production-changing clio-agent commit is `a557c991`; GACT is `cecfb4ee`
+(test changes only after `954a2a33`). The locked
 clio-core package remains `iowarp-core==2.3.1`. The new read correction is in
 clio-agent's ARC framing adapter, not the clio-core library. Ruff/format, scoped
 Mypy and unchanged removal/size/class/silent-fallback guards pass. The reader
@@ -62,6 +63,23 @@ regressions are in CI, not claimed locally executed.
   receipt stays failed because a one-case total remained in a two-case harness;
   `r112-canonical-question-proof.json` records the separate two-case derivation.
   These scoped cases do not pass all Q3 delivery modes or final race repeats.
+- R113, clio-agent `c459bc67` / GACT `954a2a33`: actual Codex/Luna started a
+  background Shell, long Subagent and Question. The parent did independent file
+  work, queried still-running work and observed 23 child-Shell output chunks.
+  An any wait returned the Shell failure while the child and Question remained
+  pending. A 0.1-second all wait expired without cancelling either; after the
+  answer, an unbounded all wait collected failed/completed/completed outcomes.
+  The parent retained one assignment across the collection-phase feedback and
+  read the failed result again with the same reference. Real child/failure files
+  and exactly one committed notification per outcome were independently checked.
+  PowerShell returned 1 for the Python child's declared exit 7, and the model
+  honestly reported the observed shell code. The original harness receipt remains
+  failed because it parsed a clipped UI preview; the actual model had already
+  finished. R115 reads complete, integrity-checked committed observations from
+  Core and records both context-call and UI-invocation identities.
+  `r113-canonical-mixed-proof.json` is the separate scoped derivation. The wrong
+  cursor used for a different handle set was rejected; that is not cursor-recovery
+  acceptance. This does not pass all Q2/Q4 modes or final race repeats.
 
 R103–R105 services exited with code zero and no active owned tasks. Their
 disposable profile/data and short-temp roots are actually absent; bounded live,
@@ -77,6 +95,9 @@ derived-proof and cleanup receipts remain; no archive was created.
 R111/R112 services also exited normally, original authentication and production
 source stayed unchanged within each run, and their disposable profile/temp roots
 are absent. The R112 cleanup additionally checked process working directories.
+R113's service and read-only Core clients retired, with no private listeners or
+active owned tasks. Its disposable profile, scripts, outputs, caches and short-temp
+root are absent. Only bounded original/derived/observation/cleanup receipts remain.
 
 `c564083c` repairs pending-assignment empty-presentation handling, preserves real
 execution failures, fixes the regression fixture's owner entry point, and repairs
@@ -87,8 +108,12 @@ GACT retains the unknown-state fixture correction and raw-state preservation;
 the original stronger assertion exposed metadata coercion and was retained.
 The attempted updater dependency change did not fix native builds: the zip 4
 versions also resolve only to yanked releases. `954a2a33` removes that ineffective
-change. The native build gate remains failed, and eight web regressions remain
-failed; no native launch or installation was performed.
+change. `cecfb4ee` repairs the eight observed web regressions: tests now select and
+assert the owning conversation for storage work, preserve the missing-owner
+rejection, await actual query/UI updates, and no longer infer child completion
+from a workflow tool call. No production code, assertion budget or timeout changed.
+Scoped formatting/lint and all six guards pass; the fresh workspace CI is running.
+The native build gate remains failed; no Desktop launch or installation occurred.
 
 The initial main clio-agent regression run reached tests after the marketplace
 commit was published. Python 3.14's three shards reported 11,582 passed, 714 failed,
