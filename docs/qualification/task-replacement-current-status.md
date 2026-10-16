@@ -9,6 +9,33 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R148 on frozen `578d2e91` / `401efcfe` exposed a real Core-outage control
+dependency. Actual Codex/Luna initiated native background Shell work with a
+recorded process and descendant. The root delegated despite the direct-execution
+mission, so this is not direct-root acceptance. The external harness verified
+the private Core PID, creation time, binary and profile/config identity, then
+suspended that daemon for 15 seconds. A static API `/docs` request succeeded
+during the suspension (about 21 ms), but the authenticated cancellation request
+did not return, and both physical worker processes remained alive. Cancellation
+returned confirmed about 15.51 seconds after submission, only after Core resumed.
+
+The same private Core process recovered. Native work then settled cancelled,
+the model collected the original result, all owned tasks retired, and normal
+API/native shutdown exited zero. `r148-failed-outage-proof.json` preserves exact
+identities/times/metrics and the failed gate; `r148-cleanup.json` confirms both
+disposable roots absent with no owned processes/listeners. Original auth,
+production source and iowarp-core 2.3.1 were unchanged.
+
+Source shows multiple prerequisites for the control effect: authorization reads
+share the Core writer lock, human intervention waits for intent recording, and
+native cancellation waits for its Core snapshot before sending native cancel.
+Existing outage catches handle failed writes, but do not let controls proceed
+past a still-pending write. The correction must keep last-confirmed authorization
+available, let the verified owner act before pending recording, and reconcile
+attributed notices through the existing Core writer/recovery path. No new task
+authority or execution scheduler is justified by this finding. R148 does not
+prove a general API freeze; its actual static probe remained responsive.
+
 The A2UI persistence audit found the same loop-blocking transcript write in the
 private-source sign-in destination. The dispatcher now awaits the existing
 off-loop helper around that finite owner operation. Ownership validation,
