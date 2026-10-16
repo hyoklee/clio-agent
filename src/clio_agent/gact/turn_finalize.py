@@ -103,29 +103,6 @@ def finalize_turn(
             schema=state.workflow_schema,
         )
 
-    # Build assistant parts — routing_decision (v0.2) first when we
-    # got a selected_agent, then optional thinking trace, then the
-    # text answer, then any file_diffs.
-    if (
-        state.error_info is None
-        and not state.answer_text
-        and not state.thinking_text
-        and not state.proposed_diffs
-        and not state.nanoagents
-    ):
-        termination_reason = str(getattr(pred, "termination_reason", "") or "")
-        state.error_info = ErrorInfo(
-            error="empty_response",
-            message="Agent completed without user-visible output.",
-            details={
-                "session_id": state.sid,
-                "routing_mode": getattr(state.sess, "routing_mode", "auto"),
-                "selected_agent": state.selected_agent,
-                "termination_reason": termination_reason,
-            },
-            recoverable=True,
-        )
-
     responder_agent_id = state.selected_agent or state.invocation_agent_id or "main"
     answer_agent_ids = {
         responder_agent_id,
@@ -135,6 +112,31 @@ def finalize_turn(
     current_stream_part_id = state.transcript.current_stream_part_id
     live_assistant_parts = state.transcript.snapshot()
     has_live_parts = bool(live_assistant_parts or current_stream_part_id)
+    # Task acceptance and other visible operations can be the whole segment's
+    # output. Assignment disposition remains the conversation owner's decision.
+    has_operation_output = any(
+        part.type in {"tool_call", "tool_result", "expert_handoff"} for part in live_assistant_parts
+    )
+    if (
+        state.error_info is None
+        and not state.answer_text
+        and not state.thinking_text
+        and not state.proposed_diffs
+        and not state.nanoagents
+        and not has_operation_output
+        and getattr(pred, "assignment_disposition", None) != "yield"
+    ):
+        state.error_info = ErrorInfo(
+            error="empty_response",
+            message="Agent completed without user-visible output.",
+            details={
+                "session_id": state.sid,
+                "routing_mode": getattr(state.sess, "routing_mode", "auto"),
+                "selected_agent": state.selected_agent,
+                "termination_reason": str(getattr(pred, "termination_reason", "") or ""),
+            },
+            recoverable=True,
+        )
     live_tool_calls = {
         p.call_id: p for p in live_assistant_parts if p.type == "tool_call" and p.call_id
     }

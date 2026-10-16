@@ -266,30 +266,18 @@ def settle_turn_slot(client: TestClient, sid: str, *, timeout: float = 30.0) -> 
 
 
 def _await_release_callbacks(runner: Any, sid: str, backstop_s: float) -> None:
-    """Block until the finished turn's done-callback (its terminal status publish) ran.
-
-    ``busy()`` turns False the instant the turn task finishes, but the task's
-    done-callback -- which clears the slot and runs ``run_when_released`` (the terminal
-    ``session.status_changed``) -- is only QUEUED on the loop at that moment. A test that
-    reads the bus right after ``busy()`` flips can beat it; on a loaded CI runner it did
-    (``test_cancel_during_turn_marks_turn_as_cancelled`` read the cancel route's
-    ``cooperative_pending`` as the last word). The loop runs its ready queue in order, so
-    a callback queued now runs after that done-callback: when it fires, the publish ran.
-    """
+    """Cross the app-loop boundary after physical reservation retirement and callbacks."""
 
     import threading  # noqa: PLC0415
 
-    # The finished task's own loop while its slot is still held; the app loop otherwise
-    # (a done-callback running right now finishes before anything queued behind it).
-    task = runner._in_flight.get(sid)
-    loop = task.get_loop() if task is not None else runner._loop
+    loop = runner._loop
     if loop is None:
-        return  # no loop was ever bound: no turn ran through the runner
+        raise AssertionError(f"Admitted turn for {sid} has no application loop")
     drained = threading.Event()
     try:
         loop.call_soon_threadsafe(drained.set)
     except RuntimeError:
-        return  # that loop is closed: it ran everything it will ever run
+        raise AssertionError(f"The application loop closed before {sid} retired") from None
     if not drained.wait(backstop_s):
         raise TimeoutError(f"the app loop did not drain within {backstop_s:g}s")
 
@@ -326,7 +314,8 @@ def complete_turn(
     if json_override:
         body.update(json_override)
     ack = client.post(f"/v1/sessions/{sid}/messages", json=body)
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
+    assert ack.json()["task_handle"].startswith("task_")
     body = ack.json()
     user_id = body["message_id"]
 
