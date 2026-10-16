@@ -341,6 +341,17 @@ def _finish_segment(
         )
         if disposition not in {"yield", "complete"}:
             raise ValueError("Invalid assignment disposition")
+        # Empty presentation on a wake is not an execution failure while the
+        # assignment still owns pending work. Retain the diagnostic in last_output;
+        # genuine provider failures and explicit completion retain their outcome.
+        presentation_only = (
+            has_work
+            and outcome.disposition != "complete"
+            and outcome.error is not None
+            and outcome.error.get("error") == "empty_response"
+            and outcome.error.get("recoverable") is True
+        )
+        execution_failed = outcome.error is not None and not presentation_only
         output = self.history.write_content(segment.session_id, outcome.error or outcome.outputs)
         detail_ref = self.history.write_content(
             segment.session_id,
@@ -361,15 +372,15 @@ def _finish_segment(
         if startup_error:
             updates.update(
                 status="task_state_uncertain",
-                raw_status="failed" if outcome.error is not None else current.raw_status,
+                raw_status="failed" if execution_failed else current.raw_status,
                 settlement="unknown",
                 progress=current.progress.model_copy(update={"message": startup_error}),
                 attention_episode=current.attention_episode or uuid4().hex,
             )
-        elif not gated and (outcome.error is not None or disposition == "complete"):
+        elif not gated and (execution_failed or disposition == "complete"):
             updates.update(
-                status="failed" if outcome.error else "completed",
-                raw_status="failed" if outcome.error else "completed",
+                status="failed" if execution_failed else "completed",
+                raw_status="failed" if execution_failed else "completed",
                 activity="",
                 settlement="confirmed",
                 terminal_at=stamp,

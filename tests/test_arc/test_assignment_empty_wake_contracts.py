@@ -9,6 +9,7 @@ import pytest
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import BackendReference, MailItem, QuestionDefinition, TaskSnapshot
+from clio_agent.gact import conversation_assignments
 from clio_agent.gact.conversations import ConversationOutcome, ConversationSegment
 from clio_agent.gact.native_work import now
 from clio_agent.gact.questions import QuestionCommands
@@ -18,8 +19,9 @@ from tests.test_arc.test_conversation_owner_contracts import create_environment
 @pytest.mark.asyncio
 @pytest.mark.parametrize("assignment_kind", ["Session", "Subagent"])
 @pytest.mark.parametrize("pending_kind", ["Question", "Shell", "Subagent"])
+@pytest.mark.parametrize("error_code", ["empty_response", "provider_error"])
 async def test_empty_wake_preserves_assignment_and_pending_work(
-    arc: ARCMemory, tmp_path: Path, assignment_kind: str, pending_kind: str
+    arc: ARCMemory, tmp_path: Path, assignment_kind: str, pending_kind: str, error_code: str
 ) -> None:
     """The conversation owner alone decides whether the assignment can settle."""
     app, owner, root = await create_environment(arc, tmp_path)
@@ -95,21 +97,26 @@ async def test_empty_wake_preserves_assignment_and_pending_work(
             current.owner.session_id, current, "wake-turn", trigger, "Task completed"
         )
         await asyncio.to_thread(
-            owner._finish_segment,
+            conversation_assignments._finish_segment,
+            owner,
             segment,
             ConversationOutcome(
                 {},
                 error={
-                    "error": "empty_response",
+                    "error": error_code,
                     "recoverable": True,
                     "message": "No presentation text",
                 },
             ),
         )
         observed = await asyncio.to_thread(owner.history.task_snapshot, current.handle)
-        assert observed.terminal_at is None
-        assert observed.status == "active" and observed.activity == "yielded"
-        assert observed.result is None
+        if error_code == "empty_response":
+            assert observed.terminal_at is None
+            assert observed.status == "active" and observed.activity == "yielded"
+            assert observed.result is None
+        else:
+            assert observed.terminal_at is not None and observed.status == "failed"
+            assert observed.result is not None
         assert await asyncio.to_thread(owner.history.task_snapshot, work.handle) == work
         assert owner.history.pending_mail(current.owner.session_id) == ()
     finally:
@@ -139,7 +146,8 @@ async def test_no_work_or_real_execution_error_is_not_silently_successful(
         trigger = await asyncio.to_thread(records)
         segment = ConversationSegment(root.owner.session_id, root, "turn", trigger, "Answer")
         await asyncio.to_thread(
-            owner._finish_segment,
+            conversation_assignments._finish_segment,
+            owner,
             segment,
             ConversationOutcome({}, error={"error": error_code, "message": "Recorded failure"}),
         )

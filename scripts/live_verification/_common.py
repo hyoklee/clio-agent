@@ -306,7 +306,11 @@ def wait_turn(call: Callable[..., Any], wsid: str, sid: str, *, max_elapsed: flo
         rows = call("GET", f"/v1/sessions?workspace_id={wsid}").get("sessions", [])
         row = next((r for r in rows if r.get("id") == sid), {})
         status = str(row.get("status") or "?")
-        return status if status in ("idle", "completed", "error", "waiting_user") else None
+        return (
+            status
+            if status in ("idle", "completed", "error", "waiting_user", "cancelled", "stopped")
+            else None
+        )
 
     result = expanding_wait(
         _check, what=f"session {sid} turn to reach a terminal status", max_elapsed=max_elapsed
