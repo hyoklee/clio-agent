@@ -28,8 +28,6 @@ from clio_agent.runtime import turn_lm_ledger
 from tests.test_gact.test_goal import _app, _session
 from tests.test_lm.test_goal_client_lifecycle import _closed
 
-pytest_plugins = ["tests.test_lm.test_goal_client_lifecycle"]
-
 
 @contextmanager
 def bound(app: Any, sid: str) -> Iterator[None]:

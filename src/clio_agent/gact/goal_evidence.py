@@ -47,6 +47,26 @@ def _bounded_judge_fact(value: Any, *, limit: int = 500) -> str:
 def _tool_result_fact(part: Any) -> str:
     """Project the user-facing result summary already recorded on a tool part."""
 
+    structured = getattr(part, "structured_content", None)
+    raw = (getattr(part, "metadata", None) or {}).get("result")
+    if not isinstance(structured, Mapping) and isinstance(raw, Mapping):
+        structured = raw.get("structuredContent")
+    if isinstance(structured, Mapping) and any(
+        key in structured for key in ("exit_code", "stdout", "stderr", "timed_out")
+    ):
+        # Command text can be several thousand characters long. A prefix of
+        # the whole result hides the actual exit status and test output from
+        # the judge, causing already-completed phases to be repeated.
+        facts = {key: structured[key] for key in ("exit_code", "timed_out") if key in structured}
+        for key in ("stdout", "stderr"):
+            text = str(structured.get(key) or "")
+            if text:
+                facts[key] = (
+                    text
+                    if len(text) <= 2400
+                    else text[:800] + "\n[...truncated...]\n" + text[-1600:]
+                )
+        return json.dumps(facts, ensure_ascii=False)
     for owner, keys in (
         (getattr(part, "structured_content", None), ("message", "summary", "status")),
         (getattr(part, "presentation", None), ("summary",)),

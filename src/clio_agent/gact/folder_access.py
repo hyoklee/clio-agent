@@ -10,7 +10,7 @@ from __future__ import annotations
 import platform
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,6 +25,28 @@ if TYPE_CHECKING:
 
 FOLDER_ACCESS_KIND = "folder_access"
 FOLDER_RESOLUTION_LOCK = threading.RLock()
+
+
+def bind_folder_gate(app: FastAPI, gate: Callable[..., str]) -> Callable[..., str]:
+    """Ground direct permission calls in their session's actual workspace."""
+
+    def grounded(
+        name: str, args: Mapping[str, Any], context: Mapping[str, Any] | None = None
+    ) -> str:
+        from clio_agent.gact.permission_gate import _resolve_tool_session
+        from clio_agent.tools.execution import (
+            get_active_tool_workspace_root,
+            tool_workspace_context,
+        )
+
+        if get_active_tool_workspace_root():
+            return gate(name, args, context)
+        _, session = _resolve_tool_session(app)
+        workspace = app.state.workspaces.get(getattr(session, "workspace_id", ""))
+        with tool_workspace_context(getattr(workspace, "root_path", None)):
+            return gate(name, args, context)
+
+    return grounded
 
 
 def requested_folders(name: str, args: Mapping[str, Any]) -> list[str]:

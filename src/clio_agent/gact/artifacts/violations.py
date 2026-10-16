@@ -89,10 +89,8 @@ class PolicyViolation(BaseModel):
 def _grant_affordance(workspace_id: str, path: str) -> str:
     """The grant affordance a ``policy_violation`` carries (B5 #979.6).
 
-    A STATIC next-step string, never a clio decision (⚑ #974.8): it tells the model that the
-    write was fenced and that a workspace ROOT GRANT (``POST /v1/workspaces/{wid}/grants`` with
-    ``{"root": "<dir>"}``) would permit it — so the MODEL may ask and the USER decides. clio
-    neither grants nor reroutes; it only surfaces the affordance on the record.
+    The model retries with explicit access paths and a reason; the permission
+    service asks the user. It must never call the grants API to approve itself.
     """
     parent = ""
     if path:

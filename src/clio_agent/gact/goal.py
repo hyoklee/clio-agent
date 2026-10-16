@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -38,6 +39,7 @@ GOAL_OUTCOME_REASONS = (
     "goal_abandoned",  # cleared without satisfaction (user /goal clear or session end)
     "goal_redrive",  # unmet -> re-drive one more turn (the continue reason, not a stop)
     "goal_judge_unavailable",
+    "goal_judge_interrupted",
     "goal_loop_stopped",
     "goal_server_interrupted",
     "goal_recovered",
@@ -247,12 +249,29 @@ async def run_llm_judge(app: Any, sid: str, goal: Mapping[str, Any]) -> "GoalJud
             else:
                 lm, adapter = await run_off_loop(_judge_route, app)
             with dspy.context(lm=lm, adapter=adapter):
+                from clio_agent.runtime.stream_audit import stream_audit
+
+                stream_audit(
+                    "goal.judge.started",
+                    goal_id=goal.get("goal_id"),
+                    session_id=sid,
+                    model=str(getattr(lm, "model", "")),
+                    client_id=id(lm),
+                )
+                logger.info(
+                    "goal judge started goal_id=%s model=%s",
+                    goal.get("goal_id"),
+                    getattr(lm, "model", "unknown"),
+                )
                 async with asyncio.timeout(DEFAULT_JUDGE_TIMEOUT_S):
                     pred = await judge.acall(
                         goal_condition=condition,
                         transcript=transcript,
                         previous_progress=str(goal.get("progress") or ""),
                     )
+                stream_audit(
+                    "goal.judge.returned", goal_id=goal.get("goal_id"), session_id=sid, met=pred.met
+                )
         if not isinstance(pred.met, bool) or getattr(pred, "next_action", "continue") not in {
             "continue",
             "needs_input",
@@ -545,6 +564,7 @@ def _settle_goal_decision(
         current = _get_goal(app, session_id)
         if current.get("goal_id") != goal.get("goal_id") or not current.get("active"):
             return None
+        current["judge_duration_s"] = goal.get("judge_duration_s")
         goal = current
         if turn_id and goal.get("last_evaluated_turn_id") == turn_id:
             return None
@@ -594,11 +614,25 @@ async def dispatch_goal_at_finalize(
         preflight = evaluate_goal(
             goal, llm=GoalJudgement(met=False), elapsed_s=elapsed_s, tokens_spent=tokens_spent
         )
-        llm = (
-            GoalJudgement(met=False, reason="The goal limit was reached before judging.")
-            if preflight.reason == "goal_budget"
-            else await run_llm_judge(app, session_id, goal)
-        )
+        from clio_agent.gact.goal_activity import begin_goal_check, cancel_goal_check
+
+        if preflight.reason != "goal_budget" and not await run_off_loop(
+            begin_goal_check, app, session_id, goal, turn_id, trace_id, executor=executor
+        ):
+            return None
+        started = time.monotonic()
+        try:
+            llm = (
+                GoalJudgement(met=False, reason="The goal limit was reached before judging.")
+                if preflight.reason == "goal_budget"
+                else await run_llm_judge(app, session_id, goal)
+            )
+        except asyncio.CancelledError:
+            await run_off_loop(
+                cancel_goal_check, app, session_id, str(goal.get("goal_id")), executor=executor
+            )
+            raise
+        goal["judge_duration_s"] = round(time.monotonic() - started, 3)
         current = _get_goal(app, session_id)
         if (
             not current
@@ -655,6 +689,7 @@ def _emit_goal_event(
                 "reason": decision.reason,
                 "guidance": decision.guidance,
                 "iters_elapsed": int(decision.new_state.get("iters_elapsed", 0) or 0),
+                "judge_duration_s": decision.new_state.get("judge_duration_s"),
             },
         )
     except Exception:  # noqa: BLE001 - capture never breaks a settled turn

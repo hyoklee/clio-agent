@@ -87,6 +87,11 @@ async def _close(lms: list[Any], primary: BaseException | None) -> None:
         for lm in reversed(lms):
             try:
                 await _close_client(lm)
+                from clio_agent.runtime.stream_audit import stream_audit
+
+                stream_audit(
+                    "lm.owned_client.closed", client_id=id(lm), model=str(getattr(lm, "model", ""))
+                )
             except _ClientCleanupError as failure:
                 exc = failure.__cause__
                 if not isinstance(exc, Exception):

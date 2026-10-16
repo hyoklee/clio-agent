@@ -68,6 +68,7 @@ from clio_agent.gact import permission_timeout
 from clio_agent.gact.cancellation_check import (
     make_cancellation_checker as _make_cancellation_checker,  # noqa: F401 - compatibility export
 )
+from clio_agent.gact.folder_access import bind_folder_gate
 from clio_agent.gact.permission_context import (
     _external_mcp_permission_context as _external_mcp_permission_context,
 )
@@ -534,14 +535,11 @@ def _resolve_permission(
 def _make_permission_gate(app: "FastAPI"):
     """Build a callable suitable for MCPToolBridge.permission_gate.
 
-    Provably read-only calls (:func:`is_read_only`) fast-allow as the FIRST
-    branch — before the plan/architect lock — so no mode ever gates a read
-    (structural invariant, #1032). Every other call proceeds to the plan/architect
-    lock, the policy match, and, absent a policy, registers a permission row,
-    publishes ``permission.requested`` into the EventBus, and blocks on a
-    ``threading.Event`` with a generous timeout, returning "allow"/"deny" from the
-    user's resolution. A missing session fails closed immediately; timeouts default
-    to deny — fail-safe.
+    Bind the session's workspace before resolving paths. Reads inside permitted
+    folders fast-allow before mode or action hooks (#1032). External folder access
+    requires a separate human grant. Other calls consult modes and policies, then
+    publish a pending permission and await resolution. Missing sessions and expired
+    requests fail closed.
     """
 
     def gate(
@@ -797,4 +795,4 @@ def _make_permission_gate(app: "FastAPI"):
             return "allow"
         return "deny"
 
-    return gate
+    return bind_folder_gate(app, gate)

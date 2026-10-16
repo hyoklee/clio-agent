@@ -39,3 +39,25 @@ individual reservations. This fix addresses the confirmed client-lifetime gap;
 its relationship to that protected gateway's count requires gateway-side evidence
 or a fresh run on the affected machine. No concurrency cap or retry policy changes
 are part of this correction.
+
+Live acceptance on 2026-10-16 used an actual CLIO server, a private real Core
+daemon, Codex gpt-6.1-sol, filesystem/shell/image tools and artifact registration.
+The goal completed a million-start Collatz project in four separate work turns:
+implementation, 32 passing pytest checks, statistics plus an inspected chart,
+then a report and registered artifacts. Four independent LLM judgments returned
+continue, continue, continue and complete. All four work turns leased the same
+client. The trace recorded 33 provider requests, at most one active request and
+none left outstanding. The judge borrowed the application's model in this route;
+the per-check Predict was ephemeral and did not own that borrowed client.
+
+The first real run exposed an evidence projection problem: a long command could
+hide its exit code and stdout in a bounded result prefix. It needed eight turns
+to verify the four phases. Projecting the actual command outcome and output
+separately removed those extra verification turns in the repeated live run.
+This acceptance establishes the real controller's behavior on Codex; it does not
+establish protected MAG reservation accounting or Google Argon compatibility.
+
+Checking is a retained goal phase with its own start event and measured duration.
+The UI can show checking separately from work or a silent provider wait. A check
+cancelled before settlement is retained as paused, and an overlapping finalizer
+cannot start a second check for the same goal.

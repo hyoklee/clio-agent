@@ -20,6 +20,7 @@ from clio_agent.lm.resources import (
     transfer_created_lm,
 )
 from clio_agent.runtime import turn_lm_ledger
+from clio_agent.runtime.stream_audit import stream_audit
 
 if TYPE_CHECKING:
     from clio_agent.config import LMProviderConfig
@@ -135,6 +136,9 @@ def session_model(config: LMProviderConfig, scope: str, sid: str) -> Iterator[An
             # Public DSPy copy: shared owned engines; fresh history/callback list/
             # request kwargs. This is a view, not another provider client or pool.
             view = entry.lm.copy()
+            stream_audit(
+                "lm.work_client.leased", session_id=sid, scope=scope, client_id=id(entry.lm)
+            )
             turn_lm_ledger.record(view)
             yield wrap_lm_with_hooks(view)
         except BaseException as exc:
@@ -142,6 +146,9 @@ def session_model(config: LMProviderConfig, scope: str, sid: str) -> Iterator[An
             raise
         finally:
             close_model_clients(owner.release(entry), primary)
+            stream_audit(
+                "lm.work_client.released", session_id=sid, scope=scope, client_id=id(entry.lm)
+            )
 
 
 def close_session_model_clients(app: Any, sid: str | None = None) -> None:
