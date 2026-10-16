@@ -13,7 +13,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from clio_agent.arc.blob_frame import BlobDecodeError
-from clio_agent.arc.task_types import QuestionDefinition, QuestionReply
+from clio_agent.arc.task_types import QuestionDefinition, QuestionReply, TaskSnapshot
 from clio_agent.gact.app import build_app
 from clio_agent.gact.question_surface import question_row
 from clio_agent.gact.questions import QuestionCommands
@@ -32,6 +32,48 @@ def post_question(app: Any, sid: str, prompt: str = "Which sample?") -> Any:
     """Post through the registered FastMCP control under actual owner context."""
     with active_turn_fixture(app, sid):
         return app.state.builtin_boundary.bind(build_ask_user_tool()).func(question=prompt)
+
+
+def test_question_header_is_not_an_answerable_interaction_before_posting(
+    world: tuple[Any, TestClient, str],
+) -> None:
+    """A UI read between confirmed acceptance and posting preserves the reservation."""
+    from clio_agent.gact.routes.interactions import _question_from_interaction_id
+
+    app, client, sid = world
+    questions = app.state.questions
+    previous = questions.before_post
+    observed: list[str] = []
+
+    def inspect_header(task: TaskSnapshot, definition: QuestionDefinition) -> None:
+        assert definition.prompt == "Which sample?"
+        assert not task.raw_status and task.terminal_at is None
+        current = app.state.task_history.task_snapshot(task.handle)
+        assert current is not None and current.details == task.details
+        response = client.get(
+            f"/v1/sessions/{sid}/interactions",
+            params={"include_children": "true", "include_recent_resolved": "true"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["interactions"] == []
+        assert response.json()["degradations"] == [
+            {"reason": "question_posting_unconfirmed", "owner_session_id": sid}
+        ]
+        assert _question_from_interaction_id(app, "question:" + task.handle) is None
+        observed.append(task.handle)
+
+    questions.before_post = inspect_header
+    try:
+        receipt = post_question(app, sid)
+    finally:
+        questions.before_post = previous
+    assert observed == [receipt["handle"]]
+    current = app.state.task_history.task_snapshot(receipt["handle"])
+    assert current is not None and current.raw_status == "pending"
+    response = client.get(f"/v1/sessions/{sid}/interactions")
+    assert response.status_code == 200, response.text
+    row = next(row for row in response.json()["interactions"] if row["task_id"] == current.handle)
+    assert row["status"] == "pending" and row["actions"] == ["answer", "cancel"]
 
 
 def test_ask_returns_a_durable_handle_without_waiting(world: tuple[Any, TestClient, str]) -> None:

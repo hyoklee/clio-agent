@@ -23,7 +23,13 @@ that behavior and qualified the native child-provenance correction: root/child
 queries returned 200 with correct ownership and no connected-UI errors.
 Test-only GACT `401efcfe` corrects the browser draft contract; required CI remains
 pending/failed and wider acceptance remains incomplete. clio-core remains
-`iowarp-core==2.3.1`. The two-hour implementation checkpoint was
+`iowarp-core==2.3.1`. R164 on clio-agent `41e8f171` / GACT `0f9c00a4` supplied
+scoped byte-progress, keyboard disclosure and actual desktop/phone Question-answer
+evidence, but failed on a real interactions API 500 while a Question reservation
+was not yet posted. Its API correction and regression require CI and a fresh live
+repeat. Every owned run process and disposable root, including the reused UI
+build, is retired/removed. GACT workspace CI passed; clio-agent CI is red.
+The two-hour implementation checkpoint was
 recorded **UNDONE** at 2026-10-15 21:45:05 UTC; Fable's final acceptance arrived
 at 21:45:08.409 UTC and does not change the deadline result. Current regression
 migration and qualification status is in

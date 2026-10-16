@@ -299,7 +299,7 @@ def _question_from_interaction_id(app: FastAPI, identity: str) -> UserQuestion |
     task = app.state.task_history.task_snapshot(handle)
     return (
         question_row(app, handle)
-        if task is not None and task.kind == "Question" and task.details
+        if task is not None and task.kind == "Question" and task.details and task.raw_status
         else None
     )
 
@@ -365,10 +365,12 @@ def project_pending_interactions(
     degradations: list[dict[str, str]] = []
     for handle in handles:
         task = access.require(handle, "read")
-        if task.details is None:
+        if task.details is None or not task.raw_status:
             degradations.append(
                 {
-                    "reason": "question_content_unconfirmed",
+                    "reason": "question_content_unconfirmed"
+                    if task.details is None
+                    else "question_posting_unconfirmed",
                     "owner_session_id": task.owner.session_id,
                 }
             )
@@ -413,7 +415,9 @@ def recorded_session_interactions(app: FastAPI, session_id: str) -> list[dict[st
     rows = [
         _question_interaction(app, question_row(app, handle))
         for handle in history.session_handles(session_id)
-        if (task := access.require(handle, "read")).kind == "Question" and task.details is not None
+        if (task := access.require(handle, "read")).kind == "Question"
+        and task.details is not None
+        and task.raw_status
     ]
     rows.extend(
         _permission_interaction(app, permission)

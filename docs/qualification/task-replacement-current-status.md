@@ -65,7 +65,7 @@ real diagnostic samples and the parent requested the human's preferred focus.
 R159 failed its browser preflight before model submission: the interactive driver
 exited on stdin EOF, and the browser-connected diagnostic expired. The source API
 and both browser attempts retired normally. R160 replaced that interactive driver
-with application-owned automatic browser launch. Actual Codex/Luna accepted the
+with harness-owned automatic browser launch. Actual Codex/Luna accepted the
 Question, Shell and Subagent handles, then freshly read the CI source file while
 the parser was running. The UI driver failed because its unscoped Question locator
 matched both the evidence panel and the Open questions dialog. No complete
@@ -86,6 +86,42 @@ CI and have not run locally. The next actual-service repeat must verify the
 canonical progress label and the completed CI-triage assignment at desktop and
 phone widths; it will scope Question controls to their actual dialog. This is a
 presentation correction, with no new task owner, backend or Core-library change.
+
+### R161–R164 integrated UI and Question reservation
+
+The repeats used clio-agent `41e8f171` and GACT `0f9c00a4`. R161–R163 failed
+harness assumptions: two legitimate Shell labels required scoping to the running
+row, the description was the model's assignment rather than a command filename,
+and the Question offered choices rather than only a freeform textbox. These runs
+are not acceptance passes. Their original work was cancelled and physically
+retired before disposal.
+
+R164 demonstrated canonical byte progress (`33 B output`), keyboard disclosure
+of the original assignment and exact public handle, and choice selection retained
+at desktop and phone widths. The actual Question answer returned HTTP 200 with
+the correct owner, handle and selected value. The family nevertheless failed:
+one interactions GET returned HTTP 500. The passive UI projection observed the
+confirmed Question reservation before posting, then tried to parse its empty raw
+status as a posted Question. The API now keeps that reservation discoverable as a
+task while reporting `question_posting_unconfirmed` instead of presenting answer
+controls. A regression covers the actual between-writes boundary and same-handle
+posting. Ruff/format, scoped Linux Mypy and seven source guards pass; regression
+execution and fresh live qualification of this correction remain pending.
+
+The retry-context regression now awaits the original turn's terminal event within
+its unchanged 30-second diagnostic, rather than treating an initial non-busy
+snapshot as completion. Its context-identity assertions remain. No local
+pytest/vitest ran. clio-agent CI `38969750109` completed with failures; no passing
+regression baseline is claimed. GACT workspace CI `38972121458` passed, including
+Windows/macOS/Linux debug builds and the fixture-backed native WebView job;
+conditional publication jobs did not run. That CI is not live model acceptance.
+
+All R161–R164 services, browsers, parser processes and private Core processes
+retired before removal. Profile/temp roots are absent, and the 29,037,620-byte
+reused UI build was removed after R164. Bounded per-run receipts and selected
+screenshots remain under the execution repository's `.pytest-runtime/static`.
+Original authentication and production hashes match. The `iowarp-core` library
+and lock remain 2.3.1; only clio-agent integration and GACT changed.
 
 R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
 R153 repeated the unchanged scenario with Core-free async/thread stack capture

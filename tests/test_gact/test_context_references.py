@@ -40,6 +40,7 @@ from clio_agent.gact.turn import _start_background_user_turn
 from clio_agent.gact.types import Message, Part
 from tests.test_gact.task_records import hold_model_segment, record_assignment_fixture
 from tests.test_gact.test_post_messages import SlowClioAgent
+from tests.turn_signals import wait_for_terminal_status
 
 
 class _Agent:
@@ -831,6 +832,7 @@ def test_normal_submission_and_retry_preserve_context_ref(
 
     with TestClient(app) as client:
         session_id = client.post("/v1/sessions", json={"title": "Context"}).json()["id"]
+        cursor = app.state.bus.latest_event_id(session_id)
         accepted = client.post(
             f"/v1/sessions/{session_id}/messages",
             json={
@@ -848,9 +850,12 @@ def test_normal_submission_and_retry_preserve_context_ref(
         assert accepted.json()["task_handle"]
         source_message_id = accepted.json()["message_id"]
 
-        deadline = time.monotonic() + 30
-        while app.state.turn_runner.busy(session_id) and time.monotonic() < deadline:
-            time.sleep(0.02)
+        assert (
+            wait_for_terminal_status(
+                app.state.bus, session_id, after_event_id=cursor, backstop_s=30
+            )
+            == "idle"
+        )
         assert not app.state.turn_runner.busy(session_id)
 
         retry = client.post(
@@ -858,6 +863,7 @@ def test_normal_submission_and_retry_preserve_context_ref(
             json={"execute": True},
         )
         assert retry.status_code == 202, retry.text
+        assert retry.json()["metadata"]["execution_blocked_reason"] == "", retry.text
         queued_id = retry.json()["metadata"]["queued_user_message_id"]
         messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
         source = next(message for message in messages if message["id"] == source_message_id)
