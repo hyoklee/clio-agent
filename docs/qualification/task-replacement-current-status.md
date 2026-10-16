@@ -9,6 +9,42 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+The current live tuple is clio-agent `bf2df179` / GACT `6669ac3a`, with the
+unchanged `iowarp-core==2.3.1` library. GACT preserves unsent Question values in
+the existing session Question context across layout remounts. Six constructed
+regressions cover free text, choices/comments, structured values and scope
+isolation. Scoped lint/format, TypeScript and all six existing GACT guards passed;
+the tests are executed by CI. CI exposed missing test DOM cleanup, corrected in
+test-only GACT `bb758d56` without changing production behavior or assertions.
+The fresh GACT workspace runs are still pending at this checkpoint.
+
+R134/R135 used actual Codex/Luna with root → child → leaf assignments, one
+inference permit per child depth and a one-worker shared finite-I/O executor.
+Both parents entered unbounded waits; the leaf posted a Question, read the real
+sentinel and yielded without retaining a synchronous session worker. R135 then
+completed an independent root and same-depth child while the original parents
+continued waiting and the leaf Question remained open. Their canonical results
+contain the actual unpredictable sentinel. Parent A required explicit feedback
+to resume its initially yielded assignment; its assignment and child handles
+did not change. This is scoped capacity evidence, not fully autonomous mission
+acceptance or the final race matrix.
+
+The original controllers remain failed. R134 incorrectly required an admission
+reservation to disappear at the instant the leaf worker retired. R135 selected
+only Session results, then incorrectly required a Subagent result in that list;
+the retained canonical Subagent result contains the expected output. Its
+independent scoped audit records this distinction. Neither run reached the
+Question resize/answer stage, so the GACT draft correction still lacks live
+acceptance. The services and all owned sessions/tasks settled normally, with
+no accepted operation replay. Disposable data and the reused UI build are
+covered by the R135 custody/cleanup receipts.
+
+clio-agent CI `38914498775` at `bf2df179` completed with failures across test
+shards and one cancelled shard; lint, dependency resolution, native service
+lifecycle and other passing jobs do not make CI green. Regression repairs and
+full live qualification remain incomplete. No clio-core source/package,
+installed Desktop, authentication, defaults or released pins were changed.
+
 R129–R131 failed harness setup/order assumptions, not product acceptance.
 Their services, processes and disposable roots are settled and removed; original
 failed receipts remain. R132 on clio-agent `0e57be74` / GACT `cecfb4ee` proved
