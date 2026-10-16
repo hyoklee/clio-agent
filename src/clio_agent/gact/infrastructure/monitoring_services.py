@@ -91,7 +91,7 @@ def monitoring_definitions(facts: TargetFacts) -> list[ManagedServiceDefinition]
     for service, label in (("flowcept", "Flowcept"), ("cmf", "HPE CMF")):
         engines = monitoring_engines(service, facts)
         compatible = facts.os == "linux" and facts.uv_available and bool(engines)
-        runtimes = "Docker, Podman or Apptainer" if service == "flowcept" else "Docker or Podman"
+        runtimes = "Docker, Podman or Apptainer"
         result.append(
             ManagedServiceDefinition(
                 id=service,
@@ -105,7 +105,7 @@ def monitoring_definitions(facts: TargetFacts) -> list[ManagedServiceDefinition]
                 variants=[
                     ServiceVariant(
                         id="managed",
-                        label="Managed service",
+                        label="Native application + container databases",
                         version="1.0.3" if service == "flowcept" else CMF_REVISION[:8],
                         install_type="supervised_stack",
                         artifact=FLOWCEPT_REVISION if service == "flowcept" else CMF_REVISION,

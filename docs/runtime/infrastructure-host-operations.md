@@ -5,6 +5,35 @@ hostname and home-directory facts. A connected SSH transport does not establish 
 every service on that host is healthy. Allocation and scheduler preparation remain the
 operator's responsibility; CLIO inspects the prepared execution host.
 
+## Native and container installation methods
+
+Choose an installation method before configuring the service. Native and Containers
+qualify independently against the selected computer. A missing Docker daemon must not
+disable a native driver; an unsupported native driver must not hide a usable container
+driver. The service chooser reports both methods before opening setup. Unavailable
+options retain their driver-specific reasons. An installed service keeps its recorded
+method until its runtime is removed; changing configuration does not migrate its data
+or silently switch its installation method.
+
+The current driver matrix is explicit:
+
+| Service | Native managed installation | Container requirements |
+| --- | --- | --- |
+| vLLM | Linux NVIDIA CUDA or Intel XPU, with uv; XPU uses the site's vLLM build | Docker, Podman or Apptainer; accelerator-specific variants remain host-qualified |
+| llama.cpp | Local Windows x86-64 CPU archive | CPU image supports Windows with a usable runtime; GPU variants retain their Linux requirements |
+| Ollama | No managed native driver yet | CPU image supports Windows with a usable runtime; GPU variants retain their Linux requirements |
+| Model router | Linux/macOS with uv | None |
+| SearXNG | Windows/Linux/macOS with uv, within the native driver's architecture constraints | None |
+| CLIO Web Search | No managed native gateway driver yet; native SearXNG is a separate built-in search service | Docker, Podman or Apptainer |
+| Flowcept / HPE CMF | Application code runs in a native environment, but the managed stack is not container-free | Linux launcher plus containerized Redis/MongoDB or PostgreSQL; Docker Desktop alone does not support that launcher |
+| CLIO Relay | Released uv tool | None |
+| Remote CLIO | Published bootstrap on a Linux SSH host | None |
+
+CPU container availability is not the same as native Linux support: the image runs
+inside the engine. CPU vLLM and Ollama therefore do not reject a Windows host solely
+because its host OS is Windows. This does not enable unqualified GPU pass-through,
+fabricate missing native drivers, or claim that every image has been run on every host.
+
 ## Storage and terminal output
 
 Structured host replies remove actual CSI/OSC terminal decoration before parsing.
