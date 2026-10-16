@@ -13,12 +13,13 @@ from fastmcp import Context
 from fastmcp.utilities.tasks import TaskConfig
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import SubmissionContext, TaskOwner
+from clio_agent.arc.task_types import SubmissionContext
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_tools import NativeTools
 from clio_agent.gact.native_work import WorkEvidence
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import TaskHistory
+from tests.test_arc.test_native_owner_contracts import owning_assignment
 
 
 @pytest.mark.asyncio
@@ -35,6 +36,7 @@ async def test_native_cancel_reaches_running_body_with_core_writer_pending(
     default = ThreadPoolExecutor(max_workers=1, thread_name_prefix="native-notifications")
     loop.set_default_executor(default)
     history = TaskHistory(arc)
+    owner = await history.io.run(owning_assignment, history)
     recovery = CoreRecovery(history)
     native = NativeTools(history, lambda _context: None, recovery, admission=lambda _task: None)
     started, cleaned, entered = asyncio.Event(), asyncio.Event(), asyncio.Event()
@@ -69,7 +71,7 @@ async def test_native_cancel_reaches_running_body_with_core_writer_pending(
                 "io_gate",
                 {},
                 kind="Shell",
-                owner=TaskOwner(human_id="human", session_id="owner", assignment_id="assignment"),
+                owner=owner,
                 invocation_id="native-core-io",
                 workspace=str(tmp_path),
                 permissions={},
