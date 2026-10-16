@@ -501,7 +501,8 @@ def test_session_capabilities_route_shape(client: TestClient) -> None:
             },
         },
     )
-    assert post.status_code == 200, post.text
+    assert post.status_code == 202, post.text
+    assert post.json()["task_handle"]
     _wait_idle(client, sid)
 
     resp2 = client.get(f"/v1/sessions/{sid}/a2ui/capabilities")
@@ -573,7 +574,8 @@ def test_post_message_valid_capabilities_are_remembered(client: TestClient) -> N
             "metadata": {"a2uiClientCapabilities": {"v0.9": {"supportedCatalogIds": [BASIC_ID]}}},
         },
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["task_handle"]
     stored = client.app.state.sessions.get(sid).metadata[A2UI_CLIENT_CAPABILITIES_METADATA_KEY]
     assert stored == {"v0.9": {"supportedCatalogIds": [BASIC_ID]}}
 
@@ -610,7 +612,8 @@ def test_post_message_data_model_is_carried_through_renamed(client: TestClient) 
             },
         },
     )
-    assert resp.status_code == 200, resp.text
+    assert resp.status_code == 202, resp.text
+    assert resp.json()["task_handle"]
     user_id = resp.json()["message_id"]
     stored_message = next(m for m in client.app.state.messages.get(sid, []) if m.id == user_id)
     assert A2UI_CLIENT_DATA_MODEL_METADATA_KEY in stored_message.metadata

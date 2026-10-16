@@ -66,7 +66,8 @@ def test_clio_error_settles_the_turn_with_its_typed_reason_in_details(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hi"}]},
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
 
         status = wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
         assert status == "error", f"expected a terminal error status, got {status!r}"

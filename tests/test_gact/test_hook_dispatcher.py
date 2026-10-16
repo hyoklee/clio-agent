@@ -777,7 +777,8 @@ def test_user_prompt_submit_hook_vetoes_turn(tmp_path: Path) -> None:
                 f"/v1/sessions/{sid}/messages",
                 json={"parts": [{"type": "text", "text": "tell me a secret"}]},
             )
-            assert ack.status_code == 200
+            assert ack.status_code == 202
+            assert ack.json()["task_handle"]
             for _ in range(60):
                 sess = c.get(f"/v1/sessions/{sid}").json()
                 if sess["status"] == "error":

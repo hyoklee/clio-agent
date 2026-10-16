@@ -242,7 +242,8 @@ def test_idle_is_not_observable_while_the_finalize_tail_holds_the_slot(
         ack = c.post(
             f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "one"}]}
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         assert tail_entered.wait(TURN_SIGNAL_BACKSTOP_S), "finalize tail never reached"
 
         # The assistant message is complete but the turn still holds its slot.

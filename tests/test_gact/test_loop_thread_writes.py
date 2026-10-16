@@ -101,7 +101,8 @@ def test_post_messages_ack_does_not_carry_the_transcript_persist(tmp_path: Path)
         ack = client.post(
             f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "x"}]}
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         assert _write_hits() == []  # the ack thread never touched the store
         settle_turn_slot(client, sid)
         atoms = load_message_part_atoms(app.state.arc, sid)

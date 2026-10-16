@@ -642,7 +642,8 @@ def test_a_record_whose_turn_settled_before_the_fold_is_still_shown_live(
     ack = client.post(
         f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "go"}]}
     )
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
+    assert ack.json()["task_handle"]
     assert started.wait(120), "the turn never reached its tool"
 
     real_fold = app.state.arc.summarize_segments

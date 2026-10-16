@@ -728,7 +728,8 @@ def test_failed_finalize_keeps_the_streamed_parts_and_reload_equals_live(
         ack = c.post(
             f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "hi"}]}
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         user_id = ack.json()["message_id"]
 
         status = wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)

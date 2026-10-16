@@ -164,7 +164,16 @@ jobs:
           ${{ matrix.python-version == '3.14' && '-W error::DeprecationWarning' || '' }}
           --num-shards 3 --shard-id ${{ matrix.shard }}
           -n logical --dist worksteal --durations=30 -rs
+          --junitxml=.pytest-runtime/ci/results.xml
           --cov=clio_agent --cov-branch --cov-report=
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.python-version }}-${{ matrix.shard }}
+          path: .pytest-runtime/ci/results.xml
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
       # Uploaded even when a test failed, so the coverage job still reports the shard's
       # numbers (the failed shard keeps the build red on its own).
       - if: ${{ !cancelled() }}

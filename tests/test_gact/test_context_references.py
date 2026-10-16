@@ -844,7 +844,8 @@ def test_normal_submission_and_retry_preserve_context_ref(
                 ]
             },
         )
-        assert accepted.status_code == 200, accepted.text
+        assert accepted.status_code == 202, accepted.text
+        assert accepted.json()["task_handle"]
         source_message_id = accepted.json()["message_id"]
 
         deadline = time.monotonic() + 30

@@ -187,7 +187,8 @@ def test_output_truncation_is_visible_terminal_state(tmp_path: Path) -> None:
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "long report"}]},
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
+        assert response.json()["task_handle"]
         # Settled = the terminal status event (published after completion events are
         # persisted), not a fixed window a cold first turn can outlast.
         assert wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor) == "error"

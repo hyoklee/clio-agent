@@ -51,7 +51,8 @@ def _drive_one_turn(app: Any, tmp_path: Path) -> str:
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hi"}]},
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
 
         assert wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor) == "idle"
     return sid
@@ -128,7 +129,8 @@ def test_second_turn_does_not_reopen_bringup(
                 f"/v1/sessions/{sid}/messages",
                 json={"parts": [{"type": "text", "text": text}]},
             )
-            assert ack.status_code == 200, ack.text
+            assert ack.status_code == 202, ack.text
+            assert ack.json()["task_handle"]
             assert wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor) == "idle"
 
         _send_and_wait("first turn")

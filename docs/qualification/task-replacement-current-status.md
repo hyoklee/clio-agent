@@ -162,6 +162,19 @@ Flowcept integration and flake-hunt passed; all nine interpreter/shard jobs rema
 running at this snapshot, with no observed current-head failure. Earlier red runs
 remain failures. No local pytest/vitest ran during these corrections.
 
+Subsequent results on that same candidate are red: Python 3.14 shard 1 recorded
+184 failed / 3949 passed / 21 skipped; shard 2 recorded 217 failed / 3912 passed /
+13 skipped. Recurring failures include old HTTP-200 expectations for newly
+accepted messages, incomplete permissions/task-history fixtures and direct
+Core reads from the test event loop. These categories do not classify every
+failure as stale. A focused migration updates 24 directly observed fresh-message
+acknowledgements across 16 test files to HTTP 202, adding assignment-handle
+assertions while retaining behavioral assertions and budgets. CI now writes and
+uploads per-shard JUnit results so named cases can be proved executed; missing
+reports fail rather than silently disappearing. Coverage artifacts, floor,
+interpreter matrix and worker/shard budgets are unchanged. Scoped lint/format and
+workflow parsing pass; no local tests ran and no production source changed.
+
 R151 retained a stricter outage failure on frozen `f4a5d05f` / `401efcfe`
 (production code unchanged from R149). Actual Codex/Luna root and child ran
 native Shell with a descendant under a one-worker default I/O executor. During

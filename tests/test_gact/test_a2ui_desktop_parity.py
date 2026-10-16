@@ -139,8 +139,10 @@ def test_browser_and_desktop_requests_remember_identical_capabilities(
     browser_resp = _post_capabilities(client, sid_browser, BROWSER_HEADERS)
     desktop_resp = _post_capabilities(client, sid_desktop, DESKTOP_HEADERS)
 
-    assert browser_resp.status_code == 200, browser_resp.text
-    assert desktop_resp.status_code == 200, desktop_resp.text
+    assert browser_resp.status_code == 202, browser_resp.text
+    assert desktop_resp.status_code == 202, desktop_resp.text
+    assert browser_resp.json()["task_handle"]
+    assert desktop_resp.json()["task_handle"]
 
     browser_stored = client.app.state.sessions.get(sid_browser).metadata[
         A2UI_CLIENT_CAPABILITIES_METADATA_KEY
@@ -214,7 +216,8 @@ def test_data_model_metadata_also_parity_across_transports(client: TestClient) -
                 },
             },
         )
-        assert posted.status_code == 200, posted.text
+        assert posted.status_code == 202, posted.text
+        assert posted.json()["task_handle"]
         # a2uiClientDataModel is per-message (sent only to the server that
         # created the surface), not remembered on the session like
         # a2uiClientCapabilities -- stored on the posted USER message's own

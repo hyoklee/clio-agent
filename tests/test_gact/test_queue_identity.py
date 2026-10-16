@@ -137,7 +137,8 @@ def test_queue_rejects_an_identity_already_owned_by_the_transcript(
         f"/v1/sessions/{sid}/messages",
         json={"text": "Original human input", "client_message_id": "shared"},
     )
-    assert response.status_code == 200, response.text
+    assert response.status_code == 202, response.text
+    assert response.json()["task_handle"]
     canonical_id = response.json()["message_id"]
     before = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
     refused = client.post(

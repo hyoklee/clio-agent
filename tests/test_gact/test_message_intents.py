@@ -190,7 +190,8 @@ def test_queue_head_starts_automatically_when_active_turn_becomes_idle(tmp_path:
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "first turn"}]},
         )
-        assert started.status_code == 200, started.text
+        assert started.status_code == 202, started.text
+        assert started.json()["task_handle"]
         queued = client.post(
             f"/v1/sessions/{sid}/queued-messages",
             json={

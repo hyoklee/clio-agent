@@ -49,7 +49,8 @@ def test_finalize_exception_settles_turn_with_error_envelope(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hi"}]},
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         user_id = ack.json()["message_id"]
 
         # Wait for the turn's terminal status event (the pre-fix symptom: the

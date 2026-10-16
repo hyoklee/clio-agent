@@ -480,7 +480,8 @@ def test_running_turn_persists_exact_user_message_count(tmp_path: Path) -> None:
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hold this turn"}]},
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
+        assert response.json()["task_handle"]
         # The turn is provably mid-flight: held inside the agent, not merely "posted".
         assert agent.entered.wait(TURN_SIGNAL_BACKSTOP_S), "turn never reached the agent"
 
@@ -1118,7 +1119,8 @@ def test_post_message_agent_override_executes_user_agent_for_one_turn(
                 "agent": {"id": "reviewer"},
             },
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         user_id = ack.json()["message_id"]
 
         deadline = time.monotonic() + 10
@@ -1972,7 +1974,8 @@ def test_post_message_reserved_metadata_key_rejected_on_busy_steer_path(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "first"}]},
         )
-        assert first.status_code == 200, first.text
+        assert first.status_code == 202, first.text
+        assert first.json()["task_handle"]
 
         # Poll until the turn is actually in flight: a benign steer acks 202.
         deadline = time.monotonic() + 5.0
