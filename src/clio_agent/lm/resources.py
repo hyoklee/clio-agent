@@ -51,6 +51,10 @@ class _Resources:
             lms, self.lms = self.lms, []
             return lms
 
+    def disown(self, lm: Any) -> None:
+        with self.lock:
+            self.lms = [client for client in self.lms if client is not lm]
+
 
 _CURRENT: ContextVar[_Resources | None] = ContextVar("clio_owned_lm_resources", default=None)
 
@@ -59,6 +63,20 @@ def record_created_lm(lm: Any) -> None:
     """Enroll a fresh factory LM in the current operation's resource lifetime."""
     if (resources := _CURRENT.get()) is not None:
         resources.record(lm)
+
+
+def transfer_created_lm(lm: Any) -> None:
+    """Transfer a factory client from this operation to an explicit longer-lived owner."""
+    if (resources := _CURRENT.get()) is not None:
+        resources.disown(lm)
+
+
+def close_model_clients(lms: list[Any], primary: BaseException | None = None) -> None:
+    """Close owned work clients on the same persistent loop used for their requests."""
+    from clio_agent.lm.engines.lm_loop import run_on_lm_loop  # noqa: PLC0415
+
+    if lms:
+        run_on_lm_loop(lambda: _close(lms, primary))
 
 
 async def _close(lms: list[Any], primary: BaseException | None) -> None:

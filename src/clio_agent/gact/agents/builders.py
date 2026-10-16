@@ -70,7 +70,7 @@ from clio_agent.gact.runtime.type_parsing import (
     _parse_field_annotation,
     _structured_output_enabled,
 )
-from clio_agent.lm.resources import model_resources
+from clio_agent.lm.session_clients import session_model
 from clio_agent.runtime import trace
 from clio_agent.tools.task_call_context import task_arguments
 
@@ -197,7 +197,6 @@ def _build_prompt_user_agent_module(base_agent: Any, agent_def: "AgentDef") -> A
         _cancelled_error_info,
         _coerce_expert_handoff_rows,
     )
-    from clio_agent.lm.hooked_lm import create_hooked_lm  # noqa: PLC0415
     from clio_agent.prompts import PromptRegistry  # noqa: PLC0415
     from clio_agent.providers.credentials import CredentialResolver  # noqa: PLC0415
 
@@ -265,13 +264,14 @@ def _build_prompt_user_agent_module(base_agent: Any, agent_def: "AgentDef") -> A
             session_token = _ctx.set_react_session(session_id)
             window_token = _ctx.set_react_window(_resolve_expert_context_window(cfg))
             try:
-                with model_resources(), dspy.track_usage(), dspy.context(lm=create_hooked_lm(cfg)):
-                    result = self.answer_synthesizer(
-                        system_prompt=self.system_prompt,
-                        question=question,
-                        images=list(images or []),
-                        files=list(files or []),
-                    )
+                with session_model(cfg, self.agent_def.id, session_id) as lm:
+                    with dspy.track_usage(), dspy.context(lm=lm):
+                        result = self.answer_synthesizer(
+                            system_prompt=self.system_prompt,
+                            question=question,
+                            images=list(images or []),
+                            files=list(files or []),
+                        )
             finally:
                 _ctx.reset(window_token)
                 _ctx.reset(session_token)
@@ -805,7 +805,6 @@ def _build_blueprint_dspy_module(base_agent: Any, agent_def: "AgentDef") -> Any:
         _coerce_expert_handoff_rows,
         _merge_tool_call_rows,
     )
-    from clio_agent.lm.hooked_lm import create_hooked_lm  # noqa: PLC0415
     from clio_agent.providers.credentials import CredentialResolver  # noqa: PLC0415
 
     class BlueprintExpertModule(dspy.Module):
@@ -1041,9 +1040,9 @@ def _build_blueprint_dspy_module(base_agent: Any, agent_def: "AgentDef") -> Any:
                     # track_usage installs the usage tracker so the live plane's
                     # auto-compaction can read the call's exact prompt_tokens.
                     with (
-                        model_resources(),
+                        session_model(_fwd_config, self.agent_def.id, session_id) as lm,
                         dspy.track_usage(),
-                        dspy.context(lm=create_hooked_lm(_fwd_config)),
+                        dspy.context(lm=lm),
                     ):
                         result = self.program(**kwargs)
                 except Exception as exc:
@@ -1100,7 +1099,6 @@ def _build_tool_user_agent_module(base_agent: Any, agent_def: "AgentDef") -> Any
         _cancelled_error_info,
         _coerce_expert_handoff_rows,
     )
-    from clio_agent.lm.hooked_lm import create_hooked_lm  # noqa: PLC0415
     from clio_agent.prompts import PromptRegistry  # noqa: PLC0415
     from clio_agent.providers.credentials import CredentialResolver  # noqa: PLC0415
 
@@ -1212,13 +1210,14 @@ def _build_tool_user_agent_module(base_agent: Any, agent_def: "AgentDef") -> Any
                 # call's exact prompt_tokens.
                 # Resolve the credential per forward so rotated tokens take effect.
                 cfg = self._resolved_spec.materialize(self._cred_resolver)
-                with model_resources(), dspy.track_usage(), dspy.context(lm=create_hooked_lm(cfg)):
-                    result = self.react_agent(
-                        system_prompt=self.system_prompt,
-                        question=question,
-                        images=list(images or []),
-                        files=list(files or []),
-                    )
+                with session_model(cfg, self.agent_def.id, session_id) as lm:
+                    with dspy.track_usage(), dspy.context(lm=lm):
+                        result = self.react_agent(
+                            system_prompt=self.system_prompt,
+                            question=question,
+                            images=list(images or []),
+                            files=list(files or []),
+                        )
             except Exception as exc:
                 app = _ctx.active_app()
                 allowed_tools = _tool_names(self.tools)

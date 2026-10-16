@@ -36,6 +36,8 @@ def endpoint() -> Iterator[tuple[str, dict[str, Any]]]:
         "active": 0,
         "max_active": 0,
         "calls": 0,
+        "connections": 0,
+        "requests": [],
         "hold": False,
         "started": threading.Event(),
     }
@@ -48,6 +50,7 @@ def endpoint() -> Iterator[tuple[str, dict[str, Any]]]:
             super().setup()
             with lock:
                 state["open"] += 1
+                state["connections"] += 1
                 state["max_open"] = max(state["max_open"], state["open"])
 
         def finish(self) -> None:
@@ -66,6 +69,7 @@ def endpoint() -> Iterator[tuple[str, dict[str, Any]]]:
                 state["active"] += 1
                 state["max_active"] = max(state["max_active"], state["active"])
                 state["calls"] += 1
+                state["requests"].append((request["model"], self.headers.get("Authorization")))
             state["started"].set()
             try:
                 text = (
