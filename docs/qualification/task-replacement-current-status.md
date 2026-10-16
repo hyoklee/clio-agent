@@ -1,6 +1,60 @@
-# Tasks replacement status — October 15
+# Tasks replacement status — October 16
 
-## Regression CI started; live experiments designed
+## Overnight live verification and CI corrections
+
+Live verification is the priority under the renewed human goal. CI is checked
+between families; failures remain failures and do not substitute for actual-model
+or real-service UI evidence. Initial implementation is done; regression repairs,
+bug corrections and qualification remain in progress. clio-core is unchanged.
+
+- R103, clio-agent `57c00ddc`: actual Codex/Luna accepted a Question, read a file
+  while it was pending, yielded, received its idle answer wake and collected the
+  original result. The family failed its post-Stop harness gate because the
+  helper omitted the session display status `cancelled`. The original failure
+  receipt remains; no family pass is claimed.
+- R104, clio-agent `c564083c` / GACT `8205f3ea`: the repeated post-Stop Question
+  case passed. The actual stopped assignment retained its open Question; an
+  answer woke the model, result collection succeeded, the later ordinary turn
+  did not duplicate delivery, and Core confirmed one answer input commitment.
+- R105 on that same pair: actual native Shell acceptance, independent file read
+  while running, a still-running snapshot, short wait expiry, progress observation,
+  unbounded collection and stored result read passed. Exit code is zero; the real
+  completion file SHA-256 is
+  `89174256781fcf055fd72081947b8ec17c709ef97c9b325fdb903839dad42166`.
+  Real-service desktop connection/transcript/Work-menu inspection occurred, but
+  the UI family timed out before cancellation and phone acceptance. Q9 remains
+  incomplete. Retained screenshots are inspection evidence, not a UI pass.
+
+R103–R105 services exited with code zero and no active owned tasks. Their
+disposable profile/data and short-temp roots are actually absent; bounded live,
+custody and cleanup receipts remain under `.pytest-runtime/static/`. Authentication
+hashes and production source hashes stayed unchanged within each run. The failed
+browser launch was settled before the installed test browser was used with a
+repository-contained profile. No installed Desktop or clio-core change occurred.
+
+`c564083c` repairs pending-assignment empty-presentation handling, preserves real
+execution failures, fixes the regression fixture's owner entry point, and repairs
+the Stop-status harness check. Scoped Ruff/format pass; fresh source review and
+full regression passing are not claimed.
+
+GACT `592013b3` includes the unknown-state fixture correction and raw-state
+preservation; the original stronger assertion exposed metadata coercion and was
+retained. Its native updater now uses stable `~2.12.0` (zip 4) with its declared
+Rust floor `1.77.2`, replacing a resolution onto yanked zip 2. CI must establish
+build/type/test acceptance; no local native launch or installation was performed.
+
+The initial main clio-agent regression run reached tests after the marketplace
+commit was published. Python 3.14's three shards reported 11,582 passed, 714 failed,
+56 errors and 53 skipped. The suite still contains obsolete fixture/import calls;
+these counts do not identify that many distinct runtime defects. The newer
+[clio-agent CI](https://github.com/iowarp/clio-agent/actions/runs/38852002469) is not
+green. The [finite nine-family plan](task-replacement-live-experiments.md) and its
+six five-repeat race obligations remain the acceptance scope.
+
+All sections below are earlier snapshots, not the current CI or qualification
+verdict.
+
+## Earlier snapshot: regression CI started; live experiments designed
 
 The constructed core/GACT test commits are pushed to
 `codex/agent-facing-async-tasks`: core `f9538f3f`, GACT `0795157b`.
