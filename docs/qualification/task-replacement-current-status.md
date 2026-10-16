@@ -9,6 +9,31 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R138 freshly qualified the native child-provenance correction on clio-agent
+`4a92f32c` / GACT `401efcfe`. Both root-only and child-inclusive native queries
+returned HTTP 200; the latter retained the actual child's task handle, session,
+parent and `worker` agent ID. Before answering, the native view contained 227
+spans; after actual child/parent completion it contained 425, including both
+owners. Root-only lineage excluded the child. The actual connected UI made no
+failing provenance requests and recorded no console/page errors after service
+connection. Four initial connection-refused messages from pre-connection setup
+remain recorded separately, not erased.
+
+The same run repeated five actual desktop/phone draft cycles, phone answering,
+fresh child collection, original child/parent assignment completion and one
+delivery per recipient. Selected native API bodies, Core input records and
+inspected screenshots are retained. `r138-cleanup.json` confirms normal
+service/browser retirement, no active owned tasks/listeners, and removal of
+the disposable profile, short temp root and build. clio-core remains unchanged
+at `iowarp-core==2.3.1`.
+
+This passes the specific provenance and connected Question UI checks, not the
+wider Tasks matrix or final six race families. Exact-source clio-agent CI
+`38924966737` and GACT workspace CI `38923122830` are still running. Native GACT
+jobs already failed dependency resolution: `tauri-plugin-updater v2.0.0` requires
+`zip ^2`, whose listed 2.x releases are all yanked. That packaging failure is
+retained as an outstanding gate; no dependency/check has been bypassed.
+
 R137 on clio-agent `4abdf956` / GACT `bb758d56` passed the scoped actual-model
 Question/UI recheck. The child asked once, read the real file while its Question
 was pending and yielded. Its answer was typed once and survived ten viewport
@@ -37,7 +62,7 @@ the stored session agent dictionary as an object with an `.id` attribute.
 The next correction reads the canonical dictionary and runs the projection in
 the route's existing worker-thread helper. Two new public-route regression
 cases assert actual stored child identity and include-children behavior.
-That correction still requires CI and fresh live acceptance.
+R138 supplies fresh scoped live acceptance; its regression CI remains pending.
 
 GACT CI at `bb758d56` passed all 3,558 unit/integration tests, including all six
 Question-draft cases, then failed two browser cases that expected an unsent
@@ -60,7 +85,7 @@ Root/child public-route regressions now assert those fields. Scoped lint/format
 and Mypy pass; regression execution stays in CI. R137 qualifies the scoped live
 binding and draft behavior described above.
 
-The current live tuple is clio-agent `bf2df179` / GACT `6669ac3a`, with the
+The earlier R134/R135 live tuple was clio-agent `bf2df179` / GACT `6669ac3a`, with the
 unchanged `iowarp-core==2.3.1` library. GACT preserves unsent Question values in
 the existing session Question context across layout remounts. Six constructed
 regressions cover free text, choices/comments, structured values and scope
