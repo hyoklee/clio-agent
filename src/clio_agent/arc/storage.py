@@ -37,7 +37,7 @@ from clio_agent.arc import clio_core_daemon_version as daemon_version
 # Daemon port-resolution + socket-liveness helpers live in the liveness owner
 # module (#892); blob writes ride the bounded rc=13-class retry module (#893).
 from clio_agent.arc.batch_put import BatchPutError, PutRecord
-from clio_agent.arc.blob_frame import BlobFrameError, BlobNameDecodeError, frame, unframe
+from clio_agent.arc.blob_frame import BlobNameDecodeError, frame, read_framed_blob
 from clio_agent.arc.clio_core_async_ops import TagIds, store_delete, store_put, store_put_many
 
 # CTE config generation + capacity policy (the bounded ram hot-tier cap) live in their own
@@ -668,23 +668,7 @@ class ClioCoreStore:
         size = tag.GetBlobSize(name)  # 0 for a missing blob (does not raise)
         if size == 0:
             return None
-        raw = tag.GetBlob(name, size, 0)
-        try:
-            return unframe(name, raw)
-        except BlobFrameError as error:
-            # A grown blob can retain its earlier size metadata after restart.
-            # Our own frame header gives the exact read length; tool content
-            # cannot supply that header. Re-read once without changing data.
-            header_size = raw.index(":") + 1 if isinstance(raw, str) else bytes(raw).index(b":") + 1
-            required = header_size + int(error.details["declared"])
-            value = unframe(name, tag.GetBlob(name, required, 0))
-            logger.warning(
-                "reason=clio_core_blob_size_stale name=%s reported=%s framed=%s",
-                name,
-                size,
-                required,
-            )
-            return value
+        return read_framed_blob(name, size, lambda length: tag.GetBlob(name, length, 0))
 
     @guard_store_op("exists")
     def exists(self, kind: str, name: str) -> bool:
