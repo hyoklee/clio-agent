@@ -38,12 +38,14 @@ async def cancel(
             selected = owner.history.task_snapshot(handle)
             if selected is None:
                 raise ValueError("External task is unavailable")
-            if selected.terminal_at is None and selected.cancellation_requested_at is None:
+            if selected.cancellation_requested_at is None:
                 owner.history.record_snapshot(
                     selected.model_copy(
                         update={
                             "cancellation_requested_at": requested_at,
-                            "activity": "cancelling",
+                            "activity": "cancelling"
+                            if selected.terminal_at is None
+                            else selected.activity,
                             "updated_at": now(),
                         }
                     ),

@@ -20,6 +20,82 @@ STAMP = "2026-10-14T00:00:00Z"
 
 
 @pytest.mark.asyncio
+async def test_external_cancelled_reply_before_control_record_keeps_cleanup_uncertain(
+    arc: ARCMemory,
+) -> None:
+    """Server cancellation cannot publish final delivery before a deferred intent lands."""
+    history = TaskHistory(arc)
+    recovery = CoreRecovery(history)
+    owner = ExternalTasks(
+        SimpleNamespace(state=SimpleNamespace(task_history=history, task_recovery=recovery))
+    )
+
+    def exercise() -> None:
+        backend = BackendReference(
+            owner="external_mcp", server="remote", session="original", task_id="original-task"
+        )
+        submission = TaskSubmission(
+            "task_cancelled",
+            "work",
+            history.write_content("owner", {"arguments": {}}),
+            None,
+            None,
+            argument_digest({}),
+        )
+        current = TaskSnapshot(
+            handle=submission.handle,
+            kind="MCP",
+            owner=TaskOwner(human_id="human", session_id="owner", assignment_id="assignment"),
+            backend=backend,
+            submission=submission.context,
+            tool="work",
+            label="External work",
+            invocation_id="external-cancel-race",
+            created_at=STAMP,
+            updated_at=STAMP,
+            status="running",
+        )
+        history.record_snapshot(current, observation_id="accepted")
+        accepted = restore_native_call(
+            Client(FastMCP("unused-cancel-transport")),
+            submission,
+            task_id=backend.task_id,
+            status="working",
+            created_at=STAMP,
+            updated_at=STAMP,
+        )
+        reply = ClientGetTaskResult.model_validate(
+            {
+                "resultType": "complete",
+                "taskId": backend.task_id,
+                "status": "cancelled",
+                "createdAt": STAMP,
+                "lastUpdatedAt": STAMP,
+            }
+        )
+        connection = ExternalConnection(backend.model_copy(update={"task_id": ""}))
+        assert current.cancellation_requested_at is None
+        owner._record_reply(connection, accepted, reply)
+        observed = history.task_snapshot(current.handle)
+        assert observed is not None and observed.status == "task_state_uncertain"
+        assert observed.raw_status == "cancelled" and observed.settlement == "unknown"
+        assert observed.terminal_at is None and observed.result is None
+        assert observed.backend_observation is not None
+        assert history.read_content(observed.backend_observation)["status"] == "cancelled"
+        notices = history.pending_mail("owner")
+        assert len(notices) == 1 and notices[0].kind == "attention"
+        owner._record_reply(connection, accepted, reply)
+        assert history.pending_mail("owner") == notices
+        assert not history.acknowledged_notifications("owner")
+
+    try:
+        await history.io.run(exercise)
+    finally:
+        await recovery.drain()
+        await history.io.close()
+
+
+@pytest.mark.asyncio
 async def test_invalid_external_terminal_is_failed_with_raw_evidence_and_one_owner_notice(
     arc: ARCMemory,
 ) -> None:

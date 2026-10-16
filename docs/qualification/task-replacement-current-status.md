@@ -83,6 +83,26 @@ the uncertainty is preserved in bounded `r155-retained-uncertainty.json`, the
 original failed-run receipt and cleanup audit. Both exact temporary roots are
 absent. No task was rewritten to terminal to satisfy cleanup or acceptance.
 
+R156 on `bdcaba3b` passed the physical external-control gate: pause acknowledged
+recording-unconfirmed in 16.85 ms; cancellation returned in 23.02 ms; both actual
+processes exited before Core resumed. It failed the subsequent honest-state gate.
+The remote terminal reply reached the confirmed writer before the deferred
+cancellation intent, and the observer incorrectly published terminal `cancelled`
+with `external_acknowledged` settlement and no recorded cancellation request.
+The correction classifies every external raw cancellation as cleanup-uncertain,
+independent of that write ordering. Late accepted control intent also retains its
+request timestamp without changing an already-terminal historical outcome.
+No new task authority, cancellation map, scheduler or driver was introduced.
+A raw-cancel-before-intent regression preserves the backend evidence and requires
+one attention notice, no final result and no delivery acknowledgement. Scoped
+Ruff/format and Linux Mypy pass; fresh actual-model proof remains pending.
+
+The failed R156 service and external server exited zero, their process trees and
+listeners retired, and the actual shutdown snapshot showed no session workers or
+busy reservations. The bounded `r156-retained-failure.json` preserves the incorrect
+published state. Disposable profile cleanup proceeds only from those independent
+physical-retirement checks; the failed acceptance result remains failed.
+
 Committed-head CI `38952642117` at `bca4e2d7` completed red. Python 3.14 shard 1
 recorded 187 failed, 3942 passed and 21 skipped. Earlier `f5d0ae42` CI
 `38950482103` recorded 188 failed, 3941 passed and 21 skipped in shard 1, and
