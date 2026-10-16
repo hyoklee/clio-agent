@@ -7,7 +7,7 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-The latest production-changing clio-agent commit is `a557c991`; GACT is `cecfb4ee`
+clio-agent now includes the human-steering correction below; GACT is `cecfb4ee`
 (test changes only after `954a2a33`). The locked
 clio-core package remains `iowarp-core==2.3.1`. The new read correction is in
 clio-agent's ARC framing adapter, not the clio-core library. Ruff/format, scoped
@@ -80,6 +80,21 @@ regressions are in CI, not claimed locally executed.
   `r113-canonical-mixed-proof.json` is the separate scoped derivation. The wrong
   cursor used for a different handle set was rejected; that is not cursor-recovery
   acceptance. This does not pass all Q2/Q4 modes or final race repeats.
+- R116 on clio-agent `5392544d` / GACT `cecfb4ee` reproduced a real missing
+  parent notice. Actual Codex/Luna paused a child while its accepted background
+  Shell continued and completed. Authenticated human steering remained pending
+  in the paused child, but its parent had no attributed notice. The immutable
+  reproduction is `r116-human-notice-defect.json`; the family remains failed.
+  Owned tasks and service settled, and its disposable profile/temp roots are absent.
+
+The correction relays confirmed human/composer input through the existing human
+control recorder. It uses the accepted input's pinned assignment and stable notice
+identity; acceptance replay repairs a missing derived notice without duplicating
+child input or targeting a successor. Human controls keep the same recorder and
+parent-mail format. No execution owner, scheduler, dependency or clio-core change
+was introduced. Six regression cases are constructed for CI. Scoped Ruff/format,
+Mypy and unchanged removal/size/class/silent-fallback guards pass; fresh model
+qualification of this correction is pending.
 
 R103–R105 services exited with code zero and no active owned tasks. Their
 disposable profile/data and short-temp roots are actually absent; bounded live,

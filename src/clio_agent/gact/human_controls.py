@@ -5,15 +5,94 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from clio_agent.arc.task_types import MailItem
+from clio_agent.arc.task_types import MailItem, TaskSnapshot
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 from clio_agent.gact.task_publication import task_owner_recipient
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from clio_agent.gact.task_history import TaskHistory
+
+
+def _record_intervention(
+    history: TaskHistory,
+    current: TaskSnapshot,
+    intent: dict[str, Any],
+    phase: str,
+    effect: dict[str, Any] | None = None,
+) -> None:
+    with history.serialized():
+        history.record_intervention(
+            current.owner.session_id,
+            intent["id"] + ":" + phase,
+            {**intent, "phase": phase, "effect": effect},
+        )
+        if phase != "effect":
+            return
+        recipient = task_owner_recipient(history, current)
+        if recipient is None:
+            return
+        content = history.write_content(recipient, {**intent, "effect": effect})
+        history.record_mail(
+            MailItem(
+                id=intent["id"] + ":parent",
+                recipient_session=recipient,
+                sender_human=intent["actor_human"],
+                kind="control",
+                content=content,
+                created_at=intent["requested_at"],
+                handle=current.handle,
+            )
+        )
+
+
+def relay_confirmed_human_input(history: TaskHistory, item: MailItem) -> None:
+    """Notify the owning parent of accepted human steering, without sending it twice.
+
+    Use the assignment pinned in confirmed mail, including on acceptance replay.
+    A later successor never becomes the target of the original intervention.
+    """
+    if item.kind not in {"human", "composer"} or item.sender_human is None:
+        return
+    with history.serialized():
+        if history.mail_item(item.recipient_session, item.id) != item:
+            raise ValueError("Human steering must already have confirmed Core acceptance")
+        body = history.read_content(item.content)
+        if not isinstance(body, dict):
+            return
+        handle = body.get("assignment_id")
+        if handle is None:
+            return  # Legacy acceptance has no proven assignment to attribute.
+        if not isinstance(handle, str):
+            raise ValueError("Human steering assignment identity is invalid")
+        current = history.task_snapshot(handle)
+        if (
+            current is None
+            or current.kind not in {"Session", "Subagent"}
+            or current.owner.session_id != item.recipient_session
+        ):
+            raise ValueError("Human steering assignment identity is unavailable")
+        recipient = task_owner_recipient(history, current)
+        identity = "intervention:message:" + item.id
+        if recipient is None or history.mail_item(recipient, identity + ":parent") is not None:
+            return
+        intent = {
+            "id": identity,
+            "handle": current.handle,
+            "action": "message",
+            "actor_human": item.sender_human,
+            "requested_at": item.created_at,
+            "message": body.get("text", ""),
+        }
+        _record_intervention(history, current, intent, "intent")
+        _record_intervention(
+            history, current, intent, "effect", {"accepted": True, "message_id": item.id}
+        )
 
 
 async def intervene(
@@ -42,29 +121,7 @@ async def intervene(
     }
 
     def record(phase: str, effect: dict[str, Any] | None = None) -> None:
-        with history.serialized():
-            history.record_intervention(
-                current.owner.session_id,
-                identity + ":" + phase,
-                {**intent, "phase": phase, "effect": effect},
-            )
-            if phase != "effect":
-                return
-            recipient = task_owner_recipient(history, current)
-            if recipient is None:
-                return
-            content = history.write_content(recipient, {**intent, "effect": effect})
-            history.record_mail(
-                MailItem(
-                    id=identity + ":parent",
-                    recipient_session=recipient,
-                    sender_human=caller.human_id,
-                    kind="control",
-                    content=content,
-                    created_at=stamp,
-                    handle=handle,
-                )
-            )
+        _record_intervention(history, current, intent, phase, effect)
 
     recording = "confirmed"
     try:

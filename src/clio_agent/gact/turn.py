@@ -750,7 +750,7 @@ def _start_background_user_turn(
             },
         )
         if mailbox_item is None:
-            owner.history.record_mail(
+            accepted_input = owner.history.record_mail(
                 MailItem(
                     id=user_msg.id,
                     recipient_session=sid,
@@ -761,7 +761,7 @@ def _start_background_user_turn(
                 )
             )
         else:
-            owner.history.update_mail(
+            accepted_input = owner.history.update_mail(
                 mailbox_item.model_copy(
                     update={
                         "content": content,
@@ -771,6 +771,9 @@ def _start_background_user_turn(
                 ),
                 expected_revision=mailbox_item.revision,
             )
+        from clio_agent.gact.human_controls import relay_confirmed_human_input
+
+        relay_confirmed_human_input(owner.history, accepted_input)
         # Core mail is authoritative. A failure before its commit must not leave
         # a conflicting transcript row; a later projection failure is recoverable
         # from the confirmed message body through startup/segment preparation.

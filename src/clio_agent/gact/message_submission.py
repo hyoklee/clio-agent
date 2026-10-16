@@ -23,6 +23,7 @@ from clio_agent.gact.context_reference_delivery import (
 )
 from clio_agent.gact.context_references import authorize_context_reference_parts_sync
 from clio_agent.gact.events import Event
+from clio_agent.gact.human_controls import relay_confirmed_human_input
 from clio_agent.gact.message_submission_errors import (
     a2ui_client_metadata_error as _a2ui_client_metadata_error,
 )
@@ -587,6 +588,7 @@ def accept_message(
             original_delivery: Literal["steer", "start"] = (
                 "steer" if retained.metadata.get("delivery") == "steer" else "start"
             )
+            relay_confirmed_human_input(owner.history, accepted)
             return PostMessageResponse(
                 message_id=identity,
                 accepted_at=retained.created_at,
