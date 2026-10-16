@@ -225,6 +225,56 @@ production boundary before invoking the stand-in. Original single-call and
 streaming assertions remain. These test corrections are not executed local
 tests; scoped Ruff/format passes and fresh CI execution remains required.
 
+### R168/R169 default assignment and queued delivery
+
+R168 on `5930d933` completed all default-disposition delivery stages but its
+controller failed an overbroad assertion banning every `wait_tasks` call. Actual
+records show two `timeout_s=0` snapshots collecting already-completed Question
+and Shell results. The separate `r168-behavior-audit.json` verifies the actual
+default submits, original assignment, delivery guards and 1,152-byte output/hash;
+it leaves the controller's failed verdict unchanged. Its profile/temp roots and
+all owned processes were retired/removed before the corrected repeat.
+
+R169 then passed the complete corrected experiment on the same production
+source/GACT pair. Actual Codex/Luna received Shell
+`task_ae845dfe3cb141daa2c6d718e49b7603` and freeform Question
+`task_bad41145e89e6442aa8b18c0d1747a2baa138fa7145a3692edd41e9f9c932527`, read a
+fresh sentinel, and submitted without an assignment disposition. Session
+`task_74789496b51247e5be6a11e91d055f46` yielded while both tasks remained pending.
+Ordinary human feedback woke that same assignment; the model freshly read the
+steering file and yielded again. The Question answer independently woke it while
+Shell was still running. Native completion then woke it a fourth time; it
+collected the result and freshly read the output file. With no remaining work,
+the fourth default submit completed the original assignment. All four submit
+records omit the disposition or set it to null.
+
+Fifteen confirmed input records retain the same assignment ID. Feedback, Question
+answer and Shell outcome each appear once; no pending input or worker remains,
+and no successor assignment or replacement workload was created. The actual
+1,152-byte payload matches SHA-256
+`9da82db2049f0330c05676f2192f10ac351054a986fce07e5ce361ac45e27f94` and the model's
+final answer. While the original model was running, the public API reported the
+correct message count of one. Final count was six. Per-case CI at `38a8794b`
+also confirms the existing running/cold-count regression passed on Python 3.13
+and 3.14; no result is inferred for unavailable artifacts or the whole suite.
+
+R169's API exited zero. Process, producer PID/creation-time, private-Core and
+listener audits passed before removing the 554,860,495-byte profile and
+1,073,741,824-byte temp root. Both exact roots are absent. Bounded run/cleanup
+receipts remain under `.pytest-runtime/static/r169-*`; auth and production hashes
+match. This qualifies the scoped Codex default-delivery behavior, with no fresh
+UI/Claude/final-race claim. The broader nine-family/frozen-candidate goal remains
+active and incomplete; CI is still failing.
+
+Between runs, the approval-input regression fixture was migrated to off-loop
+Core mail/content reads. Its native-answer test now requires the fixture's
+existing message projection to remain empty, preserving the no-extra-transcript
+message contract instead of incorrectly requiring the fixture attribute to be
+absent. All approval/output/media/acknowledgement assertions remain. Ruff/format
+passes; the corrected cases are built for CI and were not run locally. Fresh
+data-only migration, goal/Question interaction, external attention-then-final,
+current Claude routes and final repeated races remain outstanding.
+
 R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
 R153 repeated the unchanged scenario with Core-free async/thread stack capture
 and identified the actual bottleneck: both native Docket cancellation listeners

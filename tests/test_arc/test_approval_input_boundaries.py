@@ -75,14 +75,18 @@ async def test_plan_gate_recovers_a_header_when_installation_failed(
         header = await asyncio.to_thread(owner.history.task_snapshot, handle)
         assert header.raw_status == "" and header.details is not None
         assert app.state.sessions.get(root.owner.session_id).metadata.get("execution_gate") is None
-        original = owner.history.pending_mail(root.owner.session_id)
+        original = await asyncio.to_thread(owner.history.pending_mail, root.owner.session_id)
         await asyncio.to_thread(owner.history.restore)
         await asyncio.to_thread(questions.restore)
         posted = await asyncio.to_thread(owner.history.task_snapshot, handle)
         assert posted.raw_status == "pending" and posted.handle == header.handle
-        assert owner.history.read_content(posted.details) == definition.model_dump(mode="json")
+        assert await asyncio.to_thread(owner.history.read_content, posted.details) == (
+            definition.model_dump(mode="json")
+        )
         assert app.state.sessions.get(root.owner.session_id).metadata["execution_gate"] == handle
-        assert owner.history.pending_mail(root.owner.session_id) == original
+        assert (
+            await asyncio.to_thread(owner.history.pending_mail, root.owner.session_id) == original
+        )
     finally:
         for handle in owner.history.task_handles(kind="Question", active_only=True):
             await asyncio.to_thread(questions.cancel, handle)
@@ -164,7 +168,9 @@ async def test_explicit_complete_cannot_bypass_approval_or_replace_captured_outp
         await asyncio.gather(*tuple(owner._controls.values()))
         settled = owner.history.task_snapshot(root.handle)
         assert settled.status == "completed"
-        assert owner.history.read_content(settled.result) == {"answer": "Approved exact output"}
+        assert await asyncio.to_thread(owner.history.read_content, settled.result) == {
+            "answer": "Approved exact output"
+        }
         assert app.state.sessions.get(sid).metadata["execution_gate"] == ""
     finally:
         await owner.shutdown()
@@ -193,7 +199,7 @@ async def test_answer_renderer_preserves_native_media_without_another_message(
         ),
     )
     sid = root.owner.session_id
-    before = owner.history.pending_mail(sid)
+    before = await asyncio.to_thread(owner.history.pending_mail, sid)
     try:
         rendered = await asyncio.to_thread(
             render_answer_input,
@@ -204,7 +210,7 @@ async def test_answer_renderer_preserves_native_media_without_another_message(
         )
         assert rendered["actor"] == "algorithm" and rendered["source"] == "question_answer"
         assert rendered["media"][0]["type"] == "image" and PNG in rendered["media"][0]["data"]
-        assert owner.history.pending_mail(sid) == before
+        assert await asyncio.to_thread(owner.history.pending_mail, sid) == before
         assert owner.history.acknowledged_notifications(sid) == frozenset()
     finally:
         await owner.shutdown()
@@ -275,7 +281,7 @@ async def test_native_answer_uses_one_recipient_input_for_automatic_and_explicit
             assert PNG in rendered["media"][0]["data"]
             assert owner.history.acknowledged_notifications(sid) == frozenset({notice.id})
             assert not owner.history.pending_mail(sid)
-            assert not hasattr(app.state, "messages")
+            assert app.state.messages == {}
             recorder.commit_input(2)
             assert owner.history.committed_notification_input(sid, notice.id) == committed
         finally:
