@@ -42,10 +42,13 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
         if (
             current.terminal_at is not None
             or current.submission is None
+            or (current.backend is not None and current.backend.owner != "native")
             or handle in self._calls
             or handle in self._rpc
         ):
             continue
+        # Other owners retain their own submission content, including Question
+        # definitions. Unknown native acceptance still resolves its saved context.
         submission = SubmissionContext.model_validate(
             await asyncio.to_thread(self.history.read_content, current.submission)
         )

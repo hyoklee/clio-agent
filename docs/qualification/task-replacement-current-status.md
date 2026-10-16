@@ -9,6 +9,22 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R139 used actual Codex/Luna on `a295d54f` to create a Question, read the real file
+and yield. Its first API/native-lifespan retirement completed normally. Startup
+of the same profile then failed before readiness: NativeTools.restore decoded
+the Question owner's saved QuestionDefinition as a SubmissionContext. The
+traceback, original handles and bounded physical-custody audit are retained.
+This is an execution-owner selection defect in clio-agent; the Core record was
+read successfully and `iowarp-core==2.3.1` is unchanged.
+
+The correction checks a known backend owner before decoding native submission
+content, preserving recovery of native acceptance whose backend identity is
+still unknown. A regression restores native execution with a real pending
+Question and requires its identity/state to remain with the Question owner.
+The original R139 failure remains failed. Its dormant records/profile are
+retained only for immediate same-profile recovery and settlement, rather than
+resubmitting the Question. Fresh corrected recovery and CI remain pending.
+
 The next candidate corrects the remaining Question response findings from CI.
 Compatibility answer/cancel URLs now bind the selected session tree through the
 existing TaskAccess scope check; the authenticated human's broader shared-task

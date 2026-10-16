@@ -129,6 +129,21 @@ def test_stop_does_not_cancel_an_open_question(world: tuple[Any, TestClient, str
     assert not app.state.turn_runner.busy(sid)
 
 
+def test_native_restore_leaves_the_pending_question_with_its_owner(
+    world: tuple[Any, TestClient, str],
+) -> None:
+    """Execution recovery must not reinterpret another owner's saved submission."""
+    app, client, sid = world
+    handle = post_question(app, sid)["handle"]
+    before = app.state.task_history.task_snapshot(handle)
+    assert client.portal is not None
+    client.portal.call(app.state.native_tools.restore)
+    assert app.state.task_history.task_snapshot(handle) == before
+    pending = client.get(f"/v1/sessions/{sid}/questions", params={"status": "pending"})
+    assert pending.status_code == 200, pending.text
+    assert [row["task_handle"] for row in pending.json()["questions"]] == [handle]
+
+
 @pytest.mark.parametrize("decision", ["answer", "cancel"])
 def test_unrelated_session_cannot_answer_cancel_or_observe_question(
     world: tuple[Any, TestClient, str],
