@@ -203,7 +203,9 @@
     "browser_cases": 3,
     "selected_test_skips": 0,
     "ruff": "passed",
-    "mypy": "passed (11 relevant source files)",
+    "mypy": "passed (1221 source files, Linux target)",
+    "real_windows_supervisor_cases": 5,
+    "real_linux_supervisor_cases": 4,
     "ui_root_lint": "passed",
     "ui_root_typecheck": "passed",
     "production_and_offline_builds": "passed"

@@ -22,9 +22,7 @@ import uuid
 from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Any, Iterator
-from urllib.error import HTTPError, URLError
 from urllib.parse import urlsplit
-from urllib.request import ProxyHandler, Request, build_opener
 
 MARKER = "CLIO_SERVICE_OBSERVATION "
 #: Earlier runs' logs kept beside the current one; ``server.log.1`` is the previous run.
@@ -233,16 +231,7 @@ def listeners(port: int) -> list[tuple[str, str]]:
     return found
 
 
-def http_get(url: str, key: str = "") -> tuple[int, bytes]:
-    """Status and body of a direct (proxy-free) loopback GET; 0 when nothing answered."""
-    request = Request(url, headers={"Authorization": f"Bearer {key}"} if key else {})
-    try:
-        with build_opener(ProxyHandler({})).open(request, timeout=3) as response:
-            return response.status, response.read()
-    except HTTPError as error:
-        return error.code, b""
-    except (OSError, URLError, ValueError):
-        return 0, b""
+http_get = platform_helper().http_get
 
 
 def serves_identity(root: Path, receipt: dict[str, Any], key: str = "") -> bool:
@@ -356,6 +345,8 @@ def stop(root: Path) -> None:
         platform_helper().stop(receipt)
     elif alive(receipt):
         platform_helper().stop_posix(receipt, alive)
+    if sys.platform == "win32":
+        platform_helper().wait_launcher_exit(receipt)
     hook(root, "stop")
     receipt.update(
         phase="not_installed" if receipt["phase"] == "not_installed" else "stopped",
@@ -494,6 +485,7 @@ def launch(root: Path, request: dict[str, Any]) -> None:
             close_fds=True,
         )
     if os.name == "nt":
+        receipt.update(launcher_pid=process.pid, launcher_identity=identity(process.pid))
         receipt.update(platform_helper().await_worker(root, generation))
     else:
         receipt.update(pid=process.pid, process_identity=identity(process.pid))
@@ -505,29 +497,7 @@ def launch(root: Path, request: dict[str, Any]) -> None:
 with_host_setup = platform_helper().with_host_setup
 
 
-def worker_environment(
-    root: Path, manifest: dict[str, Any], base: dict[str, str]
-) -> dict[str, str]:
-    """Isolate the service from CLIO's interpreter and expose its own environment's tools.
-
-    Runtimes JIT-compile with console scripts installed beside their interpreter (vLLM's flashinfer
-    runs ``ninja``), so the service environment's ``bin`` leads ``PATH``.
-    """
-    env = {**base, **manifest.get("environment", {})}
-    for name in ("UV_PROJECT_ENVIRONMENT", "VIRTUAL_ENV", "PYTHONPATH", "PYTHONHOME"):
-        env.pop(name, None)
-    env.update(
-        UV_CACHE_DIR=str(root / "cache/uv"),
-        UV_PYTHON_INSTALL_DIR=str(root / "cache/python"),
-        TMPDIR=str(root / "tmp"),
-        TEMP=str(root / "tmp"),
-        TMP=str(root / "tmp"),
-        HF_HOME=str(root / "cache/huggingface"),
-        PATH=os.pathsep.join(
-            item for item in (str(environment_python(root).parent), env.get("PATH", "")) if item
-        ),
-    )
-    return env
+worker_environment = platform_helper().worker_environment
 
 
 def reuse_helper() -> Any:
