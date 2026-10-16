@@ -49,7 +49,7 @@ def _task_index(app: "FastAPI", root_session_id: str) -> dict[str, dict[str, Any
         rows[handle] = {
             "task_id": handle,
             "child_session_id": task.owner.session_id,
-            "agent_ref": {"expert_id": session.agent.id if session is not None else ""},
+            "agent_ref": {"expert_id": session.agent.get("id", "") if session is not None else ""},
             "run_label": task.label,
             "status": task.status,
             "created_at": task.created_at,

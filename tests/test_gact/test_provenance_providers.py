@@ -26,6 +26,7 @@ from clio_agent.gact.provenance.normalization import normalize_semantic_events
 from clio_agent.gact.provenance.protocol import ProvenanceProvider, ProviderReceipt
 from clio_agent.gact.semantic_events import SemanticEvent
 from tests._config_layer import set_config
+from tests.test_gact.task_records import record_assignment_fixture, record_delegation_fixture
 
 
 class _RecordingProvider:
@@ -96,6 +97,42 @@ def _event(
 
 def test_jsonl_is_default_provider() -> None:
     assert configured_provider_names() == ["jsonl"]
+
+
+@pytest.mark.parametrize("include_children", [True, False])
+def test_native_execution_retains_stored_child_agent_identity(
+    tmp_path: Path, include_children: bool
+) -> None:
+    """Actual session records and Core lineage must remain queryable over HTTP."""
+    set_config("provenance.agentic.providers", ["jsonl"])
+    set_config("provenance.agentic.jsonl.path", str(tmp_path / "traces"))
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app) as client:
+        parent = client.post("/v1/sessions", json={"title": "Parent"}).json()["id"]
+        record_assignment_fixture(app, parent)
+        child = record_delegation_fixture(
+            app,
+            parent,
+            handle="task_provenance_child",
+            agent="analysis-worker",
+            completed=True,
+            result={"answer": "Completed analysis"},
+        )
+        assert app.state.sessions.get(child.owner.session_id).agent["id"] == "analysis-worker"
+        response = client.get(
+            f"/v1/sessions/{parent}/provenance/execution",
+            params={"provider": "native", "include_children": include_children},
+        )
+        assert response.status_code == 200, response.text
+        lineage = response.json()["session_lineage"]
+        delegated = [row for row in lineage if row["session_id"] == child.owner.session_id]
+        if include_children:
+            assert len(delegated) == 1
+            assert delegated[0]["task_id"] == child.handle
+            assert delegated[0]["agent_id"] == "analysis-worker"
+            assert delegated[0]["parent_session_id"] == parent
+        else:
+            assert delegated == [] and len(lineage) == 1
 
 
 def test_jsonl_selection_does_not_import_flowcept(monkeypatch: pytest.MonkeyPatch) -> None:

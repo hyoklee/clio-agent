@@ -9,6 +9,47 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Capacity and Question UI checkpoint
 
+R137 on clio-agent `4abdf956` / GACT `bb758d56` passed the scoped actual-model
+Question/UI recheck. The child asked once, read the real file while its Question
+was pending and yielded. Its answer was typed once and survived ten viewport
+transitions across five desktop/390px phone cycles. The actual phone response
+returned HTTP 200 for the correct child owner and original Question handle.
+The child freshly collected the unpredictable answer and file text, completed
+its original assignment, and woke the yielded parent, which also completed its
+original assignment. Core input records contain one Question-answer delivery
+to the child and one child-result delivery to the parent. No human steering,
+replacement assignment or repeated question was needed. These are resize and
+ordinary-delivery checks, not the six final lifecycle races.
+
+`r137-scoped-audit.json`, the original controller receipt and selected real
+screenshots retain the proof. The phone/desktop frames were visually inspected.
+The service/browser exited normally, all owned work settled, and
+`r137-cleanup.json` confirms profile/temp/build absence. R136 retains its original
+failed result: its draft/response stage passed, but the controller cancelled
+work after a single ten-second status-read timeout before verifying delivery.
+R137 retained the same production tuple, used normal finite-I/O capacity and
+retried transient observations against the still-live owner rather than
+treating a read deadline as a terminal task failure.
+
+Full UI acceptance remains incomplete. Native execution-provenance requests
+returned HTTP 503, now captured with the exact cause: child attribution treated
+the stored session agent dictionary as an object with an `.id` attribute.
+The next correction reads the canonical dictionary and runs the projection in
+the route's existing worker-thread helper. Two new public-route regression
+cases assert actual stored child identity and include-children behavior.
+That correction still requires CI and fresh live acceptance.
+
+GACT CI at `bb758d56` passed all 3,558 unit/integration tests, including all six
+Question-draft cases, then failed two browser cases that expected an unsent
+answer to disappear on reopening at another width. Test-only `401efcfe` now
+requires the initial empty/disabled state and subsequent retained/enabled draft
+without retyping, preserving the existing source-navigation and geometry
+checks. Its workspace CI remains pending. Native builds are also failed.
+clio-agent CI at `4abdf956` remains red; Python 3.14 shard 1 executed 3,928 passed,
+200 failed and 21 skipped. Unrelated-session Question response routing,
+validation status and corrupt-surface projection failures in that log require
+further ownership review; they are not dismissed as fixture migrations.
+
 The next candidate also preserves the existing Question task handle and
 asynchronous response marker in the normalized interaction payload. The typed
 UI row previously discarded the marker, and the interaction projection omitted
@@ -16,7 +57,8 @@ both fields. GACT therefore displayed legacy waiting guidance and direct
 dismissal controls for task Questions. The correction changes presentation
 bindings only; the same Core Question and response owner remain authoritative.
 Root/child public-route regressions now assert those fields. Scoped lint/format
-and Mypy pass; regression execution stays in CI and live UI acceptance is pending.
+and Mypy pass; regression execution stays in CI. R137 qualifies the scoped live
+binding and draft behavior described above.
 
 The current live tuple is clio-agent `bf2df179` / GACT `6669ac3a`, with the
 unchanged `iowarp-core==2.3.1` library. GACT preserves unsent Question values in
