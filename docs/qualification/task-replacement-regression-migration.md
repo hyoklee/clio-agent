@@ -1,5 +1,26 @@
 # Remaining legacy regression migration
 
+## Completed construction phase
+
+The remaining owner-coupled tests have been replaced. See the complete
+[behavior map](task-replacement-test-construction.md). No pytest collection,
+tests or live qualification ran during this phase. Historical execution results
+below do not accept the newly written tests.
+
+Current arrangements use confirmed Core task/Question/mail records, actual
+TurnRunner admission and the conversation engine. Test doubles replace model or
+transport behavior only. UI fixtures observe confirmed Core input rather than
+installing a removed spawn callback. Retained workload, permission, context,
+rendering and provenance algorithms keep their regression obligations.
+
+Asynchronous draft Questions survive Stop and ordinary feedback. Explicit
+cancellation/expiry owns closure; choice collection reads the stored answer.
+Core history replaces lifetime JSON-store eviction assertions. Release-callback
+isolation and typed queue failures remain required even if current code fails
+those cases. The empty-wake defect is specified for roots and children with
+pending work. Static checks do not mark a behavioral acceptance row passed.
+
+
 Initial production implementation is present; this checklist concerns regression construction and qualification. Snapshot: R42 plus the first three R43 migrations; AST-only inspection of 1,098 Python test/helper files, 46 candidate files and 288 retired-binding findings, with no parse errors. This is advisory evidence, not collection, behavioral execution or complete coverage proof. A candidate may require fixture migration, removal of engine-specific assertions, or preservation as a legitimate historical decoder test; never delete it automatically.
 
 The native extension-registry expectations were additionally migrated by semantic inspection: the old custom Tasks entry is replaced by the actual SDK factory while Apps/input and catalog contracts remain covered. The queue-identity regression was added after the AST snapshot. Initial test construction remains unfinished.

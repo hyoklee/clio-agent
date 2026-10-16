@@ -22,6 +22,7 @@ import zipfile
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -762,15 +763,7 @@ class _FakeTask:
         self.task_id = task_id or f"task_{child_session_id}"
 
 
-class _FakeTaskRegistry:
-    def __init__(self, by_parent: dict[str, list[str]]) -> None:
-        self._by_parent = by_parent
-
-    def for_parent(self, parent: str) -> list[_FakeTask]:
-        return [_FakeTask(c) for c in self._by_parent.get(parent, [])]
-
-
-def test_same_name_across_unioned_workspaces_do_not_collide(tmp_path: Path) -> None:
+def test_same_name_across_unioned_workspaces_do_not_collide(tmp_path: Path, arc: Any) -> None:
     """Finding [11]: a parent's include_children export unions delegate workspaces; two
     DIFFERENT ``plot.png`` v1 records (parent + child) must ship distinct bytes under
     distinct data/ paths AND distinct JSON-LD @ids — never a silent overwrite.
@@ -792,7 +785,12 @@ def test_same_name_across_unioned_workspaces_do_not_collide(tmp_path: Path) -> N
     app = SimpleNamespace(state=state)
     parent_sid = store.create(workspace_id="ws_parent", title="t").id
     child_sid = store.create(workspace_id="ws_child", title="t").id
-    app.state.agent_task_registry = _FakeTaskRegistry({parent_sid: [child_sid]})
+    from clio_agent.gact.task_history import TaskHistory
+    from tests.test_gact.task_records import record_assignment_fixture
+
+    app.state.task_history = TaskHistory(arc)
+    app.state.human_principal = "human"
+    record_assignment_fixture(app, child_sid, parent_sid=parent_sid)
 
     parent_png = parent_root / "plot.png"
     parent_png.write_bytes(b"\x89PNG-PARENT-BYTES")

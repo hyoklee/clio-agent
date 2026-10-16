@@ -9,35 +9,37 @@ from __future__ import annotations
 import asyncio
 import threading
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.task_types import QuestionDefinition, QuestionReply
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
-from clio_agent.gact.ask_user_tool import arm_ask_user_deadline
+from clio_agent.gact.question_surface import question_row
 from clio_agent.gact.types import UserQuestion
 from tests._config_layer import set_config
+from tests.test_gact.task_records import record_assignment_fixture
 
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
 CLIO_A2UI_CATALOG_ID = workspace_catalog_id()
 
 
-def _armed_question(app: object, sid: str, question_id: str, *, ttl_s: int = 3600) -> UserQuestion:
-    now = datetime.now(timezone.utc)
-    row = UserQuestion(
-        id=question_id,
-        session_id=sid,
-        owner_session_id=sid,
-        attended_session_id=sid,
-        prompt="Which dataset?",
-        created_at=now.isoformat(),
-        updated_at=now.isoformat(),
-        expires_at=(now + timedelta(seconds=ttl_s)).isoformat(),
+def _armed_question(app: Any, sid: str, question_id: str, *, ttl_s: int = 3600) -> UserQuestion:
+    """Post one actual Core Question and let the application own its timer."""
+    assignment = app.state.task_history.latest_assignment(sid) or record_assignment_fixture(
+        app, sid
     )
-    app.state.user_questions[row.id] = row
-    return row
+    expires = (datetime.now(timezone.utc) + timedelta(seconds=ttl_s)).isoformat() if ttl_s else None
+    task = app.state.questions.create(
+        assignment.owner,
+        QuestionDefinition(prompt="Which dataset?", expires_at=expires),
+        invocation_id=question_id,
+        handle=question_id,
+    )
+    return question_row(app, task.handle)
 
 
 # --------------------------------------------------------------------------- #
@@ -45,55 +47,29 @@ def _armed_question(app: object, sid: str, question_id: str, *, ttl_s: int = 360
 # --------------------------------------------------------------------------- #
 
 
-def test_answering_a_question_cancels_its_armed_expiry_timer(tmp_path) -> None:
-    """A settled question must not leave a live daemon timer for its whole TTL."""
-
+@pytest.mark.parametrize("resolution", ["answer", "cancel"])
+def test_question_settlement_retires_its_application_timer(tmp_path: Path, resolution: str) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="ask")
-    row = _armed_question(app, session.id, "q_settled")
-    app.state.sessions.update(
-        session.id,
-        status="waiting_user",
-        metadata_patch={"pending_user_question_id": row.id},
-    )
-
-    threads_before = threading.active_count()
-    arm_ask_user_deadline(app, row)
-    assert row.id in app.state.ask_user_deadlines
-    timer = app.state.ask_user_deadlines[row.id]
-
     with TestClient(app) as client:
-        answered = client.post(
-            f"/v1/sessions/{session.id}/questions/{row.id}/answer",
-            headers=HEADERS,
-            json={"answer": "the beam"},
+        session = app.state.sessions.create(workspace_id="ws_default", title="expiry")
+        row = _armed_question(app, session.id, "task_expiry")
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), app.state.question_events.loop).result(
+            timeout=5
         )
-        assert answered.status_code == 200
-
-    assert app.state.user_questions[row.id].status == "answered"
-    assert row.id not in app.state.ask_user_deadlines
-    timer.join(timeout=5.0)
-    assert not timer.is_alive()
-    assert threading.active_count() <= threads_before
-
-
-def test_cancelling_a_question_cancels_its_armed_expiry_timer(tmp_path) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="ask")
-    row = _armed_question(app, session.id, "q_cancelled")
-
-    arm_ask_user_deadline(app, row)
-    timer = app.state.ask_user_deadlines[row.id]
-
-    with TestClient(app) as client:
-        cancelled = client.post(
-            f"/v1/sessions/{session.id}/questions/{row.id}/cancel", headers=HEADERS
+        timer = app.state.question_events._timers[row.id]
+        if resolution == "answer":
+            response = client.post(
+                f"/v1/sessions/{session.id}/questions/{row.id}/answer", json={"answer": "A"}
+            )
+        else:
+            response = client.post(f"/v1/sessions/{session.id}/questions/{row.id}/cancel")
+        assert response.status_code in {200, 204}, response.text
+        asyncio.run_coroutine_threadsafe(asyncio.sleep(0), app.state.question_events.loop).result(
+            timeout=5
         )
-        assert cancelled.status_code == 200
-
-    assert row.id not in app.state.ask_user_deadlines
-    timer.join(timeout=5.0)
-    assert not timer.is_alive()
+        assert timer.cancelled()
+        assert row.id not in app.state.question_events._timers
+        assert app.state.task_history.task_snapshot(row.id).terminal_at is not None
 
 
 def _a2ui_surface(client: TestClient, sid: str, surface_id: str) -> dict[str, object]:
@@ -476,8 +452,8 @@ def test_queue_promotion_authorizes_referenced_parts_exactly_once(tmp_path, monk
     """
 
     from clio_agent.gact import message_submission
-    from clio_agent.gact.message_intents import QueuedMessage
     from clio_agent.gact.types import Part
+    from tests.test_gact.task_records import record_composer_fixture
     from tests.test_gact.test_post_messages import FakeClioAgent
 
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(answer="ok"))
@@ -492,21 +468,21 @@ def test_queue_promotion_authorizes_referenced_parts_exactly_once(tmp_path, monk
         ).json()["references"]
         row = next(item for item in listed if item["id"] == "notes.txt")
 
-        app.state.message_intents.create_queued(
-            QueuedMessage(
-                id="queued_ref",
-                session_id=sid,
-                parts=[
-                    Part(type="text", text="look at this"),
-                    Part(
-                        type="context_ref",
-                        ref_kind="workspace_file",
-                        ref_id="notes.txt",
-                        revision=row["revision"],
-                    ),
-                ],
-                client_message_id="msg_ref_future",
-            )
+        app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": True})
+        record_composer_fixture(
+            app,
+            sid,
+            "queued_ref",
+            parts=[
+                Part(type="text", text="look at this"),
+                Part(
+                    type="context_ref",
+                    ref_kind="workspace_file",
+                    ref_id="notes.txt",
+                    revision=row["revision"],
+                ),
+            ],
+            client_message_id="msg_ref_future",
         )
 
         calls: list[int] = []
@@ -669,93 +645,42 @@ def test_admitted_diff_reference_redelivers_its_snapshot_with_a_stale_marker(
 # --------------------------------------------------------------------------- #
 
 
-def test_init_failure_refuses_inputs_parked_for_an_agent_that_never_arrives(
-    tmp_path,
-) -> None:
-    """A restart-shaped scenario: the answer landed, then construction failed.
-
-    The session must stop looking idle, but the parked item is RETAINED: a
-    provider rebind (``PUT /v1/providers/lm`` -> ``mark_agent_ready``) drains
-    these inboxes, so the item is deliverable and destroying it loses the answer
-    the user already gave.
-    """
-
+def test_init_failure_retains_confirmed_inputs_for_later_admission(tmp_path: Path) -> None:
     from clio_agent.gact.agent_initialization import record_init_failure
-    from clio_agent.gact.agent_mailbox import accept_session_input as enqueue_user_steer
-    from clio_agent.gact.agent_mailbox import pending_mail
+    from clio_agent.gact.session_input import accept_session_input
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="stranded")
-    app.state.agent = None
-    enqueue_user_steer(
-        app,
-        session.id,
-        "the answer the user already gave",
-        {"question_id": "q_parked", "ask_user_resume": True},
-    )
-    app.state.sessions.update(session.id, status="idle")
-    refusals: list[dict[str, object]] = []
-    original_publish = app.state.bus.publish
-
-    def capture(event):
-        if event.type == "session.input_refused":
-            refusals.append(dict(event.payload))
-        return original_publish(event)
-
-    app.state.bus.publish = capture
-
-    record_init_failure(app, RuntimeError("provider is not configured"), stage="init")
-
-    assert len(refusals) == 1
-    assert refusals[0]["reason"] == "agent_init_failed"
-    assert refusals[0]["question_id"] == "q_parked"
-    assert refusals[0]["recoverable"] is True
-    assert refusals[0]["retained"] is True
-    assert refusals[0]["recovery_actions"] == ["rebind_lm_provider"]
-    assert app.state.sessions.get(session.id).status == "error"
-    assert bool(pending_mail(app, session.id)), (
-        "the parked answer must survive for the rebind that can still deliver it"
-    )
-    patch = app.state.sessions.get(session.id).metadata["agent_init_error"]
-    assert patch["retained_inputs"] == 1
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="deferred")
+        app.state.agent = None
+        identity = accept_session_input(
+            app, session.id, "retained answer", metadata={"ask_user_resume": True}
+        )
+        original = app.state.task_history.mail_item(session.id, identity)
+        record_init_failure(app, RuntimeError("provider is not configured"), stage="init")
+        assert app.state.task_history.pending_mail(session.id) == (original,)
+        assert identity not in app.state.task_history.acknowledged_notifications(session.id)
+        assert app.state.agent_init_error == "RuntimeError('provider is not configured')"
 
 
-def test_a_rebind_after_an_init_failure_still_delivers_the_retained_answer(
-    tmp_path,
+def test_agent_ready_signals_the_existing_core_pending_inputs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The retention claim, proven on the real recovery door rather than asserted."""
-
-    import asyncio
-
     from clio_agent.gact.agent_initialization import mark_agent_ready, record_init_failure
-    from clio_agent.gact.agent_mailbox import accept_session_input as enqueue_user_steer
-    from clio_agent.gact.agent_mailbox import pending_mail
+    from clio_agent.gact.session_input import accept_session_input
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="recovered")
-    app.state.agent = None
-    enqueue_user_steer(app, session.id, "the answer", {"ask_user_resume": True})
-    record_init_failure(app, RuntimeError("provider is not configured"), stage="init")
-
-    drained: list[str] = []
-
-    async def drive() -> None:
-        app.state.mcp_app_loop = asyncio.get_running_loop()
-        app.state.turn_runner.bind_loop(app.state.mcp_app_loop)
-        import clio_agent.gact.loop_inbox as loop_inbox
-
-        original = loop_inbox.drain_inbox_to_new_turn
-        loop_inbox.drain_inbox_to_new_turn = lambda _app, sid: drained.append(sid)
-        try:
-            mark_agent_ready(app, object())
-            await asyncio.sleep(0)
-        finally:
-            loop_inbox.drain_inbox_to_new_turn = original
-
-    asyncio.run(drive())
-
-    assert drained == [session.id]
-    assert bool(pending_mail(app, session.id))
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="rebind")
+        app.state.agent = None
+        identity = accept_session_input(app, session.id, "retained answer")
+        record_init_failure(app, RuntimeError("not configured"), stage="init")
+        signalled = threading.Event()
+        monkeypatch.setattr(app.state.conversations, "signal_pending", signalled.set)
+        mark_agent_ready(app, object())
+        assert signalled.wait(5)
+        assert identity in {item.id for item in app.state.task_history.pending_mail(session.id)}
+        assert identity not in app.state.task_history.acknowledged_notifications(session.id)
 
 
 def test_the_session_store_refuses_an_out_of_vocabulary_status(tmp_path) -> None:
@@ -804,160 +729,90 @@ def test_the_session_store_refuses_an_out_of_vocabulary_status(tmp_path) -> None
         assert by_id["sess_good"]["status"] == "idle"
 
 
-def test_mark_agent_ready_drains_through_the_running_loop(tmp_path) -> None:
-    """The production branch (loop.call_soon), not the monkeypatched drain."""
-
-    import asyncio
-
-    from clio_agent.gact.agent_initialization import mark_agent_ready
-    from clio_agent.gact.agent_mailbox import accept_session_input as enqueue_user_steer
-    from clio_agent.gact.agent_mailbox import pending_mail
-
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="deferred")
-    app.state.agent = None
-    enqueue_user_steer(app, session.id, "deferred answer", {"ask_user_resume": True})
-
-    async def drive() -> None:
-        app.state.mcp_app_loop = asyncio.get_running_loop()
-        app.state.turn_runner.bind_loop(app.state.mcp_app_loop)
-        mark_agent_ready(app, object())
-        # call_soon schedules on the loop; one yield runs it.
-        await asyncio.sleep(0)
-        await asyncio.sleep(0)
-
-    asyncio.run(drive())
-
-    assert app.state.agent is not None
-    # The drain ran on the loop and promoted the parked steer into a real turn.
-    assert not bool(pending_mail(app, session.id))
-
-
 # --------------------------------------------------------------------------- #
 # Finding 8: a terminally-failing queue head says so instead of looping
 # --------------------------------------------------------------------------- #
 
 
-def test_queue_head_that_fails_terminally_reports_its_typed_cause_once(
-    tmp_path, monkeypatch
+def test_blocked_queue_head_retains_its_typed_failure_without_repeated_preflight(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from fastapi import HTTPException
 
-    from clio_agent.gact import composer_runtime, message_submission
-    from clio_agent.gact.message_intents import QueuedMessage
-    from clio_agent.gact.types import ErrorEnvelope, ErrorInfo, Part
+    from clio_agent.gact.routes.mailbox import promote_next
+    from tests.test_gact.input_capture import capture_inputs
+    from tests.test_gact.task_records import record_composer_fixture
+    from tests.test_gact.test_post_messages import FakeClioAgent
+
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent())
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="blocked")
+        capture_inputs(app, monkeypatch)
+        attempts: list[str] = []
+
+        def denied(*args: Any, **kwargs: Any) -> Any:
+            attempts.append("preflight")
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "context_ref_stale",
+                    "message": "revision changed",
+                    "details": {"actual_revision": "sha256:new"},
+                },
+            )
+
+        monkeypatch.setattr("clio_agent.gact.message_submission.prepare_references_sync", denied)
+        original = record_composer_fixture(app, session.id, "queued_head", text="read the file")
+        promote_next(app, session.id)
+        current = app.state.task_history.mail_item(session.id, original.id)
+        assert current.delivery == "held"
+        failure = app.state.task_history.read_content(current.content)["promotion_error"]
+        assert failure["status_code"] == 409
+        assert failure["detail"]["error"] == "context_ref_stale"
+        assert failure["detail"]["details"]["actual_revision"] == "sha256:new"
+        promote_next(app, session.id)
+        promote_next(app, session.id)
+        assert attempts == ["preflight"]
+        assert app.state.task_history.mail_item(session.id, original.id) == current
+        assert original.id not in app.state.task_history.acknowledged_notifications(session.id)
+
+
+def test_editing_blocked_queue_head_keeps_original_evidence_and_releases_hold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from tests.test_gact.input_capture import capture_inputs
+    from tests.test_gact.task_records import record_composer_fixture
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="queue")
-    app.state.message_intents.create_queued(
-        QueuedMessage(
-            id="queued_head",
-            session_id=session.id,
-            parts=[Part(type="text", text="stale reference")],
+    with TestClient(app) as client:
+        session = app.state.sessions.create(workspace_id="ws_default", title="edit")
+        capture_inputs(app, monkeypatch)
+        original = record_composer_fixture(app, session.id, "queued_head", text="original")
+        old_value = app.state.task_history.read_content(original.content)
+        held = original.model_copy(
+            update={
+                "delivery": "held",
+                "revision": 2,
+                "content": app.state.task_history.write_content(
+                    session.id,
+                    {**old_value, "promotion_error": {"status_code": 409, "detail": "stale"}},
+                ),
+            }
         )
-    )
-
-    def stale_accept(*_args, **_kwargs):
-        raise HTTPException(
-            status_code=409,
-            detail=ErrorEnvelope(
-                error=ErrorInfo(
-                    error="context_ref_stale",
-                    message="workspace file changed after the reference was selected",
-                    details={
-                        "requested_revision": "sha256:old",
-                        "actual_revision": "sha256:new",
-                    },
-                    recoverable=True,
-                )
-            ).model_dump(exclude_none=True),
+        app.state.task_history.update_mail(held, expected_revision=1)
+        response = client.patch(
+            f"/v1/sessions/{session.id}/queued-messages/queued_head",
+            json={"revision": 2, "text": "revised"},
         )
-
-    monkeypatch.setattr(message_submission, "accept_message", stale_accept)
-    published: list[tuple[str, dict[str, object]]] = []
-    original_publish = app.state.bus.publish
-
-    def capture(event):
-        published.append((event.type, dict(event.payload)))
-        return original_publish(event)
-
-    app.state.bus.publish = capture
-
-    composer_runtime.promote_queue_head(app, object(), session.id)
-    first = list(published)
-    composer_runtime.promote_queue_head(app, object(), session.id)
-    composer_runtime.promote_queue_head(app, object(), session.id)
-
-    failures = [row for row in first if row[0] == "queued_message.promotion_failed"]
-    assert len(failures) == 1
-    payload = failures[0][1]
-    assert payload["cause"]["error"] == "context_ref_stale"
-    assert payload["cause"]["status_code"] == 409
-    assert payload["cause"]["details"]["actual_revision"] == "sha256:new"
-    assert payload["recoverable"] is False
-    assert "retry_on" not in payload
-    blocked = [row for row in first if row[0] == "queued_message.head_blocked"]
-    assert len(blocked) == 1
-    assert blocked[0][1]["queued_message_id"] == "queued_head"
-    assert blocked[0][1]["recovery_actions"] == [
-        "edit_queued_message",
-        "delete_queued_message",
-    ]
-    # Re-drives do NOT re-attempt the same head at the same revision.
-    assert published == first
-    # Nothing was deleted: the row is still there for the client to edit.
-    assert [row.id for row in app.state.message_intents.list_queued(session.id)] == ["queued_head"]
-    assert composer_runtime.blocked_queue_head(app, session.id)["queued_message_id"] == (
-        "queued_head"
-    )
-
-
-def test_editing_a_blocked_queue_head_unfreezes_the_queue(tmp_path, monkeypatch) -> None:
-    from fastapi import HTTPException
-
-    from clio_agent.gact import composer_runtime, message_submission
-    from clio_agent.gact.message_intents import QueuedMessage
-    from clio_agent.gact.types import Part, PostMessageResponse
-
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="queue")
-    app.state.message_intents.create_queued(
-        QueuedMessage(
-            id="queued_head",
-            session_id=session.id,
-            parts=[Part(type="text", text="stale reference")],
+        assert response.status_code == 200, response.text
+        assert response.json()["revision"] == 3
+        assert response.json()["promotion_error"] is None
+        current = app.state.task_history.mail_item(session.id, original.id)
+        assert current.delivery == "queued"
+        assert (
+            app.state.task_history.read_content(original.content)["request"]["text"] == "original"
         )
-    )
-    monkeypatch.setattr(
-        message_submission,
-        "accept_message",
-        lambda *_a, **_k: (_ for _ in ()).throw(HTTPException(status_code=409, detail={})),
-    )
-    composer_runtime.promote_queue_head(app, object(), session.id)
-    assert composer_runtime.blocked_queue_head(app, session.id) is not None
-
-    accepted: list[str] = []
-
-    def good_accept(*_args, **_kwargs):
-        accepted.append("promoted")
-        return (
-            PostMessageResponse(
-                message_id="msg_1", accepted_at="now", delivery="start", state="started"
-            ),
-            200,
-        )
-
-    monkeypatch.setattr(message_submission, "accept_message", good_accept)
-    app.state.message_intents.update_queued(
-        session.id,
-        "queued_head",
-        1,
-        parts=[Part(type="text", text="fixed")],
-    )
-    composer_runtime.promote_queue_head(app, object(), session.id)
-
-    assert accepted == ["promoted"]
-    assert composer_runtime.blocked_queue_head(app, session.id) is None
+        assert app.state.task_history.read_content(current.content)["request"]["text"] == "revised"
 
 
 # --------------------------------------------------------------------------- #
@@ -1020,32 +875,19 @@ def test_a2ui_surface_stops_reporting_pending_once_it_was_responded_to(tmp_path)
     assert settled[0]["payload"]["last_action"]["name"] == "form.submit"
 
 
-def test_interaction_projection_reads_this_apps_task_store_not_the_process_global(
-    tmp_path,
-) -> None:
-    """Two apps in one process: the newest SessionStore owns the module global."""
-
-    from clio_agent.tools.mcp_task_records import TaskKey, TaskRecord, resolve_store
-
+def test_interactions_read_only_the_owning_app_core_history(tmp_path: Path) -> None:
     first = build_app(sessions_path=tmp_path / "first.json")
-    first_session = first.state.sessions.create(workspace_id="ws_default", title="first")
-    first.state.sessions.task_store.put(
-        TaskRecord(
-            key=TaskKey(server_id="srv", session_id=first_session.id, task_id="task_first"),
-            tool="earthscope_query",
-            status="input_required",
-        )
-    )
-    # Building a SECOND app republishes the process-global onto its own registry.
     second = build_app(sessions_path=tmp_path / "second.json")
-    assert resolve_store(None) is second.state.sessions.task_store
-
-    with TestClient(first) as client:
-        rows = client.get(f"/v1/sessions/{first_session.id}/interactions").json()["interactions"]
-
-    assert [row["id"] for row in rows if row["kind"] == "mcp_task_input"] == [
-        "mcp_task_input:srv:task_first"
-    ]
+    with TestClient(first) as first_client, TestClient(second) as second_client:
+        left = first.state.sessions.create(workspace_id="ws_default", title="left")
+        right = second.state.sessions.create(workspace_id="ws_default", title="right")
+        q = _armed_question(first, left.id, "task_left", ttl_s=0)
+        rows = first_client.get(f"/v1/sessions/{left.id}/interactions").json()["interactions"]
+        assert any(row["id"] == "question:" + q.id for row in rows)
+        assert (
+            second_client.get(f"/v1/sessions/{right.id}/interactions").json()["interactions"] == []
+        )
+        assert second.state.task_history.task_snapshot(q.id) is None
 
 
 def test_interaction_projection_is_bounded(tmp_path) -> None:
@@ -1069,36 +911,23 @@ def test_interaction_projection_is_bounded(tmp_path) -> None:
     assert len(rows) == 3
 
 
-def test_user_questions_ledger_evicts_terminal_rows_before_pending_ones(tmp_path) -> None:
-    from clio_agent.gact.runtime import retention
-    from clio_agent.gact.user_question_ledger import record_user_question
-
-    set_config("gact.ledger_retention.user_questions.max", 2)
-    set_config("gact.ledger_retention.user_questions.hard", 3)
+def test_core_question_history_retains_terminal_and_pending_rows(tmp_path: Path) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="ledger")
-    rebuilt = retention.build_ledger_bounds()
-    retention.LEDGER_BOUNDS["user_questions"] = rebuilt["user_questions"]
-
-    now = datetime.now(timezone.utc).isoformat()
-    for index in range(4):
-        record_user_question(
-            app,
-            UserQuestion(
-                id=f"q_{index}",
-                session_id=session.id,
-                prompt=f"question {index}",
-                status="answered" if index < 3 else "pending",
-                created_at=now,
-                updated_at=now,
-            ),
-        )
-
-    assert "q_3" in app.state.user_questions
-    assert len(app.state.user_questions) <= 3
-    reasons = [row["reason"] for row in app.state.ledger_evictions]
-    assert reasons and all(reason.startswith("capacity_") for reason in reasons)
-    assert all(row["ledger"] == "user_questions" for row in app.state.ledger_evictions)
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="retained")
+        handles = []
+        for index in range(12):
+            row = _armed_question(app, session.id, f"task_retained_{index}", ttl_s=0)
+            handles.append(row.id)
+            if index < 11:
+                app.state.questions.answer(row.id, QuestionReply(answer=str(index)))
+        assert all(app.state.task_history.task_snapshot(handle) is not None for handle in handles)
+        assert app.state.task_history.task_snapshot(handles[-1]).raw_status == "pending"
+        for index, handle in enumerate(handles[:-1]):
+            task = app.state.task_history.task_snapshot(handle)
+            assert QuestionReply.model_validate(
+                app.state.task_history.read_content(task.result)
+            ).answer == str(index)
 
 
 # --------------------------------------------------------------------------- #
@@ -1152,7 +981,7 @@ def test_bare_question_ids_no_longer_route_through_the_question_branch(tmp_path)
     assert bare.status_code == 404
     assert alias.status_code == 404
     assert prefixed.status_code == 200
-    assert app.state.user_questions["q_bare"].status == "answered"
+    assert question_row(app, "q_bare").status == "answered"
 
 
 def test_submit_repair_attempt_is_declared_trace_only() -> None:
@@ -1167,45 +996,18 @@ def test_submit_repair_attempt_is_declared_trace_only() -> None:
     assert event_reaches_ui("agent.submit_repair.attempted", "failed") is False
 
 
-def test_registering_interaction_routes_does_not_mutate_live_state(tmp_path) -> None:
-    """Route registration is wiring; crash recovery is app assembly."""
+def test_registering_interaction_routes_preserves_core_question_history(tmp_path: Path) -> None:
+    from clio_agent.gact.routes.interactions import register_interaction_routes
 
-    import inspect
-
-    from clio_agent.gact.routes import interactions
-
-    source = inspect.getsource(interactions.register_interaction_routes)
-    assert "restore_pending_ask_user_questions" not in source
-    # ...but build_app still restores, so the behaviour did not move out of reach.
-    sessions_path = tmp_path / "sessions.json"
-    first = build_app(sessions_path=sessions_path)
-    session = first.state.sessions.create(workspace_id="ws_default", title="restart")
-    now = datetime.now(timezone.utc)
-    first.state.sessions.update(
-        session.id,
-        status="waiting_user",
-        metadata_patch={
-            "pending_user_question_id": "q_restored",
-            "pending_ask_user": {
-                "action": "ask_user",
-                "question": "Which system?",
-                "kind": "freeform",
-                "choices": [],
-                "allow_freeform": True,
-                "created_at": now.isoformat(),
-                "expires_at": (now + timedelta(minutes=10)).isoformat(),
-                "owner_session_id": session.id,
-                "attended_session_id": session.id,
-                "caller": {"agent_id": "main"},
-                "surfaced": True,
-                "question_id": "q_restored",
-            },
-        },
-    )
-
-    restarted = build_app(sessions_path=sessions_path)
-
-    assert "q_restored" in restarted.state.user_questions
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="retained")
+        row = _armed_question(app, session.id, "task_route_registration", ttl_s=0)
+        original = app.state.task_history.task_snapshot(row.id)
+        revision = app.state.task_history.revision
+        register_interaction_routes(app)
+        assert app.state.task_history.revision == revision
+        assert app.state.task_history.task_snapshot(row.id) == original
 
 
 # --------------------------------------------------------------------------- #
@@ -1213,32 +1015,28 @@ def test_registering_interaction_routes_does_not_mutate_live_state(tmp_path) -> 
 # --------------------------------------------------------------------------- #
 
 
-def test_uncorrelated_mcp_question_states_its_kind_downgrade(tmp_path) -> None:
+def test_uncorrelated_mcp_question_states_its_kind_downgrade(tmp_path: Path) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="mcp")
-    now = datetime.now(timezone.utc).isoformat()
-    app.state.user_questions["q_mcp"] = UserQuestion(
-        id="q_mcp",
-        session_id=session.id,
-        owner_session_id=session.id,
-        attended_session_id=session.id,
-        prompt="Select format",
-        source="mcp_elicitation",
-        created_at=now,
-        updated_at=now,
-        metadata={"elicitation": {"tool_name": "earthscope_query", "invocation_id": "c1"}},
-    )
-
     with TestClient(app) as client:
+        session = app.state.sessions.create(workspace_id="ws_default", title="mcp")
+        owner = record_assignment_fixture(app, session.id).owner
+        task = app.state.questions.create(
+            owner,
+            QuestionDefinition(
+                prompt="Select format",
+                source="mcp_elicitation",
+                metadata={"elicitation": {"tool_name": "earthscope_query", "invocation_id": "c1"}},
+            ),
+            invocation_id="uncorrelated-question",
+        )
         rows = client.get(f"/v1/sessions/{session.id}/interactions").json()["interactions"]
-
-    row = next(item for item in rows if item["id"] == "question:q_mcp")
-    assert row["kind"] == "question"
-    assert row["payload"]["degraded"] == {
-        "reason": "mcp_task_correlation_missing",
-        "declared_kind": "mcp_task_input",
-        "projected_kind": "question",
-    }
+        row = next(row for row in rows if row["id"] == "question:" + task.handle)
+        assert row["kind"] == "question"
+        assert row["payload"]["degraded"] == {
+            "reason": "mcp_task_correlation_missing",
+            "declared_kind": "mcp_task_input",
+            "projected_kind": "question",
+        }
 
 
 def test_unreadable_resource_store_surfaces_a_typed_discovery_degradation(tmp_path) -> None:
@@ -1367,15 +1165,20 @@ def test_reference_discovery_degradations_are_scoped_and_reset_per_workspace(
         assert recovered_body["degradations"] == []
 
 
-def test_ask_user_has_no_default_lifetime() -> None:
-    """#1448: a question stays pending until answered or dismissed, unless the
-    agent explicitly gives it a lifetime (owner rule: no deterministic caps)."""
-    from datetime import datetime, timezone
-
-    from clio_agent.gact import ask_user_tool
-
-    assert ask_user_tool.ask_user_expires_at(0) == ""
-    assert ask_user_tool.ask_user_expires_at(-5) == ""
-    deadline = datetime.fromisoformat(ask_user_tool.ask_user_expires_at(90_000))
-    remaining = (deadline - datetime.now(timezone.utc)).total_seconds()
-    assert 89_990 < remaining <= 90_000  # honoured as asked, never clamped
+@pytest.mark.parametrize("lifetime", [0, 90_000])
+def test_ask_user_has_no_default_or_clamped_lifetime(tmp_path: Path, lifetime: int) -> None:
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="expiry")
+        row = _armed_question(app, session.id, "task_explicit_expiry", ttl_s=lifetime)
+        task = app.state.task_history.task_snapshot(row.id)
+        definition = QuestionDefinition.model_validate(
+            app.state.task_history.read_content(task.details)
+        )
+        if lifetime == 0:
+            assert definition.expires_at is None
+        else:
+            remaining = (
+                datetime.fromisoformat(definition.expires_at) - datetime.now(timezone.utc)
+            ).total_seconds()
+            assert 89_990 < remaining <= 90_000

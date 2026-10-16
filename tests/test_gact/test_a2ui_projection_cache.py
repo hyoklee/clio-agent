@@ -30,6 +30,7 @@ from clio_agent.gact import a2ui as a2ui_module
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
 from clio_agent.gact.messages import MessageStore
+from tests.test_gact.input_capture import capture_inputs
 
 WORKSPACE_CATALOG_ID = workspace_catalog_id()
 
@@ -176,10 +177,7 @@ def test_action_post_no_longer_costs_two_full_folds(tmp_path: Path, monkeypatch:
 
     app = _isolated_app(tmp_path)
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    app.state.turn_runner.spawn = _spawn
+    capture_inputs(app)
     with TestClient(app) as client:
         session = app.state.sessions.create(workspace_id="ws_default", title="action fold count")
         sid = session.id

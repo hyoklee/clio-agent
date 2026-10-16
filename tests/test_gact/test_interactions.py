@@ -1,49 +1,200 @@
-"""Runtime-tool and normalized interaction contract tests."""
+"""Public interaction routes over the sole Core Question owner.
+
+Task acceptance, response identity, restart retention, validation and isolation are
+asserted independently of removed registries and blocking ask modes.
+"""
 
 from __future__ import annotations
 
-import asyncio
-import json
-import time
-from datetime import datetime, timedelta, timezone
+from collections.abc import Iterator
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
-import dspy
 import pytest
-from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.arc.blob_frame import BlobDecodeError
-from clio_agent.gact import context as gact_context
-from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
-from clio_agent.gact.agent_initialization import mark_agent_ready, record_init_failure
-from clio_agent.gact.agent_mailbox import accept_session_input, pending_mail
-from clio_agent.gact.agent_tasks import AgentTask
-from clio_agent.gact.agents.auto_tools import build_auto_react_tools
-from clio_agent.gact.agents.builders import _dynamic_agent_tools
-from clio_agent.gact.agents.clio_react import ClioReAct
+from clio_agent.arc.task_types import QuestionDefinition, QuestionReply
 from clio_agent.gact.app import build_app
-from clio_agent.gact.ask_user_tool import arm_ask_user_deadline
-from clio_agent.gact.elicitation_bridge import (
-    claim_question_transition,
-    invocation_with_request_correlation,
+from clio_agent.gact.question_surface import question_row
+from clio_agent.gact.questions import QuestionCommands
+from clio_agent.gact.task_declarations import build_ask_user_tool
+from clio_agent.gact.task_history import TaskHistory
+from tests.test_gact.task_records import (
+    active_turn_fixture,
+    record_assignment_fixture,
+    record_delegation_fixture,
 )
-from clio_agent.gact.turn_runner import TurnRunner
-from tests.test_gact import test_core_task_mailbox as core_fixtures
-
-owner = core_fixtures.owner
-from clio_agent.gact.types import AgentDef, UserQuestion, UserQuestionOption
-from clio_agent.gact.user_question_ledger import record_user_question
-from clio_agent.tools.mcp_handlers import MCPInvocationContext
-from clio_agent.tools.mcp_task_records import TaskKey, TaskRecord, resolve_store
 
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
-CLIO_A2UI_CATALOG_ID = workspace_catalog_id()
-from tests._scripted_engine import calls, scripted_lm
 
-pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
+@pytest.fixture
+def world(tmp_path: Path) -> Iterator[tuple[Any, TestClient, str]]:
+    """One isolated production application and a confirmed owner assignment."""
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Questions"}).json()["id"]
+        record_assignment_fixture(app, sid)
+        yield app, client, sid
+
+
+def post_question(app: Any, sid: str, prompt: str = "Which sample?") -> Any:
+    """Post through the registered FastMCP control under actual owner context."""
+    with active_turn_fixture(app, sid):
+        return app.state.builtin_boundary.bind(build_ask_user_tool()).func(question=prompt)
+
+
+def test_ask_returns_a_durable_handle_without_waiting(world: tuple[Any, TestClient, str]) -> None:
+    app, client, sid = world
+    receipt = post_question(app, sid)
+    assert receipt["accepted"] and receipt["kind"] == "Question"
+    current = app.state.task_history.task_snapshot(receipt["handle"])
+    assignment = app.state.task_history.latest_assignment(sid)
+    assert current is not None and assignment is not None
+    assert current.owner.session_id == sid
+    assert current.owner.assignment_id == assignment.handle
+    assert current.owner.parent_handle == assignment.handle
+    assert current.status == "input_required" and current.terminal_at is None
+    assert current.recording == "confirmed"
+    definition = QuestionDefinition.model_validate(
+        app.state.task_history.read_content(current.details)
+    )
+    assert definition.expires_at is None
+    assert app.state.messages.get(sid, []) == []
+    assert not app.state.turn_runner.busy(sid)
+    listed = client.get(f"/v1/sessions/{sid}/interactions").json()["interactions"]
+    row = next(row for row in listed if row["id"] == "question:" + current.handle)
+    assert row["owner_session_id"] == sid and row["status"] == "pending"
+
+
+@pytest.mark.parametrize("decision", ["answer", "cancel"])
+def test_question_response_settles_the_same_core_identity(
+    world: tuple[Any, TestClient, str], decision: str
+) -> None:
+    app, client, sid = world
+    receipt = post_question(app, sid)
+    handle = receipt["handle"]
+    if decision == "answer":
+        response = client.post(
+            f"/v1/sessions/{sid}/questions/{handle}/answer", json={"answer": "sample A"}
+        )
+    else:
+        response = client.post(f"/v1/sessions/{sid}/questions/{handle}/cancel")
+    assert response.status_code in {200, 204}, response.text
+    task = app.state.task_history.task_snapshot(handle)
+    assert task is not None and task.terminal_at is not None and task.settlement == "confirmed"
+    assert task.raw_status == ("answered" if decision == "answer" else "cancelled")
+    if decision == "answer":
+        reply = QuestionReply.model_validate(app.state.task_history.read_content(task.result))
+        assert reply.answer == "sample A"
+    history = app.state.task_history
+    notices = [item for item in history.pending_mail(sid) if item.handle == handle]
+    assert len(notices) == 1
+    assert notices[0].kind == "task_result"
+    assert question_row(app, handle).id == handle
+
+
+def test_stop_does_not_cancel_an_open_question(world: tuple[Any, TestClient, str]) -> None:
+    app, client, sid = world
+    receipt = post_question(app, sid)
+    before = app.state.task_history.task_snapshot(receipt["handle"])
+    stopped = client.post(f"/v1/sessions/{sid}/cancel")
+    assert stopped.status_code == 204, stopped.text
+    after = app.state.task_history.task_snapshot(receipt["handle"])
+    assert after == before and after.terminal_at is None
+    assert not app.state.turn_runner.busy(sid)
+
+
+def test_unrelated_session_cannot_answer_or_observe_question(
+    world: tuple[Any, TestClient, str],
+) -> None:
+    app, client, sid = world
+    other = client.post("/v1/sessions", json={"title": "Other"}).json()["id"]
+    record_assignment_fixture(app, other)
+    handle = post_question(app, sid)["handle"]
+    listed = client.get(f"/v1/sessions/{other}/interactions").json()["interactions"]
+    assert not any(row["id"] == "question:" + handle for row in listed)
+    denied = client.post(
+        f"/v1/sessions/{other}/questions/{handle}/answer", json={"answer": "forged"}
+    )
+    assert denied.status_code in {403, 404}, denied.text
+    assert app.state.task_history.task_snapshot(handle).raw_status == "pending"
+
+
+def test_child_question_has_exact_owner_and_parent_attribution(
+    world: tuple[Any, TestClient, str],
+) -> None:
+    app, client, sid = world
+    child = record_delegation_fixture(app, sid, handle="task_child_question")
+    handle = post_question(app, child.owner.session_id)["handle"]
+    task = app.state.task_history.task_snapshot(handle)
+    assert task.owner.session_id == child.owner.session_id
+    assert task.owner.assignment_id == child.handle
+    rows = client.get(f"/v1/sessions/{sid}/interactions", params={"include_children": True}).json()[
+        "interactions"
+    ]
+    row = next(row for row in rows if row["id"] == "question:" + handle)
+    assert row["owner_session_id"] == child.owner.session_id
+    assert row["attended_session_id"] == sid
+    response = client.post(
+        f"/v1/sessions/{sid}/interactions/{row['id']}/respond", json={"answer": "child sample"}
+    )
+    assert response.status_code == 200, response.text
+    assert app.state.task_history.task_snapshot(handle).raw_status == "answered"
+    assert not any(item.handle == handle for item in app.state.task_history.pending_mail(sid))
+    assert any(
+        item.handle == handle
+        for item in app.state.task_history.pending_mail(child.owner.session_id)
+    )
+
+
+def test_core_restore_preserves_open_and_answered_question_identity(
+    world: tuple[Any, TestClient, str],
+) -> None:
+    app, _client, sid = world
+    open_handle = post_question(app, sid, "Open choice")["handle"]
+    answered_handle = post_question(app, sid, "Answered choice")["handle"]
+    app.state.questions.answer(answered_handle, QuestionReply(answer="retained"))
+    restored = TaskHistory(app.state.arc)
+    restored.restore()
+    assert restored.task_snapshot(open_handle) == app.state.task_history.task_snapshot(open_handle)
+    answered = restored.task_snapshot(answered_handle)
+    assert answered == app.state.task_history.task_snapshot(answered_handle)
+    assert QuestionReply.model_validate(restored.read_content(answered.result)).answer == "retained"
+    assert len([item for item in restored.pending_mail(sid) if item.handle == answered_handle]) == 1
+    QuestionCommands(restored).restore()
+    assert restored.task_snapshot(open_handle).raw_status == "pending"
+
+
+def test_invalid_answer_retains_the_question_and_prefill(
+    world: tuple[Any, TestClient, str],
+) -> None:
+    app, client, sid = world
+    task = app.state.questions.create(
+        app.state.task_history.latest_assignment(sid).owner,
+        QuestionDefinition(
+            prompt="Choose a sample",
+            kind="choice",
+            options=({"label": "A", "value": "a"},),
+            allow_freeform=False,
+        ),
+        invocation_id="validated-choice",
+    )
+    denied = client.post(
+        f"/v1/sessions/{sid}/questions/{task.handle}/answer",
+        json={"selected_options": ["unknown"], "answer": "preserve me"},
+    )
+    assert denied.status_code == 422, denied.text
+    assert app.state.task_history.task_snapshot(task.handle) == task
+    assert not any(item.handle == task.handle for item in app.state.task_history.pending_mail(sid))
+
+
+def test_capabilities_advertise_normalized_interactions(world: tuple[Any, TestClient, str]) -> None:
+    _app, client, _sid = world
+    response = client.get("/v1/capabilities")
+    assert response.status_code == 200
+    assert response.json()["capabilities"]["interactions"] is True
 
 
 def test_damaged_surface_ledger_degrades_interactions_and_snapshot(tmp_path, monkeypatch) -> None:
@@ -95,859 +246,3 @@ def test_invalid_transcript_text_degrades_surfaces_without_hiding_permissions(
     assert response.json()["degradations"][0]["reason"] == "a2ui_transcript_decode_failed"
     assert snapshot.json()["surfaces"] == []
     assert snapshot.json()["degradations"][0]["reason"] == "a2ui_transcript_decode_failed"
-
-
-def test_agent_init_failure_surfaces_a_deferred_question_resume(owner: Any) -> None:
-    """Failed provider construction reports retained Core input and its recovery route."""
-    app, sid = owner.app, owner.sid
-    app.state.turn_runner = TurnRunner({})
-    accept_session_input(
-        app,
-        sid,
-        "A recoverable answer",
-        {"ask_user_resume": True, "question_id": "question_1"},
-    )
-    record_init_failure(app, RuntimeError("provider unavailable"), stage="init")
-    assert pending_mail(app, sid), "the recoverable answer should remain queued"
-    assert app.state.sessions.get(sid).status == "error"
-    events = [e for e in app.state.bus._history[sid] if e.type == "session.input_refused"]
-    assert len(events) == 1
-    event = events[0]
-    assert event.payload["question_id"] == "question_1"
-    assert event.payload["reason"] == "agent_init_failed"
-    assert event.payload["recoverable"] is True and event.payload["retained"] is True
-    assert event.payload["recovery_actions"] == ["rebind_lm_provider"]
-
-
-def _root_and_child(app: FastAPI) -> tuple[str, str]:
-    root = app.state.sessions.create(workspace_id="ws_default", title="root")
-    child = app.state.sessions.create(
-        workspace_id="ws_default",
-        title="child",
-        parent_session_id=root.id,
-        agent={"id": "child", "mode": "subagent"},
-    )
-    app.state.agent_task_registry.register(
-        AgentTask(
-            task_id="task_child",
-            parent_session_id=root.id,
-            child_session_id=child.id,
-            agent_ref={"expert_id": "child"},
-            status="running",
-            created_at="2026-09-02T10:00:00+00:00",
-        )
-    )
-    return root.id, child.id
-
-
-def test_declared_native_tools_are_selective_and_root_a2ui_remains_compatible() -> None:
-    ask = AgentDef(id="asker", title="Asker", parent_id="root", tools=["ask_user"])
-    visual = AgentDef(id="visual", title="Visual", parent_id="root", tools=["create_a2ui_surface"])
-    plain_child = AgentDef(id="plain", title="Plain", parent_id="root")
-    root = AgentDef(id="root", title="Root")
-
-    assert [tool.name for tool in _dynamic_agent_tools(SimpleNamespace(), ask, {})] == ["ask_user"]
-    assert [tool.name for tool in _dynamic_agent_tools(SimpleNamespace(), visual, {})] == [
-        "create_a2ui_surface"
-    ]
-    assert "ask_user" not in {tool.name for tool in build_auto_react_tools(plain_child)}
-    assert "create_a2ui_surface" not in {tool.name for tool in build_auto_react_tools(plain_child)}
-    # v15 S8: a root gets the producer tools only when its agent resolves at
-    # least one declared catalog.
-    assert "create_a2ui_surface" in {
-        tool.name for tool in build_auto_react_tools(root, a2ui_producers=True)
-    }
-    assert "create_a2ui_surface" not in {
-        tool.name for tool in build_auto_react_tools(root, a2ui_producers=False)
-    }
-
-
-def test_ask_user_runtime_tool_injects_owner_task_and_attended_correlation(
-    tmp_path, monkeypatch
-) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    root, child = _root_and_child(app)
-    agent = AgentDef(id="child", title="Child", parent_id="root", tools=["ask_user"])
-    tool = _dynamic_agent_tools(SimpleNamespace(), agent, {})[0]
-    monkeypatch.setattr(gact_context, "active_app", lambda: app)
-    monkeypatch.setattr(gact_context, "active_session_id", lambda: child)
-    monkeypatch.setattr(gact_context, "active_turn_id", lambda: "turn_child")
-    monkeypatch.setattr("clio_agent.gact.ask_user_tool.observer_call_id", lambda: "call_native_ask")
-
-    result = tool(
-        question="Which dataset should I use?",
-        kind="choice",
-        options=[{"label": "A", "value": "a"}],
-        allowFreeform=True,
-    )
-
-    receipt = json.loads(result)
-    question = app.state.user_questions[receipt["question_id"]]
-    assert receipt["accepted"] and receipt["kind"] == "Question"
-    assert question.task_handle == receipt["handle"]
-    assert question.owner_session_id == child
-    assert question.attended_session_id == root
-    assert question.metadata["task_id"] == "task_child"
-    assert question.metadata["tool_name"] == "ask_user"
-    assert question.metadata["invocation_id"] == "call_native_ask"
-    assert question.allow_freeform is True
-    assert question.status == "pending" and question.response_mode == "async"
-    assert not app.state.sessions.get(child).metadata.get("pending_ask_user")
-
-
-def test_ask_user_success_returns_a_handle_to_the_next_model_step(tmp_path) -> None:
-    """Posting a question lets the model continue before the human answers."""
-
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="ask")
-    agent_def = AgentDef(id="asker", title="Asker", tools=["ask_user"])
-    ask_tool = _dynamic_agent_tools(SimpleNamespace(), agent_def, {})[0]
-    react = ClioReAct(
-        "question -> answer",
-        tools=[ask_tool],
-        max_iters=0,
-    )
-    lm, engine = scripted_lm(
-        [
-            calls(
-                (
-                    "ask_user",
-                    {
-                        "question": "What outcome should the simulation estimate?",
-                        "kind": "freeform",
-                    },
-                ),
-                text="The requested study lacks a defined objective.",
-            ),
-            calls(
-                ("submit", {"answer": "I can prepare independent work while you decide."}),
-                text="The question is open; independent work can continue.",
-            ),
-        ]
-    )
-    app_token = gact_context.set_app(app)
-    session_token = gact_context.set_session_id(session.id)
-    turn_token = gact_context.set_turn_id_token("turn_ask")
-    scope_token = gact_context.set_react_scope("asker")
-    react_session_token = gact_context.set_react_session(session.id)
-    try:
-        with TestClient(app), dspy.context(lm=lm):
-            prediction = react(question="Help me design a simulation study.")
-    finally:
-        gact_context.reset(react_session_token)
-        gact_context.reset(scope_token)
-        gact_context.reset(turn_token)
-        gact_context.reset(session_token)
-        gact_context.reset(app_token)
-
-    assert prediction.termination_reason == "submit"
-    assert prediction.answer == "I can prepare independent work while you decide."
-    assert len(engine.requests) == 2
-    question = next(iter(app.state.user_questions.values()))
-    assert question.prompt == "What outcome should the simulation estimate?"
-    assert question.status == "pending" and question.response_mode == "async"
-    from tests._scripted_engine import wire
-
-    observations = [
-        part for _role, parts in wire(engine.requests[1]) for part in parts if part[0] == "result"
-    ]
-    assert len(observations) == 1 and observations[0][3] is False
-    receipt = json.loads(observations[0][2])
-    assert receipt["accepted"] and receipt["handle"] == question.task_handle
-    assert receipt["status"] == "input_required"
-    assert not app.state.sessions.get(session.id).metadata.get("pending_ask_user")
-
-
-def test_interactions_aggregate_children_and_route_question_and_permission(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    from clio_agent.gact.routes import interactions as interaction_routes
-
-    original = interaction_routes.resolve_permission
-    called_off_loop: list[bool] = []
-
-    def audited_resolve(*args: Any, **kwargs: Any) -> dict[str, Any] | None:
-        try:
-            asyncio.get_running_loop()
-        except RuntimeError:
-            called_off_loop.append(True)
-        else:
-            called_off_loop.append(False)
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(interaction_routes, "resolve_permission", audited_resolve)
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    root, child = _root_and_child(app)
-    now = datetime.now(timezone.utc).isoformat()
-    native = UserQuestion(
-        id="q_native",
-        session_id=root,
-        owner_session_id=root,
-        attended_session_id=root,
-        prompt="Proceed?",
-        kind="confirmation",
-        options=[UserQuestionOption(label="Yes", value="yes")],
-        allow_freeform=True,
-        created_at=now,
-        updated_at=now,
-    )
-    mcp = UserQuestion(
-        id="q_mcp",
-        session_id=root,
-        owner_session_id=child,
-        attended_session_id=root,
-        prompt="Select format",
-        kind="choice",
-        options=[UserQuestionOption(label="CSV", value="csv")],
-        source="mcp_elicitation",
-        created_at=now,
-        updated_at=now,
-        metadata={
-            "elicitation": {
-                "tool_name": "earthscope_query",
-                "invocation_id": "call_7",
-                "task_id": "task_child",
-                "input_key": "format",
-            }
-        },
-    )
-    app.state.user_questions = {native.id: native, mcp.id: mcp}
-    app.state.permissions["perm_child"] = {
-        "id": "perm_child",
-        "session_id": child,
-        "status": "pending",
-        "summary": "Allow child write",
-        "created_at": now,
-        "tool_call": {"tool_name": "fs_apply_edit_write", "input": {"path": "x"}},
-    }
-    calls: list[tuple[str, str]] = []
-    original_answer = app.state.answer_user_question
-
-    async def record_answer(session_id: str, question_id: str, request: object) -> UserQuestion:
-        calls.append((session_id, question_id))
-        return await original_answer(session_id, question_id, request)
-
-    app.state.answer_user_question = record_answer
-
-    with TestClient(app) as client:
-        direct = client.get(f"/v1/sessions/{root}/interactions").json()["interactions"]
-        assert {row["id"] for row in direct} == {
-            "question:q_native",
-            "mcp_task_input:q_mcp",
-        }
-        aggregate = client.get(
-            f"/v1/sessions/{root}/interactions", params={"include_children": True}
-        ).json()["interactions"]
-        rows = {row["id"]: row for row in aggregate}
-        assert {row["status"] for row in aggregate} == {"pending"}
-        assert rows["mcp_task_input:q_mcp"]["owner_session_id"] == child
-        assert rows["mcp_task_input:q_mcp"]["task_id"] == "task_child"
-        assert rows["mcp_task_input:q_mcp"]["source"] == {
-            "protocol": "mcp",
-            "tool_name": "earthscope_query",
-            "invocation_id": "call_7",
-        }
-        assert rows["question:q_native"]["payload"]["allow_freeform"] is True
-        assert rows["permission:perm_child"]["task_id"] == "task_child"
-
-        answered = client.post(
-            f"/v1/sessions/{root}/interactions/question:q_native/respond",
-            json={"action": "answer", "selected_options": ["yes"]},
-        )
-        assert answered.status_code == 200
-        assert calls == [(root, "q_native")]
-        resolved = client.get(
-            f"/v1/sessions/{root}/interactions",
-            params={"include_recent_resolved": True},
-        ).json()["interactions"]
-        resolved_native = next(row for row in resolved if row["id"] == "question:q_native")
-        assert resolved_native["answered_by"] == "human"
-        assert resolved_native["payload"]["answer_metadata"] == {"selected_options": ["yes"]}
-        duplicate = client.post(
-            f"/v1/sessions/{root}/interactions/question:q_native/respond",
-            json={"action": "answer", "selected_options": ["yes"]},
-        )
-        assert duplicate.status_code == 409
-
-        allowed = client.post(
-            f"/v1/sessions/{root}/interactions/permission:perm_child/respond",
-            json={"action": "allow"},
-        )
-        assert allowed.status_code == 200
-        assert app.state.permissions["perm_child"]["status"] == "resolved"
-        assert called_off_loop == [True]
-
-        cancellable = UserQuestion(
-            id="q_cancel",
-            session_id=root,
-            prompt="Cancel me",
-            created_at=now,
-            updated_at=now,
-        )
-        app.state.user_questions[cancellable.id] = cancellable
-        cancelled = client.post(
-            f"/v1/sessions/{root}/interactions/question:q_cancel/respond",
-            json={"action": "cancel"},
-        )
-        assert cancelled.status_code == 200
-        assert cancelled.json()["interaction"]["status"] == "cancelled"
-
-        # The day-one ``/response`` alias is gone: ``/respond`` is the one door.
-        retired = client.post(
-            f"/v1/sessions/{root}/interactions/question:q_cancel/response",
-            json={"action": "answer", "answer": "kept"},
-        )
-        assert retired.status_code == 404
-
-        expired = UserQuestion(
-            id="q_expired",
-            session_id=root,
-            prompt="Too late",
-            status="expired",
-            created_at=now,
-            updated_at=now,
-        )
-        app.state.user_questions[expired.id] = expired
-        late = client.post(
-            f"/v1/sessions/{root}/interactions/question:q_expired/respond",
-            json={"action": "answer", "answer": "late"},
-        )
-        assert late.status_code == 409
-
-
-def test_resolved_interaction_hides_legacy_correlation_from_answer_fields(tmp_path) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="legacy answer")
-    now = datetime.now(timezone.utc).isoformat()
-    question = UserQuestion(
-        id="q_legacy_answer",
-        session_id=session.id,
-        owner_session_id=session.id,
-        attended_session_id=session.id,
-        prompt="Pick a value",
-        status="answered",
-        source="mcp_elicitation",
-        answered_by="human",
-        created_at=now,
-        updated_at=now,
-        answer_metadata={
-            "interaction_id": "mcp_task_input:q_legacy_answer",
-            "owner_session_id": session.id,
-            "attended_session_id": session.id,
-            "task_id": "task_legacy",
-            "invocation_id": "call_legacy",
-            "value": "visible answer",
-        },
-        metadata={
-            "elicitation": {
-                "tool_name": "guarded_input",
-                "task_id": "task_legacy",
-                "invocation_id": "call_legacy",
-            }
-        },
-    )
-    app.state.user_questions[question.id] = question
-
-    with TestClient(app) as client:
-        rows = client.get(
-            f"/v1/sessions/{session.id}/interactions",
-            params={"include_recent_resolved": True},
-        ).json()["interactions"]
-
-    assert rows[0]["payload"]["answer_metadata"] == {"value": "visible answer"}
-
-
-def test_pending_native_question_survives_backend_restart(tmp_path) -> None:
-    sessions_path = tmp_path / "sessions.json"
-    first_app = build_app(sessions_path=sessions_path)
-    session = first_app.state.sessions.create(workspace_id="ws_default", title="restart")
-    now = datetime.now(timezone.utc)
-    question_id = "ques_restart"
-    first_app.state.sessions.update(
-        session.id,
-        status="waiting_user",
-        metadata_patch={
-            "pending_user_question_id": question_id,
-            "pending_ask_user": {
-                "action": "ask_user",
-                "question": "Which physical system should I simulate?",
-                "kind": "freeform",
-                "choices": [],
-                "allow_freeform": True,
-                "reason": "The study needs a physical system.",
-                "created_at": now.isoformat(),
-                "expires_at": (now + timedelta(minutes=10)).isoformat(),
-                "owner_session_id": session.id,
-                "attended_session_id": session.id,
-                "task_id": "",
-                "invocation_id": "turn_before_restart:main:ask_user",
-                "caller": {"agent_id": "main"},
-                "surfaced": True,
-                "question_id": question_id,
-            },
-        },
-    )
-
-    restarted_app = build_app(sessions_path=sessions_path)
-    routed: list[tuple[str, str]] = []
-    original_answer = restarted_app.state.answer_user_question
-
-    async def record_answer(
-        session_id: str, restored_question_id: str, request: object
-    ) -> UserQuestion:
-        routed.append((session_id, restored_question_id))
-        return await original_answer(session_id, restored_question_id, request)
-
-    restarted_app.state.answer_user_question = record_answer
-
-    with TestClient(restarted_app) as client:
-        interactions = client.get(
-            f"/v1/sessions/{session.id}/interactions",
-            headers=HEADERS,
-        )
-        assert interactions.status_code == 200
-        rows = interactions.json()["interactions"]
-        assert [row["id"] for row in rows] == [f"question:{question_id}"]
-        assert rows[0]["prompt"] == "Which physical system should I simulate?"
-        assert rows[0]["source"]["invocation_id"] == "turn_before_restart:main:ask_user"
-
-        answered = client.post(
-            f"/v1/sessions/{session.id}/interactions/question:{question_id}/respond",
-            headers=HEADERS,
-            json={"action": "answer", "answer": "A cantilever beam."},
-        )
-        assert answered.status_code == 200
-
-    assert routed == [(session.id, question_id)]
-    assert restarted_app.state.user_questions[question_id].status == "answered"
-    assert restarted_app.state.sessions.get(session.id).status == "idle"
-    restarted = restarted_app.state.sessions.get(session.id)
-    assert restarted.metadata["pending_user_question_id"] == ""
-    assert restarted.metadata["pending_ask_user"]["resolved_status"] == "answered"
-    assert pending_mail(restarted_app, session.id)
-
-
-def test_agent_ready_promotes_inputs_deferred_during_initialization(tmp_path, monkeypatch) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="deferred")
-    accept_session_input(app, session.id, "Retained during provider initialization")
-    app.state.mcp_app_loop = None
-    drained: list[str] = []
-    monkeypatch.setattr(
-        "clio_agent.gact.task_completion_wake.redrive_pending_completion_wakes",
-        lambda _app: drained.append(session.id),
-    )
-    agent = object()
-
-    mark_agent_ready(app, agent)
-
-    assert app.state.agent is agent
-    assert drained == [session.id]
-
-
-def test_legacy_forwarded_question_hydrates_owner_and_attended_ids() -> None:
-    row = UserQuestion.model_validate(
-        {
-            "id": "legacy",
-            "session_id": "root",
-            "prompt": "Legacy forwarded question",
-            "created_at": "2026-09-02T10:00:00+00:00",
-            "updated_at": "2026-09-02T10:00:00+00:00",
-            "metadata": {"forwarded_from_session": "child"},
-        }
-    )
-
-    assert row.owner_session_id == "child"
-    assert row.attended_session_id == "root"
-
-
-def test_native_question_deadline_atomically_expires_and_releases_root(tmp_path) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    root = app.state.sessions.create(workspace_id="ws_default", title="root")
-    now = datetime.now(timezone.utc)
-    row = UserQuestion(
-        id="q_deadline",
-        session_id=root.id,
-        owner_session_id=root.id,
-        attended_session_id=root.id,
-        prompt="Timed question",
-        created_at=now.isoformat(),
-        updated_at=now.isoformat(),
-        expires_at=(now - timedelta(seconds=1)).isoformat(),
-    )
-    app.state.user_questions[row.id] = row
-    app.state.sessions.update(
-        root.id,
-        status="waiting_user",
-        metadata_patch={"pending_user_question_id": row.id},
-    )
-
-    arm_ask_user_deadline(app, row)
-    deadline = time.monotonic() + 2.0
-    # Expiration publishes the question state before the separate session-store update.
-    # Observe the complete asynchronous transition, retaining both final assertions.
-    while time.monotonic() < deadline and (
-        app.state.user_questions[row.id].status == "pending"
-        or app.state.sessions.get(root.id).status == "waiting_user"
-    ):
-        time.sleep(0.01)
-
-    assert app.state.user_questions[row.id].status == "expired"
-    assert app.state.sessions.get(root.id).status == "idle"
-    assert app.state.sessions.get(root.id).metadata["pending_user_question_id"] == ""
-
-
-def test_mcp_task_request_id_correlates_hyphenated_task_exactly(tmp_path) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    root, child = _root_and_child(app)
-    del root
-    resolve_store(None).put(
-        TaskRecord(
-            key=TaskKey(server_id="earthscope", session_id=child, task_id="abc-def"),
-            tool="earthscope_query",
-            status="input_required",
-            invocation_id="call_7",
-        )
-    )
-    invocation = MCPInvocationContext(
-        invocation_id="call_7",
-        session_id=child,
-        namespace="earthscope",
-        tool_name="earthscope_query",
-    )
-
-    correlated = invocation_with_request_correlation(
-        invocation,
-        SimpleNamespace(request_id="task-abc-def-output_format"),
-        app=app,
-    )
-
-    assert correlated.task_id == "abc-def"
-    assert correlated.input_key == "output_format"
-    assert correlated.task_key == TaskKey("earthscope", child, "abc-def")
-
-
-def test_child_a2ui_interaction_routes_to_owning_surface(tmp_path, monkeypatch) -> None:
-    """S5: ``form.submit`` is an ordinary agent-destination event now -- it
-    starts a fresh idle turn on the CHILD session rather than echoing its
-    context back (the deleted ``result["submitted"]`` shape)."""
-
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    root, child = _root_and_child(app)
-
-    def _spawn(coro, **_kwargs):  # noqa: ANN001, ANN002
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-    create = {
-        "version": "v0.9.1",
-        "createSurface": {"surfaceId": "child-form", "catalogId": CLIO_A2UI_CATALOG_ID},
-    }
-    components = {
-        "version": "v0.9.1",
-        "updateComponents": {
-            "surfaceId": "child-form",
-            "components": [
-                {"id": "label", "component": "Text", "text": "Submit"},
-                {
-                    "id": "submit",
-                    "component": "Button",
-                    "child": "label",
-                    "action": {"event": {"name": "form.submit", "context": {"value": "x"}}},
-                },
-            ],
-        },
-    }
-    action = {
-        "version": "v0.9.1",
-        "action": {
-            "name": "form.submit",
-            "surfaceId": "child-form",
-            "sourceComponentId": "submit",
-            "timestamp": "2026-09-02T10:00:00Z",
-            "context": {"value": "x"},
-        },
-    }
-    with TestClient(app) as client:
-        produced = client.post(
-            f"/v1/sessions/{child}/a2ui/messages",
-            headers=HEADERS,
-            json={"messages": [create, components]},
-        )
-        assert produced.status_code == 200
-        listed = client.get(
-            f"/v1/sessions/{root}/interactions", params={"include_children": True}
-        ).json()["interactions"]
-        row = next(item for item in listed if item["kind"] == "a2ui")
-        assert row["owner_session_id"] == child
-        assert row["source"]["surface_id"] == "child-form"
-        mismatched = {
-            **action,
-            "action": {**action["action"], "surfaceId": "different-surface"},
-        }
-        rejected = client.post(
-            f"/v1/sessions/{root}/interactions/{row['id']}/respond",
-            headers=HEADERS,
-            json={"message": mismatched},
-        )
-        assert rejected.status_code == 422
-        # The a2ui branch of the interaction responder enforces the SAME
-        # negotiation the canonical /a2ui/actions route does, so the headers are
-        # not decoration here.
-        responded = client.post(
-            f"/v1/sessions/{root}/interactions/{row['id']}/respond",
-            headers=HEADERS,
-            json={"message": action},
-        )
-        assert responded.status_code == 200, responded.text
-        result = responded.json()["result"]
-        assert result["delivery"] == "start"
-        assert result["state"] == "delivered"
-        surface = app.state.a2ui_store.get(child, "child-form")
-        assert surface is not None
-        [record] = surface.actions
-        assert record["envelope"]["action"]["context"] == {"value": "x"}
-        assert record["correlation"]["interaction_id"] == row["id"]
-        assert record["correlation"]["owner_session_id"] == child
-
-
-def test_capabilities_advertise_normalized_interactions(tmp_path) -> None:
-    with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as client:
-        assert client.get("/v1/capabilities").json()["capabilities"]["x_clio_interactions"] is True
-
-
-def test_agent_routed_questions_project_without_human_actions_and_keep_resolved_history(
-    tmp_path,
-) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="routing")
-    now = datetime.now(timezone.utc).isoformat()
-    fields = [
-        {
-            "name": "count",
-            "type": "integer",
-            "title": "Sample count",
-            "description": "How many samples should be retained?",
-            "required": True,
-            "default": 3,
-            "min_length": None,
-            "max_length": None,
-            "min_items": None,
-            "max_items": None,
-            "multi": False,
-        }
-    ]
-    app.state.user_questions = {
-        "agent_pending": UserQuestion(
-            id="agent_pending",
-            session_id=session.id,
-            prompt="Choose the sample count",
-            source="mcp_elicitation",
-            created_at=now,
-            updated_at=now,
-            answer_metadata={"count": 3},
-            metadata={
-                "elicitation": {
-                    "mode": "form",
-                    "fields": fields,
-                    "additional_properties": False,
-                    "invocation_id": "call_pending",
-                },
-                "agent_answer_task": {
-                    "task_id": "task_answer",
-                    "child_session_id": "sess_answer",
-                },
-            },
-            audience="agent",
-            agent_elicitation_routing="elicitation_routed_to_agent",
-        ),
-        "human_fallback": UserQuestion(
-            id="human_fallback",
-            session_id=session.id,
-            prompt="Choose the sample count",
-            source="mcp_elicitation",
-            created_at=now,
-            updated_at=now,
-            metadata={"elicitation": {"mode": "form", "fields": fields}},
-            audience="agent",
-            agent_elicitation_routing="agent_elicitation_fallback_to_human",
-            agent_elicitation_fallback_detail="agent_answer_timeout",
-        ),
-        "agent_answered": UserQuestion(
-            id="agent_answered",
-            session_id=session.id,
-            prompt="Choose the output format",
-            status="answered",
-            source="mcp_elicitation",
-            created_at=(datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(),
-            updated_at=(datetime.now(timezone.utc) + timedelta(seconds=1)).isoformat(),
-            metadata={"elicitation": {"invocation_id": "call_pending"}},
-            audience="agent",
-            agent_elicitation_routing="elicitation_routed_to_agent",
-            answered_by="agent",
-        ),
-    }
-    app.state.agent_task_registry.register(
-        AgentTask(
-            task_id="task_answer",
-            parent_session_id=session.id,
-            child_session_id="sess_answer",
-            run_label="agent-elicitation answer",
-            project_to_parent=False,
-            status="completed",
-            created_at=now,
-            updated_at=now,
-        )
-    )
-
-    with TestClient(app) as client:
-        response = client.get(
-            f"/v1/sessions/{session.id}/interactions",
-            params={"include_recent_resolved": True, "resolved_limit": 10},
-            headers=HEADERS,
-        )
-        assert response.status_code == 200
-        rows = {row["id"]: row for row in response.json()["interactions"]}
-
-        answering = rows["question:agent_pending"]
-        assert answering["requires_human_response"] is False
-        assert answering["actions"] == []
-        assert answering["routing_state"] == "elicitation_routed_to_agent"
-        assert answering["payload"]["fields"] == fields
-        assert answering["payload"]["answer_metadata"] == {"count": 3}
-        assert answering["payload"]["agent_answer_task"] == {
-            "task_id": "task_answer",
-            "child_session_id": "sess_answer",
-            "status": "completed",
-            "live_state": "completed",
-            "created_at": now,
-            "updated_at": now,
-            "run_label": "agent-elicitation answer",
-        }
-        assert answering["payload"]["request_index"] == 1
-        assert answering["payload"]["request_count"] == 2
-
-        fallback = rows["question:human_fallback"]
-        assert fallback["requires_human_response"] is True
-        assert fallback["actions"] == ["answer", "cancel"]
-        assert fallback["fallback_detail"] == "agent_answer_timeout"
-
-        answered = rows["question:agent_answered"]
-        assert answered["status"] == "answered"
-        assert answered["answered_by"] == "agent"
-        assert answered["requires_human_response"] is False
-        assert answered["payload"]["request_index"] == 2
-        assert answered["payload"]["request_count"] == 2
-
-        rejected = client.post(
-            f"/v1/sessions/{session.id}/interactions/question:agent_pending/respond",
-            json={"action": "answer", "metadata": {"count": 4}},
-            headers=HEADERS,
-        )
-        assert rejected.status_code == 409
-        assert rejected.json()["error"]["error"] == "interaction_not_human_addressed"
-
-
-def test_resolved_agent_question_survives_process_restart(tmp_path) -> None:
-    sessions_path = tmp_path / "sessions.json"
-    first = build_app(sessions_path=sessions_path)
-    session = first.state.sessions.create(workspace_id="ws_default", title="restart")
-    now = datetime.now(timezone.utc).isoformat()
-    record_user_question(
-        first,
-        UserQuestion(
-            id="agent_restart",
-            session_id=session.id,
-            prompt="What nonce did the user provide?",
-            source="mcp_elicitation",
-            created_at=now,
-            updated_at=now,
-            metadata={
-                "elicitation": {
-                    "invocation_id": "call_restart",
-                    "tool_name": "v2ex_agent_guarded_input",
-                }
-            },
-            audience="agent",
-            agent_elicitation_routing="elicitation_routed_to_agent",
-        ),
-    )
-    answered = claim_question_transition(
-        first,
-        "agent_restart",
-        "answered",
-        answer_metadata={"nonce": "restart-visible"},
-        answered_by="agent",
-    )
-    assert answered is not None
-
-    restarted = build_app(sessions_path=sessions_path)
-    with TestClient(restarted) as client:
-        response = client.get(
-            f"/v1/sessions/{session.id}/interactions",
-            params={"include_recent_resolved": True},
-            headers=HEADERS,
-        )
-
-    assert response.status_code == 200
-    [row] = response.json()["interactions"]
-    assert row["id"] == "question:agent_restart"
-    assert row["status"] == "answered"
-    assert row["answered_by"] == "agent"
-    assert row["source"] == {
-        "protocol": "mcp",
-        "tool_name": "v2ex_agent_guarded_input",
-        "invocation_id": "call_restart",
-    }
-    assert row["payload"]["answer_metadata"] == {"nonce": "restart-visible"}
-
-
-def test_structured_form_422_keeps_prefill_and_question_pending(tmp_path) -> None:
-    app = build_app(sessions_path=tmp_path / "sessions.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="form")
-    now = datetime.now(timezone.utc).isoformat()
-    question = UserQuestion(
-        id="form_required",
-        session_id=session.id,
-        prompt="Configure the guarded input",
-        source="mcp_elicitation",
-        created_at=now,
-        updated_at=now,
-        answer_metadata={"count": 3},
-        metadata={
-            "elicitation": {
-                "mode": "form",
-                "fields": [
-                    {
-                        "name": "count",
-                        "type": "integer",
-                        "title": "Sample count",
-                        "required": True,
-                        "default": 3,
-                    },
-                    {
-                        "name": "label",
-                        "type": "string",
-                        "title": "Label",
-                        "required": True,
-                        "min_length": 2,
-                        "max_length": 8,
-                    },
-                ],
-                "additional_properties": False,
-            }
-        },
-    )
-    app.state.user_questions[question.id] = question
-
-    with TestClient(app) as client:
-        invalid = client.post(
-            f"/v1/sessions/{session.id}/interactions/question:{question.id}/respond",
-            json={"action": "answer", "metadata": {"count": 3, "label": "x"}},
-            headers=HEADERS,
-        )
-        assert invalid.status_code == 422
-        retained = app.state.user_questions[question.id]
-        assert retained.status == "pending"
-        assert retained.answer_metadata == {"count": 3}

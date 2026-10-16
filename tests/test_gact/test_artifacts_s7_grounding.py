@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 from clio_agent.gact.artifacts.grounding import ground_answer_artifacts
 from clio_agent.gact.artifacts.minting import mint_artifact, mint_tool_declared_outputs
@@ -401,15 +402,7 @@ class _FakeTask:
         self.task_id = task_id or f"task_{child_session_id}"
 
 
-class _FakeTaskRegistry:
-    def __init__(self, by_parent: dict[str, list[str]]) -> None:
-        self._by_parent = by_parent
-
-    def for_parent(self, parent: str) -> list[_FakeTask]:
-        return [_FakeTask(c) for c in self._by_parent.get(parent, [])]
-
-
-def test_include_children_grounds_against_delegate_output(tmp_path: Path) -> None:
+def test_include_children_grounds_against_delegate_output(tmp_path: Path, arc: Any) -> None:
     parent_root = tmp_path / "parent"
     child_root = tmp_path / "child"
     parent_root.mkdir()
@@ -419,7 +412,12 @@ def test_include_children_grounds_against_delegate_output(tmp_path: Path) -> Non
     )
     parent_sid = _new_session(store, workspace_id="ws_parent")
     child_sid = _new_session(store, workspace_id="ws_child")
-    app.state.agent_task_registry = _FakeTaskRegistry({parent_sid: [child_sid]})
+    from clio_agent.gact.task_history import TaskHistory
+    from tests.test_gact.task_records import record_assignment_fixture
+
+    app.state.task_history = TaskHistory(arc)
+    app.state.human_principal = "human"
+    record_assignment_fixture(app, child_sid, parent_sid=parent_sid)
 
     child_png = child_root / "delegate_plot.png"
     child_png.write_bytes(b"\x89PNG" + b"0" * 32)

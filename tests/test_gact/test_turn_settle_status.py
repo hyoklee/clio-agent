@@ -31,6 +31,7 @@ from clio_agent.gact.events import Event
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.turn_runner import TurnRunner
 from clio_agent.gact.turn_settle_status import publish_turn_settled_status
+from tests.test_gact.runner_records import admit_segment, make_runner
 from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S, wait_for_terminal_status
 
 from .test_post_messages import FakeClioAgent
@@ -44,7 +45,7 @@ pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
 
 def test_run_when_released_runs_immediately_when_no_turn_in_flight() -> None:
-    runner = TurnRunner({})
+    runner = make_runner()
     calls: list[str] = []
 
     runner.run_when_released("s1", lambda: calls.append("settled"))
@@ -52,40 +53,51 @@ def test_run_when_released_runs_immediately_when_no_turn_in_flight() -> None:
     assert calls == ["settled"]
 
 
-def test_run_when_released_defers_until_slot_clears_and_precedes_idle_hook() -> None:
+def test_release_callbacks_precede_subsequent_admission() -> None:
+    """The sole pump retires its slot before callbacks, then considers later input."""
+
     async def scenario() -> list[tuple[str, bool]]:
-        runner = TurnRunner({})
-        runner.bind_loop(asyncio.get_running_loop())
         order: list[tuple[str, bool]] = []
-        runner.set_idle_hook(lambda sid: order.append(("idle_hook", runner.busy(sid))))
-        gate = asyncio.Event()
+        entered, release = asyncio.Event(), asyncio.Event()
+        offered = False
+        runner: TurnRunner
 
         async def turn() -> None:
-            # Registered from inside the turn, like finalize does.
-            runner.run_when_released("s1", lambda: order.append(("settle", runner.busy("s1"))))
-            order.append(("registered", runner.busy("s1")))
-            await gate.wait()
+            order.append(("running", runner.busy("session")))
+            runner.run_when_released(
+                "session", lambda: order.append(("released", runner.busy("session")))
+            )
+            entered.set()
+            await release.wait()
 
-        task = runner.spawn(turn(), sid="s1", turn_id="turn_a")
-        await asyncio.sleep(0)
-        assert order == [("registered", True)]  # not run while the slot is held
+        async def admit(sid: str) -> Any:
+            nonlocal offered
+            if not offered:
+                offered = True
+                return "turn", turn()
+            order.append(("recheck", runner.busy("session")))
+            return None
 
-        gate.set()
-        await task
-        await asyncio.sleep(0)
+        runner = TurnRunner(type("App", (), {"state": object()})(), admit)
+        runner.bind_loop(asyncio.get_running_loop())
+        runner.signal("session")
+        await asyncio.wait_for(entered.wait(), 5)
+        assert order == [("running", True)]
+        release.set()
+        async with asyncio.timeout(5):
+            while runner.busy("session"):
+                await asyncio.sleep(0.001)
+        await runner.drain()
         return order
 
-    order = asyncio.run(scenario())
-    # Sabotage: run the callback at registration (or after the idle hook) -> the
-    # settle entry moves / reports busy=True -> red.
-    assert order == [("registered", True), ("settle", False), ("idle_hook", False)]
+    assert asyncio.run(scenario()) == [("running", True), ("released", False), ("recheck", True)]
 
 
 def test_run_when_released_registered_from_executor_thread() -> None:
     """Finalize registers from the turn executor; the callback still fires on release."""
 
     async def scenario() -> list[bool]:
-        runner = TurnRunner({})
+        runner = make_runner()
         runner.bind_loop(asyncio.get_running_loop())
         seen: list[bool] = []
 
@@ -95,32 +107,37 @@ def test_run_when_released_registered_from_executor_thread() -> None:
             )
             assert seen == []
 
-        await runner.spawn(turn(), sid="s1", turn_id="turn_a")
+        await admit_segment(runner, turn(), sid="s1", turn_id="turn_a")
         await asyncio.sleep(0)
         return seen
 
     assert asyncio.run(scenario()) == [False]
 
 
-def test_failing_release_callback_does_not_block_others_or_idle_hook() -> None:
+def test_failing_release_callback_cannot_block_other_retirement_callbacks() -> None:
+    """One reporting failure cannot strand already retired work or later input."""
+
     async def scenario() -> list[str]:
-        runner = TurnRunner({})
+        runner = make_runner()
         runner.bind_loop(asyncio.get_running_loop())
         order: list[str] = []
-        runner.set_idle_hook(lambda _sid: order.append("idle_hook"))
 
-        def boom() -> None:
-            raise RuntimeError("settle failed")
+        def fail() -> None:
+            raise RuntimeError("deliberate reporting failure")
 
         async def turn() -> None:
-            runner.run_when_released("s1", boom)
-            runner.run_when_released("s1", lambda: order.append("second"))
+            runner.run_when_released("session", fail)
+            runner.run_when_released("session", lambda: order.append("second"))
 
-        await runner.spawn(turn(), sid="s1", turn_id="turn_a")
-        await asyncio.sleep(0)
+        completion = admit_segment(runner, turn(), sid="session", turn_id="turn")
+        try:
+            await asyncio.wait_for(completion, 5)
+            assert not runner.busy("session")
+        finally:
+            await runner.drain()
         return order
 
-    assert asyncio.run(scenario()) == ["second", "idle_hook"]
+    assert asyncio.run(scenario()) == ["second"]
 
 
 # --------------------------------------------------------------------------- #
@@ -134,7 +151,7 @@ class _App:
         self.state.sessions = SessionStore(tmp_path / "s.json")
         self.state.published = []
         self.state.bus = type("B", (), {"publish": self.state.published.append})()
-        self.state.turn_runner = TurnRunner({})
+        self.state.turn_runner = make_runner()
 
 
 def test_settled_status_publishes_status_and_event(tmp_path: Path) -> None:
@@ -171,7 +188,7 @@ def test_settled_status_superseded_by_a_later_transition_is_dropped(tmp_path: Pa
             publish_turn_settled_status(app, sid, "idle")  # type: ignore[arg-type]
             await gate.wait()
 
-        task = runner.spawn(turn(), sid=sid, turn_id="turn_a")
+        task = admit_segment(runner, turn(), sid=sid, turn_id="turn_a")
         await asyncio.sleep(0)
         app.state.sessions.update(sid, status="cancelled")  # the cancel route, mid-tail
         gate.set()

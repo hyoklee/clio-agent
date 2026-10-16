@@ -36,6 +36,7 @@ from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.types import Message, Part
 from clio_agent.gact.workspaces import WorkspaceStore
 from clio_agent.tools.servers.shell_spill_store import spill_directory
+from tests.test_gact.task_records import record_question_fixture
 
 
 @pytest.fixture
@@ -698,7 +699,6 @@ def test_archive_keeps_all_answered_questions_beyond_attention_limit(
     from clio_agent.gact.types import UserQuestion
 
     app, sid, _ = export_app
-    app.state.user_questions = {}
     for index in range(105):
         question = UserQuestion(
             id=f"q{index}",
@@ -710,7 +710,7 @@ def test_archive_keeps_all_answered_questions_beyond_attention_limit(
             updated_at="2026-10-05T00:01:00Z",
             metadata={"invocation_id": f"call{index}", "tool_name": "ask_user"},
         )
-        app.state.user_questions[question.id] = question
+        question = record_question_fixture(app, question)
     interactions = build_transcript(app, sid)["interactions"]
     assert len(interactions) == 105
     assert interactions[-1]["source"]["invocation_id"] == "call104"

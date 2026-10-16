@@ -20,6 +20,7 @@ from clio_agent.gact.agent_blueprint_sources import (
 )
 from clio_agent.gact.app import build_app
 from clio_agent.gact.storage.boundary import source_policy_change
+from tests.test_gact.runner_records import admit_segment
 
 
 @contextmanager
@@ -36,7 +37,7 @@ def _live_turn(client: TestClient, sid: str) -> Iterator[asyncio.Task[Any]]:
             entered.set()
             await finish.wait()
 
-        task = app.state.turn_runner.spawn(work(), sid=sid, turn_id="held-turn")
+        task = admit_segment(app.state.turn_runner, work(), sid=sid, turn_id="held-turn")
         await entered.wait()
         return task, finish
 

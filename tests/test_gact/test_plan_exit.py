@@ -1,46 +1,47 @@
-"""P1.4 #1066 — plan_exit tool + N-way approval + constraint-lift + durable defer.
+"""Plan guardrails and approval through the actual Core Question/mailbox boundary.
 
-Covers the plan-exit turn-ending yield end to end (minus the live model): the tool's two hard-error
-guardrails, the post-forward yield seam that mints the N-way approval question, and
-``resolve_plan_exit_answer`` applying each decision (auto / interactive / exit_only / clear-context
-modifier / reject) plus the durable-defer resume that rides the #1031 deferred-resume fold.
-
-The plan_acl allow-band (plan_exit / ask_user / web_fetch resolve ALLOW in plan mode, writes stay
-DENIED) is proven in ``test_grant_resolver.py``.
+Legacy direct-resume and mutable question-ledger arrangements are replaced with
+public answer routes, confirmed content and the sole admission mailbox.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
+from clio_agent.arc.task_types import AssignmentDetails, TaskSnapshot
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
 from clio_agent.gact.plan_mode import (
-    PLAN_EXIT_APPROVAL_META,
     PlanExitError,
-    _plan_exit_options,
     build_plan_exit_tool,
     maybe_pause_for_plan_exit,
-    resolve_plan_exit_answer,
 )
-from clio_agent.gact.transcript import EventBusTranscriptPublisher, TurnTranscript
-from clio_agent.gact.types import UserQuestion
+from clio_agent.gact.transcript import EventBusTranscriptPublisher
+from clio_agent.gact.turn_state import TurnState
+from clio_agent.gact.types import Message
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
 pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
 
 CLIO_A2UI_CATALOG_ID = workspace_catalog_id()
 
 
-def _make_app(tmp_path: Path):
+def _make_app(tmp_path: Path) -> FastAPI:
     return build_app(sessions_path=tmp_path / "s.json")
 
 
-def _plan_session(app: Any, tmp_path: Path, *, mode: str = "plan", with_plan_file: bool = True):
+def _plan_session(
+    app: Any, tmp_path: Path, *, mode: str = "plan", with_plan_file: bool = True
+) -> Any:
     sess = app.state.sessions.create(workspace_id="ws_default", title="t", mode=mode)
     if with_plan_file:
         plan_file = tmp_path / "plan.md"
@@ -124,477 +125,175 @@ def test_plan_exit_success_records_pending_request(
 # --------------------------------------------------------------------------- #
 
 
-def _fake_state(app: Any, sess: Any) -> SimpleNamespace:
-    published: list[Any] = []
-    bus = SimpleNamespace(publish=published.append)
-    state = SimpleNamespace(
-        app=app,
-        sid=sess.id,
-        error_info=None,
-        turn_id="turn_1",
-        trace_id="trace_1",
-        selected_agent="main",
-        invocation_agent_id="main",
-        retry_attempt_id="",
-        user_msg=SimpleNamespace(id="msg_user_1"),
-        context_frame={"id": "cf_1"},
-        bus=bus,
-        transcript=TurnTranscript(
-            session_id=sess.id,
-            turn_id="turn_1",
-            publisher=EventBusTranscriptPublisher(bus, sess.id),
-        ),
-    )
-    state._published = published  # type: ignore[attr-defined]
-    return state
+@dataclass
+class ApprovalWorld:
+    """A surfaced approval on real Core, with no test model execution."""
+
+    app: FastAPI
+    client: TestClient
+    sid: str
+    question: TaskSnapshot
+    state: TurnState
+
+    def resume_items(self) -> list[Any]:
+        """Read the exact approved/revised input from the indexed Core mailbox."""
+        return [
+            item
+            for item in self.app.state.task_history.pending_mail(self.sid)
+            if item.id == "plan-answer:" + self.question.handle
+        ]
 
 
-def test_maybe_pause_mints_approval_question_and_yields(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.fixture
+def approval_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[ApprovalWorld]:
     app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    monkeypatch.setattr("clio_agent.gact.plan_mode.observer_call_id", lambda: "call_plan_exit")
-    _call_plan_exit(app, sess.id, summary="ship it", recommendedMode="auto")
-
-    monkeypatch.setattr("clio_agent.gact.turn_stream.settle_turn_transcript", lambda state: None)
-    monkeypatch.setattr(
-        "clio_agent.gact.enrichment._finalize_context_frame",
-        lambda *a, **k: None,
-    )
-    monkeypatch.setattr(
-        "clio_agent.gact.runtime.globals._emit_semantic_event", lambda *a, **k: None
-    )
-
-    state = _fake_state(app, sess)
-    assert maybe_pause_for_plan_exit(state) is True
-
-    # Exactly one plan-exit approval question was minted, pending, N-way.
-    questions = [
-        q for q in app.state.user_questions.values() if q.metadata.get(PLAN_EXIT_APPROVAL_META)
-    ]
-    assert len(questions) == 1
-    q = questions[0]
-    assert q.status == "pending"
-    assert q.metadata["plan_content"] == "# Plan\n- do a thing\n"
-    assert q.metadata["plan_content_status"] == "complete"
-    assert q.metadata["artifact_ref"]["saved"] is True
-    assert q.metadata["artifact_ref"]["artifact_id"]
-    assert {o.value for o in q.options} >= {
-        "auto",
-        "interactive",
-        "exit_only",
-        "reject",
-        "clear_context",
-    }
-    # Session flipped to waiting_user; the request is marked surfaced (never re-minted).
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.status == "waiting_user"
-    assert fresh.metadata["pending_plan_exit"]["surfaced"] is True
-
-    from clio_agent.gact.routes.interactions import project_pending_interactions
-
-    projection = project_pending_interactions(app, sess.id, include_children=False)
-    [interaction] = projection.rows
-    assert interaction.title == "Review execution plan"
-    assert interaction.source.tool_name == "plan_exit"
-    assert interaction.source.invocation_id == "call_plan_exit"
-    assert interaction.payload["plan_exit"] == {
-        "summary": "ship it",
-        "recommended_mode": "auto",
-        "plan_file": str(tmp_path / "plan.md"),
-        "plan_content": "# Plan\n- do a thing\n",
-        "plan_content_status": "complete",
-        "artifact_ref": q.metadata["artifact_ref"],
-    }
-
-    # A second seam call is a no-op (already surfaced) — no double question.
-    assert maybe_pause_for_plan_exit(state) is False
-    assert (
-        len(
-            [
-                q
-                for q in app.state.user_questions.values()
-                if q.metadata.get(PLAN_EXIT_APPROVAL_META)
-            ]
+    with TestClient(app) as client:
+        session = _plan_session(app, tmp_path)
+        record_assignment_fixture(app, session.id)
+        user = Message(
+            id="user_plan",
+            session_id=session.id,
+            role="user",
+            parts=[],
+            created_at=session.created_at,
+            updated_at=session.updated_at,
         )
-        == 1
+        state = TurnState(
+            app=app,
+            sid=session.id,
+            sess=session,
+            bus=app.state.bus,
+            user_msg=user,
+            user_text="Review this plan",
+            turn_agent_id="main",
+            turn_id=user.id,
+            trace_id="trace_plan",
+            retry_attempt_id="",
+            native_images=[],
+            context_frame={"id": "fixture_plan_frame"},
+        )
+        state.transcript = app.state.turn_transcripts.open_turn(
+            session.id, user.id, EventBusTranscriptPublisher(app.state.bus, session.id)
+        )
+        # Context-frame finalization is independent of approval arbitration.
+        monkeypatch.setattr(
+            "clio_agent.gact.enrichment._finalize_context_frame", lambda *a, **k: None
+        )
+        with active_turn_fixture(app, session.id):
+            _call_plan_exit(app, session.id, summary="ship it", recommendedMode="auto")
+            assert maybe_pause_for_plan_exit(state)
+        history = app.state.task_history
+        handles = history.session_handles(session.id) & history.task_handles(kind="Question")
+        assert len(handles) == 1
+        question = history.task_snapshot(next(iter(handles)))
+        assert question is not None and question.raw_status == "pending"
+        assert app.state.sessions.get(session.id).status == "waiting_user"
+        yield ApprovalWorld(app, client, session.id, question, state)
+
+
+def answer(world: ApprovalWorld, selected: list[str], text: str = "") -> dict[str, Any]:
+    """Use the authenticated product answer route, not a mirrored Question mutation."""
+    response = world.client.post(
+        f"/v1/sessions/{world.sid}/questions/{world.question.handle}/answer",
+        json={"selected_options": selected, "answer": text},
     )
+    assert response.status_code == 200, response.text
+    return response.json()
 
 
-def test_maybe_pause_noop_without_pending(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    assert maybe_pause_for_plan_exit(_fake_state(app, sess)) is False
-
-
-# --------------------------------------------------------------------------- #
-# resolve_plan_exit_answer — each decision + the clear-context modifier + durable defer
-# --------------------------------------------------------------------------- #
-
-
-def _fake_deps() -> SimpleNamespace:
-    calls: dict[str, list[Any]] = {"resume": [], "replace": []}
-
-    def start_background_user_turn(sid, sess, user_text, *, metadata=None, prev_status="", **kw):
-        calls["resume"].append({"sid": sid, "text": user_text, "metadata": metadata or {}})
-        return SimpleNamespace(id=f"msg_resume_{len(calls['resume'])}")
-
-    def replace_session_messages(app, sid, messages):
-        calls["replace"].append({"sid": sid, "messages": messages})
-
-    return SimpleNamespace(
-        start_background_user_turn=start_background_user_turn,
-        replace_session_messages=replace_session_messages,
-        _calls=calls,
-    )
-
-
-def _pending_plan_exit_question(app: Any, sess: Any, *, plan_file: str) -> UserQuestion:
-    q = UserQuestion(
-        id="q_plan_exit",
-        session_id=sess.id,
-        prompt="approve?",
-        status="pending",
-        kind="choice",
-        options=_plan_exit_options(),
-        created_at="2026-07-27T00:00:00+00:00",
-        updated_at="2026-07-27T00:00:00+00:00",
-        source="plan_exit",
-        metadata={
-            PLAN_EXIT_APPROVAL_META: True,
-            "resume_on_answer": True,
-            "plan_file": plan_file,
-            "plan_content": "# Plan\n- do a thing\n",
-            "plan_content_status": "complete",
-            "recommended_mode": "auto",
-        },
-    )
-    app.state.user_questions[q.id] = q
-    app.state.sessions.update(
-        sess.id, status="waiting_user", metadata_patch={"pending_user_question_id": q.id}
-    )
-    # A resume needs an executable agent present (the deferred-resume entrypoint gates on it).
-    app.state.agent = object()
-    return q
-
-
-def _answer(question: UserQuestion, *, selected: list[str], answer: str = "") -> UserQuestion:
-    return question.model_copy(
-        update={"status": "answered", "selected_options": selected, "answer": answer}
-    )
-
-
-def test_approve_auto_transitions_edit_and_injects_constraint_lift(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    plan_file = str(tmp_path / "plan.md")
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=plan_file)
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto"]))
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"
-    assert fresh.approval_mode == "auto-edits"
-    assert len(deps._calls["resume"]) == 1
-    resume = deps._calls["resume"][0]
-    assert "[STATE TRANSITION OVERRIDE]" in resume["text"]
-    assert plan_file in resume["text"]
-    assert "Begin implementing the approved plan now." in resume["text"]
-    assert "<approved-plan>\n# Plan\n- do a thing\n</approved-plan>" in resume["text"]
-    assert resume["metadata"]["approved_plan"]["content_status"] == "complete"
-    assert resume["metadata"]["approved_plan"]["content"] == "# Plan\n- do a thing\n"
-    assert resume["metadata"]["plan_exit_result"] == "approved"
-    # The pending-request bookkeeping is cleared.
-    assert not fresh.metadata.get("pending_plan_exit")
-
-
-def test_approval_reuses_reviewed_plan_artifact_without_minting_a_second_version(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    "selection,mode,approval_mode,expected_text,expects_resume",
+    [
+        (["auto"], "edit", "auto-edits", "Begin implementing the approved plan now.", True),
+        (["interactive"], "edit", "ask", "prompted to approve each action", True),
+        (["exit_only"], "edit", "ask", "", False),
+        (["reject"], "plan", "ask", "add a rollback section", True),
+        ([], "plan", "ask", "REJECTED", True),
+    ],
+    ids=["auto", "interactive", "exit-only", "reject", "empty-safe-reject"],
+)
+def test_approval_decision_commits_posture_and_exact_resume_input(
+    approval_world: ApprovalWorld,
+    selection: list[str],
+    mode: str,
+    approval_mode: str,
+    expected_text: str,
+    expects_resume: bool,
 ) -> None:
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    _call_plan_exit(app, sess.id, summary="ship it", recommendedMode="auto")
-    monkeypatch.setattr("clio_agent.gact.turn_stream.settle_turn_transcript", lambda state: None)
-    monkeypatch.setattr("clio_agent.gact.enrichment._finalize_context_frame", lambda *a, **k: None)
-    monkeypatch.setattr(
-        "clio_agent.gact.runtime.globals._emit_semantic_event", lambda *a, **k: None
-    )
-
-    assert maybe_pause_for_plan_exit(_fake_state(app, sess)) is True
-    q = next(
-        q for q in app.state.user_questions.values() if q.metadata.get(PLAN_EXIT_APPROVAL_META)
-    )
-    reviewed_ref = dict(q.metadata["artifact_ref"])
-    assert reviewed_ref["saved"] is True
-
-    from clio_agent.gact import plan_reuse
-
-    monkeypatch.setattr(
-        plan_reuse,
-        "save_approved_plan",
-        lambda *args, **kwargs: pytest.fail("approval minted a second plan artifact"),
-    )
-    deps = _fake_deps()
-    app.state.agent = object()
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto"]))
-
-    resume = deps._calls["resume"][0]
-    assert resume["metadata"]["approved_plan"]["artifact_ref"] == reviewed_ref
-
-
-def test_approve_interactive_uses_ask_approval_mode(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=str(tmp_path / "plan.md"))
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["interactive"]))
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"
-    assert fresh.approval_mode == "ask"
-    assert "prompted to approve each action" in deps._calls["resume"][0]["text"]
-
-
-def test_approve_exit_only_leaves_plan_but_does_not_execute(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=str(tmp_path / "plan.md"))
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["exit_only"]))
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"  # left plan mode
-    assert fresh.status == "idle"
-    # NO resume turn, NO execute-now message — the model must not start editing.
-    assert deps._calls["resume"] == []
-
-
-def test_approve_clear_context_modifier_applies(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=str(tmp_path / "plan.md"))
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto", "clear_context"]))
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"
-    assert fresh.metadata.get("plan_exit_context_cleared") is True
-    assert len(deps._calls["replace"]) == 1  # history was cleared
-    assert deps._calls["replace"][0]["messages"] == []
-    assert deps._calls["resume"][0]["metadata"]["plan_exit_context_cleared"] is True
+    """Each decision preserves its safeguards without a producer launching a turn."""
+    world = approval_world
+    reply = answer(world, selection, "add a rollback section" if selection == ["reject"] else "")
+    session = world.app.state.sessions.get(world.sid)
+    assert session.mode == mode and session.approval_mode == approval_mode
+    assert not session.metadata.get("pending_plan_exit")
+    assert reply["status"] == "answered"
+    current = world.app.state.task_history.task_snapshot(world.question.handle)
+    assert current is not None and current.terminal_at is not None
+    items = world.resume_items()
+    assert len(items) == int(expects_resume)
+    if items:
+        item = items[0]
+        assert item.handle == world.question.handle
+        content = world.app.state.task_history.read_content(item.content)
+        assert expected_text in content["text"]
+        assert str(Path(session.metadata["plan_file"])) in content["text"]
+        if mode == "edit":
+            assert "[STATE TRANSITION OVERRIDE]" in content["text"]
+            assert "<approved-plan>\n# Plan\n- do a thing\n</approved-plan>" in content["text"]
+            assert content["metadata"]["approved_plan"]["content_status"] == "complete"
+            assert content["metadata"]["approved_plan"]["content"] == "# Plan\n- do a thing\n"
+    assert not world.app.state.turn_runner.busy(world.sid)
+    with active_turn_fixture(world.app, world.sid):
+        assert maybe_pause_for_plan_exit(world.state) is False
+    # Repeated delivery of the same answer cannot mint approval or resume again.
     assert (
-        "<approved-plan>\n# Plan\n- do a thing\n</approved-plan>"
-        in deps._calls["resume"][0]["text"]
+        answer(world, selection, "add a rollback section" if selection == ["reject"] else "")
+        == reply
     )
+    assert world.resume_items() == items
+    assert len(world.app.state.task_history.task_handles(kind="Question")) == 1
 
 
-def test_reject_stays_in_plan_mode_with_feedback(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    plan_file = str(tmp_path / "plan.md")
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=plan_file)
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(
-        app, deps, sess.id, _answer(q, selected=["reject"], answer="add a rollback section")
-    )
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "plan"  # stayed in plan mode
-    resume = deps._calls["resume"][0]
-    assert "REJECTED" in resume["text"]
-    assert "add a rollback section" in resume["text"]  # feedback visible
-    assert plan_file in resume["text"]  # rejected plan referenced
-    assert resume["metadata"]["plan_exit_result"] == "rejected"
-
-
-def test_composer_request_changes_is_a_real_plan_mode_user_message(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    plan_file = str(tmp_path / "plan.md")
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=plan_file)
-    deps = _fake_deps()
-    app.state.agent = object()
-
-    answered = _answer(q, selected=["reject"], answer="Add rollback and verification steps.")
-    answered = answered.model_copy(update={"answer_metadata": {"composer_user_message": True}})
-    resolve_plan_exit_answer(app, deps, sess.id, answered)
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "plan"
-    assert len(deps._calls["resume"]) == 1
-    resume = deps._calls["resume"][0]
-    assert resume["text"] == "Add rollback and verification steps."
-    assert resume["metadata"]["behavior"] == {"execution_mode": "plan"}
-    assert resume["metadata"]["plan_revision_feedback"] is True
-    assert resume["metadata"].get("plan_exit_resume") is None
-    assert "[STATE TRANSITION OVERRIDE]" not in resume["text"]
-
-
-def test_plan_approval_publishes_authoritative_posture_before_resume(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=str(tmp_path / "plan.md"))
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto"]))
-
-    events = app.state.bus.session_events_since(sess.id, cursor=1)
-    updated = next(event for event in events if event.type == "session.updated")
-    resolved = next(event for event in events if event.type == "plan_exit.resolved")
-    assert updated.payload["mode"] == "edit"
-    assert updated.payload["approval_mode"] == "auto-edits"
-    assert resolved.payload["decision"] == "auto"
-    assert events.index(updated) < events.index(resolved)
-
-
-def test_empty_selection_rejects_safe_ignoring_recommended_mode(tmp_path: Path) -> None:
-    """A decisionless approval (no option selected) must reject-safe, NEVER substitute the model's
-    recommended_mode. Otherwise a plan the human never explicitly approved would auto-execute."""
-    app = _make_app(tmp_path)
-    plan_file = str(tmp_path / "plan.md")
-    sess = _plan_session(app, tmp_path)
-    # recommended_mode="auto" is baked into the question metadata by _pending_plan_exit_question.
-    q = _pending_plan_exit_question(app, sess, plan_file=plan_file)
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=[]))
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "plan"  # stayed in plan mode despite recommended_mode="auto"
-    resume = deps._calls["resume"][0]
-    assert "REJECTED" in resume["text"]
-    assert "[STATE TRANSITION OVERRIDE]" not in resume["text"]  # no execute-now constraint-lift
-    assert resume["metadata"]["plan_exit_result"] == "rejected"
-
-
-def test_durable_defer_resume_when_turn_already_ended(tmp_path: Path) -> None:
-    """Approval arriving after the turn ended (session idle/waiting_user, not busy) resumes as a
-    new turn via start_background_user_turn — the #1031 deferred-resume guarantee."""
-    app = _make_app(tmp_path)
-    plan_file = str(tmp_path / "plan.md")
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=plan_file)
-    deps = _fake_deps()
-    # Not busy (the turn ended), agent present — the deferred-resume path.
-    assert not app.state.turn_runner.busy(sess.id)
-    app.state.agent = object()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto"]))
-
-    assert len(deps._calls["resume"]) == 1  # resumed as ONE new turn
-    assert app.state.sessions.get(sess.id).mode == "edit"  # transition fired on resume
-    assert "[STATE TRANSITION OVERRIDE]" in deps._calls["resume"][0]["text"]  # constraints lifted
-
-
-def _mint_and_resolve(
-    app: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *, decision: str, answer: str = ""
-) -> tuple[Any, int]:
-    """Record → seam-mint an approval question → resolve it with ``decision``.
-
-    Returns the plan session and the count of plan-exit approval questions minted before the
-    post-resolution seam is driven again (the phantom-re-approval regression setup).
-    """
-
-    sess = _plan_session(app, tmp_path)
-    _call_plan_exit(app, sess.id, summary="ship it", recommendedMode="auto")
-
-    monkeypatch.setattr("clio_agent.gact.turn_stream.settle_turn_transcript", lambda state: None)
-    monkeypatch.setattr("clio_agent.gact.enrichment._finalize_context_frame", lambda *a, **k: None)
+def test_approval_reuses_the_reviewed_immutable_plan_artifact(
+    approval_world: ApprovalWorld,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Execution refers to the human-reviewed version instead of resaving a new one."""
+    world = approval_world
+    history = world.app.state.task_history
+    original = history.read_content(world.question.details)["metadata"]["artifact_ref"]
+    assert original["saved"] is True
     monkeypatch.setattr(
-        "clio_agent.gact.runtime.globals._emit_semantic_event", lambda *a, **k: None
+        "clio_agent.gact.plan_reuse.save_approved_plan",
+        lambda *args, **kwargs: pytest.fail("Approval minted a second plan artifact"),
     )
-
-    assert maybe_pause_for_plan_exit(_fake_state(app, sess)) is True
-    q = next(
-        q for q in app.state.user_questions.values() if q.metadata.get(PLAN_EXIT_APPROVAL_META)
-    )
-
-    deps = _fake_deps()
-    app.state.agent = object()
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=[decision], answer=answer))
-
-    minted = len(
-        [q for q in app.state.user_questions.values() if q.metadata.get(PLAN_EXIT_APPROVAL_META)]
-    )
-    return sess, minted
+    answer(world, ["auto"])
+    frozen = world.app.state.questions.resolution(world.question.handle)
+    assert frozen["approved_plan"]["artifact_ref"] == original
+    assert frozen["approved_plan"]["content"] == "# Plan\n- do a thing\n"
 
 
-def test_seam_no_phantom_reapproval_after_approve(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_busy_approval_retains_core_input_until_runner_admission(
+    approval_world: ApprovalWorld,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """After an APPROVED plan-exit, the resolved-tombstone ``pending_plan_exit == {}`` must read as
-    absent: a fresh next-turn seam call returns False and mints NO second (phantom) approval question.
-
-    Regression for the plan-exit phantom re-approval BLOCKER (plan_mode.py:483/707): the resolve
-    tombstone writes ``{}``, which an ``isinstance(pending, Mapping)``-only guard treated as a live,
-    un-surfaced request and re-surfaced — hijacking the resumed execution turn with a second approval.
-    """
-
-    app = _make_app(tmp_path)
-    sess, minted = _mint_and_resolve(app, tmp_path, monkeypatch, decision="auto")
-    assert minted == 1  # only the original approval question exists
-
-    # The resume turn runs the seam again against the {} tombstone: it must not re-surface.
-    assert maybe_pause_for_plan_exit(_fake_state(app, sess)) is False
-    after = len(
-        [q for q in app.state.user_questions.values() if q.metadata.get(PLAN_EXIT_APPROVAL_META)]
-    )
-    assert after == minted  # no phantom re-approval
+    """A busy owner keeps the exact accepted approval input without another worker."""
+    world = approval_world
+    monkeypatch.setattr(world.app.state.turn_runner, "busy", lambda sid: True)
+    answer(world, ["auto"])
+    [item] = world.resume_items()
+    assert item.handle == world.question.handle
+    assert world.app.state.task_history.committed_notification_input(world.sid, item.id) is None
+    assert world.app.state.sessions.get(world.sid).mode == "edit"
 
 
-def test_seam_no_phantom_reapproval_after_reject(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+def test_clear_context_retains_core_history_and_announces_removed_surfaces(
+    approval_world: ApprovalWorld,
 ) -> None:
-    """After a REJECTED plan-exit, the seam must likewise not re-surface a phantom question on the
-    feedback-revision turn — the worst path, where a phantom approval would hijack the revision.
-    """
-
-    app = _make_app(tmp_path)
-    sess, minted = _mint_and_resolve(
-        app, tmp_path, monkeypatch, decision="reject", answer="add a rollback section"
-    )
-    assert minted == 1
-
-    assert maybe_pause_for_plan_exit(_fake_state(app, sess)) is False
-    after = len(
-        [q for q in app.state.user_questions.values() if q.metadata.get(PLAN_EXIT_APPROVAL_META)]
-    )
-    assert after == minted  # no phantom re-approval on the revision turn
-    assert app.state.sessions.get(sess.id).mode == "plan"  # reject stayed in plan mode
-
-
-def test_durable_defer_busy_folds_into_loop_inbox(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """If a turn is somehow in flight, the resume folds into the loop inbox (never dropped)."""
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    q = _pending_plan_exit_question(app, sess, plan_file=str(tmp_path / "plan.md"))
-    deps = _fake_deps()
-    app.state.agent = object()
-    monkeypatch.setattr(app.state.turn_runner, "busy", lambda sid: True)  # mark busy
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto"]))
-
-    # No direct background turn — the resume rode the loop inbox fold instead.
-    assert deps._calls["resume"] == []
-    from clio_agent.gact.agent_mailbox import pending_mail
-
-    assert pending_mail(app, sess.id)
-    assert app.state.sessions.get(sess.id).mode == "edit"  # transition still fired
-
-
-def test_clear_context_announces_every_surface_it_deletes(tmp_path: Path) -> None:
-    app = _make_app(tmp_path)
-    sess = _plan_session(app, tmp_path)
-    app.state.a2ui_store.apply_batch(
-        sess.id,
+    """Context reset references a fixed epoch while retaining the approval's history."""
+    world = approval_world
+    world.app.state.a2ui_store.apply_batch(
+        world.sid,
         [
             {
                 "version": "v0.9.1",
@@ -602,34 +301,42 @@ def test_clear_context_announces_every_surface_it_deletes(tmp_path: Path) -> Non
                     "surfaceId": "plan_surface",
                     "catalogId": CLIO_A2UI_CATALOG_ID,
                 },
-            },
-            {
-                "version": "v0.9.1",
-                "updateComponents": {
-                    "surfaceId": "plan_surface",
-                    "components": [
-                        {
-                            "id": "root",
-                            "component": "clio.status.v1",
-                            "label": "Plan",
-                            "state": "completed",
-                        }
-                    ],
-                },
-            },
+            }
         ],
     )
-    q = _pending_plan_exit_question(app, sess, plan_file=str(tmp_path / "plan.md"))
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto", "clear_context"]))
-
-    assert deps._calls["replace"][0]["messages"] == []
+    original = world.app.state.task_history.read_content(world.question.details)
+    answer(world, ["auto", "clear_context"])
+    history = world.app.state.task_history
+    assignment = history.latest_assignment(world.sid)
+    details = AssignmentDetails.model_validate(history.read_content(assignment.details))
+    assert details.context_epoch == world.question.handle
+    assert details.context_epoch_after == world.question.created_at
+    assert history.read_content(world.question.details) == original
+    assert world.app.state.sessions.get(world.sid).metadata["plan_exit_context_cleared"] is True
     deletions = [
         event.payload
-        for event in app.state.bus._history[sess.id]
+        for event in world.app.state.bus._history[world.sid]
         if event.type == "a2ui.surface.deleted"
     ]
-    assert deletions == [
-        {"surface_id": "plan_surface", "reason": "plan_exit_context_cleared"},
-    ]
+    assert deletions == [{"surface_id": "plan_surface", "reason": "plan_exit_context_cleared"}]
+
+
+def test_plan_posture_is_updated_before_approved_work_enters_mailbox(
+    approval_world: ApprovalWorld,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No admitted continuation can observe the old planning constraints."""
+    world = approval_world
+    history = world.app.state.task_history
+    original = history.record_mail
+    seen: list[tuple[str, str]] = []
+
+    def record(item: Any, **kwargs: Any) -> Any:
+        if item.id == "plan-answer:" + world.question.handle:
+            session = world.app.state.sessions.get(world.sid)
+            seen.append((session.mode, session.approval_mode))
+        return original(item, **kwargs)
+
+    monkeypatch.setattr(history, "record_mail", record)
+    answer(world, ["auto"])
+    assert seen and all(posture == ("edit", "auto-edits") for posture in seen)

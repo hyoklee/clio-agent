@@ -25,6 +25,7 @@ from pytest import MonkeyPatch
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
 from clio_agent.gact.protocol.constants import A2UI_V091
+from tests.test_gact.input_capture import capture_inputs
 
 from .test_a2ui_v3 import HEADERS, _create_message, _session_client
 
@@ -71,15 +72,9 @@ def _install_context_schema_event(app: Any, monkeypatch: MonkeyPatch) -> None:
     monkeypatch.setattr(registry, "get", patched_get)
 
 
-def _stub_spawn(app: Any, monkeypatch: MonkeyPatch) -> list[Any]:
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-    return spawned
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def _event(name: str, surface_id: str, context: dict[str, Any], timestamp: str) -> dict[str, Any]:
@@ -111,7 +106,7 @@ def test_concurrent_duplicate_submission_persists_exactly_one_record(
     session = app.state.sessions.create(workspace_id="ws_default", title="race")
     sid = session.id
     app.state.a2ui_store.apply_batch(sid, [_create_message()])
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
 
     import clio_agent.gact.a2ui_actions.dispatcher as dispatcher_module
 
@@ -151,7 +146,7 @@ def test_concurrent_duplicate_submission_persists_exactly_one_record(
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     assert len(surface.actions) == 1, f"expected exactly one record, got {len(surface.actions)}"
-    assert len(spawned) == 1, "exactly one turn must have started, not two"
+    assert len(spawned) == 1, "exactly one Core input must have been accepted"
     assert results[0]["action_id"] == results[1]["action_id"]
 
 
@@ -217,7 +212,7 @@ def test_three_ghost_surface_errors_are_three_two_hundreds_zero_turns(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
     envelope = _error_envelope("ghost", "VALIDATION_FAILED", path="/x", message="boom")
 
     responses = [
@@ -243,7 +238,7 @@ def test_uncorrelated_waiting_user_repair_does_not_burn_the_repair_budget(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     app.state.agent = object()
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -308,7 +303,7 @@ def test_replay_never_re_records_the_foreign_surface_reason(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     create_owned = {
         "version": "v0.9.1",
         "createSurface": {
@@ -379,7 +374,7 @@ def test_error_record_lifecycle_event_carries_code_as_action_name_and_kind(
 
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -416,7 +411,7 @@ def test_context_schema_rejects_empty_required_array(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     _install_context_schema_event(app, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -445,7 +440,7 @@ def test_context_schema_rejects_a_missing_required_field(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     _install_context_schema_event(app, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -465,7 +460,7 @@ def test_context_schema_delivers_a_conforming_context(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     _install_context_schema_event(app, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -490,7 +485,7 @@ def test_events_without_context_schema_are_unchanged(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     _install_context_schema_event(app, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )

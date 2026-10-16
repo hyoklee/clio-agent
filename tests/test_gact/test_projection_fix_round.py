@@ -18,25 +18,14 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from clio_agent.gact.agent_tasks import AgentTask
+from clio_agent.arc.task_types import TaskSnapshot
 from clio_agent.gact.app import build_app
+from tests.test_gact.task_records import record_assignment_fixture
 
 
-def _seed_task(app: Any, *, parent: str, child: str, task_id: str, depth: int = 1) -> AgentTask:
-    """Register one delegated child through the authoritative registry."""
-
-    return app.state.agent_task_registry.register(
-        AgentTask(
-            task_id=task_id,
-            parent_session_id=parent,
-            child_session_id=child,
-            agent_ref={"expert_id": "analyst"},
-            depth=depth,
-            status="running",
-            created_at="2026-09-03T00:00:00+00:00",
-            updated_at="2026-09-03T00:00:00+00:00",
-        )
-    )
+def _seed_task(app: Any, *, parent: str, child: str, task_id: str, depth: int = 1) -> TaskSnapshot:
+    """Write retained attribution through the confirmed Core hierarchy."""
+    return record_assignment_fixture(app, child, handle=task_id, parent_sid=parent)
 
 
 # --------------------------------------------------------------------------- #
@@ -310,73 +299,50 @@ def test_the_execution_projection_reports_its_own_depth_and_truncation(tmp_path)
     assert result["degradations"] == []
 
 
-def test_deleting_a_session_purges_its_agent_task_rows(tmp_path) -> None:
-    """A deleted child left its task row behind, so the lineage kept naming it."""
-
+def test_deleting_a_session_retains_its_historical_core_task(tmp_path: Path) -> None:
+    """Session removal cannot erase task outcomes or rewrite immutable ownership."""
     app = build_app(sessions_path=tmp_path / "sessions.json")
     with TestClient(app) as client:
         root = app.state.sessions.create(workspace_id="ws_default", title="root")
         child = app.state.sessions.create(workspace_id="ws_default", title="child")
-        _seed_task(app, parent=root.id, child=child.id, task_id="task_gone")
-        assert app.state.agent_task_registry.get("task_gone") is not None
+        original = record_assignment_fixture(
+            app, child.id, handle="task_retained", parent_sid=root.id, status="completed"
+        )
+        response = client.delete(f"/v1/sessions/{child.id}")
+        assert response.status_code in {200, 204}, response.text
+        assert app.state.sessions.get(child.id) is None
+        assert app.state.task_history.task_snapshot(original.handle) == original
+        assert app.state.task_history.read_content(original.result)["answer"] == "Fixture completed"
 
-        deleted = client.delete(f"/v1/sessions/{child.id}")
-        assert deleted.status_code in {200, 204}, deleted.text
 
-    assert app.state.agent_task_registry.get("task_gone") is None
-    assert app.state.agent_task_registry.for_parent(root.id) == []
-
-
-def test_agent_task_events_reach_the_attended_root(tmp_path: Path) -> None:
-    """Permission events already mirror to the watched root; task events did not.
-
-    A nested spawn published only to its own parent and child, so the human
-    watching the root session's stream never saw a grandchild start or finish.
-    """
-
-    from clio_agent.gact.agent_tasks import publish_agent_task_event
+def test_nested_task_projection_keeps_the_attended_root_lineage(tmp_path: Path) -> None:
+    """Grandchildren remain discoverable without another terminal writer or wake path."""
+    from clio_agent.gact.provenance.child_projection import child_session_lineage
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
     root = app.state.sessions.create(workspace_id="ws_default", title="root")
     middle = app.state.sessions.create(
-        workspace_id="ws_default",
-        title="middle",
-        parent_session_id=root.id,
-        agent={"id": "middle", "mode": "subagent"},
+        workspace_id="ws_default", title="middle", parent_session_id=root.id
     )
     leaf = app.state.sessions.create(
-        workspace_id="ws_default",
-        title="leaf",
-        parent_session_id=middle.id,
-        agent={"id": "leaf", "mode": "subagent"},
+        workspace_id="ws_default", title="leaf", parent_session_id=middle.id
     )
-    task = _seed_task(app, parent=middle.id, child=leaf.id, task_id="task_deep", depth=2)
-
-    published: list[tuple[str, dict[str, Any]]] = []
-    original = app.state.bus.publish
-
-    def capture(event: Any) -> Any:
-        published.append((event.session_id, dict(event.payload)))
-        return original(event)
-
-    app.state.bus.publish = capture
-    publish_agent_task_event(app, task, "agent.task.started")
-
-    targets = {session_id for session_id, _payload in published}
-    assert targets == {middle.id, leaf.id, root.id}
-    mirrored = next(payload for session_id, payload in published if session_id == root.id)
-    assert mirrored["forwarded_from_session_id"] == middle.id
-    assert mirrored["attended_session_id"] == root.id
+    outer = _seed_task(app, parent=root.id, child=middle.id, task_id="task_outer")
+    inner = _seed_task(app, parent=middle.id, child=leaf.id, task_id="task_inner")
+    rows, truncated = child_session_lineage(app, root.id)
+    row = next(row for row in rows if row["session_id"] == leaf.id)
+    assert row["task_path"] == [outer.handle, inner.handle]
+    assert not truncated
+    assert app.state.task_history.task_snapshot(inner.handle) == inner
 
 
 def test_the_subagent_projection_carries_the_task_path(tmp_path) -> None:
     """Without it a client cannot place a nested run in the tree it belongs to."""
 
-    from dataclasses import asdict
-
     from clio_agent.gact import context as _ctx
     from clio_agent.gact.events import Event
     from clio_agent.gact.protocol.v3.event import event_to_v3
+    from clio_agent.gact.routes.tasks import agent_task_view
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
     root = app.state.sessions.create(workspace_id="ws_default", title="root")
@@ -388,7 +354,11 @@ def test_the_subagent_projection_carries_the_task_path(tmp_path) -> None:
     token = _ctx.set_app(app)
     try:
         projected = event_to_v3(
-            Event(type="agent.task.started", session_id=middle.id, payload=asdict(task)),
+            Event(
+                type="agent.task.started",
+                session_id=middle.id,
+                payload=agent_task_view(app, task.model_dump(mode="json")),
+            ),
             session=app.state.sessions.get(middle.id),
         )
     finally:
@@ -396,27 +366,25 @@ def test_the_subagent_projection_carries_the_task_path(tmp_path) -> None:
     assert projected["payload"]["task_path"] == ["task_outer", "task_inner"]
 
 
-def test_pending_interaction_rows_carry_a_revision(tmp_path) -> None:
-    """A client cannot discard a stale poll response without one."""
-
-    from clio_agent.gact.types import UserQuestion
+def test_pending_interaction_rows_carry_the_confirmed_question_revision(tmp_path: Path) -> None:
+    """Polling clients can reject stale rows using the common owner's update stamp."""
+    from clio_agent.arc.task_types import QuestionDefinition
 
     app = build_app(sessions_path=tmp_path / "sessions.json")
     with TestClient(app) as client:
         session = app.state.sessions.create(workspace_id="ws_default", title="root")
-        app.state.user_questions["q_rev"] = UserQuestion(
-            id="q_rev",
-            session_id=session.id,
-            owner_session_id=session.id,
-            attended_session_id=session.id,
-            prompt="Which dataset?",
-            created_at="2026-09-03T00:00:00+00:00",
-            updated_at="2026-09-03T00:00:00+00:00",
+        owner = record_assignment_fixture(app, session.id).owner
+        question = app.state.questions.create(
+            owner, QuestionDefinition(prompt="Which dataset?"), invocation_id="revision-question"
         )
-        listed = client.get(f"/v1/sessions/{session.id}/interactions")
-
-    row = listed.json()["interactions"][0]
-    assert row["revision"] == "2026-09-03T00:00:00+00:00"
+        response = client.get(f"/v1/sessions/{session.id}/interactions")
+        assert response.status_code == 200, response.text
+        row = next(
+            row
+            for row in response.json()["interactions"]
+            if row["id"] == "question:" + question.handle
+        )
+        assert row["revision"] == question.updated_at
 
 
 # --------------------------------------------------------------------------- #

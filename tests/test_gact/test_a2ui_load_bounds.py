@@ -69,6 +69,7 @@ from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.a2ui_catalogs.reasons import A2UI_CATALOG_REASON_RING_MAXLEN
 from clio_agent.gact.app import build_app
 from clio_agent.gact.messages import MessageStore
+from tests.test_gact.input_capture import capture_inputs
 
 WORKSPACE_CATALOG_ID = workspace_catalog_id()
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
@@ -108,11 +109,9 @@ def _create_batch(surface_id: str) -> list[dict[str, Any]]:
     ]
 
 
-def _stub_spawn(app: Any) -> None:
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    app.state.turn_runner.spawn = _spawn
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def test_sustained_data_model_updates_keep_message_retention_at_its_configured_bound(
@@ -286,7 +285,7 @@ def test_sustained_distinct_component_ids_hit_the_merged_cap_and_refuse(
 
 def test_sustained_actions_keep_the_per_session_reason_ring_at_256(tmp_path: Path) -> None:
     app = _isolated_app(tmp_path)
-    _stub_spawn(app)
+    _capture_inputs(app)
     with TestClient(app) as client:
         session = app.state.sessions.create(workspace_id="ws_default", title="reason ring")
         sid = session.id

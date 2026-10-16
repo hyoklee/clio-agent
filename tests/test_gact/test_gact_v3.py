@@ -9,12 +9,12 @@ from fastapi.testclient import TestClient
 
 from clio_agent import __version__ as clio_agent_version
 from clio_agent.gact.agent_blueprints import install_agent_blueprint
-from clio_agent.gact.agent_tasks import seed_agent_task
 from clio_agent.gact.app import build_app
 from clio_agent.gact.events import Event
 from clio_agent.gact.parts import Part
 from clio_agent.gact.protocol_v3 import event_to_v3, message_to_v3, part_to_v3_block
 from clio_agent.gact.types import Message, Tokens
+from tests.test_gact.task_records import record_delegation_fixture
 
 V3_HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
 
@@ -545,14 +545,15 @@ def test_v3_message_projects_only_public_mcp_app_response_identity() -> None:
 def test_v3_transcript_preserves_navigable_child_agent_semantics(tmp_path: Path) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
     parent = app.state.sessions.create(workspace_id="ws_default", title="Flat NDP")
-    child = seed_agent_task(
+    child = record_delegation_fixture(
         app,
-        parent_session_id=parent.id,
+        parent.id,
+        handle="task_geo",
+        agent="geospatial",
+        label="Resolve station region",
+        completed=True,
+        description="Ground the requested region before catalog search.",
         parent_turn_id="run_1",
-        agent_ref={"expert_id": "geospatial"},
-        task_id="task_geo",
-        status="completed",
-        run_label="Resolve station region",
     )
     app.state.messages[parent.id] = [
         Message(
@@ -617,7 +618,7 @@ def test_v3_transcript_preserves_navigable_child_agent_semantics(tmp_path: Path)
             "id": "task_geo",
             "session_id": parent.id,
             "parent_run_id": "run_1",
-            "child_session_id": child.child_session_id,
+            "child_session_id": child.owner.session_id,
             "agent_id": "geospatial",
             "title": "Resolve station region",
             "state": "completed",
@@ -629,105 +630,72 @@ def test_v3_transcript_preserves_navigable_child_agent_semantics(tmp_path: Path)
     ]
 
 
-def test_v3_projects_authoritative_child_relation_without_handoff_part(tmp_path: Path) -> None:
+def test_v3_task_records_do_not_fabricate_transcript_handoff_parts(tmp_path: Path) -> None:
+    """Core task history is queried separately; a read never invents assistant output."""
     app = build_app(sessions_path=tmp_path / "sessions.json")
     parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
-    child = seed_agent_task(
+    child = record_delegation_fixture(
         app,
-        parent_session_id=parent.id,
-        parent_turn_id="run_child",
-        agent_ref={"expert_id": "geospatial"},
-        task_id="task_child",
-        status="running",
-        run_label="Resolve Seattle",
+        parent.id,
+        handle="task_child",
+        agent="geospatial",
+        completed=True,
+        label="Resolve Seattle",
+        description=None,
+        result={"answer": "Seattle resolved to an authoritative region."},
     )
-    app.state.agent_task_registry.transition(
-        child.task_id,
-        "completed",
-        result={"answer_excerpt": "Seattle resolved to an authoritative region."},
-    )
-
-    transcript = (
-        TestClient(app).get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
-    )
-
-    relation_message = transcript["messages"][0]
-    assert relation_message["id"] == "child-relation:task_child"
-    assert relation_message["blocks"] == [
-        {
-            "id": "child-relation-block:task_child",
-            "type": "subagent",
-            "subagent_id": "task_child",
-        }
-    ]
-    assert transcript["subagents"] == [
-        {
-            "id": "task_child",
-            "session_id": parent.id,
-            "parent_run_id": "run_child",
-            "child_session_id": child.child_session_id,
-            "agent_id": "geospatial",
-            "title": "Resolve Seattle",
-            "state": "completed",
-            "task": "Description unavailable for this older task",
-            "summary": "Seattle resolved to an authoritative region.",
-            "result": "Seattle resolved to an authoritative region.",
-        }
-    ]
+    with TestClient(app) as client:
+        transcript = client.get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
+        assert transcript["messages"] == []
+        assert transcript["subagents"] == []
+        current = app.state.task_history.task_snapshot(child.handle)
+        assert current == child and current.description_missing
+        assert (
+            app.state.task_history.read_content(current.result)["answer"]
+            == "Seattle resolved to an authoritative region."
+        )
+        assert app.state.messages.get(parent.id, []) == []
 
 
-def test_v3_omits_internal_runtime_child_from_parent_transcript(tmp_path: Path) -> None:
-    """A runtime helper is a real child turn, but not user-facing delegation."""
-
+def test_v3_omits_unrecorded_runtime_handoffs(tmp_path: Path) -> None:
+    """Passive child records do not fabricate started events or parent transcript rows."""
     app = build_app(sessions_path=tmp_path / "sessions.json")
     parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
-    internal = seed_agent_task(
+    internal = record_delegation_fixture(
         app,
-        parent_session_id=parent.id,
+        parent.id,
+        handle="task_agent_answer",
+        agent="main",
+        label="agent-elicitation answer",
         parent_turn_id="run_tool",
-        agent_ref={"expert_id": "main"},
-        task_id="task_agent_answer",
-        status="running",
-        run_label="agent-elicitation answer",
-        project_to_parent=False,
     )
-
-    transcript = (
-        TestClient(app).get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
-    )
-
-    assert transcript["subagents"] == []
-    assert transcript["messages"] == []
-    child_events = app.state.bus._history[internal.child_session_id]
-    assert any(event.type == "agent.task.started" for event in child_events)
-    assert not any(
-        event.type.startswith("agent.task.") for event in app.state.bus._history[parent.id]
-    )
+    with TestClient(app) as client:
+        transcript = client.get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
+        assert transcript["subagents"] == [] and transcript["messages"] == []
+        assert app.state.task_history.task_snapshot(internal.handle) == internal
+        assert not any(
+            event.type.startswith("agent.task.") for event in app.state.bus._history[parent.id]
+        )
 
 
-def test_v3_omits_missing_parent_run_from_authoritative_child_relation(tmp_path: Path) -> None:
+def test_v3_legacy_child_without_parent_run_remains_in_core_only(tmp_path: Path) -> None:
+    """A missing historical run is explicit; display reads never reconstruct one."""
     app = build_app(sessions_path=tmp_path / "sessions.json")
     parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
-    child = seed_agent_task(
+    child = record_delegation_fixture(
         app,
-        parent_session_id=parent.id,
-        parent_turn_id="",
-        agent_ref={"expert_id": "spotter_watcher"},
-        task_id="task_watcher",
-        status="waiting",
-        run_label="SPOTTER AI",
+        parent.id,
+        handle="task_watcher",
+        agent="spotter_watcher",
+        parent_turn_id=None,
+        label="SPOTTER AI",
+        description=None,
     )
-
-    transcript = (
-        TestClient(app).get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
-    )
-
-    relation_message = transcript["messages"][0]
-    assert relation_message["id"] == "child-relation:task_watcher"
-    assert "run_id" not in relation_message
-    subagent = transcript["subagents"][0]
-    assert subagent["child_session_id"] == child.child_session_id
-    assert "parent_run_id" not in subagent
+    with TestClient(app) as client:
+        transcript = client.get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
+        assert transcript["messages"] == [] and transcript["subagents"] == []
+        assert app.state.task_history.task_snapshot(child.handle) == child
+        assert child.description_missing
 
 
 def test_v3_action_card_preserves_labels_and_safe_client_behavior(tmp_path: Path) -> None:

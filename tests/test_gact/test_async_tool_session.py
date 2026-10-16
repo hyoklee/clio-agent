@@ -11,7 +11,9 @@ from typing import Any
 import pytest
 
 from clio_agent.gact import context
-from clio_agent.gact.runtime.async_tool_session import async_tool_session_context
+from clio_agent.gact.runtime.tool_session import (
+    _async_tool_session_context as async_tool_session_context,
+)
 from clio_agent.tools.execution import get_active_tool_workspace_root
 from clio_agent.tools.workspace_root import canonical_workspace_root
 from tests.test_gact.test_workspace_tool_executor import _bare_agent

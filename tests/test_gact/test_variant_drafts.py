@@ -28,12 +28,11 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import types
 from collections.abc import Iterator
 from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
 import dspy
 import pytest
@@ -41,25 +40,21 @@ from fastapi.testclient import TestClient
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.storage import make_arc_store
+from clio_agent.arc.task_types import QuestionReply
 from clio_agent.gact import context as ctx
 from clio_agent.gact.agents.clio_react import ClioReAct
 from clio_agent.gact.agents.clio_react_record import read_steps
 from clio_agent.gact.agents.variant_drafts import (
-    UserJudgedVariant,
     build_draft_alternatives_tool,
 )
 from clio_agent.gact.agents.variant_records import load_run, preference_records
 from clio_agent.gact.app import build_app
-from clio_agent.gact.elicitation_bridge import claim_question_transition
 from clio_agent.gact.events import Event
 from clio_agent.gact.protocol.v3.event import event_to_v3
-from clio_agent.gact.runtime.type_parsing import parse_module_variant
-from clio_agent.gact.transcript import EventBusTranscriptPublisher
-from clio_agent.gact.turn_state import TurnState
-from clio_agent.gact.types import Message
-from clio_agent.gact.user_question_pause import maybe_pause_for_user
+from clio_agent.gact.question_surface import question_row
 from clio_agent.runtime.lm_activity import set_live_chunk_emitter
 from tests._scripted_engine import Reply, calls, routed_lm, summarize
+from tests.test_gact.task_records import record_assignment_fixture
 
 SCOPE = "writer"
 ASK = "Write the email to Dana about the delayed shipment."
@@ -98,10 +93,24 @@ def world(tmp_path: Path) -> Iterator[World]:
     with ExitStack() as lifespans:
         app, arc, events = _app(tmp_path / "sessions.json", lifespans=lifespans)
         sid = app.state.sessions.create(workspace_id="ws_default", title="drafts").id
+        record_assignment_fixture(app, sid)
         yield World(app, arc, sid, events, tmp_path / "sessions.json", lifespans)
 
 
 def _bind(app: Any, sid: str, turn: str) -> list[Any]:
+    from clio_agent.arc.task_types import AssignmentDetails
+
+    current = app.state.task_history.latest_assignment(sid)
+    assert current is not None
+    details = AssignmentDetails.model_validate(app.state.task_history.read_content(current.details))
+    ctx.set_turn_identity(
+        app=app,
+        session_id=sid,
+        turn_id=turn,
+        trace_id="trace:" + turn,
+        assignment_handle=current.handle,
+        context_epoch=details.context_epoch,
+    )
     return [
         ctx.set_app(app),
         ctx.set_session_id(sid),
@@ -124,51 +133,25 @@ def _forward(app: Any, sid: str, lm: Any, question: str, turn: str) -> dspy.Pred
 
 
 def _surface(app: Any, sid: str, turn: str, monkeypatch: pytest.MonkeyPatch) -> Any:
-    """What the turn does after a yield: the real pause mints the choice question."""
-    monkeypatch.setattr(
-        "clio_agent.gact.user_question_pause._finalize_context_frame", lambda *a, **k: None
-    )
-    session = app.state.sessions.get(sid)
-    user = Message(
-        id=turn,
-        session_id=sid,
-        role="user",
-        parts=[],
-        created_at=session.created_at,
-        updated_at=session.updated_at,
-    )
-    state = TurnState(
-        app=app,
-        sid=sid,
-        sess=session,
-        bus=app.state.bus,
-        user_msg=user,
-        user_text=ASK,
-        turn_agent_id=SCOPE,
-        turn_id=turn,
-        trace_id=f"trace_{turn}",
-        retry_attempt_id="",
-        native_images=[],
-        context_frame={"id": f"frame_{turn}"},
-    )
-    state.transcript = app.state.turn_transcripts.open_turn(
-        sid, turn, EventBusTranscriptPublisher(app.state.bus, sid)
-    )
-
-    def no_retry(*args: Any, **kwargs: Any) -> None:
-        del args, kwargs
-
-    assert maybe_pause_for_user(state, types.SimpleNamespace(), update_retry_attempt=no_retry)
-    question_id = app.state.sessions.get(sid).metadata["pending_user_question_id"]
-    return app.state.user_questions[question_id]
+    """Read the Question already posted by the short control; do not pause a turn."""
+    rows = [
+        app.state.task_history.task_snapshot(handle)
+        for handle in app.state.task_history.tree_handles(sid)
+    ]
+    questions = [
+        task
+        for task in rows
+        if task is not None and task.kind == "Question" and task.terminal_at is None
+    ]
+    assert len(questions) == 1
+    return question_row(app, questions[0].handle)
 
 
 def _answer(app: Any, question: Any, pick: str, comment: str = "") -> None:
-    """The user's answer, through the one atomic transition every answer route takes."""
-    answered = claim_question_transition(
-        app, question.id, "answered", answer=comment, selected_options=[pick], answered_by="human"
+    """Confirm the human reply through the sole Core Question owner."""
+    app.state.questions.answer(
+        question.id, QuestionReply(answer=comment, selected_options=(pick,), answered_by="human")
     )
-    assert answered is not None
 
 
 def _score(value: float) -> Reply:
@@ -269,82 +252,6 @@ def _only_run(world: World) -> str:
 # --------------------------------------------------------------------------- #
 # The human judge: a pause on clio-core                                       #
 # --------------------------------------------------------------------------- #
-def test_a_user_pick_resumes_with_the_picks_line_even_after_a_restart(
-    world: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    lm, engine = routed_lm(
-        {SCOPE: [_draft(2)], RUN0: [Reply(text="Draft A")], RUN1: [Reply(text="Draft B")]}
-    )
-    paused = _forward(world.app, world.sid, lm, ASK, "turn_1")
-    assert paused.termination_reason == "draft_alternatives_yield"
-    question = _surface(world.app, world.sid, "turn_1", monkeypatch)
-
-    assert question.kind == "choice"
-    assert question.allow_freeform is True
-    assert [(o.value, o.description) for o in question.options] == [
-        (RUN0, "Draft A"),
-        (RUN1, "Draft B"),
-    ]
-    variants_id = question.metadata["variants_id"]
-    assert load_run(world.app, world.sid, variants_id).status == "awaiting_pick"
-
-    # a restart: a new process on the same session registry and the same clio-core
-    app2, arc2, _events = _app(world.sessions_path, lifespans=world.lifespans)
-    restored = app2.state.user_questions[question.id]
-    _answer(app2, restored, RUN1)
-    resumed = _forward(app2, world.sid, routed_lm({})[0], "[Answer] Draft 2", "turn_2")
-
-    assert resumed.answer == "Draft B"
-    assert resumed.termination_reason == "variant_selected"
-    assert len(engine.requests) == 3  # the resume called no model
-    assert _line(arc2, world.sid) == [("user", ASK), ("assistant", "Draft B")]
-    [record] = preference_records(app2, world.sid)
-    assert (record.judge, record.pick, record.selected_index) == ("user", 1, 1)
-    assert [c.text for c in record.candidates] == ["Draft A", "Draft B"]
-    assert app2.state.sessions.get(world.sid).metadata["variant_pending"] == {}
-
-
-def test_refine_with_a_user_comment_tells_the_next_try_the_advice(
-    world: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    lm, engine = routed_lm(
-        {
-            SCOPE: [_draft(3, strategy="refine")],
-            RUN0: [Reply(text="Draft one, long and formal.")],
-            RUN1: [Reply(text="Short draft.")],
-        }
-    )
-    _forward(world.app, world.sid, lm, ASK, "turn_1")
-    first = _surface(world.app, world.sid, "turn_1", monkeypatch)
-    assert [o.value for o in first.options] == [RUN0]  # Refine drafts one at a time
-
-    _answer(world.app, first, RUN0, comment="Make it shorter.")
-    again = _forward(world.app, world.sid, lm, "[Answer] refine", "turn_2")
-    assert again.termination_reason == "variant_pick_yield"
-
-    [second_try] = engine.by_scope[RUN1]
-    seen = _texts(second_try)
-    assert "[clio: variant_advice]\nMake it shorter." in seen  # the feedback reaches it
-    assert "Draft one, long and formal." in seen  # forked from the pick
-    assert seen.count(ASK) == 1  # it continues the pick's line, no second task
-
-    second = _surface(world.app, world.sid, "turn_2", monkeypatch)
-    assert [o.value for o in second.options] == [RUN0, RUN1]
-    _answer(world.app, second, RUN1)  # a pick without a comment accepts it
-    done = _forward(world.app, world.sid, lm, "[Answer] accept", "turn_3")
-
-    assert done.answer == "Short draft."
-    assert _line(world.arc, world.sid) == [
-        ("user", ASK),
-        ("assistant", "Draft one, long and formal."),
-        ("user", "[clio: variant_advice]\nMake it shorter."),
-        ("assistant", "Short draft."),
-    ]
-    [record] = preference_records(world.app, world.sid)
-    assert record.strategy == "refine"
-    assert record.advice == ("Make it shorter.",)
-    assert record.candidates[1].forked_from == 0
-    assert (record.pick, record.comment, record.selected_index) == (1, "", 1)
 
 
 def test_lm_judged_refine_tells_the_next_try_its_advice(world: World) -> None:
@@ -372,43 +279,6 @@ def test_lm_judged_refine_tells_the_next_try_its_advice(world: World) -> None:
     assert (record.origin, record.strategy, record.judge) == ("draft_alternatives", "refine", "lm")
     assert record.scores == ((0, 0.3), (1, 1.0))
     assert record.advice == ("Cut it to two sentences.",)
-
-
-def test_a_user_judged_subagent_pauses_and_resumes_the_same_way(
-    world: World, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """A spawn strategy (or blueprint) with ``judge: user`` wraps the child in the pause."""
-    spec = parse_module_variant(
-        {"variant": "best_of_n", "n": 2, "judge": "user", "reward": {"instructions": "short"}},
-        agent_id=SCOPE,
-    )
-    child = UserJudgedVariant(ClioReAct("question -> answer", tools=[]), spec, agent_id=SCOPE)
-    lm, engine = routed_lm({RUN0: [Reply(text="Draft A")], RUN1: [Reply(text="Draft B")]})
-
-    def forward(question: str, turn: str) -> Any:
-        tokens = _bind(world.app, world.sid, turn)
-        try:
-            with dspy.context(lm=lm):
-                return child(question=question)
-        finally:
-            for token in reversed(tokens):
-                ctx.reset(token)
-
-    paused = forward(ASK, "turn_1")
-    assert paused.termination_reason == "variant_pick_yield"
-    question = _surface(world.app, world.sid, "turn_1", monkeypatch)
-    _answer(world.app, question, RUN0, comment="the first is fine")
-    done = forward("[Answer]", "turn_2")
-
-    assert done.answer == "Draft A"
-    assert len(engine.requests) == 2
-    assert _line(world.arc, world.sid) == [("user", ASK), ("assistant", "Draft A")]
-    [record] = preference_records(world.app, world.sid)
-    assert (record.origin, record.pick, record.comment) == (
-        "module_variant",
-        0,
-        "the first is fine",
-    )
 
 
 def test_n_is_capped_by_config(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -480,21 +350,6 @@ def test_planning_deltas_are_reasoning_instead_of_candidate_content(world: World
     ]
 
 
-def test_a_drafts_answer_must_pick_exactly_one(world: World) -> None:
-    from fastapi import HTTPException
-
-    from clio_agent.gact.elicitation_schema import check_elicitation_answer
-
-    row = types.SimpleNamespace(
-        id="q", session_id=world.sid, metadata={"variants_id": "var_x"}, kind="choice"
-    )
-    with pytest.raises(HTTPException) as err:
-        check_elicitation_answer(
-            cast(Any, row), types.SimpleNamespace(selected_options=[], answer="hm")
-        )
-    assert err.value.status_code == 422
-
-
 # --------------------------------------------------------------------------- #
 # What the UI gets                                                            #
 # --------------------------------------------------------------------------- #
@@ -559,3 +414,93 @@ def test_tries_stream_to_their_tabs_and_project_to_v3(world: World) -> None:
         if e.event_type.startswith("expert.") and "variants_id" in e.payload
     ]
     assert {p["try_index"] for p in stamped} == {0, 1}
+
+
+@pytest.mark.parametrize("strategy", ["best_of_n", "refine"])
+def test_user_drafts_post_a_question_and_the_model_continues(
+    world: World, monkeypatch: pytest.MonkeyPatch, strategy: str
+) -> None:
+    """A human choice is asynchronous; the same model can perform its next action."""
+    script = {
+        SCOPE: [_draft(2, strategy=strategy), Reply(text="I can continue independent work.")],
+        RUN0: [Reply(text="Draft A")],
+    }
+    if strategy == "best_of_n":
+        script[RUN1] = [Reply(text="Draft B")]
+    lm, engine = routed_lm(script)
+    prediction = _forward(world.app, world.sid, lm, ASK, "turn_1")
+    assert prediction.answer == "I can continue independent work."
+    question = _surface(world.app, world.sid, "turn_1", monkeypatch)
+    assert question.status == "pending"
+    assert len(engine.by_scope[SCOPE]) == 2
+    expected = [RUN0, RUN1] if strategy == "best_of_n" else [RUN0]
+    assert [option.value for option in question.options] == expected
+    assert [option.description for option in question.options] == ["Draft A", "Draft B"][
+        : len(expected)
+    ]
+    task = world.app.state.task_history.task_snapshot(question.id)
+    assert (
+        task.owner.assignment_id == world.app.state.task_history.latest_assignment(world.sid).handle
+    )
+    assert task.terminal_at is None
+
+
+def test_selected_user_draft_is_collected_without_a_new_model_call(
+    world: World, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exact stored choice determines the winner, including after Core replay."""
+    from clio_agent.gact.agents.variant_resume import resume_question
+    from clio_agent.gact.task_history import TaskHistory
+
+    lm, engine = routed_lm(
+        {
+            SCOPE: [_draft(2), Reply(text="Waiting for your choice.")],
+            RUN0: [Reply(text="Draft A")],
+            RUN1: [Reply(text="Draft B")],
+        }
+    )
+    _forward(world.app, world.sid, lm, ASK, "turn_1")
+    question = _surface(world.app, world.sid, "turn_1", monkeypatch)
+    _answer(world.app, question, RUN1)
+    restored = TaskHistory(world.arc)
+    restored.restore()
+    assert restored.task_snapshot(question.id) == world.app.state.task_history.task_snapshot(
+        question.id
+    )
+    before = len(engine.requests)
+    tokens = _bind(world.app, world.sid, "turn_2")
+    try:
+        agent = ClioReAct("question -> answer", tools=[build_draft_alternatives_tool()])
+        with dspy.context(lm=lm):
+            selected = resume_question(agent, {"question": ASK}, question.id)
+    finally:
+        for token in reversed(tokens):
+            ctx.reset(token)
+    assert selected.answer == "Draft B" and selected.termination_reason == "variant_selected"
+    assert len(engine.requests) == before
+    run = load_run(world.app, world.sid, question.metadata["variants_id"])
+    assert run.status == "selected" and run.selected_index == 1
+    assert [item.text for item in run.tries] == ["Draft A", "Draft B"]
+    [record] = preference_records(world.app, world.sid)
+    assert (record.pick, record.selected_index) == (1, 1)
+
+
+@pytest.mark.parametrize("picks", [[], [RUN0, RUN1]])
+def test_user_choice_requires_exactly_one_draft(
+    world: World, monkeypatch: pytest.MonkeyPatch, picks: list[str]
+) -> None:
+    lm, _engine = routed_lm(
+        {
+            SCOPE: [_draft(2), Reply(text="Choose a draft.")],
+            RUN0: [Reply(text="Draft A")],
+            RUN1: [Reply(text="Draft B")],
+        }
+    )
+    _forward(world.app, world.sid, lm, ASK, "turn_1")
+    question = _surface(world.app, world.sid, "turn_1", monkeypatch)
+    response = TestClient(world.app).post(
+        f"/v1/sessions/{world.sid}/questions/{question.id}/answer",
+        json={"selected_options": picks, "answer": ""},
+    )
+    assert response.status_code == 422, response.text
+    assert world.app.state.task_history.task_snapshot(question.id).raw_status == "pending"

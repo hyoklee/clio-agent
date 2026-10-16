@@ -1,5 +1,11 @@
 # Tasks replacement acceptance ledger
 
+Regression test construction is complete; execution remains pending. See the
+[test construction map](task-replacement-test-construction.md). No row below
+becomes passed from writing a test or passing static checks. The latest
+production correction at `00b3092d` has Astra GO and Claude Fable NO-GO; the
+predecessor acceptance recorded below is historical.
+
 Revision: R2. Starting source: core `5475042feda49c1354f9f88b19051cb53d7fa740`; GACT `32044a387472b1495f60a24c862c6b9e4292abc3`. All evidence from earlier engines is a source/test lesson only, not replacement acceptance.
 
 Current source review: **Astra GO and Claude Code Fable GO** for core

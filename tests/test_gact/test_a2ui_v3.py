@@ -30,6 +30,7 @@ from clio_agent.gact.parts import Part
 from clio_agent.gact.protocol.constants import A2UI_V091
 from clio_agent.gact.protocol.v3.message import transcript_entities
 from clio_agent.gact.types import Message
+from tests.test_gact.input_capture import capture_inputs
 
 from .task_records import hold_model_segment
 
@@ -841,10 +842,7 @@ def test_registered_form_action_gets_a_server_surface_update(
         json={"messages": [_create_message()]},
     )
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     action = {
         "version": "v0.9.1",
         "action": {
@@ -898,10 +896,7 @@ def test_action_route_requires_a2ui_negotiation_and_tolerates_extensions(
         json={"messages": [_create_message()]},
     )
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     action = {
         "version": "v0.9.1",
         "action": {
@@ -1308,10 +1303,7 @@ def test_agent_submit_delivers_without_any_text_or_prompt_context(
     )
     assert define_response.status_code == 200
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     action = {
         "version": "v0.9.1",
         "action": {
@@ -1850,10 +1842,7 @@ def test_agent_submit_starts_with_resolved_structured_surface_context(
         json={"messages": [_create_message()]},
     )
 
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+    capture_inputs(app, monkeypatch)
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions",
         headers=HEADERS,
@@ -1878,34 +1867,29 @@ def test_agent_submit_starts_with_resolved_structured_surface_context(
     assert record["correlation"]["message_id"] == message.id
 
 
-def test_agent_submit_clears_a_stale_cancel_flag_before_staging(
+def test_agent_submit_after_stop_records_fresh_input(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
+    """A stopped segment does not poison later accepted UI input."""
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     client.post(
-        f"/v1/sessions/{sid}/a2ui/messages",
-        headers=HEADERS,
-        json={"messages": [_create_message()]},
+        f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    app.state.cancel_flags.add(sid)
-    app.state.cancel_events[sid] = object()
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-
+    assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
+    captured = capture_inputs(app, monkeypatch)
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions",
         headers=HEADERS,
         json={"message": _agent_submit("surface_1")},
     )
-
     assert response.status_code == 200, response.text
     assert response.json()["status"] == "accepted"
-    assert sid not in app.state.cancel_flags
-    assert sid not in app.state.cancel_events
+    assert len(captured) == 1
+    item = captured[0]
+    assert item.recipient_session == sid
+    assert item.id in {row.id for row in app.state.task_history.pending_mail(sid)}
+    assert not app.state.turn_runner.stop_requested(sid)
 
 
 def test_partial_component_update_keeps_earlier_definitions_on_replay(tmp_path: Path) -> None:

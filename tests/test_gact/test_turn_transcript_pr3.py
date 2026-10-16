@@ -580,22 +580,13 @@ class _RollupAgent:
                 )
             return _Pred(answer="child made two plots", selected_expert="")
 
-        from clio_agent.gact.turn_spawn import TaskSpec, spawn_child_turn_threadsafe
+        from clio_agent.gact.task_declarations import build_spawn_runtime_tools, build_task_tools
 
-        task = spawn_child_turn_threadsafe(
-            app,
-            TaskSpec(
-                child_expert_id="main",
-                task_text="make plots",
-                parent_session_id=session_id,
-                requesting_expert_id="main",
-                parent_turn_id=ctx.active_turn_id(),
-            ),
-        )
-        from clio_agent.gact.task_controls import wait_tasks
-
-        result = wait_tasks(task.task_id, timeout_s=30.0)
-        assert not result["pending"] and result["results"][0]["status"] == "completed"
+        spawn = build_spawn_runtime_tools(self, type("Definition", (), {"fanout": {}})())[0]
+        receipt = app.state.builtin_boundary.bind(spawn).func(agent="main", task="make plots")
+        wait = next(tool for tool in build_task_tools() if tool.name == "wait_tasks")
+        result = app.state.builtin_boundary.bind(wait).func(tasks=receipt["handle"], timeout_s=30.0)
+        assert not result["pending"] and result["outcomes"][0]["status"] == "completed"
         return _Pred(answer="parent turn done", selected_expert="")
 
 

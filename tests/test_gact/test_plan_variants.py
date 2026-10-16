@@ -34,6 +34,7 @@ from clio_agent.gact.planning import (
     plan_variant_guidance,
     recorded_plan_variant,
 )
+from tests.test_gact.task_records import record_question_fixture
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -257,7 +258,7 @@ def _pending_plan_exit_question(app: Any, sess: Any, *, plan_file: str):
         source="plan_exit",
         metadata={PLAN_EXIT_APPROVAL_META: True, "resume_on_answer": True, "plan_file": plan_file},
     )
-    app.state.user_questions[q.id] = q
+    q = record_question_fixture(app, q)
     app.state.sessions.update(
         sess.id, status="waiting_user", metadata_patch={"pending_user_question_id": q.id}
     )

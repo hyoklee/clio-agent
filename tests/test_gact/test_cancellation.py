@@ -220,7 +220,6 @@ def test_cancel_before_turn_skips_agent_forward(
 
     def cancel_at_turn_boundary(state: Any) -> None:
         original_make_turn_cancel_event(state)
-        state.app.state.cancel_flags.add(state.sid)
         state.turn_cancel_event.set()
 
     monkeypatch.setattr(turn_module, "make_turn_cancel_event", cancel_at_turn_boundary)
@@ -233,7 +232,7 @@ def test_cancel_before_turn_skips_agent_forward(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "do not forward"}]},
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
 
         # Finalization persists the error before publishing its terminal status.
         # Wait for that signal instead of racing a loaded runner with a 3 s poll.

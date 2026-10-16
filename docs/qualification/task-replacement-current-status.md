@@ -1,9 +1,38 @@
 # Tasks replacement status — October 15
 
+## Test construction completed after the renewed deadline
+
+Initial production implementation is done. Regression test construction is now
+done; regression execution and full live qualification are not done. The human
+required the complete test set before further execution, so this phase launched
+no pytest collection/tests, CI, product service, model or browser checks.
+
+The [construction map](task-replacement-test-construction.md) maps all 60
+regression obligations to 61 written test files and separates five process/live
+gates. It includes the six pending-work empty-wake cases, two declared workflow
+executions with grants/messages/replies/observe/wait, partial external-input
+answers, Core-backed composer/Question/watcher fixtures, and session-grant UI.
+The old 15-file import inventory was incomplete: additional runtime-field and
+direct-spawn fixtures also required replacement. Static AST inspection now finds
+no missing production bindings or syntax errors. Scoped Ruff is clean, Mypy
+passes for seven new/shared fixture modules, and GACT TypeScript passes with the
+2 GiB budget. These are static checks, not executed regression tests.
+
+GACT test-only commit: `0795157b5652efb8a497950cdc92344eec5bbca3`, based on
+`0a4ca5d5915a0add61cd5048b742161092468481`. Its production files are unchanged.
+Core's last production-changing commit remains `00b3092d`; the known empty-wake
+bug and Claude Fable NO-GO remain. Neither deadline's UNDONE result changes.
+No merge, release, installation or accepted-task cleanup is claimed here.
+
 ## Source and deadline
 
-Both independent reviewers accept the production source at core
-`ff9dc136630a5f329afa27a8ea0263dbe2fbb343`. GACT is
+The last production-changing commit is core `00b3092dc6a31fe1f76fe80a5c87ffe462a4ba33`;
+Its finalization correction has Astra GO but Claude Code Fable NO-GO as a complete
+correction. Fable accepts the reproduced-case patch but identifies a remaining
+empty wake segment with other owned work pending: presentation-only empty output
+can still fail the assignment. That source blocker remains unresolved. Both
+reviewers accepted predecessor `ff9dc136630a5f329afa27a8ea0263dbe2fbb343`.
+GACT is
 `0a4ca5d5915a0add61cd5048b742161092468481`; marketplace is
 `1a9b8d0337217950a2b44c303a8d22547d52d756`.
 The runtime tuple remains FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0,
@@ -16,7 +45,23 @@ projection. The new Core-backed routing contract and plan-pause preservation
 cases pass. Astra and Claude Code Fable both independently accept this correction;
 the source verdict does not qualify the remaining regression or live gates.
 
-R79 records one actual Codex/Luna native-family Shell execution on this production
+A fresh Codex/Luna Question run on ff9dc136 exposed an operation-only segment
+being marked `empty_response`. R96 reproduces that outcome through real Core and
+the FastMCP Question boundary. 00b3092d evaluates recorded operation output before
+classifying a response as empty and honors explicit yield; it adds no assignment
+or delivery policy. Both default and explicit Question-yield regressions pass,
+and the genuinely-empty-response regression still passes. R95 first stopped at
+an obsolete HTTP-200 fixture assertion; R97's old negative case stopped at the
+deleted runner `_in_flight` fixture. Those failures remain recorded. The shared
+fixture now requires HTTP 202 plus a handle and the current loop retirement
+boundary. Scoped Ruff/format, Mypy (three files) and all four source guards pass.
+R100 is the affected actual-model rerun on the new source. It records an error-free
+operation-only `end_turn`, the original assignment still yielded and the Question
+still pending. Its ordered-mission gate failed because the model omitted the later
+query; no full Question-family or final-candidate pass is claimed. R100's owned
+work/processes are settled; profile cleanup is being audited.
+
+R79 records one actual Codex/Luna native-family Shell execution on predecessor
 source: immediate handle, independent file read between two running snapshots,
 progress/output observation, an expired wait with work continuing, unbounded
 collection and a subsequent stored-result read. Actual exit code is zero and the
@@ -29,6 +74,11 @@ invocation order, backend result and filesystem evidence. A preceding WebSocket
 attempt closed before tool execution and remains a failed live attempt. No
 production patch was made for it. These are individual proofs, not Q1/Q2 or
 final-candidate acceptance.
+
+The evidence reader now also requires the independent tool call to start after
+acceptance and the later query to start after the read result. Negative controls
+reject favorable result ordering from preaccepted/batched calls. R93 passes that
+contract; R94 confirms that the original immutable R79 transcript still meets it.
 
 The two-hour checkpoint was 21:45:05 UTC / 4:45:05 PM Chicago. It remains
 **UNDONE**: Fable's last source verdict arrived at 21:45:08.409 UTC.
@@ -177,3 +227,13 @@ production-source changes. R76 stopped at readiness under a pipe-based harness;
 R77 exposed the harness's initial-idle race before any tool work; R78 records the
 failed WebSocket attempt; R79 contains the scoped native-family proof above.
 Their bounded receipts and cleanup audits remain under `.pytest-runtime/static`.
+
+R90 failed before model execution at Core IPC binding. A shorter repository-owned
+temp path allowed the next source service to start. R91 records an idle Question
+answer waking the model after explicit observation-order clarification; its Stop
+case proved that an actual stopped wait left the Question pending, then the harness
+misclassified the expected cancelled turn as failure. R92 records the independent
+empty-response defect above. All R90–R92 service processes are settled and their
+disposable profiles/short temp roots are absent. Their original failed receipts
+remain unchanged. R100 owns fresh data and processes; no old manual-only root is
+reused. Complete Question qualification and final-candidate acceptance are pending.

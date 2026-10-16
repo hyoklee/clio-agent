@@ -18,6 +18,7 @@ def test_live_task_evidence_rejects_legacy_uncertain_and_reordered_snapshots(
     from _task_evidence import model_task_evidence
 
     parts = [
+        {"type": "tool_call", "tool_name": "shell_bash", "call_id": "submit"},
         {
             "type": "tool_result",
             "tool_name": "shell_bash",
@@ -28,6 +29,7 @@ def test_live_task_evidence_rejects_legacy_uncertain_and_reordered_snapshots(
                 "accepted": True,
             },
         },
+        {"type": "tool_call", "tool_name": "fs_read_file", "call_id": "independent"},
         {
             "type": "tool_result",
             "tool_name": "fs_read_file",
@@ -36,6 +38,7 @@ def test_live_task_evidence_rejects_legacy_uncertain_and_reordered_snapshots(
                 "content": "independent action completed",
             },
         },
+        {"type": "tool_call", "tool_name": "query_tasks", "call_id": "snapshot"},
         {
             "type": "tool_result",
             "tool_name": "query_tasks",
@@ -63,12 +66,20 @@ def test_live_task_evidence_rejects_legacy_uncertain_and_reordered_snapshots(
         {"handle": "a-different-task"},
     ]:
         changed = copy.deepcopy(parts)
-        changed[2]["structured_content"]["tasks"][0].update(changes)
+        changed[5]["structured_content"]["tasks"][0].update(changes)
         assert not model_task_evidence([{"parts": changed}], "Shell")["pass"]
     legacy = copy.deepcopy(parts)
-    legacy[2]["structured_content"]["tasks"] = [
+    legacy[5]["structured_content"]["tasks"] = [
         {"handle": "opaque", "task_kind": "Shell", "effective_status": "running"}
     ]
     assert not model_task_evidence([{"parts": legacy}], "Shell")["pass"]
-    assert not model_task_evidence([{"parts": [parts[1], parts[0], parts[2]]}], "Shell")["pass"]
-    assert not model_task_evidence([{"parts": [parts[0], parts[2], parts[1]]}], "Shell")["pass"]
+    # Batched calls can finish in a favorable order without being model actions
+    # taken after acceptance or after the independent read returned.
+    batched = [parts[0], parts[2], parts[4], parts[1], parts[3], parts[5]]
+    assert not model_task_evidence([{"parts": batched}], "Shell")["pass"]
+    preaccepted_read = [parts[0], parts[2], parts[1], parts[3], parts[4], parts[5]]
+    assert not model_task_evidence([{"parts": preaccepted_read}], "Shell")["pass"]
+    early_query = [parts[0], parts[1], parts[2], parts[4], parts[3], parts[5]]
+    assert not model_task_evidence([{"parts": early_query}], "Shell")["pass"]
+    results_only = [parts[1], parts[3], parts[5]]
+    assert not model_task_evidence([{"parts": results_only}], "Shell")["pass"]

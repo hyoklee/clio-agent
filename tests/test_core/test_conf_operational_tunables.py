@@ -14,7 +14,6 @@ key is discovered by ``scripts/gen_env_reference.py`` and documented.
 from __future__ import annotations
 
 import asyncio
-import time
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -318,33 +317,14 @@ def test_spotter_clearance_event_retention_is_configurable() -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.asyncio
-async def test_cancellation_grace_is_configurable() -> None:
-    """``gact.cancellation_grace_s`` is the wait before the hard task cancel."""
+def test_conversation_stop_has_no_automatic_retirement_deadline() -> None:
+    """Stop follows physical worker retirement rather than a configured grace cutoff."""
+    import inspect
 
-    from clio_agent.gact.routes.session_cancellation import (
-        _cancel_after_grace,
-        cancellation_grace_s,
-    )
+    from clio_agent.gact.turn_runner import TurnRunner
 
-    set_config("gact", {"cancellation_grace_s": 0.4})
-    assert cancellation_grace_s() == 0.4
-
-    async def _never() -> None:
-        await asyncio.sleep(30)
-
-    task = asyncio.create_task(_never())
-    attempt: dict[str, Any] = {}
-    app = SimpleNamespace(
-        state=SimpleNamespace(cancel_flags={"sess_x"}, cancel_attempts={"sess_x": attempt})
-    )
-    started = time.monotonic()
-    await _cancel_after_grace(app, task, "sess_x", attempt)
-    elapsed = time.monotonic() - started
-
-    assert elapsed >= 0.35, "the configured grace must drive the wait, not the 0.1 literal"
-    assert attempt["asyncio_task_cancel_sent"] is True
-    assert task.cancelled() or task.cancelling()
+    assert set(inspect.signature(TurnRunner.stop).parameters) == {"self", "sid", "reservation"}
+    assert set(inspect.signature(TurnRunner.drain).parameters) == {"self"}
 
 
 # --------------------------------------------------------------------------- #

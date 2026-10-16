@@ -9,6 +9,11 @@ from typing import Any
 def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, Any]:
     """Require acceptance and a later model call observing that exact running handle."""
     parts = [part for message in messages for part in message.get("parts", [])]
+    calls = {
+        part.get("call_id"): position
+        for position, part in enumerate(parts)
+        if part.get("type") == "tool_call" and part.get("call_id")
+    }
     accepted = []
     running_observations = []
     for position, part in enumerate(parts):
@@ -59,6 +64,7 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
                         {
                             "handle": task.get("handle"),
                             "position": position,
+                            "call_position": calls.get(part.get("call_id"), -1),
                             "invocation_id": part.get("call_id"),
                             "snapshot": task,
                         }
@@ -69,6 +75,7 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
         for observation in running_observations
         if receipt["handle"] == observation["handle"]
         and receipt["position"] < observation["position"]
+        and receipt["position"] < observation["call_position"]
     ]
     independent = [
         {"position": position, "invocation_id": part.get("call_id"), "observation": part}
@@ -79,6 +86,8 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
         and (kind == "MCP" or "independent action completed" in str(part))
         and any(
             receipt["position"] < position < observation["position"]
+            and receipt["position"] < calls.get(part.get("call_id"), -1)
+            and position < observation["call_position"]
             and receipt["handle"] == observation["handle"]
             for receipt in accepted
             for observation in running_observations

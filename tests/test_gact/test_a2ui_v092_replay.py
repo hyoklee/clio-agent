@@ -43,6 +43,7 @@ from fastapi.testclient import TestClient
 
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
+from tests.test_gact.input_capture import capture_inputs
 
 FIXTURE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -169,7 +170,7 @@ def test_legacy_form_submit_and_agent_submit_dispatch_to_the_agent_lane(
         coro.close()
 
     with client:
-        monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+        captured_inputs = capture_inputs(app, monkeypatch)
 
         for name in ("agent.submit", "form.submit"):
             response = client.post(
@@ -180,7 +181,7 @@ def test_legacy_form_submit_and_agent_submit_dispatch_to_the_agent_lane(
             assert response.status_code == 200, response.text
             assert response.json()["delivery"] == "start"
 
-        assert len(spawned) == 2, "both legacy names must actually reach the agent lane"
+        assert len(captured_inputs) == 2, "both legacy names must actually reach the agent lane"
 
 
 def test_legacy_approval_respond_dispatches_to_the_permission_lane(tmp_path: Path) -> None:

@@ -16,14 +16,14 @@ from clio_agent.gact.agent_blueprints import (
 )
 from clio_agent.gact.blueprint_operations import list_blueprint_operations
 from clio_agent.gact.blueprint_reload import apply_blueprint_change
-from clio_agent.gact.turn_runner import TurnRunner
+from tests.test_gact.runner_records import admit_segment, make_runner
 
 
 def _app() -> Any:
     return SimpleNamespace(
         state=SimpleNamespace(
             agent=None,
-            turn_runner=TurnRunner({}),
+            turn_runner=make_runner(),
             sessions=SimpleNamespace(list=lambda: []),
             bus=SimpleNamespace(publish=lambda event: None),
         )
@@ -58,7 +58,7 @@ async def test_reload_retains_whole_old_turn_then_applies_for_queued_turn(tmp_pa
         await finish.wait()
         seen.append((root / "AGENT.md").read_text())
 
-    first = runner.spawn(turn(), sid="first", turn_id="old")
+    first = admit_segment(runner, turn(), sid="first", turn_id="old")
     await entered.wait()
     reload = asyncio.create_task(
         apply_blueprint_change(
@@ -77,7 +77,7 @@ async def test_reload_retains_whole_old_turn_then_applies_for_queued_turn(tmp_pa
             break
         await asyncio.sleep(0.01)
     assert not runner.revision_gate._open.is_set()
-    later = runner.spawn(turn(), sid="second", turn_id="new")
+    later = admit_segment(runner, turn(), sid="second", turn_id="new")
     assert (root / "AGENT.md").read_text() == before
     finish.set()
     result = await asyncio.wait_for(reload, timeout=10)
@@ -106,7 +106,7 @@ async def test_client_cancellation_does_not_release_boundary_during_copy() -> No
     request = asyncio.create_task(apply_blueprint_change(app, change, label="Cancel test"))
     assert await asyncio.to_thread(entered.wait, 5)
     request.cancel()
-    queued = app.state.turn_runner.spawn(later(), sid="next", turn_id="next")
+    queued = admit_segment(app.state.turn_runner, later(), sid="next", turn_id="next")
     await asyncio.sleep(0)
     assert seen == []
     finish.set()

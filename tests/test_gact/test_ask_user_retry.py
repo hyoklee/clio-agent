@@ -4,6 +4,7 @@ import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -35,40 +36,34 @@ class _FakeAgent:
 
 
 class _AskUserAgent:
+    """A test model posts a real asynchronous Question, then yields normally."""
+
     def __init__(self) -> None:
         self.questions: list[str] = []
 
-    def forward(self, question: str, session_id: str):
+    def forward(self, question: str, session_id: str) -> Any:
+        from clio_agent.gact import context
+        from clio_agent.gact.task_declarations import build_ask_user_tool
+
         self.questions.append(question)
         if len(self.questions) == 1:
+            app = context.active_app()
+            app.state.builtin_boundary.bind(build_ask_user_tool()).func(
+                question="Which dataset should I inspect?",
+                kind="choice",
+                options=[
+                    {"label": "Small", "value": "small"},
+                    {"label": "Large", "value": "large"},
+                ],
+                allow_freeform=False,
+            )
             return type(
-                "Pred",
+                "Prediction",
                 (),
-                {
-                    "answer": "",
-                    "selected_expert": "main",
-                    "routing_rationale": "needs clarification",
-                    "ask_user": {
-                        "action": "ask_user",
-                        "question": "Which dataset should I inspect?",
-                        "choices": [
-                            {"id": "small", "label": "Small"},
-                            {"id": "large", "label": "Large"},
-                        ],
-                        "allow_freeform": False,
-                        "reason": "missing_target_dataset",
-                        "caller": {"agent_id": "main", "expert_id": "planner"},
-                    },
-                },
+                {"answer": "I can continue once you choose.", "selected_expert": "main"},
             )()
         return type(
-            "Pred",
-            (),
-            {
-                "answer": f"resumed with: {question}",
-                "selected_expert": "main",
-                "routing_rationale": "answer supplied",
-            },
+            "Prediction", (), {"answer": "resumed with: " + question, "selected_expert": "main"}
         )()
 
 
@@ -181,8 +176,8 @@ def test_create_and_answer_user_question_updates_session_state(client: TestClien
     assert question["session_id"] == sid
     assert question["metadata"]["reason"] == "ambiguous_dataset"
     session = client.get(f"/v1/sessions/{sid}").json()
-    assert session["status"] == "waiting_user"
-    assert session["metadata"]["pending_user_question_id"] == question["id"]
+    assert session["status"] == "idle"
+    assert not session["metadata"].get("execution_gate")
     history = client.app.state.bus._history.get(sid, [])
     assert "user_question.created" in [event.type for event in history]
 
@@ -207,71 +202,54 @@ def test_create_and_answer_user_question_updates_session_state(client: TestClien
     assert body["answer_metadata"]["answered_from"] == "tui"
     session = client.get(f"/v1/sessions/{sid}").json()
     assert session["status"] == "idle"
-    assert session["metadata"]["pending_user_question_id"] == ""
+    assert not session["metadata"].get("execution_gate")
     history = client.app.state.bus._history.get(sid, [])
     assert "user_question.answered" in [event.type for event in history]
 
 
-def test_orchestrator_ask_user_action_pauses_and_answer_resumes(tmp_path: Path) -> None:
+def test_async_question_answer_reaches_the_same_assignment_once(tmp_path: Path) -> None:
+    from clio_agent.arc.task_types import QuestionReply
+    from tests.turn_signals import wait_for_terminal_status
+
     agent = _AskUserAgent()
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=agent)
     with TestClient(app) as client:
         sid = _create_session(client)
-
+        cursor = app.state.bus.latest_event_id(sid)
         accepted = client.post(
-            f"/v1/sessions/{sid}/messages",
-            json={"parts": [{"type": "text", "text": "Inspect the dataset."}]},
+            f"/v1/sessions/{sid}/messages", json={"text": "Inspect the dataset."}
         )
-
-        assert accepted.status_code == 200, accepted.text
-        _wait_for_status(client, sid, "waiting_user")
-        listed = client.get(f"/v1/sessions/{sid}/questions?status=pending").json()
-        assert len(listed["questions"]) == 1
-        question = listed["questions"][0]
-        assert question["source"] == "orchestrator_action"
+        assert accepted.status_code == 202, accepted.text
+        wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
+        assignment = app.state.task_history.latest_assignment(sid)
+        questions = client.get(f"/v1/sessions/{sid}/questions?status=pending").json()["questions"]
+        [question] = questions
         assert question["prompt"] == "Which dataset should I inspect?"
-        assert question["metadata"]["resume_on_answer"] is True
-        assert question["metadata"]["reason"] == "missing_target_dataset"
-        assert question["metadata"]["caller"]["expert_id"] == "planner"
-
+        assert assignment.terminal_at is None
+        assert not app.state.turn_runner.busy(sid)
+        cursor = app.state.bus.latest_event_id(sid)
         answered = client.post(
             f"/v1/sessions/{sid}/questions/{question['id']}/answer",
-            json={
-                "answer": "Use the large run.",
-                "selected_options": ["large"],
-                "metadata": {"answered_from": "test"},
-            },
+            json={"answer": "Use the large run.", "selected_options": ["large"]},
         )
-
         assert answered.status_code == 200, answered.text
-        _wait_for_idle(client, sid)
-        assert agent.questions == [
-            "Inspect the dataset.",
-            "[Answer to agent question]\n"
-            "Question: Which dataset should I inspect?\n"
-            "Selected option(s): large\n"
-            "Answer: Use the large run.",
-        ]
-        messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        resume_user = next(msg for msg in messages if msg["metadata"].get("ask_user_resume"))
-        assert resume_user["metadata"]["ask_user_question_id"] == question["id"]
-        assert resume_user["metadata"]["ask_user_answer"] == "Use the large run."
-        assistant = next(
-            msg
-            for msg in messages
-            if msg["role"] == "assistant"
-            and any("resumed with:" in part.get("text", "") for part in msg["parts"])
+        wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
+        assert len(agent.questions) == 2
+        assert "Use the large run." in agent.questions[-1]
+        assert app.state.task_history.latest_assignment(sid).handle == assignment.handle
+        stored = app.state.task_history.task_snapshot(question["id"])
+        assert (
+            QuestionReply.model_validate(app.state.task_history.read_content(stored.result)).answer
+            == "Use the large run."
         )
-        assert assistant["role"] == "assistant"
-        # The text answer is the only part — routing decisions are semantic events
-        # (a0e1d9a9), never message parts.
-        assert [part["type"] for part in assistant["parts"]] == ["text"]
-        assert "resumed with:" in assistant["parts"][0]["text"]
-        history = client.app.state.bus._history.get(sid, [])
-        event_types = [event.type for event in history]
-        assert "user_question.created" in event_types
-        assert "user_question.answered" in event_types
-        assert "user_question.resumed" in event_types
+        original = stored.result
+        repeated = client.post(
+            f"/v1/sessions/{sid}/questions/{question['id']}/answer",
+            json={"answer": "Use the large run.", "selected_options": ["large"]},
+        )
+        assert repeated.status_code == 200
+        assert app.state.task_history.task_snapshot(question["id"]).result == original
+        assert len(agent.questions) == 2
 
 
 def test_answer_rejects_invalid_choice(client: TestClient) -> None:

@@ -77,11 +77,11 @@ def _message_text(msg: Any) -> str:
 def _wait_terminal(app: Any, task_id: str, timeout: float = 10.0) -> Any:
     end = time.monotonic() + timeout
     while time.monotonic() < end:
-        t = app.state.agent_task_registry.get(task_id)
-        if t is not None and t.is_terminal:
+        t = app.state.task_history.task_snapshot(task_id)
+        if t is not None and t.terminal_at is not None:
             return t
         time.sleep(0.05)
-    return app.state.agent_task_registry.get(task_id)
+    return app.state.task_history.task_snapshot(task_id)
 
 
 # ---- parse / validation (pure) ---------------------------------------------------------
@@ -232,7 +232,7 @@ def test_spawn_subagent_with_skill_seeds_body_not_inlined(tmp_path: Path) -> Non
         assert "SUBAGENT_SKILL_BODY_MARKER." not in out
 
         # A real task/handle exists.
-        task = app.state.agent_task_registry.get(data["task_id"])
+        task = app.state.task_history.task_snapshot(data["task_id"])
         assert task is not None
         parent_parts = (getattr(app.state, "live_assistant_parts", {}) or {}).get(sess.id, [])
         handoffs = [part for part in parent_parts if getattr(part, "type", "") == "expert_handoff"]
@@ -273,9 +273,9 @@ def test_spawn_subagent_with_skill_uses_specific_task_assignment(tmp_path: Path)
             _ctx.reset(tok_a)
 
         data = json.loads(out)
-        task = app.state.agent_task_registry.get(data["task_id"])
+        task = app.state.task_history.task_snapshot(data["task_id"])
         assert task is not None
-        assert task.run_label == "Resolve San Diego, California and count stations within 50 km"
+        assert task.label == "Resolve San Diego, California and count stations within 50 km"
         _wait_terminal(app, data["task_id"])
         child_msgs = app.state.messages.get(data["child_session_id"], []) or []
         seeded = [m for m in child_msgs if getattr(m, "role", "") == "user"]

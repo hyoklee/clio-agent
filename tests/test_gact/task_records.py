@@ -97,6 +97,10 @@ def record_assignment_fixture(
     parent_sid: str | None = None,
     parent_turn_id: str | None = None,
     status: Literal["active", "completed"] = "active",
+    description: str | None = "Retained API fixture assignment",
+    label: str | None = None,
+    resource_id: str | None = None,
+    result: dict[str, Any] | None = None,
 ) -> TaskSnapshot:
     """Confirm passive test data through the production writer; create no model worker."""
     history = app.state.task_history
@@ -118,9 +122,10 @@ def record_assignment_fixture(
                 parent_handle=parent.handle if parent is not None else None,
             ),
             tool="conversation",
-            label=session.title,
-            description="Retained API fixture assignment",
-            description_missing=False,
+            label=label or session.title,
+            description=description,
+            description_missing=description is None,
+            resource_id=resource_id,
             invocation_id="fixture:" + identity,
             created_at=stamp,
             updated_at=stamp,
@@ -135,9 +140,139 @@ def record_assignment_fixture(
             details=history.write_content(
                 session_id, AssignmentDetails(parent_turn_id=parent_turn_id).model_dump(mode="json")
             ),
-            result=history.write_content(session_id, {"answer": "Fixture completed"})
+            result=history.write_content(
+                session_id, result if result is not None else {"answer": "Fixture completed"}
+            )
             if status == "completed"
             else None,
         )
         history.record_snapshot(task, observation_id="fixture:" + identity)
-        return task
+        confirmed = history.task_snapshot(identity)
+        assert confirmed is not None
+        return confirmed
+
+
+def record_delegation_fixture(
+    app: Any,
+    parent: str,
+    *,
+    handle: str,
+    agent: str = "worker",
+    label: str = "Analyze the sample",
+    description: str | None = "Analyze the sample",
+    parent_turn_id: str | None = "fixture-turn",
+    completed: bool = False,
+    result: dict[str, Any] | None = None,
+    resource_id: str | None = None,
+) -> TaskSnapshot:
+    """Write retained child attribution through Core without executing a model."""
+    child = app.state.sessions.create(
+        workspace_id=app.state.sessions.get(parent).workspace_id,
+        title=label,
+        parent_session_id=parent,
+        agent={"id": agent, "mode": "subagent"},
+    )
+    task = record_assignment_fixture(
+        app,
+        child.id,
+        handle=handle,
+        parent_sid=parent,
+        parent_turn_id=parent_turn_id,
+        status="completed" if completed else "active",
+        description=description,
+        label=label,
+        resource_id=resource_id,
+        result=result,
+    )
+    return task
+
+
+def record_question_fixture(app: Any, row: Any) -> Any:
+    """Confirm retained Question data through its production owner; return only a view."""
+    from clio_agent.arc.task_types import QuestionDefinition, QuestionOption, QuestionReply
+    from clio_agent.gact.question_surface import question_row
+
+    assignment = app.state.task_history.latest_assignment(
+        row.session_id
+    ) or record_assignment_fixture(app, row.session_id)
+    details = (
+        AssignmentDetails.model_validate(app.state.task_history.read_content(assignment.details))
+        if assignment.details
+        else AssignmentDetails()
+    )
+    metadata = dict(row.metadata or {})
+    if row.source == "plan_exit":
+        metadata["plan_approval"] = {
+            "assignment": assignment.handle,
+            "context_epoch": details.context_epoch,
+            "request": {
+                "summary": row.prompt,
+                "plan_file": metadata.get("plan_file", ""),
+                "recommended_mode": metadata.get("recommended_mode", "auto"),
+                "invocation_id": "fixture-plan:" + row.id,
+                "surfaced": True,
+            },
+        }
+    definition = QuestionDefinition(
+        prompt=row.prompt,
+        kind=row.kind,
+        source=row.source or "ask_user",
+        options=tuple(
+            QuestionOption(
+                label=option.label, value=option.value, description=option.description or ""
+            )
+            for option in (row.options or ())
+        ),
+        allow_freeform=row.allow_freeform,
+        expires_at=row.expires_at or None,
+        metadata=metadata,
+    )
+    task = app.state.questions.create(
+        assignment.owner.model_copy(update={"parent_handle": assignment.handle}),
+        definition,
+        invocation_id=str(metadata.get("invocation_id") or row.id),
+        handle=row.id,
+    )
+    if row.status == "answered":
+        task = app.state.questions.answer(
+            task.handle,
+            QuestionReply(
+                answer=row.answer or "",
+                selected_options=tuple(row.selected_options or ()),
+                metadata=dict(row.answer_metadata or {}),
+                answered_by="human",
+            ),
+        )
+    elif row.status == "cancelled":
+        task = app.state.questions.cancel(task.handle)
+    elif row.status != "pending":
+        raise ValueError("This fixture needs an explicit owner transition for " + row.status)
+    return question_row(app, task.handle)
+
+
+def record_composer_fixture(
+    app: Any,
+    sid: str,
+    identity: str,
+    *,
+    text: str = "",
+    parts: list[Any] | None = None,
+    client_message_id: str = "",
+) -> MailItem:
+    """Confirm future-message data through Core without a removed JSON intent store."""
+    from clio_agent.gact.types import PostMessageRequest
+
+    request = PostMessageRequest(text=text, parts=parts or [], client_message_id=client_message_id)
+    item = MailItem(
+        id=identity,
+        recipient_session=sid,
+        kind="composer",
+        sender_human=app.state.human_principal,
+        delivery="queued",
+        queued_order=0,
+        content=app.state.task_history.write_content(
+            sid, {"request": request.model_dump(mode="json"), "updated_at": now()}
+        ),
+        created_at=now(),
+    )
+    return app.state.task_history.record_mail(item)

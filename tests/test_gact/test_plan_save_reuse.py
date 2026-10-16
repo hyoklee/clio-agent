@@ -46,6 +46,7 @@ from clio_agent.gact.planning import (
 )
 from clio_agent.gact.skills import SkillCatalog
 from clio_agent.gact.types import AgentDef, UserQuestion
+from tests.test_gact.task_records import record_question_fixture
 
 _PLAN_MD = """# Plan
 
@@ -113,7 +114,7 @@ def _pending_question(app: Any, sess: Any, plan_file: str) -> UserQuestion:
             "recommended_mode": "auto",
         },
     )
-    app.state.user_questions[q.id] = q
+    q = record_question_fixture(app, q)
     app.state.sessions.update(
         sess.id, status="waiting_user", metadata_patch={"pending_user_question_id": q.id}
     )

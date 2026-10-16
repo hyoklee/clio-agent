@@ -30,7 +30,6 @@ from clio_agent.gact.a2ui_capabilities import (
     strip_renderer_metadata,
 )
 from clio_agent.gact.a2ui_catalogs.builtin import basic_catalog_id, workspace_catalog_id
-from clio_agent.gact.agent_message_transport import message_in_process
 from clio_agent.gact.app import build_app
 from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
 
@@ -376,50 +375,36 @@ def test_blueprint_a2ui_capability_ids_is_empty_without_a_declaring_blueprint(
 # --------------------------------------------------------------------------- #
 
 
-def test_message_in_process_passes_metadata_through_unchanged(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, Any] = {}
+def test_session_input_records_a_defensive_metadata_copy(tmp_path: Path) -> None:
+    """Renderer metadata reaches Core unchanged and cannot be mutated after acceptance."""
+    from clio_agent.gact.session_input import accept_session_input
 
-    def _fake_enqueue(app: Any, task: Any, text: str, metadata: Any) -> None:
-        captured["metadata"] = metadata
-
-    monkeypatch.setattr("clio_agent.gact.live_handle.enqueue_steer_or_raise", _fake_enqueue)
-    fake_task = SimpleNamespace(task_id="t1")
-    fake_app = SimpleNamespace(
-        state=SimpleNamespace(agent_task_registry=SimpleNamespace(get=lambda task_id: fake_task))
-    )
-    invoker = SimpleNamespace(app=fake_app)
-    handle = SimpleNamespace(task_id="t1")
-
-    metadata = {
-        "a2ui_client_capabilities": {"v0.9": {"supportedCatalogIds": [WORKSPACE_ID]}},
-        "a2ui_client_data_model": {"version": "v0.9", "surfaces": {}},
-        "keep_me": "yes",
-    }
-    message_in_process(invoker, handle, "steer text", metadata)
-
-    assert captured["metadata"] == metadata
-    assert captured["metadata"] is not metadata  # a defensive copy, not the same dict
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="steering")
+        metadata = {
+            "a2ui_client_capabilities": {"v0.9": {"supportedCatalogIds": [WORKSPACE_ID]}},
+            "keep_me": "yes",
+        }
+        identity = accept_session_input(app, session.id, "steer text", metadata=metadata)
+        metadata["keep_me"] = "changed later"
+        item = app.state.task_history.mail_item(session.id, identity)
+        stored = app.state.task_history.read_content(item.content)
+        assert stored["metadata"]["keep_me"] == "yes"
+        assert (
+            stored["metadata"]["a2ui_client_capabilities"] == metadata["a2ui_client_capabilities"]
+        )
 
 
-def test_message_in_process_handles_no_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured: dict[str, Any] = {}
+def test_session_input_without_metadata_is_an_explicit_empty_mapping(tmp_path: Path) -> None:
+    from clio_agent.gact.session_input import accept_session_input
 
-    def _fake_enqueue(app: Any, task: Any, text: str, metadata: Any) -> None:
-        captured["metadata"] = metadata
-
-    monkeypatch.setattr("clio_agent.gact.live_handle.enqueue_steer_or_raise", _fake_enqueue)
-    fake_task = SimpleNamespace(task_id="t1")
-    fake_app = SimpleNamespace(
-        state=SimpleNamespace(agent_task_registry=SimpleNamespace(get=lambda task_id: fake_task))
-    )
-    invoker = SimpleNamespace(app=fake_app)
-    handle = SimpleNamespace(task_id="t1")
-
-    message_in_process(invoker, handle, "steer text", None)
-
-    assert captured["metadata"] == {}
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="steering")
+        identity = accept_session_input(app, session.id, "steer text")
+        item = app.state.task_history.mail_item(session.id, identity)
+        assert app.state.task_history.read_content(item.content)["metadata"] == {}
 
 
 # --------------------------------------------------------------------------- #
@@ -436,69 +421,40 @@ class _StubChildAgent:
         )
 
 
-def test_spawn_child_turn_never_forwards_renderer_metadata(
+def test_spawn_does_not_copy_parent_renderer_capabilities(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A child's FIRST staged user message never carries the two renderer keys,
-    even though the parent SESSION carries a remembered client-capabilities
-    advertisement under an unrelated key -- proves the invariant end to end
-    through the real ``spawn_child_turn_threadsafe`` -> ``_launch`` path."""
+    """A child's renderer negotiation belongs to its own stable session."""
+    import asyncio
 
-    from clio_agent.gact.turn_spawn import TaskSpec, spawn_child_turn_threadsafe
+    from tests.test_gact.task_records import record_assignment_fixture
 
     monkeypatch.setattr(
         "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
         lambda app, pid, session_id="", **_bindings: {"main"},
     )
-    # NOTE: uses the module-level ``build_app`` (imported at top of this file, and
-    # wrapped by the autouse ``_default_test_arc`` fixture) so this app gets a real
-    # per-test ARC -- a fresh local import here would bypass that wrapping.
-    app = build_app(sessions_path=tmp_path / "s.json", agent=_StubChildAgent())
-    with TestClient(app) as test_client:
-        parent = test_client.post("/v1/sessions", json={"title": "p"}).json()["id"]
-        # The parent session carries a remembered client-capabilities advertisement
-        # -- present on the PARENT, structurally irrelevant to the child (proves the
-        # child's staged message metadata isn't a copy of ANY parent state).
-        caps = parse_client_capabilities(
-            {"a2uiClientCapabilities": {"v0.9": {"supportedCatalogIds": [WORKSPACE_ID]}}}
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=_StubChildAgent())
+    with TestClient(app):
+        parent = app.state.sessions.create(workspace_id="ws_default", title="parent")
+        record_assignment_fixture(app, parent.id)
+        app.state.sessions.update(
+            parent.id,
+            metadata_patch={
+                "a2ui_client_capabilities": {"v0.9": {"supportedCatalogIds": [WORKSPACE_ID]}},
+                "a2ui_client_data_model": {"surfaces": {"private": {"value": "parent only"}}},
+            },
         )
-        assert caps is not None
-        remember_client_capabilities(app, parent, caps)
-
-        task = spawn_child_turn_threadsafe(
-            app,
-            TaskSpec(
-                child_expert_id="main",
-                task_text="analyze the dataset",
-                parent_session_id=parent,
-                requesting_expert_id="main",
-            ),
-        )
-
-        # Wait on the task's own completion primitive (turn_spawn.py's
-        # AgentTaskRegistry.event -- a threading.Event set on terminal
-        # transition, the S6 wait primitive `wait_agent_tasks` itself
-        # blocks on) rather than a bare sleep-poll: efficient (no polling
-        # granularity to tune) and correct across the thread boundary
-        # (TestClient runs the app's event loop on its own thread). The
-        # ceiling stays generous -- a cold first turn imports litellm,
-        # measured ~9.3s under load even with LITELLM_LOCAL_MODEL_COST_MAP
-        # pinned (see conftest.py) -- rather than fixed at exactly the
-        # measured worst case.
-        completed = app.state.agent_task_registry.event(task.task_id).wait(timeout=30.0)
-        settled = app.state.agent_task_registry.get(task.task_id)
-        assert completed and settled is not None and settled.status == "completed", (
-            settled.status if settled else "no task"
-        )
-
-        child_messages = app.state.messages.get(settled.child_session_id, [])
-        user_messages = [m for m in child_messages if m.role == "user"]
-        assert user_messages, "child never received its staged user message"
-        staged_metadata = user_messages[0].metadata
-        assert "a2uiClientCapabilities" not in staged_metadata
-        assert "a2uiClientDataModel" not in staged_metadata
-        assert "a2ui_client_data_model" not in staged_metadata
-        assert staged_metadata.get("agent_task_id") == task.task_id
+        owner = app.state.conversations
+        receipt = asyncio.run_coroutine_threadsafe(
+            owner.spawn(owner.caller(parent.id), "Analyze the dataset", "main", "renderer-child"),
+            owner._loop,
+        ).result(timeout=10)
+        task = app.state.task_history.task_snapshot(receipt["handle"])
+        child = app.state.sessions.get(task.owner.session_id)
+        assert child is not None
+        assert "a2ui_client_capabilities" not in child.metadata
+        assert "a2ui_client_data_model" not in child.metadata
+        assert task.description == "Analyze the dataset"
 
 
 # --------------------------------------------------------------------------- #
@@ -805,35 +761,29 @@ class _SlowChildAgent:
         return SimpleNamespace(answer=f"child did: {question[:20]}", selected_expert="")
 
 
-@pytest.fixture()
+@pytest.fixture
 def running_child_client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[tuple[TestClient, str]]:
-    """Yield ``(test_client, task_id)`` for a child STILL RUNNING (the stub
-    agent sleeps 4s before answering) -- everything (spawn AND steer) stays
-    within the SAME TestClient context, since exiting/re-entering a fresh one
-    triggers app shutdown/startup that consumes the sleep window and lets the
-    child settle before the test ever gets to steer it."""
+    """Keep the actual child and its owning application in one lifespan."""
+    import asyncio
 
-    from clio_agent.gact.turn_spawn import TaskSpec, spawn_child_turn_threadsafe
+    from tests.test_gact.task_records import record_assignment_fixture
 
     monkeypatch.setattr(
         "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
         lambda app, pid, session_id="", **_bindings: {"main"},
     )
     app = build_app(sessions_path=tmp_path / "s.json", agent=_SlowChildAgent())
-    with TestClient(app) as test_client:
-        parent = test_client.post("/v1/sessions", json={"title": "p"}).json()["id"]
-        task = spawn_child_turn_threadsafe(
-            app,
-            TaskSpec(
-                child_expert_id="main",
-                task_text="analyze the dataset",
-                parent_session_id=parent,
-                requesting_expert_id="main",
-            ),
-        )
-        yield test_client, task.task_id
+    with TestClient(app) as client:
+        parent = client.post("/v1/sessions", json={"title": "p"}).json()["id"]
+        record_assignment_fixture(app, parent)
+        owner = app.state.conversations
+        receipt = asyncio.run_coroutine_threadsafe(
+            owner.spawn(owner.caller(parent), "Analyze the dataset", "main", "capabilities-child"),
+            owner._loop,
+        ).result(timeout=10)
+        yield client, receipt["handle"]
 
 
 def test_steer_door_malformed_capabilities_422_and_not_remembered(
@@ -851,10 +801,10 @@ def test_steer_door_malformed_capabilities_422_and_not_remembered(
     assert resp.status_code == 422, resp.text
     assert resp.json()["error"]["error"] == "a2ui_client_capabilities_invalid"
 
-    task = app.state.agent_task_registry.get(task_id)
-    child = app.state.sessions.get(task.child_session_id)
+    task = app.state.task_history.task_snapshot(task_id)
+    child = app.state.sessions.get(task.owner.session_id)
     assert A2UI_CLIENT_CAPABILITIES_METADATA_KEY not in child.metadata
-    reasons = app.state.a2ui_catalogs.session_reasons(task.child_session_id)
+    reasons = app.state.a2ui_catalogs.session_reasons(task.owner.session_id)
     assert any(row["reason"] == "a2ui_client_capabilities_invalid" for row in reasons)
 
 
@@ -874,8 +824,8 @@ def test_steer_door_valid_capabilities_remembered_on_child_session(
     )
     assert resp.status_code == 202, resp.text
 
-    task = app.state.agent_task_registry.get(task_id)
-    child = app.state.sessions.get(task.child_session_id)
+    task = app.state.task_history.task_snapshot(task_id)
+    child = app.state.sessions.get(task.owner.session_id)
     assert child.metadata[A2UI_CLIENT_CAPABILITIES_METADATA_KEY] == {
         "v0.9": {"supportedCatalogIds": [WORKSPACE_ID]}
     }
@@ -886,8 +836,8 @@ def test_steer_door_data_model_checked_against_the_childs_own_surfaces(
 ) -> None:
     test_client, task_id = running_child_client
     app = test_client.app
-    task = app.state.agent_task_registry.get(task_id)
-    child_sid = task.child_session_id
+    task = app.state.task_history.task_snapshot(task_id)
+    child_sid = task.owner.session_id
 
     # No surface on the CHILD requested sendDataModel yet -> refused.
     resp = test_client.post(

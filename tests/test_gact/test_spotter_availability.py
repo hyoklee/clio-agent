@@ -31,6 +31,7 @@ from clio_agent.gact.spotter_availability import (
     UNAVAILABLE_BLUEPRINT_NOT_INSTALLED,
     UNAVAILABLE_WATCHER_MCP_START_FAILED,
 )
+from clio_agent.gact.spotter_watcher import _live_watcher_tasks
 
 _BLUEPRINT_ID = "spotter-ai"
 
@@ -130,7 +131,7 @@ def test_spotter_arms_on_a_normal_install_with_clio_supplied_inputs(tmp_path: Pa
         assert resp.status_code in (200, 201), resp.text
         sid = resp.json()["id"]
         assert resp.json()["approval_mode"] == "spotter-ai"
-        assert len(app.state.agent_task_registry.for_parent(sid)) == 1
+        assert len(_live_watcher_tasks(app, sid)) == 1
 
 
 def test_blueprint_dir_and_provenance_config_resolve_to_real_paths(tmp_path: Path) -> None:

@@ -34,7 +34,11 @@ def bound(
         app.state.pending_permission_gate = lambda *args: "allow"
         monkeypatch.setattr(connect_tool.context, "active_app", lambda: app)
         monkeypatch.setattr(connect_tool.context, "active_session_id", lambda: sid)
-        yield service, app, upstream
+        from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
+
+        record_assignment_fixture(app, sid)
+        with active_turn_fixture(app, sid):
+            yield service, app, upstream
 
 
 def test_permission_denial_leaves_no_source(bound: tuple[StorageService, Any, Path]) -> None:
@@ -68,7 +72,10 @@ def test_connection_uses_live_permission_gate(
     outcomes: list[object] = []
 
     def connect() -> None:
-        with _gact_app_context(app), _tool_session_context(sid):
+        from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
+
+        record_assignment_fixture(app, sid)
+        with _gact_app_context(app), _tool_session_context(sid), active_turn_fixture(app, sid):
             token = connect_tool.context.set_session_id(sid)
             try:
                 outcomes.append(
@@ -119,10 +126,21 @@ def test_connection_is_real_and_reused_without_a_second_approval(
 
     app.state.pending_permission_gate = allow
     first = connect_tool.connected_data_connect("local", str(upstream), "Measurements")
-    from clio_agent.gact.task_controls import wait_tasks
+    import asyncio
 
-    settled = wait_tasks(first["handle"])
-    assert settled["results"][0]["status"] == "completed"
+    from clio_agent.gact.task_access import TaskCaller
+
+    settled = asyncio.run_coroutine_threadsafe(
+        app.state.task_operations.wait(
+            TaskCaller(
+                session_id=connect_tool.context.active_session_id(),
+                human_id=app.state.human_principal,
+            ),
+            first["handle"],
+        ),
+        app.state.conversations._loop,
+    ).result(timeout=10)
+    assert settled["outcomes"][0]["status"] == "completed"
     assert first["connection"]["state"] == "indexing"
     second = connect_tool.connected_data_connect("local", str(upstream), "Measurements")
     assert second["connection"]["source_id"] == first["connection"]["source_id"]

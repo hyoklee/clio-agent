@@ -123,7 +123,7 @@ def test_native_alert_emits_verified_inspection_or_disabled_action(
             receipt["capture_sha256"] = "0" * 64
         result = _call_tool_as(
             app,
-            task.child_session_id,
+            task.owner.session_id,
             build_raise_alert_card_tool(AgentDef(id="spotter_watcher", title="SPOTTER reviewer")),
             title="Review this result",
             body="Observed evidence, not a poisoning verdict.",
@@ -137,7 +137,7 @@ def test_native_alert_emits_verified_inspection_or_disabled_action(
         )
         assert "Uncertainty:" in card["body"]
         assert card["actions"][0]["enabled"] is valid
-        assert card["actions"][1]["behavior"]["handle_id"] == task.task_id
+        assert card["actions"][1]["behavior"]["handle_id"] == task.handle
         if valid:
             from clio_agent.gact.protocol.v3.message import _action_cards
 

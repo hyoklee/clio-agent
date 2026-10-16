@@ -26,6 +26,7 @@ from pytest import MonkeyPatch, mark
 from clio_agent.gact.a2ui_actions.narration import MAX_NARRATION_BYTES, narration_for
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.protocol.constants import A2UI_V091
+from tests.test_gact.input_capture import capture_inputs
 
 from .task_records import hold_model_segment
 from .test_a2ui_v3 import HEADERS, _create_message, _session_client
@@ -111,17 +112,9 @@ def _install_narration_event(
     monkeypatch.setattr(registry, "get", patched_get)
 
 
-def _stub_spawn(app: Any, monkeypatch: MonkeyPatch) -> list[Any]:
-    """Prevent a real turn from executing; return the list of spawned coros."""
-
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-    return spawned
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def _event(name: str, surface_id: str, context: dict[str, Any], timestamp: str) -> dict[str, Any]:
@@ -156,7 +149,7 @@ def test_declared_narration_renders_template_and_still_carries_context_json(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     _install_narration_event(app, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -233,7 +226,7 @@ def test_undeclared_event_delivers_legacy_form_and_records_reason_once(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )

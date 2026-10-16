@@ -23,9 +23,12 @@ from clio_agent.gact.a2ui_actions.record import mark_a2ui_action_consumed
 from clio_agent.gact.app import build_app
 from clio_agent.gact.events import Event
 from clio_agent.gact.interaction_types import UserQuestion
+from clio_agent.gact.question_surface import question_row
 from clio_agent.gact.routes.interactions import project_pending_interactions
 from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui
 from clio_agent.gact.types import Message, Part
+from tests.test_gact.input_capture import capture_inputs
+from tests.test_gact.task_records import record_question_fixture
 
 from .task_records import hold_model_segment, record_assignment_fixture
 from .test_a2ui_v3 import HEADERS, WORKSPACE_CATALOG_ID, _create_message, _session_client
@@ -33,17 +36,9 @@ from .test_a2ui_v3 import HEADERS, WORKSPACE_CATALOG_ID, _create_message, _sessi
 pytestmark = mark.usefixtures("a2ui_session_lifespan")
 
 
-def _stub_spawn(app: Any, monkeypatch: MonkeyPatch) -> list[Any]:
-    """Prevent a real turn from executing; return the list of spawned coros."""
-
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-    return spawned
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def _event(name: str, surface_id: str, context: dict[str, Any], timestamp: str) -> dict[str, Any]:
@@ -72,7 +67,7 @@ def test_duplicate_submission_returns_same_record_no_second_turn(
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
     action = _event(
         "earthscope.stations.selected",
         "surface_1",
@@ -107,7 +102,7 @@ def test_two_distinct_timestamps_create_two_records(
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     first_action = _event(
         "earthscope.stations.selected", "surface_1", {"x": 1}, "2026-09-17T00:00:00Z"
     )
@@ -205,9 +200,9 @@ def test_waiting_user_surface_tagged_question_resumes_with_context(
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     question = _pending_question(sid, surface_id="surface_1")
-    app.state.user_questions[question.id] = question
+    question = record_question_fixture(app, question)
     app.state.sessions.update(
         sid, status="waiting_user", metadata_patch={"pending_user_question_id": question.id}
     )
@@ -221,7 +216,7 @@ def test_waiting_user_surface_tagged_question_resumes_with_context(
     body = response.json()
     assert body["delivery"] == "resolve_question"
     assert body["state"] == "delivered"
-    answered = app.state.user_questions[question.id]
+    answered = question_row(app, question.id)
     assert answered.status == "answered"
     assert answered.answer_metadata["a2ui_action_context"] == {"text": "go"}
     assert answered.answer_metadata["surface_id"] == "surface_1"
@@ -236,10 +231,10 @@ def test_waiting_user_uncorrelated_action_refuses_409(
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     # A pending question tagged for a DIFFERENT surface never correlates.
     question = _pending_question(sid, surface_id="unrelated-surface")
-    app.state.user_questions[question.id] = question
+    question = record_question_fixture(app, question)
     app.state.sessions.update(
         sid, status="waiting_user", metadata_patch={"pending_user_question_id": question.id}
     )
@@ -365,7 +360,7 @@ def test_standalone_approval_without_permission_id_delivers_to_agent(
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     action = _event("approval.respond", "surface_1", {"approved": True}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -391,7 +386,7 @@ def test_standalone_approval_cancel_without_permission_id_delivers_to_agent(
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     action = _event("approval.respond", "surface_1", {"approved": False}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -420,7 +415,7 @@ def test_action_card_custom_event_unaffected_by_permission_routing(
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     action = _event("workspace.summarize", "surface_1", {"scope": "all"}, "2026-09-17T00:00:00Z")
 
     response = client.post(
@@ -469,7 +464,7 @@ def test_run_retry_destination_queues_the_existing_owner_attempt(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     app.state.agent = object()
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -507,7 +502,7 @@ def test_foreign_surface_data_model_dropped_while_action_still_delivers(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     create_owned = {
         "version": "v0.9.1",
         "createSurface": {
@@ -563,7 +558,7 @@ def test_validation_failed_repairs_once_then_exhausts_and_fails_the_surface(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -600,7 +595,7 @@ def test_generic_client_error_persisted_never_delivered(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    spawned = _stub_spawn(app, monkeypatch)
+    spawned = _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -642,7 +637,7 @@ def test_interactions_row_flips_pending_to_answered_once_delivered(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     components = {
         "version": "v0.9.1",
         "updateComponents": {
@@ -705,7 +700,7 @@ def test_mark_consumed_transitions_delivered_record_and_publishes_event(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -808,10 +803,7 @@ def test_undo_preserves_action_record_from_removed_message(tmp_path: Path) -> No
             "agent.submit", "surface_1", {"text": "go"}, "2026-09-17T00:00:00Z"
         )
 
-        def _spawn(coro: Any, **_kwargs: Any) -> None:
-            coro.close()
-
-        client.app.state.turn_runner.spawn = _spawn  # type: ignore[method-assign]
+        capture_inputs(client.app)
         response = client.post(
             f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": action_envelope}
         )

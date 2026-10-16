@@ -1,7 +1,5 @@
 """Recorded finding for browser review; never presented as a live SPOTTER verdict."""
 
-from dataclasses import replace
-
 from clio_schemas.attention import DECAYED_MAX
 from fastapi import FastAPI
 
@@ -18,12 +16,20 @@ from tests.test_gact.test_attention._support import _message
 def add_reviewer_fixture(app: FastAPI, session_id: str) -> None:
     """Attach an isolated reviewer task and verified capture-backed finding."""
     messages = app.state.messages[session_id]
-    task = next(iter(app.state.agent_task_registry.for_parent(session_id)), None)
+    history = app.state.task_history
+    task = next(
+        (
+            history.task_snapshot(handle)
+            for handle in history.tree_handles(session_id)
+            if history.task_snapshot(handle).kind == "Subagent"
+        ),
+        None,
+    )
     if task is None:
         task = _register_fake_child_task(app, parent_sid=session_id, blueprint_id="spotter-ai")
-    task = replace(task, run_label="Recorded SPOTTER review", live_state="waiting")
-    app.state.agent_task_registry.register(task)
-    app.state.sessions.update(task.child_session_id, title="Recorded reviewer (no inference)")
+    task = task.model_copy(update={"label": "Recorded SPOTTER review", "activity": "yielded"})
+    history.record_snapshot(task, observation_id="recorded-reviewer:" + task.handle)
+    app.state.sessions.update(task.owner.session_id, title="Recorded reviewer (no inference)")
     from clio_schemas.connected_resources import ContentSelection
 
     raw = next(
@@ -48,7 +54,7 @@ def add_reviewer_fixture(app: FastAPI, session_id: str) -> None:
     action, uncertainty = finding_attention_action(
         app,
         session_id,
-        task.task_id,
+        task.handle,
         {
             "response_id": call.response_id,
             "steps": view["selected_steps"],
@@ -72,7 +78,7 @@ def add_reviewer_fixture(app: FastAPI, session_id: str) -> None:
                     "id": "discuss",
                     "label": "Discuss",
                     "enabled": True,
-                    "behavior": {"kind": "focus_session", "handle_id": task.task_id},
+                    "behavior": {"kind": "focus_session", "handle_id": task.handle},
                 },
             ],
         )
@@ -93,5 +99,5 @@ def add_reviewer_fixture(app: FastAPI, session_id: str) -> None:
             )
         ],
     )
-    child.session_id = task.child_session_id
-    app.state.messages[task.child_session_id] = [child]
+    child.session_id = task.owner.session_id
+    app.state.messages[task.owner.session_id] = [child]

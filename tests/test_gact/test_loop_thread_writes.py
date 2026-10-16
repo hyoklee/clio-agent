@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import asyncio
 import threading
-import time
 from pathlib import Path
 from typing import Any
 
@@ -234,49 +233,36 @@ def test_compact_folds_the_arc_working_set_off_the_loop(
     assert _write_hits() == []
 
 
-def test_a_turn_cancelled_before_its_prologue_still_persists_the_user_message(
-    tmp_path: Path,
+def test_pre_model_stop_preserves_confirmed_user_input_off_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Review find: the deferred user-message persist must not die with the turn task.
-
-    #1334 handed the user message's ARC persist to the turn (so ``POST /messages`` never
-    waits on a store RPC), and the turn runs it first, in its off-loop prologue. A task
-    cancelled before its FIRST step never runs its body at all -- not even a ``finally``
-    -- so the job was silently dropped. The message then sat in the in-memory ledger and
-    the local store with no atoms, and ``materialize_ledger`` takes its ``has_atoms``
-    branch on any session that already completed a turn, so the message VANISHED from the
-    transcript on the next rehydrate. ``spawn_user_turn``'s done-callback flushes it.
-    """
+    """Accepted input survives before any worker starts, without a done-callback flush."""
+    from clio_agent.gact.task_history import TaskHistory
+    from tests.test_gact.input_capture import capture_inputs
 
     reset_guard_hits()
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(answer="ok"))
     with TestClient(app) as client:
         sid = _create_session(client)
-        complete_turn(client, sid, "first")  # the lane now HAS atoms: no backfill will run
+        complete_turn(client, sid, "first")
         settle_turn_slot(client, sid)
-
-        real_spawn = app.state.turn_runner.spawn
-
-        def _spawn_then_cancel(coro: Any, *, sid: str, turn_id: str) -> Any:
-            task = real_spawn(coro, sid=sid, turn_id=turn_id)
-            task.cancel()  # before its first step: the coroutine body never runs
-            return task
-
-        app.state.turn_runner.spawn = _spawn_then_cancel
-        ack = client.post(
-            f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "second"}]}
-        )
-        assert ack.status_code == 200, ack.text
-        user_id = ack.json()["message_id"]
-        deadline = time.monotonic() + 10.0
-        while time.monotonic() < deadline:
-            if user_id in load_message_part_atoms(app.state.arc, sid):
-                break
-            client.get(f"/v1/sessions/{sid}")  # keep the loop turning so the flush lands
-            time.sleep(0.05)
-        atoms = load_message_part_atoms(app.state.arc, sid)
-    assert user_id in atoms, f"the cancelled turn dropped its user message's atoms: {atoms.keys()}"
-    assert _write_hits() == [], "the orphan flush must run off the loop"
+        captured = capture_inputs(app, monkeypatch)
+        accepted = client.post(f"/v1/sessions/{sid}/messages", json={"text": "second"})
+        assert accepted.status_code == 202, accepted.text
+        identity = accepted.json()["message_id"]
+        assert not app.state.turn_runner.busy(sid)
+        assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
+        original = app.state.task_history.mail_item(sid, identity)
+        assert original is not None and original in captured
+        assert original.id not in app.state.task_history.acknowledged_notifications(sid)
+        restored = TaskHistory(app.state.arc)
+        restored.restore()
+        assert restored.mail_item(sid, identity) == original
+        assert restored.read_content(original.content)["text"] == "second"
+        assert restored.committed_notification_input(sid, identity) is None
+        messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        assert any(row["id"] == identity for row in messages)
+    assert _write_hits() == []
 
 
 def test_a_blueprint_install_reason_recorded_on_the_loop_is_written_off_it(
