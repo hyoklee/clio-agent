@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import base64
 import uuid
+from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -59,6 +61,36 @@ def test_invalid_base64_is_typed_for_legacy_and_framed_blobs() -> None:
         with pytest.raises(BlobDecodeError) as caught:
             unframe("damaged", body)
         assert caught.value.error_type == "clio_core_blob_invalid_base64"
+
+
+@pytest.mark.parametrize("as_text", [False, True])
+@pytest.mark.parametrize("physically_truncated", [False, True])
+def test_get_distinguishes_stale_size_from_truncated_data(
+    as_text: bool, physically_truncated: bool
+) -> None:
+    """Size metadata can lag intact bytes; genuinely missing bytes remain an error."""
+    data = b"retained assignment observations" * 40
+    stored = frame(data)
+    stale_size = len(stored) - 16
+    reads: list[int] = []
+
+    def read_blob(name: str, size: int, offset: int) -> bytes | str:
+        assert name == "record" and offset == 0
+        reads.append(size)
+        available = stored[:stale_size] if physically_truncated else stored
+        result = available[:size]
+        return result.decode("ascii") if as_text else result
+
+    tag = SimpleNamespace(GetBlobSize=lambda name: stale_size, GetBlob=read_blob)
+    store = SimpleNamespace(_cte=SimpleNamespace(Tag=lambda name: tag), tag=lambda kind: kind)
+    # Exercise the read algorithm independently of the separately covered RPC guard.
+    read = cast(Any, ClioCoreStore.get).__wrapped__
+    if physically_truncated:
+        with pytest.raises(BlobFrameError):
+            read(store, "segments", "record")
+    else:
+        assert read(store, "segments", "record") == data
+    assert reads == [stale_size, len(stored)]
 
 
 def test_a_slightly_shorter_put_reads_back_exactly() -> None:
