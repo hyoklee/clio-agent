@@ -829,6 +829,10 @@ def clio_core_plane(tmp_path: Path) -> Iterator[Any]:
     from clio_agent.arc.storage import make_arc_store  # noqa: PLC0415
     from clio_agent.gact import context as gact_context  # noqa: PLC0415
     from clio_agent.gact.app import build_app  # noqa: PLC0415
+    from tests.test_gact.task_records import (  # noqa: PLC0415
+        active_turn_fixture,
+        record_assignment_fixture,
+    )
     from tests.test_gact.test_post_messages import FakeClioAgent  # noqa: PLC0415
 
     arc = ARCMemory(store=make_arc_store(backend="cte"))
@@ -836,6 +840,7 @@ def clio_core_plane(tmp_path: Path) -> Iterator[Any]:
     with TestClient(app):
         app.state.workspaces.update("ws_default", root_path=str(tmp_path))
         session = app.state.sessions.create(workspace_id="ws_default", title="Model test context")
+        record_assignment_fixture(app, session.id)
         tokens = [
             gact_context.set_app(app),
             gact_context.set_session_id(session.id),
@@ -843,7 +848,8 @@ def clio_core_plane(tmp_path: Path) -> Iterator[Any]:
             gact_context.set_react_session(session.id),
         ]
         try:
-            yield app
+            with active_turn_fixture(app, session.id):
+                yield app
         finally:
             for token in reversed(tokens):
                 gact_context.reset(token)

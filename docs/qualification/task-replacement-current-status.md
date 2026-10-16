@@ -38,10 +38,30 @@ tests now use its retained public function, with their assertions unchanged.
 
 All three services exited normally, and their disposable profile/temp roots
 were removed after physical custody checks. Bounded failed receipts remain.
-The corrected live recheck and broader Q5 acceptance are still pending.
+R125 on clio-agent `dcdc640e` / GACT `cecfb4ee` passed the full scoped recheck:
+two actual declared workflows, authorized discovery/observe/subscription,
+expired waiting, denied cancellation, peer messages, revocation before input,
+and automatic delivery after restoring only the sender's message grant.
+Both workflow steps collected their unpredictable Question answers and both
+workflow runners completed. The subscriber model freshly read the original peer
+result. Owner and subscriber each have one independent final-outcome input
+commit; the retained peer reply has one input commit. No workflow or Question
+was submitted twice. `r125-live-workflows.json` records source/runtime/model,
+invocations, handles, messages and Core commitments. Service exit was zero,
+active owned tasks were empty, authentication/source hashes were unchanged,
+and `r125-cleanup.json` proves both disposable roots absent. UI grant/revoke
+controls and final frozen-candidate race repeats remain unverified.
+
+CI also exposed a retained bare-model fixture that started the real application
+but never recorded or bound its conversation assignment. The fixture now uses
+the existing confirmed assignment and active-turn helpers; model-input safety
+checks and all test assertions remain unchanged. This is a test-only correction,
+not a production implementation or clio-core change. It awaits CI execution.
 Exact-head CI `38891321674` finished failed; regression shards and Python 3.12
 coverage remain failed/cancelled, while lint, dependency resolution, filesystem,
 flake-hunt, Flowcept and Windows/Linux native-service lifecycle jobs passed.
+CI `38895429794` tests the production correction at `dcdc640e`; regression
+jobs were still running at the R125 cleanup checkpoint.
 
 - R103, clio-agent `57c00ddc`: actual Codex/Luna accepted a Question, read a file
   while it was pending, yielded, received its idle answer wake and collected the
