@@ -42,7 +42,7 @@ def begin_goal_check(app: Any, sid: str, goal: dict[str, Any], turn_id: str, tra
             actor={"component": "goal"},
             payload={"goal_id": goal["goal_id"]},
         )
-    except Exception:
+    except (OSError, RuntimeError):
         logger.warning(
             "reason=goal_activity_delivery_failed retained checking phase remains available",
             exc_info=True,
