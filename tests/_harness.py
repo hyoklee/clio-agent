@@ -300,6 +300,7 @@ def runner_module_builder(runner: Callable[..., Any]) -> Callable[[Any, Any], An
 
     def build(base_agent: Any, agent_def: Any) -> Callable[..., Any]:
         def run(question: str, session_id: str, **kwargs: Any) -> Any:
+            _commit_test_model_input(agent_def, question, session_id)
             params, accepts_var_kw = _forward_parameters(runner)
             extra = {k: v for k, v in kwargs.items() if accepts_var_kw or k in params}
             return runner(base_agent, agent_def, question, session_id, **extra)

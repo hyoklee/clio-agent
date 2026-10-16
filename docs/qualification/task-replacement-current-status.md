@@ -181,6 +181,50 @@ its assertions. Scoped Ruff/format and Linux Mypy pass; regression CI and the
 fresh actual-service repeat remain pending. No local pytest/vitest ran and the
 Core library/dependency is unchanged.
 
+### R167 native effect/result-loss recovery passed
+
+R167 passed the scoped actual-model recovery experiment on clio-agent
+`38a8794b21d227e302715a44ae4823d9c0ace394` / GACT `0f9c00a4`. Actual Codex/Luna
+received original Shell `task_93ea8f42d1604709bc804548bcad4600`, performed a fresh
+independent file read while it ran, and retained the original Session assignment
+`task_5ae3550d27f54adfb313c9872cfb7f7c`. At the injected fault the production
+workload had made its visible effect and confirmed physical cleanup, but the
+registered worker had not returned its result to FastMCP/Docket; Core had no
+terminal timestamp or stored task result. The isolated service exited 91.
+
+After restart, the original memory-backed task was reported interrupted with
+uncertain effects and `resubmitted=false`. The actual model read that original
+result and the filesystem effect before deliberately submitting revised Shell
+`task_38b5733fd20c4b1c833c101bac1045d2`. The revision explicitly referenced the
+original handle in its command and effect metadata. It did not repeat the
+original operation: the filesystem counted one initial effect and one
+reconciliation. Both outcomes were committed once to the original assignment's
+input history; the original assignment completed with both handles and the real
+nonce. There were no pending messages. This does not claim first-class retry
+lineage, persistent-native redelivery, external attention-then-final, UI recovery
+acceptance or the final repeated races.
+
+The post-restart API reported three messages, matching the three transcript rows.
+An earlier count observation landed during the intentional service restart and
+is unavailable; it is not count acceptance. CI still needs to exercise the
+running/cold-count regression. The initial cleanup guard correctly held disposal
+because Windows' venv launcher PID differed from the Uvicorn server PID. The
+startup log proves the fault PID belonged to that owned service; process/listener
+audits then proved retirement before removal. Final API exit was zero. The
+552,751,094-byte profile and 1,073,741,824-byte temp root are removed, with both
+exact roots absent. Bounded `r167-live-effect-recovery.json`, fault, effect and
+cleanup receipts remain. Auth and production hashes match; Core remains 2.3.1.
+
+Per-case CI XML at `80085850` confirms the new reserved-Question regression
+passed on Python 3.12/3.13/3.14. The regression baseline remains failed. Retry's
+terminal event can be followed by the pump's finite pending-input inspection;
+its test now retains the event and non-busy assertions within one unchanged
+30-second diagnostic. Separately, `runner_module_builder` did not commit the
+stand-in model's input, unlike the host/scripted helpers. It now uses the same
+production boundary before invoking the stand-in. Original single-call and
+streaming assertions remain. These test corrections are not executed local
+tests; scoped Ruff/format passes and fresh CI execution remains required.
+
 R152 on `f5d0ae42` still failed the strict one-worker physical-control gate.
 R153 repeated the unchanged scenario with Core-free async/thread stack capture
 and identified the actual bottleneck: both native Docket cancellation listeners

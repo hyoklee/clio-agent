@@ -849,12 +849,21 @@ def test_normal_submission_and_retry_preserve_context_ref(
         assert accepted.json()["task_handle"]
         source_message_id = accepted.json()["message_id"]
 
+        deadline = time.monotonic() + 30
         assert (
             wait_for_terminal_status(
-                app.state.bus, session_id, after_event_id=cursor, backstop_s=30
+                app.state.bus,
+                session_id,
+                after_event_id=cursor,
+                backstop_s=max(0, deadline - time.monotonic()),
             )
             == "idle"
         )
+        # The released segment's event can be followed by the pump's reserved
+        # pending-input inspection. Wait for that finite inspection within the
+        # same diagnostic; it must not launch another model without new input.
+        while app.state.turn_runner.busy(session_id) and time.monotonic() < deadline:
+            time.sleep(0.02)
         assert not app.state.turn_runner.busy(session_id)
 
         retry = client.post(
