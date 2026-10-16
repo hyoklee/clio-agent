@@ -17,6 +17,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.types import Message as ASGIMessage
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.errors import ClioError
 from clio_agent.gact.artifacts.minting import mint_artifact
 from clio_agent.gact.artifacts.records import ArtifactKind, Custody, IdentityEvidence, Mechanism
@@ -33,6 +34,7 @@ from clio_agent.gact.session_export import build_transcript
 from clio_agent.gact.session_export_archive import build_archive
 from clio_agent.gact.session_export_downloads import ExportDownloads
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.types import Message, Part
 from clio_agent.gact.workspaces import WorkspaceStore
 from clio_agent.tools.servers.shell_spill_store import spill_directory
@@ -40,8 +42,11 @@ from tests.test_gact.task_records import record_question_fixture
 
 
 @pytest.fixture
-def export_app(tmp_path: Path) -> tuple[FastAPI, str, str]:
+def export_app(tmp_path: Path, arc: ARCMemory) -> tuple[FastAPI, str, str]:
     app = FastAPI()
+    app.state.arc = arc
+    app.state.task_history = TaskHistory(arc)
+    app.state.human_principal = "human"
     app.state.sessions = SessionStore(path=tmp_path / "state" / "sessions.json")
     app.state.workspaces = WorkspaceStore(path=tmp_path / "state" / "workspaces.json")
     root = tmp_path / "source"

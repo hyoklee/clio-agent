@@ -90,6 +90,46 @@ call fixture retains the real bound session instead of replacing its ID with
 an unrecorded string. Original behavior assertions remain intact. These two
 test-only corrections pass scoped Ruff/format/Mypy and await CI execution.
 
+R127 on clio-agent `fc836008` / GACT `cecfb4ee` used an actual external native
+FastMCP HTTP server and an owned network-fault proxy. Its initial controller
+incorrectly required two simultaneous Question cards. The pinned SDK invokes
+input callbacks sequentially, in the server-supplied order; its opaque surfaced
+keys also differ from the tool's request keys. No task-code correction was
+warranted. The original controller failure is retained. A separate live audit
+answered the actual surfaced inputs, confirmed the first answer in Core while
+the other remained pending, then verified recovery after the proxy lost an
+already accepted update's reply. The actual model read both unpredictable
+values and the effect hash. `r127-native-input-proof.json` records this scoped
+pass independently of the failed controller. Normal shutdown and cleanup
+retired the service, external server, proxy and disposable roots.
+
+R128 freshly repeated that experiment with the corrected controller on the
+same source/runtime tuple and passed. The model received its MCP handle before
+completion, performed independent file and inline MCP work, queried/observed
+the input-held task and expired a short wait without cancelling it. Core held
+one confirmed answer while the other input remained open. After the accepted
+update reply was deliberately lost, the original task recovered with unchanged
+backend identity. The trace contains one original `guarded_pair` submission;
+the backend arguments were empty, with no forwarded CLIO description metadata.
+Exactly two Question handles were used. The model freshly collected both values
+and the real file SHA-256 `ff3294bf0f2e38b488ff207e5a2a95ebba20d2da03691613c6091335495bc3c6`.
+The file contains one effect record. All parent inputs retain the original
+assignment handle, with one final-outcome input commitment. Service, external
+server and proxy exited zero; owned active tasks were empty, authentication
+and production source hashes were unchanged, and `r128-cleanup.json` proves
+the disposable roots absent. `r128-live-mcp-input.json` records the actual
+models, runtime, raw RPCs, handles, inputs and backend/file outcomes. The
+external workload is explicitly synthetic; server/SDK/CLIO/model execution is
+real. This does not qualify service restart, surviving provider jobs or final
+race repeats.
+
+Two further CI fixture repairs attach the export suite to the real Core history
+and run eight retained provenance/lineage cases inside the application's actual
+lifespan. The assertions are unchanged; most displayed diff lines are indentation.
+Scoped Ruff/format/Mypy pass. These are test setup repairs awaiting CI, not live
+acceptance or changes to clio-core. The broader failing regression groups still
+need classification and correction; they are not all presumed obsolete.
+
 - R103, clio-agent `57c00ddc`: actual Codex/Luna accepted a Question, read a file
   while it was pending, yielded, received its idle answer wake and collected the
   original result. The family failed its post-Stop harness gate because the
