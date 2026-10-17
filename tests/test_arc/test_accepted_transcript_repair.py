@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -119,10 +120,22 @@ async def test_repair_preserves_unfinished_atoms_and_a_concurrent_final_append(
         after = raw_atoms(arc, sid)
         unrelated = [atom for atom in after if atom["message_id"] not in {target.id, final.id}]
         assert unrelated == before and sealed in after
-        expected = [early.id, target.id, later.id] + ([final.id] if file_enabled else [])
+        complete = [early.id, target.id, later.id] + ([final.id] if file_enabled else [])
+        expected = [early.id, partial.id, target.id, later.id] + (
+            [final.id] if file_enabled else []
+        )
         assert [row.id for row in app.state.messages[sid]] == expected
+        incomplete = next(row for row in app.state.messages[sid] if row.id == partial.id)
+        assert incomplete.parts == partial.parts and incomplete.stop_reason == "incomplete"
+        assert incomplete.metadata["transcript_incomplete"]["message_id"] == partial.id
+        assert (
+            incomplete.metadata["transcript_incomplete"]["reason"]
+            == "transcript_incomplete_no_envelope"
+        )
         if file_enabled:
-            assert [row.id for row in store.load_session(sid) or []] == expected
+            # The optional file copy has only explicitly projected complete
+            # messages. The resident view reads partial output from Core.
+            assert [row.id for row in store.load_session(sid) or []] == complete
         generation = current_generation(arc._segments, sid, MESSAGE_PART_SCOPE)
         session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
         assert current_generation(arc._segments, sid, MESSAGE_PART_SCOPE) == generation
@@ -292,12 +305,13 @@ async def test_production_cold_loader_preserves_partial_output_through_input_rep
         assert [atom for atom in after if atom["message_id"] != target.id] == before
         assert sealed in after
         assert [row.id for row in app.state.messages[sid]] == [earlier.id, partial.id, target.id]
-        assert (
-            next(row for row in app.state.messages[sid] if row.id == partial.id).metadata[
-                "transcript_incomplete"
-            ]
-            is True
-        )
+        incomplete = next(row for row in app.state.messages[sid] if row.id == partial.id)
+        assert incomplete.parts == partial.parts and incomplete.stop_reason == "incomplete"
+        marker = incomplete.metadata["transcript_incomplete"]
+        assert marker["message_id"] == partial.id
+        assert marker["reason"] == "transcript_incomplete_no_envelope"
+        assert marker["sealed_parts"] == 1
+        assert datetime.fromisoformat(marker["detected_at"]).utcoffset() is not None
         generation = current_generation(arc._segments, sid, MESSAGE_PART_SCOPE)
         session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
         assert current_generation(arc._segments, sid, MESSAGE_PART_SCOPE) == generation

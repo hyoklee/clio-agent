@@ -7,6 +7,28 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Partial transcript projection regressions — CI pending
+
+The `c11e8786` Python 3.14 artifacts contain four failed cases in accepted-input
+transcript repair. The production assembler explicitly returns sealed assistant
+parts without an envelope as an incomplete message, with structured reason,
+identity, count and detection metadata. One scenario instead expected that row to
+be hidden until finalization; another required the metadata to be Boolean.
+
+The two parametrized scenarios now require the partial row and its original text
+in the Core-backed resident view, explicitly marked incomplete. The optional file
+copy remains checked for the complete messages actually projected into it. The
+cold-loader case checks the reason, message identity, sealed-part count and a
+timezone-aware detection timestamp. Original raw-atom equality, generation
+stability, concurrent finalized append, later envelope reconstruction, pending
+mail and no-acknowledgement assertions remain. No test or parameter case is removed.
+
+This is a test migration to the documented projection contract. Production source,
+clio-core, dependencies and frozen runtime are unchanged. Scoped Ruff/format and
+one-file Mypy pass; no local behavioral test ran. Receipt:
+`ci-partial-transcript-017209-audit.json` in D static evidence. Fresh CI execution
+is required; this does not constitute actual-model recovery acceptance.
+
 ### Native wire, replay identity and retained Question API — CI pending
 
 #### Current CI result and presentation corrections
