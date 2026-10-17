@@ -656,6 +656,8 @@ gact.ledger_retention.turn_attempts.max: 2000
 gact.live_edge_streaming: false
 
 # CLIO_MAILBOX_MAX_PENDING_MESSAGES  (int)  <- src/clio_agent/gact/session_mail.py
+# Undelivered peer-message ceiling per session; 0 means unlimited. Task
+# results and human input are exempt, and delivered history is retained.
 gact.mailbox.max_pending_messages: 0
 
 # CLIO_GACT_MEDIA_CACHE_BYTES  (int)  <- src/clio_agent/gact/agents/media_cache.py

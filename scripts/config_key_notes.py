@@ -65,12 +65,6 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
         "Search gateway, or none) and the private SearXNG's engine policy.",
     ),
     (
-        "Relay",
-        ("relay",),
-        "The clio-relay integration: console/artifact transfer, the install-surface CLI and remote "
-        "agents.",
-    ),
-    (
         "Provenance, trace and debug",
         ("provenance", "trace", "debug"),
         "Agentic provenance export (Flowcept/JSONL), the semantic trace backend and "
@@ -96,6 +90,10 @@ KEY_NOTES: dict[str, str] = {
     "agent_tasks.max_concurrent": (
         "Reserved or in-flight child inference at one spawn depth; tools and waits release their "
         "inference permit. This does not cap active sessions or background tasks."
+    ),
+    "gact.mailbox.max_pending_messages": (
+        "Undelivered peer-message ceiling per session; 0 means unlimited. Task results and human "
+        "input are exempt, and delivered history is retained."
     ),
     "gact.tasks.health_timeout_s": (
         "Timeout in seconds for task transport discovery/cancellation RPC delivery; accepted execution, result "

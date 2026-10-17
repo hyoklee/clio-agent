@@ -7,7 +7,32 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Worker stalls — next CI batch pending
+### Current CI and live hold
+
+Run `39027086751` at `ca1f3308` finished. All four Python 3.14 artifacts report
+12,204 passes, 250 failures, four errors and 55 skips. The full regression
+baseline still fails; skips remain exclusions. Both timeout-retirement cases,
+the progressing-provider case, all 13 compaction cases, all 10 blob-read cases
+and all 10 wire cases pass. These are CI results, not current live acceptance.
+
+The pushed candidate `630b7d1cfcba40af1f1c43997be9ff632858c269` is now executing
+in run `39029250041`, including the admission-fixture and worker-stall repairs.
+Its source hash is recorded below. The R184 controller and verified API/private
+runtime processes remain live. No further live family has launched while its
+unresolved shutdown awaits the existing explicit human force-close decision.
+
+Four configuration-reference failures are addressed in the next documentation
+packet: retired special Relay configuration is no longer expected, and the
+existing mailbox setting now documents unlimited-by-default, pending-only peer
+backpressure. Generated default values, runtime algorithms and dependency pins
+remain unchanged. Fresh CI is required for that packet; no local behavioral
+tests run. All 26 reference test functions and their parameters are retained;
+24 bodies are AST-identical. The two changed bodies now require retired Relay
+secrets to be absent while retaining checks for supported credentials. Ruff,
+formatting, scoped Mypy and existing guards pass. Receipt:
+`ci-config-reference-630b7d1c-audit.json`.
+
+### Worker stalls — CI executing at 630b7d1c
 
 Full CI XML identifies a SPOTTER mode-PATCH deadlock in clio-agent: its Core I/O
 worker calls the watcher command, which waits for `Conversations.spawn` while
@@ -51,11 +76,13 @@ types for two heterogeneous JSON lists change no payloads. Ruff/format and Mypy
 with `--check-untyped-defs` pass. Receipt:
 `ci-admission-reservation-ca1f-audit.json`. Production and the candidate source
 hash are unchanged. No local behavioral test or new live family ran. The prior
-combined packet is executing in run `39027086751`; these cases await the next batch.
+combined packet finished in run `39027086751`; these corrections are included
+in current run `39029250041`.
 
-### Retained ARC algorithm fixtures — CI pending
+### Retained ARC algorithm fixtures — affected Python 3.14 CI passed
 
-The combined packet is pushed at `ca1f3308`; run `39027086751` is in progress.
+All 13 compaction cases and all 10 blob-read cases pass in run `39027086751`
+at `ca1f3308`. Overall counts and the remaining errors are recorded above.
 
 Six compaction failures came from a metadata-only session stub lacking the
 current session-record contract. The fixture now uses the actual Session
@@ -71,11 +98,10 @@ The production reader and its RPC guards are unchanged.
 Ruff/format, Mypy with `--check-untyped-defs` and the source/contract audit pass.
 No production file, dependency, clio-core, GACT or R184 source changed. No local
 behavioral test or live launch ran. Receipt:
-`ci-retained-arc-fixtures-b082-audit.json`. Execution awaits the next CI batch.
-The candidate Python-source SHA256 remains
+`ci-retained-arc-fixtures-b082-audit.json`. The tested Python-source SHA256 was
 `6786a99e5874587c2941d84cfb32ce4df590eddac1115f8c2a3c584f05d77fd7`.
 
-### No-progress stopping and physical retirement — next CI batch pending
+### No-progress stopping and physical retirement — affected Python 3.14 CI passed
 
 The two retained no-progress cases waited for a terminal assistant before
 releasing their held provider thread. R2 requires actual retirement first.
@@ -94,9 +120,9 @@ Scoped Ruff/format, two-file Mypy and existing removal/size/class guards pass.
 Receipt: `ci-timeout-retirement-59ee-audit.json`. No local behavioral test or live
 launch ran. Candidate Python-source SHA256:
 `6786a99e5874587c2941d84cfb32ce4df590eddac1115f8c2a3c584f05d77fd7`.
-The combined candidate awaits exact-head CI; affected live retirement
-acceptance remains required. clio-core, dependencies, GACT and R184
-production are unchanged.
+Both timeout-retirement cases and the unchanged progressing-provider case pass
+in run `39027086751`. Affected live retirement acceptance remains required.
+clio-core, dependencies, GACT and R184 production are unchanged.
 
 ### Session lifecycle confirmation — affected Python 3.14 CI passed
 

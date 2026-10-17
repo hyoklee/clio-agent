@@ -160,7 +160,6 @@ def test_secret_tokens_are_classified_secret_not_leaked_with_defaults() -> None:
         "CLIO_LM_API_KEY",
         "CLIO_ARGONNE_TOKEN",
         "ALCF_INFERENCE_TOKEN",
-        "CLIO_RELAY_API_TOKEN",
     }
     # Secrets must never appear as a file-resolvable knob (would invite a value
     # in config.yaml / .env.example).
@@ -168,6 +167,8 @@ def test_secret_tokens_are_classified_secret_not_leaked_with_defaults() -> None:
     secret_env = {e.env: e for e in env_only if e.tier == "secret"}
     for name in secret_names:
         assert name in secret_env, f"{name} should be discovered as an env-only secret"
+    assert "CLIO_RELAY_API_TOKEN" not in {r.env for r in resolved}
+    assert "CLIO_RELAY_API_TOKEN" not in {e.env for e in env_only}
 
 
 def test_tier_classification_rules() -> None:
@@ -185,9 +186,9 @@ def test_env_example_leaves_secrets_blank_and_comments_knobs() -> None:
     # Secrets render as an uncommented, blank assignment (never a real value).
     assert "CLIO_LM_API_KEY=" in lines
     assert "ALCF_INFERENCE_TOKEN=" in lines
-    assert "CLIO_RELAY_API_TOKEN=" in lines
+    assert not any(line.startswith("CLIO_RELAY_API_TOKEN") for line in lines)
     for line in lines:
-        if line.startswith(("CLIO_LM_API_KEY", "ALCF_INFERENCE_TOKEN", "CLIO_RELAY_API_TOKEN")):
+        if line.startswith(("CLIO_LM_API_KEY", "ALCF_INFERENCE_TOKEN")):
             assert line.endswith("="), f"secret carries a value: {line!r}"
     # Configured knobs are commented out so an untouched copy overrides nothing.
     assert "# CLIO_LM_PROVIDER=lm_studio" in lines
