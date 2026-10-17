@@ -16,6 +16,7 @@ from mcp.types import CallToolResult
 
 from clio_agent.gact.app import build_app
 from clio_agent.gact.storage import connect_tool, setup_tool
+from clio_agent.gact.storage.models import SourceRecord
 from clio_agent.gact.storage.service import StorageService
 from clio_agent.gact.task_access import TaskCaller
 
@@ -27,11 +28,12 @@ def _connect(
     label: str,
     *,
     configuration: dict[str, Any] | None = None,
+    mode: str = "read_only",
 ) -> dict[str, Any]:
     """Call the declared production tool through its real built-in MCP boundary."""
     tool = app.state.builtin_boundary.bind(connect_tool.build_connected_data_connect_tool())
     return tool.func(
-        provider=provider, root=root, label=label, mode="read_only", configuration=configuration
+        provider=provider, root=root, label=label, mode=mode, configuration=configuration
     )
 
 
@@ -220,6 +222,82 @@ def test_connection_is_real_and_reused_without_a_second_approval(
     opened = setup_tool.connected_data_open(indexed["source_id"])
     assert [row["path"] for row in opened["entries"]] == ["measurements.csv"]
     assert len(service.sources("ws_default")) == 1
+
+
+@pytest.mark.parametrize("change", ["mode", "configuration", "principal", "disconnected", "clio"])
+def test_reused_source_requires_new_approval_when_its_scope_changes(
+    bound: tuple[StorageService, Any, Path], change: str
+) -> None:
+    """A retained source grants only its original owner, host and exact access settings."""
+    service, app, upstream = bound
+    decisions: list[tuple[Any, ...]] = []
+
+    def gate(*args: Any) -> str:
+        decisions.append(args)
+        return "allow" if len(decisions) == 1 else "deny"
+
+    app.state.pending_permission_gate = gate
+    accepted = _connect(app, "local", str(upstream), "Measurements")
+    terminal, reply = _collect(app, accepted)
+    assert terminal["status"] == "completed"
+    source_id = _body(reply)["source_id"]
+    record = service.get("ws_default", source_id)
+    arguments: dict[str, Any] = {}
+    if change == "mode":
+        arguments["mode"] = "write_enabled"
+    elif change == "configuration":
+        arguments["configuration"] = {"github_ref": "another-revision"}
+    else:
+        if change == "principal":
+            record.principal = "another-human"
+        elif change == "disconnected":
+            record.connected = False
+        else:
+            record.source.owner = record.source.owner.model_copy(update={"clio_id": "other-clio"})
+        service.store.put("source", source_id, record)
+    prior_tasks = app.state.task_history.task_handles(
+        kind="Indexing", session_id=connect_tool.context.active_session_id()
+    )
+    with pytest.raises(PermissionError, match="not approved"):
+        _connect(app, "local", str(upstream), "Measurements", **arguments)
+    assert len(decisions) == 2
+    assert (
+        app.state.task_history.task_handles(
+            kind="Indexing", session_id=connect_tool.context.active_session_id()
+        )
+        == prior_tasks
+    )
+    assert len(service.store.list("source", SourceRecord)) == 1
+
+
+@pytest.mark.parametrize("change", ["disconnected", "configuration"])
+def test_revoked_reused_source_cannot_be_recreated_by_an_accepted_worker(
+    bound: tuple[StorageService, Any, Path], change: str
+) -> None:
+    """Revocation between submission and worker entry leaves the existing source untouched."""
+    service, app, upstream = bound
+    accepted = _connect(app, "local", str(upstream), "Measurements")
+    terminal, reply = _collect(app, accepted)
+    assert terminal["status"] == "completed"
+    source_id = _body(reply)["source_id"]
+    record = service.get("ws_default", source_id)
+    manifest = record.linked_manifest_id
+    if change == "disconnected":
+        record.connected = False
+    else:
+        record.configuration = record.configuration.model_copy(update={"github_ref": "changed"})
+    service.store.put("source", source_id, record)
+    with pytest.raises(PermissionError, match="changed before execution"):
+        connect_tool.prepare_connect(
+            app,
+            {"provider": "local", "root": str(upstream), "label": "Measurements"},
+            human_action=True,
+            session_id=connect_tool.context.active_session_id(),
+            approved_source_id=source_id,
+        )
+    retained = service.store.list("source", SourceRecord)
+    assert len(retained) == 1 and retained[0].source.id == source_id
+    assert retained[0].linked_manifest_id == manifest
 
 
 def test_status_keeps_workspace_folders_when_remote_sources_are_empty(

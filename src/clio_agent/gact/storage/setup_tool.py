@@ -20,6 +20,11 @@ def connected_data_status() -> dict[str, Any]:
     """
     app = context.active_app()
     sid = context.active_session_id()
+    return session_data_status(app, sid)
+
+
+def session_data_status(app: Any, sid: str) -> dict[str, Any]:
+    """Read the same safe inventory for an explicitly verified native-task owner."""
     if app is None or not sid:
         raise ValueError("Connected-data setup requires an active CLIO workspace session")
     session = app.state.sessions.get(sid)

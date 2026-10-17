@@ -298,24 +298,40 @@ class BuiltinBoundary:
         ]
         schema["additionalProperties"] = False
         Draft202012Validator(schema).validate(public)
-        gate = (
-            getattr(self.app.state, "pending_permission_gate", None)
-            or self.app.state.make_permission_gate()
-        )
-        decision = await run_owned_callable(
-            functools.partial(_invoke_permission_gate, gate, name, public, {"kind": "native"}),
-            captured=captured.copy(),
-            name="clio-permission-" + name,
-        )
-        if decision != "allow":
-            raise PermissionError("Task submission was not approved")
         sid = captured.run(context.active_session_id)
+        session = self.app.state.sessions.get(sid)
+        if session is None:
+            raise ValueError("Task submission requires an active session")
+        approved = None
+        if name == "connected_data_connect":
+            from clio_agent.gact.storage.connect_tool import approved_source
+            from clio_agent.gact.storage.models import CreateSource
+
+            approved = await self.app.state.task_history.io.run(
+                approved_source,
+                self.app.state.connected_storage,
+                session.workspace_id,
+                CreateSource.model_validate(
+                    {**public, "configuration": public.get("configuration") or {}}
+                ),
+            )
+        if approved is None:
+            gate = (
+                getattr(self.app.state, "pending_permission_gate", None)
+                or self.app.state.make_permission_gate()
+            )
+            decision = await run_owned_callable(
+                functools.partial(_invoke_permission_gate, gate, name, public, {"kind": "native"}),
+                captured=captured.copy(),
+                name="clio-permission-" + name,
+            )
+            if decision != "allow":
+                raise PermissionError("Task submission was not approved")
         assignment = await self.app.state.task_history.io.run(
             self.app.state.task_history.latest_assignment, sid
         )
         if assignment is None:
             raise ValueError("Task submission requires a confirmed assignment")
-        session = self.app.state.sessions.get(sid)
         workspace = self.app.state.workspaces.get(session.workspace_id)
         call = captured.run(TASK_CALL.get)
         attribution: dict[str, Any] = {"agent": captured.run(context.active_react_scope)}
@@ -326,6 +342,10 @@ class BuiltinBoundary:
                 self.app.state.connected_storage.get, session.workspace_id, public["source_id"]
             )
             attribution["source_identity"] = source_submission_identity(record)
+        elif approved is not None:
+            from clio_agent.gact.storage.identity import source_submission_identity
+
+            attribution["source_identity"] = source_submission_identity(approved)
         value = await self.app.state.native_tools.submit(
             root,
             tool,

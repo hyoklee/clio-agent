@@ -571,8 +571,21 @@ def register_native_storage(
             if "source_id" in arguments:
                 record = service.get(session.workspace_id, arguments["source_id"])
             else:
+                identity = context.attribution.get("source_identity")
+                approved_source_id: str | None = None
+                if identity is not None:
+                    selected_source = (
+                        identity.get("source_id") if isinstance(identity, dict) else None
+                    )
+                    if not isinstance(selected_source, str):
+                        raise PermissionError("Approved source identity is unavailable")
+                    approved_source_id = selected_source
                 prepared = prepare_connect(
-                    app, arguments, human_action=True, session_id=context.owner.session_id
+                    app,
+                    arguments,
+                    human_action=True,
+                    session_id=context.owner.session_id,
+                    approved_source_id=approved_source_id,
                 )
                 if "immediate_result" in prepared:
                     return prepared["immediate_result"]

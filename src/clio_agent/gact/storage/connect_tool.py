@@ -3,17 +3,53 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
 from clio_agent.gact.permission_gate import _invoke_permission_gate
-from clio_agent.gact.storage.models import CreateSource, SourceConfiguration
-from clio_agent.gact.storage.setup_tool import connected_data_status, setup_presentation
+from clio_agent.gact.storage.models import CreateSource, SourceConfiguration, SourceRecord
+from clio_agent.gact.storage.setup_tool import session_data_status, setup_presentation
+
+if TYPE_CHECKING:
+    from clio_agent.gact.storage.service import StorageService
+
+
+def approved_source(
+    service: StorageService, workspace_id: str, body: CreateSource
+) -> SourceRecord | None:
+    """Find an existing exact approval without creating a source or opening a transport."""
+    root = body.root
+    if body.provider in {"local", "obsidian"}:
+        from clio_agent.gact.storage.adapters import LocalSource
+
+        root = str(LocalSource(root, writable=body.mode != "read_only").root)
+    elif body.provider == "google_drive":
+        from clio_agent.gact.storage.drive import drive_folder_id
+
+        root = drive_folder_id(root)
+    return next(
+        (
+            record
+            for record in service.sources(workspace_id)
+            if record.connected
+            and record.source.owner.clio_id == service.store.clio_id
+            and record.source.provider == body.provider
+            and record.source.root == root
+            and record.source.mode == body.mode
+            and record.configuration == body.configuration
+        ),
+        None,
+    )
 
 
 def prepare_connect(
-    app: Any, arguments: dict[str, Any], *, human_action: bool = False, session_id: str = ""
+    app: Any,
+    arguments: dict[str, Any],
+    *,
+    human_action: bool = False,
+    session_id: str = "",
+    approved_source_id: str | None = None,
 ) -> dict[str, Any]:
     """Approve source attachment and reserve inputs before native indexing submission."""
     provider, root, label = (arguments[key] for key in ("provider", "root", "label"))
@@ -35,21 +71,11 @@ def prepare_connect(
             "configuration": configuration or {},
         }
     )
-    prepared = service._prepare_source(session.workspace_id, body, Path(workspace.root_path))
-    existing = next(
-        (
-            record
-            for record in service.sources(session.workspace_id)
-            if record.connected
-            and record.principal == service.principal
-            and record.source.owner.clio_id == service.store.clio_id
-            and record.source.provider == prepared.source.provider
-            and record.source.root == prepared.source.root
-            and record.source.mode == prepared.source.mode
-            and record.configuration == prepared.configuration
-        ),
-        None,
-    )
+    existing = approved_source(service, session.workspace_id, body)
+    if approved_source_id is not None and (
+        existing is None or existing.source.id != approved_source_id
+    ):
+        raise PermissionError("Approved source access changed before execution")
     if existing is None:
         gate = (
             getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
@@ -60,6 +86,7 @@ def prepare_connect(
             != "allow"
         ):
             raise PermissionError("Source connection was not approved")
+        prepared = service._prepare_source(session.workspace_id, body, Path(workspace.root_path))
         service.store.put("source", prepared.source.id, prepared)
         existing = prepared
     if provider in {"github", "google_drive", "globus"} and not service.auth.connected(existing):
@@ -92,7 +119,7 @@ def prepare_connect(
             "workspace_id": session.workspace_id,
             "workspace_root": workspace.root_path,
         }
-    result = connected_data_status()
+    result = session_data_status(app, sid)
     result["connection"] = {"source_id": existing.source.id, "state": "linked"}
     return {"immediate_result": result}
 

@@ -7,6 +7,45 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Latest CI and native source reuse — acceptance pending
+
+All four Python 3.14 artifacts for `4e0510ff` / run `39016179527` are complete:
+12,089 passes, 333 failures, four errors and 55 skips. This remains a failed
+baseline. All eight iteration-feedback cases and the cross-session memory-context
+turn case now pass. Source permission denial, all three live permission-gate
+variants, private sign-in and workspace status pass. These are regression results,
+not fresh actual-model qualification. Exact-head CI for `d9191f82` is dispatched
+as run `39017651189`; it includes pre-permission schema validation and the
+retirement-callback fixture correction.
+
+The remaining source-reuse failure is a real worker-context defect: its linked
+result called the ambient session tool from native execution. The existing safe
+inventory now takes explicit app/session inputs; its body is AST-identical.
+The model-facing status tool delegates to it. Reuse shares one exact source
+approval predicate between submission and worker preparation. It checks the
+workspace, current principal, CLIO owner, provider, resolved root, mode and
+configuration without creating a source or opening a provider transport.
+
+Submission binds an existing approval's source identity. The worker checks that
+the same approval remains valid before source creation or linked-result return;
+revoked work cannot silently create a replacement source. Initial approval still
+uses the existing permission gate. All six retained source-connection test bodies
+are AST-identical, including the single-approval requirement. Seven newly built
+cases cover changed scope and revocation before worker entry. The two new A2UI
+projection cases now install their test admission hold after actual application
+lifespan startup, with every assertion retained.
+
+Scoped Ruff/format, six-file Mypy and removal/class/size guards pass.
+No local behavioral tests, model or service launched. Receipt:
+`ci-source-owner-reuse-4e05-audit.json` in D static evidence. Fresh CI and affected
+live native/model/UI acceptance are required.
+
+Candidate Python-source SHA256:
+`5d06240f205b61e7333ddde9221ea259dac6223f88301239673757a7d7961c8f`.
+clio-core 2.3.1, dependencies, GACT and frozen D/R184 source remain unchanged.
+The R184 controller and its API/private runtime remain live in unresolved HTTP
+shutdown. No force-close approval has arrived, and no successor family launched.
+
 ### Complete CI partitioning — pending execution
 
 All four Python 3.14 shard artifacts for `d1082b02` / run `39014099390` are now

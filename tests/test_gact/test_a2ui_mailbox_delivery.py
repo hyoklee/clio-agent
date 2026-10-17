@@ -28,7 +28,6 @@ def test_human_action_is_visible_while_pending_and_projection_retry_keeps_its_id
     app = build_app(sessions_path=tmp_path / "sessions.json", arc=arc)
     app.state.workspaces.update("ws_default", root_path=str(tmp_path))
     sid = app.state.sessions.create(workspace_id="ws_default", title="A2UI feedback").id
-    captured = capture_inputs(app, monkeypatch)
     original = session_store.project_accepted_mail_messages
     attempts = 0
 
@@ -53,6 +52,7 @@ def test_human_action_is_visible_while_pending_and_projection_retry_keeps_its_id
         },
     }
     with TestClient(app) as client:
+        captured = capture_inputs(app, monkeypatch)
         created = client.post(
             f"/v1/sessions/{sid}/a2ui/messages",
             headers=HEADERS,
