@@ -26,6 +26,18 @@ or live model ran, and no production source changed in this packet. Remaining
 interpreter jobs in the parent run are still allowed to finish before the next
 coherent candidate dispatch.
 
+The same report has fifteen HTTP 200-versus-201 failures at queued-message
+creation. This is a production route omission: the replacement POST decorator
+lost its declared 201 status. The declaration is restored; AST comparison
+confirms the entire mailbox writer, replay, validation, promotion and input-commit
+implementation is otherwise unchanged. Existing creation/replay expectations
+remain strict 201. Scoped Ruff/format, Mypy and removal/class/size guards pass.
+Receipt: `ci-queue-created-7641-source-audit.json` in D static evidence. No local
+behavioral test or live model ran. Candidate Python-source SHA256:
+`1ce710e7611bbbf5bc2e64023374b3b148457c6becadec0a3b6a22d72decdaa0`.
+The frozen R184 source, clio-core and dependency tuple remain unchanged; fresh
+CI and affected live acceptance are still required.
+
 ### Memory caller identity and asynchronous receipt corrections — CI pending
 
 `764121a2` Python 3.14 shard 1 completed with 4,033 passes, 110 failures and

@@ -220,7 +220,7 @@ def register_mailbox_routes(app: FastAPI) -> None:
             lambda: {"queued_messages": [wire(app, item) for item in queued(app, sid)]}
         )
 
-    @app.post("/v1/sessions/{sid}/queued-messages")
+    @app.post("/v1/sessions/{sid}/queued-messages", status_code=201)
     async def create(sid: str, body: PostMessageRequest) -> dict[str, Any]:
         require_session(sid)
 
