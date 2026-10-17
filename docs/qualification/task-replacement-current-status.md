@@ -7,7 +7,32 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Session lifecycle confirmation — CI pending
+
+Root-session creation called `SessionStore.create` on the application loop.
+Its lifecycle observer consequently queued Core recording and could return an
+accepted session before confirmation, including when recording later failed.
+The existing creation operation now runs through `join_off_loop`; the observer
+confirms recording on that worker before returning. Defaults, permissions,
+blueprint preparation, watcher synchronization, warmup and response projection
+are unchanged. There is no new writer, task owner or execution policy.
+
+The four trace HTTP cases now enter and close the real service lifespan. All
+assertions in all nine retained cases are AST-preserved, including exact lifecycle
+event counts. The first case also requires recording off the application loop.
+A fresh injected-persistence-failure case requires HTTP failure, no accepted
+session row and no lifecycle event fabricated in Core.
+
+Scoped Ruff/format, two-file Mypy and existing removal/size/class guards pass.
+Static audit: `ci-session-lifecycle-d1b79656-audit.json`. No local behavioral test
+or live launch ran. Candidate Python-source SHA256:
+`1f24dee67aee59e0d5b9b3b2358c538d3701a869f4b4f23afb309eed5b5a827d`.
+CI and affected real-service/model session-readiness acceptance remain required.
+clio-core 2.3.1, dependencies, GACT and frozen R184 production remain unchanged.
+
 ### Observation expiry recovery metadata — CI pending
+
+Pushed at `d1b79656`; run `39025260067` remains in progress.
 
 The `89107014` CI comparison exposed an initial-read expiry path in `observe`
 that returned available rows without the search-recovery metadata. It now returns

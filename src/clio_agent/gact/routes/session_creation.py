@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from clio_agent.gact import session_warmup
+from clio_agent.gact.off_loop import join_off_loop
 from clio_agent.gact.protocol_v3 import project_for_request, session_to_v3
 from clio_agent.gact.routes.blueprint_selection import prepare_session_blueprint
 from clio_agent.gact.routes.search_assistant import register_search_assistant_routes
@@ -49,7 +50,8 @@ def register_session_creation_route(app: FastAPI) -> None:
             model = {"provider_id": defaults.provider_id, "model_id": defaults.model_id}
         else:
             model = None
-        sess = app.state.sessions.create(
+        sess = await join_off_loop(
+            app.state.sessions.create,
             workspace_id=wid,
             title=req.title,
             metadata=metadata,
