@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -13,11 +15,166 @@ import pytest
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import SubmissionContext
 from clio_agent.gact import context
-from clio_agent.gact.agents.tool_instrumentation import native_tool
+from clio_agent.gact.agents.tool_instrumentation import (
+    declare_structured_content,
+    native_tool,
+    pop_declared_structured_content,
+)
 from clio_agent.gact.builtin_boundary import BuiltinBoundary
-from clio_agent.gact.tool_observation import CollectedTaskResult
+from clio_agent.gact.tool_observation import CollectedTaskResult, PresentedToolResult
 from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_arc.test_conversation_owner_contracts import create_environment
+
+
+@asynccontextmanager
+async def _control_context(arc: ARCMemory, tmp_path: Path) -> AsyncIterator[BuiltinBoundary]:
+    """Own a real short-tool transport and its confirmed writer for result checks."""
+    app, owner, root = await create_environment(arc, tmp_path)
+    app.state.workspaces = SimpleNamespace(
+        get=lambda _wid: SimpleNamespace(root_path=str(tmp_path))
+    )
+
+    def authorize(saved: SubmissionContext) -> None:
+        assert saved == owner.history.submission_context(saved.reference)
+        assert saved.owner.assignment_id == root.handle
+
+    app_token = context.set_app(app)
+    session_token = context.set_session_id(root.owner.session_id)
+    try:
+        async with BuiltinBoundary(app, authorize) as boundary:
+            yield boundary
+    finally:
+        context.reset(session_token)
+        context.reset(app_token)
+        await owner.recovery.drain()
+        await owner.history.io.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value",
+    [None, False, 3, 2.5, "text", [{"row": 1}], {"answer": 42}],
+)
+async def test_native_sdk_preserves_values_and_declared_presentation(
+    arc: ARCMemory, tmp_path: Path, value: Any
+) -> None:
+    """SDK wrapping preserves JSON types; UI metadata reaches the calling context."""
+    declared = {"message": "Declared presentation", "subject": "result"}
+
+    def execute() -> Any:
+        declare_structured_content(declared)
+        return value
+
+    tool = native_tool(
+        execute,
+        name="roundtrip",
+        desc="Read a value.",
+        args={},
+        presentation="text",
+        domain="resources",
+        read_only=True,
+    )
+    async with _control_context(arc, tmp_path) as boundary:
+        reply = await boundary.call(tool, {}, contextvars.copy_context())
+        assert isinstance(reply, PresentedToolResult)
+        assert reply.value == value and type(reply.value) is type(value)
+        assert reply.structured_content == declared
+
+        def call_from_provider() -> tuple[Any, dict[str, Any] | None]:
+            result = boundary.bind(tool)()
+            presentation = pop_declared_structured_content()
+            assert pop_declared_structured_content() is None
+            return result, presentation
+
+        result, presentation = await asyncio.to_thread(call_from_provider)
+        assert result == value and type(result) is type(value)
+        assert presentation == declared
+        assert not boundary.invocations
+
+
+@pytest.mark.asyncio
+async def test_native_async_presentations_are_isolated_between_overlapping_calls(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """A second RPC cannot overwrite presentation while the first body awaits."""
+    entered, release = asyncio.Event(), asyncio.Event()
+
+    async def slow() -> str:
+        declare_structured_content({"owner": "slow"})
+        entered.set()
+        await release.wait()
+        return "slow output"
+
+    async def fast() -> str:
+        declare_structured_content({"owner": "fast"})
+        return "fast output"
+
+    tools = [
+        native_tool(
+            function,
+            name=name,
+            desc="Read a value.",
+            args={},
+            presentation="text",
+            domain="resources",
+            read_only=True,
+        )
+        for function, name in ((slow, "slow"), (fast, "fast"))
+    ]
+    async with _control_context(arc, tmp_path) as boundary:
+        pending = asyncio.create_task(boundary.call(tools[0], {}, contextvars.copy_context()))
+        try:
+            await entered.wait()
+            completed = await boundary.call(tools[1], {}, contextvars.copy_context())
+            assert isinstance(completed, PresentedToolResult)
+            assert completed.value == "fast output"
+            assert completed.structured_content == {"owner": "fast"}
+        finally:
+            release.set()
+            first = await pending
+        assert isinstance(first, PresentedToolResult)
+        assert first.value == "slow output"
+        assert first.structured_content == {"owner": "slow"}
+        assert not boundary.invocations
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_body", [False, True])
+async def test_native_failed_body_cannot_leak_presentation(
+    arc: ARCMemory, tmp_path: Path, async_body: bool
+) -> None:
+    """Both execution routes clear declarations when their actual body fails."""
+
+    def fail() -> str:
+        declare_structured_content({"owner": "failed"})
+        raise ValueError("body failed")
+
+    async def fail_async() -> str:
+        return fail()
+
+    def plain() -> dict[str, Any]:
+        return {"value": "ordinary JSON", "structured_content": {"owner": "untrusted"}}
+
+    tools = [
+        native_tool(
+            function,
+            name=name,
+            desc="Read a value.",
+            args={},
+            presentation="text",
+            domain="resources",
+            read_only=True,
+        )
+        for function, name in ((fail_async if async_body else fail, "failure"), (plain, "plain"))
+    ]
+    async with _control_context(arc, tmp_path) as boundary:
+        with pytest.raises(ValueError, match="body failed"):
+            await boundary.call(tools[0], {}, contextvars.copy_context())
+        result = await boundary.call(tools[1], {}, contextvars.copy_context())
+        assert result == plain()
+        assert not isinstance(result, PresentedToolResult)
+        assert pop_declared_structured_content() is None
+        assert not boundary.invocations
 
 
 @pytest.mark.asyncio

@@ -25,8 +25,21 @@ from clio_agent.arc.task_types import (
     argument_digest,
 )
 from clio_agent.gact import context
-from clio_agent.gact.tool_observation import CollectedTaskResult
+from clio_agent.gact.agents.tool_instrumentation import (
+    declare_structured_content,
+    pop_declared_structured_content,
+)
+from clio_agent.gact.tool_observation import CollectedTaskResult, PresentedToolResult
 from clio_agent.tools.task_call_context import TASK_CALL, permission_snapshot
+
+_PRESENTATION_META = "io.iowarp.clio/presentation"
+_OUTPUT_SCHEMA = {
+    "type": "object",
+    "properties": {"result": {}},
+    "required": ["result"],
+    "additionalProperties": False,
+    "x-fastmcp-wrap-result": True,
+}
 
 
 @dataclass
@@ -69,10 +82,21 @@ class BuiltinTool(Tool):
         invocation.claimed = True
         try:
             if inspect.iscoroutinefunction(invocation.function):
-                coroutine = invocation.context.run(invocation.function, **supplied)
-                value = await asyncio.create_task(coroutine, context=invocation.context.copy())
+
+                async def execute() -> tuple[Any, dict[str, Any] | None]:
+                    pop_declared_structured_content()
+                    try:
+                        value = await invocation.function(**supplied)
+                        return value, pop_declared_structured_content()
+                    finally:
+                        pop_declared_structured_content()
+
+                coroutine = invocation.context.run(execute)
+                value, presentation = await asyncio.create_task(
+                    coroutine, context=invocation.context.copy()
+                )
             else:
-                value = await self._boundary.run_callable(invocation, supplied)
+                value, presentation = await self._boundary.run_callable(invocation, supplied)
         except BaseException as error:
             invocation.error = error
             raise
@@ -81,9 +105,10 @@ class BuiltinTool(Tool):
             invocation.read_handles = value.read_handles
             invocation.observe_handles = value.observe_handles
             invocation.collect = value.collect
-        if isinstance(value, dict):
-            return ToolResult(structured_content=dict(value))
-        return ToolResult(content=value)
+        result = self.convert_result(value)
+        if presentation is not None:
+            result.meta = {**(result.meta or {}), _PRESENTATION_META: presentation}
+        return result
 
 
 class BuiltinBoundary:
@@ -112,12 +137,22 @@ class BuiltinBoundary:
         await self._retired.wait()
         await self.client.__aexit__(*exc)
 
-    async def run_callable(self, invocation: Invocation, arguments: dict[str, Any]) -> Any:
+    async def run_callable(
+        self, invocation: Invocation, arguments: dict[str, Any]
+    ) -> tuple[Any, dict[str, Any] | None]:
         """A synchronous short invocation owns its thread until actual exit."""
         from clio_agent.gact.tool_dispatch import run_owned_callable
 
+        def execute() -> tuple[Any, dict[str, Any] | None]:
+            pop_declared_structured_content()
+            try:
+                value = invocation.function(**arguments)
+                return value, pop_declared_structured_content()
+            finally:
+                pop_declared_structured_content()
+
         return await run_owned_callable(
-            functools.partial(invocation.function, **arguments),
+            execute,
             captured=invocation.context,
             name="clio-builtin-" + invocation.submission.tool,
         )
@@ -187,7 +222,12 @@ class BuiltinBoundary:
             registered = "builtin_" + hashlib.sha256(identity.encode()).hexdigest()[:32]
             schema["properties"]["_clio_submission"] = {"type": "string"}
             schema["required"] = [*schema.get("required", []), "_clio_submission"]
-            component = BuiltinTool(name=registered, description=tool.desc, parameters=schema)
+            component = BuiltinTool(
+                name=registered,
+                description=tool.desc,
+                parameters=schema,
+                output_schema=copy.deepcopy(_OUTPUT_SCHEMA),
+            )
             component._boundary, component._public_name = self, tool.name
             self.server.add_tool(component)
             self._registrations[identity] = registered
@@ -205,19 +245,23 @@ class BuiltinBoundary:
                 if invocation.error is not None:
                     raise invocation.error from error
                 raise
-            value: Any = reply.structured_content
-            if value is None:
-                value = "\n".join(item.text for item in reply.content if hasattr(item, "text"))
+            Draft202012Validator(_OUTPUT_SCHEMA).validate(reply.structured_content)
+            value: Any = reply.data
             if invocation.notifications or invocation.read_handles or invocation.observe_handles:
                 if not isinstance(value, dict):
                     raise TypeError("A collected task observation must contain an object")
-                return CollectedTaskResult(
+                value = CollectedTaskResult(
                     value,
                     invocation.notifications,
                     invocation.read_handles,
                     observe_handles=invocation.observe_handles,
                     collect=invocation.collect,
                 )
+            presentation = (reply.meta or {}).get(_PRESENTATION_META)
+            if presentation is not None:
+                if not isinstance(presentation, dict):
+                    raise TypeError("Declared tool presentation must contain an object")
+                return PresentedToolResult(value, presentation)
             return value
         finally:
             self.invocations.pop(reference, None)
@@ -315,9 +359,13 @@ class BuiltinBoundary:
         def invoke(**arguments: Any) -> Any:
             if self._loop is None:
                 raise RuntimeError("Built-in MCP transport is not ready")
-            return call_on_application(
+            result = call_on_application(
                 self._loop, self.call(original, arguments, contextvars.copy_context())
             )
+            if isinstance(result, PresentedToolResult):
+                declare_structured_content(result.structured_content)
+                return result.value
+            return result
 
         invoke.__dict__["_clio_mcp_bound"] = True
         wrapped = copy.copy(tool)

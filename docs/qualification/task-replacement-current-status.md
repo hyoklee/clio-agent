@@ -7,6 +7,28 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Short MCP result conversion — CI and model acceptance pending
+
+The declared-presentation loss is repaired in the common clio-agent adapter,
+without changing execution owners. `BuiltinTool` now uses FastMCP's public
+`Tool.convert_result`; its standard wrapped-output schema and client `data`
+decoder preserve JSON values, including null, scalars and lists. Explicit UI
+presentation travels through MCP metadata and a local data-only result restores
+it in the provider's calling context. It cannot acknowledge task delivery.
+The former thread-local channel is invocation-local, and both actual execution
+routes clear it on success or failure. There is no new scheduler or result store.
+
+Ten constructed real-Core/real-SDK cases cover seven JSON value forms, overlapping
+async declarations, and sync/async failures followed by ordinary untrusted JSON.
+All pre-existing short-control assertions, markers and signatures are unchanged.
+Scoped Ruff/format, Mypy for the three production files and SDK test module, and removal/class/size
+guards pass. No local pytest/vitest ran. CI and actual-model acceptance of this
+repair are pending. Candidate production hash:
+`4b27e5d132b4fd1884e790b6a1fb08f7fc90ee8552b653694646277a723dbbc6`.
+R184 remains frozen on its old source, with unresolved shutdown; the prepared
+R185 guard still requires an explicit new source binding after retirement.
+GACT, dependencies and clio-core 2.3.1 remain unchanged.
+
 ### R183/R184 UI review and unresolved isolated shutdown
 
 New CI on `7e3d026e` reaches the unchanged wait-declaration assertions and exposes
@@ -15,8 +37,10 @@ another nullable union. The clio-agent adapter now preserves schemas that alread
 validate null. Three added regression cases cover `anyOf`, `oneOf` and type-list
 forms while retaining bounds, descriptions, defaults and caller-owned input.
 All existing assertions remain unchanged. Scoped Ruff/format, adapter Mypy and
-the removal/class/size guards pass; CI and fresh model qualification are pending.
-Production hash is now
+the removal/class/size guards pass. Exact `21c4311a` Python 3.14 CI passes the
+unchanged wait-declaration case and all three new nullable-form cases. The full
+regression baseline and fresh model qualification remain incomplete.
+The nullable-only correction had production hash
 `174e03587d170482e6567b62fd2ec4e8c2693004525b064131cefff783f65518`.
 Dependencies, GACT and clio-core 2.3.1 are unchanged. The live R184 checkout remains
 frozen at its earlier source; its files have not been overwritten. The prepared
@@ -87,8 +111,8 @@ active invocation context: the observation sites now bind the complete recorded
 turn identity, and the unchanged catalog-equality assertion covers six newly
 attached tools in its call table. The real Goal-status case reaches MCP and
 records two results, but loses declared structured presentation data across the
-worker/MCP boundary. That is an unresolved production adapter defect; no test
-expectation has been relaxed to hide it.
+worker/MCP boundary. The common output repair above requires fresh CI/model
+acceptance; no test expectation has been relaxed to hide the original failure.
 
 Playbook approval tests now reuse the production Question answer route instead
 of copied Question views and synthetic resume callbacks. Their common fixture

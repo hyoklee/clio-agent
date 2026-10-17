@@ -9,9 +9,11 @@ below do not pass a broader row or the final frozen-candidate race matrix.
 Revision: R2. Starting source: clio-agent `5475042feda49c1354f9f88b19051cb53d7fa740`; GACT `32044a387472b1495f60a24c862c6b9e4292abc3`. All evidence from earlier engines is a source/test lesson only, not replacement acceptance.
 
 Current CI exposed duplicate null alternatives in clio-agent's native tool
-declarations. The adapter correction and three added public-schema cases require
-fresh CI/model acceptance; previous live captures do not qualify that correction.
-clio-core remains `iowarp-core==2.3.1`; this changes no execution owner or dependency.
+declarations. Exact `21c4311a` Python 3.14 CI passes the wait declaration and three
+added nullable-form cases; broader regression/model acceptance remains incomplete.
+The common short-MCP output conversion repair also requires fresh CI/model proof.
+Previous live captures do not qualify these corrections. clio-core remains
+`iowarp-core==2.3.1`; no execution owner or dependency changed.
 
 Initial production source review: **Astra GO and Claude Code Fable GO** for clio-agent
 `ff9dc136630a5f329afa27a8ea0263dbe2fbb343`, GACT

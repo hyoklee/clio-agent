@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
+
+
+@dataclass(frozen=True)
+class PresentedToolResult:
+    """SDK-decoded value and presentation to restore in the calling context."""
+
+    value: Any
+    structured_content: dict[str, Any]
 
 
 class CollectedTaskResult(dict[str, Any]):

@@ -60,8 +60,8 @@ import copy
 import functools
 import inspect
 import logging
-import threading
 from collections.abc import Callable, Iterable, Mapping
+from contextvars import ContextVar
 from typing import Any, cast, get_args
 
 from clio_agent.gact.evidence import _bounded_tool_call_result
@@ -420,13 +420,11 @@ def tool_domain(tool: Any) -> ToolDomain | None:
     return cast("ToolDomain", value_str)
 
 
-# Per-thread one-shot declaration (owner ruling, wire semantics): a native tool
-# call and its instrumentation wrapper always run SYNCHRONOUSLY on the SAME
-# thread (call -> func() -> notify completed, no interleaving with another
-# tool's call on that thread), so a thread-local is a safe, simple channel —
-# the same pattern ``tool_observer``'s ``_OBSERVER_CALL_IDS``/``_OBSERVER_CALL_T0``
-# already use for the same reason.
-_DECLARED_STRUCTURED_CONTENT = threading.local()
+# One-shot presentation is local to an invocation, including concurrent async
+# calls. MCP explicitly carries it between execution and observation contexts.
+_DECLARED_STRUCTURED_CONTENT: ContextVar[dict[str, Any] | None] = ContextVar(
+    "clio_declared_structured_content", default=None
+)
 
 
 def declare_structured_content(value: Mapping[str, Any]) -> None:
@@ -439,22 +437,24 @@ def declare_structured_content(value: Mapping[str, Any]) -> None:
     incidental dict-key ORDER in the model-facing return).
 
     Call this from inside a native tool's own function body, any time before
-    it returns. The instrumentation wrapper reads + clears it the moment the
-    call completes (:func:`pop_declared_structured_content`) — one-shot, so a
-    stale value can never leak onto a later, unrelated call on the same
-    thread. A tool that never calls this gets the unchanged default
+    it returns. MCP execution captures the declaration into result metadata;
+    the calling bridge restores it for the observation wrapper to read and
+    clear on completion (:func:`pop_declared_structured_content`). It is one-shot, so a
+    stale value can never leak onto a later, unrelated call in that context.
+    A tool that never calls this gets the unchanged default
     (``structured_content`` derived from an MCP-shaped ``result``, or absent).
     """
 
-    _DECLARED_STRUCTURED_CONTENT.value = dict(value)
+    _DECLARED_STRUCTURED_CONTENT.set(dict(value))
 
 
 def pop_declared_structured_content() -> dict[str, Any] | None:
-    """Read + clear the current thread's declared structured payload, if any.
+    """Read + clear the current invocation's declared structured payload, if any.
 
     Idempotent (a second pop with nothing declared just returns ``None``), so
     it is safe to call from more than one place in the same call's lifecycle.
-    Two call sites consume it (finding A, proven leak fix):
+    The MCP boundary first captures and clears it in the execution context.
+    In the calling context, two sites consume it (finding A, proven leak fix):
 
     * the tool observer (``tool_observer._make_tool_observer``) reads it once
       per completed call to attach ``structured_content`` to the wire
@@ -464,13 +464,13 @@ def pop_declared_structured_content() -> dict[str, Any] | None:
       whether the observer ever reached its own read (an unresolved session
       id, an observer exception ``execution.notify_tool_observer`` swallows,
       or no observer installed at all all used to leave a stale value for the
-      NEXT unrelated call on this thread to inherit). This is the channel's
+      NEXT unrelated call in that context to inherit). This is the channel's
       REAL one-shot guarantee: consumption is tied to the call boundary, not
       to how far the observer got.
     """
 
-    value = getattr(_DECLARED_STRUCTURED_CONTENT, "value", None)
-    _DECLARED_STRUCTURED_CONTENT.value = None
+    value = _DECLARED_STRUCTURED_CONTENT.get()
+    _DECLARED_STRUCTURED_CONTENT.set(None)
     return value
 
 
