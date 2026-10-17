@@ -134,6 +134,9 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
             if time.monotonic() - last_progress >= state.turn_progress_timeout_s:
                 state.turn_cancel_event.set()
                 task.cancel()
+                owner = getattr(state.app.state, "conversations", None)
+                if owner is not None:
+                    await owner.stopping(state.sid)
                 try:
                     await task
                 except BaseException:  # noqa: BLE001,S110 - swallow during abort

@@ -7,7 +7,32 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### No-progress stopping and physical retirement — next CI batch pending
+
+The two retained no-progress cases waited for a terminal assistant before
+releasing their held provider thread. R2 requires actual retirement first.
+The existing watchdog already waits for that retirement; it now also publishes
+Stopping through the existing conversation owner after requesting cancellation.
+All other watchdog statements are AST-identical.
+
+The shared test helper requires a real Core Stopping observation, a still-held
+slot and task, and no fabricated terminal assistant. It releases the provider,
+awaits physical exit, then requires the original timeout error and stable
+transcript. Both test functions, their timeout assertions, starved-poll case and
+progressing-provider cases are unchanged. The explicit 0.2-second setting and
+combined 30-second diagnostic budget remain; no budget is raised.
+
+Scoped Ruff/format, two-file Mypy and existing removal/size/class guards pass.
+Receipt: `ci-timeout-retirement-59ee-audit.json`. No local behavioral test or live
+launch ran. Candidate Python-source SHA256:
+`6786a99e5874587c2941d84cfb32ce4df590eddac1115f8c2a3c584f05d77fd7`.
+Exact-head CI is not dispatched yet while existing runs finish; affected live
+retirement acceptance remains required. clio-core, dependencies, GACT and R184
+production are unchanged.
+
 ### Session lifecycle confirmation — CI pending
+
+Pushed at `59ee6ac8`; run `39025715209` is in progress.
 
 Root-session creation called `SessionStore.create` on the application loop.
 Its lifecycle observer consequently queued Core recording and could return an

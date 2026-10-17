@@ -141,18 +141,20 @@ class WedgedClioAgent(FakeClioAgent):
     poll finds the work finished and correctly settles ``end_turn`` (a finished
     turn is not stuck). Under a starved event loop that poll can land after the
     sleep ends, which made the timeout assertion depend on scheduling. Blocking
-    until ``release`` is set means only the watchdog can settle the turn.
-    ``returned`` fires once ``forward`` has exited, so a test can prove that
-    work finishing late does not rewrite the turn that already settled.
+    until ``release`` is set proves that the watchdog requests stopping while
+    retirement still waits for the actual provider thread. ``returned`` fires
+    once ``forward`` exits, before the timeout may settle.
     """
 
     def __init__(self) -> None:
         super().__init__(answer="too late")
+        self.entered = threading.Event()
         self.release = threading.Event()
         self.returned = threading.Event()
 
     def forward(self, question: str, session_id: str) -> Any:
         self.calls.append((question, session_id))
+        self.entered.set()
         try:
             if not self.release.wait(timeout=TURN_SIGNAL_BACKSTOP_S):
                 raise TimeoutError("test did not release the wedged turn")
@@ -1748,33 +1750,82 @@ def test_post_message_preserves_mismatched_session_model_when_global_lm_active(
 def _run_wedged_turn_to_timeout(tmp_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     """Run one turn against a provider that never answers; return (assistant, session).
 
-    The provider is released only after the settled turn has been read, then the
-    test waits for ``forward`` to actually return and re-reads the transcript, so
-    work that finishes after the watchdog settled the turn is proven not to
-    rewrite it (#1377).
+    The explicit watchdog requests stopping. The slot and task remain active
+    until the held provider exits, then the timeout settles and discards its
+    late prediction. No terminal transcript is fabricated before retirement.
     """
 
-    from .conftest import complete_turn
+    from .conftest import settle_turn_slot
 
     set_config("limits.turn_timeout_s", 0.2)  # file-layer (file > env); #985 config-first
     agent = WedgedClioAgent()
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=agent)
     with TestClient(app) as c:
         sid = _create_session(c)
+        stopping = threading.Event()
+
+        def observed(_revision: int) -> None:
+            current = app.state.task_history.latest_assignment(sid)
+            if current is not None and current.activity == "stopping":
+                stopping.set()
+
+        unlisten = app.state.task_history.listen(observed)
+        before = app.state.bus.latest_session_event_id([sid])
         try:
-            # complete_turn's documented 30s default absorbs the first dispatch's
-            # cold-process cost (PR #1375); the 0.2s window under test is unrelated.
-            assistant = complete_turn(c, sid, "hi")
-            sess = c.get(f"/v1/sessions/{sid}").json()
+            accepted = c.post(
+                f"/v1/sessions/{sid}/messages",
+                json={"parts": [{"type": "text", "text": "hi"}]},
+            )
+            assert accepted.status_code == 202, accepted.text
+            handle = accepted.json()["task_handle"]
+            user_id = accepted.json()["message_id"]
+            # Preserve complete_turn's existing 30s diagnostic budget across
+            # entry, stopping and settlement; the configured timeout stays 0.2s.
+            deadline = time.monotonic() + 30.0
+            assert agent.entered.wait(max(0.0, deadline - time.monotonic())), (
+                "turn never reached the provider"
+            )
+            assert stopping.wait(max(0.0, deadline - time.monotonic())), (
+                "watchdog did not request stopping"
+            )
+            assert app.state.turn_runner.busy(sid)
+            assert app.state.turn_runner.stop_requested(sid)
+            assert not agent.returned.is_set()
+            held = app.state.task_history.task_snapshot(handle)
+            assert held is not None and held.activity == "stopping" and held.terminal_at is None
+            pending = c.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+            assert not any(
+                row["role"] == "assistant"
+                and not row.get("metadata", {}).get("live")
+                and row.get("stop_reason")
+                for row in pending
+            )
         finally:
             agent.release.set()
+            unlisten()
         if agent.calls:
             assert agent.returned.wait(timeout=TURN_SIGNAL_BACKSTOP_S)
+        remaining = deadline - time.monotonic()
+        assert remaining > 0, "turn did not retire within its existing 30s diagnostic budget"
+        assert (
+            wait_for_terminal_status(
+                app.state.bus, sid, after_event_id=before, backstop_s=remaining
+            )
+            == "error"
+        )
+        settle_turn_slot(c, sid, timeout=max(1.0, deadline - time.monotonic()))
+        assert not app.state.turn_runner.busy(sid)
+        messages = c.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        index = next(i for i, row in enumerate(messages) if row["id"] == user_id)
+        assert index > 0 and messages[index - 1]["role"] == "assistant"
+        assistant = messages[index - 1]
+        assert not assistant.get("metadata", {}).get("live")
+        sess = c.get(f"/v1/sessions/{sid}").json()
         after = c.get(f"/v1/sessions/{sid}/messages").json()["messages"]
         sess_after = c.get(f"/v1/sessions/{sid}").json()
 
     assert len(agent.calls) <= 1
-    # The late provider return changed nothing: same settled assistant row.
+    # The late prediction is discarded after physical retirement and remains settled.
     settled = next(m for m in after if m["id"] == assistant["id"])
     assert settled["stop_reason"] == "error"
     assert settled["error_info"]["error"] == "provider_timeout"
