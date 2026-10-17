@@ -21,9 +21,10 @@ from typing import Any
 import dspy
 import pytest
 
-from clio_agent.gact.app import build_app
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.messaging import _agent_accepts_images
 from clio_agent.gact.turn_forward import _run_turn_setup_off_loop
+from tests.test_arc.child_worker_helpers import commit_model_input, execute_model_under_owner
 
 
 def test_blocking_turn_setup_runs_off_the_event_loop() -> None:
@@ -66,6 +67,7 @@ class _NativeInputAgent(dspy.Module):
         images: list[Any] | None = None,
         **kwargs: Any,
     ) -> Any:
+        commit_model_input(session_id)
         del question, session_id, images, kwargs
         return dspy.Prediction(answer="ok")
 
@@ -119,7 +121,7 @@ def test_a_non_dspy_agent_that_only_exposes_forward_dynamically_still_resolves()
 
 
 async def test_the_module_runs_native_input_resolve_off_the_loop(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, arc: ARCMemory
 ) -> None:
     """#1334: ``_run_module`` resolves the native-input kwargs on the executor.
 
@@ -145,20 +147,8 @@ async def test_the_module_runs_native_input_resolve_off_the_loop(
     monkeypatch.setattr(turn_forward, "native_input_kwargs", _spy)
 
     agent = _NativeInputAgent()
-    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "s.json", agent=agent)
-    state = SimpleNamespace(
-        app=app,
-        sid="sid",
-        user_msg=SimpleNamespace(id="msg_user", metadata={}),
-        enriched_text="hello",
-        sess=SimpleNamespace(mode="edit", edit_mode="diff"),
-        native_images=[],
-        native_files=[],
-        injections=[],
-    )
-
     loop_thread = threading.current_thread().name
-    result = await turn_forward._run_module(state, agent, lambda: False)
+    _app, _sid, result = await execute_model_under_owner(arc, tmp_path, agent, "hello")
 
     assert result.answer == "ok"
     assert ran_on, "the native-input resolve never ran"

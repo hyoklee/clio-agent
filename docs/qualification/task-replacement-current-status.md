@@ -7,7 +7,30 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Retained streaming settlement — CI pending
+### Direct model contracts through the real owner — CI pending
+
+The four isolated streaming module cases and the off-loop native-input case now
+use the existing real Core/conversation-owner fixture. A test-only adapter posts
+human input into that mailbox, constructs the typed `TurnState` and lets actual
+admission create the exclusive session worker. Finite model doubles commit input
+through the production StepRecorder before returning or raising. The adapter
+waits for physical reservation release and settles the owner during teardown;
+it creates no execution registry, pool or compatibility reservation.
+
+This replaces the incomplete `SimpleNamespace` state and unscheduled direct
+module calls. The same attachment objects, dropped-input notes, one-call
+assertions, original exception and off-loop/thread assertions remain. Real
+session identities replace the literal `sid`; five cases request the real ARC
+fixture. The audit retains all assertions/markers across 28 existing cases in
+the two modules. The older child-worker helper's AST is unchanged.
+
+Scoped Ruff/format and Mypy pass for three files. Receipt:
+`ci-model-worker-7641-source-audit.json` in D static evidence. No local behavioral
+execution or live model ran. Production Python, prompts, dependency tuple,
+clio-core and GACT are unchanged; CI execution remains required. R184's unresolved
+shutdown still holds the next live launch.
+
+### Retained streaming settlement — prior candidate
 
 The `1b7e0281` report contains 18 streaming-module failures. Its full-turn helper
 read the removed in-flight task view and returned immediately when admission had
@@ -20,9 +43,9 @@ or call a removed runner-loop method.
 The original 30-second diagnostic remains. Expiry cancels only this waiter;
 application lifespan cleanup owns the work. Both direct POST helpers now assert
 successful acceptance and use the returned handle. All 24 existing test names,
-signatures, markers and prior assertion sets remain. The four isolated direct
-`_run_module` cases still omit canonical assignment/admission setup; this helper
-change does not claim to repair them.
+signatures, markers and prior assertion sets remain. In `764121a2`, the four
+isolated direct `_run_module` cases still omitted canonical assignment/admission
+setup; the later adapter correction above addresses that fixture gap.
 
 Scoped Ruff/format and Mypy pass. Receipt:
 `ci-streaming-settlement-6ba8-source-audit.json` in D static evidence. No local
