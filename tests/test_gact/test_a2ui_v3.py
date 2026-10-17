@@ -865,7 +865,7 @@ def test_registered_form_action_gets_a_server_surface_update(
     assert body["status"] == "accepted"
     assert body["name"] == "form.submit"
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     assert "message_id" in body
     surface = app.state.a2ui_store.get(sid, "surface_1")
@@ -874,7 +874,7 @@ def test_registered_form_action_gets_a_server_surface_update(
     assert record["envelope"]["action"]["context"] == {"selection": "quarantine"}
     assert record["correlation"]["run_id"] == "run_1"
     assert record["state"] == "delivered"
-    assert record["delivery"] == "start"
+    assert record["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"selection": "quarantine"}
 
@@ -924,7 +924,7 @@ def test_action_route_requires_a2ui_negotiation_and_tolerates_extensions(
     assert missing_version.json()["error"]["error"] == "unsupported_protocol"
     assert accepted.status_code == 200, accepted.text
     body = accepted.json()
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
@@ -1320,7 +1320,7 @@ def test_agent_submit_delivers_without_any_text_or_prompt_context(
 
     assert dispatch_response.status_code == 200, dispatch_response.text
     body = dispatch_response.json()
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"scope": "bounded_follow_up"}
@@ -1851,7 +1851,7 @@ def test_agent_submit_starts_with_resolved_structured_surface_context(
 
     assert response.status_code == 200, response.text
     body = response.json()
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     message = next(
         message for message in reversed(app.state.messages[sid]) if message.role == "user"

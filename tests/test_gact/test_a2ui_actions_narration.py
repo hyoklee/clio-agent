@@ -161,7 +161,7 @@ def test_declared_narration_renders_template_and_still_carries_context_json(
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["delivery"] == "start"
+    assert response.json()["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     text = _text(message)
     expected_prefix = 'The user selected ["MTA1","PKRD"] for earthscope-x: analyse them.'

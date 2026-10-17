@@ -44,6 +44,7 @@ async def deliver_to_agent(
     identity = "a2ui:" + record.id
     question_answered = False
     question_handle: str | None = None
+    correlation = dict(record.correlation)
 
     def accept() -> None:
         nonlocal question_answered, question_handle
@@ -104,28 +105,54 @@ async def deliver_to_agent(
                 )
                 question_answered = True
                 return
-            original = history.latest_assignment(session_id)
-            data = {"context": dict(context), "client_data_model": record.client_data_model}
-            content = history.write_content(
-                session_id,
-                {
-                    "text": narration
-                    + "\n\nA2UI action data:\n"
-                    + json.dumps(data, ensure_ascii=False),
+            accepted = history.mail_item(session_id, identity)
+            if accepted is None:
+                original = history.latest_assignment(session_id)
+                data = {"context": dict(context), "client_data_model": record.client_data_model}
+                text = narration + "\n\nA2UI action data:\n" + json.dumps(data, ensure_ascii=False)
+                payload: dict[str, Any] = {
+                    "text": text,
                     "metadata": {"a2ui_action": record.id, "surface_id": record.surface_id},
-                },
-            )
-            history.record_mail(
-                MailItem(
-                    id=identity,
-                    recipient_session=session_id,
-                    sender_human=app.state.human_principal if record.kind == "action" else None,
-                    kind="a2ui",
-                    handle=original.handle if original is not None else None,
-                    content=content,
-                    created_at=record.created_at,
+                }
+                if record.kind == "action":
+                    from clio_agent.gact.types import Message, Part
+
+                    message = Message(
+                        id=identity,
+                        session_id=session_id,
+                        role="user",
+                        created_at=record.created_at,
+                        updated_at=record.created_at,
+                        parts=[Part(type="text", text=text)],
+                        metadata={
+                            **payload["metadata"],
+                            "a2ui_action_context": dict(context),
+                            **(
+                                {"a2ui_client_data_model": record.client_data_model}
+                                if record.client_data_model is not None
+                                else {}
+                            ),
+                        },
+                    )
+                    payload.update(message_id=identity, message=message.model_dump(mode="json"))
+                accepted = history.record_mail(
+                    MailItem(
+                        id=identity,
+                        recipient_session=session_id,
+                        sender_human=app.state.human_principal if record.kind == "action" else None,
+                        kind="human" if record.kind == "action" else "a2ui",
+                        handle=original.handle if original is not None else None,
+                        content=history.write_content(session_id, payload),
+                        created_at=record.created_at,
+                    )
                 )
-            )
+            if accepted.kind == "human":
+                from clio_agent.gact.session_store import project_accepted_mail_messages
+
+                project_accepted_mail_messages(app, history, session_id, (accepted,))
+                retained = history.read_content(accepted.content)
+                if isinstance(retained, dict) and retained.get("message_id"):
+                    correlation["message_id"] = retained["message_id"]
 
     try:
         await app.state.task_history.io.run(accept)
@@ -161,6 +188,7 @@ async def deliver_to_agent(
             state="consumed" if committed else "delivered",
             delivery="resolve_question" if question_answered else "steer",
             narration=narration,
+            correlation=correlation,
         )
         if not persist_transition(app, observed):
             raise RuntimeError("A2UI action projection was not confirmed")
@@ -179,6 +207,7 @@ async def deliver_to_agent(
             state="delivered",
             delivery="resolve_question" if question_answered else "steer",
             narration=narration,
+            correlation=correlation,
         )
     _publish(app, session_id, observed)
     return observed

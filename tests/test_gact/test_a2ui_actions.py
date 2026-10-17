@@ -370,7 +370,7 @@ def test_standalone_approval_without_permission_id_delivers_to_agent(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     assert body["state"] == "delivered"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"approved": True}
@@ -396,7 +396,7 @@ def test_standalone_approval_cancel_without_permission_id_delivers_to_agent(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"approved": False}
 
@@ -425,7 +425,7 @@ def test_action_card_custom_event_unaffected_by_permission_routing(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["destination"] == "agent"
-    assert body["delivery"] == "start"
+    assert body["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     assert message.metadata["a2ui_action_context"] == {"scope": "all"}
 
@@ -570,7 +570,7 @@ def test_validation_failed_repairs_once_then_exhausts_and_fails_the_surface(
         f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": envelope}
     )
     assert first.status_code == 200, first.text
-    assert first.json()["delivery"] == "start"
+    assert first.json()["delivery"] == "steer"
     assert len(spawned) == 1
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None

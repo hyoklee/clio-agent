@@ -76,6 +76,36 @@ Current candidate Python-source SHA256:
 The D/R184 source remains frozen. clio-core, dependencies and GACT are unchanged;
 fresh CI and affected actual-model cancellation/admission acceptance are pending.
 
+### A2UI human feedback visibility — CI and live acceptance pending
+
+Nine retained A2UI cases still expect the removed producer-start delivery lane.
+Under R2, action producers confirm mailbox input and the conversation owner alone
+admits execution. Ten label assertions now require the existing queued-feedback
+lane, `steer`; all other AST nodes in those retained cases/files are unchanged.
+The existing context/transcript assertions also expose an actual omission: new
+human actions stored only an A2UI notice, without the accepted user-message
+projection while execution was held.
+
+Human actions now store their stable transcript identity and original context in
+the same Core mail content, then use `project_accepted_mail_messages` to display
+the accepted user input without acknowledging it. Retry reuses an existing mail
+header/content; legacy headers are not rewritten. Algorithmic notices keep their
+nonhuman kind. The Question/authentication branch is AST-identical, and all input
+commitment and model-admission policy remains in its existing owner.
+
+Two new public-service test cases require held execution to retain one pending,
+unacknowledged input with visible human context. A forced projection failure must
+return 503 while retaining that input; retry and duplicate action must repair one
+message with the same identity. These cases are built but not executed locally.
+Scoped Ruff/format, production/new-test Mypy and removal/class/size guards pass.
+Receipts: `ci-a2ui-human-projection-6e9d-audit.json` and
+`ci-a2ui-queued-labels-40b5-audit.json` in D static evidence.
+
+Candidate Python-source SHA256:
+`ebc1780dea2f235acf54f53fa97fa197b414bc0d4e8d4557687d03322090cc55`.
+clio-core 2.3.1, dependencies, GACT and the frozen D/R184 service are unchanged.
+Fresh CI and actual-service/model/UI acceptance are still required.
+
 ### Workflow checkpoint fixture — CI pending
 
 The retained workflow-retry case passed its business assertions in `764121a2`,
