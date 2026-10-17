@@ -63,11 +63,21 @@ def register_storage_ndp_routes(
 
     @app.post("/v1/storage/ndp/search")
     async def search(body: NDPSearch) -> dict[str, Any]:
-        return await run(
-            lambda: service.ndp.search(
-                body.query, body.endpoint_id, only_groups=body.only_groups, token=account_token()
+        def discover() -> dict[str, Any]:
+            warning = ""
+            try:
+                token = account_token()
+            except (PermissionError, ValueError):
+                token = None
+                warning = "NDP sign-in could not be refreshed. Public catalog browsing is still available; sign in again for protected data."
+            result = service.ndp.search(
+                body.query, body.endpoint_id, only_groups=body.only_groups, token=token
             )
-        )
+            if warning:
+                result["warnings"].append(warning)
+            return result
+
+        return await run(discover)
 
     @app.post("/v1/workspaces/{wid}/sources/ndp", status_code=201)
     async def attach(wid: str, body: NDPAttach) -> dict[str, Any]:

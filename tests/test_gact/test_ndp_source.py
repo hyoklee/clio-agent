@@ -153,6 +153,31 @@ def test_selection_rejects_injected_resource_and_write_mode(
         )
 
 
+def test_expired_account_does_not_block_public_catalog(
+    tmp_path: Path, catalog_http: tuple[str, list[str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unavailable refresh service must not turn public discovery into an auth error."""
+    service = StorageService(tmp_path / "sources", tmp_path / "private" / "credentials.json")
+    monkeypatch.setattr(service.auth, "connected", lambda record: True)
+
+    def unavailable(record: SourceRecord) -> str:
+        raise ValueError("Authorization was rejected")
+
+    monkeypatch.setattr(service.auth, "token", unavailable)
+    app = FastAPI()
+
+    async def run(action: Any) -> Any:
+        return await asyncio.to_thread(action)
+
+    register_storage_ndp_routes(app, service, run, lambda wid: tmp_path, lambda record: {})
+    with TestClient(app) as client:
+        response = client.post("/v1/storage/ndp/search", json={"query": "sea"})
+    assert response.status_code == 200
+    assert response.json()["datasets"][0]["id"] == "weather"
+    assert response.json()["datasets"][0]["access"] is None
+    assert "could not be refreshed" in response.json()["warnings"][0]
+
+
 def dataset(url: str) -> NDPDataset:
     """An explicitly approved protected Endpoint and one selected object."""
     return NDPDataset(
