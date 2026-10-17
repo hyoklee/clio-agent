@@ -9,6 +9,31 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### R183/R184 UI review and unresolved isolated shutdown
 
+Subsequent read-only Python 3.14 async inspection identifies R184's awaited
+dependency: `uvicorn.Server._wait_tasks_to_complete` is inside
+`asyncio.Server.wait_closed`, before the application lifespan teardown starts.
+The prior thread-only sample could not identify that suspended coroutine.
+The harness constructed Uvicorn directly with its unbounded connection grace;
+production `run_server` delegates to `desktop_lifecycle.serve_foreground`, which
+uses a three-second **HTTP-connection** grace and registers the managed server.
+Its shutdown owner also latches runtime reacquisition and discovery shutdown.
+This omission makes R184 a launcher/harness failure, not evidence of a clio-core
+shutdown defect. Native-work settlement remains a separate unbounded obligation.
+`r184-async-task-tree.txt` retains the actual wait chain. A prepared R185 observer
+wraps the real builder/lifespan while calling the real `run_server` and managed
+shutdown owner; it has not been run. R184's pending force-close question remains
+unanswered, and no force-close or subsequent live launch has occurred.
+
+The exact `8bd9501e` CI job log also supplies the cancellation timeout's earlier
+cause: FastMCP/Docket raises `KeyError: 'tool:dispatch_blocker@'` before task
+acceptance. The fixture registered its test tools after entering the native
+lifespan, after Docket captured the worker functions. Production Shell and storage
+tools are registered before that boundary. The fixture now registers through a
+test-only wrapper immediately before the real `NativeTools.__aenter__`, retaining
+the actual SDK/Docket execution, held acceptance and all ten original assertions.
+No production registry/driver/cancellation change follows this finding. The
+registration correction requires fresh CI; local pytest/vitest remains unused.
+
 Both actual Codex/Luna direct-SSE runs on clio-agent `d86c9120` / GACT `0f9c00a4`
 demonstrated external-task acceptance, independent work, one lost-visibility
 attention episode and desktop Work disclosure. The rendered row said "Needs

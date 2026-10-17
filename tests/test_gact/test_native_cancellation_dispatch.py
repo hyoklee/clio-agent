@@ -32,9 +32,42 @@ def test_shared_cancel_reaches_native_work_before_backend_binding(
     kind: Literal["Shell", "Download", "Indexing"],
 ) -> None:
     """Hold real SDK adoption for queued work; cancellation must not choose external MCP."""
-    for family in ("SHELL", "STORAGE"):
-        monkeypatch.setenv(f"CLIO_TASKS_{family}_URL", "memory://")
-        monkeypatch.setenv(f"CLIO_TASKS_{family}_CONCURRENCY", "1")
+    for setting_family in ("SHELL", "STORAGE"):
+        monkeypatch.setenv(f"CLIO_TASKS_{setting_family}_URL", "memory://")
+        monkeypatch.setenv(f"CLIO_TASKS_{setting_family}_CONCURRENCY", "1")
+    family: Literal["shell", "storage"] = "shell" if kind == "Shell" else "storage"
+    events: list[asyncio.Event] = []
+    original_enter = NativeTools.__aenter__
+
+    async def register_fixture_tools(native: NativeTools) -> NativeTools:
+        """Register test workloads before the native SDK builds its worker registry."""
+        events.extend(asyncio.Event() for _ in range(5))
+        entered, release, _adopting, _adopt_release, unexpected = events
+
+        @native.roots[family].server.tool(name="dispatch_blocker", task=TaskConfig(mode="required"))
+        async def blocker(_clio_submission: str) -> dict[str, str]:
+            async def body(_context: SubmissionContext, evidence: WorkEvidence) -> dict[str, str]:
+                entered.set()
+                try:
+                    await release.wait()
+                    return {"value": "released"}
+                finally:
+                    evidence.confirm_cleanup()
+
+            return await native.work[family].run(_clio_submission, "dispatch_blocker", {}, body)
+
+        @native.roots[family].server.tool(name="dispatch_pending", task=TaskConfig(mode="required"))
+        async def pending(_clio_submission: str) -> dict[str, str]:
+            async def body(_context: SubmissionContext, evidence: WorkEvidence) -> dict[str, str]:
+                unexpected.set()
+                evidence.confirm_cleanup()
+                return {"value": "must not start"}
+
+            return await native.work[family].run(_clio_submission, "dispatch_pending", {}, body)
+
+        return await original_enter(native)
+
+    monkeypatch.setattr(NativeTools, "__aenter__", register_fixture_tools)
     app = build_app(sessions_path=tmp_path / "sessions.json")
     with TestClient(app) as client:
         sid = client.post("/v1/sessions", json={"workspace_id": "ws_default"}).json()["id"]
@@ -46,39 +79,7 @@ def test_shared_cancel_reaches_native_work_before_backend_binding(
 
         async def exercise() -> None:
             native: NativeTools = app.state.native_tools
-            family: Literal["shell", "storage"] = "shell" if kind == "Shell" else "storage"
-            entered, release, adopting, adopt_release, unexpected = (
-                asyncio.Event() for _ in range(5)
-            )
-
-            @native.roots[family].server.tool(
-                name="dispatch_blocker", task=TaskConfig(mode="required")
-            )
-            async def blocker(_clio_submission: str) -> dict[str, str]:
-                async def body(
-                    _context: SubmissionContext, evidence: WorkEvidence
-                ) -> dict[str, str]:
-                    entered.set()
-                    try:
-                        await release.wait()
-                        return {"value": "released"}
-                    finally:
-                        evidence.confirm_cleanup()
-
-                return await native.work[family].run(_clio_submission, "dispatch_blocker", {}, body)
-
-            @native.roots[family].server.tool(
-                name="dispatch_pending", task=TaskConfig(mode="required")
-            )
-            async def pending(_clio_submission: str) -> dict[str, str]:
-                async def body(
-                    _context: SubmissionContext, evidence: WorkEvidence
-                ) -> dict[str, str]:
-                    unexpected.set()
-                    evidence.confirm_cleanup()
-                    return {"value": "must not start"}
-
-                return await native.work[family].run(_clio_submission, "dispatch_pending", {}, body)
+            entered, release, adopting, adopt_release, unexpected = events
 
             def create_owner() -> tuple[TaskOwner, dict[str, Any]]:
                 with app.state.task_history.serialized():
