@@ -157,7 +157,7 @@ async def test_arrivals_during_the_final_model_call_are_considered_before_comple
     ]
     notifications = frozenset({"feedback", f"outcome:task_feedback:{sid}"})
     assert history.acknowledged_notifications(sid) == notifications
-    assert history.pending_mail(sid) == ()
+    assert await history.io.run(history.pending_mail, sid) == ()
     for identity in notifications:
         committed = history.committed_notification_input(sid, identity)
         assert committed is not None and frozenset(committed.notification_ids) == notifications
@@ -174,7 +174,7 @@ async def test_an_explicit_iteration_cap_leaves_late_feedback_pending(
     )
     assert len(engine.requests) == 1
     assert prediction.answer == "answer"
-    assert [item.id for item in history.pending_mail(sid)] == [
+    assert [item.id for item in await history.io.run(history.pending_mail, sid)] == [
         "feedback",
         f"outcome:task_feedback:{sid}",
     ]

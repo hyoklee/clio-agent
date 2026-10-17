@@ -203,7 +203,7 @@ async def test_unconfirmed_cancellation_holds_existing_mail_before_admission(
         current = history.task_snapshot(root.handle)
         assert current is not None and current.cancellation_requested_at is None
         assert owner.eligible(sid, mail) is False
-        assert history.pending_mail(sid) == (mail,)
+        assert await history.io.run(history.pending_mail, sid) == (mail,)
         assert history.acknowledged_notifications(sid) == frozenset()
     finally:
         for operation in deferred:

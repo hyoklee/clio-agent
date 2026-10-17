@@ -37,6 +37,15 @@ code or execution owner; clio-core and the product/runtime tuple are unchanged.
 
 ### Cancellation before intent persistence — CI pending
 
+`d1082b02` Python 3.14 shard 3 reached the new hold assertions, then failed on a
+fixture mailbox read from the app loop. That read and the two matching reads in
+the newly migrated feedback cases now use `history.io.run`. Normalizing those
+three I/O wrappers leaves both test-module ASTs identical; assertion values,
+signatures, markers and budgets are preserved. The production loop guard remains
+strict. Ruff/format and two-file Mypy pass; no local behavioral test ran.
+Receipt: `ci-mailbox-fixture-io-d108-audit.json` in D static evidence. This is a
+fixture correction awaiting CI, not a completed cancellation qualification.
+
 The retained cancellation/admission case in `764121a2` admitted feedback under
 the cancelled original handle instead of a successor; the same case timed out
 in `40b5a3a1`. The common eligibility decision checked confirmed cancellation but
