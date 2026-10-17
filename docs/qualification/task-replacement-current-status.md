@@ -7,6 +7,35 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Worker stalls — next CI batch pending
+
+Full CI XML identifies a SPOTTER mode-PATCH deadlock in clio-agent: its Core I/O
+worker calls the watcher command, which waits for `Conversations.spawn` while
+that spawn needs the same worker. The mode PATCH now uses existing
+`join_off_loop`, preserving request arguments, validation, transition logic and
+publication order. The whole route module is AST-identical after that dispatch
+substitution and removal of its unused I/O alias. Both watcher route callers were
+audited; creation already runs the command outside the Core worker.
+
+The Claude abandoned-stream case held its fake producer until after stream close,
+while close correctly awaits producer retirement. It now proves dead/drop/no-reuse
+and pending close before releasing that producer, then awaits cleanup before
+closing its pool. Original assertions and concurrency settings remain. Provider
+code and test limits are unchanged.
+
+The other two error reports concern new-native-client prewarm during `build_app`
+and namespace teardown after daemon loss. Their cause remains unresolved; no
+clio-core change, guard bypass, test removal or limit increase was attempted.
+The four reports are runtime/setup/teardown errors, not collection failures.
+
+Scoped Ruff/format, Mypy with `--check-untyped-defs`, existing guards and AST
+audits pass. Receipt: `ci-worker-stalls-89938ac0-audit.json`; extracted stacks:
+`ci-runtime-stacks-59ee.json`. No local behavioral test or new live launch ran.
+Candidate Python-source SHA256:
+`af2e61eae09f0ca9ef0976d85c5139fa7f7fb8cb1d0979da8113e691e15e6267`.
+CI and affected live SPOTTER/delivery/retirement acceptance remain required.
+clio-core 2.3.1, dependencies, GACT and frozen R184 production are unchanged.
+
 ### Admission reservation fixtures — next CI batch pending
 
 Two retained cases confused transient policy-admission reservations with model

@@ -124,8 +124,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     )
                 ).model_dump(exclude_none=True),
             )
-        io = app.state.task_history.io
-        await io.run(sync_watcher_for_mode, app, sess, prior_approval_mode=prior_mode)
+        await join_off_loop(sync_watcher_for_mode, app, sess, prior_approval_mode=prior_mode)
         # Publish so live SSE subscribers see mode flips immediately.
         app.state.bus.publish(
             Event(

@@ -183,6 +183,8 @@ async def test_abandoned_stream_is_dead_before_deferred_disconnect(
     pool = sessions.ClaudeStreamClientPool(max_concurrent=2)
     entry = pool.entry_for(session_id="formatting-test")
     release = threading.Event()
+    caller_loop = asyncio.get_running_loop()
+    reset_entered = asyncio.Event()
     drops: list[str] = []
     original_reset = entry._mark_dead_and_reset
 
@@ -196,6 +198,7 @@ async def test_abandoned_stream_is_dead_before_deferred_disconnect(
         await asyncio.to_thread(release.wait)
 
     async def deferred_reset() -> None:
+        caller_loop.call_soon_threadsafe(reset_entered.set)
         await asyncio.to_thread(release.wait)
         await original_reset()
 
@@ -210,13 +213,22 @@ async def test_abandoned_stream_is_dead_before_deferred_disconnect(
         idle_timeout=None,
         on_construct=lambda: None,
     )
+    closing: asyncio.Future[None] | None = None
     try:
         assert await anext(stream) == "first"
-        await stream.aclose()
+        closing = asyncio.ensure_future(stream.aclose())
+        await asyncio.wait_for(reset_entered.wait(), 5)
+        assert not closing.done()
         assert entry.dead
         assert drops == ["formatting-test"]
         assert pool.entry_for(session_id="formatting-test") is not entry
     finally:
         release.set()
-        entry.close_blocking()
-        pool.release_session_resources("formatting-test")
+        try:
+            if closing is None:
+                await stream.aclose()
+            else:
+                await closing
+        finally:
+            entry.close_blocking()
+            pool.release_session_resources("formatting-test")
