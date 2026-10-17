@@ -46,13 +46,18 @@ Scoped Ruff/format, two-file Mypy and existing removal/size/class guards pass.
 Receipt: `ci-timeout-retirement-59ee-audit.json`. No local behavioral test or live
 launch ran. Candidate Python-source SHA256:
 `6786a99e5874587c2941d84cfb32ce4df590eddac1115f8c2a3c584f05d77fd7`.
-Exact-head CI is not dispatched yet while existing runs finish; affected live
-retirement acceptance remains required. clio-core, dependencies, GACT and R184
+The combined candidate awaits exact-head CI; affected live retirement
+acceptance remains required. clio-core, dependencies, GACT and R184
 production are unchanged.
 
-### Session lifecycle confirmation — CI pending
+### Session lifecycle confirmation — affected Python 3.14 CI passed
 
-Pushed at `59ee6ac8`; run `39025715209` is in progress.
+All four Python 3.14 artifacts for `59ee6ac8` / run `39025715209` report 12,189
+passes, 265 failures, four errors and 55 skips. Nine wire cases pass, including
+the exact lifecycle traces, off-loop recording and injected persistence failure
+with no accepted row. The remaining malformed-input case used an unmanaged
+client and is corrected in the later fixture packet. The full regression
+baseline still fails; these results do not qualify later source or live behavior.
 
 Root-session creation called `SessionStore.create` on the application loop.
 Its lifecycle observer consequently queued Core recording and could return an
@@ -76,7 +81,8 @@ Scoped Ruff/format, two-file Mypy and existing removal/size/class guards pass.
 Static audit: `ci-session-lifecycle-d1b79656-audit.json`. No local behavioral test
 or live launch ran. Candidate Python-source SHA256:
 `1f24dee67aee59e0d5b9b3b2358c538d3701a869f4b4f23afb309eed5b5a827d`.
-CI and affected real-service/model session-readiness acceptance remain required.
+The affected CI cases passed as recorded above. Newer packets require their own
+CI, and actual-model session-readiness acceptance remains required.
 clio-core 2.3.1, dependencies, GACT and frozen R184 production remain unchanged.
 
 ### Observation expiry recovery metadata — affected Python 3.14 CI passed
