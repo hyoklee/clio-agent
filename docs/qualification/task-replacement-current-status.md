@@ -7,6 +7,32 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Model-input additions and historical answer fixture — CI pending
+
+Complete `5fe0f422` Python 3.14 CI contains 11,987 passes, 431 failures, four
+errors and 53 skips. All 20 main plan, 19 plan-reuse and 10 plan-variant cases
+pass. Stall replanning has 18 passes/two failures: enrichment prepares its
+additions, but the actual session worker never binds them for model execution.
+The existing `turn_injections` setter had no production caller. The common
+worker now binds those additions immediately around module execution and resets
+the context in `finally`. The two independent end-to-end assertions remain
+unchanged. No new execution or persistence owner is introduced.
+
+Export coverage has 24 passes/one failure. Its 105-answer retention fixture
+created freeform Questions without allowing freeform answers. It now declares
+that permission explicitly; all 22 original test functions retain their
+assertions, signatures and markers. Production Question validation is unchanged.
+
+Scoped Ruff/format, Mypy and removal/class/size guards pass. No local pytest or
+vitest ran. The bounded source receipt is
+`ci-turn-injections-e709-source-audit.json` in the D checkout's static evidence.
+The corrected clio-agent production hash is
+`f8127171edb610a7d25b931f24effc7b0a0c98e75481421d8bff91f13bee94bf`.
+Fresh CI and affected actual-model acceptance remain required. The frozen R184
+source is unchanged; its unresolved shutdown still prevents another live launch.
+GACT, dependency pins, installed state and the actual iowarp-core 2.3.1 package
+remain unchanged.
+
 ### Safe plan rejection and Download wire input — CI pending
 
 The first two Python 3.14 shards on `f9891834` pass canonical modifier retries,

@@ -111,7 +111,11 @@ async def _run_module(state: "TurnState", module: Any, cancel: Callable[[], bool
                     files=state.native_files,
                 ),
             }
-            return module(**kwargs)
+            injection_token = _ctx.set_turn_injections(state.injections)
+            try:
+                return module(**kwargs)
+            finally:
+                _ctx.reset(injection_token)
 
     return await state.app.state.turn_runner.run_sync(state.sid, forward)
 

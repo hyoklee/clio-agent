@@ -711,6 +711,7 @@ def test_archive_keeps_all_answered_questions_beyond_attention_limit(
             id=f"q{index}",
             session_id=sid,
             prompt=f"Question {index}",
+            allow_freeform=True,
             status="answered",
             answer=f"Answer {index}",
             created_at="2026-10-05T00:00:00Z",
