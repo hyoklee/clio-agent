@@ -7,6 +7,26 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Retained ARC algorithm fixtures — next CI batch pending
+
+Six compaction failures came from a metadata-only session stub lacking the
+current session-record contract. The fixture now uses the actual Session
+dataclass, starts with its one seeded message and applies requested message-count
+updates. All 13 compaction test bodies remain AST-identical.
+
+Four blob-read parameter cases peeled only one wrapper and reached the RPC
+liveness guard with a deliberately minimal algorithm stub. The fixture now uses
+`inspect.unwrap` to reach the actual read algorithm. All seven test functions,
+parameter decorators and byte/truncation/read-count assertions remain intact.
+The production reader and its RPC guards are unchanged.
+
+Ruff/format, Mypy with `--check-untyped-defs` and the source/contract audit pass.
+No production file, dependency, clio-core, GACT or R184 source changed. No local
+behavioral test or live launch ran. Receipt:
+`ci-retained-arc-fixtures-b082-audit.json`. Execution awaits the next CI batch.
+The candidate Python-source SHA256 remains
+`6786a99e5874587c2941d84cfb32ce4df590eddac1115f8c2a3c584f05d77fd7`.
+
 ### No-progress stopping and physical retirement — next CI batch pending
 
 The two retained no-progress cases waited for a terminal assistant before
@@ -59,9 +79,12 @@ or live launch ran. Candidate Python-source SHA256:
 CI and affected real-service/model session-readiness acceptance remain required.
 clio-core 2.3.1, dependencies, GACT and frozen R184 production remain unchanged.
 
-### Observation expiry recovery metadata — CI pending
+### Observation expiry recovery metadata — affected Python 3.14 CI passed
 
-Pushed at `d1b79656`; run `39025260067` remains in progress.
+All four Python 3.14 artifacts for `d1b79656` / run `39025260067` report 12,183
+passes, 270 failures, four errors and 55 skips. Both zero and positive expiry
+cases pass. The complete regression baseline still fails, including the earlier
+trace and no-progress cases repaired in later packets. This is not live evidence.
 
 The `89107014` CI comparison exposed an initial-read expiry path in `observe`
 that returned available rows without the search-recovery metadata. It now returns

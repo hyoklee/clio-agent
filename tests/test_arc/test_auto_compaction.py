@@ -28,8 +28,10 @@ import pytest
 
 import clio_agent.gact.app as app
 import clio_agent.gact.runtime.context_tokens as context_tokens
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact import context as ctx
 from clio_agent.gact.compaction import AutoCompactionGuard, maybe_autocompact
+from clio_agent.gact.sessions import Session
 from clio_agent.gact.types import Message, Part, Tokens
 
 SID, SCOPE = "s1", "agentA"
@@ -67,14 +69,17 @@ class _FakeSessions:
     """Minimal ``app.state.sessions`` stand-in: ``.get`` (compact_session_context's
     404 check) + ``.update`` (the record row's message_count bump)."""
 
-    def __init__(self, rows: dict[str, Any]) -> None:
+    def __init__(self, rows: dict[str, Session]) -> None:
         self._rows = rows
 
-    def get(self, sid: str) -> Any:
+    def get(self, sid: str) -> Session | None:
         return self._rows.get(sid)
 
-    def update(self, sid: str, **_kwargs: Any) -> None:
-        pass  # the acceptance contract here is the ARC fold, not the session row
+    def update(self, sid: str, **kwargs: Any) -> Session | None:
+        row = self._rows.get(sid)
+        if row is not None and "message_count" in kwargs:
+            row.message_count = int(kwargs["message_count"])
+        return row
 
 
 class _FakeBus:
@@ -115,7 +120,7 @@ def _seed_ledger_message(sid: str, text: str = "seed") -> Message:
 
 @contextlib.contextmanager
 def _full_plane_context(
-    arc_memory,
+    arc_memory: ARCMemory,
     *,
     session: str = SID,
     scope: str = SCOPE,
@@ -129,7 +134,13 @@ def _full_plane_context(
     a bus, a memory-events store). Returns the fake agent so a test can inspect
     ``.prompts``."""
 
-    fake_session = types.SimpleNamespace(metadata=session_metadata or {})
+    fake_session = Session(
+        id=session,
+        workspace_id="compaction-workspace",
+        title="Compaction fixture",
+        message_count=1,
+        metadata=session_metadata or {},
+    )
     fake_agent = _FakeAgent(summary)
     fake_app = types.SimpleNamespace(
         state=types.SimpleNamespace(

@@ -13,6 +13,7 @@ turns ``test_a_slightly_shorter_put_reads_back_exactly`` and
 from __future__ import annotations
 
 import base64
+import inspect
 import uuid
 from types import SimpleNamespace
 from typing import Any, cast
@@ -83,8 +84,8 @@ def test_get_distinguishes_stale_size_from_truncated_data(
 
     tag = SimpleNamespace(GetBlobSize=lambda name: stale_size, GetBlob=read_blob)
     store = SimpleNamespace(_cte=SimpleNamespace(Tag=lambda name: tag), tag=lambda kind: kind)
-    # Exercise the read algorithm independently of the separately covered RPC guard.
-    read = cast(Any, ClioCoreStore.get).__wrapped__
+    # Exercise the read algorithm independently of every separately covered RPC wrapper.
+    read = cast(Any, inspect.unwrap(ClioCoreStore.get))
     if physically_truncated:
         with pytest.raises(BlobFrameError):
             read(store, "segments", "record")
