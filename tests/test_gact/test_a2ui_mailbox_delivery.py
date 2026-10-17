@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from threading import Event
 
@@ -94,7 +95,9 @@ def test_human_action_is_visible_while_pending_and_projection_retry_keeps_its_id
         users = [message for message in app.state.messages[sid] if message.role == "user"]
         assert len(users) == 1 and users[0].id == body["message_id"]
         assert users[0].metadata["a2ui_action_context"] == {"selection": "continue"}
-        assert '"selection": "continue"' in users[0].parts[0].text
+        narration = users[0].parts[0].text
+        assert narration.count("Structured context:") == 1
+        assert json.loads(narration.split("Structured context:", 1)[1]) == {"selection": "continue"}
         replay = client.post(
             f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": envelope}
         )

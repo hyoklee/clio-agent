@@ -44,16 +44,12 @@ class _AskUserAgent:
 
     def __init__(self) -> None:
         self.questions: list[str] = []
-        self.model_inputs: list[str] = []
 
     def forward(self, question: str, session_id: str) -> Any:
         from clio_agent.gact import context
         from clio_agent.gact.task_declarations import build_ask_user_tool
 
         self.questions.append(question)
-        self.model_inputs.append(
-            "\n".join([question, *(text for _, text in context.turn_injections())])
-        )
         if len(self.questions) == 1:
             app = context.active_app()
             assert app is not None
@@ -302,7 +298,21 @@ def test_async_question_answer_reaches_the_same_assignment_once(tmp_path: Path) 
         assert answered.status_code == 200, answered.text
         wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
         assert len(agent.questions) == 2
-        assert "Use the large run." in agent.model_inputs[-1]
+        # The host stand-in runs after the production input compiler. Its primary
+        # request argument is not the queued model context; inspect that confirmed
+        # boundary directly rather than claiming the stand-in is a live model.
+        history = app.state.task_history
+        notification = f"outcome:{question['id']}:{sid}"
+        committed = history.committed_notification_input(sid, notification)
+        assert committed is not None and committed.assignment_id == assignment.handle
+        assert committed.notification_ids.count(notification) == 1
+        rendered = [history.read_content(reference) for reference in committed.rendered_content]
+        assert any(
+            isinstance(value, dict)
+            and value.get("source") == "question_answer"
+            and "Use the large run." in str(value.get("text", ""))
+            for value in rendered
+        )
         assert app.state.task_history.latest_assignment(sid).handle == assignment.handle
         stored = app.state.task_history.task_snapshot(question["id"])
         assert (
@@ -316,6 +326,8 @@ def test_async_question_answer_reaches_the_same_assignment_once(tmp_path: Path) 
         )
         assert repeated.status_code == 200
         assert app.state.task_history.task_snapshot(question["id"]).result == original
+        assert history.committed_notification_input(sid, notification) == committed
+        assert not any(item.handle == question["id"] for item in history.pending_mail(sid))
         assert len(agent.questions) == 2
 
 

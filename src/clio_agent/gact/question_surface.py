@@ -75,7 +75,10 @@ def question_view(app: Any, task: TaskSnapshot) -> dict[str, Any]:
         "status": task.raw_status,
         "kind": definition.kind,
         "response_mode": "async",
-        "options": [option.model_dump(mode="json") for option in definition.options],
+        "options": [
+            option.model_dump(mode="json", exclude={"schema_version"})
+            for option in definition.options
+        ],
         "allow_freeform": definition.allow_freeform,
         "created_at": task.created_at,
         "updated_at": task.updated_at,

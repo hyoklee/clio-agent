@@ -9,6 +9,55 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Native wire, replay identity and retained Question API — CI pending
 
+#### Current CI result and presentation corrections
+
+All four Python 3.14 artifacts for `c11e8786` / run `39019757080` report
+12,121 passes, 315 failures, four errors and 55 skips. All 15 source-connection
+cases pass, including one-approval reuse, changed scope, and revocation before
+worker entry. The overall regression baseline fails; the run still has other
+interpreter jobs in progress at this observation.
+
+All four Python 3.13 artifacts report 12,120 passes, 315 failures, five errors
+and 55 skips. They reproduce the same Question wire and A2UI spacing failures.
+
+The current correction selects the existing wait, result and message presenters
+from each registered control's metadata, including the shipped aliases. The
+control implementations are unchanged. Observation cards read the actual public
+output chunks; public text is shown once while tool metadata remains in technical
+details. Query references are not presented as result bodies. Accepted messages
+link to the returned recipient and show the sent text once. No registry lookup,
+task owner, cancellation policy or execution driver is added.
+
+Nine retained presentation scenarios now use validated common snapshots, actual
+output chunks and independent wait outcomes instead of removed child-registry
+joins. No test function or parameter decorator was removed. Fresh cases use the
+real TaskHistory/TaskOperations boundary to cover presentation wiring, authorized
+progress, observe-only nondisclosure and query-reference versus collected-body
+presentation. Their asynchronous fixture closes its owned CoreIO worker.
+
+Two retained Question wire assertions identified real compatibility defects:
+internal option schema versions leaked into GET responses, and invalid choices
+lost the shipped `bad_request` error code. The shared projection/error mapper now
+preserves those public contracts; answer validation and Question ownership remain
+unchanged. The A2UI context assertion decodes its canonical JSON rather than
+requiring incidental spacing, retaining exact contents and one narration.
+
+The stand-in Question scenario now inspects the actual confirmed recipient-input
+record and rendered answer, including the same assignment, exact notification,
+immutable result and duplicate-answer guards. The stand-in's request argument is
+not evidence of provider input; it runs after the production compiler commits
+queued context. This scenario is regression evidence only, not live model
+acceptance.
+
+AST receipt: `ci-task-cards-question-c11-audit.json` in D static evidence. These
+new definitions have not executed locally. Ruff/format, removal, size and nested
+class guards pass. Eight-file Mypy with explicit import scope passes. The initial
+check following imported test modules also reports 69 diagnostics in three
+untouched imported files; this is not a full type-check pass.
+Fresh CI and affected actual-model/UI
+verification remain required. Dependencies, clio-core 2.3.1, GACT, installed
+Desktop and frozen D/R184 production source are unchanged.
+
 The four Python 3.14 artifacts for `c0e6fa1a` / run `39018326969` report 12,110
 passes, 320 failures, four errors and 55 skips. Both input-commit A2UI modes now
 pass, including projection failure followed by restoration from the confirmed
@@ -42,9 +91,9 @@ There is no Question mirror, separate scheduler, turn launch or blocking ask mod
 Question creation/answer/invalid-choice/cancellation cases now cover REST and the
 registered FastMCP control over the same records. Additional cases cover invalid
 content before task changes, closed admission and a lost reply after actual
-acceptance. The stand-in model records the actual queued injections separately
-from its original request argument; same-assignment, result and duplicate guards
-remain. Retry settlement uses a pre-request event cursor and physical reservation
+acceptance. Its same-assignment delivery check uses the confirmed input boundary
+as corrected above; result and duplicate guards remain. Retry settlement uses a
+pre-request event cursor and physical reservation
 release within the original total diagnostic backstop, rather than an initial
 idle status. These definitions have not run locally.
 
@@ -53,7 +102,7 @@ Ruff/format, six-file Mypy and removal/class/size guards pass. Receipt:
 affected production-service/model/UI verification remain required.
 
 Candidate Python-source SHA256:
-`340ce92acad2c29f0b6f1b8d6122a8a460ad595da2e573fe23c3b8acdd6f8b87`.
+`2762e671d354762eda88681a05161aa46f22a6d5b9e6d8307645bfba4ffd6963`.
 clio-core 2.3.1, dependencies, GACT, installed Desktop and frozen D/R184 source
 are unchanged. R184 remains held in unresolved HTTP shutdown; no successor live
 family launched.

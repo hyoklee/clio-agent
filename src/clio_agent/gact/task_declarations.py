@@ -100,12 +100,23 @@ def _task_read(value: dict[str, Any]) -> CollectedTaskResult:
 def _tool(
     function: Any, name: str, args: dict[str, Any], description: str, *, read: bool = False
 ) -> Any:
+    from clio_agent.gact.task_wait_presentation import wait_start_presentation
+
+    presentation = {
+        "wait_tasks": "wait",
+        "wait_agent_tasks": "wait",
+        "get_task_result": "task_output",
+        "get_agent_output": "task_output",
+        "send_agent_message": "message",
+        "message_agent": "message",
+    }.get(name, "tasks")
     return native_tool(
         function,
         name=name,
         args=args,
         desc=description,
-        presentation="tasks",
+        presentation=presentation,
+        presentation_start=wait_start_presentation if presentation == "wait" else None,
         title=name.replace("_", " ").capitalize(),
         domain="tasks",
         read_only=read,

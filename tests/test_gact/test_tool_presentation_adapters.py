@@ -8,9 +8,41 @@ from typing import Any
 
 import pytest
 
+from clio_agent.arc.task_types import TaskSnapshot
 from clio_agent.gact.agents import tool_instrumentation
 from clio_agent.gact.agents.native_presenters import native_presentation
 from clio_agent.tools.tool_presentation import present_mcp_result
+
+
+def _common_task_row(
+    *, output: list[dict[str, Any]] | None = None, **changes: Any
+) -> dict[str, Any]:
+    """Use the current validated snapshot vocabulary, with public observation chunks."""
+    values: dict[str, Any] = {
+        "handle": "task",
+        "kind": "Subagent",
+        "owner": {
+            "human_id": "human",
+            "session_id": "child",
+            "assignment_id": "task",
+            "parent_handle": "parent",
+        },
+        "label": "Researcher #1",
+        "description": "Inspect the evidence",
+        "description_missing": False,
+        "invocation_id": "invocation",
+        "tool": "conversation",
+        "created_at": "2026-10-17T12:00:00Z",
+        "updated_at": "2026-10-17T12:00:00Z",
+        "status": "active",
+        "raw_status": "active",
+        "activity": "busy",
+    }
+    values.update(changes)
+    row = TaskSnapshot.model_validate(values).model_dump(mode="json")
+    if output is not None:
+        row["output"] = output
+    return row
 
 
 def test_native_presenter_cannot_mutate_model_arguments_or_result(
@@ -134,184 +166,92 @@ def test_failed_execution_presents_the_authoritative_reason_without_fabricating_
 
 
 def test_observe_uses_child_identity_and_declared_display_name() -> None:
-    raw = json.dumps(
-        {"results": [{"task_id": "task", "child_session_id": "child", "status": "completed"}]}
-    )
-    structured = {
-        "summary": "One task completed",
-        "results": [
-            {"name": "Researcher #1", "status": "completed", "answer_excerpt": "Evidence packet"}
-        ],
-    }
+    payload = {"tasks": [_common_task_row(status="completed", activity="")], "cursor": "opaque"}
+    raw = json.dumps(payload)
+    structured = {"tasks": [_common_task_row(label="Substituted label")]}
     view = native_presentation("tasks", {}, raw, structured)
-    assert view["summary"] == ""
-    assert view["blocks"][0] == {
-        "id": "task-subject",
-        "type": "link",
-        "target": "session",
-        "uri": "child",
-        "label": "Researcher #1",
-    }
-    assert view["blocks"][1] == {
-        "id": "observation",
-        "type": "text",
-        "label": "Observed",
-        "text": "Cursor 1 -> 1; No pattern, returned immediately; Researcher #1: terminal (completed)",
-    }
+    links = [block for block in view["blocks"] if block["type"] == "link"]
+    assert len(links) == 1 and links[0]["uri"] == "child"
+    assert links[0]["label"] == "Researcher #1"
+    assert "completed" in json.dumps(view)
+    assert "Substituted label" not in json.dumps(view)
+    assert json.loads(raw) == payload
 
 
 def test_patterned_observe_presents_match_cursor_status_and_curated_evidence() -> None:
-    row = {
-        "cursor": 7,
-        "next_cursor": 10,
-        "matched": True,
-        "tasks": [
-            {
-                "task_id": "task",
-                "child_session_id": "child",
-                "name": "Research methodologist #1",
-                "status": "running",
-                "new_events": [
-                    {
-                        "family": "lifecycle",
-                        "event_type": "expert.lifecycle.started",
-                        "summary": "Context received expert research_methodologist started",
-                        "excerpt": "Context received expert research_methodologist started",
-                    },
-                    {
-                        "family": "react.step",
-                        "event_type": "react.step.completed",
-                        "summary": "Checking method",
-                        "excerpt": 'thought: compare methods | tool: search({"query": "evidence"})',
-                        "matched": True,
-                    },
-                ],
-            }
-        ],
+    chunk = {
+        "chunk_id": "matching-chunk",
+        "output": "station=KOOT",
+        "pattern_match": {"start": 0, "end": 12, "excerpt_truncated": False},
+        "fragment": True,
     }
-
-    view = native_presentation("tasks", {"pattern": "station=KOOT"}, row, None)
-
-    assert view == {
-        "subject": "task-subject",
-        "summary": "",
-        "blocks": [
-            {
-                "id": "task-subject",
-                "type": "link",
-                "target": "session",
-                "uri": "child",
-                "label": "Research methodologist #1",
-            },
-            {
-                "id": "observation",
-                "type": "text",
-                "label": "Observed",
-                "text": (
-                    'Cursor 7 -> 10; Pattern "station=KOOT" matched; '
-                    "Research methodologist #1: running"
-                ),
-            },
-            {
-                "id": "evidence-0",
-                "type": "text",
-                "label": "Evidence · Research methodologist #1",
-                "text": 'thought: compare methods | tool: search({"query": "evidence"})',
-            },
-        ],
-    }
-    assert "Context received" not in json.dumps(view)
+    row = {"cursor": "opaque-continuation", "tasks": [_common_task_row(output=[chunk])]}
+    before = json.dumps(row)
+    view = native_presentation("tasks", {"tasks": "task", "pattern": "station=KOOT"}, row, None)
+    assert any(block.get("uri") == "child" for block in view["blocks"])
+    progress = [block for block in view["blocks"] if block.get("label") == "New output"]
+    assert len(progress) == 1 and progress[0]["text"] == "station=KOOT"
+    assert "matching-chunk" not in json.dumps(view)
+    assert "opaque-continuation" not in json.dumps(view)
+    assert json.dumps(row) == before
 
 
 def test_patterned_observe_presents_terminal_release_without_claiming_a_match() -> None:
     row = {
-        "cursor": 10,
-        "next_cursor": 12,
-        "matched": False,
+        "cursor": "opaque-final",
+        "settled": True,
+        "any_settled": True,
         "tasks": [
-            {
-                "task_id": "task",
-                "child_session_id": "child",
-                "name": "Research methodologist #1",
-                "status": "completed",
-                "new_events": [
-                    {
-                        "family": "delegation",
-                        "event_type": "delegation.completed",
-                        "excerpt": "delegation.completed | workflow_state: complete",
-                    }
+            _common_task_row(
+                status="completed",
+                activity="",
+                output=[
+                    {"chunk_id": "final", "output": {"text": "Research complete", "tools": []}}
                 ],
-            }
+            )
         ],
     }
-
+    before = json.dumps(row)
     view = native_presentation("tasks", {"pattern": "never-matches"}, row, None)
-
-    assert view["blocks"][1] == {
-        "id": "observation",
-        "type": "text",
-        "label": "Observed",
-        "text": (
-            'Cursor 10 -> 12; Pattern "never-matches" did not match, '
-            "hold released by terminal child; Research methodologist #1: terminal (completed)"
-        ),
-    }
-    assert view["blocks"][2] == {
-        "id": "evidence-0",
-        "type": "text",
-        "label": "Evidence · Research methodologist #1",
-        "text": "delegation.completed | workflow_state: complete",
-    }
+    shown = json.dumps(view)
+    assert "completed" in shown and "Research complete" in shown
+    assert "matched" not in shown.lower()
+    assert json.dumps(row) == before
 
 
 @pytest.mark.parametrize("status", ["completed", "failed", "cancelled", "unknown_task"])
 def test_wait_reports_lifecycle_without_repeating_child_output(status: str) -> None:
-    raw = json.dumps(
-        {
-            "results": [
-                {
-                    "task_id": "task",
-                    "child_session_id": "child",
-                    "status": status,
-                    "output": "FULL CHILD ANSWER",
-                }
-            ]
+    outcome: dict[str, Any] = (
+        {"handle": "task", "error": "task_unavailable"}
+        if status == "unknown_task"
+        else {
+            "handle": "task",
+            "status": status,
+            "pending": False,
+            "result": {"output": "FULL CHILD ANSWER"},
         }
     )
-    structured = {
-        "summary": "waited 12.0s for 1 task",
-        "results": [
-            {
-                "name": "Researcher #1",
-                "status": status,
-                "duration_ms": 11004,
-                "answer_excerpt": "CHILD EXCERPT",
-            }
-        ],
-    }
-    view = native_presentation("wait", {}, raw, structured)
-    # #1306: the model-facing "output" is already the digested (bounded) child
-    # answer (digested_model_row) -- that IS the meaningful received context, so
-    # it wins over the separate structured "answer_excerpt" fallback. The
-    # committed wait never shows BOTH; the untaken fallback never leaks.
-    assert view["summary"] == ""
-    assert view["subject"] == "task-subject"
-    assert view["blocks"] == [
-        {"id": "task-subject", "type": "text", "text": "Researcher #1"},
-        {
-            "id": "task-0",
-            "type": "item",
-            "target": "session",
-            "uri": "child",
-            "label": "Researcher #1",
-            "status": status,
-            "result_kind": "completion",
-            "duration_ms": None,
-            "detail": "FULL CHILD ANSWER",
-        },
-    ]
-    assert "CHILD EXCERPT" not in json.dumps(view)
-    assert json.loads(raw)["results"][0]["output"] == "FULL CHILD ANSWER"
+    payload = {"outcomes": [outcome], "pending": [], "timed_out": False}
+    before = json.dumps(payload)
+    view = native_presentation(
+        "wait",
+        {"tasks": ["task"]},
+        payload,
+        {"results": [{"answer_excerpt": "SUBSTITUTED EXCERPT"}]},
+    )
+    shown = json.dumps(view)
+    assert "SUBSTITUTED EXCERPT" not in shown
+    if status == "unknown_task":
+        assert "0 results collected" in view["summary"]
+        assert any(block.get("severity") == "error" for block in view["blocks"])
+        assert "FULL CHILD ANSWER" not in shown
+    else:
+        assert "1 result collected" in view["summary"]
+        assert shown.count("FULL CHILD ANSWER") == 1
+        assert any(block.get("status") == status for block in view["blocks"])
+        if status != "completed":
+            assert any(block.get("severity") == "error" for block in view["blocks"])
+    assert json.dumps(payload) == before
 
 
 def test_declared_running_presenter_survives_wrapping_and_cannot_change_arguments(
@@ -477,18 +417,17 @@ def test_resource_truncation_is_not_mistaken_for_a_complete_document() -> None:
 def test_observation_keeps_incremental_events_in_technical_result() -> None:
     row = {
         "tasks": [
-            {
-                "task_id": "task",
-                "status": "running",
-                "new_events": [
-                    {"summary": "Reading evidence", "excerpt": "Official guide fetched"}
-                ],
-            }
+            _common_task_row(
+                output=[
+                    {"chunk_id": "read", "output": {"text": "Official guide fetched", "tools": []}}
+                ]
+            )
         ]
     }
     before = json.dumps(row)
     view = native_presentation("tasks", {}, row, None)
-    assert view["blocks"][-1]["text"] == "Official guide fetched"
+    assert any(block.get("text") == "Official guide fetched" for block in view["blocks"])
+    assert "chunk_id" not in json.dumps(view)
     assert json.dumps(row) == before
 
 
@@ -504,42 +443,59 @@ def test_resource_list_uses_the_custody_name_and_identifier() -> None:
 def test_observation_keeps_serialized_action_and_full_extraction_technical(event_type: str) -> None:
     row = {
         "tasks": [
-            {
-                "task_id": "task",
-                "status": "running",
-                "new_events": [
+            _common_task_row(
+                output=[
                     {
-                        "event_type": event_type,
-                        "summary": "Researcher completed its analysis",
-                        "excerpt": 'tool: submit({"answer": "FULL REPORT"})',
+                        "chunk_id": "analysis",
+                        "output": {
+                            "text": "Researcher completed its analysis",
+                            "tools": [
+                                {
+                                    "event_type": event_type,
+                                    "excerpt": 'tool: submit({"answer": "FULL REPORT"})',
+                                }
+                            ],
+                        },
                     }
-                ],
-            }
+                ]
+            )
         ]
     }
     before = json.dumps(row)
     view = native_presentation("tasks", {}, row, None)
-    assert view["blocks"][-1]["text"] == 'tool: submit({"answer": "FULL REPORT"})'
+    shown = json.dumps(view)
+    assert "Researcher completed its analysis" in shown
+    assert "FULL REPORT" not in shown and "submit(" not in shown
+    assert "FULL REPORT" in json.dumps(row)
     assert json.dumps(row) == before
 
 
 def test_observation_drops_child_lifecycle_chatter() -> None:
     row = {
         "tasks": [
-            {
-                "task_id": "task",
-                "new_events": [
+            _common_task_row(
+                output=[
                     {
-                        "event_type": "expert.lifecycle.started",
-                        "summary": "Researcher started",
-                        "excerpt": "Researcher started",
+                        "chunk_id": "lifecycle",
+                        "output": {
+                            "text": "",
+                            "tools": [
+                                {
+                                    "event_type": "expert.lifecycle.started",
+                                    "summary": "Context received",
+                                }
+                            ],
+                        },
                     }
-                ],
-            }
+                ]
+            )
         ]
     }
+    before = json.dumps(row)
     view = native_presentation("tasks", {}, row, None)
-    assert all(block["id"] != "evidence-0" for block in view["blocks"])
+    assert "Context received" not in json.dumps(view)
+    assert all(block.get("label") != "New output" for block in view["blocks"])
+    assert json.dumps(row) == before
 
 
 def test_resource_inspection_uses_the_custody_size_fields() -> None:
@@ -837,17 +793,24 @@ def test_each_native_family_exposes_actual_result_content(
 
 
 def test_message_exposes_sent_content_and_keeps_transport_in_raw_details() -> None:
-    raw = {"message": "queued", "transport": "inbox", "action": "queue"}
+    raw = {
+        "accepted": True,
+        "session_id": "child",
+        "message_id": "mail",
+        "transport": "internal-transport",
+    }
+    before = dict(raw)
     view = native_presentation(
         "message",
-        {"message": "Review this evidence", "task_id": "unknown"},
+        {"message": "Review this evidence", "target": "child"},
         {},
         raw,
     )
-    assert view["blocks"][0]["text"] == "Review this evidence"
-    assert view["summary"] == "Queued"
-    assert len(view["blocks"]) == 1
-    assert raw == {"message": "queued", "transport": "inbox", "action": "queue"}
+    assert view["summary"] == "Message accepted"
+    assert sum(block.get("text") == "Review this evidence" for block in view["blocks"]) == 1
+    assert any(block.get("uri") == "child" for block in view["blocks"])
+    assert "internal-transport" not in json.dumps(view)
+    assert raw == before
 
 
 def test_one_shot_schedule_has_trigger_and_no_empty_separator() -> None:
@@ -920,12 +883,17 @@ def test_schedule_removal_preserves_actual_outcome_without_duplicate_fields(dele
 
 
 def test_failed_task_collection_does_not_claim_it_collected_a_result() -> None:
-    view = native_presentation(
-        "task_output", {}, {"task_id": "missing", "error": "unknown_task"}, None
+    row = {"handle": "missing", "error": "task_unavailable"}
+    before = dict(row)
+    view = native_presentation("task_output", {}, row, None)
+    assert view["status"] == "failed"
+    assert "collected" not in view["summary"].lower()
+    assert any(
+        block.get("severity") == "error" and block.get("text") == "task_unavailable"
+        for block in view["blocks"]
     )
-    assert view["summary"] == ""
-    assert view["blocks"][0]["label"] == "Full output unavailable"
-    assert view["blocks"][0]["text"] == "unknown task"
+    assert all(block.get("label") != "Result" for block in view["blocks"])
+    assert row == before
 
 
 def test_model_catalog_exposes_actual_changes_and_failures_without_empty_fields() -> None:

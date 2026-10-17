@@ -47,6 +47,18 @@ def answer_question_response(
     except ValueError as error:
         latest = app.state.task_history.task_snapshot(handle)
         status = 404 if latest is None else 409 if latest.terminal_at is not None else 422
+        if status == 422:
+            raise HTTPException(
+                status_code=status,
+                detail=ErrorEnvelope(
+                    error=ErrorInfo(
+                        error="bad_request",
+                        message="Question answer was not accepted: " + str(error),
+                        details={"session_id": caller.session_id, "question_id": handle},
+                        recoverable=True,
+                    )
+                ).model_dump(exclude_none=True),
+            ) from error
         raise HTTPException(status, "Question answer was not accepted: " + str(error)) from error
 
 

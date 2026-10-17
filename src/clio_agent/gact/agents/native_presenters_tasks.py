@@ -21,12 +21,16 @@ def _detail(value: Any) -> str:
     """Bound the display; complete output remains in the tool observation."""
     if isinstance(value, str):
         text = value
+    elif isinstance(value, Mapping) and isinstance(value.get("text"), str):
+        text = value["text"]
     else:
         text = json.dumps(value, ensure_ascii=False, indent=2, default=str)
     return text if len(text) <= 1800 else text[:1740].rstrip() + "\nMore in technical details"
 
 
-def _task_blocks(row: Mapping[str, Any], index: int) -> list[dict[str, Any]]:
+def _task_blocks(
+    row: Mapping[str, Any], index: int, *, result_body: bool = False
+) -> list[dict[str, Any]]:
     """Render a single common snapshot or independent control outcome."""
     label = _label(row)
     status = str(row.get("activity") or row.get("status") or "")
@@ -65,16 +69,40 @@ def _task_blocks(row: Mapping[str, Any], index: int) -> list[dict[str, Any]]:
         if error or row.get("status") in {"failed", "interrupted", "task_state_uncertain"}:
             block["severity"] = "error"
         blocks.append(block)
-    if row.get("incremental_output"):
-        blocks.append(
-            {
-                "id": f"task-{index}-progress",
-                "type": "text",
-                "label": "New output",
-                "text": _detail(row["incremental_output"]),
-            }
+    chunks = row.get("output")
+    if isinstance(chunks, list):
+        text = "\n".join(
+            _detail(chunk["output"])
+            for chunk in chunks
+            if isinstance(chunk, Mapping) and chunk.get("output") is not None
         )
-    if row.get("result") is not None:
+        if text:
+            if row.get("output_truncated"):
+                text += "\nMore output is available."
+            blocks.append(
+                {
+                    "id": f"task-{index}-progress",
+                    "type": "text",
+                    "label": "New output",
+                    "text": _detail(text),
+                }
+            )
+        errors = [
+            str(chunk["error"])
+            for chunk in chunks
+            if isinstance(chunk, Mapping) and chunk.get("error")
+        ]
+        if errors:
+            blocks.append(
+                {
+                    "id": f"task-{index}-output-error",
+                    "type": "text",
+                    "label": "Output unavailable",
+                    "severity": "warning",
+                    "text": _detail("\n".join(errors)),
+                }
+            )
+    if result_body and row.get("result") is not None:
         blocks.append(
             {
                 "id": f"task-{index}-result",
@@ -83,7 +111,9 @@ def _task_blocks(row: Mapping[str, Any], index: int) -> list[dict[str, Any]]:
                 "text": _detail(row["result"]),
             }
         )
-    if row.get("result_reference") and row.get("result") is None:
+    if (row.get("result_reference") and row.get("result") is None) or (
+        not result_body and row.get("result") is not None
+    ):
         blocks.append(
             {
                 "id": f"task-{index}-reference",
@@ -113,9 +143,15 @@ def present_task_family(
         )
     if declaration == "message":
         error = payload.get("error")
-        session = payload.get("target_session") or payload.get("target_session_id")
+        session = (
+            payload.get("session_id")
+            or payload.get("target_session")
+            or payload.get("target_session_id")
+        )
         accepted = payload.get("accepted", not error)
         blocks: list[dict[str, Any]] = []
+        if accepted and isinstance(args.get("message"), str) and args["message"]:
+            blocks.append({"id": "message", "type": "text", "text": _detail(args["message"])})
         if accepted and isinstance(session, str) and session:
             blocks.append(
                 {
@@ -135,7 +171,7 @@ def present_task_family(
             blocks,
             "Message",
             "failed" if error else "",
-            "recipient" if blocks and accepted else "",
+            "recipient" if accepted and isinstance(session, str) and session else "",
         )
     values = payload.get("tasks", payload.get("outcomes"))
     selected = (
@@ -145,7 +181,7 @@ def present_task_family(
     )
     blocks = []
     for index, selected_row in enumerate(selected):
-        blocks.extend(_task_blocks(selected_row, index))
+        blocks.extend(_task_blocks(selected_row, index, result_body=declaration == "task_output"))
     pending = payload.get("pending")
     if isinstance(pending, list) and pending:
         blocks.append(
