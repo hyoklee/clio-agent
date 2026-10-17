@@ -106,7 +106,7 @@ def _tool(
         "wait_tasks": "wait",
         "wait_agent_tasks": "wait",
         "get_task_result": "task_output",
-        "get_agent_output": "task_output",
+        "get_agent_task_output": "task_output",
         "send_agent_message": "message",
         "message_agent": "message",
     }.get(name, "tasks")

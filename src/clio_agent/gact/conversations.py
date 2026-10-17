@@ -181,30 +181,14 @@ class Conversations:
                 ):
                     return False
         if item.kind in {"goal", "loop", "schedule"}:
+            from clio_agent.gact.autonomy_guard import autonomous_input_is_current
+
             value = self.history.read_content(item.content)
             metadata = value.get("metadata", {}) if isinstance(value, dict) else {}
             if not isinstance(metadata, dict):
                 return False
-            if metadata.get("goal_id"):
-                goal = session.metadata.get("goal", {})
-                if not goal.get("active") or goal.get("goal_id") != metadata["goal_id"]:
-                    return False
-            if metadata.get("loop_id"):
-                loop = session.metadata.get("loop", {})
-                if (
-                    not loop.get("active")
-                    or loop.get("stopped")
-                    or loop.get("loop_id") != metadata["loop_id"]
-                ):
-                    return False
-            if metadata.get("schedule_id"):
-                schedule = self.app.state.schedules.get(metadata["schedule_id"])
-                if schedule is None or (
-                    not schedule.enabled
-                    and schedule.disabled_reason
-                    not in {"max_fires_reached", "no_recurring_trigger", "until_reached"}
-                ):
-                    return False
+            if not autonomous_input_is_current(self.app, sid, metadata, session.metadata):
+                return False
         if assignment is None:
             return True
         if not self.supports_execution(assignment) or assignment.handle in self._control_holds:

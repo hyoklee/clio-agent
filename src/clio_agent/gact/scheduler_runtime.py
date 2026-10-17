@@ -122,6 +122,7 @@ def _fire_schedule(app: "FastAPI", sch: Any) -> None:
         metadata={
             "scheduled": True,
             "schedule_id": sch.id,
+            "schedule_one_shot": not sch.recurring,
             **({"loop_id": loop_id} if loop_id else {}),
         },
         steer_message_id=f"schedule:{sch.id}:{sch.fire_count}",

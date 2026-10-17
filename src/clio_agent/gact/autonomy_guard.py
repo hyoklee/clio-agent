@@ -70,23 +70,52 @@ def settle_failed_loop_schedule(app: Any, schedule: Any) -> None:
             end_loop(app, schedule.session_id, reason="loop_schedule_failed", loop=loop)
 
 
-def goal_redrive_is_current(app: Any, sid: str, metadata: Mapping[str, Any]) -> bool:
-    """Discard goal wakeups left behind by a clear, replacement."""
-    if not metadata.get("goal_redrive"):
-        return True
-    session = app.state.sessions.get(sid)
-    goal = (getattr(session, "metadata", None) or {}).get("goal") or {}
-    current = bool(
-        goal.get("active")
-        and not goal.get("cleared")
-        and goal.get("goal_id") == metadata.get("goal_id")
-    )
-    return current and not expire_goal_budget(app, sid, goal)
+def goal_budget_exhausted(app: Any, sid: str, goal: Mapping[str, Any]) -> bool:
+    """Check explicit limits without writing state or taking the goal mutation lock."""
+    from clio_agent.gact.goal import _budget_spent
+
+    elapsed, tokens = _budget_spent(app, sid, goal)
+    wall_limit = float(goal.get("max_wallclock_s") or 0)
+    token_limit = int(goal.get("max_tokens") or 0)
+    return (wall_limit > 0 and elapsed >= wall_limit) or (token_limit > 0 and tokens >= token_limit)
+
+
+def autonomous_input_is_current(
+    app: Any, sid: str, metadata: Mapping[str, Any], session_metadata: Mapping[str, Any]
+) -> bool:
+    """Read goal, loop and schedule validity for the conversation owner's admission decision."""
+    if metadata.get("goal_id"):
+        goal = session_metadata.get("goal", {})
+        if (
+            not goal.get("active")
+            or goal.get("goal_id") != metadata["goal_id"]
+            or goal_budget_exhausted(app, sid, goal)
+        ):
+            return False
+    if metadata.get("loop_id"):
+        loop = session_metadata.get("loop", {})
+        if (
+            not loop.get("active")
+            or loop.get("stopped")
+            or loop.get("loop_id") != metadata["loop_id"]
+        ):
+            return False
+    if metadata.get("schedule_id"):
+        schedule = app.state.schedules.get(metadata["schedule_id"])
+        if schedule is None:
+            return metadata.get("schedule_one_shot") is True
+        if not schedule.enabled and schedule.disabled_reason not in {
+            "max_fires_reached",
+            "no_recurring_trigger",
+            "until_reached",
+        }:
+            return False
+    return True
 
 
 def expire_goal_budget(app: Any, sid: str, goal: Mapping[str, Any]) -> bool:
     """Enforce elapsed/token limits before work queued earlier gets another turn."""
-    from clio_agent.gact.goal import _GOAL_MUTEX, _budget_spent, _get_goal, clear_goal
+    from clio_agent.gact.goal import _GOAL_MUTEX, _get_goal, clear_goal
 
     with _GOAL_MUTEX:
         current = _get_goal(app, sid)
@@ -96,12 +125,7 @@ def expire_goal_budget(app: Any, sid: str, goal: Mapping[str, Any]) -> bool:
             or current.get("goal_id") != goal.get("goal_id")
         ):
             return False
-        elapsed, tokens = _budget_spent(app, sid, current)
-        wall_limit = float(current.get("max_wallclock_s") or 0)
-        token_limit = int(current.get("max_tokens") or 0)
-        if (wall_limit > 0 and elapsed >= wall_limit) or (
-            token_limit > 0 and tokens >= token_limit
-        ):
+        if goal_budget_exhausted(app, sid, current):
             clear_goal(app, sid, reason="goal_budget")
             return True
         return False

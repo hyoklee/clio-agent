@@ -673,7 +673,7 @@ class ScheduleStore:
         ref = (now or _utcnow()).astimezone(timezone.utc)
         with self._lock:
             sch = self._schedules.get(sid)
-            if sch is None:
+            if sch is None or not sch.enabled:
                 return
             sch.last_fired_at = _iso(ref)
             sch.fire_count += 1

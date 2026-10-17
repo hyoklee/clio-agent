@@ -3,20 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import AsyncIterator
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
+import pytest_asyncio
 
 from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.task_types import MailItem
 from clio_agent.gact import goal as goal_mod
 from clio_agent.gact.autonomous_loop import _get_loop, run_loop_command, start_loop
-from clio_agent.gact.autonomy_guard import (
-    goal_redrive_is_current,
-    reconcile_autonomous_controls,
-)
+from clio_agent.gact.autonomy_guard import reconcile_autonomous_controls
+from clio_agent.gact.conversations import Conversations
 from clio_agent.gact.goal import (
     GoalJudgement,
     _get_goal,
@@ -28,15 +29,38 @@ from clio_agent.gact.goal import (
     run_goal_command,
 )
 from clio_agent.gact.scheduler_runtime import _fire_schedule
+from clio_agent.gact.task_history import TaskHistory
 from tests.test_arc.conftest import core_arc as core_arc
+from tests.test_arc.test_conversation_owner_contracts import create_environment
 from tests.test_gact.test_goal import _app, _session
 from tests.test_gact.test_goal import _pending_inputs as pending_mail
 
+if TYPE_CHECKING:
+    from fastapi import FastAPI
+
+    from clio_agent.gact.turn_state import TurnState
+
+
+@pytest_asyncio.fixture
+async def autonomous_session(
+    arc: ARCMemory, tmp_path: Path
+) -> AsyncIterator[tuple[Any, Conversations, str]]:
+    """Use actual mailbox/admission owners while vetoing model execution in policy tests."""
+    from clio_agent.gact.scheduler import ScheduleStore
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    app.state.schedules = ScheduleStore(path=tmp_path / "schedules.json")
+    app.state.deferred_schedules = set()
+    owner.execution_gate = lambda _sid: "Policy assertions do not execute a model"
+    try:
+        yield app, owner, root.owner.session_id
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
 
 @pytest.mark.parametrize("limit", ["time", "tokens", "iterations"])
-def test_waiting_loop_limit_prevents_staging(
-    tmp_path: Path, monkeypatch: Any, limit: str, arc: ARCMemory
-) -> None:
+def test_waiting_loop_limit_prevents_staging(tmp_path: Path, limit: str, arc: ARCMemory) -> None:
     """A limit crossed during the wait must prevent another tool/model turn."""
     app = _app(tmp_path, arc)
     sid = _session(app)
@@ -59,14 +83,8 @@ def test_waiting_loop_limit_prevents_staging(
     else:
         app.state.sessions.update(sid, add_tokens_input=21)
     app.state.sessions.update(sid, metadata_patch={"loop": loop})
-    staged: list[str] = []
-    from clio_agent.gact import app as app_mod
-
-    monkeypatch.setattr(
-        app_mod, "_turn_start_background_user_turn", lambda *a, **k: staged.append(sid)
-    )
-    _fire_schedule(app, schedule)
-    assert staged == []
+    _fire_schedule(cast("FastAPI", app), schedule)
+    assert pending_mail(app, sid) == []
     assert app.state.schedules.list(session_id=sid) == []
     assert _get_loop(app, sid)["stop_reason"] == (
         "loop_max_iters" if limit == "iterations" else "loop_budget"
@@ -94,41 +112,230 @@ def test_unmet_goal_continues_independently_of_loop_pacing(
 
 
 @pytest.mark.parametrize("paced", [False, True])
-def test_goal_expiring_while_queued_prevents_another_turn(
-    tmp_path: Path, paced: bool, arc: ARCMemory
+@pytest.mark.parametrize("limit", ["time", "tokens"])
+@pytest.mark.asyncio
+async def test_goal_expiring_while_queued_prevents_another_turn(
+    autonomous_session: tuple[Any, Conversations, str], paced: bool, limit: str
 ) -> None:
-    app = _app(tmp_path, arc)
-    sid = _session(app)
-    arm_goal(app, sid, condition="Done", max_wallclock_s=1)
-    goal = _get_goal(app, sid)
-    if paced:
-        start_loop(app, sid, prompt="One checkpoint", interval_s=60)
-        goal = _get_goal(app, sid)
-    goal["created_at"] = (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat()
-    app.state.sessions.update(sid, metadata_patch={"goal": goal})
-    if paced:
-        schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
-        from clio_agent.gact.autonomy_guard import admit_loop_wakeup
+    from clio_agent.gact.autonomy_guard import admit_loop_wakeup
+    from clio_agent.gact.goal_control import maintain_goal_controls
 
-        assert admit_loop_wakeup(app, schedule)
-        assert _get_loop(app, sid)["active"]
-    assert not goal_redrive_is_current(app, sid, {"goal_redrive": True, "goal_id": goal["goal_id"]})
+    app, owner, sid = autonomous_session
+
+    def exercise() -> None:
+        arm_goal(
+            app,
+            sid,
+            condition="Done",
+            max_wallclock_s=1 if limit == "time" else 0,
+            max_tokens=1 if limit == "tokens" else 0,
+        )
+        goal = _get_goal(app, sid)
+        _settle_goal_decision(app, sid, goal, GoalJudgement(met=False), "t", "tr")
+        [wakeup] = owner.history.pending_mail(sid)
+        assert owner.eligible(sid, wakeup)
+        if paced:
+            start_loop(app, sid, prompt="One checkpoint", interval_s=60)
+        goal = _get_goal(app, sid)
+        if limit == "time":
+            goal["created_at"] = (datetime.now(timezone.utc) - timedelta(seconds=2)).isoformat()
+            app.state.sessions.update(sid, metadata_patch={"goal": goal})
+        else:
+            app.state.sessions.update(sid, add_tokens_input=2)
+        if paced:
+            schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
+            assert admit_loop_wakeup(app, schedule)
+            assert _get_loop(app, sid)["active"]
+        # Admission must reject it before the periodic maintenance has run.
+        assert _get_goal(app, sid)["active"]
+        assert not owner.eligible(sid, wakeup)
+        assert owner.mail.stage(owner.caller(sid)).items == ()
+        assert owner.history.pending_mail(sid) == (wakeup,)
+        assert not owner.history.acknowledged_notifications(sid)
+        feedback = owner.history.record_mail(
+            MailItem(
+                id="human-feedback",
+                recipient_session=sid,
+                sender_human="human",
+                kind="human",
+                content=owner.history.write_content(sid, {"text": "Please inspect the result"}),
+                created_at=datetime.now(timezone.utc).isoformat(),
+            )
+        )
+        assert owner.eligible(sid, feedback)
+        assert owner.mail.stage(owner.caller(sid)).items == (feedback,)
+
+    await owner.history.io.run(exercise)
+    await maintain_goal_controls(app)
     assert _get_goal(app, sid)["clear_reason"] == "goal_budget"
 
 
-def test_unpaced_goal_redrives_then_clear_invalidates_wakeup(
-    tmp_path: Path, arc: ARCMemory
+@pytest.mark.asyncio
+async def test_unpaced_goal_redrives_then_clear_invalidates_wakeup(
+    autonomous_session: tuple[Any, Conversations, str],
 ) -> None:
-    app = _app(tmp_path, arc)
-    sid = _session(app)
-    arm_goal(app, sid, condition="Finish the sweep")
-    _settle_goal_decision(app, sid, _get_goal(app, sid), GoalJudgement(met=False), "t", "tr")
-    wakeup = pending_mail(app, sid)[0]
-    assert goal_redrive_is_current(app, sid, wakeup["metadata"])
-    clear_goal(app, sid)
-    assert not goal_redrive_is_current(app, sid, wakeup["metadata"])
-    arm_goal(app, sid, condition="A different goal")
-    assert not goal_redrive_is_current(app, sid, wakeup["metadata"])
+    app, owner, sid = autonomous_session
+
+    def exercise() -> None:
+        arm_goal(app, sid, condition="Finish the sweep")
+        _settle_goal_decision(app, sid, _get_goal(app, sid), GoalJudgement(met=False), "t", "tr")
+        [wakeup] = owner.history.pending_mail(sid)
+        assert owner.eligible(sid, wakeup)
+        clear_goal(app, sid)
+        assert not owner.eligible(sid, wakeup)
+        arm_goal(app, sid, condition="A different goal")
+        assert not owner.eligible(sid, wakeup)
+        assert owner.history.pending_mail(sid) == (wakeup,)
+        assert not owner.history.acknowledged_notifications(sid)
+
+    await owner.history.io.run(exercise)
+
+
+@pytest.mark.asyncio
+async def test_unbounded_goal_input_remains_eligible_after_accumulated_work(
+    autonomous_session: tuple[Any, Conversations, str],
+) -> None:
+    app, owner, sid = autonomous_session
+
+    def exercise() -> None:
+        arm_goal(app, sid, condition="Continue the study", max_wallclock_s=0, max_tokens=0)
+        goal = _get_goal(app, sid)
+        goal["created_at"] = (datetime.now(timezone.utc) - timedelta(days=365)).isoformat()
+        app.state.sessions.update(sid, metadata_patch={"goal": goal}, add_tokens_input=1_000_000)
+        _settle_goal_decision(app, sid, goal, GoalJudgement(met=False), "t", "tr")
+        [item] = owner.history.pending_mail(sid)
+        before = _get_goal(app, sid)
+        assert before["max_wallclock_s"] == before["max_tokens"] == 0
+        assert owner.eligible(sid, item)
+        assert owner.mail.stage(owner.caller(sid)).items == (item,)
+        assert _get_goal(app, sid) == before
+        assert not owner.history.acknowledged_notifications(sid)
+
+    await owner.history.io.run(exercise)
+
+
+@pytest.mark.parametrize("one_shot", [False, True])
+@pytest.mark.asyncio
+async def test_schedule_cancellation_withdraws_only_its_pending_occurrence(
+    autonomous_session: tuple[Any, Conversations, str],
+    monkeypatch: pytest.MonkeyPatch,
+    one_shot: bool,
+) -> None:
+    from clio_agent.gact.cron_tools import cancel_schedule
+    from clio_agent.gact.scheduler import ScheduleStore
+    from clio_agent.gact.session_input import accept_session_input
+
+    app, owner, sid = autonomous_session
+    original = ScheduleStore.mark_fired
+
+    def exercise() -> None:
+        schedule = app.state.schedules.create(
+            session_id=sid,
+            question="Inspect the sample",
+            cron="" if one_shot else "0 1 * * *",
+            delay_s=60 if one_shot else 0,
+        )
+        unrelated = accept_session_input(
+            app, sid, "Retain unrelated work", steer_message_id="unrelated"
+        )
+        seen: list[MailItem] = []
+
+        def cancel_before_advancement(
+            store: ScheduleStore, identity: str, *, now: datetime | None = None
+        ) -> None:
+            if store is app.state.schedules and identity == schedule.id:
+                [item] = [row for row in owner.history.pending_mail(sid) if row.kind == "schedule"]
+                seen.append(item)
+                assert cancel_schedule(app, identity)
+            original(store, identity, now=now)
+
+        # The request arrives after durable acceptance but before timer retirement.
+        with monkeypatch.context() as patch:
+            patch.setattr(ScheduleStore, "mark_fired", cancel_before_advancement)
+            _fire_schedule(app, schedule)
+        [item] = seen
+        assert app.state.schedules.get(schedule.id) is None
+        assert owner.history.mail_withdrawn(sid, item.id)
+        assert owner.history.mail_item(sid, item.id) == item
+        assert [row.id for row in owner.history.pending_mail(sid)] == [unrelated]
+        assert item not in owner.mail.stage(owner.caller(sid)).items
+        assert not owner.history.acknowledged_notifications(sid)
+
+    await owner.history.io.run(exercise)
+
+
+@pytest.mark.parametrize("failure_phase", ["read", "write"])
+@pytest.mark.asyncio
+async def test_schedule_cancellation_recording_failure_keeps_future_and_queued_work_held(
+    autonomous_session: tuple[Any, Conversations, str],
+    monkeypatch: pytest.MonkeyPatch,
+    failure_phase: str,
+) -> None:
+    from clio_agent.gact.cron_tools import cancel_schedule
+    from clio_agent.gact.scheduler import ScheduleStore
+
+    app, owner, sid = autonomous_session
+    mark_fired, read_content, record = (
+        ScheduleStore.mark_fired,
+        TaskHistory.read_content,
+        TaskHistory._record,
+    )
+
+    def exercise() -> None:
+        schedule = app.state.schedules.create(session_id=sid, question="Inspect", delay_s=60)
+        seen: list[MailItem] = []
+
+        def cancel_before_advancement(
+            store: ScheduleStore, identity: str, *, now: datetime | None = None
+        ) -> None:
+            if store is app.state.schedules and identity == schedule.id:
+                [item] = owner.history.pending_mail(sid)
+                seen.append(item)
+
+                def fail_read(history: TaskHistory, reference: Any) -> Any:
+                    if history is owner.history and reference == item.content:
+                        raise OSError("Core cancellation read unavailable")
+                    return read_content(history, reference)
+
+                def fail_record(
+                    history: TaskHistory,
+                    event: str,
+                    session: str,
+                    observation: str,
+                    payload: dict[str, Any],
+                ) -> None:
+                    if history is owner.history and event == "session.mail.withdrawn":
+                        raise OSError("Core cancellation write unavailable")
+                    record(history, event, session, observation, payload)
+
+                with monkeypatch.context() as fault:
+                    if failure_phase == "read":
+                        fault.setattr(TaskHistory, "read_content", fail_read)
+                    else:
+                        fault.setattr(TaskHistory, "_record", fail_record)
+                    with pytest.raises(OSError, match="Core cancellation"):
+                        cancel_schedule(app, identity)
+            # The scheduler's concurrent advancement cannot remove the human hold.
+            mark_fired(store, identity, now=now)
+
+        with monkeypatch.context() as patch:
+            patch.setattr(ScheduleStore, "mark_fired", cancel_before_advancement)
+            _fire_schedule(app, schedule)
+        [item] = seen
+        retained = app.state.schedules.get(schedule.id)
+        assert retained is not None and not retained.enabled
+        owner.history.restore()
+        assert owner.history.pending_mail(sid) == (item,)
+        assert not owner.history.mail_withdrawn(sid, item.id)
+        assert not owner.eligible(sid, item)
+        assert owner.mail.stage(owner.caller(sid)).items == ()
+        assert not owner.history.acknowledged_notifications(sid)
+        assert cancel_schedule(app, schedule.id)
+        assert app.state.schedules.get(schedule.id) is None
+        assert owner.history.mail_withdrawn(sid, item.id)
+        assert owner.history.pending_mail(sid) == ()
+
+    await owner.history.io.run(exercise)
 
 
 def test_clear_before_settlement_cannot_resurrect_goal(tmp_path: Path, arc: ARCMemory) -> None:
@@ -228,8 +435,10 @@ def test_restart_preserves_only_durable_waiting_work(
             sessions=SessionStore(path=tmp_path / "sessions.json"),
             schedules=ScheduleStore(path=tmp_path / "schedules.json"),
             deferred_schedules=set(),
+            task_history=TaskHistory(arc),
         )
     )
+    reloaded.state.task_history.restore()
     assert reloaded.state.sessions.get(sid) is not None
     reconcile_autonomous_controls(reloaded)
     if status == "idle":
@@ -242,13 +451,16 @@ def test_restart_preserves_only_durable_waiting_work(
         assert reloaded.state.schedules.list(session_id=sid) == []
 
 
-def test_restart_does_not_leave_unpaced_goal_active(tmp_path: Path, arc: ARCMemory) -> None:
+def test_restart_retains_unpaced_goal_without_manufacturing_a_wakeup(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     app = _app(tmp_path, arc)
     sid = _session(app)
     arm_goal(app, sid, condition="Finish the sweep")
     reconcile_autonomous_controls(app)
     assert _get_goal(app, sid)["phase"] == "recovering"
-    assert len(pending_mail(app, sid)) == 1
+    assert _get_goal(app, sid)["active"]
+    assert pending_mail(app, sid) == []
 
 
 def test_normal_backend_boot_persists_schedule_without_explicit_path(
@@ -337,13 +549,13 @@ def test_goal_cap_stops_paired_loop_at_real_finalize_seam(
     arm_goal(app, sid, condition="Done", max_tokens=1)
     start_loop(app, sid, prompt="One checkpoint")
     app.state.sessions.update(sid, add_tokens_input=2)
-    monkeypatch.setattr(turn_finalize_goal, "finalize_turn", lambda *args, **kwargs: None)
+    monkeypatch.setattr(turn_finalize_goal, "finalize_turn", lambda *args, **kwargs: True)
     state = SimpleNamespace(
         app=app, sid=sid, turn_id="t", trace_id="tr", user_msg=SimpleNamespace(metadata={})
     )
     asyncio.run(
         turn_finalize_goal.finalize_turn_async(
-            state,
+            cast("TurnState", state),
             None,
             drain_observed_tool_calls=lambda: [],
             update_retry_attempt=lambda *args: None,
@@ -351,6 +563,7 @@ def test_goal_cap_stops_paired_loop_at_real_finalize_seam(
     )
     assert _get_loop(app, sid)["active"]
     assert len(app.state.schedules.list(session_id=sid)) == 1
+    assert _get_goal(app, sid)["clear_reason"] == "goal_budget"
 
 
 def test_judge_retains_precise_artifact_facts_and_recent_chronology(
@@ -386,60 +599,75 @@ def test_judge_retains_precise_artifact_facts_and_recent_chronology(
 
 
 @pytest.mark.parametrize("status", ["waiting_user", "waiting_permission"])
-def test_wakeup_waits_for_human_input(
-    tmp_path: Path, monkeypatch: Any, status: str, arc: ARCMemory
+@pytest.mark.asyncio
+async def test_wakeup_waits_for_human_input(
+    autonomous_session: tuple[Any, Conversations, str], status: str
 ) -> None:
-    app = _app(tmp_path, arc)
-    sid = _session(app)
-    start_loop(app, sid, prompt="One checkpoint", interval_s=60)
-    app.state.sessions.update(sid, status=status)
-    app.state.turn_runner = SimpleNamespace(busy=lambda sid: False)
-    loop = _get_loop(app, sid)
-    schedule = app.state.schedules.get(loop["pending_schedule_id"])
-    from clio_agent.gact import app as app_mod
+    app, owner, sid = autonomous_session
 
-    staged: list[bool] = []
-    monkeypatch.setattr(
-        app_mod, "_turn_start_background_user_turn", lambda *args, **kwargs: staged.append(True)
-    )
-    _fire_schedule(app, schedule)
-    assert not staged
-    assert schedule.id in app.state.deferred_schedules
-    assert app.state.schedules.get(schedule.id) is not None
+    def exercise() -> None:
+        start_loop(app, sid, prompt="One checkpoint", interval_s=60)
+        app.state.sessions.update(
+            sid, status=status, metadata_patch={"execution_gate": "pending-human-approval"}
+        )
+        schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
+        _fire_schedule(app, schedule)
+        [item] = owner.history.pending_mail(sid)
+        assert item.kind == "schedule"
+        content = owner.history.read_content(item.content)
+        assert isinstance(content, dict)
+        metadata = content["metadata"]
+        assert isinstance(metadata, dict) and metadata["schedule_id"] == schedule.id
+        assert not owner.eligible(sid, item)
+        assert owner.mail.stage(owner.caller(sid)).items == ()
+        # Acceptance retires the one-shot timer; the canonical mailbox retains
+        # its occurrence through the human gate instead of a second defer queue.
+        assert app.state.schedules.get(schedule.id) is None
+        app.state.sessions.update(sid, status="idle", metadata_patch={"execution_gate": ""})
+        assert owner.eligible(sid, item)
+        assert owner.history.pending_mail(sid) == (item,)
+        assert not owner.history.acknowledged_notifications(sid)
+
+    await owner.history.io.run(exercise)
 
 
-def test_exhausted_schedule_retries_settle_loop_and_goal(
-    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+@pytest.mark.asyncio
+async def test_exhausted_schedule_retries_settle_loop_and_goal(
+    autonomous_session: tuple[Any, Conversations, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from clio_agent.gact import app as app_mod
+    from clio_agent.gact import scheduler_runtime
     from clio_agent.gact.scheduler_runtime import _fire_one
 
-    app = _app(tmp_path, arc)
-    sid = _session(app)
-    arm_goal(app, sid, condition="Done")
-    start_loop(app, sid, prompt="One checkpoint")
-    app.state.turn_runner = SimpleNamespace(busy=lambda sid: False)
-    schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
+    app, owner, sid = autonomous_session
 
     def fail(*args: Any, **kwargs: Any) -> None:
         raise RuntimeError("Staging unavailable")
 
-    monkeypatch.setattr(app_mod, "_turn_start_background_user_turn", fail)
+    monkeypatch.setattr(scheduler_runtime, "accept_session_input", fail)
     monkeypatch.setenv("CLIO_SCHEDULER_MAX_RETRIES", "1")
-    _fire_one(app, schedule)
-    _fire_one(app, schedule)
-    assert _get_loop(app, sid)["stop_reason"] == "loop_schedule_failed"
-    assert _get_goal(app, sid)["active"]
-    assert not app.state.schedules.list(session_id=sid)
+
+    def exercise() -> None:
+        arm_goal(app, sid, condition="Done")
+        start_loop(app, sid, prompt="One checkpoint")
+        schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
+        _fire_one(app, schedule)
+        _fire_one(app, schedule)
+        assert _get_loop(app, sid)["stop_reason"] == "loop_schedule_failed"
+        assert _get_goal(app, sid)["active"]
+        assert not app.state.schedules.list(session_id=sid)
+        assert owner.history.pending_mail(sid) == ()
+
+    await owner.history.io.run(exercise)
 
 
-def test_startup_storage_failure_retries_before_firing(
-    tmp_path: Path, monkeypatch: Any, arc: ARCMemory
+@pytest.mark.asyncio
+async def test_startup_storage_failure_retries_before_firing(
+    autonomous_session: tuple[Any, Conversations, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A transient startup read failure must neither fire unsafe work nor kill the scheduler."""
     from clio_agent.gact import scheduler_runtime
 
-    app = _app(tmp_path, arc)
+    app, _, _ = autonomous_session
     attempts: list[str] = []
 
     def reconcile(app: Any) -> None:
@@ -458,35 +686,37 @@ def test_startup_storage_failure_retries_before_firing(
     monkeypatch.setattr(scheduler_runtime, "_scheduler_tick_once", tick)
     monkeypatch.setattr(scheduler_runtime.asyncio, "sleep", sleep)
     with pytest.raises(asyncio.CancelledError):
-        asyncio.run(scheduler_runtime._scheduler_tick(app))
+        await scheduler_runtime._scheduler_tick(app)
     assert attempts == ["reconcile", "reconcile", "tick"]
 
 
 @pytest.mark.parametrize("starting", [True, False])
-def test_overdue_wakeup_waits_for_runtime_readiness(
-    tmp_path: Path, monkeypatch: Any, starting: bool, arc: ARCMemory
+@pytest.mark.asyncio
+async def test_overdue_wakeup_waits_for_runtime_readiness(
+    autonomous_session: tuple[Any, Conversations, str], starting: bool
 ) -> None:
-    from clio_agent.gact import app as app_mod
+    app, owner, sid = autonomous_session
 
-    app = _app(tmp_path, arc)
-    sid = _session(app)
-    start_loop(app, sid, prompt="One checkpoint", interval_s=60)
-    schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
-    app.state.agent = None if starting else object()
-    app.state.lm_config_status = {"state": "ready" if starting else "configuring"}
-    app.state.turn_runner = SimpleNamespace(busy=lambda sid: False)
-    staged: list[str] = []
-    monkeypatch.setattr(
-        app_mod, "_turn_start_background_user_turn", lambda *a, **k: staged.append(sid)
-    )
-    _fire_schedule(app, schedule)
-    assert not staged and schedule.id in app.state.deferred_schedules
-    assert app.state.schedules.get(schedule.id).enabled
-    app.state.agent = object()
-    app.state.lm_config_status = {"state": "ready"}
-    _fire_schedule(app, schedule)
-    assert staged == [sid]
-    assert app.state.schedules.get(schedule.id) is None
+    def exercise() -> None:
+        start_loop(app, sid, prompt="One checkpoint", interval_s=60)
+        schedule = app.state.schedules.get(_get_loop(app, sid)["pending_schedule_id"])
+        app.state.agent = None if starting else object()
+        app.state.lm_config_status = {"state": "ready" if starting else "configuring"}
+        _fire_schedule(app, schedule)
+        assert not owner.history.pending_mail(sid)
+        assert schedule.id in app.state.deferred_schedules
+        assert app.state.schedules.get(schedule.id).enabled
+        app.state.agent = object()
+        app.state.lm_config_status = {"state": "ready"}
+        _fire_schedule(app, schedule)
+        [item] = owner.history.pending_mail(sid)
+        assert item.kind == "schedule" and owner.eligible(sid, item)
+        assert app.state.schedules.get(schedule.id) is None
+        _fire_schedule(app, schedule)
+        assert owner.history.pending_mail(sid) == (item,)
+        assert not owner.history.acknowledged_notifications(sid)
+
+    await owner.history.io.run(exercise)
 
 
 def test_scheduler_restores_a_sessions_own_model(
@@ -505,6 +735,7 @@ def test_scheduler_restores_a_sessions_own_model(
 
     async def build(app: Any, session_id: str, request: Any) -> None:
         ref = session_host_agent.selected_ref(app, session_id, request)
+        assert ref is not None
         assert ref.provider_id == "codex" and ref.model_id == "gpt-6-luna"
         built.append(session_id)
         app.state.agent = object()

@@ -98,13 +98,13 @@ async def recorded_tasks(arc: ARCMemory) -> AsyncIterator[tuple[TaskHistory, Tas
 
 
 def test_task_tool_declarations_select_their_shared_presenters() -> None:
-    aliases = ["wait_agent_tasks", "get_agent_output", "message_agent"]
+    aliases = ["wait_agent_tasks", "get_agent_task_output", "message_agent"]
     tools = build_task_tools() + build_task_compatibility_tools(aliases)
     expected = {
         "wait_tasks": "wait",
         "wait_agent_tasks": "wait",
         "get_task_result": "task_output",
-        "get_agent_output": "task_output",
+        "get_agent_task_output": "task_output",
         "send_agent_message": "message",
         "message_agent": "message",
         "query_tasks": "tasks",

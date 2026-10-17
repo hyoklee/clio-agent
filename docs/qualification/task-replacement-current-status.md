@@ -7,7 +7,60 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Partial transcript projection regressions — CI pending
+### Goal and schedule input admission — CI pending
+
+Source inspection found an expired-goal admission gap: the conversation owner
+checked goal identity while the older expiry-aware helper had no production
+callers. The existing admission decision now uses read-only autonomy predicates
+in `autonomy_guard`; maintenance uses the same explicit-budget predicate when
+recording goal expiry. It takes no goal mutation lock while holding the history
+lock, introduces no default deadline, and leaves human feedback eligible.
+The unused `goal_redrive_is_current` helper is removed. Conversation execution,
+reservation, inference, pause, cancellation and recovery methods are unchanged.
+
+One-shot schedule acceptance now records its trusted one-shot attribute in the
+existing Core mailbox item. Natural timer retirement therefore cannot make that
+accepted occurrence unavailable. Explicit schedule deletion serializes with
+mailbox admission and withdraws only that schedule's uncommitted occurrences;
+their history remains readable and unrelated input remains pending. It disables
+the timer before Core reads/withdrawal and deletes it only after confirmation.
+Failed recording retains the disabled timer; late advancement cannot remove that
+hold. Read/write-failure cases require recovery and an explicit successful retry.
+There is no
+new schedule store, execution owner, worker or polling path. Other scheduler
+runtime functions are AST-identical.
+
+The affected policy scenarios now use real TaskHistory, Conversations and
+SessionMail owners rather than removed direct-turn launch mocks. They cover
+explicit time/token expiry before maintenance, unlimited budgets, human-feedback
+independence, held one-shot occurrences, runtime readiness, exhausted admission
+retries, stale goals and cancellation between acceptance and timer advancement.
+The restart case now enforces the reviewed no-manufactured-wakeup rule (plan line
+96), retaining the objective and its recovering state. The finalize stand-in
+returns the current confirmed-success value so the goal step is actually reached.
+All previous parameter cases remain; original limits and diagnostic timeouts stay
+unchanged. New test fixtures retire their owned resources.
+
+Python 3.14 CI for `017209b5` reports 12,144 passes, 298 failures, four errors
+and 55 skips. All 58 existing presentation, 17 Question, two A2UI and 15 source
+connection cases pass. Five new public-operation presentation cases pass; the
+metadata case exposed my incorrect alias spelling. The released spelling is
+`get_agent_task_output`; both the presentation metadata and test now use it,
+without adding another compatibility tool or changing its execution.
+
+Eight-file scoped Mypy, Ruff/format and removal/class/size guards pass. The size
+ratchet remains unchanged. Source/test AST audit:
+`ci-autonomy-mailbox-fc56-audit.json` in D static evidence. No local behavioral
+tests ran. Fresh CI and affected actual-model/UI qualification are required.
+clio-core 2.3.1, dependencies, GACT, installed state and frozen R184 runtime are
+unchanged; no successor live family launched.
+
+### Partial transcript projection regressions — CI passed for affected cases
+
+All four Python 3.14 artifacts for `fc56a04d` / run `39021776304` report
+12,151 passes, 290 failures, five errors and 55 skips. All eight accepted-input
+transcript-repair cases pass, including all four cases below. The complete
+regression baseline remains failed; these are not live recovery acceptance.
 
 The `c11e8786` Python 3.14 artifacts contain four failed cases in accepted-input
 transcript repair. The production assembler explicitly returns sealed assistant
@@ -23,11 +76,11 @@ timezone-aware detection timestamp. Original raw-atom equality, generation
 stability, concurrent finalized append, later envelope reconstruction, pending
 mail and no-acknowledgement assertions remain. No test or parameter case is removed.
 
-This is a test migration to the documented projection contract. Production source,
-clio-core, dependencies and frozen runtime are unchanged. Scoped Ruff/format and
-one-file Mypy pass; no local behavioral test ran. Receipt:
-`ci-partial-transcript-017209-audit.json` in D static evidence. Fresh CI execution
-is required; this does not constitute actual-model recovery acceptance.
+That test migration changed no production source, clio-core, dependency or frozen
+runtime. Scoped Ruff/format and one-file Mypy passed; no local behavioral test
+ran. Receipt: `ci-partial-transcript-017209-audit.json` in D static evidence.
+The affected regression cases passed as recorded above; actual-model recovery
+acceptance remains required.
 
 ### Native wire, replay identity and retained Question API — CI pending
 
@@ -124,7 +177,7 @@ Ruff/format, six-file Mypy and removal/class/size guards pass. Receipt:
 affected production-service/model/UI verification remain required.
 
 Candidate Python-source SHA256:
-`2762e671d354762eda88681a05161aa46f22a6d5b9e6d8307645bfba4ffd6963`.
+`8894bba066d6fdad2928bfe2ce712e1122defacbcbe6ebaacad0a1d1c1c23319`.
 clio-core 2.3.1, dependencies, GACT, installed Desktop and frozen D/R184 source
 are unchanged. R184 remains held in unresolved HTTP shutdown; no successor live
 family launched.
