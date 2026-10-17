@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -160,6 +161,55 @@ async def create_environment(
     app.state.conversations = owner
     await owner.restore()
     return app, owner, root
+
+
+@pytest.mark.asyncio
+async def test_unconfirmed_cancellation_holds_existing_mail_before_admission(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Control effects close admission before their deferred Core write can run."""
+    _, owner, root = await create_environment(arc, tmp_path)
+    history, sid = owner.history, root.owner.session_id
+    deferred: list[Callable[[], object]] = []
+    original = owner.recovery.defer_recording
+
+    def delay_recording(identity: str, operation: Callable[[], object]) -> None:
+        if identity == "conversation-cancel:" + root.handle:
+            deferred.append(operation)
+        else:
+            original(identity, operation)
+
+    def accept() -> MailItem:
+        return history.record_mail(
+            MailItem(
+                id="human-before-cancel-confirmation",
+                recipient_session=sid,
+                sender_human="human",
+                kind="human",
+                content=history.write_content(sid, {"text": "New human assignment"}),
+                created_at=now(),
+            )
+        )
+
+    mail = await history.io.run(accept)
+    monkeypatch.setattr(owner.recovery, "defer_recording", delay_recording)
+    try:
+        acknowledgement = await owner.cancel(
+            TaskCaller(sid, "human", human_action=True), root.handle
+        )
+        assert acknowledgement["cancellation_requested"] is True
+        assert acknowledgement["recording"] == "unconfirmed"
+        assert len(deferred) == 1
+        current = history.task_snapshot(root.handle)
+        assert current is not None and current.cancellation_requested_at is None
+        assert owner.eligible(sid, mail) is False
+        assert history.pending_mail(sid) == (mail,)
+        assert history.acknowledged_notifications(sid) == frozenset()
+    finally:
+        for operation in deferred:
+            await history.io.run(operation)
+        await owner.shutdown()
+        await owner.recovery.drain()
 
 
 @pytest.mark.asyncio

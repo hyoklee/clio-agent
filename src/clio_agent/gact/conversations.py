@@ -207,7 +207,7 @@ class Conversations:
                     return False
         if assignment is None:
             return True
-        if not self.supports_execution(assignment):
+        if not self.supports_execution(assignment) or assignment.handle in self._control_holds:
             return False
         if assignment.cancellation_requested_at is not None:
             if assignment.terminal_at is None:

@@ -35,6 +35,29 @@ will finish unchanged. Its successor must execute all four shards and confirm
 complete counts before claiming a full report. This change adds no production
 code or execution owner; clio-core and the product/runtime tuple are unchanged.
 
+### Cancellation before intent persistence — CI pending
+
+The retained cancellation/admission case in `764121a2` admitted feedback under
+the cancelled original handle instead of a successor; the same case timed out
+in `40b5a3a1`. The common eligibility decision checked confirmed cancellation but
+omitted the already-existing provisional control hold. It now retains input
+while that hold is active, before deferred intent persistence. This adds one
+condition to the existing owner, not another scheduler or lifecycle policy.
+
+A new real-Core regression holds cancellation recording before it runs and
+requires the verified control to make existing human mail ineligible immediately.
+The snapshot must still show unconfirmed intent, the mail must remain pending,
+and no recipient acknowledgement may exist. All eleven existing tests in that
+module are AST-identical; the settlement/successor assertions are retained.
+Scoped Ruff/format, two-file Mypy and removal/class/size guards pass. No local
+behavioral test or model ran. Receipt:
+`ci-cancel-admission-hold-40b5-source-audit.json` in D static evidence.
+
+Current candidate Python-source SHA256:
+`187340cbc8c690d7f9e5ed932faf946c3bda2a52e5a1ac9454b41cb36bd52ce2`.
+The D/R184 source remains frozen. clio-core, dependencies and GACT are unchanged;
+fresh CI and affected actual-model cancellation/admission acceptance are pending.
+
 ### Workflow checkpoint fixture — CI pending
 
 The retained workflow-retry case passed its business assertions in `764121a2`,
