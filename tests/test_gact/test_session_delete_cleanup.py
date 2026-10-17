@@ -1,8 +1,9 @@
 """Deleting a session never leaves its clio-core transcript behind silently.
 
 ``DELETE /v1/sessions/{id}`` (and ``/clear``) erases the session's clio-core data
-FIRST -- the ``_events/m`` transcript lane with its generations and pointer
-(:func:`~clio_agent.arc.lane_generations.erase_lane`) and the ``_events/s`` op lane.
+FIRST -- the ``_events/m`` transcript payload generations and the ``_events/s`` op
+lane. Its empty visibility marker remains so retained task input cannot restore
+the deleted transcript.
 When clio-core cannot finish, the request fails typed (``transcript_erase_failed``,
 a retryable 503) BEFORE the session row, the in-memory ledger or the file copy is
 touched: the session stays, and repeating the request finishes the erase (every
@@ -13,7 +14,7 @@ Everything runs on a REAL clio-core store (``ARCMemory(data_dir=...)``); a "rest
 is a second ``build_app`` over the same registry and namespace. Failures are injected
 at the store's own ``put`` / ``delete``, refusing ONE named record.
 
-SABOTAGE (recorded, run on real clio-core; each went RED, then was restored):
+Historical pre-replacement sabotage (not acceptance of the current regressions):
 
 * the old swallow restored in ``_delete_session_messages`` (catch, log a warning)
   with the row deleted first: 12 of 14 fail -- the delete answers 204, the session is
@@ -37,6 +38,7 @@ from fastapi.testclient import TestClient
 
 from clio_agent.arc.lane_chunking import chunk_scope
 from clio_agent.arc.lane_generations import (
+    GENERATION_KIND,
     current_generation,
     generation_base,
     pointer_scope,
@@ -107,16 +109,37 @@ def _assert_erase_failed(response: Any, cause: str = "LaneReplaceError") -> None
     assert error["details"]["cause"] == cause
 
 
-def _assert_nothing_left(tmp_path: Path, sid: str) -> None:
-    """After a restart: no row, no lane chunk / generation / pointer / op, no file."""
+def _assert_only_visibility_marker(app: Any, sid: str) -> str:
+    """Require all payload/op records gone and one valid empty visibility boundary."""
+    segments = app.state.arc._segments
+    scope = pointer_scope(MESSAGE_PART_SCOPE)
+    assert _lane_records(app, sid) == [_record(sid, scope)]
+    pointers = segments.list_segments(sid, scope, include_tombstoned=True)
+    assert len(pointers) == 1 and pointers[0].kind == GENERATION_KIND
+    marker = pointers[0].content
+    visibility = marker.get("transcript_visibility")
+    assert isinstance(visibility, str) and visibility
+    generation = current_generation(segments, sid, MESSAGE_PART_SCOPE)
+    assert generation > 0 and marker["generation"] == generation
+    assert (
+        segments.list_segments(
+            sid, generation_base(MESSAGE_PART_SCOPE, generation), include_tombstoned=True
+        )
+        == []
+    )
+    return visibility
+
+
+def _assert_nothing_left(tmp_path: Path, sid: str, visibility: str) -> None:
+    """After restart: deleted row/file/payloads stay gone; the same visibility survives."""
 
     app = _app(tmp_path)
     with TestClient(app) as client:
         assert app.state.sessions.get(sid) is None
         assert client.get(f"/v1/sessions/{sid}").status_code == 404
-        assert _lane_records(app, sid) == []
+        assert _assert_only_visibility_marker(app, sid) == visibility
         segments = app.state.arc._segments
-        assert not segments.has_segments(sid, pointer_scope(MESSAGE_PART_SCOPE))
+        assert segments.has_segments(sid, pointer_scope(MESSAGE_PART_SCOPE))
         for generation in (0, 1, 2, 3):
             base = generation_base(MESSAGE_PART_SCOPE, generation)
             assert segments.list_segments(sid, base, include_tombstoned=True) == []
@@ -125,14 +148,14 @@ def _assert_nothing_left(tmp_path: Path, sid: str) -> None:
 
 # Each case refuses one record the erase of a generation-1 lane touches, naming the
 # stage it fails at: the pointer switch (nothing changed yet), the old generation's
-# second chunk (switched; old chunks remain), the pointer's removal, the op lane.
+# second chunk (switched; old chunks remain), or the op lane. The visibility
+# pointer is intentionally retained; its no-delete guarantee is tested separately.
 _FAILURES = {
     "switch": ("put", lambda sid: _record(sid, pointer_scope(MESSAGE_PART_SCOPE))),
     "retire": (
         "delete",
         lambda sid: _record(sid, chunk_scope(generation_base(MESSAGE_PART_SCOPE, 1), 2)),
     ),
-    "pointer": ("delete", lambda sid: _record(sid, pointer_scope(MESSAGE_PART_SCOPE))),
     "op_lane": ("delete", lambda sid: _record(sid, STATE_MERGE_SCOPE)),
 }
 
@@ -171,8 +194,8 @@ def test_a_failed_clio_core_erase_fails_the_delete_typed_and_a_retry_finishes_it
         # Not silently left: the retry (same process, store healthy again) removes it.
         retry = client.delete(f"/v1/sessions/{sid}")
         assert retry.status_code == 204, retry.text
-        assert _lane_records(first, sid) == []
-    _assert_nothing_left(tmp_path, sid)
+        visibility = _assert_only_visibility_marker(first, sid)
+    _assert_nothing_left(tmp_path, sid, visibility)
 
 
 def test_a_failed_erase_keeps_the_session_across_a_restart_and_the_retry_there_finishes(
@@ -191,10 +214,11 @@ def test_a_failed_erase_keeps_the_session_across_a_restart_and_the_retry_there_f
         assert second.state.sessions.get(sid) is not None
         assert _ids(client, sid) == before
         assert client.delete(f"/v1/sessions/{sid}").status_code == 204
-    _assert_nothing_left(tmp_path, sid)
+        visibility = _assert_only_visibility_marker(second, sid)
+    _assert_nothing_left(tmp_path, sid, visibility)
 
 
-def test_a_successful_delete_leaves_no_lane_pointer_or_generation(
+def test_a_successful_delete_removes_payloads_and_preserves_visibility(
     tmp_path: Path, file_mode: bool
 ) -> None:
     app = _app(tmp_path)
@@ -204,8 +228,24 @@ def test_a_successful_delete_leaves_no_lane_pointer_or_generation(
         client.post(f"/v1/sessions/{sid}/undo", json={"count": 1}).raise_for_status()
         assert current_generation(app.state.arc._segments, sid, MESSAGE_PART_SCOPE) == 2
         assert client.delete(f"/v1/sessions/{sid}").status_code == 204
-        assert _lane_records(app, sid) == []
-    _assert_nothing_left(tmp_path, sid)
+        visibility = _assert_only_visibility_marker(app, sid)
+    _assert_nothing_left(tmp_path, sid, visibility)
+
+
+def test_delete_never_attempts_to_remove_the_visibility_boundary(
+    tmp_path: Path, file_mode: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Refusing pointer deletion cannot block cleanup because that marker must remain."""
+    app = _app(tmp_path)
+    with TestClient(app) as client:
+        sid = _seed_with_ops(app, client)
+        with monkeypatch.context() as injected:
+            refused = _refuse_delete(app, injected, _record(sid, pointer_scope(MESSAGE_PART_SCOPE)))
+            response = client.delete(f"/v1/sessions/{sid}")
+        assert response.status_code == 204, response.text
+        assert refused == []
+        visibility = _assert_only_visibility_marker(app, sid)
+    _assert_nothing_left(tmp_path, sid, visibility)
 
 
 def test_a_failed_clear_is_typed_and_its_retry_clears(tmp_path: Path, file_mode: bool) -> None:

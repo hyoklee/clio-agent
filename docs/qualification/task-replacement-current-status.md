@@ -7,6 +7,30 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Transcript deletion visibility regressions — CI pending
+
+The retained deletion tests expected removal of the generation pointer. The
+replacement transcript path instead writes an empty generation with a new
+`transcript_visibility` boundary, so retained task inputs cannot reconstruct an
+older visible transcript. The tests now require every payload/op record gone and
+exactly one typed marker, an empty current generation and the same visibility
+identity after application restart. Deleted session/file and historical chunk
+absence checks remain.
+
+Switch, old-chunk retirement and op-lane fault injection still require typed 503,
+the retained session/cache where applicable, and successful retry, including a
+restart between failure and retry. The obsolete pointer-removal fault variants
+are replaced by refusal guards: deletion must succeed while attempting zero
+pointer deletes. Both file-cache modes still run, retaining 14 parameterized
+cases. The four original fault/source helper ASTs are unchanged. Historical
+sabotage notes are explicitly identified as pre-replacement evidence.
+
+Scoped Ruff/format and Mypy pass. Receipt:
+`ci-delete-visibility-066b-source-audit.json` in D static evidence. No local
+behavioral test or live model ran; production source, clio-core and the dependency
+tuple are unchanged. Full CI on `764121a2` remains active; the subsequent test-only
+commits await one coherent next-head dispatch after that report completes.
+
 ### Direct model contracts through the real owner — CI pending
 
 The four isolated streaming module cases and the off-loop native-input case now
