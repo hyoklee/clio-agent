@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import faulthandler
+import sys
 from pathlib import Path
 from typing import Any, Literal
 
@@ -159,4 +161,26 @@ def test_shared_cancel_reaches_native_work_before_backend_binding(
                     await native.await_settlement(receipt["handle"], allow_uncertainty=False)
                 monkeypatch.setattr(native, "_confirm_acceptance", original)
 
-        asyncio.run_coroutine_threadsafe(exercise(), app.state.mcp_app_loop).result(timeout=110)
+        future = asyncio.run_coroutine_threadsafe(exercise(), app.state.mcp_app_loop)
+        try:
+            future.result(timeout=110)
+        except TimeoutError:
+            faulthandler.dump_traceback(file=sys.stderr, all_threads=True)
+
+            async def describe_pending_tasks() -> None:
+                """Identify suspended owners before failure cleanup cancels the waiter."""
+                for task in asyncio.all_tasks():
+                    print(f"Native cancellation diagnostic: {task.get_name()}", file=sys.stderr)
+                    task.print_stack(file=sys.stderr)
+
+            diagnostic = asyncio.run_coroutine_threadsafe(
+                describe_pending_tasks(), app.state.mcp_app_loop
+            )
+            try:
+                diagnostic.result(timeout=1)
+            except TimeoutError:
+                diagnostic.cancel()
+                print("Application loop did not service task diagnostics", file=sys.stderr)
+            finally:
+                future.cancel()
+            raise

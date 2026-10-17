@@ -7,6 +7,53 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### R183/R184 UI review and unresolved isolated shutdown
+
+Both actual Codex/Luna direct-SSE runs on clio-agent `d86c9120` / GACT `0f9c00a4`
+demonstrated external-task acceptance, independent work, one lost-visibility
+attention episode and desktop Work disclosure. The rendered row said "Needs
+inspection"; keyboard disclosure retained the original assignment and handle,
+with raw backend `working`, connection `lost` and viewport containment. Selected
+untouched desktop captures and phone failure captures were visually inspected.
+There were no connected-API HTTP failures or page errors in the browser record.
+
+Neither UI run passes. R183's driver treated the four-state Evidence layout
+button as a binary toggle and selected Data when resizing. R184 selected Bottom
+but the docked panel was hidden after its desktop gutter disappeared on the phone.
+The next driver must reopen Work using the actual layout controls. Phone Work,
+Runs filtering and final-result UI acceptance remain unverified; no product UI
+patch follows these driver assumptions.
+
+R183's original backend completed once; the original model assignment completed
+after one final result. API/external/proxy exited zero and the deliberately failed
+browser exited one after closing its context. All local processes/listeners were
+absent before removing its 514,151,625-byte profile and 2,777,191,463-byte temp root.
+The unchanged 29,037,620-byte UI build remains registered for the pending repeat.
+
+R184's backend has physically completed/cleaned; browser context and process are
+closed, and its session reports no active task after explicit cleanup controls.
+The external server/proxy have retired normally. The isolated API has not exited:
+verified API PID `63128`, launcher `29952`, private runtime `45180` on port `30300`.
+Its controller is still waiting for normal exit. Read-only py-spy stacks show an
+idle application event loop and idle worker/proxy threads; these do not identify
+the awaited shutdown dependency. Do not call this settled or remove its live
+profile/temp data. The R2 human-force-close question is pending; no force-close
+or subsequent live launch has occurred. The installed Desktop and clio-core
+library remain unchanged. Bounded evidence is `r183/r184-live-external-recovery`,
+UI results/captures/custody, `r183-cleanup*.json` and `r184-shutdown-stacks.txt`.
+
+CI `38991839575` on `e837c3bf` completed failed. All three Python 3.14 artifacts
+report 11,865 passed, 534 failed, four errors and 53 skips. The new public SSE
+factory regression passes. Preceding `8bd9501e` artifacts report 11,864 passed,
+532 failed, six errors and 53 skips; all four migrated observer cases pass.
+The three native cancellation cases now reach a 110-second diagnostic timeout
+instead of the missing-invocation setup error. Their failure record contains no
+application-task stack, so a test-only diagnostic now captures thread/task stacks
+and cancels its failed exercise waiter before re-raising. Its assertions, 110/120
+second limits, worker settings and production cancellation policy are unchanged.
+That diagnostic is not a fix or a passing regression claim. No local pytest/vitest
+ran; source/live qualification and the full CI baseline remain incomplete.
+
 ### R181 selection failure and R182 actual direct-SSE recovery
 
 R182 passed actual Codex/Luna direct-SSE execution on clio-agent `e837c3bf` / GACT
