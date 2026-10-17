@@ -7,7 +7,32 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Plan-answer correction — CI and model acceptance pending
+### Safe plan rejection and Download wire input — CI pending
+
+The first two Python 3.14 shards on `f9891834` pass canonical modifier retries,
+both original invalid-selection cases, auto/interactive approval, immutable plan
+reuse and queued busy approval. They expose two remaining failures. Empty plan
+answers are refused by generic Question validation before the existing safe-reject
+decision can run. The plan-only authenticated boundary now canonicalizes an empty
+human response to the already-advertised reject option. Modifier-only selection
+still fails, and an added ordinary empty-Question case retains generic refusal.
+
+The all-auto-tool wire test now reaches every tool except Download: its table
+omitted the required `paths`, so DSPy rejected the arguments before the observed
+body ran. That fixture now supplies a valid missing path with its missing source,
+keeping provider/network operations out of this test and retaining the unchanged
+every-executed-call assertion. No Download production code changed.
+
+All original assertions are preserved; two parameter cases add modifier-only and
+ordinary empty-input coverage. Scoped Ruff/format, Mypy and removal/class/size
+guards pass. No local pytest/vitest ran. The bounded audit receipt is
+`ci-plan-safe-reject-0d71-source-audit.json` in the D checkout's static evidence.
+The current production hash is
+`7ffd923c684ff07bdb3b3e39128b0b6bb43d61eadcee2019e661a26b436d0f89`.
+Fresh CI and actual-model acceptance remain required. The still-live R184 source,
+GACT, dependencies and clio-core 2.3.1 remain unchanged.
+
+### Initial plan-answer correction — scoped CI evidence, wider acceptance pending
 
 Exact `5d21491c` CI exposed a plan-answer mismatch: the question advertises
 `clear_context` as an auxiliary option, while generic single-choice validation
@@ -33,7 +58,7 @@ No permission policy or timeout changes in production.
 
 Scoped Ruff/format, Mypy for all five changed code/test files and
 removal/class/size guards pass.
-No local pytest/vitest ran. Candidate production hash:
+No local pytest/vitest ran. This initial correction's production hash:
 `43593e67ded67853b1b89c387a5b852f3a497c25b5c38a1a6ca32347afc82978`.
 GACT, dependencies, clio-core 2.3.1 and the still-live R184 source are unchanged.
 

@@ -344,6 +344,7 @@ def test_clear_context_retains_core_history_and_announces_removed_surfaces(
     [
         ["auto", "interactive", "clear_context"],
         ["auto", "clear_context", "clear_context"],
+        ["clear_context"],
     ],
 )
 def test_plan_modifier_keeps_primary_and_duplicate_choice_checks(
@@ -383,8 +384,9 @@ def test_context_modifier_forms_share_one_canonical_answer(
     assert world.app.state.task_history.read_content(current.result) == stored
 
 
+@pytest.mark.parametrize("selection", [["auto", "clear_context"], []])
 def test_plan_modifier_does_not_relax_an_ordinary_choice(
-    approval_world: ApprovalWorld,
+    approval_world: ApprovalWorld, selection: list[str]
 ) -> None:
     """An unrelated question cannot acquire plan semantics from an option's name."""
     world = approval_world
@@ -406,7 +408,7 @@ def test_plan_modifier_does_not_relax_an_ordinary_choice(
     )
     response = world.client.post(
         f"/v1/sessions/{world.sid}/questions/{question.handle}/answer",
-        json={"selected_options": ["auto", "clear_context"]},
+        json={"selected_options": selection},
     )
     assert response.status_code == 422
     current = history.task_snapshot(question.handle)

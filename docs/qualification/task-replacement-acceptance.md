@@ -13,8 +13,9 @@ declarations. Exact `21c4311a` Python 3.14 CI passes the wait declaration and th
 added nullable-form cases; broader regression/model acceptance remains incomplete.
 Exact `5d21491c` Python 3.14 CI also passes all ten short-MCP output conversion
 cases and the original Goal presentation case; model acceptance remains pending.
-The advertised plan-context modifier correction and permission-policy fixture
-migration require fresh CI. Their assertions and validation boundaries are
+Partial `f9891834` CI passes modifier retries and invalid-primary checks; the
+remaining empty safe-reject correction and Download wire input require fresh CI.
+Their assertions and validation boundaries are
 documented in the current status; the broad regression baseline remains failed.
 Previous live captures do not qualify these corrections. clio-core remains
 `iowarp-core==2.3.1`; no execution owner or dependency changed.

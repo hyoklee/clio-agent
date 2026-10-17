@@ -34,20 +34,27 @@ class PlanApproval(BaseModel):
 def normalize_plan_exit_reply(
     definition: QuestionDefinition, reply: QuestionReply
 ) -> QuestionReply:
-    """Separate the advertised context modifier from the single plan decision."""
+    """Normalize the plan decision and its advertised auxiliary context modifier."""
     from clio_agent.gact.plan_mode import _PLAN_EXIT_CLEAR_CONTEXT
 
-    if _PLAN_EXIT_CLEAR_CONTEXT not in reply.selected_options or not any(
-        option.value == _PLAN_EXIT_CLEAR_CONTEXT for option in definition.options
+    choices = {option.value for option in definition.options}
+    if not reply.selected_options and not reply.answer.strip() and "reject" in choices:
+        # An empty human plan response keeps the existing safe-rejection policy.
+        # Ordinary Questions still require an answer in their unchanged owner.
+        return reply.model_copy(update={"selected_options": ("reject",)})
+    if (
+        _PLAN_EXIT_CLEAR_CONTEXT not in reply.selected_options
+        or _PLAN_EXIT_CLEAR_CONTEXT not in choices
     ):
         return reply
     if len(set(reply.selected_options)) != len(reply.selected_options):
         raise ValueError("An option cannot be selected twice")
+    primary = tuple(value for value in reply.selected_options if value != _PLAN_EXIT_CLEAR_CONTEXT)
+    if not primary:
+        raise ValueError("A plan context modifier requires an approval or rejection decision")
     return reply.model_copy(
         update={
-            "selected_options": tuple(
-                value for value in reply.selected_options if value != _PLAN_EXIT_CLEAR_CONTEXT
-            ),
+            "selected_options": primary,
             "metadata": {**reply.metadata, "clear_context": True},
         }
     )

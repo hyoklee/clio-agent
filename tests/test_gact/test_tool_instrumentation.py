@@ -642,7 +642,7 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             # makes a provider "configured" and the real probe reach the network.
             "refresh_provider_models": {},
             "connected_data_status": {},
-            "connected_data_download": {"source_id": "missing-source"},
+            "connected_data_download": {"source_id": "missing-source", "paths": ["missing.txt"]},
             "connected_data_index": {"source_id": "missing-source"},
             "query_tasks": {},
             "observe_tasks": {"tasks": "missing-task"},
