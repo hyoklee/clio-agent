@@ -35,12 +35,14 @@ from typing import Any, Iterator
 import pytest
 from fastapi import FastAPI
 
+from clio_agent.arc.task_types import SubmissionContext
 from clio_agent.gact import context as ctx
 from clio_agent.gact.agents.builders import (
     _blueprint_runtime_signature,
     _build_blueprint_dspy_module,
 )
 from clio_agent.gact.agents.composition import _runtime_dynamic_agent_children_context
+from clio_agent.gact.builtin_boundary import BuiltinBoundary
 from clio_agent.gact.runtime.globals import _gact_app_context
 from clio_agent.gact.types import AgentDef
 
@@ -52,6 +54,17 @@ def _clear_app_caches(app: Any) -> None:
         store = getattr(app.state, name, None)
         if isinstance(store, dict):
             store.clear()
+
+
+def _assembly_app(*, arc: Any = None) -> SimpleNamespace:
+    """Provide real MCP declaration binding without starting or executing tools."""
+
+    def reject_execution(_submission: SubmissionContext) -> None:
+        raise AssertionError("Prompt assembly must not execute a built-in tool")
+
+    app = SimpleNamespace(state=SimpleNamespace(arc=arc, sessions={}))
+    app.state.builtin_boundary = BuiltinBoundary(app, authorize=reject_execution)
+    return app
 
 
 # ---- deterministic fixture graph -------------------------------------------- #
@@ -145,7 +158,7 @@ def _build_expert_system_prompt(monkeypatch: pytest.MonkeyPatch, *, arc: Any) ->
     _patch_runtime(monkeypatch)
     # ``sessions`` mirrors real app wiring: the workflow-schema resolver looks the
     # session up (unknown id -> no blueprint to attribute -> GENERIC schema).
-    app = SimpleNamespace(state=SimpleNamespace(arc=arc, sessions={}))
+    app = _assembly_app(arc=arc)
     sid = "sess-multiturn"
     sid_token = ctx.set_session_id(sid)
     try:
@@ -182,7 +195,7 @@ def test_signature_instructions_byte_stable_across_turns(
     emits. They must be byte-stable for the SAME expert across turns -- the signature is
     static (the workflow_state field type is stable and the rest is fixed)."""
     _patch_runtime(monkeypatch)
-    app = SimpleNamespace(state=SimpleNamespace(arc=None, sessions={}))
+    app = _assembly_app()
     sid = "sess-multiturn"
     sid_token = ctx.set_session_id(sid)
     try:
@@ -200,7 +213,7 @@ def test_orchestrator_briefing_byte_stable(monkeypatch: pytest.MonkeyPatch) -> N
     """The orchestrator-identity briefing (child-description injection) is byte-stable:
     children are sorted by (tier, id) and the prose is static -- no volatile content."""
     _patch_runtime(monkeypatch)
-    app = SimpleNamespace(state=SimpleNamespace(arc=None))
+    app = _assembly_app()
     first = _runtime_dynamic_agent_children_context(app, PARENT, session_id="sess-multiturn")
     _clear_app_caches(app)
     second = _runtime_dynamic_agent_children_context(app, PARENT, session_id="sess-multiturn")
@@ -261,7 +274,7 @@ def test_orchestrator_briefing_child_order_is_deterministic(
     """Child rows rendered in (tier, id) order regardless of input order -- so a
     registry that returns children in a different order does NOT perturb the prompt."""
     _patch_runtime(monkeypatch)
-    app = SimpleNamespace(state=SimpleNamespace(arc=None))
+    app = _assembly_app()
     sorted_order = _runtime_dynamic_agent_children_context(app, PARENT, session_id="sess-multiturn")
     _clear_app_caches(app)
     # Re-patch with the children REVERSED; the render must be identical.
@@ -285,7 +298,7 @@ def test_adaptive_delegation_exposes_children_without_forcing_orchestration(
     """Adaptive roots own simple work and consult children only when useful."""
 
     _patch_runtime(monkeypatch)
-    app = SimpleNamespace(state=SimpleNamespace(arc=None))
+    app = _assembly_app()
     adaptive = PARENT.model_copy(
         update={"metadata": {**PARENT.metadata, "delegation_policy": "adaptive"}}
     )
@@ -346,7 +359,7 @@ def test_system_message_is_a_byte_prefix_across_turns(
     the KV cache hits from byte 0 through the entire system region. The per-turn user
     content (the question + prepended transcript) appends AFTER this prefix."""
     _patch_runtime(monkeypatch)
-    app = SimpleNamespace(state=SimpleNamespace(arc=None, sessions={}))
+    app = _assembly_app()
     sid_token = ctx.set_session_id("sess-multiturn")
     try:
         with _gact_app_context(app):

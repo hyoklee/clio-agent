@@ -45,6 +45,16 @@ Run `38994982164` on `2715f6fc` has passed native lifecycle checks on both Windo
 and Linux and all three lint jobs; its regression shards are still running.
 No fresh live qualification or clio-core library change is claimed.
 
+The first two available Python 3.14 cancellation results on `2715f6fc` now pass:
+Shell and Download both execute their actual native queued-cancellation cases.
+Indexing's result is not yet available. These results confirm the fixture
+registration repair for those two workloads, not a green regression baseline.
+The prompt-stability fixture now constructs the real `BuiltinBoundary` for
+declaration binding only; it starts no client lifespan or workload, and its
+authorization callback rejects unexpected execution. All original prompt
+assertions are AST-identical. Scoped Ruff/format pass; fresh CI is still required
+for that additional fixture migration. Production source remains unchanged.
+
 Both actual Codex/Luna direct-SSE runs on clio-agent `d86c9120` / GACT `0f9c00a4`
 demonstrated external-task acceptance, independent work, one lost-visibility
 attention episode and desktop Work disclosure. The rendered row said "Needs
