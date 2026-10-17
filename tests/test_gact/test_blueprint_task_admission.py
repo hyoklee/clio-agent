@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 from clio_agent.gact.app import build_app
 from clio_agent.gact.off_loop import join_off_loop
 from clio_agent.gact.turn_runner import TurnRunner
+from tests.test_gact.conftest import settle_turn_slot
 
 
 def test_installed_blueprint_selection_uses_current_admission(tmp_path: Path) -> None:
@@ -43,6 +44,15 @@ def test_installed_blueprint_selection_uses_current_admission(tmp_path: Path) ->
             json={"blueprint_id": installed.json()["installed"][0]["id"]},
         )
         assert selected.status_code == 200, selected.text
+        activation = selected.json()
+        materialized = Path(activation["active_agent_blueprint_path"])
+        assert (materialized / "AGENT.md").is_file()
+        stored = app.state.sessions.get(sid)
+        assert stored is not None
+        assert stored.metadata["active_agent_blueprint_path"] == str(materialized)
+        # Mutation has finished; its queued admission recheck may still hold a
+        # transient reservation, which the shared fixture waits to retire.
+        settle_turn_slot(client, sid)
         assert not app.state.turn_runner.busy(sid)
 
 

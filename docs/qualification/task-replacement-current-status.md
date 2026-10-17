@@ -7,7 +7,26 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Retained ARC algorithm fixtures — next CI batch pending
+### Admission reservation fixtures — next CI batch pending
+
+Two retained cases confused transient policy-admission reservations with model
+execution. Blueprint selection now checks materialized AGENT.md and persisted
+activation immediately after HTTP success, then uses the existing slot-settlement
+helper before its original idle assertion. The fanout case awaits the real runner
+release callback, rejects actual model admission and pending delegation for
+dormant children, then retains every original concurrency and terminal assertion.
+Its original five-second budget now covers both retirement and inference entry.
+
+All 20 test functions, parameter decorators and old assertions remain. Explicit
+types for two heterogeneous JSON lists change no payloads. Ruff/format and Mypy
+with `--check-untyped-defs` pass. Receipt:
+`ci-admission-reservation-ca1f-audit.json`. Production and the candidate source
+hash are unchanged. No local behavioral test or new live family ran. The prior
+combined packet is executing in run `39027086751`; these cases await the next batch.
+
+### Retained ARC algorithm fixtures — CI pending
+
+The combined packet is pushed at `ca1f3308`; run `39027086751` is in progress.
 
 Six compaction failures came from a metadata-only session stub lacking the
 current session-record contract. The fixture now uses the actual Session

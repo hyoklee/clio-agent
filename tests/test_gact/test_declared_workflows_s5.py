@@ -30,7 +30,9 @@ from tests.test_arc.child_worker_helpers import execute_child
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 
-def _wf_def(steps: list[dict], *, agent_id: str = "main", parent_id: str = "") -> AgentDef:
+def _wf_def(
+    steps: list[dict[str, Any]], *, agent_id: str = "main", parent_id: str = ""
+) -> AgentDef:
     # The workflow declaration lives on metadata (its home — no AgentDef field, #948 S5).
     return AgentDef(
         id=agent_id,
@@ -54,7 +56,7 @@ def _errors_for(parent: AgentDef, children: list[AgentDef]) -> list[str]:
 
 
 def test_valid_workflow_parses_and_expert_stays_enabled() -> None:
-    steps = [
+    steps: list[dict[str, Any]] = [
         {
             "id": "s_a",
             "child": "a",
@@ -242,7 +244,7 @@ async def test_declared_workflow_uses_ordered_common_assignments(
 
     app.state.task_operations = TaskOperations(owner.history, cancel)
     caller = TaskCaller(root.owner.session_id, "human")
-    steps = [
+    steps: list[dict[str, Any]] = [
         {"id": "a", "child": "a", "task": "First analysis"},
         {"id": "b", "child": "b", "task": "Second analysis", "when_child_completed": "a"},
         {"id": "c", "child": "c", "task": "Final analysis", "when_child_completed": "b"},
@@ -347,6 +349,17 @@ async def test_declared_fanout_limit_applies_only_during_inference(
             finally:
                 active -= 1
 
+    async def dormant_reservation_retires(sid: str) -> None:
+        """Wait for policy rechecks, rejecting any actual model admission."""
+        await asyncio.sleep(0)
+        while app.state.turn_runner.busy(sid):
+            handle = app.state.turn_runner.handle(sid)
+            assert handle is None or not handle.turn_id
+            retired = asyncio.Event()
+            app.state.turn_runner.run_when_released(sid, retired.set)
+            await retired.wait()
+            await asyncio.sleep(0)
+
     try:
         receipts = [
             await owner.spawn(
@@ -364,9 +377,20 @@ async def test_declared_fanout_limit_applies_only_during_inference(
             for receipt in receipts
         ]
         assert all(task.terminal_at is None for task in tasks)
+        # Preserve the existing five-second diagnostic budget across policy
+        # reservation retirement and the declared inference-entry check.
+        deadline = asyncio.get_running_loop().time() + 5
+        for task in tasks:
+            await asyncio.wait_for(
+                dormant_reservation_retires(task.owner.session_id),
+                max(0.0, deadline - asyncio.get_running_loop().time()),
+            )
+            assert not owner.history.pending_mail(task.owner.session_id)
         assert all(not app.state.turn_runner.busy(task.owner.session_id) for task in tasks)
         jobs = [asyncio.create_task(model_call(task.owner.session_id)) for task in tasks]
-        await asyncio.wait_for(entered.wait(), 5)
+        await asyncio.wait_for(
+            entered.wait(), max(0.0, deadline - asyncio.get_running_loop().time())
+        )
         await asyncio.sleep(0)
         assert maximum == 1 and active == 1
         release.set()
