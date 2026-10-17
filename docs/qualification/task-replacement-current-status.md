@@ -7,6 +7,33 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Input-recovery fixture and deletion guard — CI pending
+
+All four Python 3.14 artifacts for `d9191f82` / run `39017651189` are present:
+12,099 passes, 323 failures, four errors and 55 skips. All 24 streaming cases now
+pass, including physical worker-retirement checks. The stronger credential case
+also passes before permission/custody. This remains a failed regression baseline;
+other interpreters and later-source candidates are tracked independently.
+Counts: `ci-d919-complete-python314-counts.json` in D static evidence.
+
+The retained input-recovery test still patches a removed bound method. It now
+faults the current projection accept function only for its original history
+owner, after the confirmed recipient-input append. Its original recovery and
+no-loss assertions remain; it additionally requires the original owner to hold
+recovery and avoid publishing an unconfirmed notification lookup. The restored
+owner uses the actual projection function and original Core records.
+
+The size guard also retained a baseline entry and obsolete note for deleted
+`tools/relay_transport.py`. Only that nonexistent entry/note is removed. Every
+surviving size allowance and the complete guard AST otherwise remain unchanged;
+the missing-baseline regression itself is untouched.
+
+Ruff/format, test-file Mypy, size and removal guards pass. No production source,
+dependency, execution owner or clio-core code changed; the production digest
+remains `2e89a5f44259f06817491ddbf3ccbb872bcdc614d98f6f53bf0a47829b174706`.
+No local behavioral test ran. Receipt: `ci-input-recovery-fixture-d919-audit.json`
+in D static evidence. CI execution is still required.
+
 ### A2UI human-input commitment repair — CI pending
 
 The `4e0510ff` report also exposes two regressions in the accepted-human-action

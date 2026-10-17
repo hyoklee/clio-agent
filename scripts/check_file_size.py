@@ -1046,54 +1046,6 @@ RATCHET_BASELINE: dict[str, int] = {
     # the owner module tools/mcp_redaction.py, which more than paid for the
     # ``declared`` pre-expansion field this file gained.
     "src/clio_agent/tools/mcp_config.py": 811,
-    # #1231 Part 1/2 (consumer half of the live-console feature): not previously
-    # baselined -- this file was ALREADY 7 lines over the 800 cap before this
-    # change (unbaselined pre-existing debt), i.e. 807 -> 820. Part 1 (+6 net):
-    # resolve TaskKey.session_id from the ACTIVE gact session at submit time
-    # instead of freezing it to the relay owner-session id at __init__ (the
-    # ``mcp_task_record_held_locally`` root cause) -- the resolution logic
-    # itself lives in the owner module tools/relay_contract.py
-    # (resolve_relay_task_session_id); only the two-field constructor storage +
-    # the one-call submit-time resolve land here. Part 2 (+7 net): wire the
-    # console-tail on_poll hook into ``wait()`` -- the pull/fold/config logic
-    # lives entirely in the NEW owner module tools/relay_console.py
-    # (make_console_on_poll); only the import + one keyword argument + a
-    # docstring note land here. Ratchets back below 800 with the #714/#767
-    # decomposition. +7 (820->827): the #1231 run-13 fix folds one console
-    # increment on every explicit resolution in ``poll()`` (terminal-at-lookup
-    # records and relay_observe peeks were console-less forever) -- the fold
-    # logic itself stays in relay_console.py; only the hook call lands here.
-    # +26 (827->853): the missing CLIENT half of #1231 -- register/unregister this
-    # instance's console observer factory (tools/task_observers.py) against its own
-    # backend_identity() server_id at __aenter__/__aexit__, so a relay-backed task
-    # that resolves through the TRANSPARENT #1115 extension path (never through this
-    # client's own submit()/poll()/wait()) also folds its console tail. The registry
-    # + the guarded resolve-and-catch live in the new owner module
-    # tools/task_observers.py; only the register/unregister call sites + the
-    # _observer_server_id bookkeeping field land here.
-    # +3 (853->856): ``backend_identity(getattr(mcp_client, "transport", mcp_client))``
-    # -- a real ``fastmcp.Client`` always has ``.transport`` (matches submit()'s own
-    # derivation exactly), but test_mcp_execution_era_visibility.py's minimal
-    # era-classification fake client does not, and crashed __aenter__ before this
-    # fallback (a pre-existing, unrelated test this change must not break).
-    # +12 (856->868, #1236): ``poll()`` -- the explicit single-observation path --
-    # now derives the SAME honest ``effective_status``/``effective_status_reason``
-    # pair ``tools/mcp_tasks.py``'s own poll loop (``_record_status``) does, via
-    # the shared ``derive_effective_status`` helper that OWNS the derivation logic
-    # (mcp_tasks.py); only the one extra call + the two extra ``replace()`` kwargs
-    # land here, so a task resolved through this explicit path (not the transparent
-    # #1115 extension) does not read a delivered-error result as bare "completed"
-    # either (clio-relay#265's "completed is a terrible status indicator" ruling).
-    # +26 (868->894, clio-relay#221/#259 consumer half): the console-SSE
-    # capability negotiation + reader-registry lifecycle call sites -- the
-    # ``console_sse_supported`` field/accessor, the one ``probe_console_sse_
-    # capability`` await at __aenter__, the ``_console_stream_registry`` field,
-    # and its ``cancel_all()`` safety-net await at __aexit__ (before the http
-    # client that owns the readers' connections closes). All SSE reading/
-    # parsing/fallback logic lives in the new owner module
-    # tools/relay_console_stream.py; only these thin construction/probe/cleanup
-    # call sites land here, since this class is the sole owner of both doors.
-    "src/clio_agent/tools/relay_transport.py": 885,
     # #1232 pt 2: not previously baselined (under the 800 cap). +28 for
     # list_builtin_tool_definitions -- the boot path needs a FAST,
     # synchronous, no-I/O tool-definitions seed (built-ins only) so

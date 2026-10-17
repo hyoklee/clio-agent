@@ -77,13 +77,19 @@ def test_input_commit_fault_does_not_publish_unconfirmed_projection(
     history = TaskHistory(arc)
     first = commit(history, "first", "2026-10-15T12:00:00Z")
 
-    def crash(_record: RecipientInput) -> None:
-        raise OSError("lost reply after durable input commit")
+    accept = task_history_projection._accept_input
 
-    monkeypatch.setattr(history, "_accept_input", crash)
+    def crash(owner: TaskHistory, record: RecipientInput) -> None:
+        if owner is history:
+            raise OSError("lost reply after durable input commit")
+        accept(owner, record)
+
+    monkeypatch.setattr(task_history_projection, "_accept_input", crash)
     with pytest.raises(OSError, match="lost reply"):
         commit(history, "second", "2026-10-15T13:00:00Z")
     assert history.latest_input("parent") == first
+    assert history.requires_recovery
+    assert history.committed_notification_input("owner", "second") is None
     recovered = TaskHistory(arc)
     recovered.restore()
     latest = recovered.latest_input("parent")
