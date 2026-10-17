@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from fastapi.testclient import TestClient
 
 from clio_agent.arc.task_types import QuestionDefinition
 from clio_agent.gact.agents.variant_close import close_for_question
@@ -68,7 +67,7 @@ def test_explicit_question_close_retains_drafts_and_notifies_once(
     assert close_for_question(world.app, terminal) is None
     notices = [item for item in history.pending_mail(world.sid) if item.handle == question.id]
     assert len(notices) == 1
-    denied = TestClient(world.app).post(
+    denied = world.client.post(
         f"/v1/sessions/{world.sid}/questions/{question.id}/answer",
         json={"selected_options": [RUN1], "answer": ""},
     )
@@ -93,7 +92,7 @@ def test_stop_and_unrelated_feedback_leave_the_async_choice_open(
     question = _surface(world.app, world.sid, "turn_1", monkeypatch)
     history = world.app.state.task_history
     original = history.task_snapshot(question.id)
-    response = TestClient(world.app).post(f"/v1/sessions/{world.sid}/cancel")
+    response = world.client.post(f"/v1/sessions/{world.sid}/cancel")
     assert response.status_code == 204
     history.record_mail(
         MailItem(

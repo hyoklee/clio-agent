@@ -35,9 +35,11 @@ async def run_lifespan(
     try:
         await start(app)
     except BaseException as error:
+        logger.exception("Task runtime unavailable reason=startup_failed; settling owned resources")
         try:
             cleanup_errors = await close(app)
         except BaseException as cleanup_error:
+            logger.exception("Task runtime unsettled reason=startup_cleanup_failed")
             failure: BaseException = BaseExceptionGroup(
                 "Task runtime startup settlement failed", [error, cleanup_error]
             )
@@ -51,7 +53,6 @@ async def run_lifespan(
         )
         readiness.set_exception(failure)
         readiness.exception()
-        logger.exception("Task runtime startup failed; durable acceptance unavailable")
         return (failure,)
     readiness.set_result(None)
     await stopping.wait()
@@ -168,6 +169,7 @@ async def start(app: Any) -> None:
         return await cancel_owner(task, TaskCaller(task.owner.session_id, task.owner.human_id))
 
     async def run_segment(segment: ConversationSegment) -> ConversationOutcome:
+        from clio_agent.gact.events import Event
         from clio_agent.gact.native_work import now
         from clio_agent.gact.turn import _run_turn_in_background
         from clio_agent.gact.types import Message, Part
@@ -205,8 +207,13 @@ async def start(app: Any) -> None:
                 recovered = Message.model_validate(original["message"])
                 if recovered.session_id != segment.session_id or recovered.role != "user":
                     raise ValueError("Retained human input belongs to another session or role")
+                from clio_agent.gact.messaging import queued_user_input
                 from clio_agent.gact.session_store import project_accepted_mail_messages
 
+                rendered = queued_user_input(app, segment.session_id, original)
+                model_text = rendered.get("text", "")
+                if not isinstance(model_text, str):
+                    raise ValueError("Retained human model text must be a string")
                 project_accepted_mail_messages(app, history, segment.session_id, (segment.trigger,))
                 return recovered, agent, model_text
             if segment.trigger.kind in {"human", "composer"} and existing is not None:
@@ -246,6 +253,13 @@ async def start(app: Any) -> None:
                 if not isinstance(raw_metadata, dict):
                     raise ValueError("Trusted continuation metadata is malformed")
                 producer_metadata = raw_metadata
+            source = (
+                original.get("source", segment.trigger.kind)
+                if isinstance(original, dict)
+                else segment.trigger.kind
+            )
+            if not isinstance(source, str):
+                raise ValueError("Retained continuation source must be text")
             return (
                 Message(
                     id=segment.turn_id,
@@ -255,7 +269,12 @@ async def start(app: Any) -> None:
                     created_at=stamp,
                     updated_at=stamp,
                     parts=[
-                        Part(id=segment.turn_id + ":continuation", type="text", text=segment.text)
+                        Part(
+                            id=segment.turn_id + ":continuation",
+                            type="injection",
+                            source=source,
+                            text=segment.text,
+                        )
                     ],
                     metadata={
                         "system_injection": True,
@@ -270,7 +289,19 @@ async def start(app: Any) -> None:
 
         message, agent, model_text = await history.io.run(prepare)
         app.state.cancel_flags.discard(segment.session_id)
-        await history.io.run(session_store.update, segment.session_id, status="running")
+        updated = await history.io.run(session_store.update, segment.session_id, status="running")
+        if updated is not None:
+            app.state.bus.publish(
+                Event(
+                    type="session.status_changed",
+                    session_id=segment.session_id,
+                    payload={
+                        "session_id": segment.session_id,
+                        "status": updated.status,
+                        "updated_at": updated.updated_at,
+                    },
+                )
+            )
         outcome = await _run_turn_in_background(app, segment.session_id, model_text, message, agent)
         return (
             outcome

@@ -889,6 +889,26 @@ def test_plan_acl_allows_plan_safe_tools_in_plan_mode() -> None:
     assert resolve("tool", _WRITE_TOOL, policies=[], session_id="s", mode="plan") == "deny"
 
 
+@pytest.mark.parametrize("mode", ["plan", "architect"])
+def test_skill_delegation_preserves_explicit_denial_and_child_write_restrictions(mode: str) -> None:
+    assert resolve("tool", "spawn_skill_task", policies=[], session_id="s", mode=mode) == "allow"
+    policies = [
+        {
+            "scope": "session",
+            "scope_id": "s",
+            "tool_name_pattern": "spawn_skill_task",
+            "action": "deny",
+        }
+    ]
+    assert (
+        resolve("tool", "spawn_skill_task", policies=policies, session_id="s", mode=mode) == "deny"
+    )
+    assert resolve("tool", _WRITE_TOOL, policies=[], session_id="s", mode=mode) == "deny"
+    assert (
+        resolve("tool", "spawn_skill_task", policies=[], session_id="s", mode="read_only") == "deny"
+    )
+
+
 def test_plan_acl_allow_band_beats_user_deny_for_plan_exit() -> None:
     """A user ``deny plan_exit`` cannot strand the model: the dynamic allow-band outranks it."""
     policies = [

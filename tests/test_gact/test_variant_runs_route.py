@@ -22,7 +22,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi.testclient import TestClient
 
 from clio_agent.gact.agents.variant_records import VARIANT_RECORD_KIND, VARIANT_RECORD_SCOPE
 from clio_agent.gact.protocol.v3.message import part_to_v3_block
@@ -56,7 +55,7 @@ def world(tmp_path: Path) -> Iterator[World]:
 
 
 def _runs(app: Any, sid: str) -> dict[str, Any]:
-    response = TestClient(app).get(f"/v1/sessions/{sid}/variant-runs")
+    response = app.state.test_client.get(f"/v1/sessions/{sid}/variant-runs")
     assert response.status_code == 200, response.text
     return response.json()
 
@@ -143,7 +142,7 @@ def test_the_interactions_list_carries_the_drafts_question_metadata(
     _forward(world.app, world.sid, lm, ASK, "turn_1")
     question = _surface(world.app, world.sid, "turn_1", monkeypatch)
 
-    rows = TestClient(world.app).get(f"/v1/sessions/{world.sid}/interactions").json()
+    rows = world.client.get(f"/v1/sessions/{world.sid}/interactions").json()
     [row] = [r for r in rows["interactions"] if r["payload"].get("question_id") == question.id]
     metadata = row["payload"]["metadata"]
     assert metadata["variants_id"] == question.metadata["variants_id"]
@@ -199,7 +198,7 @@ def test_refine_advice_lands_in_its_trys_tab(world: World, monkeypatch: pytest.M
 
 
 def test_an_unreadable_record_and_an_unknown_session_are_typed(world: World) -> None:
-    client = TestClient(world.app)
+    client = world.client
     missing = client.get("/v1/sessions/nope/variant-runs")
     assert (missing.status_code, missing.json()["error"]["error"]) == (404, "not_found")
 

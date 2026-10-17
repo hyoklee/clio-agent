@@ -259,10 +259,9 @@ def _a2ui_interactions(
 
 
 def interactions_projection_limit() -> int:
-    """Maximum interaction rows one projection returns, newest first.
+    """Bound returned rows and expensive per-owner surface projections.
 
-    The projection is a full scan of four ledgers with no bound of its own, and
-    ``include_children=true`` on a deep spawn tree multiplies it. Config:
+    Zero leaves the projection unlimited. Config:
     ``gact.interactions.projection_limit`` / ``CLIO_INTERACTIONS_PROJECTION_LIMIT``.
     """
 
@@ -381,7 +380,18 @@ def project_pending_interactions(
         if str(permission.get("session_id") or "") in owners:
             row = _permission_interaction(app, permission)
             (pending if row.status == "pending" else resolved).append(row)
-    for owner in _owners_newest_first(app, owners):
+    ordered_owners = _owners_newest_first(app, owners)
+    limit = interactions_projection_limit()
+    if limit > 0 and len(ordered_owners) > limit:
+        degradations.append(
+            {
+                "reason": "interaction_projection_truncated",
+                "owner_session_id": root_session_id,
+                "detail": f"Interactive surfaces include {limit} of {len(ordered_owners)} authorized sessions; narrow the session scope for the remainder.",
+            }
+        )
+        ordered_owners = ordered_owners[:limit]
+    for owner in ordered_owners:
         surfaces, reasons = _a2ui_interactions(app, owner)
         degradations.extend(reasons)
         for row in surfaces:
@@ -390,7 +400,6 @@ def project_pending_interactions(
         resolved.sort(key=lambda row: (row.revision, row.id), reverse=True)
         pending.extend(resolved[:resolved_limit])
     pending.sort(key=lambda row: (row.created_at, row.id), reverse=True)
-    limit = interactions_projection_limit()
     if limit > 0 and len(pending) > limit:
         degradations.append({"reason": "projection_limit", "owner_session_id": root_session_id})
         pending = pending[:limit]

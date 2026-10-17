@@ -364,7 +364,7 @@ def test_record_and_history_survive_a_cold_reload(tmp_path: Path) -> None:
     with TestClient(restarted) as client:
         response = client.get(f"/v1/sessions/{sid}/messages")
         assert response.status_code == 200, response.text
-        from_core = [Message.model_validate(row) for row in response.json()["messages"]]
+        from_core = [Message.model_validate(row) for row in reversed(response.json()["messages"])]
         assert [m.id for m in from_core] == live_ids
         assert _record_of(from_core[-1]).text == done["summary"]
         assert model_context_messages(from_core) == [from_core[-1]]

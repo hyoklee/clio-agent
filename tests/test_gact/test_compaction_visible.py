@@ -122,6 +122,7 @@ def _install_loop(
             ctx.set_react_window(WINDOW),
         ]
         try:
+            ctx.set_primary_agent_id(SCOPE)
             with dspy.context(lm=lm):
                 return ClioReAct("question -> answer", tools=_tools())(question=question)
         finally:

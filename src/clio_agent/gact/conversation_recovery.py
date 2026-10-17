@@ -373,6 +373,11 @@ async def _retired_segment(
     self: Conversations, segment: ConversationSegment, *, stopped: bool
 ) -> None:
     """Reconcile Stop once, after physical retirement and before slot release."""
+    from clio_agent.gact.conversation_assignments import observe_child_lifecycle
+
+    task = self.history.task_snapshot(segment.assignment.handle)
+    if task is not None and task.kind == "Subagent" and task.terminal_at is not None:
+        await self.history.io.run(observe_child_lifecycle, self, task, started=False)
     if not stopped:
         return
     sid, handle = segment.session_id, segment.assignment.handle

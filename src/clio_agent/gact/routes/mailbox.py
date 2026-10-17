@@ -14,7 +14,15 @@ from clio_agent.gact.context_references import authorize_context_reference_parts
 from clio_agent.gact.events import Event
 from clio_agent.gact.native_work import now
 from clio_agent.gact.off_loop import join_off_loop
-from clio_agent.gact.types import Message, MessageBehavior, ModelRef, PostMessageRequest, Session
+from clio_agent.gact.types import (
+    ErrorEnvelope,
+    ErrorInfo,
+    Message,
+    MessageBehavior,
+    ModelRef,
+    PostMessageRequest,
+    Session,
+)
 
 
 class PromoteRequest(BaseModel):
@@ -122,10 +130,13 @@ def _require_available_message_id(
     if collision:
         raise HTTPException(
             status_code=409,
-            detail={
-                "error": "client_message_id_conflict",
-                "message": "This message identity already belongs to accepted input.",
-            },
+            detail=ErrorEnvelope(
+                error=ErrorInfo(
+                    error="client_message_id_conflict",
+                    message="This message identity already belongs to accepted input.",
+                    recoverable=True,
+                )
+            ).model_dump(exclude_none=True),
         )
 
 

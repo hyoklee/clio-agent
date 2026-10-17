@@ -152,4 +152,15 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
             if exc is None:
                 return task.result()
         task.cancel()
+        # Stop cancels this wrapper as well as its inner waiter. Retire the
+        # actual work before turn finalization can publish a settled envelope.
+        # The inner session owner retains any synchronous worker until exit.
+        while not task.done():
+            try:
+                await asyncio.shield(task)
+            except asyncio.CancelledError:
+                if task.done():
+                    break
+        if not task.cancelled():
+            task.result()
         raise

@@ -1084,7 +1084,12 @@ def test_subagent_start_and_stop_fire_exactly_once(
                 owner._loop,
             ).result(timeout=10)
             handle = receipt["handle"]
+            released = threading.Event()
+            child = app.state.task_history.task_snapshot(handle)
+            assert child is not None
+            app.state.turn_runner.run_when_released(child.owner.session_id, released.set)
             assert disp.wait_for_task(SUBAGENT_STOP, handle)
+            assert released.wait(5), "the child worker did not release its reservation"
             assert disp.count_for_task(SUBAGENT_START, handle) == 1
             assert disp.count_for_task(SUBAGENT_STOP, handle) == 1
             child = app.state.task_history.task_snapshot(handle)

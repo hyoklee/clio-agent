@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import TaskSnapshot
+from clio_agent.arc.task_types import CoreReference, TaskSnapshot
 from clio_agent.gact.permission_gate import resolve_permission
 from clio_agent.gact.question_surface import resolve_plan_question
 from clio_agent.gact.questions import QuestionCommands
@@ -19,6 +19,53 @@ from clio_agent.gact.task_operations import TaskOperations
 from tests.test_arc.test_conversation_owner_contracts import create_environment
 from tests.test_arc.test_hook_approval_contracts import prepared
 from tests.test_arc.test_task_retirement_contracts import idle
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("origin", ["thread", "temporary_loop"])
+async def test_recovery_outlives_its_request_loop_and_runs_on_the_application_loop(
+    arc: ARCMemory, tmp_path: Path, origin: str
+) -> None:
+    """Closing a request must not cancel the application's recording recovery."""
+    _app, owner, root = await create_environment(arc, tmp_path)
+    loop = asyncio.get_running_loop()
+    registered = asyncio.Event()
+    observed: list[asyncio.AbstractEventLoop] = []
+    saved: list[CoreReference] = []
+
+    async def repair() -> None:
+        observed.append(asyncio.get_running_loop())
+        saved.append(
+            await owner.history.io.run(
+                owner.history.write_content, root.owner.session_id, {"repaired": origin}
+            )
+        )
+
+    def submit() -> None:
+        async def request() -> None:
+            owner.recovery.defer("request-owned-recording", repair)
+
+        if origin == "temporary_loop":
+            asyncio.run(request())
+        else:
+            owner.recovery.defer("request-owned-recording", repair)
+        loop.call_soon_threadsafe(registered.set)
+
+    try:
+        await asyncio.to_thread(submit)
+        await asyncio.wait_for(registered.wait(), 2)
+        await asyncio.wait_for(owner.recovery.drain(), 10)
+        assert observed == [loop]
+        assert len(saved) == 1
+        assert await owner.history.io.run(owner.history.read_content, saved[0]) == {
+            "repaired": origin
+        }
+        assert not owner.recovery.pending
+        assert owner.recovery._worker is not None and owner.recovery._worker.done()
+        assert not owner.recovery._worker.cancelled()
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
 
 
 @pytest.mark.asyncio

@@ -29,9 +29,25 @@ class _BlockedFirstTurn:
         self.app: Any = None
         self.started = threading.Event()
         self.questions: list[str] = []
+        self.model_inputs: list[list[str]] = []
 
     def forward(self, question: str, session_id: str) -> Any:
         """Hold the old turn until Stop and finish follow-ups without a live LM."""
+        from dspy.lm15 import TextPart
+
+        from clio_agent.gact import context
+        from clio_agent.gact.agents.context_reader import ContextReader
+
+        scope = context.run_keyed_scope(context.current_turn().primary_agent_id or "main")
+        messages = ContextReader(self.app.state.arc, session_id, scope).read()
+        self.model_inputs.append(
+            [
+                part.text
+                for message in messages
+                for part in message.parts
+                if isinstance(part, TextPart)
+            ]
+        )
         self.questions.append(question)
         if len(self.questions) == 1:
             cancel_event = self.app.state.cancel_events[session_id]
@@ -43,11 +59,7 @@ class _BlockedFirstTurn:
 def _wait_for_feedback(app: Any, sid: str, ids: list[str]) -> None:
     deadline = time.monotonic() + 5
     while time.monotonic() < deadline:
-        completed = {
-            row.turn_id
-            for row in app.state.messages.get(sid, [])
-            if row.role == "assistant" and row.error_info is None
-        }
+        completed = app.state.task_history.acknowledged_notifications(sid)
         if set(ids) <= completed and not app.state.turn_runner.busy(sid):
             return
         time.sleep(0.01)
@@ -104,9 +116,14 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
         _wait_for_feedback(app, sid, ids)
 
-        assert len(agent.questions) == 3
-        for question, expected in zip(agent.questions[1:], feedback, strict=True):
-            assert expected in question
+        assert len(agent.questions) == 2
+        # Both accepted arrivals enter the same next model iteration, in order.
+        # A separate turn per message is not the queue's delivery boundary.
+        delivered_text = "\n".join(agent.model_inputs[1])
+        assert delivered_text.index(feedback[0]) < delivered_text.index(feedback[1])
+        proofs = app.state.task_history.context_inputs(sid, "main")
+        [batch] = [proof for proof in proofs.values() if set(ids) <= set(proof.notification_ids)]
+        assert [identity for identity in batch.notification_ids if identity in ids] == ids
         rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
         user_ids = [row["id"] for row in rows if row["role"] == "user"]
         assert len(user_ids) == 3
@@ -116,10 +133,10 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
             assert row["metadata"]["client_message_id"] == client_id
             assert row["turn_id"] == message_id
             assert row["metadata"]["pending_steer"] is False
-            assistant = next(
-                row for row in rows if row["turn_id"] == message_id and row["role"] == "assistant"
-            )
-            assert assistant.get("error_info") is None
+        assistant = next(
+            row for row in rows if row["turn_id"] == ids[0] and row["role"] == "assistant"
+        )
+        assert assistant.get("error_info") is None
         old_assistant = next(
             row for row in rows if row["turn_id"] == first_id and row["role"] == "assistant"
         )
@@ -134,7 +151,7 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         events = app.state.bus.session_events_since(sid, cursor=1)
         assert [event.payload["turn_id"] for event in events if event.type == "turn.started"] == [
             first_id,
-            *ids,
+            ids[0],
         ]
         cancelled_index = next(
             index
@@ -170,7 +187,7 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         )
         assert response.status_code == 200, response.text
         _wait_for_feedback(app, sid, ["msg_future"])
-        assert len(agent.questions) == 4
+        assert len(agent.questions) == 3
         assert not session_autostart_suspended(app, sid)
 
 

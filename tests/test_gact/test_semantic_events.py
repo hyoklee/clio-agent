@@ -102,7 +102,15 @@ def test_semantic_events_stream_and_trace_file(tmp_path: Path, monkeypatch) -> N
         assert required in trace_event_types, required
     # Session lifecycle is now a first-class semantic event with its own stable
     # trace. Turn-scoped rows retain the original message-derived trace contract.
-    turn_rows = [row for row in semantic_rows if not row["event_type"].startswith("session.")]
+    turn_rows = [row for row in semantic_rows if row.get("turn_id") == assistant["turn_id"]]
+    assert {
+        "turn.started",
+        "agent.invocation.started",
+        "llm.request.started",
+        "llm.response.completed",
+        "agent.invocation.completed",
+        "turn.completed",
+    } <= {row["event_type"] for row in turn_rows}
     assert all(row["trace_id"] == "trace_" + assistant["turn_id"] for row in turn_rows)
     # The DURABLE canonical trace captures FULL (unredacted) bodies.
     request_row = next(row for row in rows if row["event_type"] == "llm.request.started")

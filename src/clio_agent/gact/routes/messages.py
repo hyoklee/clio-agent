@@ -421,6 +421,26 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         # never a string compare); a no-op for post-S2 rows.
         def project_v3() -> JSONResponse:
             subagent_links: dict[str, dict[str, Any]] = {}
+            from clio_agent.gact.task_access import TaskAccess, TaskAccessDenied, TaskCaller
+
+            history = getattr(app.state, "task_history", None)
+            if history is not None:
+                access = TaskAccess(
+                    history, TaskCaller(sid, app.state.human_principal, human_action=True)
+                )
+                visible = {
+                    part.handle_id
+                    for row in rows
+                    for part in row.parts
+                    if part.type == "expert_handoff" and part.handle_id
+                }
+                for handle in visible:
+                    try:
+                        task = access.require(handle, "read")
+                    except TaskAccessDenied:
+                        continue  # Retained handoff text grants no child-session disclosure.
+                    if task.kind == "Subagent":
+                        subagent_links[handle] = {"child_session_id": task.owner.session_id}
             # ``rows`` is newest-first for the 0.2 page; the v3 projection is
             # ledger-ordered and preserves what it is given, so hand it the
             # chronological view rather than making it re-sort by wall clock.

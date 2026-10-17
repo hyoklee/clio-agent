@@ -307,7 +307,7 @@ def test_queue_replay_returns_the_accepted_revision_before_resolving_references_
 
 
 @pytest.mark.parametrize("operation", ["create", "edit"])
-@pytest.mark.parametrize("change", ["session", "workspace_root"])
+@pytest.mark.parametrize("change", ["session_deleted", "workspace_root"])
 def test_queue_reference_preflight_cannot_commit_after_its_workspace_changes(
     paused: tuple[TestClient, str],
     tmp_path: Path,
@@ -338,12 +338,16 @@ def test_queue_reference_preflight_cannot_commit_after_its_workspace_changes(
         body["revision"] = before[0]["revision"]
     original = mailbox.authorize_context_reference_parts_sync
     resolved: list[Part] = []
+    pending_after_deletion: tuple[Any, ...] = ()
 
     def change_after_authorization(app: Any, session: Any, parts: list[Part]) -> list[Part]:
+        nonlocal pending_after_deletion
         canonical = original(app, session, parts)
         resolved.extend(canonical)
-        if change == "session":
-            app.state.sessions.update(sid, workspace_id=target.id)
+        if change == "session_deleted":
+            removed = client.delete(f"/v1/sessions/{sid}")
+            assert removed.status_code == 204, removed.text
+            pending_after_deletion = app.state.task_history.pending_mail(sid)
         else:
             app.state.workspaces.update("ws_default", root_path=target.root_path)
         return canonical
@@ -357,6 +361,11 @@ def test_queue_reference_preflight_cannot_commit_after_its_workspace_changes(
         else client.patch(endpoint, json=body)
     )
     assert resolved and resolved[0].revision.startswith("sha256:")
-    assert response.status_code == 409, response.text
-    assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == before
+    if change == "session_deleted":
+        assert response.status_code == 404, response.text
+        assert client.get(f"/v1/sessions/{sid}/queued-messages").status_code == 404
+        assert app.state.task_history.pending_mail(sid) == pending_after_deletion
+    else:
+        assert response.status_code == 409, response.text
+        assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == before
     assert not app.state.task_history.acknowledged_notifications(sid)

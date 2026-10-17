@@ -1801,6 +1801,7 @@ def test_agent_submit_remains_core_pending_while_real_runner_is_busy(
     hold_model_segment(app, sid, monkeypatch)
     app.state.sessions.update(sid, status="cancelled")
     staged_users_before = sum(message.role == "user" for message in app.state.messages.get(sid, []))
+    pending_before = {item.id for item in app.state.task_history.pending_mail(sid)}
 
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions",
@@ -1815,7 +1816,11 @@ def test_agent_submit_remains_core_pending_while_real_runner_is_busy(
         sum(message.role == "user" for message in app.state.messages.get(sid, []))
         == staged_users_before + 1
     )
-    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "human"]
+    [notice] = [
+        item
+        for item in app.state.task_history.pending_mail(sid)
+        if item.kind == "human" and item.id not in pending_before
+    ]
     queued = app.state.task_history.read_content(notice.content)
     assert queued["message"]["metadata"]["a2ui_action_context"] == {
         "text": "continue the analysis",

@@ -72,6 +72,11 @@ class World:
     sessions_path: Path
     lifespans: ExitStack
 
+    @property
+    def client(self) -> TestClient:
+        """Use the request portal owned by this application's running lifespan."""
+        return self.app.state.test_client
+
 
 def _app(sessions_path: Path, *, lifespans: ExitStack) -> tuple[Any, ARCMemory, list[Any]]:
     arc = ARCMemory(store=make_arc_store(backend="cte"))
@@ -84,7 +89,7 @@ def _app(sessions_path: Path, *, lifespans: ExitStack) -> tuple[Any, ARCMemory, 
         return real_emit(event)
 
     app.state.semantic_event_sink.emit = emit
-    lifespans.enter_context(TestClient(app))
+    app.state.test_client = lifespans.enter_context(TestClient(app))
     return app, arc, events
 
 
@@ -100,6 +105,7 @@ def variant_world(tmp_path: Path) -> Iterator[World]:
 def _bind(app: Any, sid: str, turn: str) -> list[Any]:
     from clio_agent.arc.task_types import AssignmentDetails
 
+    tokens = [ctx.set_app(app), ctx.set_session_id(sid)]
     current = app.state.task_history.latest_assignment(sid)
     assert current is not None
     details = AssignmentDetails.model_validate(app.state.task_history.read_content(current.details))
@@ -113,8 +119,7 @@ def _bind(app: Any, sid: str, turn: str) -> list[Any]:
     )
     ctx.set_primary_agent_id(SCOPE)
     return [
-        ctx.set_app(app),
-        ctx.set_session_id(sid),
+        *tokens,
         ctx.set_turn_id_token(turn),
         ctx.set_react_scope(SCOPE, "react"),
         ctx.set_react_session(sid),
@@ -506,7 +511,7 @@ def test_user_choice_requires_exactly_one_draft(
     )
     _forward(world.app, world.sid, lm, ASK, "turn_1")
     question = _surface(world.app, world.sid, "turn_1", monkeypatch)
-    response = TestClient(world.app).post(
+    response = world.client.post(
         f"/v1/sessions/{world.sid}/questions/{question.id}/answer",
         json={"selected_options": picks, "answer": ""},
     )

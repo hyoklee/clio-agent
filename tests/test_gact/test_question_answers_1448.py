@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from clio_agent.arc.task_types import QuestionReply
+from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_interactions import post_question
 from tests.test_gact.test_resources import _upload, _workspace
 
@@ -55,6 +56,7 @@ def test_question_answer_preserves_attachment_identity(
     created = client.post("/v1/sessions", json={"workspace_id": workspace, "title": "Attachments"})
     assert created.status_code == 200, created.text
     sid = created.json()["id"]
+    record_assignment_fixture(app, sid)
     resource = _upload(
         client,
         workspace,

@@ -162,18 +162,10 @@ def test_legacy_form_submit_and_agent_submit_dispatch_to_the_agent_lane(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     """``agent.submit``/``form.submit`` are undeclared in the clio-workspace
-    catalog's sidecar events map, so they fall to the default agent lane
-    (docs/gact/a2ui-binding.md rule 6). ``delivery="start"`` is the agent
-    lane's idle-session sub-kind (a new turn starts) -- distinct from
-    ``"steer"``/``"resolve_question"`` for a running/waiting_user session."""
+    catalog's sidecar events map, so both enter the session's Core mailbox.
+    TurnRunner owns admission; this producer does not choose an idle start."""
 
     client, app, sid = _replayed_session(tmp_path)
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
     with client:
         captured_inputs = capture_inputs(app, monkeypatch)
 
@@ -184,7 +176,8 @@ def test_legacy_form_submit_and_agent_submit_dispatch_to_the_agent_lane(
                 json={"message": _legacy_action(name, {"selection": "SGPS"})},
             )
             assert response.status_code == 200, response.text
-            assert response.json()["delivery"] == "start"
+            assert response.json()["delivery"] == "steer"
+            assert response.json()["state"] == "delivered"
 
         assert len(captured_inputs) == 2, "both legacy names must actually reach the agent lane"
 
@@ -228,4 +221,7 @@ def test_legacy_run_cancel_dispatches_to_the_run_lane(tmp_path: Path) -> None:
 
         assert response.status_code == 200, response.text
         assert response.json()["delivery"] == "run_cancel"
-        assert app.state.sessions.get(sid).status == "cancelled"
+        # Replayed output is historical, not an active assignment to cancel.
+        assert app.state.task_history.latest_assignment(sid) is None
+        assert not app.state.turn_runner.busy(sid)
+        assert app.state.sessions.get(sid).status == "idle"

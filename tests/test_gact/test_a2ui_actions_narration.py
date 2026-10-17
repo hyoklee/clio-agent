@@ -192,6 +192,7 @@ def test_busy_feedback_preserves_declared_narration_and_structured_context(
     )
 
     hold_model_segment(app, sid, monkeypatch)
+    pending_before = {item.id for item in app.state.task_history.pending_mail(sid)}
     context = {"stationIds": ["MTA1", "PKRD"], "searchId": "earthscope-x"}
     action = _event(EVENT_NAME, "surface_1", context, "2026-09-17T00:00:00Z")
 
@@ -201,7 +202,11 @@ def test_busy_feedback_preserves_declared_narration_and_structured_context(
 
     assert response.status_code == 200, response.text
     assert response.json()["delivery"] == "steer"
-    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "human"]
+    [notice] = [
+        item
+        for item in app.state.task_history.pending_mail(sid)
+        if item.kind == "human" and item.id not in pending_before
+    ]
     queued = app.state.task_history.read_content(notice.content)
     expected_prefix = 'The user selected ["MTA1","PKRD"] for earthscope-x: analyse them.'
     expected_text = f"{expected_prefix}\n\nStructured context:\n{_canonical(context)}"

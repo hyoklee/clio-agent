@@ -52,6 +52,7 @@ _TASK_CONTROLS: tuple[str, ...] = (
     "observe_tasks",
     "send_agent_message",
     "spawn_agent_task",
+    "spawn_skill_task",
     "pause_agent",
     "resume_agent",
     "restart_agent",

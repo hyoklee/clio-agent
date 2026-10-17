@@ -115,6 +115,7 @@ WORKING_SET_KINDS: frozenset[str] = frozenset(
     {
         "system",
         "user",
+        "recipient_input",  # confirmed message references resolve through the Core input reader
         "tool_def",
         "thought",
         "tool_call",

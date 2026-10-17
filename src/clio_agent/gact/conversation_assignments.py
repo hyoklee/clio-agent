@@ -150,6 +150,29 @@ def clear_model_context(self: Conversations, sid: str, question: str, boundary: 
         )
 
 
+def observe_child_lifecycle(self: Conversations, task: TaskSnapshot, *, started: bool) -> None:
+    """Publish retained observation hooks from the conversation owner's transitions."""
+    if task.kind != "Subagent":
+        return
+    from clio_agent.gact.hooks.dispatcher import (
+        dispatch_subagent_start,
+        dispatch_subagent_stop,
+        get_global_dispatcher,
+    )
+
+    if get_global_dispatcher() is None:
+        return
+
+    session = self.sessions.get(task.owner.session_id)
+    workspace = self.app.state.workspaces.get(session.workspace_id) if session is not None else None
+    dispatch = dispatch_subagent_start if started else dispatch_subagent_stop
+    dispatch(
+        session_id=task.owner.session_id,
+        cwd=workspace.root_path if workspace is not None else "",
+        payload={"task_id": task.handle, "status": task.status},
+    )
+
+
 def _new_assignment(
     self: Conversations,
     sid: str,
@@ -665,6 +688,9 @@ async def spawn(
                     observation_id=uuid4().hex,
                 )
             if not start:
+                if task.activity == "queued":
+                    task = task.model_copy(update={"activity": "idle", "updated_at": now()})
+                    self.history.record_snapshot(task, observation_id=uuid4().hex)
                 return task
             content = self.history.write_content(
                 child.id,

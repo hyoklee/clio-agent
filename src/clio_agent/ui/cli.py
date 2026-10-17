@@ -481,11 +481,9 @@ Source: server agent catalog (GET /v1/agents)
         """Ask the server a question: post the message, consume the session
         SSE feed until the turn completes, and return the rendered result.
 
-        The conversation reuses one server session across REPL turns; the SSE
-        cursor advances so each turn only reads its own new events. If the
-        agent pauses to ask a clarifying question or request a tool
-        permission, the consume loop handles the pause (prompting when
-        ``interactive``) and resumes — it never blocks indefinitely.
+        Reuse one session and advance its event cursor across REPL turns.
+        Interactive mode answers posted Questions and permission requests;
+        noninteractive mode reports required human input without inventing it.
 
         Args:
             question: The user's question.
@@ -552,27 +550,16 @@ Source: server agent catalog (GET /v1/agents)
         interactive: bool = True,
         status: Any = None,
     ) -> tuple[Any, Any, dict[str, Any] | None]:
-        """Consume the SSE feed until this turn settles, driving any pauses.
+        """Consume completion and human-input events from the session feed.
 
-        The loop reads events until one of three things happens:
+        Fetch the authoritative assistant on ``message.completed``. Resolve
+        ``user_question.created`` (or legacy ``waiting_user``) and permissions,
+        then reopen the feed from its cursor. Posting a Question itself does
+        not pause model execution; the agent may explicitly wait on its handle.
 
-        * ``message.completed`` — the turn settled; we fetch the authoritative
-          assistant message and return.
-        * ``session.status_changed`` → ``waiting_user`` — the agent asked a
-          clarifying question; we resolve it (:meth:`_resolve_waiting_user`),
-          then re-open the feed from the advanced cursor to pick up the
-          resumed turn.
-        * ``permission.requested`` — a tool needs authorization; we resolve it
-          (:meth:`_resolve_permission`) and resume the same way.
-
-        Pause rounds are bounded by :attr:`MAX_PAUSE_ROUNDS` so a server that
-        never settles cannot hang the CLI — exceeding the bound returns a
-        structured error instead.
-
-        Returns ``(completed_event, assistant_message, error_info)``. The
-        ``error_info`` dict is set only for structured consume-time failures
-        (pause abort / pause-limit / message-fetch failure); it is ``None`` on
-        the normal path.
+        Input rounds retain the CLI's MAX_PAUSE_ROUNDS safeguard. Return
+        ``(completed_event, assistant_message, error_info)``; consume failures
+        remain structured, including unavailable input and failed message reads.
         """
         completed = None
         error_info: dict[str, Any] | None = None
@@ -590,7 +577,11 @@ Source: server agent catalog (GET /v1/agents)
                         completed = event
                         stream_ended = False
                         break
-                    if isinstance(event, SessionStatusChanged) and event.status == "waiting_user":
+                    if (
+                        isinstance(event, SessionStatusChanged)
+                        and event.status == "waiting_user"
+                        or event.type == "user_question.created"
+                    ):
                         pause_kind = "waiting_user"
                         stream_ended = False
                         break

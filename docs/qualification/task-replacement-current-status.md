@@ -1,5 +1,56 @@
 # Tasks replacement status — October 17
 
+## October 17 — completed CI inventory and coordinated follow-up
+
+Initial production implementation is done. The regression baseline remains
+failed; bug corrections and live qualification are unfinished. This follow-up
+was prepared as one batch, with no local behavioral tests, new model run,
+browser run, build, or service launch.
+
+CI for `c94722f73d32b6a73f952194e4d28295f5361e20` completed with failure:
+
+| Interpreter | Passed | Failures | Errors | Skipped |
+| --- | ---: | ---: | ---: | ---: |
+| 3.12 | 12,341 | 125 | 13 | 54 |
+| 3.13 | 12,338 | 128 | 13 | 54 |
+| 3.14 | 12,299 | 165 | 14 | 54 |
+
+All twelve regression shards failed. All three lint jobs found the same
+startup cleanup error-reporting omission. Coverage, filesystem, lock resolution,
+Flowcept, repeated flake-hunt, and Windows/Linux native service lifecycle jobs
+passed. Those lifecycle jobs do not qualify the replacement task matrix.
+
+The bounded twelve-report inventory is recorded in the existing D qualification
+root under `.pytest-runtime/static/ci-c947-followup-audit.json`. Its dispositions
+are constructed corrections, shared-fixture requalification, unresolved issues,
+or skipped/unverified exclusions; none is a new executed pass.
+
+Ruff lint/format and AST parsing cover all 53 changed Python files. Scoped Mypy
+passes the 17 changed production files, with the three subsequently adjusted
+modules checked again. Removal, file/class, vocabulary and error-reporting
+ratchets pass without increasing a baseline. These are static checks only.
+
+The shared corrections address application-loop recovery ownership; cooperative
+async tool cancellation; physical inner-worker retirement before Stop finalizes;
+confirmed input participating in compaction while retaining delivery proof;
+typed human-context rendering at admission; and the missing subagent observation
+hooks. Public checks retain authorization, pending-only delivery, task identity,
+input commitment, cleanup and actual worker ownership. Old stores and drivers
+remain removed. Fixture migrations also remove leaked variant context/request
+lifespans and unawaited async calls, rather than patching their downstream effects.
+
+Native AIO stalls under the unchanged 1,005-message workload and the sustained
+A2UI workload remain unresolved. Other failures without a proved correction stay
+in the inventory for fresh CI; counts, timeouts, skips and guards are not relaxed.
+
+GACT remains `0f9c00a47e0aac05b676a4c5fd13c34a6677b7c0`; dependency pins and
+clio-core 2.3.1 remain unchanged. The daily Desktop is untouched. Installation
+authorization applies only to isolated verification. The prior R184 API/private
+runtime remain under unresolved shutdown custody; the separate exact-process
+force-close question is unanswered. R185 remains prepared and unlaunched, and
+the D production source remains frozen. No final live matrix, release, merge or
+installation acceptance is claimed.
+
 ## Overnight live verification and CI corrections
 
 Live verification is the priority under the renewed human goal. CI is checked

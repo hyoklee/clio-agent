@@ -29,7 +29,7 @@ class SessionRunIdentities:
 
     def payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Return a fresh event payload with canonical Session-run identities."""
-        if payload.get("kind") != "Session" or payload.get("tool") != "session_run":
+        if payload.get("kind") != "Session":
             return payload
 
         def walk(value: Any, key: str = "") -> Any:

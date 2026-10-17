@@ -220,9 +220,10 @@ def test_queue_head_starts_automatically_when_active_turn_becomes_idle(tmp_path:
 def test_message_state_snapshot_reconciles_transcript_pending_queue_and_cursor(
     tmp_path: Path,
 ) -> None:
+    agent = SlowClioAgent(delay_s=2.0)
     app = build_app(
         sessions_path=tmp_path / "sessions.json",
-        agent=SlowClioAgent(delay_s=2.0),
+        agent=agent,
     )
     with TestClient(app) as client:
         sid = client.post("/v1/sessions", json={"title": "snapshot"}).json()["id"]
@@ -234,8 +235,9 @@ def test_message_state_snapshot_reconciles_transcript_pending_queue_and_cursor(
             == 202
         )
         deadline = time.monotonic() + 3.0
-        while time.monotonic() < deadline and not app.state.turn_runner.busy(sid):
+        while time.monotonic() < deadline and not agent.calls:
             time.sleep(0.02)
+        assert agent.calls, "the first input never committed and reached model execution"
         queued = client.post(
             f"/v1/sessions/{sid}/queued-messages",
             json={"text": "later", "client_message_id": "queued_client"},

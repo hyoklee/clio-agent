@@ -42,6 +42,7 @@ async def _control_context(arc: ARCMemory, tmp_path: Path) -> AsyncIterator[Buil
     session_token = context.set_session_id(root.owner.session_id)
     try:
         async with BuiltinBoundary(app, authorize) as boundary:
+            app.state.builtin_boundary = boundary
             yield boundary
     finally:
         context.reset(session_token)

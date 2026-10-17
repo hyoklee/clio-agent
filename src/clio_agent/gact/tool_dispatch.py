@@ -146,16 +146,23 @@ async def await_on_application(
     loop: asyncio.AbstractEventLoop, work: Coroutine[Any, Any, Any]
 ) -> Any:
     """Await the same RPC retirement without occupying a thread or default executor."""
+    from clio_agent.runtime.cancellation import cancellation_requested
+
     result, _retired, request_cancel = _start_application_call(loop, work)
     waiter = asyncio.wrap_future(result)
     stopped = False
     while not waiter.done():
         try:
-            await asyncio.wait({waiter})
+            # Synchronous provider workers can host an async tool on their own
+            # loop. Their turn Stop uses the existing cooperative token rather
+            # than cancelling this asyncio task. This cadence is no deadline.
+            await asyncio.wait({waiter}, timeout=0.1)
+            should_stop = cancellation_requested()
         except asyncio.CancelledError:
-            if not stopped:
-                stopped = True
-                request_cancel()
+            should_stop = True
+        if should_stop and not stopped:
+            stopped = True
+            request_cancel()
     if stopped:
         if not waiter.cancelled():
             waiter.exception()

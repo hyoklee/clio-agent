@@ -2,8 +2,8 @@
 
 A fired schedule must go through the same staging as POST /messages --
 the session flips to ``running`` (publishing ``session.status_changed``)
-and the turn task is registered in ``app.state.in_flight_turns`` so
-cancellation can reach it. Tick errors must be logged with a structured
+and TurnRunner holds its real reservation so cancellation can reach it.
+Tick errors must be logged with a structured
 reason, never silently swallowed, and the sleep between ticks must be
 aligned to the next minute boundary instead of a flat 60s drift.
 """
@@ -80,12 +80,15 @@ def test_fired_schedule_is_registered_and_cancellable(
             loop = asyncio.get_running_loop()
             deadline = loop.time() + 3.0
             while loop.time() < deadline:
-                if app.state.in_flight_turns.get(sid) is not None:
+                if (
+                    app.state.turn_runner.busy(sid)
+                    and app.state.sessions.get(sid).status == "running"
+                ):
                     break
                 await asyncio.sleep(0.02)
 
-            task = app.state.in_flight_turns.get(sid)
-            assert task is not None, "scheduled turn was not registered in in_flight_turns"
+            handle = app.state.turn_runner.handle(sid)
+            assert handle is not None and handle.turn_id, "scheduled turn has no active reservation"
 
             sess = app.state.sessions.get(sid)
             assert sess is not None
@@ -115,10 +118,8 @@ def test_fired_schedule_is_registered_and_cancellable(
 
             # Cancellable: a cancel reaches the registered task, and the
             # done-callback drops the registration.
-            task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await asyncio.wait_for(task, timeout=5.0)
-            assert app.state.in_flight_turns.get(sid) is None
+            await asyncio.wait_for(app.state.turn_runner.stop(sid), timeout=5.0)
+            assert not app.state.turn_runner.busy(sid)
         finally:
             tick.cancel()
             with contextlib.suppress(asyncio.CancelledError):

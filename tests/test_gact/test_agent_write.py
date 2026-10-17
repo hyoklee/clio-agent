@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -12,8 +13,9 @@ from clio_agent.gact.app import build_app
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(build_app(sessions_path=tmp_path / "s.json"))
+def client(tmp_path: Path) -> Iterator[TestClient]:
+    with TestClient(build_app(sessions_path=tmp_path / "s.json")) as client:
+        yield client
 
 
 def test_capability_advertised(client: TestClient) -> None:

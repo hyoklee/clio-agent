@@ -20,8 +20,12 @@ def test_closing_the_transport_drains_a_running_turn(app: Any) -> None:
     runner: Any = app.state.turn_runner
     started = threading.Event()
     retired = threading.Event()
+    tasks: list[asyncio.Task[Any]] = []
 
     async def hold(_segment: Any) -> Any:
+        task = asyncio.current_task()
+        assert task is not None
+        tasks.append(task)
         started.set()
         try:
             await asyncio.Event().wait()
@@ -36,10 +40,10 @@ def test_closing_the_transport_drains_a_running_turn(app: Any) -> None:
         accept_session_input(app, sid, "Hold this owned turn")
         assert started.wait(10)
         assert runner.busy(sid)
-        task = app.state.in_flight_turns[sid]
+        assert len(tasks) == 1
     finally:
         transport.close()
 
-    assert task.done(), "the turn was left pending when the app stopped"
+    assert tasks[0].done(), "the turn was left pending when the app stopped"
     assert retired.is_set()
     assert not runner.busy(sid)

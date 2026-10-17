@@ -43,6 +43,14 @@ class CoreRecovery:
 
     def defer(self, identity: str, action: RecoveryAction) -> None:
         """Retain owner-local evidence until that exact reconciliation succeeds."""
+        loop: asyncio.AbstractEventLoop | None
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+        if loop is not self._loop:
+            self._loop.call_soon_threadsafe(self.defer, identity, action)
+            return
         self._pending[identity] = action
         if self._worker is None or self._worker.done():
             self._worker = asyncio.create_task(self._recover())

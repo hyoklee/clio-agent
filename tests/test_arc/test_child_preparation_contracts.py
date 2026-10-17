@@ -133,7 +133,7 @@ async def test_identical_preparations_accept_one_child_without_executing_discove
         assert first == second
         children = [row for row in app.state.sessions.list() if row.parent_session_id]
         assert [row.id for row in children] == [first["session_id"]]
-        assert len(owner.history.pending_mail(first["session_id"])) == 1
+        assert len(await owner.history.io.run(owner.history.pending_mail, first["session_id"])) == 1
         assert children[0].creation_hook_state == "pending"
     finally:
         release.set()

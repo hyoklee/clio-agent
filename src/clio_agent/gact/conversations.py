@@ -279,7 +279,9 @@ class Conversations:
                 value = self.history.read_content(trigger.content)
                 input_text = (
                     value.get("text", "")
-                    if trigger.kind in {"human", "composer"} and isinstance(value, dict)
+                    if trigger.kind
+                    in {"human", "composer", "goal", "loop", "schedule", "hook", "approval"}
+                    and isinstance(value, dict)
                     else value
                     if trigger.kind in {"human", "composer"} and isinstance(value, str)
                     else "Continue the retained assignment using the queued messages and task outcomes."
@@ -295,7 +297,7 @@ class Conversations:
                 if assignment is None or assignment.terminal_at is not None:
                     description = (
                         text
-                        if trigger.kind in {"human", "composer"}
+                        if trigger.kind in {"human", "composer", "goal", "loop", "schedule", "hook"}
                         else (
                             assignment.description
                             if assignment is not None
@@ -677,6 +679,16 @@ class Conversations:
             context_epoch=segment.context_epoch,
             context_epoch_after=segment.context_epoch_after,
         )
+        if segment.assignment.kind == "Subagent" and segment.assignment.activity in {
+            "queued",
+            "idle",
+        }:
+            await self.history.io.run(
+                conversation_assignments.observe_child_lifecycle,
+                self,
+                segment.assignment,
+                started=True,
+            )
         try:
             if self.runner.cancellation(sid).is_set():
                 raise asyncio.CancelledError

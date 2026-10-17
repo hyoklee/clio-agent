@@ -32,8 +32,10 @@ def _connect(
 ) -> dict[str, Any]:
     """Call the declared production tool through its real built-in MCP boundary."""
     tool = app.state.builtin_boundary.bind(connect_tool.build_connected_data_connect_tool())
-    return tool.func(
-        provider=provider, root=root, label=label, mode=mode, configuration=configuration
+    return asyncio.run(
+        tool.acall(
+            provider=provider, root=root, label=label, mode=mode, configuration=configuration
+        )
     )
 
 

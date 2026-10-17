@@ -235,23 +235,24 @@ def test_spawn_subagent_with_skill_seeds_body_not_inlined(tmp_path: Path) -> Non
             task="Research the requested topic and report the grounded result.",
         )
         assert data["skill_effect"] == "spawn_subagent_with_skill"
-        assert data["task_id"] and data["child_session_id"]
+        assert data["accepted"] is True
+        assert data["handle"] and data["session_id"]
         # The body is NOT inlined into the caller's tool observation.
         assert "SUBAGENT_SKILL_BODY_MARKER." not in json.dumps(data)
 
         # A real task/handle exists.
-        task = app.state.task_history.task_snapshot(data["task_id"])
+        task = app.state.task_history.task_snapshot(data["handle"])
         assert task is not None
         parent_parts = (getattr(app.state, "live_assistant_parts", {}) or {}).get(sess.id, [])
         handoffs = [part for part in parent_parts if getattr(part, "type", "") == "expert_handoff"]
         assert handoffs == [], "A standalone fixture call cannot invent a streamed parent part"
         parent = app.state.task_history.latest_assignment(sess.id)
         assert parent is not None and task.owner.parent_handle == parent.handle
-        assert task.kind == "Subagent" and task.owner.session_id == data["child_session_id"]
+        assert task.kind == "Subagent" and task.owner.session_id == data["session_id"]
 
-        _wait_terminal(app, data["task_id"])
+        _wait_terminal(app, data["handle"])
         # The child turn was SEEDED with the skill body (staged as its user input).
-        child_msgs = app.state.messages.get(data["child_session_id"], []) or []
+        child_msgs = app.state.messages.get(data["session_id"], []) or []
         seeded = [m for m in child_msgs if getattr(m, "role", "") == "user"]
         assert seeded, "child got no staged user message"
         assert any("SUBAGENT_SKILL_BODY_MARKER." in _message_text(m) for m in seeded)
@@ -277,12 +278,13 @@ def test_spawn_subagent_with_skill_uses_specific_task_assignment(tmp_path: Path)
             skill_id="region-worker",
             task="Resolve San Diego, California and count stations within 50 km.",
         )
-        task = app.state.task_history.task_snapshot(data["task_id"])
+        assert data["accepted"] is True
+        task = app.state.task_history.task_snapshot(data["handle"])
         assert task is not None
         assert task.description == "Resolve San Diego, California and count stations within 50 km."
         assert task.label
-        _wait_terminal(app, data["task_id"])
-        child_msgs = app.state.messages.get(data["child_session_id"], []) or []
+        _wait_terminal(app, data["handle"])
+        child_msgs = app.state.messages.get(data["session_id"], []) or []
         seeded = [m for m in child_msgs if getattr(m, "role", "") == "user"]
         assert any("RESOLVE_REGION_PROCEDURE." in _message_text(m) for m in seeded)
         assert any("Resolve San Diego" in _message_text(m) for m in seeded)
@@ -319,7 +321,8 @@ def test_spawn_subagent_with_skill_from_plan_mode_parent_inherits_plan_mode(
             skill_id="research-sub",
             task="Research the requested topic without changing files.",
         )
-        child_id = data["child_session_id"]
+        assert data["accepted"] is True
+        child_id = data["session_id"]
         child = app.state.sessions.get(child_id)
 
         assert child.mode == "plan", (

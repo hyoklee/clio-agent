@@ -635,5 +635,9 @@ def test_every_refusal_reason_is_in_the_closed_set() -> None:
 
 
 def test_validate_watcher_arming_is_a_no_op_without_a_declared_server(tmp_path: Path) -> None:
+    serverless = (
+        _AGENT_MD[: _AGENT_MD.index("mcp_servers:")] + _AGENT_MD[_AGENT_MD.index("experts:") :]
+    )
+    _install_watcher_blueprint(tmp_path, agent_md=serverless)
     app = build_app(sessions_path=tmp_path / "s.json")
     assert validate_watcher_arming(app, env={}) is None

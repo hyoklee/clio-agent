@@ -24,6 +24,7 @@ These tests lock the assembly seam (``gact/agents/tool_instrumentation.py``):
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterable
 from pathlib import Path
 from types import SimpleNamespace
@@ -707,7 +708,7 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
         with active_turn_fixture(app, sid), _tool_session_context(sid):
             for name, kwargs in calls.items():
                 try:
-                    auto_tools[name](**kwargs)
+                    asyncio.run(auto_tools[name].acall(**kwargs))
                 except Exception:
                     pass  # only tool_call/tool_result wire evidence is under test
                 exercised.append(name)

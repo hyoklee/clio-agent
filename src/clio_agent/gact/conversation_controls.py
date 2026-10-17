@@ -720,13 +720,13 @@ async def _cancel_subtree(
                     self._paused.pop(current.owner.session_id, None)
                 self._pause_tokens.pop(current.owner.session_id, None)
 
-        def finish() -> None:
+        def finish() -> TaskSnapshot | None:
             with self.history.serialized():
                 if confirm_request is not None:
                     confirm_request()
                 current = self.history.task_snapshot(assignment.handle)
                 if current is None:
-                    return
+                    return None
                 if current.terminal_at is None or current.status == "cancelled":
                     withdraw_assignment_input(
                         self.history, current.owner.session_id, current.handle
@@ -735,7 +735,7 @@ async def _cancel_subtree(
                     if current.status == "cancelled":
                         clear_pause(current)
                         publish_task_notice(self.history, current)
-                    return
+                    return None
                 stamp = now()
                 result = self.history.write_content(
                     current.owner.session_id,
@@ -762,9 +762,14 @@ async def _cancel_subtree(
                     self._loop.call_soon_threadsafe(self.arm_deadline, settled.handle, None)
                 clear_pause(settled)
                 publish_task_notice(self.history, settled)
+                return settled
 
         async def confirm_finish() -> None:
-            await self.history.io.run(finish)
+            settled = await self.history.io.run(finish)
+            if settled is not None:
+                from clio_agent.gact.conversation_assignments import observe_child_lifecycle
+
+                await self.history.io.run(observe_child_lifecycle, self, settled, started=False)
             # Confirmed settlement makes previously vetoed mailbox arrivals eligible.
             self.runner.signal(sid)
 

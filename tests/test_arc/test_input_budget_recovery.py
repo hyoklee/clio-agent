@@ -41,8 +41,8 @@ async def test_late_eligible_input_excludes_trigger_until_a_later_committed_iter
                     sid, {"text": "Earlier accepted input " + "x" * 500}
                 ),
                 created_at=now(),
-                delivery="queued",
-                queued_order=0,
+                delivery="held",
+                held_reason="awaiting_eligibility",
             )
         )
 
@@ -53,7 +53,11 @@ async def test_late_eligible_input_excludes_trigger_until_a_later_committed_iter
             earlier = owner.history.require_mail(sid, "earlier")
             owner.history.update_mail(
                 earlier.model_copy(
-                    update={"delivery": "eligible", "revision": earlier.revision + 1}
+                    update={
+                        "delivery": "eligible",
+                        "held_reason": "",
+                        "revision": earlier.revision + 1,
+                    }
                 ),
                 expected_revision=earlier.revision,
             )

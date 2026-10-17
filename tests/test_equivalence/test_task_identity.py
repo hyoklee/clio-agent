@@ -53,3 +53,14 @@ def test_task_cursor_projection_preserves_semantic_boundary() -> None:
     assert SessionRunIdentities([1, 5, 8]).payload(a) != SessionRunIdentities(
         [101, 105, 108]
     ).payload(b)
+
+
+def test_refresh_hints_keep_the_same_handle_relationship_as_the_full_session_record() -> None:
+    a, b = payload("a"), payload("b")
+    left, right = SessionRunIdentities(), SessionRunIdentities()
+    hint_a, hint_b = ({"kind": "Session", "handle": row["handle"], "revision": 3} for row in (a, b))
+    normalized = left.payload(hint_a)
+    assert normalized == right.payload(hint_b)
+    assert normalized["handle"] == left.payload(a)["handle"] == right.payload(b)["handle"]
+    assert left.payload({**hint_a, "revision": 4}) != normalized
+    assert left.payload({**hint_a, "kind": "MCP"})["handle"] == a["handle"]

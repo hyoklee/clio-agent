@@ -244,11 +244,11 @@ def test_three_ghost_surface_errors_are_three_two_hundreds_zero_turns(
 
 
 # --------------------------------------------------------------------------- #
-# #4: repair accounting only counts actually-delivered attempts              #
+# Repair admission is independent of the projected session status.           #
 # --------------------------------------------------------------------------- #
 
 
-def test_waiting_projection_does_not_reject_valid_repair_feedback(
+def test_waiting_projection_accepts_one_repair_without_resetting_its_revision_budget(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
@@ -265,7 +265,7 @@ def test_waiting_projection_does_not_reject_valid_repair_feedback(
         f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": envelope}
     )
     assert first.status_code == 200, first.text
-    assert first.json()["delivery"] == "steer"
+    assert first.json()["delivery"] == "steer", first.text
     first_mail = tuple(app.state.task_history.pending_mail(sid))
     assert first_mail
     assert not app.state.task_history.acknowledged_notifications(sid)
@@ -276,13 +276,14 @@ def test_waiting_projection_does_not_reject_valid_repair_feedback(
     )
 
     assert second.status_code == 200, second.text
-    assert second.json()["delivery"] == "steer"
-    assert {row.id for row in first_mail} <= {
+    assert second.json()["delivery"] == "rejected"
+    assert second.json()["reason"] == "a2ui_repair_exhausted"
+    assert {row.id for row in first_mail} == {
         row.id for row in app.state.task_history.pending_mail(sid)
     }
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
-    assert surface.state != "failed"
+    assert surface.state == "failed"
 
 
 # --------------------------------------------------------------------------- #

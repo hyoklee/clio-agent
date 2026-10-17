@@ -82,6 +82,13 @@ def test_explicit_disarm_uses_conversation_cancellation(
         ),
         app.state.mcp_app_loop,
     ).result(timeout=10)
+
+    async def await_release() -> None:
+        released = asyncio.Event()
+        app.state.turn_runner.run_when_released(child, released.set)
+        await asyncio.wait_for(released.wait(), 5)
+
+    asyncio.run_coroutine_threadsafe(await_release(), app.state.mcp_app_loop).result(timeout=10)
     current = app.state.task_history.task_snapshot(task.handle)
     assert current.status == "cancelled" and current.terminal_at is not None
     assert current.settlement == "confirmed"
