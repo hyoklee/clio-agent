@@ -26,6 +26,7 @@ from typing import Any
 
 import pytest
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.cas_gc import export_manifest_shas
 from clio_agent.gact.artifacts.environment import EnvironmentRecord, EnvironmentTier
@@ -56,6 +57,7 @@ from clio_agent.gact.artifacts.transform_types import (
 )
 from clio_agent.gact.artifacts.transforms import TransformRecord, TransformStatus
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
 
 
 class _CapturingArc:
@@ -79,11 +81,13 @@ class _FakeWorkspaces:
         return [SimpleNamespace(id=wid, root_path=root) for wid, root in self._roots.items()]
 
 
-def _export_app(tmp_path: Path):
+def _export_app(tmp_path: Path, *, arc: ARCMemory) -> tuple[Any, SessionStore]:
     store = SessionStore(path=tmp_path / "sessions.json")
     state = SimpleNamespace(
         sessions=store,
         arc=_CapturingArc(),
+        task_history=TaskHistory(arc),
+        human_principal="human",
         workspaces=_FakeWorkspaces({"ws1": str(tmp_path)}),
         semantic_event_sink=object(),
         semantic_trace_detail_level="semantic",
@@ -301,8 +305,8 @@ def _build_ndp_scenario(app, sid, tmp_path: Path):
 # --------------------------------------------------------------------------- #
 
 
-def test_ro_crate_roundtrip_artifacts_and_edges_present(tmp_path: Path) -> None:
-    app, store = _export_app(tmp_path)
+def test_ro_crate_roundtrip_artifacts_and_edges_present(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     versions = _build_ndp_scenario(app, sid, tmp_path)
 
@@ -357,8 +361,8 @@ def _types(entity: dict) -> set:
     return set(t) if isinstance(t, list) else {t}
 
 
-def test_wasrevisionof_edge_present_for_v2(tmp_path: Path) -> None:
-    app, store = _export_app(tmp_path)
+def test_wasrevisionof_edge_present_for_v2(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     f = tmp_path / "series.csv"
     f.write_text("v1\n")
@@ -380,8 +384,8 @@ def test_wasrevisionof_edge_present_for_v2(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_reproduce_compilation_matrix(tmp_path: Path) -> None:
-    app, store = _export_app(tmp_path)
+def test_reproduce_compilation_matrix(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     _build_ndp_scenario(app, sid, tmp_path)
     reg = app.state.artifact_registry
@@ -426,13 +430,13 @@ def test_reproduce_compilation_matrix(tmp_path: Path) -> None:
     assert nb["nbformat"] == 4 and nb["cells"]
 
 
-def test_per_stage_env_tier_gates_determinism_independently(tmp_path: Path) -> None:
+def test_per_stage_env_tier_gates_determinism_independently(tmp_path: Path, arc: ARCMemory) -> None:
     """Finding [6]: each stage's DETERMINISTIC/RE_RUNNABLE verdict comes from THAT
     stage's OWN transform environment tier, never a blanket tier from the first
     transform. Two pandas stages sharing a hash-pinned input but recorded under
     different env tiers must get DIFFERENT verdicts in ONE compile (no override).
     """
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     src = tmp_path / "src.csv"
     src.write_text("time,east\n0,1\n1,2\n")
@@ -506,8 +510,10 @@ def test_per_stage_env_tier_gates_determinism_independently(tmp_path: Path) -> N
 # --------------------------------------------------------------------------- #
 
 
-def test_compiled_write_bytes_stage_executes_and_sha_asserts_pass(tmp_path: Path) -> None:
-    app, store = _export_app(tmp_path)
+def test_compiled_write_bytes_stage_executes_and_sha_asserts_pass(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     report = tmp_path / "report.md"
     report.write_text("# Findings\n\nThe station moved 3mm/yr.\n")
@@ -547,9 +553,9 @@ def test_compiled_write_bytes_stage_executes_and_sha_asserts_pass(tmp_path: Path
     assert (crate / "report.md").read_text(encoding="utf-8") == report.read_text(encoding="utf-8")
 
 
-def test_compiled_script_detects_a_tampered_pin(tmp_path: Path) -> None:
+def test_compiled_script_detects_a_tampered_pin(tmp_path: Path, arc: ARCMemory) -> None:
     """Sabotage twin: corrupt the exported bytes and the sha assert must FAIL."""
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     report = tmp_path / "report.md"
     report.write_text("# Findings\n")
@@ -584,14 +590,16 @@ def test_compiled_script_detects_a_tampered_pin(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_translated_download_pandas_plot_chain_runs_and_pins_pass(tmp_path: Path) -> None:
+def test_translated_download_pandas_plot_chain_runs_and_pins_pass(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     import functools
     import http.server
     import threading
 
     import pandas as pd
 
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
 
     # Serve the staged CSV over a real local HTTP server (the download stage fetches it).
@@ -750,19 +758,6 @@ def test_notebook_first_cell_runs_without_dunder_file(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-class _FakeTask:
-    """The two ``AgentTask`` fields the descendant walk reads.
-
-    ``task_id`` is not optional on the real record, and the walk uses it to tell
-    a DELEGATED child from a session-store fork -- so a stub without one would be
-    attributed as a fork and prove the wrong thing.
-    """
-
-    def __init__(self, child_session_id: str, task_id: str = "") -> None:
-        self.child_session_id = child_session_id
-        self.task_id = task_id or f"task_{child_session_id}"
-
-
 def test_same_name_across_unioned_workspaces_do_not_collide(tmp_path: Path, arc: Any) -> None:
     """Finding [11]: a parent's include_children export unions delegate workspaces; two
     DIFFERENT ``plot.png`` v1 records (parent + child) must ship distinct bytes under
@@ -785,7 +780,6 @@ def test_same_name_across_unioned_workspaces_do_not_collide(tmp_path: Path, arc:
     app = SimpleNamespace(state=state)
     parent_sid = store.create(workspace_id="ws_parent", title="t").id
     child_sid = store.create(workspace_id="ws_child", title="t").id
-    from clio_agent.gact.task_history import TaskHistory
     from tests.test_gact.task_records import record_assignment_fixture
 
     app.state.task_history = TaskHistory(arc)
@@ -846,14 +840,14 @@ def test_same_name_across_unioned_workspaces_do_not_collide(tmp_path: Path, arc:
 # --------------------------------------------------------------------------- #
 
 
-def test_query_arg_cannot_escape_its_string_literal(tmp_path: Path) -> None:
+def test_query_arg_cannot_escape_its_string_literal(tmp_path: Path, arc: ARCMemory) -> None:
     """SECURITY (finding [9]): a recorded query arg is model/data-derived text compiled
     into user-runnable Python. Quotes / newlines / an ``import os`` payload must be
     contained in a string literal and NEVER become executable code.
     """
     import ast
 
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     src = tmp_path / "src.csv"
     src.write_text("time,east\n0,1\n")
@@ -924,13 +918,15 @@ def test_query_arg_cannot_escape_its_string_literal(tmp_path: Path) -> None:
     assert payload in query_consts
 
 
-def test_pandas_unrecognized_filter_shape_is_rerunnable_without_sha_assert(tmp_path: Path) -> None:
+def test_pandas_unrecognized_filter_shape_is_rerunnable_without_sha_assert(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     """Finding [9]: the real ``pandas_filter_data`` takes a structured ``filter_conditions``
     DSL, not a query expression. That shape is NOT reproduced — the stage must be a
     re-runnable MCP reference with NO sha assert it cannot back, never a DETERMINISTIC
     bare CSV round-trip that silently drops the filter.
     """
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     src = tmp_path / "in.csv"
     src.write_text("time,east\n0,1\n")
@@ -987,11 +983,11 @@ def test_pandas_unrecognized_filter_shape_is_rerunnable_without_sha_assert(tmp_p
     assert "NOT REPRODUCED" in code
 
 
-def test_configure_tool_is_not_mistranslated_as_a_plot(tmp_path: Path) -> None:
+def test_configure_tool_is_not_mistranslated_as_a_plot(tmp_path: Path, arc: ARCMemory) -> None:
     """Finding [3]: exact tool-name matching. ``reconfigure_workspace`` (contains the
     substring ``figure``) must NOT route to the plot translator — it is agentic-only.
     """
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     out = tmp_path / "cfg.json"
     out.write_text("{}\n")
@@ -1039,8 +1035,8 @@ def test_configure_tool_is_not_mistranslated_as_a_plot(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_multi_output_stage_asserts_only_the_written_output(tmp_path: Path) -> None:
-    app, store = _export_app(tmp_path)
+def test_multi_output_stage_asserts_only_the_written_output(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     src = tmp_path / "src.csv"
     src.write_text("time,east\n0,1\n1,3\n")
@@ -1112,11 +1108,11 @@ def test_multi_output_stage_asserts_only_the_written_output(tmp_path: Path) -> N
 # --------------------------------------------------------------------------- #
 
 
-def test_context_maps_both_prov_lineage_terms(tmp_path: Path) -> None:
+def test_context_maps_both_prov_lineage_terms(tmp_path: Path, arc: ARCMemory) -> None:
     """Finding [5]: wasGeneratedBy must be mapped in @context or a strict JSON-LD
     expansion drops every File→producing-Activity edge (only wasRevisionOf was mapped).
     """
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     _build_ndp_scenario(app, sid, tmp_path)
     bundle = build_session_bundle(app, sid)
@@ -1126,12 +1122,14 @@ def test_context_maps_both_prov_lineage_terms(tmp_path: Path) -> None:
     assert ctx.get("wasRevisionOf") == "prov:wasRevisionOf"
 
 
-def test_root_dataset_has_datepublished_and_license(tmp_path: Path, monkeypatch) -> None:
+def test_root_dataset_has_datepublished_and_license(
+    tmp_path: Path, monkeypatch, arc: ARCMemory
+) -> None:
     """Finding [10]: the RO-Crate Root Data Entity carries datePublished (MUST) and
     license (SHOULD; NOASSERTION default, config-overridable)."""
     import re as _re
 
-    app, store = _export_app(tmp_path)
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     _build_ndp_scenario(app, sid, tmp_path)
     bundle = build_session_bundle(app, sid)
@@ -1156,8 +1154,8 @@ def test_root_dataset_has_datepublished_and_license(tmp_path: Path, monkeypatch)
 # --------------------------------------------------------------------------- #
 
 
-def test_export_registers_cas_gc_roots(tmp_path: Path) -> None:
-    app, store = _export_app(tmp_path)
+def test_export_registers_cas_gc_roots(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     versions = _build_ndp_scenario(app, sid, tmp_path)
 
@@ -1174,8 +1172,8 @@ def test_export_registers_cas_gc_roots(tmp_path: Path) -> None:
     assert versions["clean"].sha256 in export_manifest_shas(app, "ws1")
 
 
-def test_export_unknown_ids_return_none(tmp_path: Path) -> None:
-    app, _store = _export_app(tmp_path)
+def test_export_unknown_ids_return_none(tmp_path: Path, arc: ARCMemory) -> None:
+    app, _store = _export_app(tmp_path, arc=arc)
     assert build_session_bundle(app, "sess_missing") is None
     assert build_artifact_bundle(app, "artifact_missing") is None
 
@@ -1211,8 +1209,8 @@ def test_export_routes_serve_zip_and_pin_gc_roots(tmp_path: Path) -> None:
         assert c.get("/v1/sessions/sess_nope/export/bundle").status_code == 404
 
 
-def test_single_artifact_bundle_carries_its_lineage(tmp_path: Path) -> None:
-    app, store = _export_app(tmp_path)
+def test_single_artifact_bundle_carries_its_lineage(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _export_app(tmp_path, arc=arc)
     sid = store.create(workspace_id="ws1", title="t").id
     versions = _build_ndp_scenario(app, sid, tmp_path)
 

@@ -63,6 +63,16 @@ fixture. Every original assertion and test signature is AST-identical; scoped
 Ruff/format pass. This migration awaits CI execution and does not qualify runtime
 observation behavior. No local pytest/vitest or fresh live family ran during it.
 
+Artifact export and grounding fixtures now explicitly accept the existing real
+Core ARC fixture and install the production `TaskHistory` reader. Thirty-two
+tests retain their original algorithm assertions while supplying the lineage
+source required by descendant walks. Existing child cases still write real
+assignment lineage; two unused pre-replacement `_FakeTask` classes and a duplicate
+reader construction are removed. AST auditing preserves every test, original
+parameter, marker and assertion. Scoped Ruff/format pass; CI execution is pending.
+The first `831625ba` artifact also confirms the optional null/default schema case
+now passes. Other schema/prompt results are not yet available.
+
 Both actual Codex/Luna direct-SSE runs on clio-agent `d86c9120` / GACT `0f9c00a4`
 demonstrated external-task acceptance, independent work, one lost-visibility
 attention episode and desktop Work disclosure. The rendered row said "Needs

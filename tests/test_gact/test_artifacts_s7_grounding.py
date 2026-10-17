@@ -26,6 +26,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.artifacts.grounding import ground_answer_artifacts
 from clio_agent.gact.artifacts.minting import mint_artifact, mint_tool_declared_outputs
 from clio_agent.gact.artifacts.records import (
@@ -37,6 +38,7 @@ from clio_agent.gact.artifacts.records import (
 )
 from clio_agent.gact.artifacts.registry import ArtifactRegistry
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.workflow_state.schema import WorkflowStateSchema
 from tests.test_gact.earthscope_schema import EARTHSCOPE_WORKFLOW_STATE_SCHEMA
 
@@ -66,12 +68,16 @@ class _FakeWorkspaces:
         return [SimpleNamespace(id=wid, root_path=root) for wid, root in self._roots.items()]
 
 
-def _grounding_app(tmp_path: Path, *, roots: dict[str, str] | None = None):
+def _grounding_app(
+    tmp_path: Path, *, arc: ARCMemory, roots: dict[str, str] | None = None
+) -> tuple[Any, SessionStore]:
     """A lightweight app with a real registry + session store, for grounding."""
     store = SessionStore(path=tmp_path / "sessions.json")
     state = SimpleNamespace(
         sessions=store,
         arc=_CapturingArc(),
+        task_history=TaskHistory(arc),
+        human_principal="human",
         workspaces=_FakeWorkspaces(roots or {"ws1": str(tmp_path)}),
         semantic_event_sink=object(),
         semantic_trace_detail_level="semantic",
@@ -178,8 +184,8 @@ def _registry_version(app, sid: str, name: str):
 # --------------------------------------------------------------------------- #
 
 
-def test_parity_rewrites_fabricated_csv_and_png_to_verified(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_parity_rewrites_fabricated_csv_and_png_to_verified(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     real_csv = tmp_path / "ndp-staging" / "P475.CI.LY_.20.csv"
     real_png = tmp_path / "ndp-staging" / "P475.CI.LY_.20_plot.png"
@@ -206,8 +212,10 @@ def test_parity_rewrites_fabricated_csv_and_png_to_verified(tmp_path: Path) -> N
     assert "https://ds2.datacollaboratory.org/raw_csv/P475.CI.LY_.20.csv" in grounded
 
 
-def test_parity_staged_authority_input_is_not_a_substitution_candidate(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_parity_staged_authority_input_is_not_a_substitution_candidate(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     staging = tmp_path / "ndp-staging"
     staging.mkdir()
@@ -240,8 +248,8 @@ def test_parity_staged_authority_input_is_not_a_substitution_candidate(tmp_path:
     assert str(catalog) not in grounded
 
 
-def test_parity_respects_missing_framing(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_parity_respects_missing_framing(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     real_png = tmp_path / "ndp-staging" / "P475.CI.LY_.20_plot.png"
     real_png.parent.mkdir(parents=True)
@@ -255,8 +263,8 @@ def test_parity_respects_missing_framing(tmp_path: Path) -> None:
     assert grounded == answer
 
 
-def test_parity_no_verified_neutralizes(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_parity_no_verified_neutralizes(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)  # data-blocked run: nothing registered.
 
     answer = "Plot (PNG): /home/x/.clio/artifacts/plots/SAN_timeseries.png"
@@ -271,9 +279,9 @@ def test_parity_no_verified_neutralizes(tmp_path: Path) -> None:
 
 
 def test_parity_collapses_doubled_prefix_even_with_multiple_verified(
-    tmp_path: Path, monkeypatch
+    tmp_path: Path, monkeypatch, arc: ARCMemory
 ) -> None:
-    app, store = _grounding_app(tmp_path)
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     # The artifact-token grammar is slash-based and colon-free (a Windows drive
     # colon would split a token), so exercise the embedded-prefix collapse with
@@ -300,8 +308,8 @@ def test_parity_collapses_doubled_prefix_even_with_multiple_verified(
     assert doubled not in grounded
 
 
-def test_parity_keeps_honest_blocked_prose(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_parity_keeps_honest_blocked_prose(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     answer = (
         "No PNG was produced because staging was blocked; a figure would be "
@@ -316,8 +324,10 @@ def test_parity_keeps_honest_blocked_prose(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_parity_widget_schema_grounds_svg_and_leaves_csv_png_untouched(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_parity_widget_schema_grounds_svg_and_leaves_csv_png_untouched(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     real_svg = tmp_path / "widget.svg"
     real_svg.write_text("<svg/>")
@@ -333,8 +343,8 @@ def test_parity_widget_schema_grounds_svg_and_leaves_csv_png_untouched(tmp_path:
     assert "/out/chart.png" in grounded
 
 
-def test_generic_schema_grounds_nothing(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_generic_schema_grounds_nothing(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     real = tmp_path / "x.png"
     real.write_bytes(b"\x89PNG")
@@ -345,8 +355,8 @@ def test_generic_schema_grounds_nothing(tmp_path: Path) -> None:
     assert ground_answer_artifacts(app, sid, answer, schema=WorkflowStateSchema()) == answer
 
 
-def test_on_disk_citation_is_left_unchanged(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_on_disk_citation_is_left_unchanged(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     real = tmp_path / "real.png"
     real.write_bytes(b"\x89PNG")
@@ -359,8 +369,8 @@ def test_on_disk_citation_is_left_unchanged(tmp_path: Path) -> None:
     )
 
 
-def test_ambiguous_multiple_deliverables_left_unchanged(tmp_path: Path) -> None:
-    app, store = _grounding_app(tmp_path)
+def test_ambiguous_multiple_deliverables_left_unchanged(tmp_path: Path, arc: ARCMemory) -> None:
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     a = tmp_path / "a.png"
     b = tmp_path / "b.png"
@@ -376,8 +386,8 @@ def test_ambiguous_multiple_deliverables_left_unchanged(tmp_path: Path) -> None:
     )
 
 
-def test_unknown_session_grounds_nothing(tmp_path: Path) -> None:
-    app, _store = _grounding_app(tmp_path)
+def test_unknown_session_grounds_nothing(tmp_path: Path, arc: ARCMemory) -> None:
+    app, _store = _grounding_app(tmp_path, arc=arc)
     answer = "Plot: /tmp/fabricated.png"
     # No such session → no workspace → no candidates → answer returned unchanged
     # (never a crash on an unbound session).
@@ -389,34 +399,18 @@ def test_unknown_session_grounds_nothing(tmp_path: Path) -> None:
     )
 
 
-class _FakeTask:
-    """The two ``AgentTask`` fields the descendant walk reads.
-
-    ``task_id`` is not optional on the real record, and the walk uses it to tell
-    a DELEGATED child from a session-store fork -- so a stub without one would be
-    attributed as a fork and prove the wrong thing.
-    """
-
-    def __init__(self, child_session_id: str, task_id: str = "") -> None:
-        self.child_session_id = child_session_id
-        self.task_id = task_id or f"task_{child_session_id}"
-
-
 def test_include_children_grounds_against_delegate_output(tmp_path: Path, arc: Any) -> None:
     parent_root = tmp_path / "parent"
     child_root = tmp_path / "child"
     parent_root.mkdir()
     child_root.mkdir()
     app, store = _grounding_app(
-        tmp_path, roots={"ws_parent": str(parent_root), "ws_child": str(child_root)}
+        tmp_path, arc=arc, roots={"ws_parent": str(parent_root), "ws_child": str(child_root)}
     )
     parent_sid = _new_session(store, workspace_id="ws_parent")
     child_sid = _new_session(store, workspace_id="ws_child")
-    from clio_agent.gact.task_history import TaskHistory
     from tests.test_gact.task_records import record_assignment_fixture
 
-    app.state.task_history = TaskHistory(arc)
-    app.state.human_principal = "human"
     record_assignment_fixture(app, child_sid, parent_sid=parent_sid)
 
     child_png = child_root / "delegate_plot.png"
@@ -451,7 +445,9 @@ def test_include_children_grounds_against_delegate_output(tmp_path: Path, arc: A
 # --------------------------------------------------------------------------- #
 
 
-def test_stat_pinned_over_ceiling_deliverable_is_a_candidate(tmp_path: Path, monkeypatch) -> None:
+def test_stat_pinned_over_ceiling_deliverable_is_a_candidate(
+    tmp_path: Path, monkeypatch, arc: ARCMemory
+) -> None:
     """A produced deliverable over the hash ceiling is stat-pinned — and STILL a candidate.
 
     Finding [1]: keying the candidate set on ``evidence_class == hashed-at-use``
@@ -461,7 +457,7 @@ def test_stat_pinned_over_ceiling_deliverable_is_a_candidate(tmp_path: Path, mon
     lowered so a small file stat-pins exactly as a >64MB one does in production.
     """
     monkeypatch.setenv("CLIO_ARTIFACTS_HASH_MAX_FILE_BYTES", "4")
-    app, store = _grounding_app(tmp_path)
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     big = tmp_path / "huge_series.csv"
     big.write_text("time,east\n0,1\n1,2\n")  # > 4 bytes → stat-pinned via the seam
@@ -483,7 +479,7 @@ def test_stat_pinned_over_ceiling_deliverable_is_a_candidate(tmp_path: Path, mon
     assert "no local csv artifact was produced" not in grounded
 
 
-def test_seam_minted_staged_catalog_is_excluded(tmp_path: Path) -> None:
+def test_seam_minted_staged_catalog_is_excluded(tmp_path: Path, arc: ARCMemory) -> None:
     """Discriminator on REAL seam shapes: a staged catalog + a deliverable, same ext.
 
     Both minted through the real seams — the deliverable via the pandas tool-schema
@@ -491,7 +487,7 @@ def test_seam_minted_staged_catalog_is_excluded(tmp_path: Path) -> None:
     are hashed-at-use; only the producer distinguishes them, so the fabricated CSV
     grounds to the single deliverable, never the staged catalog.
     """
-    app, store = _grounding_app(tmp_path)
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     deliverable = tmp_path / "clean.csv"
     deliverable.write_text("time,east\n0,1\n")
@@ -511,7 +507,9 @@ def test_seam_minted_staged_catalog_is_excluded(tmp_path: Path) -> None:
     assert "/tmp/SAN_timeseries.csv" not in grounded
 
 
-def test_produced_deliverable_off_disk_is_not_falsely_neutralized(tmp_path: Path) -> None:
+def test_produced_deliverable_off_disk_is_not_falsely_neutralized(
+    tmp_path: Path, arc: ARCMemory
+) -> None:
     """A produced deliverable whose bytes are gone is NEVER declared "not produced".
 
     Finding [1] guard: when a deliverable of the cited ext WAS produced (registered)
@@ -519,7 +517,7 @@ def test_produced_deliverable_off_disk_is_not_falsely_neutralized(tmp_path: Path
     is left unchanged — the server must not author the affirmatively-false "no local
     csv artifact was produced" note over a deliverable that genuinely existed.
     """
-    app, store = _grounding_app(tmp_path)
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     gone = tmp_path / "produced_then_deleted.csv"
     gone.write_text("time,east\n0,1\n")
@@ -552,14 +550,14 @@ def test_token_re_keeps_windows_drive_spec() -> None:
     assert match.group(0) == "/home/user/real.png"
 
 
-def test_tail_of_verified_token_is_never_substituted(tmp_path: Path) -> None:
+def test_tail_of_verified_token_is_never_substituted(tmp_path: Path, arc: ARCMemory) -> None:
     """A token that is the TAIL of a verified path stays untouched (inverse-mangle guard).
 
     Substituting the full verified path into a tail token that sits inside prose
     would double the prefix — the same C:C:/ defect shape for every prefix-trim
     (e.g. a model citing the path without its mount prefix).
     """
-    app, store = _grounding_app(tmp_path)
+    app, store = _grounding_app(tmp_path, arc=arc)
     sid = _new_session(store)
     real = tmp_path / "real.png"
     real.write_bytes(b"PNGBYTES")
