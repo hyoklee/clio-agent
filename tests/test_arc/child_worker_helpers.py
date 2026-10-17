@@ -53,14 +53,14 @@ async def execute_model_under_owner(
         state = TurnState(
             app=app,
             sid=sid,
-            user_text=text,
+            user_text=segment.text,
             user_msg=Message(
                 id=segment.turn_id,
                 session_id=sid,
                 role="user",
                 created_at=segment.trigger.created_at,
                 updated_at=segment.trigger.created_at,
-                parts=[Part(type="text", text=text)],
+                parts=[Part(type="text", text=segment.text)],
             ),
             turn_agent_id="main",
             sess=session,
@@ -68,7 +68,7 @@ async def execute_model_under_owner(
             turn_id=segment.turn_id,
             trace_id=_semantic_trace_id(segment.turn_id),
             retry_attempt_id="",
-            enriched_text=text,
+            enriched_text=segment.text,
             native_images=list(images or []),
             native_files=list(files or []),
         )
@@ -80,7 +80,8 @@ async def execute_model_under_owner(
                 result.set_exception(error)
             raise
         else:
-            result.set_result(value)
+            if not result.done():
+                result.set_result(value)
             return ConversationOutcome({"answer": value.answer}, disposition="complete")
 
     owner.run_segment = run

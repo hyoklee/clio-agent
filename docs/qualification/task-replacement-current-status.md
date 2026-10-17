@@ -114,6 +114,23 @@ subsequent CI execution.
 
 ### Final-iteration feedback migration — CI pending
 
+`d1082b02` exposed a second fixture omission: the submit case reaches the real
+inference guard without a started conversation owner. The feedback helper now
+reuses `execute_model_under_owner`, actual TurnRunner admission and `_run_module`.
+The common finite-model helper uses each admitted segment's accepted text and
+preserves its first result if later mail admits another segment. Its child/input
+helpers are AST-identical. No readiness flag, capacity bypass or production
+fallback is introduced.
+
+The cap assertions capture the exact first forward-return boundary on the actual
+session worker: one model call, both late inputs still pending, and only the
+original accepted input acknowledged. Later automatic admission is permitted,
+as required by the product. Direct-response/submit cases still require two calls,
+the updated answer, ordered attributed wire input and the same recipient commit
+for both late notifications. All test signatures/markers remain. Ruff/format and
+two-file Mypy pass; no local behavioral test ran. Receipt:
+`ci-feedback-owned-worker-d108-audit.json` in D static evidence. CI is pending.
+
 The two final-response cases in `40b5a3a1` still invoke the removed
 `pending_loop_inbox_drain` hook. They now run the production `ClioReAct` loop with
 the real conversation owner, Core mailbox and recipient-input commits. A finite

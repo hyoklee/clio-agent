@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -20,8 +19,7 @@ from clio_agent.gact.protocol.v3.message import message_to_v3
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_publication import publish_task_notice
 from tests._scripted_engine import Reply, ScriptedEngine, calls, scripted_lm, wire
-from tests.test_arc.test_conversation_owner_contracts import create_environment
-from tests.test_gact.task_records import active_turn_fixture
+from tests.test_arc.child_worker_helpers import execute_model_under_owner
 
 
 @pytest.mark.parametrize("status", [None, "running", "pending", "completed"])
@@ -62,16 +60,22 @@ async def _run_with_late_feedback(
     first: Reply,
     *,
     max_iters: int = 20,
-) -> tuple[dspy.Prediction, ScriptedEngine, TaskHistory, str]:
+) -> tuple[dspy.Prediction, ScriptedEngine, TaskHistory, str, list[dict[str, Any]]]:
     """Publish real Core mail during the finite model's first production loop call."""
-    app, owner, root = await create_environment(arc, tmp_path)
-    history, sid = owner.history, root.owner.session_id
     lm, engine = scripted_lm([first, Reply(text="updated answer")])
+    agent = ClioReAct("question -> answer", tools=[], max_iters=max_iters)
+    agent.set_lm(lm)
+    active: dict[str, Any] = {}
+    boundaries: list[dict[str, Any]] = []
     original = engine._next
 
     def respond(request: Request) -> Response:
         response = original(request)
         if len(engine.requests) == 1:
+            app, sid = active["app"], active["sid"]
+            history = app.state.task_history
+            root = history.latest_assignment(sid)
+            assert root is not None
             stamp = now()
             history.record_mail(
                 MailItem(
@@ -104,24 +108,31 @@ async def _run_with_late_feedback(
 
     monkeypatch.setattr(engine, "_next", respond)
 
-    def run() -> dspy.Prediction:
-        with active_turn_fixture(app, sid), dspy.context(lm=lm):
-            scope_token = context.set_react_scope("main")
-            session_token = context.set_react_session(sid)
-            try:
-                return ClioReAct("question -> answer", tools=[], max_iters=max_iters)(
-                    question="initial scope"
-                )
-            finally:
-                context.reset(session_token)
-                context.reset(scope_token)
+    forward = agent.forward
 
-    try:
-        prediction = await asyncio.to_thread(run)
-        return prediction, engine, history, sid
-    finally:
-        await owner.shutdown()
-        await owner.recovery.drain()
+    def run(**kwargs: Any) -> dspy.Prediction:
+        app, sid = context.active_app(), kwargs["session_id"]
+        assert app is not None
+        active.update(app=app, sid=sid)
+        scope_token = context.set_react_scope("main")
+        session_token = context.set_react_session(sid)
+        try:
+            prediction = forward(question=kwargs["question"])
+            boundaries.append(
+                {
+                    "model_calls": len(engine.requests),
+                    "pending": tuple(item.id for item in app.state.task_history.pending_mail(sid)),
+                    "acknowledged": app.state.task_history.acknowledged_notifications(sid),
+                }
+            )
+            return prediction
+        finally:
+            context.reset(session_token)
+            context.reset(scope_token)
+
+    monkeypatch.setattr(agent, "forward", run)
+    app, sid, prediction = await execute_model_under_owner(arc, tmp_path, agent, "initial scope")
+    return prediction, engine, app.state.task_history, sid, boundaries
 
 
 @pytest.mark.asyncio
@@ -137,7 +148,7 @@ async def test_arrivals_during_the_final_model_call_are_considered_before_comple
         if finish == "direct_response"
         else calls(("submit", {"answer": "old answer"}))
     )
-    prediction, engine, history, sid = await _run_with_late_feedback(
+    prediction, engine, history, sid, _ = await _run_with_late_feedback(
         arc, tmp_path, monkeypatch, first
     )
     assert len(engine.requests) == 2
@@ -156,7 +167,7 @@ async def test_arrivals_during_the_final_model_call_are_considered_before_comple
         ),
     ]
     notifications = frozenset({"feedback", f"outcome:task_feedback:{sid}"})
-    assert history.acknowledged_notifications(sid) == notifications
+    assert history.acknowledged_notifications(sid) == notifications | {"model-contract-input"}
     assert await history.io.run(history.pending_mail, sid) == ()
     for identity in notifications:
         committed = history.committed_notification_input(sid, identity)
@@ -169,13 +180,13 @@ async def test_an_explicit_iteration_cap_leaves_late_feedback_pending(
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A cap must not consume feedback that this forward cannot process."""
-    prediction, engine, history, sid = await _run_with_late_feedback(
+    prediction, _engine, _history, sid, boundaries = await _run_with_late_feedback(
         arc, tmp_path, monkeypatch, Reply(text="answer"), max_iters=1
     )
-    assert len(engine.requests) == 1
+    assert boundaries[0]["model_calls"] == 1
     assert prediction.answer == "answer"
-    assert [item.id for item in await history.io.run(history.pending_mail, sid)] == [
+    assert boundaries[0]["pending"] == (
         "feedback",
         f"outcome:task_feedback:{sid}",
-    ]
-    assert history.acknowledged_notifications(sid) == frozenset()
+    )
+    assert boundaries[0]["acknowledged"] == frozenset({"model-contract-input"})
