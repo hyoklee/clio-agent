@@ -19,10 +19,13 @@ covered by ``tests/test_gact/test_agent_resolution_unify.py``.
 from __future__ import annotations
 
 import sys
+from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.agent_blueprints import DEFAULT_AGENT_BLUEPRINT_ID
@@ -30,10 +33,11 @@ from clio_agent.gact.app import build_app
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
+def client(tmp_path: Path) -> Iterator[TestClient]:
     # agent=None is fine; /v1/agents doesn't need a live ClioAgent
     # (it reads static Expert.get_capabilities()).
-    return TestClient(build_app(sessions_path=tmp_path / "sessions.json", agent=None))
+    with TestClient(build_app(sessions_path=tmp_path / "sessions.json", agent=None)) as started:
+        yield started
 
 
 def _activated_session(client: TestClient) -> str:
@@ -255,7 +259,8 @@ def test_unified_tools_endpoint_includes_preloaded_agent_runtime_mcps(
                 "shell_bash": SimpleNamespace(name="shell_bash"),
             }
 
-    client.app.state.agent = SimpleNamespace(tool_executor=RuntimeExecutor())
+    app = cast(FastAPI, client.app)
+    app.state.agent = SimpleNamespace(tool_executor=RuntimeExecutor())
 
     response = client.get("/v1/tools")
     assert response.status_code == 200

@@ -12,6 +12,7 @@ and a terminal session status.
 from __future__ import annotations
 
 import asyncio
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -112,7 +113,6 @@ def test_finalize_survives_a_prologue_that_skipped_context_file_provenance(
     from clio_agent.gact.tool_observer import _open_turn_transcript
     from clio_agent.gact.turn_finalize import finalize_turn
     from clio_agent.gact.turn_state import new_turn_state
-    from clio_agent.gact.turn_watchdog import make_turn_cancel_event
     from clio_agent.gact.types import Message, Part
 
     app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
@@ -134,7 +134,9 @@ def test_finalize_survives_a_prologue_that_skipped_context_file_provenance(
     # assignment under test.
     state.workflow_schema = _active_workflow_state_schema(app, sid)
     state.transcript = _open_turn_transcript(app, sid, state.turn_id)
-    make_turn_cancel_event(state)
+    # Production receives this token from an admitted runner segment. This unit
+    # case supplies that input without launching a competing model segment.
+    state.turn_cancel_event = threading.Event()
     # NEVER call prepare_turn_off_loop: context_file_provenance stays at
     # TurnState's own default. context_frame shares the same None-until-
     # prologue shape (also only set by prepare_turn_off_loop, via
@@ -177,7 +179,6 @@ def _new_prologue_shaped_state(
     from clio_agent.gact.agents.resolution import _active_workflow_state_schema
     from clio_agent.gact.tool_observer import _open_turn_transcript
     from clio_agent.gact.turn_state import new_turn_state
-    from clio_agent.gact.turn_watchdog import make_turn_cancel_event
     from clio_agent.gact.types import Message, Part
 
     now = "2026-09-13T00:00:00+00:00"
@@ -193,7 +194,8 @@ def _new_prologue_shaped_state(
     state = new_turn_state(app, sid, "hello", user_msg, "main", sess=sess, bus=app.state.bus)
     state.workflow_schema = _active_workflow_state_schema(app, sid)
     state.transcript = _open_turn_transcript(app, sid, state.turn_id)
-    make_turn_cancel_event(state)
+    # These are prologue/finalize unit inputs, not a request to admit another turn.
+    state.turn_cancel_event = threading.Event()
     return state
 
 
@@ -414,6 +416,11 @@ async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
         emitted: list[str] = []
         published: list[str] = []
         frame_calls: list[Any] = []
+
+        def _record_frame(*_args: Any, **_kwargs: Any) -> dict[str, str]:
+            frame_calls.append(1)
+            return {"id": "unused"}
+
         monkeypatch.setattr(offloop_module, "open_turn_minter", _open_then_cancel)
         monkeypatch.setattr(
             offloop_module,
@@ -428,7 +435,7 @@ async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
         monkeypatch.setattr(
             offloop_module,
             "_record_context_frame",
-            lambda *a, **k: frame_calls.append(1) or {"id": "unused"},
+            _record_frame,
         )
 
         assert turn_minter(app, sid) is None  # nothing opened yet

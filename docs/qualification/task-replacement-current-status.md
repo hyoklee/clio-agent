@@ -56,6 +56,22 @@ The bounded audit receipt is `ci-fixture-migration-f989-source-audit.json` under
 the D qualification checkout's `.pytest-runtime/static`; it also verifies that
 the still-running R184 production files retain their original frozen hash.
 
+### Catalog startup and prologue test inputs — CI pending
+
+Eight catalog cases on `5d21491c` called blueprint activation without entering
+the application's lifespan. Their shared client fixture now enters and leaves
+the real lifespan, including admission initialization and normal shutdown.
+Six prologue/finalizer unit cases instead attempted to obtain a runner-owned
+cancel token without admitting a segment. They now supply the real cooperative
+token type as a unit input; they start no competing model segment. Their original
+failure causes, cancellation checkpoints, minter cleanup, typed events and
+persisted-output assertions remain unchanged. Actual runner ownership is covered
+separately by the runner/conversation and live lifecycle cases.
+
+AST comparison preserves every original assertion, test signature and marker in
+both modules. Scoped Ruff/format and Mypy pass. No production source changed and
+no local pytest/vitest ran; fresh CI results remain required.
+
 ### Short MCP result conversion — scoped CI passed; model acceptance pending
 
 The declared-presentation loss is repaired in the common clio-agent adapter,
