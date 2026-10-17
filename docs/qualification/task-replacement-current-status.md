@@ -9,6 +9,15 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Complete CI partitioning — pending execution
 
+All four Python 3.14 shard artifacts for `d1082b02` / run `39014099390` are now
+present: JUnit records 12,077 passes, 343 failures, four errors and 55 skips.
+This remains a failed baseline. The original cancellation/successor regression
+now passes; all four workflow-checkpoint cases and eleven retirement cases pass.
+The new cancellation fixture and three feedback cases still fail at the fixture
+boundaries corrected below. Those corrections require the next CI execution.
+Other interpreters are still running; no whole-matrix acceptance is claimed.
+Receipt: `ci-d108-complete-python314-counts.json` in D static evidence.
+
 The complete Python 3.14 report for `40b5a3a1` / run `39012483935` has 12,075
 passes, 344 failures, five errors and 53 skips across its three shards. This is
 still a failed baseline. Other interpreter jobs are allowed to finish before
