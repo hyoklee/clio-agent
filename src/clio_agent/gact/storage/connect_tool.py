@@ -8,7 +8,7 @@ from typing import Any
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
 from clio_agent.gact.permission_gate import _invoke_permission_gate
-from clio_agent.gact.storage.models import CreateSource
+from clio_agent.gact.storage.models import CreateSource, SourceConfiguration
 from clio_agent.gact.storage.setup_tool import connected_data_status, setup_presentation
 
 
@@ -108,7 +108,10 @@ def build_connected_data_connect_tool() -> Any:
             "root": {"type": "string", "description": "Requested folder or repository location."},
             "label": {"type": "string", "description": "User-facing name for this source."},
             "mode": {"type": "string", "description": "read_only, working_copy or write_enabled."},
-            "configuration": {"type": "object", "description": "Nonsecret provider settings."},
+            "configuration": {
+                "anyOf": [SourceConfiguration.model_json_schema(), {"type": "null"}],
+                "description": "Nonsecret provider settings; credentials use private sign-in.",
+            },
         },
         presentation=setup_presentation,
         title="Connect source",

@@ -123,6 +123,33 @@ clio-core remains `iowarp-core 2.3.1`; the dependency declaration and lockfile a
 unchanged. The current three-shard CI continues; this fixture needs execution on
 the next coherent four-shard candidate.
 
+### Native input validation before permission — CI pending
+
+The earlier source-connection migration incorrectly treated worker rejection of
+credential configuration as sufficient. Submission arguments have already been
+recorded at that point. Own native calls now validate the registered FastMCP
+public schema before asking for permission or creating submission custody. Only
+the application-owned submission-reference property is removed from that public
+schema; extra public arguments remain forbidden.
+
+The registered Connect callable and model-facing declaration use the existing
+closed `SourceConfiguration` schema. The pinned SDK returns typed Python values,
+so validated public arguments use Pydantic's JSON codec for Core custody; the SDK
+retains its validated call and existing execution/observation/cancellation code.
+The indexing and source-preparation algorithms are AST-identical.
+
+The credential test again requires a specific pre-submission validation error,
+now also requiring zero permission calls, Indexing tasks and sources. The valid
+reuse case passes an empty configuration object through native serialization;
+its strict single-approval assertion is retained. All test signatures/markers
+remain. Ruff/format, five-file Mypy and removal/class/size guards pass. No local
+behavioral test ran. Receipt: `ci-native-preflight-schema-4e05-audit.json` in D
+static evidence. Fresh CI and native/model acceptance are pending.
+
+Candidate Python-source SHA256:
+`fd6e93fb4a673437c78d6669d7d4670c62c56892d2c26f2d798ca337b07978f6`.
+clio-core 2.3.1, dependency pins, GACT and the frozen D/R184 service are unchanged.
+
 ### Connected-source native boundary migration — CI pending
 
 `6e9d21b8` shard evidence confirms permission denial and live ask/deny pass.
@@ -159,9 +186,9 @@ removed; caller/session context is explicitly bound.
 All six test signatures/markers and eight parameterized cases remain. The
 workspace-status case is AST-identical. The single-approval assertion is retained,
 along with source identity, filename, manifest/count, permission audit, private
-sign-in and no-source-on-credential-rejection checks. Domain validation now has to
-produce a stored failed native result identifying the forbidden token key, rather
-than pretending asynchronous worker validation raises at submission. Permission
+sign-in and no-source-on-credential-rejection checks. The earlier stored-failure
+expectation for forbidden credential fields was incorrect; the native public
+schema now rejects them before permission or task creation, as described above. Permission
 workers are denied/rejoined on an interrupted assertion; the existing five-second
 join and ten-second collection diagnostics are unchanged.
 

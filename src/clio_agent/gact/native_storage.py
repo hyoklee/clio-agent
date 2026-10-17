@@ -24,7 +24,13 @@ from clio_agent.gact.storage.connect_tool import prepare_connect
 from clio_agent.gact.storage.globus import GlobusSource
 from clio_agent.gact.storage.identity import source_submission_identity
 from clio_agent.gact.storage.indexing import run_index
-from clio_agent.gact.storage.models import FileEntry, Manifest, SourceRecord, TransferOperation
+from clio_agent.gact.storage.models import (
+    FileEntry,
+    Manifest,
+    SourceConfiguration,
+    SourceRecord,
+    TransferOperation,
+)
 from clio_agent.gact.task_history import RecordingUnconfirmed
 from clio_agent.tools.native_roots import NativeRoot
 
@@ -615,7 +621,7 @@ def register_native_storage(
         label: str,
         _clio_submission: str,
         mode: str = "read_only",
-        configuration: dict[str, Any] | None = None,
+        configuration: SourceConfiguration | None = None,
     ) -> dict[str, Any]:
         """Connect and index a folder as a task; Stop leaves accepted indexing running."""
         arguments = {
@@ -623,7 +629,9 @@ def register_native_storage(
             "root": root,
             "label": label,
             "mode": mode,
-            "configuration": configuration,
+            "configuration": configuration.model_dump(mode="json")
+            if configuration is not None
+            else None,
         }
 
         async def body(context: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:

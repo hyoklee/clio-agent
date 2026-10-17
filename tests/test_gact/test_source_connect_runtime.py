@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from fastmcp_tasks.client_models import ClientGetTaskResult
+from jsonschema import ValidationError
 from mcp.types import CallToolResult
 
 from clio_agent.gact.app import build_app
@@ -204,12 +205,12 @@ def test_connection_is_real_and_reused_without_a_second_approval(
         return "allow"
 
     app.state.pending_permission_gate = allow
-    first = _connect(app, "local", str(upstream), "Measurements")
+    first = _connect(app, "local", str(upstream), "Measurements", configuration={})
     terminal, reply = _collect(app, first)
     indexed = _body(reply)
     assert terminal["status"] == "completed" and indexed["state"] == "completed"
     assert indexed["manifest_id"] and indexed["entries"] == 1
-    second = _connect(app, "local", str(upstream), "Measurements")
+    second = _connect(app, "local", str(upstream), "Measurements", configuration={})
     terminal, reply = _collect(app, second)
     linked = _body(reply)
     assert terminal["status"] == "completed"
@@ -257,9 +258,19 @@ def test_source_configuration_cannot_smuggle_a_credential(
     bound: tuple[StorageService, Any, Path],
 ) -> None:
     service, app, _ = bound
-    accepted = _connect(
-        app, "github", "iowarp/clio-agent", "Repo", configuration={"token": "must-not-accept"}
+    permission_calls: list[tuple[Any, ...]] = []
+
+    def allow(*args: Any) -> str:
+        permission_calls.append(args)
+        return "allow"
+
+    app.state.pending_permission_gate = allow
+    with pytest.raises(ValidationError, match="token"):
+        _connect(
+            app, "github", "iowarp/clio-agent", "Repo", configuration={"token": "must-not-accept"}
+        )
+    assert permission_calls == []
+    assert not app.state.task_history.task_handles(
+        kind="Indexing", session_id=connect_tool.context.active_session_id()
     )
-    terminal, reply = _collect(app, accepted)
-    assert terminal["status"] == "failed" and "token" in reply.model_dump_json()
     assert service.sources("ws_default") == []

@@ -272,6 +272,7 @@ class BuiltinBoundary:
         self, name: str, arguments: dict[str, Any], captured: contextvars.Context
     ) -> Any:
         """Route task-capable built-ins to their own native root without a gateway queue."""
+        from clio_agent.gact.native_work import SUBMISSION_ARGUMENT
         from clio_agent.gact.permission_gate import _invoke_permission_gate
         from clio_agent.gact.tool_dispatch import run_owned_callable
         from clio_agent.tools.task_call_context import safe_description
@@ -280,6 +281,23 @@ class BuiltinBoundary:
         description = public.pop("_clio_task_description", None) or safe_description(name, public)
         if not isinstance(description, str) or len(description) > 2000:
             raise ValueError("Task description must be a string of at most 2000 characters")
+        root, kind, tool = (
+            ("shell", "Shell", "bash")
+            if name in {"bash", "shell_bash"}
+            else ("storage", "Download", name)
+            if name == "connected_data_download"
+            else ("storage", "Indexing", name)
+        )
+        component = await self.app.state.native_tools.roots[root].server.get_tool(tool)
+        if component is None:
+            raise ValueError("Native workload is unavailable")
+        schema = copy.deepcopy(component.parameters)
+        schema.get("properties", {}).pop(SUBMISSION_ARGUMENT, None)
+        schema["required"] = [
+            key for key in schema.get("required", []) if key != SUBMISSION_ARGUMENT
+        ]
+        schema["additionalProperties"] = False
+        Draft202012Validator(schema).validate(public)
         gate = (
             getattr(self.app.state, "pending_permission_gate", None)
             or self.app.state.make_permission_gate()
@@ -299,13 +317,6 @@ class BuiltinBoundary:
             raise ValueError("Task submission requires a confirmed assignment")
         session = self.app.state.sessions.get(sid)
         workspace = self.app.state.workspaces.get(session.workspace_id)
-        root, kind, tool = (
-            ("shell", "Shell", "bash")
-            if name in {"bash", "shell_bash"}
-            else ("storage", "Download", name)
-            if name == "connected_data_download"
-            else ("storage", "Indexing", name)
-        )
         call = captured.run(TASK_CALL.get)
         attribution: dict[str, Any] = {"agent": captured.run(context.active_react_scope)}
         if root == "storage" and "source_id" in public:

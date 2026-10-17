@@ -21,7 +21,7 @@ from fastmcp.client.transports.memory import FastMCPTransport
 from fastmcp_tasks.client_models import ClientGetTaskResult
 from fastmcp_tasks.components import coerce_task_arguments
 from mcp.client.session import ClientSession
-from pydantic import JsonValue
+from pydantic import JsonValue, TypeAdapter
 
 from clio_agent.arc.task_types import (
     BackendReference,
@@ -55,6 +55,7 @@ from clio_agent.tools.task_receipt import AcceptedTaskResult, accepted_result
 from clio_agent.tools.task_transport import TaskObservationTransport
 
 logger = logging.getLogger(__name__)
+_ARGUMENTS_JSON = TypeAdapter(dict[str, Any])
 
 
 class NativeTools:
@@ -216,7 +217,11 @@ class NativeTools:
         wire = coerce_task_arguments(
             component, {**arguments, SUBMISSION_ARGUMENT: reference}, strict=True
         )
-        public = {key: value for key, value in wire.items() if key != SUBMISSION_ARGUMENT}
+        public = _ARGUMENTS_JSON.dump_python(
+            {key: value for key, value in wire.items() if key != SUBMISSION_ARGUMENT},
+            mode="json",
+            warnings="error",
+        )
         context = SubmissionContext(
             reference=reference,
             handle=handle,
