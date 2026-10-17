@@ -124,7 +124,25 @@ class AskThenAnswerAgent:
         receipt = asyncio.run(boundary.bind(build_ask_user_tool()).acall(question=self.question))
         wait_tool = next(tool for tool in build_task_tools() if tool.name == "wait_tasks")
         # Asking returns immediately; this assignment explicitly chooses to wait.
-        asyncio.run(boundary.bind(wait_tool).acall(tasks=receipt["handle"]))
+        result = asyncio.run(boundary.bind(wait_tool).acall(tasks=receipt["handle"]))
+        from dspy.lm15 import ToolCallPart
+
+        from clio_agent.gact.agents.clio_react_record import StepRecorder
+        from clio_agent.gact.tool_observation import PresentedToolResult
+
+        if isinstance(result, PresentedToolResult):
+            result = result.value
+        # The finite host model still records the production collection input;
+        # returning a result to this test double alone cannot acknowledge mail.
+        recorder = StepRecorder(app.state.arc, session_id, "main", expert_id="main")
+        recorder.step_done(
+            0,
+            "wait-step",
+            text="",
+            thinking=(),
+            calls=(ToolCallPart(id="wait", name="wait_tasks", input={"tasks": receipt["handle"]}),),
+            results={"wait": (result, False)},
+        )
         return _AnswerPred(answer=self.answer)
 
 
@@ -199,6 +217,8 @@ def test_ask_question_drives_ask_user_pause_and_resumes(
     assert questions, "the pause created a user question"
     assert all(q.status == "answered" for q in questions)
     assert questions[0].answer == "the HDF5 dataset"
+    assert questions[0].answer_input is not None
+    assert questions[0].answer_input["turn_id"]
 
 
 def test_ask_user_pause_aborts_structured_in_non_interactive(

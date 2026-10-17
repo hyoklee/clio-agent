@@ -701,6 +701,7 @@ class StepRecorder:
             notifications,
             assignment_id=context.active_assignment_handle(),
             iteration_id=f"tool:{self.turn_id}:{self.expert_span_id}:{call_id}",
+            turn_id=self.turn_id,
             boundary=ContextBoundary(
                 session_id=self.session,
                 scope=self.scope,

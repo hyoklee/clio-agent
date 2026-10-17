@@ -67,7 +67,8 @@ class ContextReader:
             live_inputs = {
                 str(segment.id)
                 for segment in snapshot.segments
-                if segment.kind == "recipient_input"
+                if segment.kind in {"recipient_input", "user"}
+                and segment.content.get("rendered_content")
             }
             self._input_messages = {
                 key: value for key, value in self._input_messages.items() if key in live_inputs
@@ -125,7 +126,7 @@ def model_context_segments(
     proofs = history.committed_observations(session, scope) if history is not None else frozenset()
     result = []
     for segment in segments:
-        if segment.kind == "recipient_input" and segment.content.get("rendered_content"):
+        if segment.kind in {"recipient_input", "user"} and segment.content.get("rendered_content"):
             if history is None:
                 raise ContextReadError(
                     scope, ValueError("Confirmed input needs its Core content resolver")

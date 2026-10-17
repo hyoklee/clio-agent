@@ -72,7 +72,7 @@ def _message_text(msg: Any) -> str:
     return "".join(
         str(getattr(p, "text", "") or "")
         for p in getattr(msg, "parts", []) or []
-        if getattr(p, "type", "") == "text"
+        if getattr(p, "type", "") in {"text", "injection"}
     )
 
 
@@ -251,10 +251,11 @@ def test_spawn_subagent_with_skill_seeds_body_not_inlined(tmp_path: Path) -> Non
         assert task.kind == "Subagent" and task.owner.session_id == data["session_id"]
 
         _wait_terminal(app, data["handle"])
-        # The child turn was SEEDED with the skill body (staged as its user input).
+        # Delegated instructions are system injections, never fabricated human input.
         child_msgs = app.state.messages.get(data["session_id"], []) or []
-        seeded = [m for m in child_msgs if getattr(m, "role", "") == "user"]
-        assert seeded, "child got no staged user message"
+        assert not [m for m in child_msgs if m.role == "user"]
+        seeded = [m for m in child_msgs if m.role == "system"]
+        assert seeded, "child got no delegated assignment injection"
         assert any("SUBAGENT_SKILL_BODY_MARKER." in _message_text(m) for m in seeded)
 
 
@@ -285,7 +286,8 @@ def test_spawn_subagent_with_skill_uses_specific_task_assignment(tmp_path: Path)
         assert task.label
         _wait_terminal(app, data["handle"])
         child_msgs = app.state.messages.get(data["session_id"], []) or []
-        seeded = [m for m in child_msgs if getattr(m, "role", "") == "user"]
+        assert not [m for m in child_msgs if m.role == "user"]
+        seeded = [m for m in child_msgs if m.role == "system"]
         assert any("RESOLVE_REGION_PROCEDURE." in _message_text(m) for m in seeded)
         assert any("Resolve San Diego" in _message_text(m) for m in seeded)
 

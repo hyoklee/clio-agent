@@ -1,31 +1,10 @@
-"""Process-wide MCP commitment-wait activity tracker (iowarp/clio-agent#1230).
+"""Report deliberate waits to the existing per-session turn watchdog.
 
-#1225 made ``wait_for_terminal`` an UNBOUNDED commitment at the MCP-call layer
-(``AsyncMCPToolExecutor._timeout_budget_for_call`` returns ``seconds=None`` for
-a declared commitment wait, so the per-call ceiling never fires against it).
-But the GACT no-progress watchdog (``gact/turn_watchdog.py``,
-``CLIO_GACT_TURN_TIMEOUT_S``) still bounds the whole TURN independently: a turn
-legitimately blocked for hours inside one honest commitment wait — the relay's
-own remote job runs, publishing nothing this session's bus listens for — goes
-silent from the watchdog's point of view and is killed at the wall, the exact
-defect class #1226 already removed one layer down (a turn's single tool call
-being an unbounded commitment must complete, not die at a token/time ceiling).
-
-This module is the missing signal: it mirrors ``runtime/lm_activity.py``'s
-per-session in-flight tracker (same shape, same #761 defect-2 lesson — a busy
-NEIGHBOR session must never keep a genuinely wedged session's watchdog alive)
-so ``await_turn_work`` can ask "does THIS session have a commitment wait in
-flight right now" and treat "yes" as progress, exactly like an actively
-generating LM call. No per-call ceiling is layered on here: the MCP executor
-already leaves the wait itself unbounded (#1225's whole point), so this
-tracker never second-guesses that — it only reports whether one is open.
-
-The instrumentation call sites live in ``tools/execution.py`` (start/end
-around the unbounded foreground wait) via :func:`track`, a context manager
-that is a plain no-op unless the call is a genuine unbounded commitment —
-``tools/execution.py`` stays gact-agnostic (no import of ``gact`` at module
-scope): the session is resolved here, deferred, exactly like
-``lm_activity._active_lm_session``.
+Shared task controls, foreground native work and legacy MCP commitments retain
+their own timeout and cancellation rules. Silence during those waits must not
+trigger an unrelated turn deadline. Counts belong to the verified waiting
+session, so activity in another conversation cannot keep a wedged turn alive.
+This transient activity signal neither schedules work nor owns task state.
 """
 
 from __future__ import annotations
@@ -57,20 +36,20 @@ def _active_session() -> str:
         return ""
 
 
-def note_commitment_start() -> None:
+def note_commitment_start(session_id: str | None = None) -> None:
     """Register one commitment wait as in flight for the active session."""
-    key = _active_session()
+    key = _active_session() if session_id is None else session_id
     with _LOCK:
         _INFLIGHT[key] = _INFLIGHT.get(key, 0) + 1
 
 
-def note_commitment_end() -> None:
+def note_commitment_end(session_id: str | None = None) -> None:
     """Release one completed commitment wait for the active session.
 
     Drops the bucket once it drains to zero -- an idle session leaves no
     residual entry (the same no-unbounded-growth discipline as lm_activity).
     """
-    key = _active_session()
+    key = _active_session() if session_id is None else session_id
     with _LOCK:
         remaining = _INFLIGHT.get(key, 0) - 1
         if remaining <= 0:
@@ -95,19 +74,20 @@ def commitment_wait_in_flight(session_id: str | None = None) -> bool:
 
 
 @contextmanager
-def track(unbounded: bool) -> Iterator[None]:
-    """Scope a commitment wait's in-flight marker; a no-op unless ``unbounded``.
+def track(unbounded: bool, *, session_id: str | None = None) -> Iterator[None]:
+    """Exclude an enabled deliberate wait from the unrelated turn watchdog.
 
-    Single unconditional call-site shape for ``tools/execution.py``: the
-    caller always writes ``with commitment_activity.track(timeout is None):``
-    regardless of whether THIS particular call is a genuine unbounded
-    commitment, so the instrumentation never needs an ``if`` at the call site.
+    The caller retains its own explicit timeout and cancellation semantics.
+    Shared controls pass their verified caller identity; legacy callers may
+    resolve the active session. Capture it once so cleanup releases that same
+    session even if a caller changes its runtime context while waiting.
     """
     if not unbounded:
         yield
         return
-    note_commitment_start()
+    key = _active_session() if session_id is None else session_id
+    note_commitment_start(key)
     try:
         yield
     finally:
-        note_commitment_end()
+        note_commitment_end(key)

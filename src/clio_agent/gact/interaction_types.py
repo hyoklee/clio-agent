@@ -26,6 +26,7 @@ class UserQuestion(BaseModel):
     attended_session_id: str = ""
     task_handle: str | None = None
     response_mode: Literal["async"] = "async"
+    answer_input: dict[str, Any] | None = None
     prompt: str
     status: Literal["pending", "answered", "cancelled", "expired"] = "pending"
     # "multi_choice" (SEP-1330, C1-S4/#1284): a multi-select elicitation field

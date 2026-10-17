@@ -266,5 +266,8 @@ def test_idle_is_not_observable_while_the_finalize_tail_holds_the_slot(
         )
         assert second.status_code == 202, second.text
         assert second.json()["task_handle"]
-        assert second.json()["delivery"] == "start"
         assert wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor) == "idle"
+        receipt = app.state.task_history.committed_notification_input(
+            sid, second.json()["message_id"]
+        )
+        assert receipt is not None and receipt.turn_id == second.json()["message_id"]

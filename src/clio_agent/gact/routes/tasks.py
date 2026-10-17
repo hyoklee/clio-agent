@@ -436,6 +436,7 @@ def register_task_routes(app: FastAPI) -> None:
             ]
             return {
                 "questions": [row for row in values if status is None or row["status"] == status],
+                "metadata": {"status": status},
                 **{key: value for key, value in page.items() if key != "tasks"},
             }
 
@@ -460,6 +461,15 @@ def register_task_routes(app: FastAPI) -> None:
         except ValueError as error:
             raise HTTPException(404, "Question is unavailable") from error
         return current
+
+    @app.get("/v1/sessions/{sid}/questions/{handle}", response_model=UserQuestion)
+    async def get_question(sid: str, handle: str) -> dict[str, Any]:
+        """Read the authorized Question and its existing recipient-input projection."""
+
+        def read() -> dict[str, Any]:
+            return question_view(app, session_question(sid, handle))
+
+        return await app.state.task_history.io.run(read)
 
     @app.post("/v1/sessions/{sid}/questions/{handle}/answer")
     async def answer(sid: str, handle: str, body: AnswerRequest) -> dict[str, Any]:

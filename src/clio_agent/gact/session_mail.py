@@ -291,6 +291,7 @@ class SessionMail:
         assignment_id: str,
         iteration_id: str,
         boundary: ContextBoundary,
+        turn_id: str = "",
     ) -> RecipientInput:
         """Render and confirm a stored observation through the sole recipient-input boundary."""
         from clio_agent.gact.question_surface import render_collected_answers
@@ -336,6 +337,7 @@ class SessionMail:
                 boundary=boundary,
                 tool_observation=observation,
                 rendered_content=rendered,
+                turn_id=turn_id,
             )
 
     def collection(self, caller: TaskCaller, identities: tuple[str, ...]) -> StagedInput:

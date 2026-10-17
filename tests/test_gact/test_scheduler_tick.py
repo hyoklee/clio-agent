@@ -83,6 +83,11 @@ def test_fired_schedule_is_registered_and_cancellable(
                 if (
                     app.state.turn_runner.busy(sid)
                     and app.state.sessions.get(sid).status == "running"
+                    and any(
+                        event.type == "session.status_changed"
+                        and event.payload.get("status") == "running"
+                        for event in app.state.bus._history.get(sid, [])
+                    )
                 ):
                     break
                 await asyncio.sleep(0.02)

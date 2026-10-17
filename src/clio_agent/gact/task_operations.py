@@ -24,6 +24,7 @@ from clio_agent.gact.task_observations import pattern_text, read_observations
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 from clio_agent.gact.task_result_content import committed_evidence, read_cursor, result_page
 from clio_agent.gact.tool_observation import CollectedTaskResult
+from clio_agent.runtime.commitment_activity import track
 
 CancelOwner = Callable[[TaskSnapshot, TaskCaller], Awaitable[dict[str, Any]]]
 
@@ -294,36 +295,41 @@ class TaskOperations:
         timeout_s: float | None = None,
     ) -> dict[str, Any]:
         """Await mixed owner observations; timeout/cancellation never cancels a member."""
-        if return_when not in {"all", "any"}:
-            raise ValueError("return_when must be all or any")
-        handles, timeout = (
-            await self.history.io.run(self._canonical_observed, caller, _handles(tasks)),
-            _timeout(timeout_s),
-        )
-        deadline = None if timeout is None else asyncio.get_running_loop().time() + timeout
-        changed, loop = asyncio.Event(), asyncio.get_running_loop()
+        with track(timeout_s != 0, session_id=caller.session_id):
+            if return_when not in {"all", "any"}:
+                raise ValueError("return_when must be all or any")
+            handles, timeout = (
+                await self.history.io.run(self._canonical_observed, caller, _handles(tasks)),
+                _timeout(timeout_s),
+            )
+            deadline = None if timeout is None else asyncio.get_running_loop().time() + timeout
+            changed, loop = asyncio.Event(), asyncio.get_running_loop()
 
-        def wake(_revision: int) -> None:
-            loop.call_soon_threadsafe(changed.set)
+            def wake(_revision: int) -> None:
+                loop.call_soon_threadsafe(changed.set)
 
-        remove = self.history.listen(wake, handles=handles, recipient_session=caller.session_id)
-        try:
-            while True:
-                changed.clear()
-                outcomes, pending = await self.history.io.run(self._outcomes, caller, handles)
-                uncertain = any(item.get("status") == "task_state_uncertain" for item in outcomes)
-                if not pending or uncertain or (return_when == "any" and outcomes):
-                    return _wait_value(outcomes, pending, timed_out=False)
-                remaining = None if deadline is None else max(0.0, deadline - loop.time())
-                if remaining == 0:
-                    return _wait_value(outcomes, pending, timed_out=True)
-                try:
-                    await asyncio.wait_for(changed.wait(), remaining)
-                except TimeoutError:
+            remove = self.history.listen(wake, handles=handles, recipient_session=caller.session_id)
+            try:
+                while True:
+                    changed.clear()
                     outcomes, pending = await self.history.io.run(self._outcomes, caller, handles)
-                    return _wait_value(outcomes, pending, timed_out=True)
-        finally:
-            remove()
+                    uncertain = any(
+                        item.get("status") == "task_state_uncertain" for item in outcomes
+                    )
+                    if not pending or uncertain or (return_when == "any" and outcomes):
+                        return _wait_value(outcomes, pending, timed_out=False)
+                    remaining = None if deadline is None else max(0.0, deadline - loop.time())
+                    if remaining == 0:
+                        return _wait_value(outcomes, pending, timed_out=True)
+                    try:
+                        await asyncio.wait_for(changed.wait(), remaining)
+                    except TimeoutError:
+                        outcomes, pending = await self.history.io.run(
+                            self._outcomes, caller, handles
+                        )
+                        return _wait_value(outcomes, pending, timed_out=True)
+            finally:
+                remove()
 
     def _canonical_observed(self, caller: TaskCaller, handles: tuple[str, ...]) -> tuple[str, ...]:
         """Authorize aliases before registering for canonical owner observations."""
@@ -406,87 +412,53 @@ class TaskOperations:
         include_state: bool = False,
     ) -> dict[str, Any]:
         """Read available changes immediately, or explicitly await output/settlement."""
-        handles = await self.history.io.run(self._canonical_observed, caller, _handles(tasks))
-        timeout, previous = _timeout(timeout_s), _decode(cursor)
-        search_start = _cursor(previous) if previous else None
-        scanned_pages = 0
-        try:
-            expression = re.compile(pattern) if pattern is not None else None
-        except re.error as error:
-            raise ValueError("Observation pattern is invalid") from error
-        deadline = None if timeout is None else asyncio.get_running_loop().time() + timeout
-        changed, loop = asyncio.Event(), asyncio.get_running_loop()
+        with track(pattern is not None and timeout_s != 0, session_id=caller.session_id):
+            handles = await self.history.io.run(self._canonical_observed, caller, _handles(tasks))
+            timeout, previous = _timeout(timeout_s), _decode(cursor)
+            search_start = _cursor(previous) if previous else None
+            scanned_pages = 0
+            try:
+                expression = re.compile(pattern) if pattern is not None else None
+            except re.error as error:
+                raise ValueError("Observation pattern is invalid") from error
+            deadline = None if timeout is None else asyncio.get_running_loop().time() + timeout
+            changed, loop = asyncio.Event(), asyncio.get_running_loop()
 
-        def wake(revision: int) -> None:
-            loop.call_soon_threadsafe(changed.set)
+            def wake(revision: int) -> None:
+                loop.call_soon_threadsafe(changed.set)
 
-        remove = self.history.listen(wake, handles=handles, recipient_session=caller.session_id)
-        try:
-            initial: dict[str, Any] | None = await self.history.io.run(
-                self._observations, caller, handles, previous, row_limit, include_state, expression
-            )
-            if self.refresh_owner is not None:
-                for handle in handles:
-                    try:
-                        task = await self.history.io.run(
-                            TaskAccess(self.history, caller).require, handle, "observe"
-                        )
-                    except ValueError:
-                        continue
-                    if task.terminal_at is None and task.status == "task_state_uncertain":
-                        self.refresh_owner(task)
-            subscription_errors = []
-            if notify is not None:
-                subscription_errors = await self.history.io.run(
-                    self._subscribe, caller, handles, notify
+            remove = self.history.listen(wake, handles=handles, recipient_session=caller.session_id)
+            try:
+                initial: dict[str, Any] | None = await self.history.io.run(
+                    self._observations,
+                    caller,
+                    handles,
+                    previous,
+                    row_limit,
+                    include_state,
+                    expression,
                 )
-            while True:
-                if initial is not None:
-                    result, initial = initial, None
-                else:
-                    changed.clear()
-                    result = await self.history.io.run(
-                        self._observations,
-                        caller,
-                        handles,
-                        previous,
-                        row_limit,
-                        include_state,
-                        expression,
+                if self.refresh_owner is not None:
+                    for handle in handles:
+                        try:
+                            task = await self.history.io.run(
+                                TaskAccess(self.history, caller).require, handle, "observe"
+                            )
+                        except ValueError:
+                            continue
+                        if task.terminal_at is None and task.status == "task_state_uncertain":
+                            self.refresh_owner(task)
+                subscription_errors = []
+                if notify is not None:
+                    subscription_errors = await self.history.io.run(
+                        self._subscribe, caller, handles, notify
                     )
-                if expression is not None:
-                    result.update(search_start_cursor=search_start, scanned_pages=scanned_pages)
-                if subscription_errors:
-                    result["subscription_errors"] = subscription_errors
-                if (
-                    expression is None
-                    or result["any_settled"]
-                    or any(
-                        "pattern_match" in chunk
-                        for row in result["tasks"]
-                        for chunk in row.get("output", [])
-                    )
-                    or any(expression.search(pattern_text(row)) for row in result["tasks"])
-                ):
-                    return result
-                remaining = None if deadline is None else max(0.0, deadline - loop.time())
-                if remaining == 0:
-                    return {
-                        **result,
-                        "search_start_cursor": search_start,
-                        "scanned_pages": scanned_pages,
-                        "timed_out": True,
-                    }
-                previous = _decode(result["cursor"])
-                if result["has_more"]:
-                    scanned_pages += 1
-                    await asyncio.sleep(0)  # Cancellation remains responsive while paging.
-                    continue
-                try:
-                    await asyncio.wait_for(changed.wait(), remaining)
-                except TimeoutError:
-                    return {
-                        **await self.history.io.run(
+                while True:
+                    if initial is not None:
+                        result, initial = initial, None
+                    else:
+                        changed.clear()
+                        result = await self.history.io.run(
                             self._observations,
                             caller,
                             handles,
@@ -494,18 +466,59 @@ class TaskOperations:
                             row_limit,
                             include_state,
                             expression,
-                        ),
-                        **(
-                            {"subscription_errors": subscription_errors}
-                            if subscription_errors
-                            else {}
-                        ),
-                        "search_start_cursor": search_start,
-                        "scanned_pages": scanned_pages,
-                        "timed_out": True,
-                    }
-        finally:
-            remove()
+                        )
+                    if expression is not None:
+                        result.update(search_start_cursor=search_start, scanned_pages=scanned_pages)
+                    if subscription_errors:
+                        result["subscription_errors"] = subscription_errors
+                    if (
+                        expression is None
+                        or result["any_settled"]
+                        or any(
+                            "pattern_match" in chunk
+                            for row in result["tasks"]
+                            for chunk in row.get("output", [])
+                        )
+                        or any(expression.search(pattern_text(row)) for row in result["tasks"])
+                    ):
+                        return result
+                    remaining = None if deadline is None else max(0.0, deadline - loop.time())
+                    if remaining == 0:
+                        return {
+                            **result,
+                            "search_start_cursor": search_start,
+                            "scanned_pages": scanned_pages,
+                            "timed_out": True,
+                        }
+                    previous = _decode(result["cursor"])
+                    if result["has_more"]:
+                        scanned_pages += 1
+                        await asyncio.sleep(0)  # Cancellation remains responsive while paging.
+                        continue
+                    try:
+                        await asyncio.wait_for(changed.wait(), remaining)
+                    except TimeoutError:
+                        return {
+                            **await self.history.io.run(
+                                self._observations,
+                                caller,
+                                handles,
+                                previous,
+                                row_limit,
+                                include_state,
+                                expression,
+                            ),
+                            **(
+                                {"subscription_errors": subscription_errors}
+                                if subscription_errors
+                                else {}
+                            ),
+                            "search_start_cursor": search_start,
+                            "scanned_pages": scanned_pages,
+                            "timed_out": True,
+                        }
+            finally:
+                remove()
 
     def _observations(
         self,

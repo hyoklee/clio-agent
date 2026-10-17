@@ -53,9 +53,6 @@ from clio_agent.sdk import (
     ClioClient,
     ClioSDKError,
     Health,
-    MessageCompleted,
-    PermissionRequested,
-    SessionStatusChanged,
 )
 from clio_agent.ui.cli_commands import handle_local_command
 from clio_agent.ui.doctor import run_doctor, run_doctor_gc
@@ -549,103 +546,19 @@ Source: server agent catalog (GET /v1/agents)
         *,
         interactive: bool = True,
         status: Any = None,
+        answered_question: str | None = None,
     ) -> tuple[Any, Any, dict[str, Any] | None]:
-        """Consume completion and human-input events from the session feed.
+        """Consume this request's correlated completion and human-input events."""
+        from clio_agent.ui.cli_events import consume_turn
 
-        Fetch the authoritative assistant on ``message.completed``. Resolve
-        ``user_question.created`` (or legacy ``waiting_user``) and permissions,
-        then reopen the feed from its cursor. Posting a Question itself does
-        not pause model execution; the agent may explicitly wait on its handle.
-
-        Input rounds retain the CLI's MAX_PAUSE_ROUNDS safeguard. Return
-        ``(completed_event, assistant_message, error_info)``; consume failures
-        remain structured, including unavailable input and failed message reads.
-        """
-        completed = None
-        error_info: dict[str, Any] | None = None
-        rounds = 0
-
-        while True:
-            pause_kind: str | None = None
-            pause_permission: Any = None
-            stream_ended = True
-            with self.client.sessions.events(
-                session_id, last_event_id=self._event_cursor
-            ) as stream:
-                for event in stream:
-                    if isinstance(event, MessageCompleted):
-                        completed = event
-                        stream_ended = False
-                        break
-                    if (
-                        isinstance(event, SessionStatusChanged)
-                        and event.status == "waiting_user"
-                        or event.type == "user_question.created"
-                    ):
-                        pause_kind = "waiting_user"
-                        stream_ended = False
-                        break
-                    if isinstance(event, PermissionRequested):
-                        pause_kind = "permission"
-                        pause_permission = event.permission
-                        stream_ended = False
-                        break
-                self._event_cursor = stream.last_event_id
-
-            if completed is not None:
-                break
-            if pause_kind is None:
-                # The feed ended without a terminal event and without a
-                # pause — surface it structurally rather than returning a
-                # silently empty answer.
-                if stream_ended:
-                    error_info = {
-                        "error": "stream_ended",
-                        "message": (
-                            "The event stream ended before the turn completed; "
-                            "the answer could not be retrieved."
-                        ),
-                    }
-                break
-
-            rounds += 1
-            if rounds > self.MAX_PAUSE_ROUNDS:
-                error_info = {
-                    "error": "too_many_pauses",
-                    "message": (
-                        f"The turn did not complete after {self.MAX_PAUSE_ROUNDS} "
-                        "clarification/permission rounds; aborting to avoid an "
-                        "unbounded wait."
-                    ),
-                }
-                break
-
-            if pause_kind == "waiting_user":
-                abort = self._resolve_waiting_user(
-                    session_id, interactive=interactive, status=status
-                )
-            else:
-                abort = self._resolve_permission(
-                    pause_permission, interactive=interactive, status=status
-                )
-            if abort is not None:
-                error_info = abort
-                break
-            # Loop back to re-open the feed and consume the resumed turn.
-
-        message = None
-        if completed is not None and completed.message_id:
-            try:
-                message = self.client.messages.get(session_id, completed.message_id)
-            except ClioSDKError as exc:
-                # The turn completed cleanly but the authoritative message
-                # fetch failed. Do NOT degrade to an empty answer — surface a
-                # structured reason so it reaches the user (no-silent-fallback).
-                error_info = {
-                    "error": "message_fetch_failed",
-                    "message": (f"The turn completed but its message could not be fetched: {exc}"),
-                }
-        return completed, message, error_info
+        return consume_turn(
+            self,
+            session_id,
+            ack_message_id,
+            interactive=interactive,
+            status=status,
+            answered_question=answered_question,
+        )
 
     # -- pause resolution (ask-user / permission) --------------------------
 
@@ -666,44 +579,19 @@ Source: server agent catalog (GET /v1/agents)
                 status.start()
 
     def _resolve_waiting_user(
-        self, session_id: str, *, interactive: bool, status: Any = None
-    ) -> dict[str, Any] | None:
-        """Resolve a ``waiting_user`` pause: fetch the pending question, prompt
-        the user, and submit the answer.
+        self,
+        session_id: str,
+        *,
+        interactive: bool,
+        status: Any = None,
+        question_id: str | None = None,
+    ) -> tuple[dict[str, Any] | None, Any]:
+        """Answer the addressed Question and retain its actual owner identity."""
+        from clio_agent.ui.cli_events import resolve_waiting_user
 
-        Returns ``None`` once handled (so the turn can resume), or a structured
-        error dict when the pause cannot be resolved (e.g. non-interactive mode
-        cannot show a prompt).
-        """
-        pending = [q for q in self.client.sessions.questions(session_id) if q.status == "pending"]
-        if not pending:
-            # Already resolved out-of-band — nothing to do; just resume.
-            return None
-        question = pending[0]
-
-        if not interactive:
-            return {
-                "error": "input_required",
-                "message": (
-                    "The agent asked a clarifying question but the CLI is running "
-                    "non-interactively and cannot prompt for an answer: "
-                    f"{question.prompt}"
-                ),
-            }
-
-        body = f"[bold]{escape(question.prompt)}[/bold]"
-        if question.options:
-            lines = "\n".join(
-                f"  - {escape(opt.value or opt.label)}: {escape(opt.label)}"
-                for opt in question.options
-            )
-            body = f"{body}\n\n[dim]Options:[/dim]\n{lines}"
-        self.console.print(
-            Panel(body, title="[#FFAA00]CLIO needs your input[/#FFAA00]", border_style="#FFAA00")
+        return resolve_waiting_user(
+            self, session_id, interactive=interactive, status=status, question_id=question_id
         )
-        answer = self._prompt("Your answer: ", status=status).strip()
-        self.client.sessions.answer_question(session_id, question.id, answer=answer)
-        return None
 
     def _resolve_permission(
         self, permission: Any, *, interactive: bool, status: Any = None

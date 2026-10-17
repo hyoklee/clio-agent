@@ -493,10 +493,10 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         direct_factories: Mapping[str, Callable[[], Any]] = (
             getattr(self, "_clio_namespace_direct_factories", None) or {}
         )
-        direct_client, decision = resolve_and_build_direct_client(namespace, direct_factories)
-        record_namespace_route_decision(namespace, decision)
-        ctx = direct_client if direct_client is not None else self._client_factory(proxy)
         try:
+            direct_client, decision = resolve_and_build_direct_client(namespace, direct_factories)
+            record_namespace_route_decision(namespace, decision)
+            ctx = direct_client if direct_client is not None else self._client_factory(proxy)
             if spec is not None and uses_shared_launcher_cache(spec):
                 async with aacquire_launcher_cache_lock(namespace):
                     client = await ctx.__aenter__()

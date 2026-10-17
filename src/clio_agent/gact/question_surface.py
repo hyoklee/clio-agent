@@ -65,6 +65,9 @@ def question_view(app: Any, task: TaskSnapshot) -> dict[str, Any]:
         else QuestionReply()
     )
     metadata = definition.metadata
+    receipt = history.committed_notification_input(
+        task.owner.session_id, f"outcome:{task.handle}:{task.owner.session_id}"
+    )
     return {
         "id": task.handle,
         "task_handle": task.handle,
@@ -86,6 +89,12 @@ def question_view(app: Any, task: TaskSnapshot) -> dict[str, Any]:
         "answer": answer.answer,
         "selected_options": list(answer.selected_options),
         "answer_metadata": answer.metadata,
+        "answer_input": receipt.model_dump(
+            mode="json",
+            include={"id", "session_id", "assignment_id", "iteration_id", "turn_id", "boundary"},
+        )
+        if receipt is not None
+        else None,
         "source": definition.source,
         "metadata": metadata,
         "turn_id": str(metadata.get("source_user_message_id") or task.invocation_id),

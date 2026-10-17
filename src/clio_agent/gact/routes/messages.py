@@ -424,16 +424,16 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             from clio_agent.gact.task_access import TaskAccess, TaskAccessDenied, TaskCaller
 
             history = getattr(app.state, "task_history", None)
-            if history is not None:
+            visible = {
+                part.handle_id
+                for row in rows
+                for part in row.parts
+                if part.type == "expert_handoff" and part.handle_id
+            }
+            if history is not None and visible:
                 access = TaskAccess(
                     history, TaskCaller(sid, app.state.human_principal, human_action=True)
                 )
-                visible = {
-                    part.handle_id
-                    for row in rows
-                    for part in row.parts
-                    if part.type == "expert_handoff" and part.handle_id
-                }
                 for handle in visible:
                     try:
                         task = access.require(handle, "read")

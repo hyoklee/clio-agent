@@ -68,6 +68,9 @@ def test_health_is_degraded_not_down_and_names_the_mode(
             async def failed_start() -> None:
                 with pytest.raises(RuntimeError, match="Durable tasks require clio-core"):
                     await app.state.task_runtime_start
+                # The immediate boot report names attachment, not the full ARC
+                # probe. This assertion concerns the completed doctor report.
+                await app.state.health_boot_task
 
             assert client.portal is not None
             client.portal.call(failed_start)

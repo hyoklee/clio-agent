@@ -51,6 +51,19 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------------------- #
 
 
+def project_committed_feedback(
+    history: "TaskHistory", session_id: str, messages: list["Message"]
+) -> None:
+    """Derive delivery display from Core input commits, without rewriting accepted bodies."""
+    pending = [message for message in messages if message.metadata.get("pending_steer") is True]
+    if not pending:
+        return
+    acknowledged = history.acknowledged_notifications(session_id)
+    for message in pending:
+        if message.id in acknowledged:
+            message.metadata = {**message.metadata, "pending_steer": False}
+
+
 def _metrics_counters(app: "FastAPI") -> Any:
     """Return the running metrics aggregate, or ``None`` when not wired.
 

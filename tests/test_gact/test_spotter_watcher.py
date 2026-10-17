@@ -87,6 +87,9 @@ def test_explicit_disarm_uses_conversation_cancellation(
         released = asyncio.Event()
         app.state.turn_runner.run_when_released(child, released.set)
         await asyncio.wait_for(released.wait(), 5)
+        pump = app.state.turn_runner._pumps.get(child)
+        if pump is not None:
+            await asyncio.wait_for(asyncio.shield(pump), 5)
 
     asyncio.run_coroutine_threadsafe(await_release(), app.state.mcp_app_loop).result(timeout=10)
     current = app.state.task_history.task_snapshot(task.handle)

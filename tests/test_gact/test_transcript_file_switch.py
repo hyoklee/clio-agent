@@ -364,7 +364,11 @@ def test_off_a_failed_record_mint_is_typed_and_leaves_no_ghost_row(
         monkeypatch.setattr("clio_agent.gact.transcript_recording.append_part_atom", _store_down)
         response = client.post(f"/v1/sessions/{sid}/compact", json={})
         assert response.status_code == 500, response.text
-        assert response.json()["error"]["error"] == "compaction_record_write_failed"
+        error = response.json()["error"]
+        assert error["error"] == "compaction_failure_unrecorded"
+        assert error["details"]["compaction_error"] == "compaction_record_write_failed"
+        assert error["recoverable"] is False
+        assert "failure notice could not be written" in error["message"]
         assert [m.id for m in app.state.messages[sid]] == ["msg_1", "msg_2"]
         live = app.state.arc.render_working_set(sid, "main")
         assert [(s.kind, s.content["text"]) for s in live] == [("user", "one")]

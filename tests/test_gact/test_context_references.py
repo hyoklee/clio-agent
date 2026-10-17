@@ -1062,8 +1062,9 @@ def test_context_only_busy_steer_idle_redrive_preserves_parts_and_model_text(
         assert started.status_code == 202, started.text
         assert started.json()["task_handle"]
         deadline = time.monotonic() + 3
-        while not app.state.turn_runner.busy(session_id) and time.monotonic() < deadline:
+        while not agent.calls and time.monotonic() < deadline:
             time.sleep(0.02)
+        assert len(agent.calls) == 1, "Steering must arrive after the first model input"
         assert app.state.turn_runner.busy(session_id)
         steer = client.post(
             f"/v1/sessions/{session_id}/messages",

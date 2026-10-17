@@ -299,18 +299,21 @@ class NativeTools:
                 if response.structured_content is None:
                     raise RuntimeError("Accepted native task has no local receipt")
                 return response.structured_content
-            driver = self._drivers.get(handle)
-            if driver is not None:
-                await asyncio.shield(driver)
-            current = await self.await_settlement(handle)
-            return {
-                "handle": handle,
-                "status": current.status,
-                "pending": current.terminal_at is None,
-                "result": await self.history.io.run(self.history.read_content, current.result)
-                if current.result is not None
-                else None,
-            }
+            from clio_agent.runtime.commitment_activity import track
+
+            with track(True, session_id=context.owner.session_id):
+                driver = self._drivers.get(handle)
+                if driver is not None:
+                    await asyncio.shield(driver)
+                current = await self.await_settlement(handle)
+                return {
+                    "handle": handle,
+                    "status": current.status,
+                    "pending": current.terminal_at is None,
+                    "result": await self.history.io.run(self.history.read_content, current.result)
+                    if current.result is not None
+                    else None,
+                }
         except asyncio.CancelledError:
             if not background and handle in self._calls:
                 await self._stop_foreground(handle)

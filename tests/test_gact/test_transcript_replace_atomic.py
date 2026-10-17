@@ -388,11 +388,14 @@ def test_off_undo_rewind_fork_compact_import_and_clear_survive_restarts(
     expected[import_sid] = ["msg_1", "msg_2"]
 
     with _restart_and_check() as (app, client):
+        previous_generation = current_generation(
+            app.state.arc._segments, fork_sid, MESSAGE_PART_SCOPE
+        )
         _delete_session_messages(app, fork_sid)  # the /clear seam: the session stays
         app.state.sessions.update(fork_sid, message_count=0)
         segments = app.state.arc._segments
-        assert current_generation(segments, fork_sid, MESSAGE_PART_SCOPE) == 0  # no pointer
-        assert not segments.has_segments(fork_sid, pointer_scope(MESSAGE_PART_SCOPE))
+        assert current_generation(segments, fork_sid, MESSAGE_PART_SCOPE) > previous_generation
+        assert segments.has_segments(fork_sid, pointer_scope(MESSAGE_PART_SCOPE))
         for generation in (0, 1, 2):
             base = generation_base(MESSAGE_PART_SCOPE, generation)
             assert segments.list_segments(fork_sid, base, include_tombstoned=True) == []

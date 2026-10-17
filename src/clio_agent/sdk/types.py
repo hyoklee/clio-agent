@@ -463,18 +463,21 @@ class UserQuestionOption(_WireModel):
 
 
 class UserQuestion(_WireModel):
-    """A clarifying question the agent paused the turn to ask.
+    """An asynchronous Question, independent of whether its agent chooses to wait.
 
     Mirrors the server's ``clio_agent.gact.types.UserQuestion`` wire shape
     (only the client-relevant subset is declared; anything richer is
     preserved via ``extra="allow"``). Returned by
     ``GET /v1/sessions/{sid}/questions`` and the answer endpoint. While a
-    question is ``pending`` the session sits in ``waiting_user``; answering
-    the last pending question resumes the turn on the same session.
+    question is pending, accepted work and model execution may continue.
+    ``answer_input`` names the existing confirmed recipient-input record;
+    the answer's creation turn alone does not identify its continuation.
     """
 
     id: str
     session_id: str = ""
+    owner_session_id: str = ""
+    attended_session_id: str = ""
     prompt: str = ""
     status: str = "pending"
     kind: str = "freeform"
@@ -488,6 +491,7 @@ class UserQuestion(_WireModel):
     answer: str = ""
     selected_options: list[str] = Field(default_factory=list)
     answer_metadata: dict[str, Any] = Field(default_factory=dict)
+    answer_input: dict[str, Any] | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 

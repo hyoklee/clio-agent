@@ -1,5 +1,40 @@
 # Tasks replacement status — October 17
 
+## October 17 — c64 CI result and complete next-batch inventory
+
+Initial implementation is done. Regression testing is failed; bug corrections
+and final live qualification remain in progress. The exact `c64e853a` CI run
+`39044300709` completed with eleven failed regression shards and one cancelled
+at the existing 25-minute job limit. Python 3.14 reports 12,459 passed, 21 failed,
+three errors and 54 skipped; Python 3.13 reports 12,460 passed, 21 failed, two
+errors and 54 skipped. Python 3.12 shard 2 produced no report. Coverage passed
+for 3.13/3.14 and failed for 3.12. All three lint and both native-service jobs
+passed. None of this is final task-system live acceptance.
+
+All 26 distinct failure/error cases from the eleven available reports are
+mapped in `.pytest-runtime/static/ci-c64e853a-followup-audit.json` in the D
+qualification checkout. Twenty-two have constructed source/fixture corrections;
+four native-storage/no-progress obligations remain unresolved. No corrected
+behavioral case has been executed locally or claimed passed. The next batch
+has not been pushed or dispatched to CI.
+
+The source fixes retain existing owners: deliberate waits use the existing
+session wait marker; variants inherit input-content references without copying
+acknowledgements; transcript delivery display derives from confirmed input;
+and stale delegated launches cannot admit a successor. CLI Question handling
+uses each answered Question's existing input receipt and completion identity,
+including attended child ownership and multiple outstanding answers. A narrow
+fresh Astra recheck found no remaining blocker in that CLI correction; it is
+source review only. Twenty-one new behavior cases are constructed, unexecuted.
+
+Scoped Ruff/format, AST parsing and Mypy pass; size limits remain enforced and
+the smaller CLI baseline is lowered. No production state owner, scheduler or
+delivery acknowledgement is added. Upstream #1789 and iowarp-core 2.3.2 use
+remain subject to the pending separate human decision. No dependency, D runtime
+source, GACT pointer or daily Desktop change has occurred. R184 API 63128 and
+private runtime 45180 still have their verified original process identities;
+their separate force-close question remains unanswered. R185 is unlaunched.
+
 ## October 17 — completed CI inventory and coordinated follow-up
 
 Initial production implementation is done. The regression baseline remains

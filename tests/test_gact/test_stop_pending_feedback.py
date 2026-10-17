@@ -133,6 +133,14 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
             assert row["metadata"]["client_message_id"] == client_id
             assert row["turn_id"] == message_id
             assert row["metadata"]["pending_steer"] is False
+        from clio_agent.gact.transcript_file import load_durable_transcript
+
+        reloaded = load_durable_transcript(app, sid)
+        assert reloaded is not None
+        for message_id in ids:
+            replayed = next(message for message in reloaded if message.id == message_id)
+            assert replayed.metadata["pending_steer"] is False
+            assert app.state.task_history.committed_notification_input(sid, message_id) == batch
         assistant = next(
             row for row in rows if row["turn_id"] == ids[0] and row["role"] == "assistant"
         )

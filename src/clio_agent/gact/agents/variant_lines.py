@@ -65,11 +65,19 @@ def _run_scope(base: str, run_index: int) -> str:
 def _copy(arc: Any, session: str, scope: str, segments: list[Any]) -> list[str]:
     ids: list[str] = []
     for seg in segments:
+        kind, content = seg.kind, dict(seg.content)
+        if kind == "recipient_input":
+            references = content.get("rendered_content")
+            if not references:
+                continue
+            # A variant inherits input content, never the source scope's
+            # authoritative acknowledgement. Keep the existing Core references.
+            kind, content = "user", {"rendered_content": references}
         copied = arc.append_segment(
             session,
             scope,
-            seg.kind,
-            dict(seg.content),
+            kind,
+            content,
             step=seg.step,
             token_count=seg.token_count,
             turn_id=seg.turn_id,

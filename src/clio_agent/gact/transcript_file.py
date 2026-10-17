@@ -228,11 +228,19 @@ def materialize_from_atoms(app: "FastAPI", session_id: str) -> Optional[list["Me
                 "The conversation is being written right now. Retry shortly.",
             )
         lane_lock.acquire()  # off the loop: wait for the in-flight append to land
+    messages = None
     try:
         if has_atoms(arc, session_id):
-            return assemble_session_messages(arc, session_id)
+            messages = assemble_session_messages(arc, session_id)
     finally:
         lane_lock.release()
+    if messages is not None:
+        history = getattr(app.state, "task_history", None)
+        if history is not None:
+            from clio_agent.gact.session_store import project_committed_feedback
+
+            project_committed_feedback(history, session_id, messages)
+        return messages
     return [] if app.state.transcript_index.has_session(session_id) else None
 
 

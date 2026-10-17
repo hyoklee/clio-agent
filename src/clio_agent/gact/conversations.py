@@ -158,6 +158,12 @@ class Conversations:
         session = self.sessions.get(sid)
         if session is None or self.model_paused(sid):
             return False
+        if item.kind == "delegation" and item.handle:
+            delegated = self.history.task_snapshot(item.handle)
+            if delegated is None or delegated.terminal_at is not None:
+                return False
+            if delegated.cancellation_requested_at or delegated.handle in self._control_holds:
+                return False  # A stale launch cannot create a successor assignment.
         if item.kind == "composer" and item.automatic_promotion:
             from clio_agent.gact.composer_runtime import session_autostart_suspended
 

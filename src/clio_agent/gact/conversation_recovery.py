@@ -36,6 +36,15 @@ if TYPE_CHECKING:
 
 def _input_committed(self: Conversations, staged: StagedInput) -> None:
     """Derive A2UI display state only after the Core input acknowledgement."""
+    from clio_agent.gact.session_store import project_committed_feedback
+
+    for sid in {
+        item.recipient_session for item in staged.items if item.kind in {"human", "composer"}
+    }:
+        messages = self.app.state.messages
+        resident = getattr(messages, "get_if_resident", messages.get)(sid)
+        if resident is not None:
+            project_committed_feedback(self.history, sid, resident)
     for item in staged.items:
         if item.kind not in {"a2ui", "question_answer", "human"} or (
             item.kind == "human" and not item.id.startswith("a2ui:")
