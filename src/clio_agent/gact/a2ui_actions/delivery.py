@@ -109,7 +109,17 @@ async def deliver_to_agent(
             if accepted is None:
                 original = history.latest_assignment(session_id)
                 data = {"context": dict(context), "client_data_model": record.client_data_model}
-                text = narration + "\n\nA2UI action data:\n" + json.dumps(data, ensure_ascii=False)
+                text = (
+                    narration
+                    if record.kind == "action"
+                    else narration
+                    + "\n\nA2UI action data:\n"
+                    + json.dumps(data, ensure_ascii=False)
+                )
+                if record.kind == "action" and record.client_data_model is not None:
+                    text += "\n\nA2UI client data model:\n" + json.dumps(
+                        record.client_data_model, ensure_ascii=False
+                    )
                 payload: dict[str, Any] = {
                     "text": text,
                     "metadata": {"a2ui_action": record.id, "surface_id": record.surface_id},

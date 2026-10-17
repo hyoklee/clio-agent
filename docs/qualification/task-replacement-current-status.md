@@ -7,6 +7,40 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### A2UI human-input commitment repair — CI pending
+
+The `4e0510ff` report also exposes two regressions in the accepted-human-action
+projection: declared narration is followed by a duplicate context serialization,
+and the commitment/recovery projection ignores the newly human-attributed A2UI
+mail. Human actions now retain their canonical narration once. A validated,
+session-owned client data model still travels once in the actual model input;
+foreign surfaces remain excluded. Full original context and client state remain
+in the existing retained message metadata.
+
+The existing post-commit projection recognizes human A2UI identities during both
+normal commitment and startup repair. Ordinary human inputs are skipped before
+content reads. The projection writer, input acknowledgement, model admission,
+Question-answer path and all other conversation recovery functions are unchanged.
+No new delivery policy, authority, worker or clio-core change is introduced.
+
+The existing commitment case adds a projection-fault mode: the Core input must
+be acknowledged while display remains delivered, then the existing restore path
+must repair consumed state. The retained client-state filtering case additionally
+checks the actual queued input text. All 169 previous assertions in the two
+affected test files remain in order. Freeform Question fixtures now supply a
+valid freeform answer contract; resolved interaction rows are explicitly requested;
+the refusal test faults actual mailbox admission rather than the removed turn
+spawner. TestClient's real FastAPI app references receive precise types without
+type ignores or runtime fixture changes.
+
+Scoped Ruff/format, four-file Mypy and removal/class/size guards pass. No local
+behavioral test ran. Receipt: `ci-a2ui-human-commit-4e05-audit.json` in D static
+evidence. Fresh CI and actual-service/model/UI acceptance remain pending.
+
+Candidate Python-source SHA256:
+`2e89a5f44259f06817491ddbf3ccbb872bcdc614d98f6f53bf0a47829b174706`.
+clio-core 2.3.1, dependencies, GACT and the frozen D/R184 service are unchanged.
+
 ### Latest CI and native source reuse — acceptance pending
 
 All four Python 3.14 artifacts for `4e0510ff` / run `39016179527` are complete:

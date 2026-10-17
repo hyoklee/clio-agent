@@ -37,7 +37,9 @@ if TYPE_CHECKING:
 def _input_committed(self: Conversations, staged: StagedInput) -> None:
     """Derive A2UI display state only after the Core input acknowledgement."""
     for item in staged.items:
-        if item.kind not in {"a2ui", "question_answer"}:
+        if item.kind not in {"a2ui", "question_answer", "human"} or (
+            item.kind == "human" and not item.id.startswith("a2ui:")
+        ):
             continue
 
         def update(item: MailItem = item) -> None:
@@ -105,7 +107,7 @@ def _restore_input_projections(self: Conversations) -> None:
                 self._loop.call_soon_threadsafe(
                     self.recovery.defer, "workflow-reference:" + root, repair
                 )
-    items = self.history.acknowledged_mail(("a2ui", "question_answer"))
+    items = self.history.acknowledged_mail(("a2ui", "question_answer", "human"))
     self._input_committed(StagedInput(items, ()))
 
 
