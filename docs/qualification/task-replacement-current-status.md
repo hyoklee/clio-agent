@@ -7,7 +7,33 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### R181 direct-SSE selection failure and provider correction
+### R181 selection failure and R182 actual direct-SSE recovery
+
+R182 passed actual Codex/Luna direct-SSE execution on clio-agent `e837c3bf` / GACT
+`0f9c00a4`, production hash
+`a9c9ae58b09e073e456ee2f21bcf3746b34f8dff9a1c601871edf97fd5c8ccc6`.
+The production provider-selection API accepted SSE. Luna received external task
+`task_72506661a0fc464c9fbce698500331b7`, performed an independent filesystem read
+while it ran, then yielded assignment `task_eeb30f73ae1f40f490d1dd1caf4661ae`.
+The original external job finished and cleaned up while the caller was stopped.
+The restarted caller restored the selected SSE model without another selection
+write; its fresh SDK client discovered/read the original native backend identity
+and captured schema without resubmission. Luna automatically woke, collected the
+actual tag/nonce/77 bytes/SHA-256 and completed the same assignment.
+All six confirmed inputs retain that assignment, one final result was delivered
+once, and only one backend body/`tools/call` ran. Both callers, external server and
+proxy exited zero, with no active assignments, pending mail or workers remaining.
+Auth and production hashes match. Bounded source/runtime/model/identity/input/RPC
+and byte/hash evidence is `r182-live-external-recovery.json`; physical/data cleanup
+is recorded separately in `r182-cleanup*.json`. The 496,446,630-byte profile and
+1,073,741,824-byte temp root are removed/absent. This qualifies the normal SSE
+route, not oversized SSE lines or the full frozen-candidate race matrix.
+
+The two-line factory behavior correction passed scoped Ruff/format, Mypy for the
+changed source file and removal/class/file-size guards. Its new regression has
+not run locally. CI `38991839575` is running on `e837c3bf`; CI `38991236612` remains
+running on the preceding test/qualification commit `8bd9501e`. No passing full
+regression baseline or complete Tasks qualification is claimed.
 
 R181 on clio-agent `8bd9501e` / GACT `0f9c00a4` failed before model execution:
 the production provider-selection API returned HTTP 400, "A custom HTTP wire
@@ -20,7 +46,7 @@ The clio-agent factory now lets each HTTP engine construct its native matched
 provider pair, while retaining the existing shared WebSocket wire and custom-wire
 guard. A new public `create_lm` regression requires both real HTTP engine/provider
 types, independent asynchronous wires and preserved credential/account bindings.
-Its execution goes to CI; fresh actual-model SSE qualification is required.
+Its execution goes to CI; R182 supplies the scoped actual-model SSE qualification.
 No clio-core source/dependency, provider parser or size-limit policy changed.
 The failed run's API, external server and proxy exited zero; its 378,117,557-byte
 profile and 1,073,741,824-byte temp root are removed/absent. Bounded failure and
