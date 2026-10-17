@@ -168,12 +168,15 @@ def _wait_for_turn_settlement(
         assert assignment is not None, "No confirmed assignment exists for the accepted input"
         handle = assignment.handle
 
+    observed: dict[str, Any] = {}
+
     async def settled() -> None:
         result = await app.state.task_operations.wait(
             TaskCaller(sid, app.state.human_principal, human_action=True), handle
         )
         assert not result["pending"], result
         assert len(result["outcomes"]) == 1 and "error" not in result["outcomes"][0], result
+        observed.update(result)
         released = asyncio.Event()
         app.state.turn_runner.run_when_released(sid, released.set)
         await released.wait()
@@ -184,7 +187,11 @@ def _wait_for_turn_settlement(
     except TimeoutError as error:
         waiting.cancel()  # End only the diagnostic waiter; lifespan cleanup owns the work.
         raise AssertionError("background turn did not settle before event assertions") from error
-    assert not app.state.turn_runner.busy(sid)
+    assert not app.state.turn_runner.busy(sid), {
+        "requested_assignment": handle,
+        "settlement": observed,
+        "reservation": app.state.turn_runner.handle(sid),
+    }
 
 
 def _run_turn(client: TestClient, app: Any, text: str = "stream me") -> str:

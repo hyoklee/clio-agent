@@ -125,6 +125,23 @@ the next coherent four-shard candidate.
 
 ### Connected-source native boundary migration — CI pending
 
+`6e9d21b8` shard evidence confirms permission denial and live ask/deny pass.
+Allowed calls reach native settlement, but the fixture incorrectly reads the
+outer saved task envelope as the workload body. It now validates the pinned
+`ClientGetTaskResult`, checks its native task identity, then reads the MCP
+`CallToolResult.structured_content`. Sign-in-required is correctly required to
+be a failed domain outcome with its explicit code and unindexed source, rather
+than a fabricated success. The one-approval assertion remains strict.
+
+The feedback fixture's unchanged publication body now runs through the real
+application Core writer; shared-LM-loop writes remain rejected. Its test bodies
+are AST-identical. A memory-turn failure still sees a busy reservation after a
+release callback; the unchanged assertion now reports the observed settlement
+and current reservation for diagnosis. No retry, timeout increase or production
+change is introduced by these fixture corrections. Three-file Ruff/format/Mypy
+pass; no local behavioral test ran. Receipt:
+`ci-native-fixture-boundaries-6e9d-audit.json` in D static evidence. CI is pending.
+
 The retained source-connection module in `40b5a3a1` calls a removed direct tool
 function. Its fixture also replaces the storage service after native worker
 registration has captured the original service. The fixture now supplies its real

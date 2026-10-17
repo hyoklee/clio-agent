@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -69,41 +70,52 @@ async def _run_with_late_feedback(
     boundaries: list[dict[str, Any]] = []
     original = engine._next
 
+    def publish() -> None:
+        app, sid = active["app"], active["sid"]
+        history = app.state.task_history
+        root = history.latest_assignment(sid)
+        assert root is not None
+        stamp = now()
+        history.record_mail(
+            MailItem(
+                id="feedback",
+                recipient_session=sid,
+                sender_human="human",
+                kind="human",
+                content=history.write_content(sid, {"text": "use the new scope"}),
+                created_at=stamp,
+            )
+        )
+        completed = TaskSnapshot(
+            handle="task_feedback",
+            kind="MCP",
+            owner=root.owner.model_copy(update={"parent_handle": root.handle}),
+            tool="external",
+            label="Child work",
+            invocation_id="child-work",
+            created_at=stamp,
+            updated_at=stamp,
+            status="completed",
+            raw_status="completed",
+            settlement="confirmed",
+            terminal_at=stamp,
+            result=history.write_content(sid, "child done"),
+        )
+        history.record_snapshot(completed, observation_id="child-completed")
+        publish_task_notice(history, completed)
+
     def respond(request: Request) -> Response:
         response = original(request)
         if len(engine.requests) == 1:
-            app, sid = active["app"], active["sid"]
-            history = app.state.task_history
-            root = history.latest_assignment(sid)
-            assert root is not None
-            stamp = now()
-            history.record_mail(
-                MailItem(
-                    id="feedback",
-                    recipient_session=sid,
-                    sender_human="human",
-                    kind="human",
-                    content=history.write_content(sid, {"text": "use the new scope"}),
-                    created_at=stamp,
-                )
+            app = active["app"]
+            delivery = asyncio.run_coroutine_threadsafe(
+                app.state.task_history.io.run(publish), app.state.conversations._loop
             )
-            completed = TaskSnapshot(
-                handle="task_feedback",
-                kind="MCP",
-                owner=root.owner.model_copy(update={"parent_handle": root.handle}),
-                tool="external",
-                label="Child work",
-                invocation_id="child-work",
-                created_at=stamp,
-                updated_at=stamp,
-                status="completed",
-                raw_status="completed",
-                settlement="confirmed",
-                terminal_at=stamp,
-                result=history.write_content(sid, "child done"),
-            )
-            history.record_snapshot(completed, observation_id="child-completed")
-            publish_task_notice(history, completed)
+            try:
+                delivery.result(timeout=10)
+            except TimeoutError:
+                delivery.cancel()
+                raise
         return response
 
     monkeypatch.setattr(engine, "_next", respond)

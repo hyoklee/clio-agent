@@ -10,6 +10,8 @@ from typing import Any
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from fastmcp_tasks.client_models import ClientGetTaskResult
+from mcp.types import CallToolResult
 
 from clio_agent.gact.app import build_app
 from clio_agent.gact.storage import connect_tool, setup_tool
@@ -34,14 +36,14 @@ def _connect(
 
 def _collect(
     app: Any, accepted: dict[str, Any], *, session_id: str | None = None
-) -> tuple[dict[str, Any], dict[str, Any]]:
+) -> tuple[dict[str, Any], ClientGetTaskResult]:
     """Collect actual native execution using shared waits and confirmed stored output."""
     assert accepted["accepted"] is True and accepted["kind"] == "Indexing"
     caller = TaskCaller(
         session_id or connect_tool.context.active_session_id(), app.state.human_principal
     )
 
-    async def collect() -> tuple[dict[str, Any], dict[str, Any]]:
+    async def collect() -> tuple[dict[str, Any], ClientGetTaskResult]:
         report = await app.state.task_operations.wait(caller, accepted["handle"])
         assert report["pending"] == [] and len(report["outcomes"]) == 1
         snapshot = await app.state.task_history.io.run(
@@ -53,7 +55,9 @@ def _collect(
             app.state.task_history.read_content, snapshot.result
         )
         assert isinstance(result, dict)
-        return report["outcomes"][0], result
+        reply = ClientGetTaskResult.model_validate(result)
+        assert snapshot.backend is not None and reply.task_id == snapshot.backend.task_id
+        return report["outcomes"][0], reply
 
     loop = app.state.builtin_boundary._loop
     assert loop is not None
@@ -63,6 +67,14 @@ def _collect(
     except TimeoutError:
         waiter.cancel()  # The application still owns and settles accepted indexing.
         raise
+
+
+def _body(reply: ClientGetTaskResult) -> dict[str, Any]:
+    """Read the protocol's actual structured tool output, preserving failed envelopes."""
+    assert reply.result is not None, reply
+    output = CallToolResult.model_validate(reply.result)
+    assert output.structured_content is not None, output
+    return output.structured_content
 
 
 @pytest.fixture
@@ -157,7 +169,8 @@ def test_connection_uses_live_permission_gate(
             assert isinstance(outcomes[0], PermissionError) and records == []
         else:
             assert isinstance(outcomes[0], dict), outcomes
-            terminal, result = _collect(app, outcomes[0], session_id=sid)
+            terminal, reply = _collect(app, outcomes[0], session_id=sid)
+            result = _body(reply)
             assert terminal["status"] == "completed" and result["state"] == "completed"
             records = app.state.connected_storage.sources(session.workspace_id)
             assert len(records) == 1 and result["source_id"] == records[0].source.id
@@ -192,11 +205,13 @@ def test_connection_is_real_and_reused_without_a_second_approval(
 
     app.state.pending_permission_gate = allow
     first = _connect(app, "local", str(upstream), "Measurements")
-    terminal, indexed = _collect(app, first)
+    terminal, reply = _collect(app, first)
+    indexed = _body(reply)
     assert terminal["status"] == "completed" and indexed["state"] == "completed"
     assert indexed["manifest_id"] and indexed["entries"] == 1
     second = _connect(app, "local", str(upstream), "Measurements")
-    terminal, linked = _collect(app, second)
+    terminal, reply = _collect(app, second)
+    linked = _body(reply)
     assert terminal["status"] == "completed"
     assert linked["connection"]["source_id"] == indexed["source_id"]
     assert linked["connection"]["state"] == "linked"
@@ -224,8 +239,10 @@ def test_oauth_connection_waits_for_private_sign_in(
 ) -> None:
     service, app, _ = bound
     accepted = _connect(app, "google_drive", "drive-folder", "Dataset")
-    terminal, result = _collect(app, accepted)
-    assert terminal["status"] == "completed" and result["state"] == "sign_in_required"
+    terminal, reply = _collect(app, accepted)
+    result = _body(reply)
+    assert terminal["status"] == "failed" and result["state"] == "sign_in_required"
+    assert result["error"]["code"] == "source_sign_in_required"
     assert service.sources("ws_default")[0].linked_manifest_id is None
     status = setup_tool.connected_data_status()
     assert (
@@ -243,6 +260,6 @@ def test_source_configuration_cannot_smuggle_a_credential(
     accepted = _connect(
         app, "github", "iowarp/clio-agent", "Repo", configuration={"token": "must-not-accept"}
     )
-    terminal, result = _collect(app, accepted)
-    assert terminal["status"] == "failed" and "token" in str(result)
+    terminal, reply = _collect(app, accepted)
+    assert terminal["status"] == "failed" and "token" in reply.model_dump_json()
     assert service.sources("ws_default") == []
