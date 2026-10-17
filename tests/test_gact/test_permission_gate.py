@@ -23,7 +23,6 @@ from fastapi.testclient import TestClient
 from mcp.types import TextContent
 
 from clio_agent.gact.app import (
-    _gact_app_context,
     _make_permission_gate,
     _make_tool_observer,
     _tool_session_context,
@@ -37,6 +36,7 @@ from clio_agent.gact.permission_gate import (
 from clio_agent.gact.types import Message, Part
 from clio_agent.tools.execution import SyncMCPToolExecutor
 from tests.test_gact.conftest import complete_turn
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
 
 # #948 S4b: default sessions run the blueprint react ``main``; route it to each
@@ -291,34 +291,36 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
 ) -> None:
     """Blueprint/workspace MCP tools must not bypass GACT annotation semantics."""
 
-    class DeclaredClient:
-        called = False
+    from fastmcp import FastMCP
 
-        async def __aenter__(self) -> "DeclaredClient":
-            return self
+    from clio_agent.tools.mcp_runtime import make_mcp_client
 
-        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-            return None
+    server = FastMCP("declared-permission")
+    calls: list[str] = []
+    transports: list[Any] = []
 
-        async def list_tools(self) -> list[Any]:
-            return []
+    @server.tool(
+        name="jarvis_run",
+        annotations={"readOnlyHint": False, "destructiveHint": False},
+        task=False,
+    )
+    def mutation(pipeline_id: str) -> dict[str, Any]:
+        """Record one approved inline operation for the permission boundary test."""
+        calls.append(pipeline_id)
+        return {"name": "jarvis_run", "args": {"pipeline_id": pipeline_id}}
 
-        async def call_tool(
-            self, name: str, args: dict[str, Any], *, progress_handler: Any = None
-        ) -> Any:
-            DeclaredClient.called = True
-            return SimpleNamespace(data={"name": name, "args": args})
-
-        async def read_resource(self, uri: str) -> Any:
-            return SimpleNamespace(uri=uri)
+    def client_factory(target: Any) -> Any:
+        transports.append(target)
+        return make_mcp_client(target, server_id="relay")
 
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         session_id = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
+        record_assignment_fixture(app, session_id)
         executor = SyncMCPToolExecutor(
             object(),
             timeout=1.0,
-            client_factory=lambda _server: DeclaredClient(),
+            client_factory=client_factory,
             preloaded_tools={
                 "relay_jarvis_run": SimpleNamespace(
                     name="relay_jarvis_run",
@@ -326,12 +328,12 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
                     annotations={"readOnlyHint": False, "destructiveHint": False},
                 )
             },
-            namespace_servers={"relay": object()},
+            namespace_servers={"relay": server},
         )
         result: dict[str, str] = {}
 
         def call_tool() -> None:
-            with _gact_app_context(app), _tool_session_context(session_id):
+            with active_turn_fixture(app, session_id), _tool_session_context(session_id):
                 result["value"] = executor.call_tool(
                     "relay_jarvis_run",
                     {"pipeline_id": "pipeline-1"},
@@ -343,7 +345,8 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
         while time.monotonic() < deadline and not app.state.permissions:
             time.sleep(0.01)
 
-        assert DeclaredClient.called is False
+        assert calls == []
+        assert transports == []
         pending = next(iter(app.state.permissions.values()))
         assert pending["status"] == "pending"
         assert pending["tool_call"] == {
@@ -357,7 +360,8 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
         executor.close()
 
         assert not thread.is_alive()
-        assert DeclaredClient.called is True
+        assert calls == ["pipeline-1"], result
+        assert len(transports) == 1
         assert '"name": "jarvis_run"' in result["value"]
 
 
@@ -405,39 +409,22 @@ def test_dynamic_external_mcp_read_only_hint_invokes_client(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    from fastmcp import FastMCP
+
     from clio_agent.gact.agents import builders
 
-    class FakeClient:
-        called = False
+    server = FastMCP("read-only-permission")
+    calls: list[str] = []
 
-        def __init__(self, transport: Any, **_: Any) -> None:
-            self.transport = transport
+    @server.tool(name="lookup", annotations={"readOnlyHint": True}, task=False)
+    def lookup(resource_id: str) -> str:
+        """Return one inline read result through the real SDK and captured schema."""
+        calls.append(resource_id)
+        return "lookup:ok"
 
-        async def __aenter__(self) -> "FakeClient":
-            return self
-
-        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-            return None
-
-        async def call_tool(
-            self, name: str, args: dict[str, Any], *, progress_handler: Any = None
-        ) -> Any:
-            FakeClient.called = True
-            return SimpleNamespace(
-                content=[TextContent(type="text", text=f"{name}:ok")],
-                isError=False,
-            )
-
-        async def list_tools(self) -> list[Any]:
-            """Advertise the same read-only tool whose permission path is tested."""
-            from mcp.types import Tool
-
-            return [Tool.model_validate({"name": "lookup", "inputSchema": {"type": "object"}})]
-
-    _use_external_client_class(monkeypatch, FakeClient)
     monkeypatch.setattr(
         "clio_agent.tools.mcp_config.transport_from_spec",
-        lambda spec: spec,
+        lambda _spec: server,
     )
     app = build_app(sessions_path=tmp_path / "s.json")
     info = {
@@ -445,19 +432,23 @@ def test_dynamic_external_mcp_read_only_hint_invokes_client(
         "spec": {"transport": "stdio", "command": "fake", "args": []},
     }
 
-    result = asyncio.run(
-        builders._call_enabled_external_mcp_tool(
-            app,
-            "srv",
-            info,
-            "lookup",
-            {"resource_id": "resource-1"},
-            {"readOnlyHint": True},
-        )
-    )
-
-    assert FakeClient.called is True
-    assert result == "lookup:ok"
+    with TestClient(app) as client:
+        session_id = client.post("/v1/sessions", json={"title": "Read lookup"}).json()["id"]
+        record_assignment_fixture(app, session_id)
+        assert client.portal is not None
+        with active_turn_fixture(app, session_id):
+            result = client.portal.call(
+                builders._call_enabled_external_mcp_tool,
+                app,
+                "srv",
+                info,
+                "lookup",
+                {"resource_id": "resource-1"},
+                {"readOnlyHint": True},
+            )
+        assert calls == ["resource-1"]
+        assert result == "lookup:ok"
+        assert app.state.permissions == {}
 
 
 @pytest.mark.parametrize(

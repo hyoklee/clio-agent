@@ -1,4 +1,4 @@
-# Tasks replacement status — October 16
+# Tasks replacement status — October 17
 
 ## Overnight live verification and CI corrections
 
@@ -60,6 +60,35 @@ Scoped Ruff/format and Mypy pass for all five changed test modules. No local
 pytest/vitest ran. Fresh CI remains required; the production hash is still
 `7ffd923c684ff07bdb3b3e39128b0b6bb43d61eadcee2019e661a26b436d0f89`.
 The broader regression baseline and final live qualification remain incomplete.
+
+### Finalizer and MCP permission owners — CI pending
+
+Complete `6ba52a32` Python 3.14 CI contains 11,981 passes, 436 failures, five
+errors and 53 skips. All 20 plan cases, all 13 short-MCP host cases, all 13
+catalog cases and the every-auto-tool wire check pass. Permission coverage has
+45 passes/two failures; finalization has five passes/two failures. These are
+scoped regression results, not a green baseline or model acceptance.
+
+The remaining finalizer cases reach child-resource authorization, which requires
+the real conversation owner. Their unit app factory now owns startup/shutdown
+and creates the Core assignment record. It starts lazily at the same point as
+each former builder call, preserving custom-hook setup before startup and
+off-loop construction in asynchronous tests. The prologue inputs and every
+original error/cancellation/minter assertion remain intact; no model segment is
+launched for these unit cases.
+
+Both remaining MCP permission fixtures now use actual in-memory FastMCP servers,
+native SDK clients, tool catalogs and recorded assignments on the application
+loop. The mutation case still requires the exact pending card and human allow
+response; it additionally proves zero transport creation before approval and
+one body execution afterward. The read-only case retains its exact response,
+requires one body execution and no permission card. Three fake-client booleans
+are replaced by these stronger execution counts. RPC/thread/test budgets and all
+other original assertions/markers are unchanged.
+
+Scoped Ruff/format and Mypy pass. No local pytest/vitest ran and no production
+code, dependency, installed state or frozen R184 file changed. Fresh CI remains
+required for these fixture corrections.
 
 ### Initial plan-answer correction — scoped CI evidence, wider acceptance pending
 
