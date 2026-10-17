@@ -67,15 +67,19 @@ def restore_gate(app: Any, task: TaskSnapshot, definition: QuestionDefinition) -
     history = app.state.task_history
     with history.serialized():
         session = app.state.sessions.get(task.owner.session_id)
+        if session is None:
+            return False
+        gate = session.metadata.get("execution_gate")
+        if task.terminal_at is not None and task.raw_status != "answered":
+            return gate == task.handle  # Closed input may release its gate, never reinstall it.
         current = history.latest_assignment(task.owner.session_id)
-        if session is None or current is None or current.terminal_at is not None:
+        if current is None or current.terminal_at is not None:
             return False
         if current.cancellation_requested_at is not None:
             return False
         captured = PlanApproval.model_validate(definition.metadata.get("plan_approval"))
         if current.handle != captured.assignment or task.owner.assignment_id != current.handle:
             return False
-        gate = session.metadata.get("execution_gate")
         frozen = app.state.questions.resolution(task.handle)
         if frozen is not None and gate != task.handle:
             return False  # Already released; historical reads cannot reinstall a gate.
@@ -165,6 +169,7 @@ def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, questio
             _resolve_plan_exit_answer(app, deps, sid, question)
         app.state.sessions.update(
             sid,
+            status="idle" if session.status == "waiting_user" else None,
             metadata_patch={
                 _PLAN_EXIT_PENDING_KEY: {},
                 "pending_user_question_id": "",

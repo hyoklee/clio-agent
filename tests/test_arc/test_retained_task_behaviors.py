@@ -23,13 +23,14 @@ from clio_agent.arc.task_types import (
     TaskSnapshot,
 )
 from clio_agent.gact.native_work import now
+from clio_agent.gact.plan_exit_resolution import PlanApproval, normalize_plan_exit_reply
 from clio_agent.gact.planning import (
     Playbook,
     PlaybookStep,
     record_playbook,
     recorded_execution_playbook,
 )
-from clio_agent.gact.question_surface import resolve_plan_question
+from clio_agent.gact.question_surface import prepare_question_gate, resolve_plan_question
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_operations import TaskOperations
@@ -159,30 +160,44 @@ async def test_closed_visual_answer_never_becomes_an_unaddressed_surface(
 
 
 @pytest.mark.asyncio
-async def test_cancelled_plan_gate_repairs_after_resume_mail_was_saved(
+async def test_cancelled_plan_gate_repairs_without_duplicate_continuation(
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
-    app.state.questions = QuestionCommands(owner.history)
-    app.state.bus = SimpleNamespace(publish=lambda _event: None)
     app.state.gact_deps = SimpleNamespace()
     sid = root.owner.session_id
+    await asyncio.to_thread(app.state.sessions.update, sid, mode="plan")
+    await owner.pause(TaskCaller(sid, "human", human_action=True), root.handle)
+    for job in tuple(owner._controls.values()):
+        await job
+    await owner.recovery.drain()
+    app.state.questions.before_post = lambda task, definition: prepare_question_gate(
+        app, task, definition
+    )
     question = await asyncio.to_thread(
         app.state.questions.create,
-        root.owner,
+        root.owner.model_copy(update={"parent_handle": root.handle}),
         QuestionDefinition(
             prompt="Approve the plan",
             source="plan_exit",
-            metadata={"plan_file": str(tmp_path / "plan.md")},
+            kind="choice",
+            options=(
+                QuestionOption(label="Approve", value="auto"),
+                QuestionOption(label="Reject", value="reject"),
+            ),
+            allow_freeform=True,
+            metadata={
+                "plan_file": str(tmp_path / "plan.md"),
+                "plan_approval": PlanApproval(
+                    assignment=root.handle,
+                    context_epoch="",
+                    request={"summary": "Approve the plan", "plan_file": str(tmp_path / "plan.md")},
+                ).model_dump(mode="json"),
+            },
         ),
         invocation_id="plan",
     )
-    await asyncio.to_thread(
-        app.state.sessions.update,
-        sid,
-        mode="plan",
-        metadata_patch={"execution_gate": question.handle},
-    )
+    assert app.state.sessions.get(sid).status == "waiting_user"
     closed = await asyncio.to_thread(app.state.questions.cancel, question.handle)
     original = app.state.sessions.update
     failed = False
@@ -199,17 +214,25 @@ async def test_cancelled_plan_gate_repairs_after_resume_mail_was_saved(
         with pytest.raises(OSError, match="gate projection"):
             await asyncio.to_thread(resolve_plan_question, app, closed)
         before = await asyncio.to_thread(owner.history.pending_mail, sid)
-        resumes = [item for item in before if item.id == "plan-answer:" + question.handle]
+        notices = [
+            item for item in before if item.kind == "task_result" and item.handle == question.handle
+        ]
         assert (
-            len(resumes) == 1
+            len(notices) == 1
             and app.state.sessions.get(sid).metadata["execution_gate"] == question.handle
         )
+        assert not any(item.id == "plan-answer:" + question.handle for item in before)
         await asyncio.to_thread(resolve_plan_question, app, closed)
+        released = app.state.sessions.get(sid)
         await asyncio.to_thread(resolve_plan_question, app, closed)
         after = await asyncio.to_thread(owner.history.pending_mail, sid)
-        assert [item.id for item in after].count(resumes[0].id) == 1
+        assert [item.id for item in after].count(notices[0].id) == 1
+        assert not any(item.id == "plan-answer:" + question.handle for item in after)
         session = app.state.sessions.get(sid)
         assert session.mode == "plan" and session.metadata["execution_gate"] == ""
+        assert session.status == "idle" and session == released
+        assert owner.model_paused(sid)
+        assert owner.history.acknowledged_notifications(sid) == frozenset()
         current_question = owner.history.task_snapshot(question.handle)
         assert current_question is not None
         assert current_question.raw_status == "cancelled"
@@ -224,8 +247,6 @@ async def test_approval_repair_preserves_execution_playbook_and_later_feedback(
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
     sid = root.owner.session_id
-    app.state.questions = QuestionCommands(owner.history)
-    app.state.bus = SimpleNamespace(publish=lambda _event: None)
     app.state.a2ui_store = SimpleNamespace(announce_ledger_clear=lambda *_args: None)
     app.state.messages = {sid: []}
 
@@ -238,39 +259,52 @@ async def test_approval_repair_preserves_execution_playbook_and_later_feedback(
         "artifact_id": "reviewed-original",
         "sha256": "captured",
     }
+    await asyncio.to_thread(app.state.sessions.update, sid, mode="plan")
+    await owner.pause(TaskCaller(sid, "human", human_action=True), root.handle)
+    for job in tuple(owner._controls.values()):
+        await job
+    await owner.recovery.drain()
+    app.state.questions.before_post = lambda task, definition: prepare_question_gate(
+        app, task, definition
+    )
+    definition = QuestionDefinition(
+        prompt="Approve",
+        source="plan_exit",
+        kind="choice",
+        allow_freeform=True,
+        options=(
+            QuestionOption(label="Approve", value="auto"),
+            QuestionOption(label="Clear context", value="clear_context"),
+        ),
+        metadata={
+            "plan_file": str(tmp_path / "plan.md"),
+            "plan_content": "Approved original",
+            "plan_content_status": "available",
+            "artifact_ref": artifact,
+            "plan_approval": PlanApproval(
+                assignment=root.handle,
+                context_epoch="",
+                request={"summary": "Approve", "plan_file": str(tmp_path / "plan.md")},
+            ).model_dump(mode="json"),
+        },
+    )
     question = await asyncio.to_thread(
         app.state.questions.create,
-        root.owner,
-        QuestionDefinition(
-            prompt="Approve",
-            source="plan_exit",
-            kind="multi_choice",
-            options=(
-                QuestionOption(label="Approve", value="auto"),
-                QuestionOption(label="Clear context", value="clear_context"),
-            ),
-            metadata={
-                "plan_file": str(tmp_path / "plan.md"),
-                "plan_content": "Approved original",
-                "plan_content_status": "available",
-                "artifact_ref": artifact,
-            },
-        ),
+        root.owner.model_copy(update={"parent_handle": root.handle}),
+        definition,
         invocation_id="approve",
     )
-    await asyncio.to_thread(
-        app.state.sessions.update,
-        sid,
-        mode="plan",
-        metadata_patch={"execution_gate": question.handle},
-    )
+    assert app.state.sessions.get(sid).status == "waiting_user"
     await asyncio.to_thread(
         record_playbook, app, sid, Playbook("Plan", (PlaybookStep("Implement"),))
     )
     closed = await asyncio.to_thread(
         app.state.questions.answer,
         question.handle,
-        QuestionReply(selected_options=("auto", "clear_context")),
+        normalize_plan_exit_reply(
+            definition,
+            QuestionReply(selected_options=("auto", "clear_context"), responder_human="human"),
+        ),
     )
     earlier = datetime.fromisoformat(question.created_at) - timedelta(seconds=1)
     app.state.messages[sid] = [
@@ -325,6 +359,8 @@ async def test_approval_repair_preserves_execution_playbook_and_later_feedback(
         assert approved_plan["artifact_ref"] == artifact
         assert app.state.sessions.get(sid).metadata["execution_gate"] == ""
         assert app.state.sessions.get(sid).message_count == 1
+        assert app.state.sessions.get(sid).status == "idle"
+        assert owner.model_paused(sid)
         assignment = await asyncio.to_thread(owner.history.latest_assignment, sid)
         assert assignment is not None and assignment.details is not None
         details = AssignmentDetails.model_validate(

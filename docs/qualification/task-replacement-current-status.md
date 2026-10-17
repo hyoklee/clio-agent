@@ -7,7 +7,45 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Cancellation recording order and native SDK errors — CI pending
+### Closed plan gates and regression setup — CI pending
+
+The `1b7e0281` Python 3.14 artifacts contain 12,017 passes, 402 failures,
+five errors and 53 skips; the overall multi-interpreter run is still pending.
+All ten MRTR cases now pass, as do both factory-routing cases. The new delayed
+cancellation regression failed before its ordering assertions because its caller
+used agent identity to wait on its own active assignment. It now explicitly uses
+the authenticated human-control identity that the scenario exercises; the product's
+agent self-wait rejection is unchanged.
+
+Two retained plan-gate cases used incomplete pre-replacement Question metadata.
+They now create the canonical captured assignment/context, prepare the real plan
+gate and normalize the human answer through production code. That source review
+also found two real defects: rereading a cancelled approval could reinstall its
+gate, and releasing an approval could leave the session showing `waiting_user`.
+The existing plan owner now permits only release of an exact matching closed
+gate and clears that stale presentation status. Pending/answered approvals retain
+their assignment, context and frozen-decision checks; explicit model pause remains
+independent.
+
+The cancellation scenario now requires the existing durable Question result once,
+without the obsolete fabricated `plan-answer` approval message. Its historical
+reread must leave the released session unchanged, with no acknowledgement or
+automatic unpause. All 12 prior approval/playbook/content assertions remain, with
+three additional gate/status/pause assertions. The common conversation fixture
+now installs the real Question owner over the same confirmed history, correcting
+the workflow recovery fixture's missing dependency.
+
+Scoped Ruff/format, Mypy for four files and removal/class/size guards pass. The
+AST audit retains all 26 existing test signatures/markers, accounting explicitly
+for the renamed cancellation scenario and its corrected notification contract.
+Receipt: `ci-plan-gate-1b7-source-audit.json` in D static evidence. No local
+pytest/vitest or live model ran. Candidate Python-source SHA256:
+`bb90a7e32bb2b84d290aa246826da537eabffe33fed9ef2a6256c5d917980da2`.
+clio-core stays at `iowarp-core==2.3.1`; dependency files, GACT and the frozen
+R184 service are unchanged. These changes need fresh CI and affected live
+qualification. R184's unresolved shutdown still prevents another live launch.
+
+### Cancellation recording order and native SDK errors — prior candidate
 
 The explicit-deadline regression exposes a recording race: physical cancellation
 can settle before the deferred request write, leaving a cancelled assignment with

@@ -46,7 +46,7 @@ async def test_settlement_confirms_delayed_cancel_intent_before_terminal_publica
 
     monkeypatch.setattr(owner.recovery, "defer_recording", postpone)
     remove = owner.history.listen(changed, handles=(root.handle,))
-    caller = TaskCaller(root.owner.session_id, "human")
+    caller = TaskCaller(root.owner.session_id, "human", human_action=True)
     operations = TaskOperations(owner.history, lambda task, actor: owner.cancel(actor, task.handle))
     try:
         assert (await owner.cancel(caller, root.handle))["cancellation_requested"]

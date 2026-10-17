@@ -106,6 +106,7 @@ async def create_environment(
 
     app, root = await asyncio.to_thread(records)
     app.state.arc, app.state.bus, app.state.messages = arc, EventBus(), {}
+    app.state.questions = QuestionCommands(app.state.task_history)
     app.state.semantic_event_sink = SemanticEventSink(
         bus=app.state.bus, trace_backend=NoopSemanticTraceBackend()
     )
