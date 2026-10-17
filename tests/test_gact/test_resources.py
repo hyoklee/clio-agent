@@ -1737,6 +1737,7 @@ def test_create_resource_accepts_a_windows_unsafe_display_name(tmp_path: Path) -
         )
 
         assert resource["name"] == "Q3: notes?.md"
+        assert isinstance(resource["materialization"], dict)
         assert resource["materialization"]["state"] == "ready"
         workspace_copy = Path(str(resource["workspace_path"]))
         assert workspace_copy.name == "Q3_ notes_.md"
@@ -1767,6 +1768,7 @@ def test_a_resource_whose_materialization_fails_does_not_break_get_resources(
         good = _upload(
             client, workspace_id, name="notes.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(good["materialization"], dict)
         assert good["materialization"]["state"] == "ready"
         assert good["workspace_path"]
 
@@ -1781,14 +1783,14 @@ def test_a_resource_whose_materialization_fails_does_not_break_get_resources(
                 raise OSError("simulated disk failure")
             return original_materialize(app, record)
 
-        monkeypatch.setattr(
-            materialization_module, "materialize_resource_for_app", _fail_for_cursed
-        )
-        appended = client.patch(
-            created["upload_url"], headers={"Upload-Offset": "0"}, content=b"evil"
-        )
-        assert appended.status_code == 204
-        monkeypatch.undo()
+        # Restore only this fault; undo() also removes autouse namespace and
+        # runtime-release guards while this TestClient is still alive.
+        with monkeypatch.context() as fault:
+            fault.setattr(materialization_module, "materialize_resource_for_app", _fail_for_cursed)
+            appended = client.patch(
+                created["upload_url"], headers={"Upload-Offset": "0"}, content=b"evil"
+            )
+            assert appended.status_code == 204
 
         listed = client.get(f"/v1/workspaces/{workspace_id}/resources")
         assert listed.status_code == 200, listed.text
@@ -1831,6 +1833,7 @@ def test_get_resources_never_materializes_or_copies_files(
         resource = _upload(
             client, workspace_id, name="notes.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(resource["materialization"], dict)
         assert resource["materialization"]["state"] == "ready"
 
         monkeypatch.setattr(materialization_module, "materialize_resource_for_app", _spy)
@@ -1910,12 +1913,14 @@ def test_legacy_pending_resource_is_materialized_at_the_next_agent_touch_point(
         resource = _upload(
             client, workspace_id, name="legacy.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(resource["materialization"], dict)
         assert resource["materialization"]["state"] == "ready"
 
         # Simulate a legacy record: its workspace-tree copy is gone and its
         # materialization was never tracked (defaults to "pending", exactly
         # like a record loaded from an index written before this field
         # existed).
+        assert isinstance(resource["workspace_path"], str)
         Path(resource["workspace_path"]).unlink()
         app.state.resource_store.set_materialization(
             resource["id"], ResourceMaterialization(state="pending")
@@ -1940,6 +1945,7 @@ def test_inspect_workspace_resource_retries_materialization(tmp_path: Path) -> N
         resource = _upload(
             client, workspace_id, name="legacy.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(resource["workspace_path"], str)
         Path(resource["workspace_path"]).unlink()
         app.state.resource_store.set_materialization(
             resource["id"], ResourceMaterialization(state="failed", reason="disk unavailable")

@@ -7,6 +7,28 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Resource fault fixture — private runtime isolation retained
+
+Full CI XML names the materialization-failure test as stopping its worker's
+private daemon (PID 2867 in run `39029250041`), followed by namespace teardown
+against the dead/quarantined endpoint. Source inspection found
+`monkeypatch.undo()` inside its still-open TestClient. That undid the autouse
+`release_runtime_client` protection and namespace tracking, so app shutdown could
+release the shared worker runtime. A later resource case hung in new-client
+prewarm. The latter symptom still needs a fresh CI result; no independent native
+library defect is inferred.
+
+The injected materialization failure now uses its own `monkeypatch.context()`.
+Only that fault is restored before GET; every original assertion remains, and
+the worker's isolation/release/cleanup guards stay installed. Six explicit JSON
+shape assertions also narrow existing resource dictionaries/path strings for
+the full-file type check, retaining all original values and filesystem checks.
+Ruff/format, Mypy with `--check-untyped-defs` and static assertion/source audits
+pass. No production file, dependency, clio-core, native bound, cleanup guard or
+test budget changes. No local behavioral test or live family ran. Fresh CI is
+required. Receipts: `ci-resource-runtime-630b7d1c-diagnostics.json` and
+`ci-resource-runtime-0be1f189-audit.json`.
+
 ### Legacy MCP callback regression — distinct Questions, not snapshot updates
 
 The actual-SDK stdio test queued every pending Question snapshot. Question
@@ -73,8 +95,9 @@ runtime processes remain live. No further live family has launched while its
 unresolved shutdown awaits the existing explicit human force-close decision.
 All four Python 3.14 artifacts now report 12,205 passes, 252 failures, two errors
 and 54 skips. The formerly deadlocked mode-PATCH and Claude stream-retirement
-cases pass, as does blueprint selection. The remaining errors still concern
-native-client startup and daemon-loss teardown; their cause remains unresolved.
+cases pass, as does blueprint selection. The remaining errors concern
+native-client startup and daemon-loss teardown; the premature fixture undo
+described above is corrected in the later packet and awaits fresh CI.
 The full run is still executing other interpreters. This failing regression
 baseline does not qualify the later pending-feedback or test-fixture packets.
 
@@ -106,8 +129,9 @@ closing its pool. Original assertions and concurrency settings remain. Provider
 code and test limits are unchanged.
 
 The other two error reports concern new-native-client prewarm during `build_app`
-and namespace teardown after daemon loss. Their cause remains unresolved; no
-clio-core change, guard bypass, test removal or limit increase was attempted.
+and namespace teardown after daemon loss. Later full diagnostics identify the
+premature fixture undo described above. No clio-core change, guard bypass,
+test removal or limit increase was attempted.
 The four reports are runtime/setup/teardown errors, not collection failures.
 
 Scoped Ruff/format, Mypy with `--check-untyped-defs`, existing guards and AST
