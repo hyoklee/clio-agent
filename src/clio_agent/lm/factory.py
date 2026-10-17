@@ -237,8 +237,9 @@ def _codex_direct_lm(config: LMProviderConfig) -> Any:
         generation["reasoning_effort"] = effort
     if config.max_tokens:
         generation["max_tokens"] = config.max_tokens
-    wire = default_wire()
     http = config.codex_transport == "sse"  # the operator's explicit no-WebSocket choice
+    # Each HTTP engine builds its matched synchronous/asynchronous provider pair.
+    wire = None if http else default_wire()
     lm = dspy.LM(
         f"{_CODEX_LITELLM_PREFIX}/{bare}",
         engine=CodexDirectEngine(bare, wire=wire, http=http),

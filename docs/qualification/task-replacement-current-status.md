@@ -7,6 +7,25 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### R181 direct-SSE selection failure and provider correction
+
+R181 on clio-agent `8bd9501e` / GACT `0f9c00a4` failed before model execution:
+the production provider-selection API returned HTTP 400, "A custom HTTP wire
+requires its explicit asynchronous counterpart." The factory passed its normal
+synchronous wire explicitly into both HTTP engines, which correctly require
+an explicit asynchronous counterpart for custom-wire injection. WebSocket
+construction was unaffected.
+
+The clio-agent factory now lets each HTTP engine construct its native matched
+provider pair, while retaining the existing shared WebSocket wire and custom-wire
+guard. A new public `create_lm` regression requires both real HTTP engine/provider
+types, independent asynchronous wires and preserved credential/account bindings.
+Its execution goes to CI; fresh actual-model SSE qualification is required.
+No clio-core source/dependency, provider parser or size-limit policy changed.
+The failed run's API, external server and proxy exited zero; its 378,117,557-byte
+profile and 1,073,741,824-byte temp root are removed/absent. Bounded failure and
+cleanup receipts are `r181-live-external-recovery.json` and `r181-cleanup*.json`.
+
 ### R177–R180 external visibility and caller-restart recovery
 
 R177 passed on clio-agent `ec3a405f` / GACT `0f9c00a4`, with production hash

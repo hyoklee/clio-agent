@@ -628,6 +628,32 @@ def test_create_lm_builds_the_direct_engine_lm(monkeypatch: pytest.MonkeyPatch) 
     assert not any(k.startswith("codex_") for k in lm.kwargs)
 
 
+def test_create_lm_builds_the_sse_engine_pair(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The public SSE choice must construct both native async HTTP wires."""
+    from dspy.lm15 import AsyncOpenAICodexLM
+
+    from clio_agent.config import LMProviderConfig
+    from clio_agent.lm.factory import create_lm
+
+    monkeypatch.setattr(direct_engine, "default_wire", _wire)
+    config = LMProviderConfig(
+        provider="codex",
+        model="gpt-5.5",
+        api_base="codex://direct",
+        codex_transport="sse",
+    )
+    lm = create_lm(config)
+
+    assert isinstance(lm._engine_spec, direct_engine.CodexDirectEngine)
+    assert isinstance(lm._async_engine_spec, direct_engine.AsyncCodexDirectEngine)
+    assert lm._engine_spec.http is True and lm._async_engine_spec.http is True
+    assert isinstance(lm._engine_spec.http_wire, AsyncOpenAICodexLM)
+    assert isinstance(lm._async_engine_spec.http_wire, AsyncOpenAICodexLM)
+    assert lm._engine_spec.http_wire is not lm._async_engine_spec.http_wire
+    assert lm._engine_spec.http_wire.api_key == lm._engine_spec.wire.api_key
+    assert lm._async_engine_spec.http_wire.account_id == lm._async_engine_spec.wire.account_id
+
+
 def test_an_oversized_image_is_refused_typed_before_any_send(
     harness: Harness, monkeypatch: pytest.MonkeyPatch
 ) -> None:
