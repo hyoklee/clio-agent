@@ -47,6 +47,10 @@ assertions in all nine retained cases are AST-preserved, including exact lifecyc
 event counts. The first case also requires recording off the application loop.
 A fresh injected-persistence-failure case requires HTTP failure, no accepted
 session row and no lifecycle event fabricated in Core.
+The retained malformed-message case also enters the real service lifespan. Its
+six original assertions remain AST-identical: typed 400, validation code,
+message, session details, recoverability and no persisted user input. Scoped
+lint/format/Mypy and the audit pass; CI execution remains pending.
 
 Scoped Ruff/format, two-file Mypy and existing removal/size/class guards pass.
 Static audit: `ci-session-lifecycle-d1b79656-audit.json`. No local behavioral test
@@ -78,9 +82,15 @@ Candidate Python-source SHA256:
 `45af517bdbbdeb0d90d40fde8ba7f31cedaee9938012fb0e8b71926a24d88121`.
 Exact-head CI and affected live observation acceptance remain required.
 
-### Selected-model acceptance and schedule deletion — CI pending
+### Selected-model acceptance and schedule deletion — affected Python 3.14 CI passed
 
-These repairs are pushed at `48c8f4d6`; run `39025058382` is in progress.
+All four Python 3.14 artifacts for `48c8f4d6` / run `39025058382` report 12,184
+passes, 267 failures, five errors and 55 skips. All 11 host/model-selection cases,
+14 schedule cases and 39 autonomy cases pass. Fifty post-message cases pass; the
+two no-progress retirement failures are corrected in the later pending packet.
+The entire regression baseline still fails. Other interpreters, later source
+and live qualification remain separate. Receipt:
+`ci-ready-http-fixture-48c8-results.json`.
 
 The retained first-message model tests exposed missing calls to the existing
 host construction, Claude discovery reprobe and selected-model discovery helpers.

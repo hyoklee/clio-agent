@@ -235,19 +235,19 @@ def test_post_message_missing_parts_is_typed_400_validation_error(tmp_path: Path
     (that tag is reserved for a >=500 server-side fault, see
     ``_error_code_for_status`` in app.py)."""
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=_AckAgent())
-    client = TestClient(app)
-    sid = _session(client)
+    with TestClient(app) as client:
+        sid = _session(client)
 
-    response = client.post(f"/v1/sessions/{sid}/messages", json={"content": "hi there"})
+        response = client.post(f"/v1/sessions/{sid}/messages", json={"content": "hi there"})
 
-    assert response.status_code == 400, response.text
-    error = response.json()["error"]
-    assert error["error"] == "validation_error"
-    assert "parts" in error["message"]
-    assert error["details"] == {"session_id": sid}
-    assert error["recoverable"] is True
-    # No user message was persisted for the rejected body.
-    assert client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == []
+        assert response.status_code == 400, response.text
+        error = response.json()["error"]
+        assert error["error"] == "validation_error"
+        assert "parts" in error["message"]
+        assert error["details"] == {"session_id": sid}
+        assert error["recoverable"] is True
+        # No user message was persisted for the rejected body.
+        assert client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == []
 
 
 def test_transcript_reads_preserve_historical_handoffs_without_task_repair(
