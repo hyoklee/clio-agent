@@ -9,6 +9,9 @@ on:
   # GITHUB_TOKEN does not trigger pull_request workflows.
   workflow_dispatch: {}
 
+env:
+  CI_TEST_SHARD_COUNT: 4
+
 jobs:
   native-service-lifecycle:
     name: native service lifecycle (${{ matrix.os }})
@@ -127,15 +130,15 @@ jobs:
   check:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-    # The suite runs as 3 deterministic shards (tests/_sharding.py) per interpreter,
+    # The suite runs as 4 deterministic shards (tests/_sharding.py) per interpreter,
     # each on its own runner with one xdist worker per logical CPU. One 4-worker
     # runner took 23-29 min; the tests are CPU-bound (every gact test builds an app),
     # so more workers on the same 4 vCPUs only contend.
     name: check (${{ matrix.python-version }}, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # Python 3.12 shards now reach 97-99% at the former 18-minute job cap
-    # while still making steady progress. Allow suite and coverage-write headroom;
-    # pytest's individual test deadlines remain the hang guard.
+    # The three-shard Python 3.12 run still made progress at the 25-minute cap
+    # (one shard reached 92%). Partition across another runner while preserving
+    # the per-test deadlines, per-runner worker count and job deadline.
     timeout-minutes: 25
     strategy:
       # Every supported interpreter completes independently: existing hosts run
@@ -143,7 +146,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
-        shard: [0, 1, 2]
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -162,7 +165,7 @@ jobs:
       - run: >-
           uv run python -B scripts/run_tests.py tests/ -m "not integration"
           ${{ matrix.python-version == '3.14' && '-W error::DeprecationWarning' || '' }}
-          --num-shards 3 --shard-id ${{ matrix.shard }}
+          --num-shards ${{ env.CI_TEST_SHARD_COUNT }} --shard-id ${{ matrix.shard }}
           -n logical --dist worksteal --durations=30 -rs
           --junitxml=.pytest-runtime/ci/results.xml
           --cov=clio_agent --cov-branch --cov-report=
@@ -213,9 +216,9 @@ jobs:
         with:
           pattern: coverage-${{ matrix.python-version }}-*
           merge-multiple: true
-      # All three shards must have reported: a missing shard is a failure, never a
+      # All configured shards must have reported: a missing shard is a failure, never a
       # smaller denominator.
-      - run: test "$(ls coverage-*.dat | wc -l)" -eq 3
+      - run: test "$(ls coverage-*.dat | wc -l)" -eq "${{ env.CI_TEST_SHARD_COUNT }}"
       - run: uv run coverage combine coverage-*.dat
       - run: uv run coverage report --show-missing --fail-under=78
 

@@ -7,6 +7,27 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Complete CI partitioning — pending execution
+
+All three Python 3.12 checks in `764121a2` ended cancelled and produced no JUnit
+artifacts. Shard 2 ran from 06:40:14 to 07:05:30 UTC and was still progressing
+at 92% near the configured 25-minute job cap. Dependency sync took four seconds;
+this was not a package-install delay. These jobs are unverified, not passing.
+Bounded receipt: `ci-python312-cancellation-7641.json` in D static evidence.
+
+The unchanged complete suite is now configured as four deterministic shards per
+interpreter. The matrix, pytest shard count and mandatory coverage-artifact count
+agree on four. The 25-minute job deadline, per-test deadlines, `-n logical`,
+suite filters and 78% coverage floor are unchanged. Every other workflow field
+is structurally identical. Missing any of the four coverage artifacts remains a
+failure. YAML/static source validation passes; no local pytest or model ran.
+Receipt: `ci-four-shards-40b5-audit.json` in D static evidence.
+
+The already-running `40b5a3a1` CI uses the earlier three-shard configuration and
+will finish unchanged. Its successor must execute all four shards and confirm
+complete counts before claiming a full report. This change adds no production
+code or execution owner; clio-core and the product/runtime tuple are unchanged.
+
 ### Fresh-message acceptance assertions — CI pending
 
 The complete `764121a2` Python 3.14 report contains 12,030 passes, 390 failures,
