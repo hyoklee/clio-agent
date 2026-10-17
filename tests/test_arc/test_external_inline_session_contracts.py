@@ -141,8 +141,18 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
     ]
     posted: list[TaskSnapshot] = []
     try:
-        for _ in range(2):
-            posted.append(await asyncio.wait_for(questions.get(), 30))
+        # Posting and routing annotation both publish pending snapshots. Wait
+        # for two Question identities, not two revisions of the first Question.
+        by_handle: dict[str, TaskSnapshot] = {}
+        deadline = loop.time() + 30
+        while len(by_handle) < 2:
+            question = await asyncio.wait_for(questions.get(), max(0.0, deadline - loop.time()))
+            previous = by_handle.get(question.handle)
+            if previous is not None:
+                assert question.owner == previous.owner
+                assert question.invocation_id == previous.invocation_id
+            by_handle[question.handle] = question
+        posted = list(by_handle.values())
         assert len({task.owner.parent_handle for task in posted}) == 2
         assert all(not call.done() for call in calls)
         assert len(callbacks) == 2 and len({item[0] for item in callbacks}) == 2

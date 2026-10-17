@@ -7,6 +7,23 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Legacy MCP callback regression — distinct Questions, not snapshot updates
+
+The actual-SDK stdio test queued every pending Question snapshot. Question
+creation and trusted routing annotation both publish pending updates, so two
+updates of one Question could satisfy its two-message receive loop before the
+other invocation posted. The fixture now waits for two distinct Question
+handles, checks that repeated updates preserve owner/invocation, then retains
+every original two-parent, callback/session identity, answer and process-retirement
+assertion. Both cancellation variants and the 120-second hard limit remain;
+the receive phase now shares one original 30-second deadline.
+
+Only the test changes. Production source, SDK dispatch, Question commands,
+clio-core, dependencies, GACT and R184 remain unchanged. Scoped Ruff/format,
+Mypy with `--check-untyped-defs` and static assertion/parameter/source audits pass.
+No local behavioral test or live family ran. Fresh CI is required. Receipt:
+`ci-legacy-question-updates-97f26283-audit.json`.
+
 ### Pending-feedback public routes — fresh CI pending
 
 Released `main` exposes pending-feedback list/cancel and `message-state` routes;
@@ -54,9 +71,12 @@ in run `39029250041`, including the admission-fixture and worker-stall repairs.
 Its source hash is recorded below. The R184 controller and verified API/private
 runtime processes remain live. No further live family has launched while its
 unresolved shutdown awaits the existing explicit human force-close decision.
-The first three Python 3.14 artifacts confirm the formerly deadlocked mode-PATCH
-case and blueprint-selection case pass. The current run still has failures;
-neither these partial artifacts nor that older source qualify the next packet.
+All four Python 3.14 artifacts now report 12,205 passes, 252 failures, two errors
+and 54 skips. The formerly deadlocked mode-PATCH and Claude stream-retirement
+cases pass, as does blueprint selection. The remaining errors still concern
+native-client startup and daemon-loss teardown; their cause remains unresolved.
+The full run is still executing other interpreters. This failing regression
+baseline does not qualify the later pending-feedback or test-fixture packets.
 
 Four configuration-reference failures are addressed in the next documentation
 packet: retired special Relay configuration is no longer expected, and the
@@ -69,7 +89,7 @@ secrets to be absent while retaining checks for supported credentials. Ruff,
 formatting, scoped Mypy and existing guards pass. Receipt:
 `ci-config-reference-630b7d1c-audit.json`.
 
-### Worker stalls — CI executing at 630b7d1c
+### Worker stalls — affected Python 3.14 CI passed at 630b7d1c
 
 Full CI XML identifies a SPOTTER mode-PATCH deadlock in clio-agent: its Core I/O
 worker calls the watcher command, which waits for `Conversations.spawn` while
@@ -95,7 +115,7 @@ audits pass. Receipt: `ci-worker-stalls-89938ac0-audit.json`; extracted stacks:
 `ci-runtime-stacks-59ee.json`. No local behavioral test or new live launch ran.
 Candidate Python-source SHA256:
 `af2e61eae09f0ca9ef0976d85c5139fa7f7fb8cb1d0979da8113e691e15e6267`.
-CI and affected live SPOTTER/delivery/retirement acceptance remain required.
+Full candidate CI and affected live SPOTTER/delivery/retirement acceptance remain required.
 clio-core 2.3.1, dependencies, GACT and frozen R184 production are unchanged.
 
 ### Admission reservation fixtures — next CI batch pending
