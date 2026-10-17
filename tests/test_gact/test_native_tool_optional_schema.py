@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import pytest
 from jsonschema import Draft202012Validator
 
 from clio_agent.gact.a2ui_producer import build_capture_a2ui_surface_tool
 from clio_agent.gact.agents.skill_runtime import SkillRuntime, build_load_skill_tool
 from clio_agent.gact.agents.tool_instrumentation import instrument_tools, native_tool
 from clio_agent.gact.types import AgentDef
+
+pytestmark = pytest.mark.usefixtures("builtin_tool_context")
 
 
 def test_skill_loader_requires_only_the_skill_identifier() -> None:

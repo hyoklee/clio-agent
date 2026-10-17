@@ -9,6 +9,7 @@ from clio_agent.gact.task_declarations import build_task_tools
 from clio_agent.gact.task_wait_presentation import wait_presentation
 
 
+@pytest.mark.usefixtures("builtin_tool_context")
 def test_wait_defaults_are_explicit_in_the_agent_visible_declaration() -> None:
     """Default null remains public after native schema and observer wrapping."""
     tool = next(tool for tool in build_task_tools() if tool.name == "wait_tasks")

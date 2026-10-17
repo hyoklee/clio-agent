@@ -34,6 +34,17 @@ the actual SDK/Docket execution, held acceptance and all ten original assertions
 No production registry/driver/cancellation change follows this finding. The
 registration correction requires fresh CI; local pytest/vitest remains unused.
 
+CI triage also identified 24 earlier standalone assembly failures at the required
+built-in MCP boundary. The optional-schema module and wait-declaration case now
+opt into a real application lifespan, recorded Core assignment and production
+MCP boundary through the existing test helpers. This addresses four intended
+cases without adding a production bypass; other assembly fixtures remain to be
+migrated. AST comparison confirms every original assertion in these two modules
+is unchanged. Scoped Ruff and formatting pass; these changes await CI execution.
+Run `38994982164` on `2715f6fc` has passed native lifecycle checks on both Windows
+and Linux and all three lint jobs; its regression shards are still running.
+No fresh live qualification or clio-core library change is claimed.
+
 Both actual Codex/Luna direct-SSE runs on clio-agent `d86c9120` / GACT `0f9c00a4`
 demonstrated external-task acceptance, independent work, one lost-visibility
 attention episode and desktop Work disclosure. The rendered row said "Needs

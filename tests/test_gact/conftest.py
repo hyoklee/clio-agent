@@ -86,6 +86,16 @@ def native_builtin_lifespan(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
         yield
 
 
+@pytest.fixture
+def builtin_tool_context(world: tuple[Any, TestClient, str]) -> Iterator[None]:
+    """Bind an actual Core assignment and MCP boundary for standalone tool checks."""
+    from tests.test_gact.task_records import active_turn_fixture
+
+    app, _client, session_id = world
+    with active_turn_fixture(app, session_id):
+        yield
+
+
 @pytest.fixture(autouse=True)
 def _default_test_arc(request, tmp_path, monkeypatch):
     """Give every GACT test app a real, per-app ARC unless it asked otherwise.
