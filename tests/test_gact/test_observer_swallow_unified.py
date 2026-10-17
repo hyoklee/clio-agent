@@ -95,6 +95,23 @@ class _StructuredFakeClient(_FakeClient):
         )
 
 
+class _InlineExternalOwner:
+    """Isolate observer tests at the application's external-call boundary."""
+
+    async def call(
+        self,
+        server_id: str,
+        configured: _FakeClient,
+        tool_name: str,
+        tool_args: dict[str, Any],
+        *,
+        auth_scope: str,
+    ) -> _FakeResult:
+        """Return inline test content without simulating native task lifecycle."""
+        async with configured as client:
+            return await client.call_tool(tool_name, tool_args)
+
+
 class _RecordingObserver:
     """Capture lifecycle notifications without changing tool behavior."""
 
@@ -119,7 +136,10 @@ def test_builders_exploding_observer_fails_the_tool_call(
 ) -> None:
     from clio_agent.gact.agents import builders
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", _FakeClient)
+    monkeypatch.setattr(
+        "clio_agent.tools.mcp_runtime.make_mcp_client",
+        lambda *args, **kwargs: _FakeClient(*args, **kwargs),
+    )
     monkeypatch.setattr(
         "clio_agent.tools.mcp_config.transport_from_spec", lambda spec: object(), raising=True
     )
@@ -129,6 +149,7 @@ def test_builders_exploding_observer_fails_the_tool_call(
         state=SimpleNamespace(
             pending_permission_gate=lambda name, args: "allow",
             pending_tool_observer=observer,
+            external_tasks=_InlineExternalOwner(),
         )
     )
     info = {"name": "ext", "spec": {"transport": "stdio", "command": "x"}}
@@ -147,7 +168,10 @@ def test_builders_observer_receives_structured_mcp_result(
 
     from clio_agent.gact.agents import builders
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", _StructuredFakeClient)
+    monkeypatch.setattr(
+        "clio_agent.tools.mcp_runtime.make_mcp_client",
+        lambda *args, **kwargs: _StructuredFakeClient(*args, **kwargs),
+    )
     monkeypatch.setattr(
         "clio_agent.tools.mcp_config.transport_from_spec", lambda spec: object(), raising=True
     )
@@ -157,6 +181,7 @@ def test_builders_observer_receives_structured_mcp_result(
         state=SimpleNamespace(
             pending_permission_gate=lambda name, args: "allow",
             pending_tool_observer=observer,
+            external_tasks=_InlineExternalOwner(),
         )
     )
     info = {"name": "ext", "spec": {"transport": "stdio", "command": "x"}}
@@ -188,7 +213,10 @@ def test_mcp_route_exploding_observer_fails_the_call_typed(
 ) -> None:
     from clio_agent.gact.app import build_app
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", _FakeClient)
+    monkeypatch.setattr(
+        "clio_agent.tools.mcp_runtime.make_mcp_client",
+        lambda *args, **kwargs: _FakeClient(*args, **kwargs),
+    )
     _patch_transport(monkeypatch, "clio_agent.gact.routes.mcp")
 
     app = build_app(sessions_path=tmp_path / "s.json")
@@ -214,7 +242,10 @@ def test_mcp_route_observer_receives_structured_mcp_result(
 
     from clio_agent.gact.app import build_app
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", _StructuredFakeClient)
+    monkeypatch.setattr(
+        "clio_agent.tools.mcp_runtime.make_mcp_client",
+        lambda *args, **kwargs: _StructuredFakeClient(*args, **kwargs),
+    )
     _patch_transport(monkeypatch, "clio_agent.gact.routes.mcp")
 
     app = build_app(sessions_path=tmp_path / "s.json")
@@ -226,6 +257,7 @@ def test_mcp_route_observer_receives_structured_mcp_result(
     app.state.pending_tool_observer = observer
 
     with TestClient(app) as client:
+        monkeypatch.setattr(app.state.external_tasks, "call", _InlineExternalOwner().call)
         response = client.post(
             "/v1/mcp/servers/srv/call",
             json={"tool": "do_thing", "args": {"a": 1}},

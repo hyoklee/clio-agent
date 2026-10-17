@@ -7,6 +7,67 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### R177–R180 external visibility and caller-restart recovery
+
+R177 passed on clio-agent `ec3a405f` / GACT `0f9c00a4`, with production hash
+`abe140a51dc1cad7205c3f8553549eca2c81da441441bfd4026e024137bc9728` unchanged.
+Actual Codex/Luna received a native HTTP MCP handle, performed an independent
+filesystem read and yielded. Six real proxy 503s interrupted observation while
+the backend kept running. One attention episode reached the same assignment;
+repeated failures did not produce repeated wakes. Restoring visibility and
+completing the original job delivered one final result. The actual 77-byte output
+and SHA-256 matched, with one backend body and one `tools/call`. This is visibility
+recovery; R177 did not restart the caller process. All three services exited zero;
+its 555,066,857-byte profile and 1,073,741,824-byte temp root are removed/absent.
+
+R178 preserved a failed harness result: bare `build_app()` omitted production
+`run_server` startup flags, so its restarted caller stayed agentless. The external
+job actually finished once while CLIO was offline. Independent physical retirement
+and cleanup removed the 551,249,809-byte profile and 1,073,741,824-byte temp root;
+unknown detached exit codes and unqualified persisted task settlement remain
+explicit in `r178-retirement-audit.json`. No product patch followed that omission.
+
+R179 enabled the production startup flags and supplied an independent successful
+behavior audit: a new caller/client recovered the original backend identity,
+and Luna collected its final result under the original assignment. Its controller
+still failed a wrong readiness predicate: provider-selection `state` stays `idle`
+on boot even when `configured=true` and the model executes. The controller also
+expected the legacy `initialize` handshake; this pinned MCP v2 HTTP route uses
+`server/discover`. A cleanup helper wrongly rejected Stop's correct HTTP 204.
+Those harness failures remain recorded separately from `r179-behavior-audit.json`.
+All owned processes retired, and its 496,305,632-byte profile and 1,073,741,824-byte
+temp root are removed/absent. The owned Python-cache junction was audited without
+following it before removal.
+
+R180 passed the complete corrected check on the same production source. Luna
+received external handle `task_ef75cd28a6fa4f3da4e56ec08cc98bb3`, freshly read a
+sentinel while its job ran, and yielded assignment
+`task_caf5e7e6ae044a18bae1448e6cd7bc10`. The first CLIO caller exited zero; the
+original external job then finished and cleaned up while CLIO was offline.
+The restarted caller restored its model without a second model-selection write.
+Its new SDK client performed protocol-v2 discovery and read the original task ID,
+server/session/auth scope and captured result schema; no second submission ran.
+Automatic final delivery woke Luna, which collected the real nonce, tag, 77-byte
+length and SHA-256 `4e7bb1168da30f2f321a9776bab8490b66d3f5516bb0b00b453aa3437ce918b3`.
+All five committed inputs retain the original assignment. One final notice was
+committed once; no pending mail, active assignment or worker remains. Both callers,
+external server and proxy exited zero. The 495,900,865-byte profile and
+1,073,741,824-byte temp root are removed/absent; auth and production hashes match.
+Bounded receipts/audits are under the execution checkout's `.pytest-runtime/static`.
+These synthetic workloads use actual production server/SDK/CLIO/model routes;
+they do not qualify approved-provider jobs, UI recovery or final-candidate races.
+
+CI `38987288853` on `ec3a405f` completed failed. Python 3.14 reports 11,860 passed,
+538 failed, four errors and 53 skipped. The restored startup-recovery fixture now
+passes; 40 cases in the recently migrated setup modules pass and 26 reach further
+failures. Three native-cancellation cases stopped at a fixture missing the required
+assignment invocation ID; that setup now supplies it. Four observer regressions
+patched the removed `task_receipt.TaskAwareClient` location; they now use the
+client-factory/external-call test seams while retaining every telemetry, typed
+failure and private-metadata assertion. No production or clio-core change, local
+pytest/vitest, timeout/budget reduction or assertion weakening is included.
+Scoped Ruff/format/diff checks pass; these fixture repairs require CI.
+
 ### R176 busy-goal next-iteration delivery passed
 
 R176 passed on clio-agent `e894dddf` / GACT `0f9c00a4`, with unchanged production

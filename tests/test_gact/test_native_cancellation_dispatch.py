@@ -84,6 +84,7 @@ def test_shared_cancel_reaches_native_work_before_backend_binding(
                         sid,
                         "Native cancellation routing",
                         app.state.human_principal,
+                        invocation_id="native-cancellation-routing",
                     )
                     return root.owner.model_copy(
                         update={"parent_handle": root.handle}
