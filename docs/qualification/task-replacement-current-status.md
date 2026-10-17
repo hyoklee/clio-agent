@@ -75,6 +75,34 @@ clio-core remains `iowarp-core 2.3.1`; the dependency declaration and lockfile a
 unchanged. The current three-shard CI continues; this fixture needs execution on
 the next coherent four-shard candidate.
 
+### Connected-source native boundary migration — CI pending
+
+The retained source-connection module in `40b5a3a1` calls a removed direct tool
+function. Its fixture also replaces the storage service after native worker
+registration has captured the original service. The fixture now supplies its real
+storage service before application lifespan startup and binds the declared
+`connected_data_connect` tool through the production built-in MCP boundary.
+Shared waits collect the actual native outcome and confirmed result before
+checking linked sources and manifests. Global context-function replacements are
+removed; caller/session context is explicitly bound.
+
+All six test signatures/markers and eight parameterized cases remain. The
+workspace-status case is AST-identical. The single-approval assertion is retained,
+along with source identity, filename, manifest/count, permission audit, private
+sign-in and no-source-on-credential-rejection checks. Domain validation now has to
+produce a stored failed native result identifying the forbidden token key, rather
+than pretending asynchronous worker validation raises at submission. Permission
+workers are denied/rejoined on an interrupted assertion; the existing five-second
+join and ten-second collection diagnostics are unchanged.
+
+Scoped Ruff/format and Mypy pass. No local behavioral test, model or new service
+ran. The repeat-approval behavior is not claimed passing before CI. Receipt:
+`ci-source-connect-mcp-40b5-audit.json` in D static evidence. Production source,
+clio-core, dependency pins, GACT and the frozen D/R184 service are unchanged by
+this test-only migration. Current production CI remains run `39014099390` at
+`d1082b02`, with four shards per interpreter; this migration requires its own
+subsequent CI execution.
+
 ### Final-iteration feedback migration — CI pending
 
 The two final-response cases in `40b5a3a1` still invoke the removed
