@@ -9,6 +9,13 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### Complete CI partitioning — pending execution
 
+The complete Python 3.14 report for `40b5a3a1` / run `39012483935` has 12,075
+passes, 344 failures, five errors and 53 skips across its three shards. This is
+still a failed baseline. Other interpreter jobs are allowed to finish before
+dispatching the next coherent four-shard candidate. The errors include worker
+timeouts and resource-fixture teardown; they are not passing or live acceptance.
+Bounded counts: `ci-40b5-complete-python314-counts.json` in D static evidence.
+
 All three Python 3.12 checks in `764121a2` ended cancelled and produced no JUnit
 artifacts. Shard 2 ran from 06:40:14 to 07:05:30 UTC and was still progressing
 at 92% near the configured 25-minute job cap. Dependency sync took four seconds;
@@ -44,6 +51,25 @@ Production Python SHA256 remains
 clio-core remains `iowarp-core 2.3.1`; the dependency declaration and lockfile are
 unchanged. The current three-shard CI continues; this fixture needs execution on
 the next coherent four-shard candidate.
+
+### Final-iteration feedback migration — CI pending
+
+The two final-response cases in `40b5a3a1` still invoke the removed
+`pending_loop_inbox_drain` hook. They now run the production `ClioReAct` loop with
+the real conversation owner, Core mailbox and recipient-input commits. A finite
+test model publishes human feedback and a completed external-task observation
+during its first call. Direct-response and submit paths must make a second model
+call, expose both attributed inputs in accepted order and return the updated
+answer. Both notification identities must share the committed input, remain
+readable in history and leave no pending delivery.
+
+The explicit iteration-cap case now checks actual retained human/task-result
+mail and absent acknowledgements after its single model call, replacing the old
+inbox-drain invocation counter. The unrelated timestamp and public-receipt tests
+are AST-identical. No production code changes, new inbox or execution owner is
+introduced. Ruff/format and Mypy pass; behavioral execution remains CI-pending.
+Receipt: `ci-feedback-mailbox-40b5-source-audit.json` in D static evidence.
+The production source hash remains `1ce710e7611bbbf5bc2e64023374b3b148457c6becadec0a3b6a22d72decdaa0`.
 
 ### Fresh-message acceptance assertions — CI pending
 
