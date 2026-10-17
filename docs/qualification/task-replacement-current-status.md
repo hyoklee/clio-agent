@@ -7,6 +7,28 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Retained streaming settlement — CI pending
+
+The `1b7e0281` report contains 18 streaming-module failures. Its full-turn helper
+read the removed in-flight task view and returned immediately when admission had
+not installed a task there. Event assertions could therefore run before the
+accepted assignment produced output. The helper now waits on the confirmed
+accepted handle using authenticated human identity, then waits for the actual
+TurnRunner reservation release. It does not restore a removed compatibility map
+or call a removed runner-loop method.
+
+The original 30-second diagnostic remains. Expiry cancels only this waiter;
+application lifespan cleanup owns the work. Both direct POST helpers now assert
+successful acceptance and use the returned handle. All 24 existing test names,
+signatures, markers and prior assertion sets remain. The four isolated direct
+`_run_module` cases still omit canonical assignment/admission setup; this helper
+change does not claim to repair them.
+
+Scoped Ruff/format and Mypy pass. Receipt:
+`ci-streaming-settlement-6ba8-source-audit.json` in D static evidence. No local
+behavioral test or live model ran. Production Python, shared prompts,
+dependencies, clio-core, GACT and the frozen R184 source are unchanged.
+
 ### Retained recall regressions — CI pending
 
 The `1b7e0281` report contains 14 failures in the retained memory/stats module.

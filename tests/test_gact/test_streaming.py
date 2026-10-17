@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import threading
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
@@ -31,6 +30,7 @@ from clio_agent.gact.app import (
     _stream_fallback_reason_capabilities,
     build_app,
 )
+from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.turn_forward import _run_module
 from clio_agent.gact.types import AgentDef
 from clio_agent.providers.claude_code_errors import CLAUDE_CODE_INSTALL_FAILED_MESSAGE
@@ -150,8 +150,10 @@ def enter_client() -> Iterator[Callable[[Any], TestClient]]:
         yield _enter
 
 
-def _wait_for_turn_settlement(app: Any, sid: str, timeout: float = 30.0) -> None:
-    """Wait on the owned turn task without polling or changing turn semantics.
+def _wait_for_turn_settlement(
+    app: Any, sid: str, timeout: float = 30.0, *, handle: str | None = None
+) -> None:
+    """Wait on confirmed assignment settlement and physical reservation release.
 
     30s for the same reason ``conftest.complete_turn`` uses it: every turn builds
     and runs a blueprint module, and slow 2-core CI runners under coverage need
@@ -159,17 +161,27 @@ def _wait_for_turn_settlement(app: Any, sid: str, timeout: float = 30.0) -> None
     ever fires on a genuine hang.
     """
 
-    task = app.state.in_flight_turns.get(sid)
-    if task is None:
-        return
+    if handle is None:
+        assignment = app.state.task_history.latest_assignment(sid)
+        assert assignment is not None, "No confirmed assignment exists for the accepted input"
+        handle = assignment.handle
 
-    settled = threading.Event()
+    async def settled() -> None:
+        result = await app.state.task_operations.wait(
+            TaskCaller(sid, app.state.human_principal, human_action=True), handle
+        )
+        assert not result["pending"], result
+        assert len(result["outcomes"]) == 1 and "error" not in result["outcomes"][0], result
+        released = asyncio.Event()
+        app.state.turn_runner.run_when_released(sid, released.set)
+        await released.wait()
 
-    def _observe() -> None:
-        task.add_done_callback(lambda _finished: settled.set())
-
-    app.state.turn_runner.call_soon_threadsafe(_observe)
-    assert settled.wait(timeout), "background turn did not settle before event assertions"
+    waiting = asyncio.run_coroutine_threadsafe(settled(), app.state.conversations._loop)
+    try:
+        waiting.result(timeout=timeout)
+    except TimeoutError as error:
+        waiting.cancel()  # End only the diagnostic waiter; lifespan cleanup owns the work.
+        raise AssertionError("background turn did not settle before event assertions") from error
     assert not app.state.turn_runner.busy(sid)
 
 
@@ -177,8 +189,11 @@ def _run_turn(client: TestClient, app: Any, text: str = "stream me") -> str:
     """Create a session, post one message and wait for its turn to settle."""
 
     sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-    client.post(f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": text}]})
-    _wait_for_turn_settlement(app, sid)
+    accepted = client.post(
+        f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": text}]}
+    )
+    assert accepted.status_code == 200, accepted.text
+    _wait_for_turn_settlement(app, sid, handle=accepted.json()["task_handle"])
     return sid
 
 
@@ -902,11 +917,12 @@ def test_message_events_carry_turn_id_and_stream_source_batch(app_client) -> Non
 
     app, client, _ = app_client
     sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-    client.post(
+    accepted = client.post(
         f"/v1/sessions/{sid}/messages",
         json={"parts": [{"type": "text", "text": "correlate me"}]},
     )
-    _wait_for_turn_settlement(app, sid)
+    assert accepted.status_code == 200, accepted.text
+    _wait_for_turn_settlement(app, sid, handle=accepted.json()["task_handle"])
 
     history = app.state.bus._history.get(sid, [])
     turn_id = _turn_id_of(history)
