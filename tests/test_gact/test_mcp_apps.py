@@ -556,7 +556,7 @@ def test_app_message_records_context_provenance_without_exposing_private_data(
                 "content": [{"type": "text", "text": "Apply it"}],
             },
         )
-        assert sent.status_code == 200
+        assert sent.status_code == 202
         deadline = time.monotonic() + 2
         while not model_prompts and time.monotonic() < deadline:
             time.sleep(0.01)
@@ -601,7 +601,7 @@ def test_busy_app_message_uses_existing_pending_steer_queue_without_private_data
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "keep working"}]},
         )
-        assert first.status_code == 200
+        assert first.status_code == 202
         deadline = time.monotonic() + 2
         while not app.state.turn_runner.busy(sid) and time.monotonic() < deadline:
             time.sleep(0.01)

@@ -377,7 +377,7 @@ def test_failed_finalize_still_settles_the_ledger(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hi"}]},
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
         status = wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
 
         assert status == "error"
@@ -516,7 +516,7 @@ def test_ask_user_pause_persists_activity_and_resume_has_a_distinct_turn(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "inspect data"}]},
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
         paused_status = wait_for_terminal_status(
             app.state.bus,
             sid,

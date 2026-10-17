@@ -171,7 +171,7 @@ def test_desktop_request_with_no_origin_header_is_not_treated_as_untrusted(
 
     response = _post_capabilities(client, sid, DESKTOP_HEADERS)
 
-    assert response.status_code == 200, response.text
+    assert response.status_code == 202, response.text
     caps = client_capabilities(client.app, sid)
     assert caps is not None
     assert list(caps.v0_9.supportedCatalogIds) == [WORKSPACE_ID, BASIC_ID]

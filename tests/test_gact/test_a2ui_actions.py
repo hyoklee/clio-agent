@@ -471,7 +471,7 @@ def test_run_retry_destination_queues_the_existing_owner_attempt(
     posted = client.post(
         f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "hi"}]}
     )
-    assert posted.status_code == 200, posted.text
+    assert posted.status_code == 202, posted.text
     source_message_id = posted.json()["message_id"]
     spawned.clear()
 

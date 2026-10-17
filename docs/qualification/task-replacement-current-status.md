@@ -7,6 +7,25 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Fresh-message acceptance assertions — CI pending
+
+The complete `764121a2` Python 3.14 report contains 12,030 passes, 390 failures,
+four errors and 53 skips. All ten retained-task behaviors and all eleven
+retirement cases pass; this remains a failed regression baseline. The report
+includes 28 failures at stale HTTP 200 expectations for fresh message acceptance.
+Source confirms that only existing-identity replay returns 200; fresh confirmed
+acceptance returns 202.
+
+Ten additional exact failing assertions across eight retained API modules now
+require 202. The files were checked against the CI revision before editing; AST
+comparison confirms only those numeric expectations changed. Replay expectations,
+payloads, privacy/resource checks, transcript goldens, Stop/queue ordering and all
+other assertions remain intact. Scoped Ruff and formatting checks pass. Receipt:
+`ci-http-acceptance-7641-audit.json` in D static evidence. No local behavioral test
+or live model ran, and no production source changed in this packet. Remaining
+interpreter jobs in the parent run are still allowed to finish before the next
+coherent candidate dispatch.
+
 ### Memory caller identity and asynchronous receipt corrections — CI pending
 
 `764121a2` Python 3.14 shard 1 completed with 4,033 passes, 110 failures and

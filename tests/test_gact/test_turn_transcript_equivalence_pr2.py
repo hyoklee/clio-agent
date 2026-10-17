@@ -76,7 +76,7 @@ def scenario_error_envelope_turn(tmp_path: Path, monkeypatch: Any) -> dict[str, 
         sid = client.post("/v1/sessions", json={"title": "e"}).json()["id"]
         cursor = app.state.bus.latest_event_id(sid)
         ack = client.post(f"/v1/sessions/{sid}/messages", json={"text": "stream then crash"})
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
         status = wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
         assert status == "error", f"envelope did not settle the session: {status!r}"
         trace = _normalized_trace(app, client, sid)

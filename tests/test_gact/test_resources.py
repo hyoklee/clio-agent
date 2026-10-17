@@ -571,7 +571,7 @@ def test_message_resource_ref_is_workspace_scoped_ready_and_server_normalized(
                 ],
             },
         )
-        assert accepted.status_code == 200, accepted.text
+        assert accepted.status_code == 202, accepted.text
         messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
         user_message = next(row for row in messages if row["id"] == "msg_resource_ref")
         reference = next(part for part in user_message["parts"] if part["type"] == "resource_ref")

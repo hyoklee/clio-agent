@@ -75,7 +75,7 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "check the repo"}]},
         )
-        assert first.status_code == 200, first.text
+        assert first.status_code == 202, first.text
         started = agent.started.wait(timeout=5)
         assert started, "first forward never started"
         first_id = first.json()["message_id"]
