@@ -28,7 +28,7 @@ from clio_agent.gact.agents.variant_records import VARIANT_RECORD_KIND, VARIANT_
 from clio_agent.gact.protocol.v3.message import part_to_v3_block
 from clio_agent.gact.session_store import _append_session_message
 from clio_agent.gact.types import Message, Part
-from tests._scripted_engine import Reply, routed_lm
+from tests._scripted_engine import Reply, calls, routed_lm
 from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_variant_drafts import (
     ASK,
@@ -134,7 +134,11 @@ def test_the_interactions_list_carries_the_drafts_question_metadata(
     world: World, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     lm, _engine = routed_lm(
-        {SCOPE: [_draft(2)], RUN0: [Reply(text="Draft A")], RUN1: [Reply(text="Draft B")]}
+        {
+            SCOPE: [_draft(2), Reply(text="Choose a draft.")],
+            RUN0: [Reply(text="Draft A")],
+            RUN1: [Reply(text="Draft B")],
+        }
     )
     _forward(world.app, world.sid, lm, ASK, "turn_1")
     question = _surface(world.app, world.sid, "turn_1", monkeypatch)
@@ -154,7 +158,7 @@ def test_the_interactions_list_carries_the_drafts_question_metadata(
 def test_refine_advice_lands_in_its_trys_tab(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
     lm, _engine = routed_lm(
         {
-            SCOPE: [_draft(2, strategy="refine")],
+            SCOPE: [_draft(2, strategy="refine"), Reply(text="Choose a draft.")],
             RUN0: [Reply(text="Long draft.")],
             RUN1: [Reply(text="Short draft.")],
         }
@@ -162,6 +166,12 @@ def test_refine_advice_lands_in_its_trys_tab(world: World, monkeypatch: pytest.M
     _forward(world.app, world.sid, lm, ASK, "turn_1")
     question = _surface(world.app, world.sid, "turn_1", monkeypatch)
     _answer(world.app, question, RUN0, comment="Shorter, please.")
+    _engine.routes[SCOPE].extend(
+        [
+            calls(("draft_alternatives", {"question_handle": question.id})),
+            Reply(text="Choose the revised draft."),
+        ]
+    )
     _forward(world.app, world.sid, lm, "[Answer] refine", "turn_2")
 
     variants_id = question.metadata["variants_id"]

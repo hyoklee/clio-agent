@@ -16,6 +16,9 @@ from __future__ import annotations
 
 import inspect
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 
 def _oauth2_source() -> str:
@@ -91,6 +94,9 @@ def test_a7_no_network_json_schema_dereferencing_in_clio_agent() -> None:
         Path("src/clio_agent/gact/a2ui_catalogs/registry.py"),
         Path("src/clio_agent/gact/a2ui_catalogs/validation.py"),
         Path("src/clio_agent/tools/task_receipt.py"),
+        Path("src/clio_agent/gact/builtin_boundary.py"),
+        Path("src/clio_agent/gact/questions.py"),
+        Path("src/clio_agent/gact/agents/dspy_native_tool.py"),
     }
     src_root = Path("src/clio_agent")
     offenders = []
@@ -117,7 +123,7 @@ def test_a7_no_network_json_schema_dereferencing_in_clio_agent() -> None:
     from clio_schemas.a2ui.validation import catalog_validators
     from referencing.exceptions import Unresolvable
 
-    catalog = {
+    catalog: dict[str, Any] = {
         "catalogId": "https://example.invalid/catalogs/probe/v1",
         "components": {
             "Probe": {
@@ -143,19 +149,71 @@ def test_a7_no_network_json_schema_dereferencing_in_clio_agent() -> None:
             validator.validate({"component": "Probe", "leak": {"anything": 1}})
         # MCP terminal schemas use the same no-retrieval rule. Exercise the real
         # task validator as well, rather than merely expanding the file allowlist.
-        from types import SimpleNamespace
-
         from clio_agent.tools.task_receipt import TaskResultValidationError, validate_terminal
+        from tests.test_tools.test_task_receipt import terminal
 
-        record = SimpleNamespace(backend={"output_schema": catalog["components"]["Probe"]})
-        current = SimpleNamespace(
-            status="completed",
-            result={"content": [], "structuredContent": {"component": "Probe", "leak": {}}},
-        )
+        schema = catalog["components"]["Probe"]
+        current = terminal({"content": [], "structuredContent": {"component": "Probe", "leak": {}}})
         with pytest.raises(TaskResultValidationError, match="unresolved external reference"):
-            validate_terminal(record, current)
+            validate_terminal(schema, current)
     finally:
         socket.create_connection = original_create_connection
+
+
+@pytest.mark.asyncio
+async def test_builtin_input_schema_rejects_remote_references_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The production short-tool boundary must refuse unknown schema references."""
+    import contextvars
+    import socket
+    from types import SimpleNamespace
+
+    import pytest
+    from referencing.exceptions import Unresolvable
+
+    from clio_agent.gact.builtin_boundary import BuiltinBoundary
+
+    def no_network(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Built-in validation attempted a network connection")
+
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    boundary = BuiltinBoundary(SimpleNamespace(), authorize=lambda _submission: None)
+    tool = SimpleNamespace(
+        name="schema_probe",
+        format_as_litellm_function_call=lambda: {
+            "function": {
+                "parameters": {
+                    "type": "object",
+                    "properties": {"value": {"$ref": "https://example.invalid/never.json"}},
+                }
+            }
+        },
+    )
+    with pytest.raises(Unresolvable):
+        await boundary.call(tool, {"value": {}}, contextvars.copy_context())
+
+
+def test_nullable_tool_schema_rejects_remote_references_without_network(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Nullable-argument inspection uses the same non-retrieving schema registry."""
+    import socket
+
+    import pytest
+    from referencing.exceptions import Unresolvable
+
+    from clio_agent.gact.agents.dspy_native_tool import ClioNativeTool
+
+    def no_network(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Nullable schema inspection attempted a network connection")
+
+    def optional(value: object = None) -> object:
+        return value
+
+    monkeypatch.setattr(socket, "create_connection", no_network)
+    with pytest.raises(Unresolvable):
+        ClioNativeTool(optional, args={"value": {"$ref": "https://example.invalid/never.json"}})
 
 
 def test_b5_sse_streams_are_never_resumed_only_reissued() -> None:

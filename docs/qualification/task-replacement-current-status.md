@@ -7,6 +7,63 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### October 17 — one coordinated regression correction pass
+
+The preceding pushed clio-agent head is `c1107f5e56d894839f5f4367f88a49837d671043`.
+Its completed CI run `39032665548` reports 12,226 passes, 234 failures, one error
+and 54 skipped tests on Python 3.14. This remains a failed regression baseline.
+The human directed one pass over the full failure set before another push/CI run;
+this batch is the coordinated follow-up. Its new CI result remains pending.
+No local behavioral tests or new live family ran during this pass.
+
+The working ledger covers all 240 original failed/error outcomes, plus newly
+observed failures. A constructed correction is not an executed pass. Shared
+corrections address application-lifespan fixtures, asynchronous MCP dispatch,
+CLI-only inline budgets, queue/result wire compatibility, real-loop input
+ownership, and source discovery occupying the Core writer's I/O resource.
+Source discovery now uses the existing finite SDK I/O helper; it adds no registry,
+scheduler or executor pool. A failed release callback no longer strands later
+retirement callbacks. Native SDK lifespan entry/exit remains in one application
+task, allowing health to serve while Core attaches and refusing premature work.
+
+All 240 original failure/error obligations have a review disposition: 227 have
+constructed direct/shared/mapped corrections, seven remain unresolved, and six
+passed at the previous pushed head. These are review dispositions, not new test
+results. Of two newly observed failures, the shared admission-retirement helper
+addresses one; the 0.2-second progressing-turn failure remains unresolved.
+
+The seven original unresolved cases are the native 1,005-message I/O stall, two
+goal-command HTTP 500s, context-only busy feedback failing to redrive, cancellation
+publishing its envelope before the held-worker assertion, the child Stop hook
+timeout, and the late-input budget callback timeout. Response/callback diagnostics
+are improved where the previous failure hid its exception. None is counted fixed.
+
+Static checks are separate evidence: Mypy passes all 29 changed production files;
+Ruff lint/format passes all 148 changed/new Python files. Removal/class/size
+guards and the diff check pass. No timeout
+or skip decorator changed. Two assertion-count reductions explicitly retire
+obsolete authority: the removed workspace-wide execution lease and optional-file
+fallback after confirmed Core erasure. Replacement assertions require session
+ownership, finite blueprint preparation and canonical erasure visibility. They
+do not weaken the physical-retirement, persistence or retained-work obligations.
+The native-call failure and remaining regressions are not represented as
+corrected merely because adjacent files changed.
+The previous Astra/Fable source acceptance does not review this new dirty batch.
+
+The installation clarification authorizes the isolated verification service.
+R184's API/private-runtime processes still remain in shutdown; the specific
+force-close request is pending under the plan's explicit-human-force-close rule.
+No installation, process force-close or cleanup completion is claimed. The daily
+Desktop, authentication, defaults, dependency tuple, released pins, GACT and
+clio-core library remain unchanged. The next live launch uses the managed server
+shutdown path after existing custody is resolved.
+
+Working records live inside the existing D: qualification checkout at
+`.pytest-runtime/static/regression-batch-progress.json` and
+`regression-batch-static-audit.json`, with the explicit mapping in
+`task-batch-review-map.py`. Disposable analysis helpers and receipts are
+registered there; no source archive, new environment or new service was created.
+
 ### October 17 morning checkpoint — failing baseline, live hold
 
 Initial feature implementation is done. Regression testing has begun and its

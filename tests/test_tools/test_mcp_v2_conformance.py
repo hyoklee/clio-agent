@@ -88,6 +88,7 @@ from clio_agent.tools.mcp_task_routing import (
     resolve_namespace_route,
 )
 from tests._scripted_engine import calls, scripted_lm
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
 from .mcp_exerciser import (
     EXERCISER_NAMESPACE,
@@ -1307,7 +1308,8 @@ async def test_declared_path_ui_resource_admits_and_serves_through_the_apps_host
         with TestClient(app, base_url="http://127.0.0.1:8100") as client:
             sid = client.post("/v1/sessions", json={"title": "C1-S3"}).json()["id"]
 
-            with _gact_app_context(app), _tool_session_context(sid):
+            record_assignment_fixture(app, sid)
+            with _gact_app_context(app), _tool_session_context(sid), active_turn_fixture(app, sid):
                 # (2) must NOT raise (MCPAppAdmissionError would fire the
                 # mcp_app_admission_failed log path in execution.py's caller;
                 # calling the observer directly here, a raise IS the failure).
@@ -1404,7 +1406,8 @@ async def test_ui_bearing_result_survives_the_proxy_relay_to_the_apps_host(
         app = build_app(sessions_path=tmp_path / "sessions.json", agent=agent)
         with TestClient(app, base_url="http://127.0.0.1:8100") as client:
             sid = client.post("/v1/sessions", json={"title": "C1-S3-proxy"}).json()["id"]
-            with _gact_app_context(app), _tool_session_context(sid):
+            record_assignment_fixture(app, sid)
+            with _gact_app_context(app), _tool_session_context(sid), active_turn_fixture(app, sid):
                 app.state.pending_mcp_app_observer(
                     f"{namespace}_ui_echo",
                     {"payload": "proxied"},
@@ -1504,7 +1507,8 @@ async def test_ui_bearing_call_auto_fires_the_production_observer_hook(
             # current_tool_runtime() resolver (build_app ->
             # set_tool_runtime_resolver), bound under the exact context
             # managers a live turn binds around a tool call.
-            with _gact_app_context(app), _tool_session_context(sid):
+            record_assignment_fixture(app, sid)
+            with _gact_app_context(app), _tool_session_context(sid), active_turn_fixture(app, sid):
                 model_text = executor.call_tool(f"{namespace}_ui_echo", {"payload": "auto"})
 
             assert model_text == "ui:auto"
@@ -1652,7 +1656,8 @@ async def test_stale_listing_cache_entry_silently_defeats_the_ui_meta_wiring(
             app.state.pending_tool_observer = lambda *a, **k: None
             app.state.pending_permission_gate = lambda *a, **k: "allow"
 
-            with _gact_app_context(app), _tool_session_context(sid):
+            record_assignment_fixture(app, sid)
+            with _gact_app_context(app), _tool_session_context(sid), active_turn_fixture(app, sid):
                 # F3 (Opus review, C1-S4): an ORDINARY (non-App) tool call
                 # through this SAME auto-firing path -- diagnosability of the
                 # exact #1308 live symptom is the point of the typed reasons

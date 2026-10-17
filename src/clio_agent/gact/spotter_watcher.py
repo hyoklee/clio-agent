@@ -202,13 +202,21 @@ def _live_watcher_tasks(app: "FastAPI", parent_session_id: str) -> list[TaskSnap
         for handle in history.resource_handles("spotter:" + parent_session_id)
         if (task := history.task_snapshot(handle)) is not None and task.kind == "Subagent"
     }
-    return [
+    candidates = [
         task
         for sid in sorted(sessions)
         if (task := history.latest_assignment(sid)) is not None
         and task.cancellation_requested_at is None
         and task.status != "cancelled"
     ]
+    live = []
+    for task in candidates:
+        try:
+            app.state.conversations.require_admission(task)
+        except ValueError:
+            continue  # A cancellation hold closes admission before its Core write completes.
+        live.append(task)
+    return live
 
 
 def ensure_spotter_watcher(app: "FastAPI", session: "Session") -> TaskSnapshot | None:

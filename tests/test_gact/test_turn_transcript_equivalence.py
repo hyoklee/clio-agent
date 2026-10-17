@@ -660,9 +660,11 @@ def test_transcript_registry_closes_before_persist_can_release_the_gil(
     observed: list[bool] = []
     real_persist = turn_finalize_module.persist_finalized_message
 
-    def _record_registry_state_then_persist(app: Any, session_id: str, message: Any) -> None:
+    def _record_registry_state_then_persist(
+        app: Any, session_id: str, message: Any, **kwargs: Any
+    ) -> bool:
         observed.append(app.state.turn_transcripts.get(session_id) is None)
-        real_persist(app, session_id, message)
+        return real_persist(app, session_id, message, **kwargs)
 
     monkeypatch.setattr(
         turn_finalize_module, "persist_finalized_message", _record_registry_state_then_persist

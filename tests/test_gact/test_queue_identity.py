@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
-from clio_agent.gact.types import PostMessageRequest
+from clio_agent.gact.types import Part, PostMessageRequest
 from tests.test_gact.test_post_messages import FakeClioAgent
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
@@ -47,7 +47,7 @@ def test_different_queue_keys_cannot_accept_the_same_client_message_id(
         endpoint, json={"text": "second", "client_message_id": "shared", "idempotency_key": "two"}
     )
     assert refused.status_code == 409, refused.text
-    assert refused.json()["detail"]["error"] == "client_message_id_conflict"
+    assert refused.json()["error"]["error"] == "client_message_id_conflict"
     assert _app(client).state.task_history.pending_mail(sid) == before
     assert client.get(endpoint).json()["queued_messages"] == [original.json()]
     replay = client.post(
@@ -225,7 +225,8 @@ def test_promotion_rechecks_identity_after_an_intervening_public_acceptance(
                 accepted = client.post(
                     f"/v1/sessions/{sid}/messages", json={"text": "Intervening human input"}
                 )
-            assert accepted.status_code == 200, accepted.text
+            assert accepted.status_code == 202, accepted.text
+            assert accepted.json()["task_handle"]
             inserted.extend(client.get(f"/v1/sessions/{sid}/messages").json()["messages"])
         return prepared
 
@@ -234,7 +235,7 @@ def test_promotion_rechecks_identity_after_an_intervening_public_acceptance(
         endpoint + "/" + queued["id"] + "/promote", json={"revision": queued["revision"]}
     )
     assert refused.status_code == 409, refused.text
-    assert refused.json()["detail"]["error"] == "client_message_id_conflict"
+    assert refused.json()["error"]["error"] == "client_message_id_conflict"
     assert inserted and client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == inserted
     assert client.get(endpoint).json()["queued_messages"] == [queued]
     assert not _app(client).state.task_history.acknowledged_notifications(sid)
@@ -265,7 +266,97 @@ def test_legacy_transcript_identity_cannot_be_replaced_by_new_acceptance(
         f"/v1/sessions/{sid}/messages", json={"text": "Would rewrite existing history"}
     )
     assert refused.status_code == 409, refused.text
-    assert "without a confirmed acceptance" in refused.json()["detail"]
+    assert "without a confirmed acceptance" in refused.json()["error"]["message"]
     assert client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == before
     assert not app.state.task_history.pending_mail(sid)
     assert app.state.task_history.latest_assignment(sid) == assignment
+
+
+@pytest.mark.parametrize("key", ["idempotency_key", "client_message_id"])
+def test_queue_replay_returns_the_accepted_revision_before_resolving_references_again(
+    paused: tuple[TestClient, str], monkeypatch: pytest.MonkeyPatch, key: str
+) -> None:
+    """Replay preserves accepted identity even after an edit or reference expiry."""
+    from clio_agent.gact.routes import mailbox
+
+    client, sid = paused
+    endpoint = f"/v1/sessions/{sid}/queued-messages"
+    request = {"text": "original", key: "retained"}
+    accepted = client.post(endpoint, json=request)
+    assert accepted.status_code == 201, accepted.text
+    row = accepted.json()
+    edited = client.patch(
+        endpoint + "/" + row["id"], json={"revision": row["revision"], "text": "edited"}
+    )
+    assert edited.status_code == 200, edited.text
+
+    def refuse_resolution(*_args: Any, **_kwargs: Any) -> list[Part]:
+        raise AssertionError("An accepted request must not be resolved or accepted twice")
+
+    monkeypatch.setattr(mailbox, "authorize_context_reference_parts_sync", refuse_resolution)
+    replay = client.post(endpoint, json=request)
+    assert replay.status_code == 201, replay.text
+    assert replay.json() == edited.json()
+    assert client.get(endpoint).json()["queued_messages"] == [edited.json()]
+    assert not _app(client).state.task_history.acknowledged_notifications(sid)
+    changed = client.post(endpoint, json={**request, "text": "different submission"})
+    if key == "idempotency_key":
+        assert changed.status_code == 201 and changed.json() == edited.json()
+    else:
+        assert changed.status_code == 409, changed.text
+
+
+@pytest.mark.parametrize("operation", ["create", "edit"])
+@pytest.mark.parametrize("change", ["session", "workspace_root"])
+def test_queue_reference_preflight_cannot_commit_after_its_workspace_changes(
+    paused: tuple[TestClient, str],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    change: str,
+) -> None:
+    """Authorization of one workspace cannot admit content into a different scope."""
+    from clio_agent.gact.routes import mailbox
+
+    client, sid = paused
+    app = _app(client)
+    root = tmp_path / "original"
+    root.mkdir()
+    (root / "input.txt").write_text("private original workspace", encoding="utf-8")
+    app.state.workspaces.update("ws_default", root_path=str(root))
+    target = app.state.workspaces.create(name="replacement", root_path=str(tmp_path / "other"))
+    endpoint = f"/v1/sessions/{sid}/queued-messages"
+    before: list[dict[str, Any]] = []
+    body: dict[str, Any] = {
+        "parts": [{"type": "context_ref", "ref_kind": "workspace_file", "ref_id": "input.txt"}]
+    }
+    if operation == "edit":
+        accepted = client.post(endpoint, json={"text": "retain this draft"})
+        assert accepted.status_code == 201, accepted.text
+        before = [accepted.json()]
+        endpoint += "/" + before[0]["id"]
+        body["revision"] = before[0]["revision"]
+    original = mailbox.authorize_context_reference_parts_sync
+    resolved: list[Part] = []
+
+    def change_after_authorization(app: Any, session: Any, parts: list[Part]) -> list[Part]:
+        canonical = original(app, session, parts)
+        resolved.extend(canonical)
+        if change == "session":
+            app.state.sessions.update(sid, workspace_id=target.id)
+        else:
+            app.state.workspaces.update("ws_default", root_path=target.root_path)
+        return canonical
+
+    monkeypatch.setattr(
+        mailbox, "authorize_context_reference_parts_sync", change_after_authorization
+    )
+    response = (
+        client.post(endpoint, json=body)
+        if operation == "create"
+        else client.patch(endpoint, json=body)
+    )
+    assert resolved and resolved[0].revision.startswith("sha256:")
+    assert response.status_code == 409, response.text
+    assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == before
+    assert not app.state.task_history.acknowledged_notifications(sid)

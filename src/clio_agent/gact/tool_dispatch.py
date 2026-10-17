@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from collections.abc import Coroutine
+from collections.abc import Callable, Coroutine
 from concurrent.futures import Future
 from concurrent.futures import TimeoutError as FutureTimeout
 from typing import Any
@@ -62,11 +62,10 @@ async def run_owned_callable(
     return await asyncio.shield(result)
 
 
-def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, Any, Any]) -> Any:
-    """Stop a waiter cooperatively and retain its owned thread until cleanup exits."""
-    from clio_agent.agent import cancellation_requested
-    from clio_agent.gact.agents.clio_react import _turn_cancelled
-
+def _start_application_call(
+    loop: asyncio.AbstractEventLoop, work: Coroutine[Any, Any, Any]
+) -> tuple[Future[Any], threading.Event, Callable[[], None]]:
+    """Share the existing RPC's actual-exit proof between sync and async callers."""
     retired = threading.Event()
     cancellation = threading.Event()
     result: Future[Any] = Future()
@@ -104,7 +103,24 @@ def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, An
         if running is not None and not running.done():
             running.cancel()
 
-    loop.call_soon_threadsafe(start)
+    def request_cancel() -> None:
+        cancellation.set()
+        loop.call_soon_threadsafe(cancel)
+
+    try:
+        loop.call_soon_threadsafe(start)
+    except RuntimeError:
+        work.close()
+        raise
+    return result, retired, request_cancel
+
+
+def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, Any, Any]) -> Any:
+    """Stop a waiter cooperatively and retain its owned thread until cleanup exits."""
+    from clio_agent.agent import cancellation_requested
+    from clio_agent.gact.agents.clio_react import _turn_cancelled
+
+    result, retired, request_cancel = _start_application_call(loop, work)
     stopped = False
     while True:
         try:
@@ -115,8 +131,7 @@ def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, An
         except FutureTimeout:
             if cancellation_requested() and not stopped:
                 stopped = True
-                cancellation.set()
-                loop.call_soon_threadsafe(cancel)
+                request_cancel()
         except BaseException as error:
             # ConcurrentFuture.cancel() acknowledges cancellation before the
             # application coroutine unwinds. Its actual exit is the boundary.
@@ -125,3 +140,24 @@ def call_on_application(loop: asyncio.AbstractEventLoop, work: Coroutine[Any, An
             if stopped:
                 raise _turn_cancelled() from error
             raise
+
+
+async def await_on_application(
+    loop: asyncio.AbstractEventLoop, work: Coroutine[Any, Any, Any]
+) -> Any:
+    """Await the same RPC retirement without occupying a thread or default executor."""
+    result, _retired, request_cancel = _start_application_call(loop, work)
+    waiter = asyncio.wrap_future(result)
+    stopped = False
+    while not waiter.done():
+        try:
+            await asyncio.wait({waiter})
+        except asyncio.CancelledError:
+            if not stopped:
+                stopped = True
+                request_cancel()
+    if stopped:
+        if not waiter.cancelled():
+            waiter.exception()
+        raise asyncio.CancelledError
+    return await waiter

@@ -386,14 +386,18 @@ async def test_stop_approval_uses_captured_assignment_and_cancellation_does_not_
     app, owner, root, original, handle = await prepared(arc, tmp_path, monkeypatch, event="Stop")
     sid = root.owner.session_id
     calls = []
+    completion_applied = asyncio.Event()
 
     async def completed(
         session: str, assignment: str, *, context_epoch: str, completion: DeferredCompletion
     ) -> None:
         assert context_epoch == ""
-        assert owner.history.read_content(completion.result) == {"answer": "Approved exact output"}
+        assert await owner.history.io.run(owner.history.read_content, completion.result) == {
+            "answer": "Approved exact output"
+        }
         assert not completion.failed
         calls.append((session, assignment))
+        completion_applied.set()
 
     monkeypatch.setattr(owner, "complete_deferred", completed)
     try:
@@ -405,6 +409,8 @@ async def test_stop_approval_uses_captured_assignment_and_cancellation_does_not_
         await asyncio.sleep(0)
         if owner._controls:
             await asyncio.gather(*tuple(owner._controls.values()))
+        if decision == "allow":
+            await asyncio.wait_for(completion_applied.wait(), 5)
         pending = await asyncio.to_thread(owner.history.pending_mail, sid)
         resumes = [item for item in pending if item.id.startswith("hook-resume:")]
         assert len(resumes) == (1 if decision == "deny" else 0)

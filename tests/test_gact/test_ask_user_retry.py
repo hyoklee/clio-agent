@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
@@ -53,14 +54,16 @@ class _AskUserAgent:
         if len(self.questions) == 1:
             app = context.active_app()
             assert app is not None
-            app.state.builtin_boundary.bind(build_ask_user_tool()).func(
-                question="Which dataset should I inspect?",
-                kind="choice",
-                options=[
-                    {"label": "Small", "value": "small"},
-                    {"label": "Large", "value": "large"},
-                ],
-                allow_freeform=False,
+            asyncio.run(
+                app.state.builtin_boundary.bind(build_ask_user_tool()).acall(
+                    question="Which dataset should I inspect?",
+                    kind="choice",
+                    options=[
+                        {"label": "Small", "value": "small"},
+                        {"label": "Large", "value": "large"},
+                    ],
+                    allow_freeform=False,
+                )
             )
             return type(
                 "Prediction",
@@ -117,8 +120,10 @@ def _ask_question(
     else:
         record_assignment_fixture(app, sid)
         with active_turn_fixture(app, sid):
-            accepted = app.state.builtin_boundary.bind(build_ask_user_tool()).func(
-                question=prompt, kind=kind, options=options, allow_freeform=False, reason=reason
+            accepted = asyncio.run(
+                app.state.builtin_boundary.bind(build_ask_user_tool()).acall(
+                    question=prompt, kind=kind, options=options, allow_freeform=False, reason=reason
+                )
             )
         assert accepted["accepted"] is True and accepted["kind"] == "Question"
         handle = accepted["handle"]

@@ -160,7 +160,12 @@ class TurnRunner:
                                     self._turns.pop(sid)
                                 callbacks = self._released.pop(sid, [])
                             for callback in callbacks:
-                                callback()
+                                try:
+                                    callback()
+                                except Exception:
+                                    logger.exception(
+                                        "Conversation release callback failed session=%s", sid
+                                    )
                 # Admission and busy-to-idle are serialized by this same pump.
                 # An eligible closing-turn arrival is considered even without a
                 # later user request. The engine returns None for every veto.

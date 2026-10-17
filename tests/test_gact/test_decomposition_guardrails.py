@@ -193,7 +193,8 @@ from clio_agent.gact.app import build_app
 # owned by routes/knowledge.py and registered from routes/connected_storage.py.
 # Integrated upstream and canonical task routes; special Relay routes are removed.
 # Measured on the production factory: 387 unique pairs, including legacy receipt GET.
-EXPECTED_ROUTE_METHOD_PAIRS = 387
+# CI f7a4d00e measured 391; the source-operation cancellation delegate adds one.
+EXPECTED_ROUTE_METHOD_PAIRS = 392
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
@@ -238,6 +239,10 @@ def test_build_app_registers_expected_route_count() -> None:
         ("/v1/sessions/{sid}/tasks/mailbox", "GET"),
         ("/v1/sessions/{sid}/tasks/wait", "POST"),
         ("/v1/sessions/{sid}/tasks/cancel", "POST"),
+        ("/v1/sessions/{sid}/pending-steers", "GET"),
+        ("/v1/sessions/{sid}/pending-steers/{message_id}", "DELETE"),
+        ("/v1/sessions/{sid}/message-state", "GET"),
+        ("/v1/workspaces/{wid}/sources/{source_id}/operations/{handle}/cancel", "POST"),
         ("/v1/sessions/{sid}/legacy-transcript", "GET"),
     } <= set(route_pairs)
     assert ("/v1/infrastructure/models/details", "GET") in route_pairs

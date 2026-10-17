@@ -184,8 +184,7 @@ def test_a_failed_clio_core_erase_fails_the_delete_typed_and_a_retry_finishes_it
         if file_mode:
             # The file copy is untouched: nothing but clio-core was changed.
             assert (tmp_path / "messages" / f"{sid}.json").exists()
-            assert _ids(client, sid) == before
-        elif failure == "switch":
+        if failure == "switch":
             # Nothing switched: clio-core still holds the whole transcript.
             assert _ids(client, sid) == before
         else:

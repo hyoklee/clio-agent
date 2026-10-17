@@ -590,13 +590,10 @@ def instrument_tools(tools: Iterable[Any]) -> list[Any]:
 
 
 def _instrument_tool(tool: Any) -> Any:
-    from clio_agent.gact import context
+    from clio_agent.gact.builtin_boundary import BuiltinBoundary
 
-    boundary = getattr(getattr(context.active_app(), "state", None), "builtin_boundary", None)
     if getattr(getattr(tool, "func", None), "_clio_builtin", False):
-        if boundary is None:
-            raise RuntimeError("Built-in MCP boundary is not ready")
-        tool = boundary.bind(tool)
+        tool = BuiltinBoundary.bind(tool)
     func = getattr(tool, "func", None)
     name = str(getattr(tool, "name", "") or "").strip()
     if not callable(func) or not name:

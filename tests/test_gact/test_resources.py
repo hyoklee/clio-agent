@@ -572,8 +572,13 @@ def test_message_resource_ref_is_workspace_scoped_ready_and_server_normalized(
             },
         )
         assert accepted.status_code == 202, accepted.text
+        from tests.test_gact.conftest import settle_turn_slot
+
+        settle_turn_slot(client, sid)
+        accepted_id = accepted.json()["message_id"]
         messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        user_message = next(row for row in messages if row["id"] == "msg_resource_ref")
+        user_message = next(row for row in messages if row["id"] == accepted_id)
+        assert user_message["metadata"]["client_message_id"] == "msg_resource_ref"
         reference = next(part for part in user_message["parts"] if part["type"] == "resource_ref")
         assert reference["name"] == "truth.md"
         assert reference["media_type"] == "text/markdown"
@@ -584,7 +589,7 @@ def test_message_resource_ref_is_workspace_scoped_ready_and_server_normalized(
             "records"
         ]
         assert len(deliveries) == 1
-        assert deliveries[0]["message_id"] == "msg_resource_ref"
+        assert deliveries[0]["message_id"] == accepted_id
         assert deliveries[0]["resource_id"] == ready["id"]
         assert deliveries[0]["representation"] == "bounded_tools"
 
@@ -1247,7 +1252,11 @@ def test_resource_context_is_private_from_transcript_and_points_agent_to_tools(
         assert "Filesystem tools may read or transform that copy" in prompt
 
         messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        user = next(row for row in messages if row["id"] == "resource_private_context")
+        user = next(
+            row
+            for row in messages
+            if row["metadata"].get("client_message_id") == "resource_private_context"
+        )
         visible_text = "\n".join(
             str(part.get("text") or "") for part in user["parts"] if part["type"] == "text"
         )

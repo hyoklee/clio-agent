@@ -22,6 +22,7 @@ The suite-wide live==reload fold property (design §8.2b) lives in
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -583,9 +584,13 @@ class _RollupAgent:
         from clio_agent.gact.task_declarations import build_spawn_runtime_tools, build_task_tools
 
         spawn = build_spawn_runtime_tools(self, type("Definition", (), {"fanout": {}})())[0]
-        receipt = app.state.builtin_boundary.bind(spawn).func(agent="main", task="make plots")
+        receipt = asyncio.run(
+            app.state.builtin_boundary.bind(spawn).acall(agent="main", task="make plots")
+        )
         wait = next(tool for tool in build_task_tools() if tool.name == "wait_tasks")
-        result = app.state.builtin_boundary.bind(wait).func(tasks=receipt["handle"], timeout_s=30.0)
+        result = asyncio.run(
+            app.state.builtin_boundary.bind(wait).acall(tasks=receipt["handle"], timeout_s=30.0)
+        )
         assert not result["pending"] and result["outcomes"][0]["status"] == "completed"
         return _Pred(answer="parent turn done", selected_expert="")
 

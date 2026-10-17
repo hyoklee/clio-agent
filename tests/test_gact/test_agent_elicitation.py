@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from clio_agent.gact import agent_elicitation as ae
+from clio_agent.gact.agent_elicitation_reply import answer_field_text
 from clio_agent.gact.parts import Part
 from clio_agent.gact.types import Message
 
@@ -284,7 +285,7 @@ def test_answer_field_text_ignores_reasoning_and_reads_only_the_answer_part() ->
         ],
     )
     app = SimpleNamespace(state=SimpleNamespace(messages={"sid1": [msg]}))
-    assert ae._answer_field_text(app, "sid1", "msg_a") == answer_json
+    assert answer_field_text(app, "sid1", "msg_a") == answer_json
 
 
 def test_answer_field_text_is_untruncated_behind_a_long_reasoning_block() -> None:
@@ -306,7 +307,7 @@ def test_answer_field_text_is_untruncated_behind_a_long_reasoning_block() -> Non
     )
     app = SimpleNamespace(state=SimpleNamespace(messages={"sid1": [msg]}))
 
-    result = ae._answer_field_text(app, "sid1", "msg_b")
+    result = answer_field_text(app, "sid1", "msg_b")
 
     assert result == answer_json
     parsed = ae.parse_agent_reply(result)
@@ -315,12 +316,12 @@ def test_answer_field_text_is_untruncated_behind_a_long_reasoning_block() -> Non
 
 def test_answer_field_text_unknown_message_ref_is_empty() -> None:
     app = SimpleNamespace(state=SimpleNamespace(messages={"sid1": []}))
-    assert ae._answer_field_text(app, "sid1", "msg_missing") == ""
+    assert answer_field_text(app, "sid1", "msg_missing") == ""
 
 
 def test_answer_field_text_empty_ref_is_empty() -> None:
     app = SimpleNamespace(state=SimpleNamespace(messages={}))
-    assert ae._answer_field_text(app, "sid1", "") == ""
+    assert answer_field_text(app, "sid1", "") == ""
 
 
 def test_apply_session_tool_allowlist_is_a_noop_without_the_stamped_metadata() -> None:
@@ -331,7 +332,7 @@ def test_apply_session_tool_allowlist_is_a_noop_without_the_stamped_metadata() -
     from clio_agent.gact.agents import resolution as _resolution
     from clio_agent.gact.types import AgentDef
 
-    app = SimpleNamespace(
+    app: Any = SimpleNamespace(
         state=SimpleNamespace(
             sessions=_FakeSessions(
                 {"sid1": SimpleNamespace(metadata={}, agent=SimpleNamespace(id="main"))}

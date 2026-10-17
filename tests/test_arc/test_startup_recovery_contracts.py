@@ -142,7 +142,9 @@ async def test_failed_startup_never_admits_a_successor_without_physical_proof(
             owner.sessions = app.state.sessions = await asyncio.to_thread(
                 SessionStore, path=tmp_path / "sessions.json"
             )
+            await owner.history.io.close()
             owner.history = app.state.task_history = await asyncio.to_thread(TaskHistory, arc)
+            await owner.history.io.run(owner.history.restore)
             owner.mail.history = owner.recovery.history = owner.history
             restored = owner.sessions.get(sid)
             assert restored is not None and restored.creation_hook_state == "started"

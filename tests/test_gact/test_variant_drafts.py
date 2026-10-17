@@ -88,8 +88,8 @@ def _app(sessions_path: Path, *, lifespans: ExitStack) -> tuple[Any, ARCMemory, 
     return app, arc, events
 
 
-@pytest.fixture
-def world(tmp_path: Path) -> Iterator[World]:
+@pytest.fixture(name="world")
+def variant_world(tmp_path: Path) -> Iterator[World]:
     with ExitStack() as lifespans:
         app, arc, events = _app(tmp_path / "sessions.json", lifespans=lifespans)
         sid = app.state.sessions.create(workspace_id="ws_default", title="drafts").id
@@ -111,6 +111,7 @@ def _bind(app: Any, sid: str, turn: str) -> list[Any]:
         assignment_handle=current.handle,
         context_epoch=details.context_epoch,
     )
+    ctx.set_primary_agent_id(SCOPE)
     return [
         ctx.set_app(app),
         ctx.set_session_id(sid),
@@ -150,7 +151,10 @@ def _surface(app: Any, sid: str, turn: str, monkeypatch: pytest.MonkeyPatch) -> 
 def _answer(app: Any, question: Any, pick: str, comment: str = "") -> None:
     """Confirm the human reply through the sole Core Question owner."""
     app.state.questions.answer(
-        question.id, QuestionReply(answer=comment, selected_options=(pick,), answered_by="human")
+        question.id,
+        QuestionReply(
+            answer=comment, selected_options=(pick,), responder_human=app.state.human_principal
+        ),
     )
 
 
@@ -284,7 +288,11 @@ def test_lm_judged_refine_tells_the_next_try_its_advice(world: World) -> None:
 def test_n_is_capped_by_config(world: World, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLIO_VARIANTS_MAX_N", "2")
     lm, engine = routed_lm(
-        {SCOPE: [_draft(5)], RUN0: [Reply(text="Draft A")], RUN1: [Reply(text="Draft B")]}
+        {
+            SCOPE: [_draft(5), Reply(text="Choose a draft; I can continue independent work.")],
+            RUN0: [Reply(text="Draft A")],
+            RUN1: [Reply(text="Draft B")],
+        }
     )
     _forward(world.app, world.sid, lm, ASK, "turn_1")
 
@@ -299,7 +307,7 @@ def test_n_is_capped_by_config(world: World, monkeypatch: pytest.MonkeyPatch) ->
 def test_five_poems_are_five_single_candidate_attempts(world: World) -> None:
     """A plural request stays intact, while every real try receives a singular boundary."""
     question = "Make drafts with the tool of 5 different poems for a friend."
-    script = {SCOPE: [_draft(5)]}
+    script = {SCOPE: [_draft(5), Reply(text="Choose a draft; I can continue independent work.")]}
     for index in range(5):
         script[f"{SCOPE}#run{index}"] = [Reply(text=f"Poem {index + 1}")]
     lm, engine = routed_lm(script)

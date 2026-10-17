@@ -535,8 +535,10 @@ async def spawn(
             return parent.handle
 
     prepared_parent = await self.history.io.run(preflight)
+    from clio_agent.gact.off_loop import join_off_loop
+
     prepared_child = (
-        await self.history.io.run(self.prepare_child, caller.session_id, agent_id, target_scope)
+        await join_off_loop(self.prepare_child, caller.session_id, agent_id, target_scope)
         if prepared_parent is not None
         else None
     )

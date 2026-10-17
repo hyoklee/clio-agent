@@ -120,8 +120,9 @@ def test_default_field_arg_schema_matches_declared_outputs() -> None:
     """The tool schema still advertises every structured output to the model."""
     submit = _build(_DefaultedSig).tools["submit"]
 
-    assert set(submit.arg_types) == {"answer", "workflow_state"}
+    assert set(submit.arg_types) == {"answer", "workflow_state", "assignment_disposition"}
     assert submit.arg_types["workflow_state"] == dict[str, Any]
+    assert "assignment_disposition" not in _DefaultedSig.output_fields
 
 
 def test_prediction_carries_the_loop_messages() -> None:

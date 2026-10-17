@@ -129,7 +129,7 @@ def build_connected_data_connect_tool() -> Any:
     return native_tool(
         _native_connect,
         name="connected_data_connect",
-        desc="Connect and index an approved source folder. Returns an Indexing handle immediately; files are downloaded only by connected_data_download. Observe progress, wait explicitly, or continue independent work. Stop leaves accepted indexing running.",
+        desc="Connect and index an approved source folder. Returns an Indexing task handle immediately; files are downloaded only by connected_data_download. Observe progress, wait explicitly, or continue independent work. Stop leaves accepted indexing running.",
         args={
             "provider": {"type": "string", "description": "Provider reported by source status."},
             "root": {"type": "string", "description": "Requested folder or repository location."},

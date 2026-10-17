@@ -145,9 +145,11 @@ def test_globus_lost_submission_and_restart_reuse_the_native_job(
     assert persisted.native_request["submission_id"] == "unique-submission"
     assert persisted.native_job_id is None
     restarted = SourceStore(store.root)
-    restarted.recover()
+    before_restart = persisted
     persisted = restarted.get("operation", operation.id, TransferOperation)
-    assert persisted.state == "interrupted"
+    assert persisted == before_restart
+    assert len(client.requests) == 1, "Opening retained data must not replay a provider submission"
+    # An explicit caller chooses to reconcile with the original provider idempotency identity.
     operation = adapter.submit(restarted, persisted)
     assert client.requests[0] == client.requests[1]
     assert operation.native_job_id == "native-task"

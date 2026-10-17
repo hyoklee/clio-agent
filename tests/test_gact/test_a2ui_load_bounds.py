@@ -285,8 +285,8 @@ def test_sustained_distinct_component_ids_hit_the_merged_cap_and_refuse(
 
 def test_sustained_actions_keep_the_per_session_reason_ring_at_256(tmp_path: Path) -> None:
     app = _isolated_app(tmp_path)
-    _capture_inputs(app)
     with TestClient(app) as client:
+        _capture_inputs(app)
         session = app.state.sessions.create(workspace_id="ws_default", title="reason ring")
         sid = session.id
         app.state.a2ui_store.apply_batch(sid, _create_batch("ring_surface"))

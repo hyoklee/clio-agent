@@ -20,11 +20,11 @@ def test_http_startup_leaves_unused_providers_and_servers_unloaded(tmp_path: Pat
         "CLIO_ENV_FILE_LOADED": "1",
     }
     code = """
-import asyncio, json, sys
+import json, sys
 from clio_agent.gact.app import build_app
 app = build_app()
-from clio_agent.gact.server_boot import reconcile_connected_storage
-asyncio.run(reconcile_connected_storage(app))
+# Construction registers the routes; native SDK lifespans start only on app entry.
+assert not hasattr(app.state, 'native_tools')
 for name in (
     'googleapiclient.discovery', 'gdrive_fsspec',
     'clio_agent.tools.servers.fs_server', 'clio_agent.tools.servers.shell_server',

@@ -424,24 +424,19 @@ def test_create_into_spotter_ai_arms_when_the_declaration_resolves(
     sid = resp.json()["id"]
     tasks = _live_watcher_tasks(app, sid)
     assert len(tasks) == 1, tasks
-    assert app.state.sessions.get(tasks[0].owner.session_id).agent.id == "spotter_watcher"
+    assert app.state.sessions.get(tasks[0].owner.session_id).agent["id"] == "spotter_watcher"
     assert tasks[0].activity == "idle"
 
 
-def test_arming_without_an_installed_watcher_blueprint_is_unchanged(tmp_path: Path) -> None:
-    """No blueprint installed -> nothing declared -> nothing to resolve.
-
-    The gate refuses only a DECLARED-but-unresolvable server; a deployment that
-    declares none arms exactly as it did before (the shape every other
-    ``test_spotter_watcher.py`` case relies on).
-    """
-
+def test_arming_without_an_installed_watcher_blueprint_is_refused(tmp_path: Path) -> None:
+    """A missing executable watcher cannot leave an apparently protected session."""
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
-        resp = client.post("/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"})
-
-    assert resp.status_code == 200, resp.text
-    assert len(_live_watcher_tasks(app, resp.json()["id"])) == 1
+        response = client.post("/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"})
+        assert response.status_code == 422, response.text
+        assert response.json()["error"]["error"] == REFUSAL_WATCHER_UNMOUNTABLE
+        assert "not installed" in response.json()["error"]["message"]
+        assert app.state.sessions.list() == []
 
 
 # --------------------------------------------------------------------------- #

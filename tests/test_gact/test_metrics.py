@@ -36,6 +36,28 @@ class _FakeAgent:
         return _Pred()
 
 
+def test_command_confirmations_remain_counted_in_metrics_after_cache_rebuild() -> None:
+    from clio_agent.gact.metrics_counters import MetricsCounters
+    from clio_agent.gact.types import Message
+
+    answer = Message(
+        id="answer", session_id="session", role="assistant", created_at="t", updated_at="t"
+    )
+    confirmation = answer.model_copy(
+        update={"id": "confirmation", "metadata": {"synthetic": "command_result"}}
+    )
+    counters = MetricsCounters()
+    counters.add_messages("session", [answer, confirmation])
+    assert counters.message_total == 2
+    assert counters.role_counts() == {"assistant": 2}
+    assert counters.session_count("session") == 1
+    counters.set_session("session", [answer, confirmation])
+    assert counters.message_total == 2
+    assert counters.session_count("session") == 1
+    counters.remove_session("session")
+    assert counters.message_total == counters.session_count("session") == 0
+
+
 @pytest.fixture()
 def client(tmp_path: Path) -> Iterator[TestClient]:
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=_FakeAgent())

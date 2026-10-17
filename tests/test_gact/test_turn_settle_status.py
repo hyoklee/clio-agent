@@ -183,13 +183,15 @@ def test_settled_status_superseded_by_a_later_transition_is_dropped(tmp_path: Pa
         sid = app.state.sessions.create(workspace_id="ws", title="t").id
         app.state.sessions.update(sid, status="running")
         gate = asyncio.Event()
+        entered = asyncio.Event()
 
         async def turn() -> None:
             publish_turn_settled_status(app, sid, "idle")  # type: ignore[arg-type]
+            entered.set()
             await gate.wait()
 
         task = admit_segment(runner, turn(), sid=sid, turn_id="turn_a")
-        await asyncio.sleep(0)
+        await entered.wait()
         app.state.sessions.update(sid, status="cancelled")  # the cancel route, mid-tail
         gate.set()
         await task

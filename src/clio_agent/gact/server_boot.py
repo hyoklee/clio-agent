@@ -60,6 +60,14 @@ def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:
 logger = logging.getLogger(__name__)
 
 
+async def stop_producers(*tasks: asyncio.Task[Any] | None) -> None:
+    """Stop application input producers before task-owner settlement or failed-start exit."""
+    pending = [task for task in tasks if task is not None and not task.done()]
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 _PROCESS_ARC_LOCK = threading.Lock()
 
 

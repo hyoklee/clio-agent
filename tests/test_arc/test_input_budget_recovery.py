@@ -23,7 +23,8 @@ async def test_late_eligible_input_excludes_trigger_until_a_later_committed_iter
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
-    sid, processed = root.owner.session_id, asyncio.Event()
+    sid = root.owner.session_id
+    processed: asyncio.Future[None] = asyncio.get_running_loop().create_future()
     monkeypatch.setenv("CLIO_MODEL_TOOL_RESULT_CHARS", "300")
     marker = "DEFERRED-ORIGINAL-HUMAN-INPUT"
     observed: list[str] = []
@@ -93,8 +94,12 @@ async def test_late_eligible_input_excludes_trigger_until_a_later_committed_iter
             observed.append(final)
             runs.append(segment.assignment.handle)
 
-        await asyncio.to_thread(iterations)
-        processed.set()
+        try:
+            await asyncio.to_thread(iterations)
+        except Exception as error:
+            processed.set_exception(error)
+            raise
+        processed.set_result(None)
         return ConversationOutcome({"answer": "Both inputs retained"}, disposition="yield")
 
     await asyncio.to_thread(prepare)
@@ -103,7 +108,7 @@ async def test_late_eligible_input_excludes_trigger_until_a_later_committed_iter
     owner.recovery.on_ready = None
     try:
         await accept(owner, sid, "trigger", marker)
-        await asyncio.wait_for(processed.wait(), 10)
+        await asyncio.wait_for(asyncio.shield(processed), 10)
         await idle(owner, sid)
         assert runs == [root.handle] and len(observed) == 1
     finally:

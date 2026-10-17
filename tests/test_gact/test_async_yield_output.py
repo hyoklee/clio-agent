@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
@@ -38,7 +39,9 @@ def test_question_tool_output_yields_without_an_empty_response_error(
             )
             arguments = {"question": "Which sample should I analyze?"}
             observer("ask_user", arguments, "started", None, None)
-            value = app.state.builtin_boundary.bind(build_ask_user_tool()).func(**arguments)
+            value = asyncio.run(
+                app.state.builtin_boundary.bind(build_ask_user_tool()).acall(**arguments)
+            )
             observer("ask_user", arguments, "completed", None, value)
             assert value["accepted"] and value["kind"] == "Question"
             handles.append(value["handle"])

@@ -190,6 +190,11 @@ class TaskAwareClient(Client):
         elicitation_handler: Any,
     ) -> TaskAwareClient:
         """Preserve configured SDK behavior; keep pinned client internals in this adapter."""
+        if any(
+            key.startswith("sampling_") and value is not None
+            for key, value in configured._session_kwargs.items()
+        ):
+            raise ValueError("Configured MCP sampling is unsupported by CLIO")
         client = cls(
             transport,
             on_task_accepted=on_task_accepted,
@@ -206,9 +211,6 @@ class TaskAwareClient(Client):
             mode=configured.mode,
             prior_discover=configured.prior_discover,
         )
-        client._session_kwargs["sampling_callback"] = configured._session_kwargs.get(
-            "sampling_callback"
-        )
         client._session_kwargs["list_roots_callback"] = configured._session_kwargs.get(
             "list_roots_callback"
         )
@@ -223,9 +225,6 @@ class TaskAwareClient(Client):
             "read_timeout_seconds"
         )
         client._session_kwargs["client_info"] = configured._session_kwargs.get("client_info")
-        client._session_kwargs["sampling_capabilities"] = configured._session_kwargs.get(
-            "sampling_capabilities"
-        )
         client._transport_options = copy.copy(configured._transport_options)
         return client
 

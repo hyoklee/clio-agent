@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from contextlib import AsyncExitStack
 from functools import partial
@@ -27,6 +28,36 @@ from clio_agent.gact.task_publication import subscription_caller
 logger = logging.getLogger(__name__)
 
 
+async def run_lifespan(
+    app: Any, readiness: asyncio.Future[None], stopping: asyncio.Event
+) -> tuple[BaseException, ...]:
+    """Own SDK entry and exit in one task while health can serve during Core attachment."""
+    try:
+        await start(app)
+    except BaseException as error:
+        try:
+            cleanup_errors = await close(app)
+        except BaseException as cleanup_error:
+            failure: BaseException = BaseExceptionGroup(
+                "Task runtime startup settlement failed", [error, cleanup_error]
+            )
+            readiness.set_exception(failure)
+            readiness.exception()
+            raise failure from None  # Do not release Core past unknown owner settlement.
+        failure = (
+            BaseExceptionGroup("Task runtime startup failed", [error, *cleanup_errors])
+            if cleanup_errors
+            else error
+        )
+        readiness.set_exception(failure)
+        readiness.exception()
+        logger.exception("Task runtime startup failed; durable acceptance unavailable")
+        return (failure,)
+    readiness.set_result(None)
+    await stopping.wait()
+    return await close(app)
+
+
 async def start(app: Any) -> None:
     """Attach one confirmed Core writer before exposing durable task acceptance."""
     from clio_agent.gact.server_boot import process_arc_off_loop
@@ -38,6 +69,7 @@ async def start(app: Any) -> None:
     history = getattr(app.state, "task_history", None)
     if history is None:
         history = TaskHistory(arc)
+        app.state.task_history = history  # Startup failure still owns and retires this writer.
         await history.io.run(history.restore)
     recovery = CoreRecovery(history)
     app.state.task_history, app.state.task_recovery = history, recovery
@@ -324,30 +356,18 @@ async def start(app: Any) -> None:
     history.observation_committed = task_changed
     stack = AsyncExitStack()
     app.state.task_resource_stack = stack
-    try:
-        native = NativeTools(
-            history, authorize, recovery, admission=conversations.require_admission
-        )
-        register_native_storage(native.roots["storage"], native.work["storage"], app, native=native)
-        app.state.native_tools = await stack.enter_async_context(native)
-        app.state.builtin_boundary = await stack.enter_async_context(
-            BuiltinBoundary(app, authorize)
-        )
-        await native.restore()
-        await app.state.external_tasks.restore()
-        conversations.start()
-        await conversations.restore()
-        if not history.requires_recovery:
-            await history.io.run(app.state.questions.restore)
-            await app.state.question_events.restore()
-            conversations.signal_pending()
-    except BaseException as error:
-        cleanup_errors = await close(app)
-        if cleanup_errors:
-            raise BaseExceptionGroup(
-                "Task runtime startup failed", [error, *cleanup_errors]
-            ) from None
-        raise
+    native = NativeTools(history, authorize, recovery, admission=conversations.require_admission)
+    register_native_storage(native.roots["storage"], native.work["storage"], app, native=native)
+    app.state.native_tools = await stack.enter_async_context(native)
+    app.state.builtin_boundary = await stack.enter_async_context(BuiltinBoundary(app, authorize))
+    await native.restore()
+    await app.state.external_tasks.restore()
+    conversations.start()
+    await conversations.restore()
+    if not history.requires_recovery:
+        await history.io.run(app.state.questions.restore)
+        await app.state.question_events.restore()
+        conversations.signal_pending()
 
 
 async def close(app: Any) -> tuple[BaseException, ...]:

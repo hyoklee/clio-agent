@@ -786,90 +786,81 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     provider_catalog_task = server_boot.start_provider_catalog(app)
 
+    runtime_stop = asyncio.Event()
+
+    runtime_task = asyncio.create_task(
+        task_runtime.run_lifespan(app, readiness, runtime_stop), name="clio-task-resources"
+    )
+    app.state.task_runtime_lifetime = runtime_task
     try:
-        await task_runtime.start(app)
-    except BaseException as error:
-        readiness.set_exception(error)
-        readiness.exception()  # observe failure even when construction has no readiness waiter
+        if not getattr(app.state, "server_boot", False):
+            await asyncio.shield(readiness)
+        yield
+    finally:
+        # Agent construction runs on an executor thread. Cancelling its asyncio task
+        # does not stop that thread, and Python waits for executor workers at process
+        # exit. Wake provider discovery before cancelling the task so a missing LM
+        # Studio instance cannot add its entire retry window to Desktop Quit.
         desktop_lifecycle.wake_for_shutdown()
-        producers = [item for item in (task, agent_task, provider_catalog_task) if item is not None]
-        for producer in producers:
-            producer.cancel()
-        await asyncio.gather(*producers, return_exceptions=True)
-        raise
-    readiness.set_result(None)
-    yield
 
-    # Agent construction runs on an executor thread. Cancelling its asyncio task
-    # does not stop that thread, and Python waits for executor workers at process
-    # exit. Wake provider discovery before cancelling the task so a missing LM
-    # Studio instance cannot add its entire retry window to Desktop Quit.
-    desktop_lifecycle.wake_for_shutdown()
-
-    # #1334: no request is served on this loop any more, so the teardown flushes below
-    # (the turn drain, the trace close) must LAND rather than be refused and dropped.
-    loop_guard.begin_server_loop_drain(app.state.mcp_app_loop)
-    await asyncio.to_thread(app.state.document_store.close)
-    # #948 S1 (#662): quiesce the internal turn-PRODUCERS (the scheduler tick, the
-    # agent-construction and lm-config tasks) BEFORE draining turns, so nothing can
-    # spawn a fresh turn into the drain window. The scheduler (the live post-yield
-    # producer) could otherwise fire mid-drain and leave a zombie turn the drain
-    # never saw (drain() re-snapshots too); the catalog re-probe loop stops here.
-    lm_config_task = getattr(app.state, "lm_config_task", None)
-    reprobe_task = getattr(app.state, "provider_catalog_reprobe_task", None)
-    for t in (task, agent_task, lm_config_task, provider_catalog_task, reprobe_task):
-        if t is None:
-            continue
-        if getattr(t, "done", lambda: False)():
-            continue
-        t.cancel()
-        try:
-            await t
-        except (asyncio.CancelledError, Exception):  # noqa: BLE001,S110 - shutdown task drain; cancellation/errors ignored on teardown
-            pass
-
-    # Settle turns and task owners while their durable stores are still alive.
-    task_cleanup_errors = await task_runtime.close(app)
-
-    # Release Core after verified worker retirement and before later executor joins.
-    await desktop_lifecycle.release_runtime_after_drain(app)
-
-    # MCP Apps may own browser attachments or other remote resources. Close
-    # every retained record while the exact originating MCP transports are
-    # still alive. A failure is logged and retained; the child server's own
-    # close_all lifespan remains the final process-level backstop below.
-    try:
-        await cleanup_all_mcp_apps(app)
-    except RuntimeError:
-        logger.exception(
-            "one or more MCP Apps failed explicit host cleanup; "
-            "child transport shutdown will run the server cleanup backstop"
+        # #1334: no request is served on this loop any more, so the teardown flushes below
+        # (the turn drain, the trace close) must LAND rather than be refused and dropped.
+        loop_guard.begin_server_loop_drain(app.state.mcp_app_loop)
+        await asyncio.to_thread(app.state.document_store.close)
+        # #948 S1 (#662): quiesce the internal turn-PRODUCERS (the scheduler tick, the
+        # agent-construction and lm-config tasks) BEFORE draining turns, so nothing can
+        # spawn a fresh turn into the drain window. The scheduler (the live post-yield
+        # producer) could otherwise fire mid-drain and leave a zombie turn the drain
+        # never saw (drain() re-snapshots too); the catalog re-probe loop stops here.
+        lm_config_task = getattr(app.state, "lm_config_task", None)
+        reprobe_task = getattr(app.state, "provider_catalog_reprobe_task", None)
+        await server_boot.stop_producers(
+            task, agent_task, lm_config_task, provider_catalog_task, reprobe_task
         )
-    try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(
-            None,
-            lambda: _release_owned_lm_studio_instance(app, raise_on_error=False),
-        )
-    except Exception:  # noqa: BLE001,S110 - best-effort LM-Studio instance release on shutdown
-        pass
-    # Drain + stop the off-loop semantic-trace writer so no events are lost on shutdown.
-    _trace_backend = getattr(app.state, "semantic_trace_backend", None)
-    _trace_close = getattr(_trace_backend, "close", None)
-    if callable(_trace_close):
+
+        # Settle turns and task owners while their durable stores are still alive.
+        runtime_stop.set()
+        task_cleanup_errors = await asyncio.shield(runtime_task)
+
+        # Release Core after verified worker retirement and before later executor joins.
+        await desktop_lifecycle.release_runtime_after_drain(app)
+
+        # MCP Apps may own browser attachments or other remote resources. Close
+        # every retained record while the exact originating MCP transports are
+        # still alive. A failure is logged and retained; the child server's own
+        # close_all lifespan remains the final process-level backstop below.
         try:
-            _trace_close()
-        except Exception:  # pragma: no cover - defensive shutdown cleanup  # noqa: BLE001,S110 - defensive shutdown cleanup
+            await cleanup_all_mcp_apps(app)
+        except RuntimeError:
+            logger.exception(
+                "one or more MCP Apps failed explicit host cleanup; "
+                "child transport shutdown will run the server cleanup backstop"
+            )
+        try:
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(
+                None,
+                lambda: _release_owned_lm_studio_instance(app, raise_on_error=False),
+            )
+        except Exception:  # noqa: BLE001,S110 - best-effort LM-Studio instance release on shutdown
             pass
-    provenance_wiring.close_artifact_backend(app)
-    # #900: explicit clean-shutdown teardown (promoted from atexit best-effort) — close
-    # the agent's MCP stdio executors + pooled SDK CLI transports now, with typed logging,
-    # off the event loop (thread joins). A HARD kill skips this; the Job Object / pdeathsig
-    # binding above is the backstop. The owner helper never raises.
-    _agent = getattr(app.state, "agent", None)
-    await desktop_lifecycle.finalize_desktop_shutdown(app, _agent)
-    if task_cleanup_errors:
-        raise BaseExceptionGroup("Task runtime cleanup failed", list(task_cleanup_errors))
+        # Drain + stop the off-loop semantic-trace writer so no events are lost on shutdown.
+        _trace_backend = getattr(app.state, "semantic_trace_backend", None)
+        _trace_close = getattr(_trace_backend, "close", None)
+        if callable(_trace_close):
+            try:
+                _trace_close()
+            except Exception:  # pragma: no cover - defensive shutdown cleanup  # noqa: BLE001,S110 - defensive shutdown cleanup
+                pass
+        provenance_wiring.close_artifact_backend(app)
+        # #900: explicit clean-shutdown teardown (promoted from atexit best-effort) — close
+        # the agent's MCP stdio executors + pooled SDK CLI transports now, with typed logging,
+        # off the event loop (thread joins). A HARD kill skips this; the Job Object / pdeathsig
+        # binding above is the backstop. The owner helper never raises.
+        _agent = getattr(app.state, "agent", None)
+        await desktop_lifecycle.finalize_desktop_shutdown(app, _agent)
+        if task_cleanup_errors:
+            raise BaseExceptionGroup("Task runtime cleanup failed", list(task_cleanup_errors))
 
 
 async def _construct_agent_async(app: "FastAPI") -> None:

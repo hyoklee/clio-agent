@@ -87,12 +87,13 @@ def test_historical_header_projection_preserves_original_blocks() -> None:
 
 def test_persisted_block_and_pages_reconstruct_exact_unicode_content() -> None:
     text = "aé🌻\n" * 5000
-    full = ToolPresentation(
-        summary="Loaded report", blocks=[{"id": "body", "type": "markdown", "text": text}]
+    full = ToolPresentation.model_validate(
+        {"summary": "Loaded report", "blocks": [{"id": "body", "type": "markdown", "text": text}]}
     ).model_dump(exclude_none=True)
     part = Part(type="tool_result", call_id="call", presentation=full)
     restored = Part.model_validate_json(part.model_dump_json())
     projection = project_presentation(restored.presentation, "session", "call")
+    assert projection is not None and restored.presentation is not None
     block = projection["blocks"][0]
     assert len(block["text"]) == PAGE_CHARS
     assert block["content_ref"]["session_id"] == "session"
@@ -119,7 +120,8 @@ def test_paged_content_is_scoped_to_session_call_and_block() -> None:
     )
     app.state.sessions = {"owner": object(), "other": object()}
     app.state.messages = {"owner": [SimpleNamespace(parts=[part])]}
-    register_messages_routes(app, SimpleNamespace())
+    deps: Any = SimpleNamespace()
+    register_messages_routes(app, deps)
     with TestClient(app) as client:
         path = "/v1/sessions/owner/tools/call/presentation/body"
         assert client.get(path).json()["text"] == "private result"
@@ -141,15 +143,17 @@ def test_adapter_failure_keeps_original_result_unchanged(monkeypatch: pytest.Mon
     assert json.dumps(original) == before
 
 
-def test_child_output_is_a_paged_text_block_not_serialized_metadata() -> None:
+@pytest.mark.parametrize("result_key", ["output", "result"], ids=["shipped-alias", "shared-result"])
+def test_child_output_is_a_paged_text_block_not_serialized_metadata(result_key: str) -> None:
     output = "Research evidence\n" * 1000
-    raw = json.dumps({"task_id": "child", "status": "completed", "output": output})
+    raw = json.dumps({"task_id": "child", "status": "completed", result_key: output})
     result = native_presentation("task_output", {}, raw, None)
     projected = project_presentation(result, "parent", "collect")
+    assert projected is not None
     assert projected["blocks"][0]["text"] == output[:PAGE_CHARS]
     assert projected["blocks"][0]["content_ref"]["total_chars"] == len(output)
     assert "error_reason" not in json.dumps(projected)
-    assert json.loads(raw)["output"] == output
+    assert json.loads(raw)[result_key] == output
 
 
 def test_terminal_append_offsets_and_final_order() -> None:
@@ -166,6 +170,7 @@ def test_terminal_append_offsets_and_final_order() -> None:
                 ),
             },
         )
+        assert projected is not None
         seen.append(projected[1]["presentation_delta"])
     assembled = ""
     for delta in seen:

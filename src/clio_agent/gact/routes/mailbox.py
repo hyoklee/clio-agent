@@ -9,10 +9,12 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 
-from clio_agent.arc.task_types import CoreReference, MailItem
+from clio_agent.arc.task_types import CoreReference, MailItem, argument_digest
+from clio_agent.gact.context_references import authorize_context_reference_parts_sync
 from clio_agent.gact.events import Event
 from clio_agent.gact.native_work import now
-from clio_agent.gact.types import Message, MessageBehavior, ModelRef, PostMessageRequest
+from clio_agent.gact.off_loop import join_off_loop
+from clio_agent.gact.types import Message, MessageBehavior, ModelRef, PostMessageRequest, Session
 
 
 class PromoteRequest(BaseModel):
@@ -34,13 +36,21 @@ def queued(app: Any, sid: str) -> list[MailItem]:
     )
 
 
-def wire(app: Any, item: MailItem) -> dict[str, Any]:
-    """Project one canonical mailbox revision for the composer UI."""
+def _queue_value(app: Any, item: MailItem) -> dict[str, Any]:
+    """Decode a retained queue revision, including its promoted-content reference."""
     value = app.state.task_history.read_content(item.content)
-    if "queue_context" in value:
+    if isinstance(value, dict) and "queue_context" in value:
         value = app.state.task_history.read_content(
             CoreReference.model_validate(value["queue_context"])
         )
+    if not isinstance(value, dict) or not isinstance(value.get("request"), dict):
+        raise ValueError("The retained queued request is unavailable")
+    return value
+
+
+def wire(app: Any, item: MailItem) -> dict[str, Any]:
+    """Project one canonical mailbox revision for the composer UI."""
+    value = _queue_value(app, item)
     request = PostMessageRequest.model_validate(value["request"])
     parts = [part.model_dump(mode="json") for part in request.parts]
     if not parts and request.text:
@@ -214,9 +224,7 @@ def promote_next(app: Any, sid: str) -> None:
     if not pending:
         return
     item = pending[0]
-    if item.delivery == "held" and not app.state.task_history.read_content(item.content).get(
-        "promotion_error"
-    ):
+    if item.delivery == "held":
         return
     try:
         promote(app, sid, item.id, item.revision, automatic=True)
@@ -244,9 +252,21 @@ def promote_next(app: Any, sid: str) -> None:
 def register_mailbox_routes(app: FastAPI) -> None:
     """Route queue edits through confirmed Core revisions; producers never start turns."""
 
-    def require_session(sid: str) -> None:
-        if app.state.sessions.get(sid) is None:
+    def require_session(sid: str) -> Session:
+        session = app.state.sessions.get(sid)
+        if session is None:
             raise HTTPException(status_code=404, detail="Session unavailable")
+        return session
+
+    def reference_scope(session: Session) -> tuple[str, str, str]:
+        workspace = app.state.workspaces.get(session.workspace_id)
+        if workspace is None:
+            raise HTTPException(status_code=404, detail="Workspace unavailable")
+        return session.workspace_id, workspace.root_path, workspace.connection_id
+
+    def recheck_scope(sid: str, scope: tuple[str, str, str]) -> None:
+        if reference_scope(require_session(sid)) != scope:
+            raise HTTPException(status_code=409, detail="Queued message workspace changed")
 
     @app.get("/v1/sessions/{sid}/pending-steers")
     async def list_pending_steers(sid: str) -> dict[str, Any]:
@@ -320,41 +340,65 @@ def register_mailbox_routes(app: FastAPI) -> None:
     @app.post("/v1/sessions/{sid}/queued-messages", status_code=201)
     async def create(sid: str, body: PostMessageRequest) -> dict[str, Any]:
         require_session(sid)
+        history = app.state.task_history
+        key = body.idempotency_key or body.client_message_id
+        identity = (
+            "queued_" + hashlib.sha256((sid + "\0" + key).encode()).hexdigest()
+            if key
+            else "queued_" + uuid4().hex
+        )
+        submitted = body.model_dump(mode="json")
+        digest = argument_digest(submitted)
 
-        def accept() -> dict[str, Any]:
-            history = app.state.task_history
+        def existing() -> dict[str, Any] | None:
             with history.serialized():
-                key = body.idempotency_key or body.client_message_id
-                identity = (
-                    "queued_" + hashlib.sha256((sid + "\0" + key).encode()).hexdigest()
-                    if key
-                    else "queued_" + uuid4().hex
-                )
-                existing = history.mail_item(sid, identity)
-                if existing is not None:
-                    if body.idempotency_key:
-                        # A released idempotency key identifies the accepted row,
-                        # including its original client ID and later human edits.
-                        return wire(app, existing)
-                    stored = history.read_content(existing.content)
-                    if "queue_context" in stored:
-                        stored = history.read_content(
-                            CoreReference.model_validate(stored["queue_context"])
-                        )
+                item = history.mail_item(sid, identity)
+                if item is None:
+                    return None
+                if not body.idempotency_key:
+                    stored = _queue_value(app, item)
                     if "accepted_request" in stored:
                         stored = history.read_content(
                             CoreReference.model_validate(stored["accepted_request"])
                         )
-                    if stored.get("request") != body.model_dump(mode="json"):
-                        raise HTTPException(
-                            status_code=409, detail="Queue identity was reused with changed content"
-                        )
-                    return wire(app, existing)
+                    matches = (
+                        stored.get("submitted_request_digest") == digest
+                        if "submitted_request_digest" in stored
+                        else stored.get("request") == submitted
+                    )
+                    if not matches:
+                        raise HTTPException(409, "Queue identity was reused with changed content")
+                return wire(app, item)
+
+        previous = await history.io.run(existing)
+        if previous is not None:
+            return previous
+        session = require_session(sid)
+        scope = reference_scope(session)
+        parts = await join_off_loop(
+            authorize_context_reference_parts_sync,
+            app,
+            session,
+            list(body.parts),
+        )
+        prepared = body.model_copy(update={"parts": parts})
+
+        def accept() -> dict[str, Any]:
+            with history.serialized():
+                previous = existing()
+                if previous is not None:
+                    return previous
+                recheck_scope(sid, scope)
                 if body.client_message_id:
                     _require_available_message_id(app, sid, body.client_message_id)
                 stamp = now()
                 content = history.write_content(
-                    sid, {"request": body.model_dump(mode="json"), "updated_at": stamp}
+                    sid,
+                    {
+                        "request": prepared.model_dump(mode="json"),
+                        "submitted_request_digest": digest,
+                        "updated_at": stamp,
+                    },
                 )
                 item = MailItem(
                     id=identity,
@@ -382,7 +426,18 @@ def register_mailbox_routes(app: FastAPI) -> None:
             history = app.state.task_history
             with history.serialized():
                 items = {item.id: item for item in queued(app, sid)}
-                selected = body.get("items", [])
+                selected = body.get("items")
+                if selected is None:
+                    order, revisions = body.get("ordered_ids", []), body.get("revisions", {})
+                    if not isinstance(order, list) or not isinstance(revisions, dict):
+                        raise HTTPException(422, "Queue order and revisions are malformed")
+                    selected = [
+                        {"id": identity, "revision": revisions.get(identity)} for identity in order
+                    ]
+                if not isinstance(selected, list) or any(
+                    not isinstance(row, dict) for row in selected
+                ):
+                    raise HTTPException(422, "Queue order is malformed")
                 if (
                     len(selected) != len(items)
                     or {row.get("id") for row in selected} != items.keys()
@@ -406,13 +461,13 @@ def register_mailbox_routes(app: FastAPI) -> None:
     async def edit(sid: str, identity: str, body: dict[str, Any]) -> dict[str, Any]:
         require_session(sid)
 
-        def apply() -> dict[str, Any]:
+        def prepare() -> tuple[MailItem, dict[str, Any], PostMessageRequest]:
             history = app.state.task_history
             with history.serialized():
                 item = next((item for item in queued(app, sid) if item.id == identity), None)
                 if item is None or item.revision != body.get("revision"):
                     raise HTTPException(status_code=409, detail="Queued message revision changed")
-                previous = history.read_content(item.content)
+                previous = _queue_value(app, item)
                 request = PostMessageRequest.model_validate(
                     {
                         **previous["request"],
@@ -423,6 +478,26 @@ def register_mailbox_routes(app: FastAPI) -> None:
                         },
                     }
                 )
+                return item, previous, request
+
+        item, previous, request = await app.state.task_history.io.run(prepare)
+        session = require_session(sid)
+        scope = reference_scope(session)
+        parts = await join_off_loop(
+            authorize_context_reference_parts_sync,
+            app,
+            session,
+            list(request.parts),
+        )
+        request = request.model_copy(update={"parts": parts})
+
+        def apply() -> dict[str, Any]:
+            history = app.state.task_history
+            with history.serialized():
+                current = history.mail_item(sid, identity)
+                if current is None or current != item or current.revision != body.get("revision"):
+                    raise HTTPException(409, "Queued message revision changed")
+                recheck_scope(sid, scope)
                 content = history.write_content(
                     sid,
                     {
@@ -434,7 +509,14 @@ def register_mailbox_routes(app: FastAPI) -> None:
                     },
                 )
                 edited = history.update_mail(
-                    item.model_copy(update={"content": content, "revision": item.revision + 1}),
+                    item.model_copy(
+                        update={
+                            "content": content,
+                            "revision": item.revision + 1,
+                            "delivery": "queued",
+                            "held_reason": "",
+                        }
+                    ),
                     expected_revision=item.revision,
                 )
                 return wire(app, edited)

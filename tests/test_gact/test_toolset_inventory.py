@@ -474,41 +474,33 @@ def test_identical_rebuild_in_the_same_session_emits_only_once(
 def test_changed_toolset_in_the_same_session_emits_again(
     live_app: Any, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The dedup is CONTENT-based, not a blanket once-per-agent suppression: a
-    genuinely different toolset (declared children appear between builds, so
-    the spawn-runtime tools join the set) re-emits."""
+    """Inventory deduplication follows the effective tool content in one session."""
+    import dspy
 
-    from clio_agent.gact.agents.builders import _build_blueprint_dspy_module
+    from clio_agent.gact.agents.toolset_inventory import emit_agent_toolset_recorded
 
     application, sid = live_app
-    _patch_lm(monkeypatch)
     captured = _capture_emit(monkeypatch)
-
-    base_agent = SimpleNamespace(tool_executor=None)
     agent_def = AgentDef(
         id="grow_agent",
         source="expert_pack",
         title="Grow",
         system_prompt="Root.",
         module={"kind": "react"},
-        parent_id="parent",
     )
+    first = dspy.Tool(lambda: "first", name="first_tool")
+    second = dspy.Tool(lambda: "second", name="second_tool")
 
-    _build_under_turn_identity(
-        _build_blueprint_dspy_module, base_agent, agent_def, application, sid
-    )
-    monkeypatch.setattr(
-        "clio_agent.gact.agents.resolution._runtime_declared_child_ids",
-        lambda a, pid, session_id="": {"child_a"},
-    )
-    _build_under_turn_identity(
-        _build_blueprint_dspy_module, base_agent, agent_def, application, sid
-    )
+    def publish(tools: Any, definition: AgentDef) -> None:
+        emit_agent_toolset_recorded(definition, tools, {})
 
+    _build_under_turn_identity(publish, [first], agent_def, application, sid)
+    _build_under_turn_identity(publish, [first, second], agent_def, application, sid)
     events = _events_of(captured, "agent.toolset.recorded")
     assert len(events) == 2
-    assert "spawn_agent_task" not in {row["name"] for row in events[0]["payload"]["tools"]}
-    assert "spawn_agent_task" in {row["name"] for row in events[1]["payload"]["tools"]}
+    assert {row["name"] for row in events[0]["payload"]["tools"]} == {"first_tool"}
+    assert {row["name"] for row in events[1]["payload"]["tools"]} == {"first_tool", "second_tool"}
+    assert {event["session_id"] for event in events} == {sid}
 
 
 # ---------------------------------------------------------------------------

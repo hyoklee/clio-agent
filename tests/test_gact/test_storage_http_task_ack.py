@@ -168,6 +168,9 @@ def test_queued_storage_is_visible_and_cancellable_before_worker_start(
                 app.state.connected_storage.store.get("operation", handle, TransferOperation)
             visible = client.get(prefixes[1] + "/operations").json()["operations"]
             assert len(visible) == 1 and visible[0]["task_handle"] == handle
+            assert client.post(prefixes[0] + f"/operations/{handle}/cancel").status_code == 404, (
+                "A handle from another source cannot be controlled through this source"
+            )
             cancelled = client.post(prefixes[1] + f"/operations/{handle}/cancel")
             assert cancelled.status_code == 200, cancelled.text
             assert cancelled.json()["cancel_requested"]

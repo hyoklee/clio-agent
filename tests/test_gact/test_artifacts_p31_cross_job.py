@@ -165,11 +165,19 @@ def test_cross_job_clean_input_binds_foreign_id_with_marker(tmp_path):
     assert e.sha256 == _sha(b"rows\n")
 
 
-def test_cross_job_edited_input_binds_as_revision_not_new_artifact(tmp_path):
+def test_cross_job_edited_input_binds_as_revision_not_new_artifact(
+    tmp_path: Path, clio_core_plane: Any
+) -> None:
     from clio_agent.gact import tool_observer
 
-    app, sess, _arc = _make_cross_app(tmp_path, ["ws1", "ws2"])
-    path, v1 = _register_under(app, sess["ws1"].id, tmp_path, "a.csv", b"v1", "call_a", "ws1")
+    app = clio_core_plane
+    ws1 = app.state.workspaces.create(name="Producer", root_path=str(tmp_path))
+    ws2 = app.state.workspaces.create(name="Consumer", root_path=str(tmp_path))
+    sess = {
+        workspace.id: app.state.sessions.create(workspace_id=workspace.id, title=workspace.name)
+        for workspace in (ws1, ws2)
+    }
+    path, v1 = _register_under(app, sess[ws1.id].id, tmp_path, "a.csv", b"v1", "call_a", ws1.id)
     # The file is EDITED after registration; a clean single-writer lease (an active
     # observer call, no other writer) makes the reconcile an auto-revision.
     path.write_bytes(b"v2-edited")
@@ -178,12 +186,12 @@ def test_cross_job_edited_input_binds_as_revision_not_new_artifact(tmp_path):
     try:
         scan = detect_used_edges(
             app,
-            sess["ws2"].id,
+            sess[ws2.id].id,
             args={"data_path": str(path)},
-            workspace_id="ws2",
+            workspace_id=ws2.id,
             turn_id="",
             trace_id="",
-            allowed_workspace_ids={"ws1", "ws2"},
+            allowed_workspace_ids={ws1.id, ws2.id},
         )
     finally:
         tool_observer._OBSERVER_CALL_T0.value = prev_t0
@@ -197,11 +205,11 @@ def test_cross_job_edited_input_binds_as_revision_not_new_artifact(tmp_path):
     assert e.version == 2 and e.artifact_id != v1.artifact_id
     reg = get_registry(app)
     # The revision landed on the FOREIGN (ws1) chain, and NO local ws2 record was forged.
-    ws1_rec = reg.get("ws1", "a.csv")
+    ws1_rec = reg.get(ws1.id, "a.csv")
     assert ws1_rec is not None and {v.version for v in ws1_rec.versions} == {1, 2}
     v2 = next(v for v in ws1_rec.versions if v.version == 2)
     assert v2.prior_version == 1 and v2.artifact_id == e.artifact_id
-    assert reg.get("ws2", "a.csv") is None
+    assert reg.get(ws2.id, "a.csv") is None
     # One-id-per-version: the reused foreign id resolves to exactly that version.
     assert reg.get_by_artifact_id(e.artifact_id) == (ws1_rec, v2)
 

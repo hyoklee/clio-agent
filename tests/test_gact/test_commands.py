@@ -30,17 +30,6 @@ class _Agent:
         return _Pred()
 
 
-class _BrokenARC:
-    def get_cache_stats(self) -> dict[str, object]:
-        raise RuntimeError("ARC stats unavailable")
-
-    def set_highway_sink(self, _sink: object) -> None:
-        return None
-
-    def set_segment_op_logger(self, _logger: object) -> None:
-        return None
-
-
 @pytest.fixture()
 def client(tmp_path: Path) -> Iterator[TestClient]:
     # ENTERED: test_dispatch_clear_drops_messages / test_dispatch_clear_obeys_
@@ -666,63 +655,63 @@ Validate {{args.path}} for this QC workflow.
         encoding="utf-8",
     )
 
-    c = TestClient(build_app(sessions_path=tmp_path / "s.json", agent=_Agent()))
-    wid = c.post(
-        "/v1/workspaces",
-        json={
-            "name": "Workspace",
-            "root_path": str(workspace),
-            "storage_root": str(workspace / ".clio"),
-        },
-    ).json()["id"]
-    sid = c.post("/v1/sessions", json={"title": "t", "workspace_id": wid}).json()["id"]
-    assert (
-        c.post(
-            f"/v1/sessions/{sid}/agent-blueprint",
-            json={"blueprint_id": "qc-agent"},
-        ).status_code
-        == 200
-    )
+    with TestClient(build_app(sessions_path=tmp_path / "s.json", agent=_Agent())) as c:
+        wid = c.post(
+            "/v1/workspaces",
+            json={
+                "name": "Workspace",
+                "root_path": str(workspace),
+                "storage_root": str(workspace / ".clio"),
+            },
+        ).json()["id"]
+        sid = c.post("/v1/sessions", json={"title": "t", "workspace_id": wid}).json()["id"]
+        assert (
+            c.post(
+                f"/v1/sessions/{sid}/agent-blueprint",
+                json={"blueprint_id": "qc-agent"},
+            ).status_code
+            == 200
+        )
 
-    workspace_commands = c.get("/v1/commands", params={"workspace_id": wid}).json()["commands"]
-    assert "/validate-dataset" not in {row["id"] for row in workspace_commands}
+        workspace_commands = c.get("/v1/commands", params={"workspace_id": wid}).json()["commands"]
+        assert "/validate-dataset" not in {row["id"] for row in workspace_commands}
 
-    session_commands = c.get("/v1/commands", params={"session_id": sid}).json()["commands"]
-    packaged = next(row for row in session_commands if row["id"] == "/validate-dataset")
-    assert packaged["command_source"] == "agent_blueprint"
-    assert packaged["agent_blueprint_id"] == "qc-agent"
-    assert packaged["command_scope"] == "agent_blueprint"
-    assert packaged["command_path"].endswith("commands/validate-dataset.md")
+        session_commands = c.get("/v1/commands", params={"session_id": sid}).json()["commands"]
+        packaged = next(row for row in session_commands if row["id"] == "/validate-dataset")
+        assert packaged["command_source"] == "agent_blueprint"
+        assert packaged["agent_blueprint_id"] == "qc-agent"
+        assert packaged["command_scope"] == "agent_blueprint"
+        assert packaged["command_path"].endswith("commands/validate-dataset.md")
 
-    planner_commands = c.get(
-        "/v1/commands",
-        params={"session_id": sid, "planner": "true", "agent_id": "root"},
-    ).json()["commands"]
-    assert {row["id"] for row in planner_commands} == {"/validate-dataset"}
+        planner_commands = c.get(
+            "/v1/commands",
+            params={"session_id": sid, "planner": "true", "agent_id": "root"},
+        ).json()["commands"]
+        assert {row["id"] for row in planner_commands} == {"/validate-dataset"}
 
-    denied = c.post(
-        f"/v1/sessions/{sid}/commands/validate-dataset",
-        json={
-            "caller": {"type": "agent", "agent_id": "missing"},
-            "args": {"path": "data.csv"},
-        },
-    )
-    assert denied.status_code == 403
-    assert denied.json()["error"]["details"]["audit"]["status"] == "denied"
+        denied = c.post(
+            f"/v1/sessions/{sid}/commands/validate-dataset",
+            json={
+                "caller": {"type": "agent", "agent_id": "missing"},
+                "args": {"path": "data.csv"},
+            },
+        )
+        assert denied.status_code == 403
+        assert denied.json()["error"]["details"]["audit"]["status"] == "denied"
 
-    resp = c.post(
-        f"/v1/sessions/{sid}/commands/validate-dataset",
-        json={
-            "caller": {"type": "agent", "agent_id": "root"},
-            "args": {"path": "data.csv"},
-        },
-    ).json()
+        resp = c.post(
+            f"/v1/sessions/{sid}/commands/validate-dataset",
+            json={
+                "caller": {"type": "agent", "agent_id": "root"},
+                "args": {"path": "data.csv"},
+            },
+        ).json()
 
-    assert resp["result"]["text"] == "VALIDATION_OK"
-    assert resp["result"]["audit"]["caller_type"] == "agent"
-    assert resp["result"]["audit"]["caller_agent_id"] == "root"
-    assert resp["result"]["audit"]["command_source"] == "agent_blueprint"
-    assert calls == [("root", "Validate data.csv for this QC workflow.", sid)]
+        assert resp["result"]["text"] == "VALIDATION_OK"
+        assert resp["result"]["audit"]["caller_type"] == "agent"
+        assert resp["result"]["audit"]["caller_agent_id"] == "root"
+        assert resp["result"]["audit"]["command_source"] == "agent_blueprint"
+        assert calls == [("root", "Validate data.csv for this QC workflow.", sid)]
 
 
 def test_workspace_commands_do_not_leak_between_workspace_requests(tmp_path: Path) -> None:
@@ -870,33 +859,34 @@ def test_disabled_user_agent_command_is_visible_but_not_runnable(tmp_path: Path)
 
 def test_dispatch_cache_stats_arc_failure_returns_structured_error(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    client = TestClient(
-        build_app(
-            sessions_path=tmp_path / "s.json",
-            agent=_Agent(),
-            arc=_BrokenARC(),
+    def broken_stats() -> dict[str, object]:
+        raise RuntimeError("ARC stats unavailable")
+
+    app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent())
+    with TestClient(app) as client:
+        created = client.post("/v1/sessions", json={"title": "t"})
+        assert created.status_code == 200, created.text
+        sid = created.json()["id"]
+        monkeypatch.setattr(app.state.arc, "get_cache_stats", broken_stats)
+        resp = client.post(f"/v1/sessions/{sid}/commands/cache-stats")
+
+        assert resp.status_code == 500
+        body = resp.json()
+        assert body["error"]["error"] == "command_error"
+        assert body["error"]["message"] == (
+            "Backend command /cache-stats could not read ARC cache statistics."
         )
-    )
-    sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-
-    resp = client.post(f"/v1/sessions/{sid}/commands/cache-stats")
-
-    assert resp.status_code == 500
-    body = resp.json()
-    assert body["error"]["error"] == "command_error"
-    assert body["error"]["message"] == (
-        "Backend command /cache-stats could not read ARC cache statistics."
-    )
-    assert body["error"]["details"]["command"] == "/cache-stats"
-    assert body["error"]["details"]["original_error"] == "ARC stats unavailable"
-    assert body["error"]["details"]["recovery_actions"] == [
-        "retry",
-        "reconfigure_provider",
-        "exit",
-    ]
-    msgs = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-    assert msgs == []
+        assert body["error"]["details"]["command"] == "/cache-stats"
+        assert body["error"]["details"]["original_error"] == "ARC stats unavailable"
+        assert body["error"]["details"]["recovery_actions"] == [
+            "retry",
+            "reconfigure_provider",
+            "exit",
+        ]
+        msgs = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        assert msgs == []
 
 
 def test_dispatch_optimize_returns_structured_not_implemented(

@@ -80,8 +80,9 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         assert started, "first forward never started"
         first_id = first.json()["message_id"]
         feedback = ["can you actually use gh to clone it", "then inspect its latest release"]
-        ids = ["msg_feedback_clone", "msg_feedback_release"]
-        for text, message_id in zip(feedback, ids, strict=True):
+        client_ids = ["msg_feedback_clone", "msg_feedback_release"]
+        ids = []
+        for text, message_id in zip(feedback, client_ids, strict=True):
             response = client.post(
                 f"/v1/sessions/{sid}/messages",
                 json={
@@ -91,7 +92,9 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
                 },
             )
             assert response.status_code == 202, response.text
-            assert response.json()["message_id"] == message_id
+            accepted_id = response.json()["message_id"]
+            assert accepted_id and accepted_id not in ids
+            ids.append(accepted_id)
         queued = client.post(
             f"/v1/sessions/{sid}/queued-messages",
             json={"text": "future task", "client_message_id": "msg_future"},
@@ -108,8 +111,9 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         user_ids = [row["id"] for row in rows if row["role"] == "user"]
         assert len(user_ids) == 3
         assert set(user_ids) == {first_id, *ids}
-        for message_id in ids:
+        for message_id, client_id in zip(ids, client_ids, strict=True):
             row = next(row for row in rows if row["id"] == message_id)
+            assert row["metadata"]["client_message_id"] == client_id
             assert row["turn_id"] == message_id
             assert row["metadata"]["pending_steer"] is False
             assistant = next(
@@ -183,13 +187,21 @@ def test_queue_pause_survives_completed_feedback_and_store_reload(tmp_path: Path
     assert not session_autostart_suspended(app, session.id)
 
 
-def test_legacy_cancelled_session_retains_queue_pause() -> None:
-    """An older persisted cancelled session has no queue-pause metadata yet."""
-    sessions = SessionStore()
+def test_startup_migrates_legacy_cancelled_queue_pause_once(tmp_path: Path) -> None:
+    """Legacy Stop is imported at startup; ordinary reads do not migrate state."""
+    path = tmp_path / "sessions.json"
+    sessions = SessionStore(path=path)
     session = sessions.create(workspace_id="ws_default", title="Legacy cancelled")
     sessions.update(session.id, status="cancelled")
-    app = SimpleNamespace(state=SimpleNamespace(sessions=sessions))
-    assert session_autostart_suspended(app, session.id)
+    app = build_app(sessions_path=path)
+    with TestClient(app):
+        assert session_autostart_suspended(app, session.id)
+        first = app.state.sessions.get(session.id)
+        from clio_agent.gact.task_migration import migrate_history
+
+        migrate_history(app)
+        assert app.state.sessions.get(session.id) == first
+        assert app.state.turn_runner.handle(session.id) is None
 
 
 def test_queue_pause_projection_does_not_expose_private_session_metadata() -> None:

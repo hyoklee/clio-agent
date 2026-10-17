@@ -47,6 +47,7 @@ from clio_agent.gact.storage.service import StorageService, provider_capabilitie
 from clio_agent.gact.storage.sftp import SftpSource
 from clio_agent.gact.storage.ssh_target import SshTargetSource
 from clio_agent.gact.storage.task_controls import (
+    cancel_source_action,
     source_operation_views,
     submit_source_action,
     validate_task_owner,
@@ -708,6 +709,12 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         record_for(wid, source_id, connected=False)
         rows = await run(lambda: source_operation_views(app, source_id))
         return {"operations": rows}
+
+    @app.post("/v1/workspaces/{wid}/sources/{source_id}/operations/{handle}/cancel")
+    async def cancel_operation(wid: str, source_id: str, handle: str) -> dict[str, Any]:
+        """Cancel through the shared owner, including work that has not started yet."""
+        record_for(wid, source_id, connected=False)
+        return await cancel_source_action(app, source_id, handle)
 
     @app.post("/v1/workspaces/{wid}/sources/{source_id}/review")
     async def review(wid: str, source_id: str) -> dict[str, Any]:

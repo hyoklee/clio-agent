@@ -16,12 +16,10 @@ from typing import Any, Callable
 import pytest
 from fastapi.testclient import TestClient
 
-from clio_agent.arc.lane_chunking import drop_lane
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.gact.app import build_app
 from clio_agent.gact.context_rollback import rolled_back_compactions
 from clio_agent.gact.conversation_projection import model_context_messages
-from clio_agent.gact.part_atoms import MESSAGE_PART_SCOPE
 from clio_agent.gact.summarization_record import as_summarization
 from clio_agent.gact.types import Message, Part, Tokens
 
@@ -59,8 +57,9 @@ def _record(client: TestClient, sid: str, messages: list[Message]) -> None:
 
 
 def _seed(client: TestClient, sid: str, messages: list[Message]) -> None:
-    client.app.state.messages[sid] = messages
-    client.app.state.message_store.replace_session(sid, messages)
+    from clio_agent.gact.session_store import _replace_session_messages
+
+    _replace_session_messages(client.app, sid, messages)
     client.app.state.sessions.update(sid, message_count=len(messages))
     _record(client, sid, messages)
 
@@ -360,12 +359,15 @@ def test_record_and_history_survive_a_cold_reload(tmp_path: Path) -> None:
         assert _record_of(reloaded[-1]).text == done["summary"]
         assert model_context_messages(reloaded) == [reloaded[-1]]
 
-        # Erase the atom lane too: rehydrated from the retained per-session file.
-        app.state.messages.clear()
-        drop_lane(arc._segments, sid, MESSAGE_PART_SCOPE)
-        from_file = list(app.state.messages.get(sid, []))
-        assert [m.id for m in from_file] == live_ids
-        assert _record_of(from_file[-1]).text == done["summary"]
+    # Rebuild the application, retaining canonical history rather than reimporting JSON.
+    restarted = build_app(sessions_path=tmp_path / "s.json", agent=agent, arc=arc)
+    with TestClient(restarted) as client:
+        response = client.get(f"/v1/sessions/{sid}/messages")
+        assert response.status_code == 200, response.text
+        from_core = [Message.model_validate(row) for row in response.json()["messages"]]
+        assert [m.id for m in from_core] == live_ids
+        assert _record_of(from_core[-1]).text == done["summary"]
+        assert model_context_messages(from_core) == [from_core[-1]]
 
 
 def test_a_record_write_failure_is_a_typed_500_and_folds_nothing(

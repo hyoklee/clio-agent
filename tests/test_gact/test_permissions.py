@@ -248,6 +248,12 @@ def test_unscoped_questions_route_spans_sessions_and_filters_by_status(
             assert row.status_code == 201, row.text
             created.append(row.json()["id"])
 
+        ambiguous = client.post(
+            f"/v1/sessions/{first}/questions/{created[0]}/answer",
+            json={"value": "yes", "selected_options": ["no"]},
+        )
+        assert ambiguous.status_code == 422, ambiguous.text
+        assert app.state.task_history.task_snapshot(created[0]).raw_status == "pending"
         answered = client.post(
             f"/v1/sessions/{first}/questions/{created[0]}/answer",
             json={"value": "yes"},

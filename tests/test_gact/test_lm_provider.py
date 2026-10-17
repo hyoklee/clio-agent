@@ -14,6 +14,7 @@ from typing import Any
 
 import pytest
 import requests
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.config import LMProviderConfig
@@ -139,11 +140,10 @@ def test_openrouter_auth_state_is_keyed_by_its_own_env_var(
     with TestClient(app) as c:
         body = c.get("/v1/providers").json()
 
-    openrouter = next(p for p in body["providers"] if p["id"] == "openrouter")
-    assert openrouter["is_authenticated"] is False
+        openrouter = next(p for p in body["providers"] if p["id"] == "openrouter")
+        assert openrouter["is_authenticated"] is False
 
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-openrouter")
-    with TestClient(app) as c:
+        monkeypatch.setenv("OPENROUTER_API_KEY", "sk-openrouter")
         body = c.get("/v1/providers").json()
     openrouter = next(p for p in body["providers"] if p["id"] == "openrouter")
     assert openrouter["is_authenticated"] is True
@@ -307,10 +307,15 @@ def test_install_claude_code_support_endpoint(tmp_path: Path, monkeypatch: Any) 
     from clio_agent.providers import dependencies
 
     calls: list[bool] = []
+
+    def install(**_kwargs: Any) -> bool:
+        calls.append(True)
+        return True
+
     monkeypatch.setitem(
         dependencies._PROVIDER_INSTALLERS,
         "claude_code",
-        lambda **_kwargs: calls.append(True) or True,
+        install,
     )
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
@@ -330,10 +335,15 @@ def test_install_argonne_support_endpoint_dispatches_through_the_same_generic_ro
     from clio_agent.providers import dependencies
 
     calls: list[bool] = []
+
+    def install(**_kwargs: Any) -> bool:
+        calls.append(True)
+        return True
+
     monkeypatch.setitem(
         dependencies._PROVIDER_INSTALLERS,
         "argonne",
-        lambda **_kwargs: calls.append(True) or True,
+        install,
     )
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
@@ -2149,7 +2159,7 @@ def test_turn_timeout_precedence_runtime_over_conf() -> None:
 
     os.environ.pop("CLIO_GACT_TURN_TIMEOUT_S", None)
     conf.reload()
-    app = SimpleNamespace(state=SimpleNamespace())
+    app = FastAPI()
 
     # No app / no runtime config -> default.
     assert _gact_turn_timeout_s(None) == 900.0

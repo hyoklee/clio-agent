@@ -15,7 +15,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.arc import runtime_stop
-from clio_agent.gact import app as gact_app
 from clio_agent.gact import desktop_lifecycle
 from clio_agent.gact.app import build_app
 from clio_agent.gact.routes import lifecycle
@@ -203,13 +202,18 @@ async def test_request_desktop_shutdown_never_releases_runtime_client(monkeypatc
 def test_lifespan_releases_runtime_after_turn_drain_for_desktop(tmp_path, monkeypatch) -> None:
     order: list[str] = []
 
-    async def fake_drain(app, logger) -> None:  # noqa: ANN001 - test shim
+    from clio_agent.gact.conversations import Conversations
+
+    shutdown = Conversations.shutdown
+
+    async def observed_drain(owner: Conversations) -> None:
         order.append("drain")
+        await shutdown(owner)
 
     def fake_release(*args, **kwargs) -> None:  # noqa: ANN002, ANN003 - test shim
         order.append("release")
 
-    monkeypatch.setattr(gact_app, "drain_app_turns", fake_drain)
+    monkeypatch.setattr(Conversations, "shutdown", observed_drain)
     monkeypatch.setattr("clio_agent.arc.storage.release_runtime_client", fake_release)
     monkeypatch.setattr(desktop_lifecycle, "_app_owns_runtime_client", lambda _app: True)
     monkeypatch.setattr(
@@ -229,13 +233,18 @@ def test_lifespan_releases_runtime_after_turn_drain_for_desktop(tmp_path, monkey
 def test_lifespan_releases_runtime_when_not_desktop(tmp_path, monkeypatch) -> None:
     order: list[str] = []
 
-    async def fake_drain(app, logger) -> None:  # noqa: ANN001 - test shim
+    from clio_agent.gact.conversations import Conversations
+
+    shutdown = Conversations.shutdown
+
+    async def observed_drain(owner: Conversations) -> None:
         order.append("drain")
+        await shutdown(owner)
 
     def fake_release(*args, **kwargs) -> None:  # noqa: ANN002, ANN003 - test shim
         order.append("release")
 
-    monkeypatch.setattr(gact_app, "drain_app_turns", fake_drain)
+    monkeypatch.setattr(Conversations, "shutdown", observed_drain)
     monkeypatch.setattr("clio_agent.arc.storage.release_runtime_client", fake_release)
     monkeypatch.setattr(desktop_lifecycle, "_app_owns_runtime_client", lambda _app: True)
 

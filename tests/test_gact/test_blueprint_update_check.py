@@ -369,14 +369,13 @@ def test_updates_route_lists_every_source(tmp_path: Path, monkeypatch) -> None:
     with TestClient(app) as client:
         resp = client.get("/v1/agent-blueprints/sources/updates")
 
-    assert resp.status_code == 200, resp.text
-    body = resp.json()
-    assert "checked_at" in body
-    assert [row["source_id"] for row in body["sources"]] == ["src_a"]
-    assert body["sources"][0]["reason"] == "up_to_date"
-    assert body["sources"][0]["update_available"] is False
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "checked_at" in body
+        assert [row["source_id"] for row in body["sources"]] == ["src_a"]
+        assert body["sources"][0]["reason"] == "up_to_date"
+        assert body["sources"][0]["update_available"] is False
 
-    with TestClient(app) as client:
         one = client.get("/v1/agent-blueprints/sources/src_a/updates")
     assert one.status_code == 200, one.text
     assert one.json()["source"]["source_id"] == "src_a"

@@ -98,22 +98,20 @@ def test_native_alert_emits_verified_inspection_or_disabled_action(
     from clio_agent.gact.action_cards import build_raise_alert_card_tool
     from clio_agent.gact.app import build_app
     from clio_agent.gact.attention import routes
+    from clio_agent.gact.session_store import _replace_session_messages
     from clio_agent.gact.types import AgentDef
-    from tests.test_gact.task_records import record_delegation_fixture
-    from tests.test_gact.test_action_cards import _call_tool_as
+    from tests.test_gact.test_action_cards import _call_tool_as, _record_child_assignment
 
     # This test uses recorded captures, independent of optional live writers.
     monkeypatch.setenv("CLIO_PROVENANCE_PROVIDERS", "jsonl")
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        task = record_delegation_fixture(
-            app, parent, handle="task_recorded_review", agent="spotter_watcher"
-        )
+        task = _record_child_assignment(app, parent_sid=parent, expert_id="spotter_watcher")
         messages = fixture_transcript()
         for message in messages:
             message.session_id = parent
-        app.state.messages[parent] = messages
+        _replace_session_messages(app, parent, messages)
         monkeypatch.setattr(
             routes, "session_lm_calls", lambda app, sid: [replace(_call(), session_id=parent)]
         )

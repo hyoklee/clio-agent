@@ -221,7 +221,7 @@ def _call_tool(rid: str, call_id: str, name: str, args: dict[str, Any]) -> list[
 
 @pytest.mark.usefixtures("session")
 def test_workspace_summary_continues_to_local_inspection_after_pdf_refusal(
-    harness: base.Harness, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    harness: base.Harness, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, clio_core_plane: Any
 ) -> None:
     """Actual loop, native PDF descriptor and wire; only the provider socket is scripted."""
     from pypdf import PdfReader

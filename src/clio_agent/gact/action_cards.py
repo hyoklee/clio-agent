@@ -234,7 +234,7 @@ def _calling_assignment(app: Any, sid: str) -> tuple[TaskSnapshot | None, TaskSn
     from clio_agent.gact import context
 
     session = app.state.sessions.get(sid)
-    if session is None or session.parent_session_id is None:
+    if session is None or not session.parent_session_id:
         return None, None, "no_parent_session"
     history = app.state.task_history
     current = history.task_snapshot(context.active_assignment_handle())

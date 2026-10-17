@@ -70,6 +70,13 @@ def migrate_history(app: Any) -> None:
     history = app.state.task_history
     app.state.task_migration_issues = []
     sessions = {session.id: session for session in app.state.sessions.list()}
+    for session in sessions.values():
+        if (
+            session.status == "cancelled"
+            and "composer_queue_paused" not in session.metadata
+            and history.latest_assignment(session.id) is None
+        ):
+            app.state.sessions.update(session.id, metadata_patch={"composer_queue_paused": True})
     latest: dict[str, tuple[str, str, dict[str, Any], dict[str, Any]]] = {}
     mail: dict[tuple[str, str], dict[str, Any]] = {}
     withdrawals: set[tuple[str, str]] = set()

@@ -48,6 +48,7 @@ def test_prepared_input_trace_does_not_create_delivery_proof(
         content=(content,),
         rendered_content=(content,),
         turn_id="turn",
+        committed_at="2026-10-14T00:00:00Z",
     )
     backend = FileSemanticTraceBackend(tmp_path / "trace")
     backend.emit(
@@ -66,6 +67,8 @@ def test_prepared_input_trace_does_not_create_delivery_proof(
                             scope="main",
                             kind="recipient_input",
                             step=0,
+                            order=1.0,
+                            logical_time=1,
                             turn_id="turn",
                             content=prepared.model_dump(mode="json"),
                         )
@@ -120,7 +123,7 @@ def test_restart_restores_actual_inputs_results_and_skill_text(
         return event.to_dict("full")
 
     arc.set_segment_op_logger(record)
-    for kind, content in [
+    records: list[tuple[Any, dict[str, Any]]] = [
         ("user", {"text": "Read the data"}),
         (
             "thought",
@@ -145,7 +148,8 @@ def test_restart_restores_actual_inputs_results_and_skill_text(
             {"call_id": "c", "text": "# Complete skill\nOriginal instructions", "is_error": False},
         ),
         ("thought", {"text": "Read complete"}),
-    ]:
+    ]
+    for kind, content in records:
         arc.append_segment("s", "main", kind, content, turn_id="u1")
     expected = arc.render_working_set("s", "main")
     app = SimpleNamespace(state=SimpleNamespace(semantic_trace_backend=backend))
@@ -279,7 +283,7 @@ def test_unanswered_transcript_call_is_closed_with_uncertainty_before_publicatio
     assert calls[0].content["id"] == results[0].content["call_id"] == "c"
     assert calls[0].content["args"] == {"path": "x"}
     assert "uncertain" in results[0].content["text"].lower()
-    assert "not replayed" in results[0].content["text"].lower()
+    assert "no operation was replayed" in results[0].content["text"].lower()
 
 
 @pytest.mark.parametrize("turn_id", ["current", ""])
@@ -399,6 +403,6 @@ def test_an_earlier_orphan_closes_before_the_following_message(
     )
     folded = recorder.read_steps()
     assert [row.role for row in folded[:3]] == ["assistant", "tool", "user"]
-    assert folded[1].parts[0].call_id == "c"
+    assert folded[1].parts[0].id == "c"
     assert "uncertain" in folded[1].parts[0].content[0].text.lower()
     assert "Inspect the uncertain result first" in folded[2].parts[0].text

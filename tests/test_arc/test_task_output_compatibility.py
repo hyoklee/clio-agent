@@ -3,17 +3,26 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import ContextBoundary, TaskAlias, TaskOwner, TaskSnapshot
+from clio_agent.arc.task_types import (
+    ContextBoundary,
+    CoreReference,
+    TaskAlias,
+    TaskOwner,
+    TaskSnapshot,
+)
 from clio_agent.gact import context
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_declarations import build_task_compatibility_tools, build_task_tools
+from clio_agent.gact.task_history import _encoded
 from clio_agent.gact.task_operations import TaskOperations
 from clio_agent.gact.tool_observation import CollectedTaskResult
 from tests.test_arc.test_assignment_evidence_contracts import evidence_children
@@ -27,6 +36,7 @@ async def test_wait_and_message_aliases_preserve_canonical_receipts_and_addressi
     tmp_path: Path,
 ) -> None:
     app, owner, source, critic, body = await evidence_children(arc, tmp_path)
+    assert source.owner.parent_handle is not None
     root = await asyncio.to_thread(owner.history.task_snapshot, source.owner.parent_handle)
     assert root is not None
     app.state.task_operations = TaskOperations(owner.history, forbidden_cancel)
@@ -58,12 +68,15 @@ async def test_wait_and_message_aliases_preserve_canonical_receipts_and_addressi
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["completed", "failed"])
 async def test_legacy_getter_preserves_authorized_result_and_durable_collection(
-    arc: ARCMemory, tmp_path: Path, status: str, monkeypatch: pytest.MonkeyPatch
+    arc: ARCMemory,
+    tmp_path: Path,
+    status: Literal["failed", "completed"],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Retained aliases resolve historical work; a read never acknowledges without input commit."""
     app, owner, root = await create_environment(arc, tmp_path)
 
-    async def unexpected_cancel(_task: TaskSnapshot) -> dict[str, Any]:
+    async def unexpected_cancel(_task: TaskSnapshot, _caller: TaskCaller) -> dict[str, Any]:
         pytest.fail("The legacy getter must never invoke cancellation")
 
     app.state.task_operations = TaskOperations(owner.history, unexpected_cancel)
@@ -105,6 +118,7 @@ async def test_legacy_getter_preserves_authorized_result_and_durable_collection(
         return child
 
     child = await asyncio.to_thread(records)
+    assert child.result is not None
     (tool,) = build_task_compatibility_tools(["get_agent_task_output"])
     assert "get_agent_task_output" not in {tool.name for tool in build_task_tools()}
     assert build_task_compatibility_tools([]) == []
@@ -127,7 +141,19 @@ async def test_legacy_getter_preserves_authorized_result_and_durable_collection(
             assert not history.acknowledged_notifications(sid)
             assert len(result.notification_ids) == 1
             assert [item.id for item in history.pending_mail(sid)] == list(result.notification_ids)
-            observation = history.write_content(sid, dict(result))
+            observed = {
+                "call_id": "legacy-getter",
+                "text": json.dumps(dict(result), ensure_ascii=False),
+                "notification_ids": list(result.notification_ids),
+                "task_read_handles": list(result.read_handles),
+            }
+            segment = arc.append_segment(sid, "main", "observation", observed)
+            observation = CoreReference(
+                session_id=sid,
+                scope="main",
+                content_id=str(segment.id),
+                sha256=hashlib.sha256(_encoded(observed)).hexdigest(),
+            )
             staged = owner.mail.collection(TaskCaller(sid, "human"), result.notification_ids)
             owner.mail.commit(
                 TaskCaller(sid, "human"),
@@ -164,7 +190,7 @@ async def test_legacy_getter_reports_pending_and_refuses_unknown_without_collect
     """The compatibility name cannot turn a pending task or invalid handle into completion."""
     app, owner, root = await create_environment(arc, tmp_path)
 
-    async def unexpected_cancel(_task: TaskSnapshot) -> dict[str, Any]:
+    async def unexpected_cancel(_task: TaskSnapshot, _caller: TaskCaller) -> dict[str, Any]:
         pytest.fail("Result lookup must not cancel work")
 
     app.state.task_operations = TaskOperations(owner.history, unexpected_cancel)

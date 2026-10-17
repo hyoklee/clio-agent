@@ -150,7 +150,15 @@ def test_live_suite_runtime_is_not_system_temp(pytestconfig: pytest.Config) -> N
     assert Path(os.environ["XDG_CACHE_HOME"]).resolve().is_relative_to(runtime)
     assert Path(os.environ["XDG_STATE_HOME"]).resolve().is_relative_to(runtime)
     assert pytestconfig.cache is not None
-    assert pytestconfig.cache._cachedir.resolve().is_relative_to(runtime)
+    # xdist inherits the controller's parsed cache option before worker bootstrap.
+    # Its cache belongs to that same launch; all worker runtime state stays private.
+    controller = Path(os.environ.get("CLIO_TEST_CONTROLLER_RUNTIME", str(runtime))).resolve()
+    assert controller.is_relative_to(expected_parent)
+    assert controller.is_relative_to(checkout)
+    owner = json.loads((controller / ".clio-test-run.json").read_text(encoding="utf-8"))
+    assert Path(owner["checkout"]).resolve() == checkout
+    assert controller.name.startswith(f"run-{owner['pid']}-")
+    assert pytestconfig.cache._cachedir.resolve().is_relative_to(controller)
 
 
 def test_launcher_isolates_plugin_imports_and_cleans_help_exit(tmp_path: Path) -> None:

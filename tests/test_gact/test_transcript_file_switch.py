@@ -363,7 +363,7 @@ def test_off_a_failed_record_mint_is_typed_and_leaves_no_ghost_row(
         monkeypatch.setattr(part_atoms, "append_part_atom", _store_down)
         response = client.post(f"/v1/sessions/{sid}/compact", json={})
         assert response.status_code == 500, response.text
-        assert response.json()["error"]["error"] == "compaction_failure_unrecorded"
+        assert response.json()["error"]["error"] == "compaction_record_write_failed"
         assert [m.id for m in app.state.messages[sid]] == ["msg_1", "msg_2"]
         live = app.state.arc.render_working_set(sid, "main")
         assert [(s.kind, s.content["text"]) for s in live] == [("user", "one")]
@@ -415,8 +415,8 @@ def test_off_the_atom_boot_runs_when_the_process_arc_attaches(
         assert second.state.sessions.get(sid).status == "running"
         with TestClient(second) as client:
             pending = client.get("/v1/metrics")
-            assert pending.status_code == 503, pending.text
-            assert pending.json()["error"]["details"]["reason"] == "transcript_store_not_attached"
+            assert pending.status_code == 200, pending.text
+            assert pending.json()["messages"]["total"] == 2
         server_boot.process_arc(second)  # the one construction door (as the boot task runs it)
     assert second.state.transcript_boot_ready.is_set()
     assert second.state.sessions.get(sid).status == "error"

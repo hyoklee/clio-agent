@@ -17,17 +17,22 @@ async def test_stop_waits_for_preflight_retirement_and_cannot_stop_a_later_reser
     """Stop owns a reserved admission even when it has no model segment yet."""
     entered, release, later = asyncio.Event(), asyncio.Event(), asyncio.Event()
     ended = asyncio.Event()
+    later_requested = asyncio.Event()
+    later_claimed = False
     offered = 0
     started: list[str] = []
 
     async def admit(sid: str) -> tuple[str, Any] | None:
-        nonlocal offered
+        nonlocal offered, later_claimed
         offered += 1
         if offered == 1:
             entered.set()
             await release.wait()
-        elif offered > 2:
-            return None
+        else:
+            # Rechecking after Stop must not invent a second pending input.
+            if not later_requested.is_set() or later_claimed:
+                return None
+            later_claimed = True
 
         async def segment() -> None:
             started.append(sid)
@@ -49,6 +54,7 @@ async def test_stop_waits_for_preflight_retirement_and_cannot_stop_a_later_reser
         release.set()
         await stopping
         assert started == [] and not runner.busy("session")
+        later_requested.set()
         runner.signal("session")
         await later.wait()
         await runner.stop("session", reservation=reservation)

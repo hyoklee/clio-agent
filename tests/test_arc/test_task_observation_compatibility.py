@@ -162,8 +162,11 @@ async def test_output_cursors_cannot_read_another_tasks_content(
     )
     with pytest.raises(ValueError, match="task-local provenance"):
         await operations.observe(caller, first.handle, encode_cursor(state))
-    with pytest.raises(ValueError, match="another recipient"):
+    with pytest.raises(ValueError, match="different read or history epoch") as refused:
         await operations.observe(TaskCaller("other", "human"), first.handle, page["cursor"])
+    assert "first private output" not in str(refused.value)
+    assert "second private output" not in str(refused.value)
+    await owner.shutdown()
     await owner.recovery.drain()
 
 

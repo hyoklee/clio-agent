@@ -8,15 +8,16 @@ Covers the PR2 behavior surface:
   state queries the finalize region reads instead of the deleted ``turn.py``
   closure vars (``current_stream_part_id``, ``was_closed_live``,
   ``raw_streamed_text``);
-* ``adopt_carried_state`` (the ask_user carry, encoded explicitly);
+* historical ``adopt_carried_state`` decoding;
 * turn-loop lifecycle integration: a production turn opens the ledger, the
   stream tap appends through it, and EVERY exit path settles it — success,
-  the #756 finalize error envelope, and the ask_user early return (whose
-  resume turn re-adopts the carried in-flight assistant state).
+  the #756 finalize error envelope, and an asynchronous Question followed by
+  an answer wake with a distinct segment and the same active assignment.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from pathlib import Path
@@ -447,7 +448,7 @@ def test_late_chunk_after_settle_is_rejected_and_never_repopulates_legacy_dicts(
 
 class _AskUserThenAnswerAgent:
     """First forward: appends a live tool part, then asks the user.
-    Second forward (the resume): answers."""
+    Second forward (the answer wake): answers."""
 
     def __init__(self) -> None:
         self.calls = 0
@@ -467,27 +468,30 @@ class _AskUserThenAnswerAgent:
                 None,
                 result={"ok": True, "text": "rows"},
             )
-            return _Pred(
-                answer="",
-                selected_expert="main",
-                ask_user={
-                    "action": "ask_user",
-                    "question": "Which column?",
-                    "allow_freeform": True,
-                    "reason": "ambiguous_column",
-                },
+            from clio_agent.gact import context
+            from clio_agent.gact.task_declarations import build_ask_user_tool
+
+            app = context.active_app()
+            receipt = asyncio.run(
+                app.state.builtin_boundary.bind(build_ask_user_tool()).acall(
+                    question="Which column?", allow_freeform=True
+                )
             )
+            self.question_handle = receipt["handle"]
+            return _Pred(
+                answer="Question posted; independent work can continue.", selected_expert="main"
+            )
+
         return _Pred(answer=f"resumed: {question[-20:]}", selected_expert="main")
 
 
 @pytest.mark.parametrize("disk", ["fast", "slow"])
-def test_ask_user_pause_persists_activity_and_resume_has_a_distinct_turn(
+def test_async_question_preserves_activity_and_answer_wakes_a_distinct_segment(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, disk: str
 ) -> None:
-    """Pause and resume retain every observed part exactly once, even on reload.
+    """An asynchronous Question and its answer wake retain every observed part.
 
-    The paused assistant is durable before the answer, rather than relying on
-    process-local carry dictionaries which disappear on restart. ``slow`` delays
+    The first assistant response is durable before the answer. ``slow`` delays
     every message-store write, as a loaded machine does: the test must wait on the
     turn's own signals, never on how long a write usually takes.
     """
@@ -523,9 +527,9 @@ def test_ask_user_pause_persists_activity_and_resume_has_a_distinct_turn(
             after_event_id=cursor,
             statuses=frozenset({"waiting_user", *TERMINAL_STATUSES}),
         )
-        assert paused_status == "waiting_user"
+        assert paused_status == "idle"
         session = client.get(f"/v1/sessions/{sid}").json()
-        assert session["status"] == "waiting_user"
+        assert session["status"] == "idle"
 
         assert app.state.turn_transcripts.get(sid) is None
         paused_messages = app.state.message_store.load_session(sid)
@@ -534,11 +538,14 @@ def test_ask_user_pause_persists_activity_and_resume_has_a_distinct_turn(
         paused_msg_id = paused[0].id
         paused_part_ids = [p.id for p in paused[0].parts]
         assert any(pid.endswith("_call") for pid in paused_part_ids)
-        assert paused[0].stop_reason == "waiting_user"
+        assert paused[0].stop_reason == "end_turn"
         assert sid not in app.state.live_assistant_message_ids
         assert sid not in app.state.live_assistant_parts
 
-        question_id = session["metadata"]["pending_user_question_id"]
+        question_id = agent.question_handle
+        task = app.state.task_history.task_snapshot(question_id)
+        assert task is not None and task.raw_status == "pending"
+        assert task.owner.assignment_id == ack.json()["task_handle"]
         cursor = app.state.bus.latest_event_id(sid)
         answered = client.post(
             f"/v1/sessions/{sid}/questions/{question_id}/answer",

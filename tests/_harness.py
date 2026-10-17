@@ -226,23 +226,29 @@ def install_host_agent_executor(monkeypatch: Any) -> None:
 class _ScriptedModule:
     """A built module whose forward is a test-supplied script."""
 
-    def __init__(self, script: Callable[..., Any], agent_def: Any) -> None:
+    def __init__(self, script: Callable[..., Any], agent_def: Any, *, commit_input: bool) -> None:
         self._script = script
         self.agent_def = agent_def
+        self._commit_input = commit_input
 
     def __call__(self, question: str, session_id: str, **kwargs: Any) -> Any:
         """Run the script with the kwargs the turn passed."""
 
-        _commit_test_model_input(self.agent_def, question, session_id)
+        if self._commit_input:
+            _commit_test_model_input(self.agent_def, question, session_id)
         return self._script(question=question, session_id=session_id, **kwargs)
 
 
-def install_scripted_module(monkeypatch: Any, script: Callable[..., Any]) -> None:
+def install_scripted_module(
+    monkeypatch: Any, script: Callable[..., Any], *, commit_input: bool = True
+) -> None:
     """Make every turn build a module that runs ``script``.
 
     ``script`` receives the kwargs the turn passes to the built module
     (``question``, ``session_id``, ``session_mode``, ``session_edit_mode``,
-    ``cancel_requested``) and returns the prediction. It runs in the turn's
+    ``cancel_requested``) and returns the prediction. Scripts running the real
+    ClioReAct loop use ``commit_input=False``: that loop owns its input commit.
+    Stand-in models use the normal confirmed boundary here. It runs in the turn's
     forward executor, so it can stream live text with :func:`emit_live_text`.
     """
 
@@ -250,7 +256,7 @@ def install_scripted_module(monkeypatch: Any, script: Callable[..., Any]) -> Non
 
     def _builder(base_agent: Any, agent_def: Any) -> _ScriptedModule:
         del base_agent
-        return _ScriptedModule(script, agent_def)
+        return _ScriptedModule(script, agent_def, commit_input=commit_input)
 
     monkeypatch.setattr(gact_app, "_build_blueprint_dspy_module", _builder)
 

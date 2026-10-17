@@ -151,8 +151,7 @@ def test_shutdown_retains_goal_but_user_stop_and_work_failure_do_not_resume(
     state = _turn_state()
     state.app, state.sid = app, sid
     state.error_info = {"error": "cancelled"}
-    monkeypatch.setattr(turn_finalize_goal, "finalize_turn", lambda *a, **kw: None)
-    monkeypatch.setattr(turn_finalize_goal, "_forward_executor", lambda _state: None)
+    monkeypatch.setattr(turn_finalize_goal, "finalize_turn", lambda *a, **kw: True)
     asyncio.run(
         turn_finalize_goal.finalize_turn_async(
             state, None, drain_observed_tool_calls=lambda: [], update_retry_attempt=lambda *a: None
@@ -181,9 +180,10 @@ def test_finalize_turn_runs_off_the_loop(monkeypatch: Any) -> None:
     started = threading.Event()
     release = threading.Event()
 
-    def _parked_finalize(state: Any, pred: Any, **kwargs: Any) -> None:
+    def _parked_finalize(state: Any, pred: Any, **kwargs: Any) -> bool:
         started.set()
         assert release.wait(timeout=5.0)
+        return True
 
     async def _goal(app: Any, **kwargs: Any) -> Any:
         return None
@@ -216,8 +216,9 @@ def test_finalize_turn_async_runs_finalize_then_goal_then_compose(monkeypatch: A
     order: list[str] = []
     sentinel = object()
 
-    def _finalize(state: Any, pred: Any, **kwargs: Any) -> None:
+    def _finalize(state: Any, pred: Any, **kwargs: Any) -> bool:
         order.append("finalize")
+        return True
 
     async def _goal(app: Any, **kwargs: Any) -> Any:
         order.append("goal")

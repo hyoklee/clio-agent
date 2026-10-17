@@ -646,7 +646,9 @@ def test_every_step_runs_on_one_persistent_loop_in_the_callers_context() -> None
         cache=False,
         num_retries=0,
     )
-    token = gact_context.set_session_id("sess-loop")
+    session_id = gact_context.active_session_id()
+    assert session_id, "The Core fixture must supply a confirmed conversation"
+    token = gact_context.set_session_id(session_id)
     try:
         with dspy.context(lm=lm):
             ClioReAct("question -> answer", tools=[search])(question="q")
@@ -654,4 +656,4 @@ def test_every_step_runs_on_one_persistent_loop_in_the_callers_context() -> None
         gact_context.reset(token)
     loops = {loop for loop, _ in seen}
     assert len(seen) == 2 and len(loops) == 1
-    assert {session for _, session in seen} == {"sess-loop"}
+    assert {session for _, session in seen} == {session_id}

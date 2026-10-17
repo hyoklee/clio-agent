@@ -9,6 +9,7 @@ surfaced later as an unraisable error in whichever test ran next.
 from __future__ import annotations
 
 import asyncio
+import threading
 from typing import Any
 
 from tests.test_sdk.conftest import StreamingASGITransport
@@ -17,14 +18,28 @@ from tests.test_sdk.conftest import StreamingASGITransport
 def test_closing_the_transport_drains_a_running_turn(app: Any) -> None:
     transport = StreamingASGITransport(app)
     runner: Any = app.state.turn_runner
+    started = threading.Event()
+    retired = threading.Event()
 
-    async def spawn() -> asyncio.Task[object]:
-        return runner.spawn(asyncio.sleep(3600), sid="s1", turn_id="t1")
+    async def hold(_segment: Any) -> Any:
+        started.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            retired.set()
 
-    task = asyncio.run_coroutine_threadsafe(spawn(), transport._loop).result(10)
-    assert runner.busy("s1")
+    from clio_agent.gact.session_input import accept_session_input
 
-    transport.close()
+    app.state.conversations._run = hold
+    sid = app.state.sessions.create(workspace_id="ws_default", title="Drain").id
+    try:
+        accept_session_input(app, sid, "Hold this owned turn")
+        assert started.wait(10)
+        assert runner.busy(sid)
+        task = app.state.in_flight_turns[sid]
+    finally:
+        transport.close()
 
     assert task.done(), "the turn was left pending when the app stopped"
-    assert not runner.busy("s1")
+    assert retired.is_set()
+    assert not runner.busy(sid)

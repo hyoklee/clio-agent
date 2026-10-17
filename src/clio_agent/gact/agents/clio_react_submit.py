@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping
-from typing import Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import pydantic
 
-from clio_agent.gact.agents.dspy_native_tool import ClioNativeTool
+if TYPE_CHECKING:
+    from clio_agent.gact.agents.dspy_native_tool import ClioNativeTool
 
 
 class SubmittedOutputs(dict[str, Any]):
@@ -20,6 +21,8 @@ class SubmittedOutputs(dict[str, Any]):
 
 def submit_tool(signature: Any) -> ClioNativeTool:
     """Build the finish boundary without adding orchestration to signature outputs."""
+    from clio_agent.gact.agents.dspy_native_tool import ClioNativeTool
+
     fields = signature.output_fields
     if "assignment_disposition" in fields:
         raise ValueError("assignment_disposition is reserved for conversation orchestration")
@@ -46,7 +49,7 @@ def submit_tool(signature: Any) -> ClioNativeTool:
             if name not in values:
                 present, value = _declared_default(field)
                 if not present:
-                    raise ValueError(f"Missing output: {name}")
+                    raise ValueError(f"Missing required final output field(s): {name}")
             else:
                 value = values[name]
             validated[name] = pydantic.TypeAdapter(field.annotation).validate_python(value)
@@ -56,6 +59,10 @@ def submit_tool(signature: Any) -> ClioNativeTool:
         submit,
         name="submit",
         args=schemas,
+        arg_types={
+            **{name: field.annotation for name, field in fields.items()},
+            "assignment_disposition": Literal["yield", "complete"] | None,
+        },
         desc="Return the declared outputs and yield or complete this assignment. Yield when awaiting background work or answers.",
     )
 

@@ -868,7 +868,10 @@ def test_a2ui_surface_stops_reporting_pending_once_it_was_responded_to(tmp_path)
             json={"message": action},
         )
         assert responded.status_code == 200
-        after = client.get(f"/v1/sessions/{session.id}/interactions").json()["interactions"]
+        after = client.get(
+            f"/v1/sessions/{session.id}/interactions",
+            params={"include_recent_resolved": True},
+        ).json()["interactions"]
 
     settled = [row for row in after if row["kind"] == "a2ui"]
     assert [row["status"] for row in settled] == ["answered"]
@@ -958,9 +961,8 @@ def test_provenance_kinds_classify_the_families_that_are_actually_emitted() -> N
 def test_bare_question_ids_no_longer_route_through_the_question_branch(tmp_path) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
     session = app.state.sessions.create(workspace_id="ws_default", title="ids")
-    _armed_question(app, session.id, "q_bare")
-
     with TestClient(app) as client:
+        _armed_question(app, session.id, "q_bare")
         bare = client.post(
             f"/v1/sessions/{session.id}/interactions/q_bare/respond",
             headers=HEADERS,
@@ -1005,7 +1007,7 @@ def test_registering_interaction_routes_preserves_core_question_history(tmp_path
         row = _armed_question(app, session.id, "task_route_registration", ttl_s=0)
         original = app.state.task_history.task_snapshot(row.id)
         revision = app.state.task_history.revision
-        register_interaction_routes(app)
+        register_interaction_routes(app, app.state.gact_deps)
         assert app.state.task_history.revision == revision
         assert app.state.task_history.task_snapshot(row.id) == original
 
@@ -1015,7 +1017,9 @@ def test_registering_interaction_routes_preserves_core_question_history(tmp_path
 # --------------------------------------------------------------------------- #
 
 
-def test_uncorrelated_mcp_question_states_its_kind_downgrade(tmp_path: Path) -> None:
+def test_inline_mcp_question_retains_identity_without_inventing_a_backend_task(
+    tmp_path: Path,
+) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
     with TestClient(app) as client:
         session = app.state.sessions.create(workspace_id="ws_default", title="mcp")
@@ -1032,11 +1036,12 @@ def test_uncorrelated_mcp_question_states_its_kind_downgrade(tmp_path: Path) -> 
         rows = client.get(f"/v1/sessions/{session.id}/interactions").json()["interactions"]
         row = next(row for row in rows if row["id"] == "question:" + task.handle)
         assert row["kind"] == "question"
-        assert row["payload"]["degraded"] == {
-            "reason": "mcp_task_correlation_missing",
-            "declared_kind": "mcp_task_input",
-            "projected_kind": "question",
-        }
+        assert row["source"]["protocol"] == "mcp"
+        assert row["payload"]["tool_name"] == "earthscope_query"
+        assert row["payload"]["invocation_id"] == "c1"
+        assert row["payload"]["task_handle"] == task.handle
+        assert row["payload"].get("task_id") is None
+        assert "degraded" not in row["payload"]
 
 
 def test_unreadable_resource_store_surfaces_a_typed_discovery_degradation(tmp_path) -> None:

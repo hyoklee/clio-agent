@@ -795,9 +795,10 @@ def test_steer_door_malformed_capabilities_422_and_not_remembered(
     test_client, task_id = running_child_client
     app = test_client.app
     resp = test_client.post(
-        f"/v1/agent-tasks/{task_id}/steer",
+        f"/v1/sessions/{app.state.task_history.task_snapshot(task_id).owner.session_id}/messages",
         json={
             "text": "hello child",
+            "delivery": "steer",
             "metadata": {"a2uiClientCapabilities": {"v0.9": {"supportedCatalogIds": "nope"}}},
         },
     )
@@ -817,9 +818,10 @@ def test_steer_door_valid_capabilities_remembered_on_child_session(
     test_client, task_id = running_child_client
     app = test_client.app
     resp = test_client.post(
-        f"/v1/agent-tasks/{task_id}/steer",
+        f"/v1/sessions/{app.state.task_history.task_snapshot(task_id).owner.session_id}/messages",
         json={
             "text": "hello child",
+            "delivery": "steer",
             "metadata": {
                 "a2uiClientCapabilities": {"v0.9": {"supportedCatalogIds": [WORKSPACE_ID]}}
             },
@@ -844,9 +846,10 @@ def test_steer_door_data_model_checked_against_the_childs_own_surfaces(
 
     # No surface on the CHILD requested sendDataModel yet -> refused.
     resp = test_client.post(
-        f"/v1/agent-tasks/{task_id}/steer",
+        f"/v1/sessions/{app.state.task_history.task_snapshot(task_id).owner.session_id}/messages",
         json={
             "text": "hello child",
+            "delivery": "steer",
             "metadata": {"a2uiClientDataModel": {"version": "v0.9.1", "surfaces": {"s1": {}}}},
         },
     )
@@ -873,9 +876,10 @@ def test_steer_door_data_model_checked_against_the_childs_own_surfaces(
     assert create.status_code == 200, create.text
 
     resp2 = test_client.post(
-        f"/v1/agent-tasks/{task_id}/steer",
+        f"/v1/sessions/{app.state.task_history.task_snapshot(task_id).owner.session_id}/messages",
         json={
             "text": "hello again",
+            "delivery": "steer",
             "metadata": {
                 "a2uiClientDataModel": {"version": "v0.9.1", "surfaces": {"s1": {"x": 1}}}
             },

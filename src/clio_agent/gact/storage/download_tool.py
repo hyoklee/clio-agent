@@ -24,7 +24,7 @@ def build_connected_data_download_tool() -> Any:
             "source_id": {"type": "string"},
             "paths": {"type": "array", "items": {"type": "string"}, "minItems": 1},
         },
-        desc="Download approved source paths and immediately return a durable Download handle. Continue independent work or use observe_tasks/wait_tasks. Completion wakes eligible idle agents; Stop leaves the transfer running.",
+        desc="Download approved source paths and immediately return a durable Download task handle. Continue independent work or use observe_tasks/wait_tasks. Completion wakes eligible idle agents; Stop leaves the transfer running.",
         presentation="tasks",
         domain="resources",
         title="Download source files",

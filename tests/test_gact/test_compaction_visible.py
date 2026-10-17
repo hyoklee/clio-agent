@@ -128,7 +128,7 @@ def _install_loop(
             for token in reversed(tokens):
                 ctx.reset(token)
 
-    install_scripted_module(monkeypatch, run)
+    install_scripted_module(monkeypatch, run, commit_input=False)
 
 
 @pytest.fixture
@@ -635,7 +635,7 @@ def test_a_record_whose_turn_settled_before_the_fold_is_still_shown_live(
             for token in reversed(tokens):
                 ctx.reset(token)
 
-    install_scripted_module(monkeypatch, run)
+    install_scripted_module(monkeypatch, run, commit_input=False)
     _patch_tokens(monkeypatch, high_on=set())
     bus = app.state.bus
     cursor = bus.latest_event_id(sid)

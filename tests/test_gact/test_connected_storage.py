@@ -184,7 +184,7 @@ def test_read_only_adapter_and_snapshot_never_apply_upstream(source_setup: tuple
     assert not (workspace / "connected-data").exists()
 
 
-def test_cancellation_and_restart_recovery_keep_identity_and_previous_data(
+def test_cancel_cleanup_and_reopened_store_preserve_work_without_replaying_it(
     source_setup: tuple,
 ) -> None:
     store, record, adapter, workspace = source_setup
@@ -195,10 +195,11 @@ def test_cancellation_and_restart_recovery_keep_identity_and_previous_data(
     assert store.get("operation", operation.id, TransferOperation).state == "cancelled"
     operation = store.begin_operation(record.source.id, "materialize")
     restored = SourceStore(store.root)
-    restored.recover()
+    assert restored.get("operation", operation.id, TransferOperation) == operation
     assert restored.clio_id == store.clio_id
-    assert restored.get("operation", operation.id, TransferOperation).state == "interrupted"
-    record = transfer((restored, record, adapter, workspace))
+    # The body was never started. This explicit caller resumes the retained workload;
+    # opening the data store itself never drives or settles an execution.
+    record = materialize(restored, record, adapter, workspace, operation)
     assert record.source.materialization == "ready"
 
 

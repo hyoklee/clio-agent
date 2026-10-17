@@ -544,107 +544,106 @@ def test_v3_message_projects_only_public_mcp_app_response_identity() -> None:
 
 def test_v3_transcript_preserves_navigable_child_agent_semantics(tmp_path: Path) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    parent = app.state.sessions.create(workspace_id="ws_default", title="Flat NDP")
-    child = record_delegation_fixture(
-        app,
-        parent.id,
-        handle="task_geo",
-        agent="geospatial",
-        label="Resolve station region",
-        completed=True,
-        description="Ground the requested region before catalog search.",
-        parent_turn_id="run_1",
-    )
-    app.state.messages[parent.id] = [
-        Message(
-            id="msg_subagent",
-            session_id=parent.id,
-            turn_id="run_1",
-            role="assistant",
-            created_at="2026-08-22T00:00:00+00:00",
-            updated_at="2026-08-22T00:00:01+00:00",
-            parts=[
-                Part(
-                    id="handoff_geo_started",
-                    type="expert_handoff",
-                    handle_id="task_geo",
-                    child_agent="geospatial",
-                    run_label="Resolve station region",
-                    stage="delegate.started",
-                    live_state="running",
-                    status="running",
-                    text="main -> geospatial",
-                    metadata={"question": "Ground the requested region before catalog search."},
-                ),
-                Part(
-                    id="handoff_geo_returned",
-                    type="expert_handoff",
-                    handle_id="task_geo",
-                    child_agent="geospatial",
-                    run_label="Resolve station region",
-                    stage="delegate.completed",
-                    live_state="completed",
-                    status="completed",
-                    duration_ms=12_500.0,
-                    text="main <- geospatial",
-                    metadata={"output": "Resolved the region with authoritative coordinates."},
-                ),
-            ],
+    with TestClient(app) as client:
+        parent = app.state.sessions.create(workspace_id="ws_default", title="Flat NDP")
+        child = record_delegation_fixture(
+            app,
+            parent.id,
+            handle="task_geo",
+            agent="geospatial",
+            label="Resolve station region",
+            completed=True,
+            description="Ground the requested region before catalog search.",
+            parent_turn_id="run_1",
         )
-    ]
+        app.state.messages[parent.id] = [
+            Message(
+                id="msg_subagent",
+                session_id=parent.id,
+                turn_id="run_1",
+                role="assistant",
+                created_at="2026-08-22T00:00:00+00:00",
+                updated_at="2026-08-22T00:00:01+00:00",
+                parts=[
+                    Part(
+                        id="handoff_geo_started",
+                        type="expert_handoff",
+                        handle_id="task_geo",
+                        child_agent="geospatial",
+                        run_label="Resolve station region",
+                        stage="delegate.started",
+                        live_state="running",
+                        status="running",
+                        text="main -> geospatial",
+                        metadata={"question": "Ground the requested region before catalog search."},
+                    ),
+                    Part(
+                        id="handoff_geo_returned",
+                        type="expert_handoff",
+                        handle_id="task_geo",
+                        child_agent="geospatial",
+                        run_label="Resolve station region",
+                        stage="delegate.completed",
+                        live_state="completed",
+                        status="completed",
+                        duration_ms=12_500.0,
+                        text="main <- geospatial",
+                        metadata={"output": "Resolved the region with authoritative coordinates."},
+                    ),
+                ],
+            )
+        ]
 
-    transcript = (
-        TestClient(app).get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
-    )
+        transcript = client.get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
 
-    assert transcript["messages"][0]["blocks"] == [
-        {
-            "id": "handoff_geo_started",
-            "type": "subagent",
-            "subagent_id": "task_geo",
-            "stage": "delegate.started",
-            "task": "Ground the requested region before catalog search.",
-        },
-        {
-            "id": "handoff_geo_returned",
-            "type": "subagent",
-            "subagent_id": "task_geo",
-            "stage": "delegate.completed",
-        },
-    ]
+        assert transcript["messages"][0]["blocks"] == [
+            {
+                "id": "handoff_geo_started",
+                "type": "subagent",
+                "subagent_id": "task_geo",
+                "stage": "delegate.started",
+                "task": "Ground the requested region before catalog search.",
+            },
+            {
+                "id": "handoff_geo_returned",
+                "type": "subagent",
+                "subagent_id": "task_geo",
+                "stage": "delegate.completed",
+            },
+        ]
 
-    assert transcript["subagents"] == [
-        {
-            "id": "task_geo",
-            "session_id": parent.id,
-            "parent_run_id": "run_1",
-            "child_session_id": child.owner.session_id,
-            "agent_id": "geospatial",
-            "title": "Resolve station region",
-            "state": "completed",
-            "summary": "Resolved the region with authoritative coordinates.",
-            "task": "Ground the requested region before catalog search.",
-            "result": "Resolved the region with authoritative coordinates.",
-            "duration_ms": 12_500.0,
-        }
-    ]
+        assert transcript["subagents"] == [
+            {
+                "id": "task_geo",
+                "session_id": parent.id,
+                "parent_run_id": "run_1",
+                "child_session_id": child.owner.session_id,
+                "agent_id": "geospatial",
+                "title": "Resolve station region",
+                "state": "completed",
+                "summary": "Resolved the region with authoritative coordinates.",
+                "task": "Ground the requested region before catalog search.",
+                "result": "Resolved the region with authoritative coordinates.",
+                "duration_ms": 12_500.0,
+            }
+        ]
 
 
 def test_v3_task_records_do_not_fabricate_transcript_handoff_parts(tmp_path: Path) -> None:
     """Core task history is queried separately; a read never invents assistant output."""
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
-    child = record_delegation_fixture(
-        app,
-        parent.id,
-        handle="task_child",
-        agent="geospatial",
-        completed=True,
-        label="Resolve Seattle",
-        description=None,
-        result={"answer": "Seattle resolved to an authoritative region."},
-    )
     with TestClient(app) as client:
+        parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
+        child = record_delegation_fixture(
+            app,
+            parent.id,
+            handle="task_child",
+            agent="geospatial",
+            completed=True,
+            label="Resolve Seattle",
+            description=None,
+            result={"answer": "Seattle resolved to an authoritative region."},
+        )
         transcript = client.get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
         assert transcript["messages"] == []
         assert transcript["subagents"] == []
@@ -660,16 +659,16 @@ def test_v3_task_records_do_not_fabricate_transcript_handoff_parts(tmp_path: Pat
 def test_v3_omits_unrecorded_runtime_handoffs(tmp_path: Path) -> None:
     """Passive child records do not fabricate started events or parent transcript rows."""
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
-    internal = record_delegation_fixture(
-        app,
-        parent.id,
-        handle="task_agent_answer",
-        agent="main",
-        label="agent-elicitation answer",
-        parent_turn_id="run_tool",
-    )
     with TestClient(app) as client:
+        parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
+        internal = record_delegation_fixture(
+            app,
+            parent.id,
+            handle="task_agent_answer",
+            agent="main",
+            label="agent-elicitation answer",
+            parent_turn_id="run_tool",
+        )
         transcript = client.get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
         assert transcript["subagents"] == [] and transcript["messages"] == []
         assert app.state.task_history.task_snapshot(internal.handle) == internal
@@ -681,17 +680,17 @@ def test_v3_omits_unrecorded_runtime_handoffs(tmp_path: Path) -> None:
 def test_v3_legacy_child_without_parent_run_remains_in_core_only(tmp_path: Path) -> None:
     """A missing historical run is explicit; display reads never reconstruct one."""
     app = build_app(sessions_path=tmp_path / "sessions.json")
-    parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
-    child = record_delegation_fixture(
-        app,
-        parent.id,
-        handle="task_watcher",
-        agent="spotter_watcher",
-        parent_turn_id=None,
-        label="SPOTTER AI",
-        description=None,
-    )
     with TestClient(app) as client:
+        parent = app.state.sessions.create(workspace_id="ws_default", title="Parent")
+        child = record_delegation_fixture(
+            app,
+            parent.id,
+            handle="task_watcher",
+            agent="spotter_watcher",
+            parent_turn_id=None,
+            label="SPOTTER AI",
+            description=None,
+        )
         transcript = client.get(f"/v1/sessions/{parent.id}/messages", headers=V3_HEADERS).json()
         assert transcript["messages"] == [] and transcript["subagents"] == []
         assert app.state.task_history.task_snapshot(child.handle) == child

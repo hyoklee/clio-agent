@@ -71,6 +71,9 @@ def transfer_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
         )
         assert created.status_code == 201, created.text
         wid = created.json()["id"]
+        owner = client.post("/v1/sessions", json={"workspace_id": wid, "title": "Transfer owner"})
+        assert owner.status_code == 200, owner.text
+        sid = owner.json()["id"]
         source = client.post(
             f"/v1/workspaces/{wid}/sources",
             json={"provider": "local", "root": str(upstream), "label": "Transfer fixture"},
@@ -85,7 +88,7 @@ def transfer_setup(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
 
         monkeypatch.setattr(app.state.connected_storage, "adapter", source_adapter)
         try:
-            yield client, app, f"/v1/workspaces/{wid}/sources/{source_id}", adapter, payload
+            yield client, app, f"/v1/workspaces/{wid}/sources/{source_id}", adapter, payload, sid
         finally:
             adapter.release.set()
 
@@ -103,6 +106,18 @@ def _wait_terminal(client: TestClient, prefix: str, identifier: str) -> dict[str
             return row
         time.sleep(0.01)
     pytest.fail("the transfer never settled")
+
+
+def _wait_cancel_request(client: TestClient, prefix: str, identifier: str) -> dict[str, Any]:
+    """Observe deferred intent confirmation while the actual worker is still held."""
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        row = _operation(client, prefix, identifier)
+        if row["cancel_requested"]:
+            assert row["state"] == "cancellation_requested", row
+            return row
+        time.sleep(0.01)
+    pytest.fail("the cancellation request was not durably recorded")
 
 
 @contextmanager
@@ -129,8 +144,8 @@ def test_download_ack_progress_and_result_do_not_block_control_plane(
     transfer_setup: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The real 202/progress/result path stays responsive while file I/O is paused."""
-    client, app, prefix, adapter, payload = transfer_setup
-    response = client.post(prefix + "/transfer", json={"access": "read_only"})
+    client, app, prefix, adapter, payload, sid = transfer_setup
+    response = client.post(prefix + "/transfer", json={"access": "read_only", "session_id": sid})
     assert response.status_code == 202, response.text
     identifier = response.json()["id"]
     source_id = prefix.rsplit("/", 1)[-1]
@@ -164,22 +179,23 @@ def test_cancel_is_requested_then_settled_without_publishing_partial_data(
     transfer_setup: tuple[Any, ...], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An acknowledged cancellation becomes terminal only when the transfer owner settles."""
-    client, app, prefix, adapter, payload = transfer_setup
-    response = client.post(prefix + "/transfer", json={"access": "read_only"})
+    client, app, prefix, adapter, payload, sid = transfer_setup
+    response = client.post(prefix + "/transfer", json={"access": "read_only", "session_id": sid})
     assert response.status_code == 202, response.text
     identifier = response.json()["id"]
     assert adapter.entered.wait(timeout=5), str(_operation(client, prefix, identifier))
     cancellation = client.post(prefix + f"/operations/{identifier}/cancel")
     assert cancellation.status_code == 200, cancellation.text
-    pending = _operation(client, prefix, identifier)
+    assert cancellation.json()["cancel_requested"] is True
+    pending = _wait_cancel_request(client, prefix, identifier)
     assert pending["cancel_requested"] is True
-    assert pending["state"] == "running"
+    assert pending["state"] == "cancellation_requested"
 
     with _pause_cleanup(monkeypatch, identifier) as cleanup:
         adapter.release.set()
         assert cleanup.wait(timeout=5), str(_operation(client, prefix, identifier))
         pending = _operation(client, prefix, identifier)
-        assert pending["state"] == "running"
+        assert pending["state"] == "cancellation_requested"
         assert pending["cancel_requested"] is True
         assert client.get("/v1/health").status_code == 200
     settled = _wait_terminal(client, prefix, identifier)

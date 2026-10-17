@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 from pathlib import Path
 from types import SimpleNamespace
@@ -1814,16 +1813,17 @@ def test_agent_submit_remains_core_pending_while_real_runner_is_busy(
     assert response.json()["state"] == "delivered"
     assert (
         sum(message.role == "user" for message in app.state.messages.get(sid, []))
-        == staged_users_before
+        == staged_users_before + 1
     )
-    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "a2ui"]
+    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "human"]
     queued = app.state.task_history.read_content(notice.content)
-    action_data = json.loads(queued["text"].rsplit("\n\nA2UI action data:\n", 1)[1])
-    assert action_data["context"] == {
+    assert queued["message"]["metadata"]["a2ui_action_context"] == {
         "text": "continue the analysis",
         "selected_station_ids": ["SGPS"],
     }
     assert '"selected_station_ids":["SGPS"]' in queued["text"]
+    assert notice.id not in app.state.task_history.acknowledged_notifications(sid)
+    assert app.state.turn_runner.busy(sid)
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions

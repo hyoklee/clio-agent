@@ -415,15 +415,15 @@ def test_idle_action_delivers_and_starts_a_turn_with_context_verbatim(
     assert surface.actions[0]["state"] == "delivered"
     history, owner = app.state.task_history, app.state.conversations
     mail = history.pending_mail(sid)
-    assert len(mail) == 1 and mail[0].kind == "a2ui"
+    assert len(mail) == 1 and mail[0].kind == "human"
     assert mail[0].sender_human == app.state.human_principal
     queued = history.read_content(mail[0].content)
     expected_context = {
         "searchId": "earthscope-la-20260917",
         "stationIds": ["P123", "P456"],
     }
-    action_data = json.loads(queued["text"].rsplit("\n\nA2UI action data:\n", 1)[1])
-    assert action_data["context"] == expected_context
+    assert queued["message"]["metadata"]["a2ui_action_context"] == expected_context
+    assert queued["text"] == surface.actions[0]["narration"]
     assert len(spawned) == 1
     assert mail[0].admission is not None
     assignment = history.latest_assignment(sid)
@@ -434,11 +434,11 @@ def test_idle_action_delivers_and_starts_a_turn_with_context_verbatim(
     assert mail[0].admission.input_revision == mail[0].revision
     staged = owner.mail.stage(owner.caller(sid))
     assert len(staged.items) == 1 and len(staged.injections) == 1
-    payload = json.loads(staged.injections[0][1].split("\n", 1)[1])
-    assert (
-        json.loads(payload["text"].rsplit("\n\nA2UI action data:\n", 1)[1])["context"]
-        == expected_context
-    )
+    source, text = staged.injections[0]
+    assert source == "steer"
+    assert text.endswith(queued["text"])
+    assert "Human " + app.state.human_principal in text
+    assert text.notification_ids == (mail[0].id,)
     assert history.pending_mail(sid) == mail  # Staging is not recipient input commit.
 
 

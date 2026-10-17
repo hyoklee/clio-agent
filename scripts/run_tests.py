@@ -6,6 +6,7 @@ Set UV_CACHE_DIR inside the checkout before invoking uv when syncing dependencie
 
 from __future__ import annotations
 
+import os
 import runpy
 import sys
 from pathlib import Path
@@ -22,6 +23,7 @@ def main() -> None:
     )
 
     runtime = bootstrap_test_runtime(checkout)
+    os.environ["CLIO_TEST_CONTROLLER_RUNTIME"] = str(runtime.root)
     sys.argv[0] = "pytest"
     # pytest's cache provider loads before the suite's configure hook. Keep its
     # writes in the same disposable run even when an inherited option names a

@@ -6,6 +6,7 @@ asserted independently of removed registries and blocking ask modes.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,9 @@ HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
 def post_question(app: Any, sid: str, prompt: str = "Which sample?") -> Any:
     """Post through the registered FastMCP control under actual owner context."""
     with active_turn_fixture(app, sid):
-        return app.state.builtin_boundary.bind(build_ask_user_tool()).func(question=prompt)
+        return asyncio.run(
+            app.state.builtin_boundary.bind(build_ask_user_tool()).acall(question=prompt)
+        )
 
 
 def test_question_header_is_not_an_answerable_interaction_before_posting(
@@ -156,7 +159,7 @@ def test_question_response_settles_the_same_core_identity(
     history = app.state.task_history
     notices = [item for item in history.pending_mail(sid) if item.handle == handle]
     assert len(notices) == 1
-    assert notices[0].kind == "task_result"
+    assert notices[0].kind == ("question_answer" if decision == "answer" else "task_result")
     assert question_row(app, handle).id == handle
 
 
@@ -293,7 +296,7 @@ def test_capabilities_advertise_normalized_interactions(world: tuple[Any, TestCl
     _app, client, _sid = world
     response = client.get("/v1/capabilities")
     assert response.status_code == 200
-    assert response.json()["capabilities"]["interactions"] is True
+    assert response.json()["capabilities"]["x_clio_interactions"] is True
 
 
 def test_damaged_surface_ledger_degrades_interactions_and_snapshot(tmp_path, monkeypatch) -> None:

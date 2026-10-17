@@ -48,7 +48,7 @@ def test_settle_turn_slot_waits_for_the_release_publish() -> None:
     try:
         loop.call_soon_threadsafe(lambda: admit_segment(runner, turn(), sid=SID, turn_id="turn_1"))
         assert loop_held.wait(BACKSTOP_S), "the turn never ran"
-        assert not runner.busy(SID), "busy() already reads free here: the task is done"
+        assert runner.busy(SID), "The physical reservation includes pending retirement/publication"
         assert published == [], "the terminal publish has not run yet"
 
         settled = threading.Event()
@@ -57,7 +57,7 @@ def test_settle_turn_slot_waits_for_the_release_publish() -> None:
             daemon=True,
         )
         waiter.start()
-        # busy() is False, yet the helper must keep waiting for the queued publish.
+        # The helper must keep waiting for physical retirement and the queued publish.
         time.sleep(0.3)
         assert not settled.is_set(), "settle_turn_slot returned before the terminal publish"
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -58,7 +59,7 @@ def test_semantic_events_stream_and_trace_file(tmp_path: Path, monkeypatch) -> N
     app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent())
     with TestClient(app) as client:
         sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-        complete_turn(client, sid, "analyze this")
+        assistant = complete_turn(client, sid, "analyze this")
 
     history = app.state.bus._history.get(sid, [])
     semantic_events = [e for e in history if e.type == "semantic.event"]
@@ -102,7 +103,7 @@ def test_semantic_events_stream_and_trace_file(tmp_path: Path, monkeypatch) -> N
     # Session lifecycle is now a first-class semantic event with its own stable
     # trace. Turn-scoped rows retain the original message-derived trace contract.
     turn_rows = [row for row in semantic_rows if not row["event_type"].startswith("session.")]
-    assert all(row["trace_id"].startswith("trace_msg_user_") for row in turn_rows)
+    assert all(row["trace_id"] == "trace_" + assistant["turn_id"] for row in turn_rows)
     # The DURABLE canonical trace captures FULL (unredacted) bodies.
     request_row = next(row for row in rows if row["event_type"] == "llm.request.started")
     assert request_row["payload"]["input"] == "analyze this"
@@ -305,13 +306,16 @@ def test_tool_observer_emits_semantic_tool_events(tmp_path: Path, monkeypatch) -
     assert tool_mirror == []
 
 
-def test_tool_observer_stamps_curated_title_on_call_events(tmp_path: Path) -> None:
+def test_tool_observer_stamps_curated_title_on_call_events(
+    world: tuple[Any, TestClient, str],
+) -> None:
     """Round-9 wire defect: obs "called" rows rendered the raw tool name because
     the tool.call.started/completed events never carried the title the observer
     already resolves (and already stamps on the tool_call Part). The dedicated
     bus events must carry it too, for a curated tool."""
 
     from clio_agent.gact.agents.tool_instrumentation import instrument_tools, native_tool
+    from tests.test_gact.task_records import active_turn_fixture
 
     def _rank_stations(**_: object) -> str:
         return "ranked"
@@ -328,13 +332,12 @@ def test_tool_observer_stamps_curated_title_on_call_events(tmp_path: Path) -> No
     instrument_tools([tool])
 
     set_config("trace.backend", "none")  # file-layer (file > env); #985 config-first
-    app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent())
-    client = TestClient(app)
-    sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
+    app, _client, sid = world
     observer = _make_tool_observer(app)
 
-    observer("p5_rank_stations", {}, "started", None)
-    observer("p5_rank_stations", {}, "completed", None, "ranked")
+    with active_turn_fixture(app, sid):
+        observer("p5_rank_stations", {}, "started", None)
+        observer("p5_rank_stations", {}, "completed", None, "ranked")
 
     history = app.state.bus._history.get(sid, [])
     dedicated = {

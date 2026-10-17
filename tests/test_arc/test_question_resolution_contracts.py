@@ -8,6 +8,7 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from pydantic import JsonValue
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import (
@@ -39,7 +40,9 @@ async def test_question_projection_preserves_optional_routing_contract(
         for index, routing in enumerate(
             [None, "", "elicitation_routed_to_agent", "agent_elicitation_fallback_to_human"]
         ):
-            metadata = {} if routing is None else {"agent_elicitation_routing": routing}
+            metadata: dict[str, JsonValue] = (
+                {} if routing is None else {"agent_elicitation_routing": routing}
+            )
             task = await asyncio.to_thread(
                 questions.create,
                 root.owner,
@@ -92,6 +95,7 @@ async def test_resolution_is_bound_and_does_not_replace_the_answer(
         frozen = await asyncio.to_thread(questions.freeze_resolution, task.handle, payload)
         repeated = await asyncio.to_thread(questions.freeze_resolution, task.handle, payload)
         current = await asyncio.to_thread(owner.history.task_snapshot, task.handle)
+        assert current is not None and answered.result is not None
         assert frozen == repeated == await asyncio.to_thread(questions.resolution, task.handle)
         assert frozen["question_handle"] == task.handle
         assert frozen["answer_reference"] == answered.result.model_dump(mode="json")
@@ -177,9 +181,13 @@ async def test_degraded_approval_reuses_frozen_content_after_mutable_plan_change
         assert len(resumes) == (0 if decision == "exit_only" else 1)
         if resumes:
             payload = await asyncio.to_thread(owner.history.read_content, resumes[0].content)
-            assert payload["text"] == frozen["resume_text"]
-            assert "Unreviewed changed bytes" not in payload["text"]
+            assert isinstance(payload, dict)
+            text = payload.get("text")
+            assert isinstance(text, str)
+            assert text == frozen["resume_text"]
+            assert "Unreviewed changed bytes" not in text
         current = await asyncio.to_thread(owner.history.task_snapshot, question.handle)
+        assert current is not None
         assert current.result == answered.result and current.terminal_at == answered.terminal_at
     finally:
         await owner.shutdown()
@@ -245,11 +253,9 @@ async def test_input_commit_cannot_acknowledge_mail_in_an_old_epoch(
         )
         assert committed.notification_ids == (item.id,)
         assert item.id in owner.history.acknowledged_notifications(caller.session_id)
-        assert await asyncio.to_thread(owner.history.recovery_input, root.handle, epoch="") is None
+        assert await asyncio.to_thread(owner.history.latest_input, root.handle, epoch="") is None
         assert (
-            await asyncio.to_thread(
-                owner.history.recovery_input, root.handle, epoch="question-clear"
-            )
+            await asyncio.to_thread(owner.history.latest_input, root.handle, epoch="question-clear")
             == committed
         )
     finally:

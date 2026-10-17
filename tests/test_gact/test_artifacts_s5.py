@@ -132,7 +132,7 @@ def _register_file(app, sess, tmp_path: Path, name: str, data: bytes, call_id: s
         tool_name="producer",
         effective_args={"output_path": str(path)},
         call_id=call_id,
-        workspace_id="ws1",
+        workspace_id=sess.workspace_id,
     )
     assert minted, "fixture mint should register the file"
     return path, minted[0]
@@ -880,10 +880,14 @@ def test_used_edge_unresolved_path_arg_is_noted_bare_query_is_not(tmp_path):
 # --------------------------------------------------------------------------- #
 
 
-def test_used_edge_note_auto_revision_when_lease_clean(tmp_path):
+def test_used_edge_note_auto_revision_when_lease_clean(
+    tmp_path: Path, clio_core_plane: Any
+) -> None:
     from clio_agent.gact import tool_observer
 
-    app, sess, _arc = _make_app(tmp_path)
+    app = clio_core_plane
+    workspace = app.state.workspaces.create(name="Artifact lease", root_path=str(tmp_path))
+    sess = app.state.sessions.create(workspace_id=workspace.id, title="Producer")
     path, version = _register_file(app, sess, tmp_path, "in.csv", b"v1", "call_p1")
     path.write_bytes(b"v2-changed")
     # Inside an active tool call (stamp set) with a single writer -> a provably-clean
@@ -891,7 +895,12 @@ def test_used_edge_note_auto_revision_when_lease_clean(tmp_path):
     tool_observer._OBSERVER_CALL_T0.value = time.time()
     try:
         scan = _detect_used_edges(
-            app, sess.id, args={"data_path": str(path)}, workspace_id="ws1", turn_id="", trace_id=""
+            app,
+            sess.id,
+            args={"data_path": str(path)},
+            workspace_id=workspace.id,
+            turn_id="",
+            trace_id="",
         )
     finally:
         tool_observer._OBSERVER_CALL_T0.value = None

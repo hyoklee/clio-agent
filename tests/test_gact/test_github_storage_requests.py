@@ -6,20 +6,17 @@ import base64
 import hashlib
 import json
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 import requests
-from fastapi import FastAPI
-from fastapi.testclient import TestClient
 
-from clio_agent.gact.routes.connected_storage import register_connected_storage_routes
 from clio_agent.gact.storage import github_access
 from clio_agent.gact.storage.github_access import GitHubAccess
 from clio_agent.gact.storage.linked import link_folder, linked_file
 from clio_agent.gact.storage.models import CreateSource
 from clio_agent.gact.storage.service import StorageService
+from tests.test_gact.storage_operation_helpers import storage_world
 
 
 def response(url: str, body: dict[str, Any], status: int = 200) -> requests.Response:
@@ -48,6 +45,7 @@ def github_http(monkeypatch: pytest.MonkeyPatch) -> tuple[list[str], dict[str, b
 
     def get(url: str, **kwargs: Any) -> requests.Response:
         calls.append(url)
+        body: dict[str, Any]
         if url.endswith("/repos/test/data"):
             body = {"default_branch": "main"}
         elif url.endswith("/git/trees/main"):
@@ -76,13 +74,10 @@ def test_browse_navigates_without_repeated_repository_scans(
     monkeypatch.setenv("CLIO_AGENT_HOME", str(tmp_path / "agent"))
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    app = FastAPI()
-    app.state.workspaces = {"w": SimpleNamespace(root_path=str(workspace))}
-    register_connected_storage_routes(app)
     calls, _ = github_http
-    with TestClient(app) as client:
+    with storage_world(tmp_path, workspace) as (_app, client, wid, sid):
         created = client.post(
-            "/v1/workspaces/w/sources",
+            f"/v1/workspaces/{wid}/sources",
             json={
                 "provider": "github",
                 "root": "https://github.com/test/data",
@@ -90,7 +85,7 @@ def test_browse_navigates_without_repeated_repository_scans(
             },
         )
         assert created.status_code == 201, created.text
-        prefix = f"/v1/workspaces/w/sources/{created.json()['id']}"
+        prefix = f"/v1/workspaces/{wid}/sources/{created.json()['id']}"
         assert not calls
         for _ in range(3):
             result = client.post(prefix + "/browse", json={})
@@ -106,7 +101,7 @@ def test_browse_navigates_without_repeated_repository_scans(
             assert client.post(prefix + "/browse", json={"query": query}).status_code == 200
         from tests.test_gact.storage_operation_helpers import complete_indexing
 
-        complete_indexing(client, prefix, client.post(prefix + "/link"))
+        complete_indexing(client, prefix, client.post(prefix + "/link", json={"session_id": sid}))
         assert len(calls) == 3  # Searching and linking reuse the already-read metadata.
 
 

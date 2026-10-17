@@ -285,9 +285,12 @@ def settle_turn_slot(client: TestClient, sid: str, *, timeout: float = 30.0) -> 
     runner = client.app.state.turn_runner
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not runner.busy(sid):
+        pump = runner._pumps.get(sid)
+        if not runner.busy(sid) and (pump is None or pump.done()):
             _await_release_callbacks(runner, sid, max(deadline - time.monotonic(), 1.0))
-            return
+            pump = runner._pumps.get(sid)
+            if not runner.busy(sid) and (pump is None or pump.done()):
+                return
         time.sleep(0.02)
     raise TimeoutError(f"turn slot for {sid} still busy after {timeout}s")
 

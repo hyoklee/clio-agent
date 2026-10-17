@@ -194,13 +194,11 @@ def test_bare_session_builtin_main_has_no_installed_default_registry_prompt(
 
 def test_activated_default_registry_agents_surface_prompts(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={"title": "activated"}).json()["id"]
-    assert (
-        client.post(
-            f"/v1/sessions/{sid}/agent-blueprint",
-            json={"blueprint_id": DEFAULT_AGENT_BLUEPRINT_ID},
-        ).status_code
-        == 200
+    activated = client.post(
+        f"/v1/sessions/{sid}/agent-blueprint",
+        json={"blueprint_id": DEFAULT_AGENT_BLUEPRINT_ID},
     )
+    assert activated.status_code == 200, activated.text
 
     rows = client.get("/v1/agents", params={"session_id": sid}).json()["agents"]
     main = next(a for a in rows if a["id"] == "main")

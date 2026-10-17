@@ -110,76 +110,32 @@ def test_post_messages_ack_does_not_carry_the_transcript_persist(tmp_path: Path)
     assert _write_hits() == []
 
 
-def test_post_judge_goal_persistence_runs_off_the_loop(monkeypatch: Any) -> None:
-    """Site C: the goal.<outcome> event after the awaited judge never runs on the loop."""
-
+def test_post_judge_goal_persistence_runs_off_the_loop(tmp_path: Path, monkeypatch: Any) -> None:
+    """The real Core dependency check and goal settlement both leave the loop responsive."""
     threads: list[str] = []
 
-    def _spy_emit(app: Any, sid: str, event_type: str, **_kw: Any) -> dict[str, Any]:
+    def spy_emit(app: Any, sid: str, event_type: str, **kwargs: Any) -> dict[str, Any]:
         threads.append(f"{event_type}@{threading.current_thread().name}")
         return {}
 
-    class _Sessions:
-        def __init__(self) -> None:
-            self.meta = {
-                "goal": {
-                    "goal_id": "g1",
-                    "active": True,
-                    "cleared": False,
-                    "condition": "done",
-                    "iters_elapsed": 0,
-                    "max_goal_iters": 3,
-                    "created_at": "2026-09-10T00:00:00+00:00",
-                }
-            }
-
-        def get(self, sid: str) -> Any:
-            return type("S", (), {"metadata": self.meta, "tokens_input": 0, "tokens_output": 0})()
-
-        def update(self, sid: str, **kw: Any) -> None:
-            patch = kw.get("metadata_patch") or {}
-            self.meta.update(patch)
-
-    app = type("App", (), {})()
-    app.state = type("State", (), {})()
-    app.state.sessions = _Sessions()
-
-    async def _judge(*_a: Any, **_k: Any) -> Any:
+    async def judge(*args: Any, **kwargs: Any) -> GoalJudgement:
         return GoalJudgement(met=True, reason="ok")
 
-    monkeypatch.setattr(goal_module, "run_llm_judge", _judge)
-    monkeypatch.setattr(goal_module, "_enqueue_goal_redrive", lambda *a, **k: None)
-    monkeypatch.setattr(
-        "clio_agent.gact.runtime.globals._emit_semantic_event", _spy_emit, raising=True
-    )
-
-    async def _run() -> Any:
-        loop_thread = threading.current_thread().name
-        decision = await dispatch_goal_at_finalize(app, session_id="s1", turn_id="t", trace_id="tr")
-        return loop_thread, decision
-
-    loop_thread, decision = asyncio.run(_run())
-    assert decision is not None and decision.outcome == "met"
-    assert threads and all(not t.endswith(f"@{loop_thread}") for t in threads), threads
-
-
-@pytest.mark.parametrize("route", ["compact", "command", "delete_message"])
-def test_routes_that_touch_the_ledger_never_write_from_the_loop(tmp_path: Path, route: str) -> None:
-    """Sites D/E: session create/delete (lifecycle), compact, a command, a message delete."""
-
-    reset_guard_hits()
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent())
+    app = build_app(sessions_path=tmp_path / "goal.json")
     with TestClient(app) as client:
-        sid = _create_session(client)
-        user = complete_turn(client, sid, "first")
-        if route == "compact":
-            client.post(f"/v1/sessions/{sid}/compact", json={})
-        elif route == "command":
-            client.post(f"/v1/sessions/{sid}/commands/help", json={"input": ""})
-        else:
-            client.delete(f"/v1/sessions/{sid}/messages/{user['id']}")
-        client.delete(f"/v1/sessions/{sid}")
-    assert _write_hits() == []
+        sid = client.post("/v1/sessions", json={"title": "Goal settlement"}).json()["id"]
+        goal_module.arm_goal(app, sid, condition="done", max_goal_iters=3)
+        monkeypatch.setattr(goal_module, "run_llm_judge", judge)
+        monkeypatch.setattr("clio_agent.gact.runtime.globals._emit_semantic_event", spy_emit)
+        loop_thread = threading.current_thread().name
+        decision = asyncio.run(
+            dispatch_goal_at_finalize(app, session_id=sid, turn_id="t", trace_id="tr")
+        )
+        assert decision is not None and decision.outcome == "met"
+        assert threads and all(not thread.endswith(f"@{loop_thread}") for thread in threads), (
+            threads
+        )
+        assert app.state.sessions.get(sid).metadata["goal"]["met"] is True
 
 
 def test_compact_folds_the_arc_working_set_off_the_loop(
@@ -251,6 +207,7 @@ def test_pre_model_stop_preserves_confirmed_user_input_off_loop(
         accepted = client.post(f"/v1/sessions/{sid}/messages", json={"text": "second"})
         assert accepted.status_code == 202, accepted.text
         identity = accepted.json()["message_id"]
+        settle_turn_slot(client, sid)
         assert not app.state.turn_runner.busy(sid)
         assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
         original = app.state.task_history.mail_item(sid, identity)

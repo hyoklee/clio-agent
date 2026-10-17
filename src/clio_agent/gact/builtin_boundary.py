@@ -17,6 +17,7 @@ from fastmcp import Client, FastMCP
 from fastmcp.tools import Tool, ToolResult
 from jsonschema import Draft202012Validator
 from pydantic import PrivateAttr
+from referencing import Registry
 
 from clio_agent.arc.task_types import (
     BackendReference,
@@ -173,7 +174,7 @@ class BuiltinBoundary:
             return await self.native_call(tool.name, arguments, captured)
         schema = copy.deepcopy(tool.format_as_litellm_function_call()["function"]["parameters"])
         schema["additionalProperties"] = False
-        Draft202012Validator(schema).validate(arguments)
+        Draft202012Validator(schema, registry=Registry()).validate(arguments)
         sid = captured.run(context.active_session_id)
         assignment = await self.app.state.task_history.io.run(
             self.app.state.task_history.latest_assignment, sid
@@ -245,7 +246,9 @@ class BuiltinBoundary:
                 if invocation.error is not None:
                     raise invocation.error from error
                 raise
-            Draft202012Validator(_OUTPUT_SCHEMA).validate(reply.structured_content)
+            Draft202012Validator(_OUTPUT_SCHEMA, registry=Registry()).validate(
+                reply.structured_content
+            )
             value: Any = reply.data
             if invocation.notifications or invocation.read_handles or invocation.observe_handles:
                 if not isinstance(value, dict):
@@ -297,7 +300,7 @@ class BuiltinBoundary:
             key for key in schema.get("required", []) if key != SUBMISSION_ARGUMENT
         ]
         schema["additionalProperties"] = False
-        Draft202012Validator(schema).validate(public)
+        Draft202012Validator(schema, registry=Registry()).validate(public)
         sid = captured.run(context.active_session_id)
         session = self.app.state.sessions.get(sid)
         if session is None:
@@ -378,29 +381,50 @@ class BuiltinBoundary:
             )
         return value
 
-    def bind(self, tool: Any) -> Any:
-        """Give every local built-in the same native MCP boundary before instrumentation."""
+    @staticmethod
+    def bind(tool: Any) -> Any:
+        """Describe tools without a running app; require its MCP owner on invocation."""
         if getattr(tool.func, "_clio_mcp_bound", False):
             return tool
-        from clio_agent.gact.tool_dispatch import call_on_application
+        from clio_agent.gact.tool_dispatch import await_on_application, call_on_application
 
         original = copy.copy(tool)
 
-        @functools.wraps(tool.func)
-        def invoke(**arguments: Any) -> Any:
-            if self._loop is None:
-                raise RuntimeError("Built-in MCP transport is not ready")
-            result = call_on_application(
-                self._loop, self.call(original, arguments, contextvars.copy_context())
+        def owner() -> tuple[BuiltinBoundary, asyncio.AbstractEventLoop]:
+            boundary = getattr(
+                getattr(context.active_app(), "state", None), "builtin_boundary", None
             )
+            if boundary is None or boundary._loop is None:
+                raise RuntimeError("Built-in MCP transport is not ready")
+            return boundary, boundary._loop
+
+        def unpack(result: Any) -> Any:
             if isinstance(result, PresentedToolResult):
                 declare_structured_content(result.structured_content)
                 return result.value
             return result
 
-        invoke.__dict__["_clio_mcp_bound"] = True
+        @functools.wraps(tool.func)
+        def invoke(**arguments: Any) -> Any:
+            boundary, loop = owner()
+            return unpack(
+                call_on_application(
+                    loop, boundary.call(original, arguments, contextvars.copy_context())
+                )
+            )
+
+        @functools.wraps(tool.func)
+        async def invoke_async(**arguments: Any) -> Any:
+            boundary, loop = owner()
+            return unpack(
+                await await_on_application(
+                    loop, boundary.call(original, arguments, contextvars.copy_context())
+                )
+            )
+
         wrapped = copy.copy(tool)
-        wrapped.func = invoke
+        wrapped.func = invoke_async if inspect.iscoroutinefunction(tool.func) else invoke
+        wrapped.func.__dict__["_clio_mcp_bound"] = True
         return wrapped
 
 

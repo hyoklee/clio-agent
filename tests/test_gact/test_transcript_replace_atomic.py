@@ -31,9 +31,11 @@ from __future__ import annotations
 
 import json
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -85,7 +87,12 @@ def _app(tmp_path: Path, agent: Any = None) -> Any:
     )
 
 
-def _message(sid: str, message_id: str, text: str, role: str = "user") -> Message:
+def _message(
+    sid: str,
+    message_id: str,
+    text: str,
+    role: Literal["user", "assistant", "system", "tool"] = "user",
+) -> Message:
     return Message(
         id=message_id,
         turn_id=message_id,
@@ -346,30 +353,29 @@ def test_off_undo_rewind_fork_compact_import_and_clear_survive_restarts(
         assert client.post(f"/v1/sessions/{sid}/undo", json={"count": 1}).status_code == 200
     expected = {sid: ["msg_1", "msg_2", "msg_3", "msg_4"]}
 
-    def _restart_and_check() -> Any:
+    @contextmanager
+    def _restart_and_check() -> Iterator[tuple[Any, TestClient]]:
+        """Read and mutate through one lifespan, rebuilding the app on each restart."""
         app = _app(tmp_path)
         with TestClient(app) as client:
             for session_id, ids in expected.items():
                 assert _ids(client, session_id) == ids, session_id
-        return app
+            yield app, client
 
-    app = _restart_and_check()
-    with TestClient(app) as client:
+    with _restart_and_check() as (app, client):
         rewind = client.post(
             f"/v1/sessions/{sid}/rewind", json={"message_id": "msg_3", "include_target": False}
         )
         assert rewind.status_code == 200, rewind.text
     expected[sid] = ["msg_1", "msg_2", "msg_3"]
 
-    app = _restart_and_check()
-    with TestClient(app) as client:
+    with _restart_and_check() as (app, client):
         fork = client.post(f"/v1/sessions/{sid}/fork", json={"at_message_id": "msg_2"})
         assert fork.status_code == 201, fork.text
         fork_sid = fork.json()["id"]
     expected[fork_sid] = ["msg_1", "msg_2"]
 
-    app = _restart_and_check()
-    with TestClient(app) as client:
+    with _restart_and_check() as (app, client):
         compact = client.post(f"/v1/sessions/{sid}/compact", json={})
         assert compact.status_code == 200, compact.text
         compacted = _ids(client, sid)
@@ -381,8 +387,7 @@ def test_off_undo_rewind_fork_compact_import_and_clear_survive_restarts(
     expected[sid] = compacted
     expected[import_sid] = ["msg_1", "msg_2"]
 
-    app = _restart_and_check()
-    with TestClient(app) as client:
+    with _restart_and_check() as (app, client):
         _delete_session_messages(app, fork_sid)  # the /clear seam: the session stays
         app.state.sessions.update(fork_sid, message_count=0)
         segments = app.state.arc._segments
@@ -395,11 +400,11 @@ def test_off_undo_rewind_fork_compact_import_and_clear_survive_restarts(
     expected[fork_sid] = []
     del expected[import_sid]
 
-    app = _restart_and_check()
-    assert app.state.sessions.get(import_sid) is None
-    assert not app.state.arc._segments.list_segments(
-        import_sid, generation_base(MESSAGE_PART_SCOPE, 1), include_tombstoned=True
-    )
+    with _restart_and_check() as (app, _client):
+        assert app.state.sessions.get(import_sid) is None
+        assert not app.state.arc._segments.list_segments(
+            import_sid, generation_base(MESSAGE_PART_SCOPE, 1), include_tombstoned=True
+        )
     _no_messages_dir(tmp_path)
 
 
@@ -470,8 +475,8 @@ def test_off_a_legacy_row_takes_its_last_atom_message_time_never_messages_dir(
     _no_messages_dir(tmp_path)
 
 
-def test_on_a_legacy_row_takes_its_message_file_mtime(tmp_path: Path) -> None:
-    """File on (default): the pre-switch recovery, from the ``messages/`` file mtime."""
+def test_legacy_file_mtime_cannot_rewrite_session_interaction_time(tmp_path: Path) -> None:
+    """Optional cache timestamps are not proof of a later accepted interaction."""
 
     _legacy_rows(tmp_path, ["sess_legacy", "sess_no_file"])
     messages_dir = tmp_path / "messages"
@@ -484,5 +489,6 @@ def test_on_a_legacy_row_takes_its_message_file_mtime(tmp_path: Path) -> None:
     app = _app(tmp_path)
     assert app.state.transcript_file is True
     sessions = app.state.sessions
-    assert sessions.get("sess_legacy").last_interaction_at == "2026-08-22T18:21:00+00:00"
+    assert sessions.get("sess_legacy").last_interaction_at == "2026-08-01T00:00:00+00:00"
+    assert ledger.stat().st_mtime == observed
     assert sessions.get("sess_no_file").last_interaction_at == "2026-08-01T00:00:00+00:00"

@@ -129,7 +129,7 @@ def test_queue_routes_keep_future_messages_out_of_transcript_until_promoted(
                 f"/v1/sessions/{sid}/messages",
                 json={"parts": [{"type": "text", "text": "hold the slot"}]},
             ).status_code
-            == 200
+            == 202
         )
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline and not app.state.turn_runner.busy(sid):
@@ -231,7 +231,7 @@ def test_message_state_snapshot_reconciles_transcript_pending_queue_and_cursor(
                 f"/v1/sessions/{sid}/messages",
                 json={"parts": [{"type": "text", "text": "hold the slot"}]},
             ).status_code
-            == 200
+            == 202
         )
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline and not app.state.turn_runner.busy(sid):

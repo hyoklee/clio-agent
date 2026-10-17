@@ -68,27 +68,31 @@ def _clio_messages(request: Any) -> list[str]:
 
 
 def test_every_clio_addition_the_agent_sees_is_shown_to_the_user(
-    tmp_path: Path, emitted: list[dict[str, Any]]
+    clio_core_plane: Any, emitted: list[dict[str, Any]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    arc = ARCMemory(data_dir=str(tmp_path / "arc"))
-    arrivals = [[], [("task_results", "child: done")]]
+    """The sole Core mailbox renders a child result identically for model and UI."""
+    from tests.test_gact.test_context_projection import queue_step_arrivals
 
-    def drain() -> list[tuple[str, str]]:
-        return arrivals.pop(0) if arrivals else []
+    app, sid = clio_core_plane, ctx.active_session_id()
+    monkeypatch.setattr(app.state.conversations, "execution_gate", lambda _sid: "test_direct_loop")
+
+    def search(q: str) -> str:
+        queue_step_arrivals(app, sid)
+        return "hits"
 
     lm, engine = scripted_lm([calls(("search", {"q": "x"})), Reply(text="ok")])
-    agent = ClioReAct("question -> answer", tools=[dspy.Tool(lambda q: "hits", name="search")])
-    with _plane(arc, pending_loop_inbox_drain=drain), dspy.context(lm=lm):
-        token = ctx.set_turn_injections([("todos", "- [ ] load"), ("plan_mode", "plan first")])
-        try:
+    agent = ClioReAct("question -> answer", tools=[dspy.Tool(search, name="search")])
+    token = ctx.set_turn_injections([("todos", "- [ ] load"), ("plan_mode", "plan first")])
+    try:
+        with dspy.context(lm=lm):
             agent(question="q")
-        finally:
-            ctx.reset(token)
-
+    finally:
+        ctx.reset(token)
     seen_by_agent = _clio_messages(engine.requests[-1])
     shown = [f"[clio: {row['source']}]\n{row['text']}" for row in emitted]
     assert seen_by_agent == shown
-    assert [row["source"] for row in emitted] == ["tool_use", "todos", "plan_mode", "task_results"]
+    assert [row["source"] for row in emitted] == ["tool_use", "todos", "plan_mode", "task_result"]
+    assert "child: done" in shown[-1]
 
 
 def test_a_note_on_a_tool_call_is_shown_with_its_call(

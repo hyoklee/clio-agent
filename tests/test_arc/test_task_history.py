@@ -122,10 +122,16 @@ def test_crash_after_context_commit_recovers_acknowledgement(
     item = history.record_mail(mail(history, "after"))
     record = input_record(item)
 
-    def crash_after_commit(committed: RecipientInput) -> None:
-        raise OSError("crash after input commit")
+    from clio_agent.gact import task_history_projection
 
-    monkeypatch.setattr(history, "_accept_input", crash_after_commit)
+    accept_input = task_history_projection._accept_input
+
+    def crash_after_commit(selected: TaskHistory, committed: RecipientInput) -> None:
+        if selected is history:
+            raise OSError("crash after input commit")
+        accept_input(selected, committed)
+
+    monkeypatch.setattr(task_history_projection, "_accept_input", crash_after_commit)
     with pytest.raises(OSError, match="after input commit"):
         history.record_input(record)
     assert history.pending_mail("owner") == (item,)

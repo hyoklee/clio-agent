@@ -211,6 +211,26 @@ def test_configured_client_preserves_protocol_negotiation() -> None:
     assert adapted.prior_discover is configured.prior_discover
 
 
+def test_configured_sampling_is_rejected_before_submission() -> None:
+    """The Tasks adapter cannot activate CLIO's prohibited MCP sampling surface."""
+
+    async def refuse_acceptance(call: AcceptedNativeCall) -> AcceptedTaskResult:
+        pytest.fail("Unsupported client options must be rejected before work is submitted")
+
+    async def sampling(*args: Any, **kwargs: Any) -> str:
+        pytest.fail("Configured sampling must never be invoked")
+
+    configured = Client(FastMCP("unsupported-sampling"))
+    configured.set_sampling_callback(sampling)
+    with pytest.raises(ValueError, match="MCP sampling is unsupported"):
+        TaskAwareClient.from_configured(
+            configured,
+            configured.transport,
+            on_task_accepted=refuse_acceptance,
+            elicitation_handler=None,
+        )
+
+
 def native_creation() -> ClientCreateTaskResult:
     """An acceptance-shaped value for adapter custody fault injection only."""
     return ClientCreateTaskResult.model_validate(

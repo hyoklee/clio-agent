@@ -201,15 +201,14 @@ def test_busy_feedback_preserves_declared_narration_and_structured_context(
 
     assert response.status_code == 200, response.text
     assert response.json()["delivery"] == "steer"
-    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "a2ui"]
+    [notice] = [item for item in app.state.task_history.pending_mail(sid) if item.kind == "human"]
     queued = app.state.task_history.read_content(notice.content)
     expected_prefix = 'The user selected ["MTA1","PKRD"] for earthscope-x: analyse them.'
     expected_text = f"{expected_prefix}\n\nStructured context:\n{_canonical(context)}"
-    assert queued["text"] == (
-        expected_text
-        + "\n\nA2UI action data:\n"
-        + json.dumps({"context": context, "client_data_model": None}, ensure_ascii=False)
-    )
+    assert queued["text"] == expected_text
+    assert queued["message"]["metadata"]["a2ui_action_context"] == context
+    assert notice.sender_human == app.state.human_principal
+    assert notice.id not in app.state.task_history.acknowledged_notifications(sid)
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions

@@ -61,8 +61,17 @@ def test_health_is_degraded_not_down_and_names_the_mode(
     _no_binding(monkeypatch)
     app = build_app(sessions_path=tmp_path / "s.json")
 
-    with TestClient(app) as client:
-        response = client.get("/v1/health")
+    app.state.server_boot = True
+    with pytest.raises(ExceptionGroup, match="Task runtime cleanup failed"):
+        with TestClient(app) as client:
+
+            async def failed_start() -> None:
+                with pytest.raises(RuntimeError, match="Durable tasks require clio-core"):
+                    await app.state.task_runtime_start
+
+            assert client.portal is not None
+            client.portal.call(failed_start)
+            response = client.get("/v1/health")
 
     body = response.json()
     assert response.status_code == 200, body

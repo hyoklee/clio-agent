@@ -177,8 +177,8 @@ def test_action_post_no_longer_costs_two_full_folds(tmp_path: Path, monkeypatch:
 
     app = _isolated_app(tmp_path)
 
-    capture_inputs(app)
     with TestClient(app) as client:
+        capture_inputs(app)
         session = app.state.sessions.create(workspace_id="ws_default", title="action fold count")
         sid = session.id
         app.state.a2ui_store.apply_batch(sid, _create_batch("s1"))

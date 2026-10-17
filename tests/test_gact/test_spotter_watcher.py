@@ -74,6 +74,14 @@ def test_explicit_disarm_uses_conversation_cancellation(
     app, parent, child = watcher_world
     task = app.state.task_history.latest_assignment(child)
     disarm_spotter_watcher(app, app.state.sessions.get(parent))
+    import asyncio
+
+    asyncio.run_coroutine_threadsafe(
+        app.state.task_operations.wait(
+            app.state.conversations.caller(parent), task.handle, timeout_s=5
+        ),
+        app.state.mcp_app_loop,
+    ).result(timeout=10)
     current = app.state.task_history.task_snapshot(task.handle)
     assert current.status == "cancelled" and current.terminal_at is not None
     assert current.settlement == "confirmed"

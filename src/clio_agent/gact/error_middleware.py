@@ -100,6 +100,32 @@ class EnvelopeErrorMiddleware:
             await self.app(scope, receive, send)
             return
 
+        state = getattr(scope.get("app"), "state", None)
+        starting = getattr(state, "task_runtime_start", None)
+        if starting is not None and scope.get("path") not in {
+            "/v1/health",
+            "/v1/capabilities",
+            "/v1/server/shutdown",
+            "/v1/desktop/shutdown",
+        }:
+            failed = starting.done() and (starting.cancelled() or starting.exception() is not None)
+            if failed or not starting.done():
+                reason = "task_runtime_unavailable" if failed else "task_runtime_starting"
+                response = JSONResponse(
+                    status_code=503,
+                    content=ErrorEnvelope(
+                        error=ErrorInfo(
+                            error=reason,
+                            message="Durable task services are unavailable."
+                            if failed
+                            else "Durable task services are starting.",
+                            recoverable=True,
+                        )
+                    ).model_dump(exclude_none=True),
+                )
+                await response(scope, receive, send)
+                return
+
         response_started = False
 
         async def _send(message: Message) -> None:

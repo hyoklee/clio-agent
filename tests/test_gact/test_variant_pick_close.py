@@ -23,6 +23,9 @@ from tests.test_gact.test_variant_drafts import (
     _forward,
     _surface,
 )
+from tests.test_gact.test_variant_drafts import (
+    variant_world as variant_world,
+)
 
 
 @pytest.mark.parametrize("resolution", ["cancelled", "expired"])

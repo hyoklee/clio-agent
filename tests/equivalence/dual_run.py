@@ -192,7 +192,8 @@ def _capture_gact_surfaces(
         ack = c.post(
             f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "hi"}]}
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         # Capture once the turn has SETTLED: its terminal status event publishes after
         # the busy gate releases (#1466), which is after the completion events are
         # persisted (#1469). A fixed wall-clock window failed on a slow first turn.

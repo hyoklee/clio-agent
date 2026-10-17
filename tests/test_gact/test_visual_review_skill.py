@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 from clio_agent.gact.agents.skill_runtime import (
     SkillRuntime,
@@ -164,28 +165,31 @@ def test_annotation_example_uses_real_producer_validation(
     )
     from tests.test_gact.test_a2ui_chart_guard import _create, _producer_session
 
-    _producer_session(tmp_path, monkeypatch)
-    catalog = SkillCatalog(home=tmp_path / "home", cwd=tmp_path / "workspace")
-    resolution = catalog.resolve(SKILL_ID)
-    assert resolution.skill is not None
-    example: dict[str, Any] = json.loads(
-        (Path(resolution.skill.dir) / "examples/annotated-scatter.json").read_text(encoding="utf-8")
-    )
-    base = {
-        **example,
-        "spec": {
-            "data": {"name": "source"},
-            "mark": "point",
-            "encoding": example["spec"]["encoding"],
-        },
-    }
-    created = _create([base])
-    assert created.get("ok") is not False, created
-    revised = build_update_a2ui_components_tool()(surface_id="surface", components=[example])
-    assert revised.get("ok") is not False, revised
-    assert revised["revision"] > created["revision"]
-    inspected = build_inspect_a2ui_surface_tool()(surface_id="surface")
-    chart = inspected["components"][0]
-    assert chart["data"] == base["data"]
-    assert chart["spec"]["layer"] == example["spec"]["layer"]
-    assert revised["definition_artifact_id"]
+    producer_app, _sid, _root = _producer_session(tmp_path, monkeypatch)
+    with TestClient(producer_app):
+        catalog = SkillCatalog(home=tmp_path / "home", cwd=tmp_path / "workspace")
+        resolution = catalog.resolve(SKILL_ID)
+        assert resolution.skill is not None
+        example: dict[str, Any] = json.loads(
+            (Path(resolution.skill.dir) / "examples/annotated-scatter.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        base = {
+            **example,
+            "spec": {
+                "data": {"name": "source"},
+                "mark": "point",
+                "encoding": example["spec"]["encoding"],
+            },
+        }
+        created = _create([base])
+        assert created.get("ok") is not False, created
+        revised = build_update_a2ui_components_tool()(surface_id="surface", components=[example])
+        assert revised.get("ok") is not False, revised
+        assert revised["revision"] > created["revision"]
+        inspected = build_inspect_a2ui_surface_tool()(surface_id="surface")
+        chart = inspected["components"][0]
+        assert chart["data"] == base["data"]
+        assert chart["spec"]["layer"] == example["spec"]["layer"]
+        assert revised["definition_artifact_id"]

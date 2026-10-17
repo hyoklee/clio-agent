@@ -81,14 +81,17 @@ def test_empty_session_unchanged(client: TestClient) -> None:
     assert body["next_cursor"] is None
 
 
-def test_empty_session_does_not_fetch_a_missing_persistent_blob(client: TestClient) -> None:
+def test_empty_session_does_not_fetch_a_missing_persistent_blob(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     sid = _create_session(client)
 
-    class MissingBlobStore:
-        def get(self, _key: str, _default: object = None) -> object:
-            raise RuntimeError("GetBlob operation failed")
+    def missing_cache(_sid: str) -> list[Message]:
+        raise RuntimeError("Optional transcript cache is missing")
 
-    client.app.state.messages = MissingBlobStore()  # type: ignore[attr-defined]
+    # Core remains the authority. An absent optional file cannot turn a valid,
+    # empty canonical transcript into an error or install a replacement owner.
+    monkeypatch.setattr(client.app.state.message_store, "load_session", missing_cache)
 
     response = client.get(
         f"/v1/sessions/{sid}/messages",

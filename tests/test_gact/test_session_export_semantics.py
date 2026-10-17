@@ -722,7 +722,9 @@ def test_archive_keeps_all_answered_questions_beyond_attention_limit(
     interactions = build_transcript(app, sid)["interactions"]
     assert len(interactions) == 105
     assert interactions[-1]["source"]["invocation_id"] == "call104"
-    assert interactions[-1]["payload"]["answer_metadata"]["answer"] == "Answer 104"
+    assert [item["payload"]["answer"] for item in interactions] == [
+        f"Answer {index}" for index in range(105)
+    ]
 
 
 def test_archive_retains_resolved_permissions_only_from_its_session(

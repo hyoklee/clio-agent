@@ -80,19 +80,14 @@ def test_first_turn_bringup_phases_reach_stream_audit(
     assert "session.create" in phase_names
     assert "turn.accept_gap" in phase_names
     assert "enrichment" in phase_names
-    assert "workspace.lease" in phase_names
+    assert "workspace.lease" not in phase_names
     assert "blueprint.resolve" in phase_names
 
-    # workspace.lease is the depth-0 OUTER phase; blueprint.resolve nests inside
-    # it (depth 1) -- the deliberate nesting the module docstring documents.
-    lease_row = next(r for r in phase_rows if r["phase"] == "workspace.lease")
+    # Session ownership replaces the removed whole-workspace execution lease.
+    # Blueprint resolution is finite preparation at the outer level.
     resolve_row = next(r for r in phase_rows if r["phase"] == "blueprint.resolve")
-    # Sabotage: flatten blueprint.resolve to depth 0 (start it OUTSIDE
-    # workspace.lease's phase() block) -> this assertion goes red AND the
-    # attribution contract below would double-count wall time.
-    assert lease_row["depth"] == 0
-    assert resolve_row["depth"] == 1
-    assert lease_row["forced_close"] is False
+    # No removed workspace lease may reappear as an enclosing phase.
+    assert resolve_row["depth"] == 0
     assert resolve_row["forced_close"] is False
 
     # Exactly one settled bringup.summary for this session (finish_bringup is

@@ -237,6 +237,7 @@ def test_the_interactions_projection_bounds_the_owners_it_walks(tmp_path: Path) 
                 parent_session_id=root.id,
                 agent={"id": f"worker{index}", "mode": "subagent"},
             )
+            record_assignment_fixture(app, child.id, parent_sid=root.id)
             app.state.permissions[f"perm_{index}"] = {
                 "id": f"perm_{index}",
                 "session_id": child.id,
@@ -373,7 +374,9 @@ def test_the_subagent_projection_carries_the_task_path(tmp_path) -> None:
             )
         finally:
             _ctx.reset(token)
-        assert projected["payload"]["task_path"] == ["task_outer", "task_inner"]
+        root_task = app.state.task_history.latest_assignment(root.id)
+        assert root_task is not None
+        assert projected["payload"]["task_path"] == [root_task.handle, "task_outer", "task_inner"]
 
 
 def test_pending_interaction_rows_carry_the_confirmed_question_revision(tmp_path: Path) -> None:

@@ -58,8 +58,14 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
         requested = [requested]
     pending = [handle for handle in result.get("pending", []) if isinstance(handle, str)]
     outcomes = result.get("outcomes", result.get("results", []))
-    rows = [row for row in outcomes if isinstance(row, Mapping) and not row.get("error")]
-    errors = [row for row in outcomes if isinstance(row, Mapping) and row.get("error")]
+    # Decode released receipt fields without consulting a second task authority.
+    outcomes = [
+        {**row, "handle": row.get("handle") or row.get("task_id")}
+        for row in outcomes
+        if isinstance(row, Mapping)
+    ]
+    rows = [row for row in outcomes if not row.get("error")]
+    errors = [row for row in outcomes if row.get("error")]
     errors.extend(row for row in result.get("errors", []) if isinstance(row, Mapping))
 
     def uncollected(row: Mapping[str, Any]) -> bool:
@@ -113,13 +119,25 @@ def wait_presentation(args: Mapping[str, Any], result: Mapping[str, Any]) -> dic
                 if row.get("kind") in {"Session", "Subagent"} and status == "completed"
                 else status.capitalize() or "Result collected"
             )
-            value = row.get("result")
+            value = row.get("result", row.get("output"))
             block.update(
                 label=f"{handle}: {label}",
                 text="No result body was recorded." if value is None else _result_text(value),
                 status=status,
                 result_kind="snapshot" if uncollected(row) else "completion",
             )
+            state = row.get("workflow_state")
+            if isinstance(state, Mapping):
+                detail: list[str] = []
+                for group, fields in state.items():
+                    if isinstance(fields, Mapping):
+                        detail.extend(
+                            f"{str(group).replace('_', ' ').capitalize()} {key}: {_result_text(value)}"
+                            for key, value in fields.items()
+                        )
+                    else:
+                        detail.append(f"{group}: {_result_text(fields)}")
+                block["detail"] = "\n".join(detail)
             if status == "task_state_uncertain":
                 block.update(
                     label=f"{handle}: Needs attention",

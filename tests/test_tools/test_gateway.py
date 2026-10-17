@@ -164,15 +164,15 @@ def test_build_gateway_no_specs_is_builtins_only():
     assert not any(n.startswith("demo_") for n in names)
 
 
-def test_build_gateway_reports_unconfigured_relay_tool_surface() -> None:
-    """Finding 5: an absent P2 relay surface is a typed, queryable degradation."""
+def test_gateway_has_no_special_relay_owner_or_configuration_degradation() -> None:
+    """Relay connects as an ordinary MCP server; absence installs no special policy."""
+    from clio_agent.tools.gateway import list_tool_definitions, namespace_proxies
 
     gateway = build_gateway({})
 
-    degrade = gateway._clio_degraded_capabilities["relay"]
-    assert degrade["reason"] == "relay_tools_not_configured"
-    assert degrade["category"] == "relay_configuration"
-    assert "configure_relay" in degrade["recovery_actions"]
+    assert "relay" not in getattr(gateway, "_clio_degraded_capabilities", {})
+    assert "relay" not in namespace_proxies(gateway)
+    assert not any(name.startswith("relay_") for name in list_tool_definitions(gateway))
 
 
 def test_build_gateway_skips_unusable_spec(declared_server: FastMCP):

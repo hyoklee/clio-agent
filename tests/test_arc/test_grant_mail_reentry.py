@@ -139,11 +139,7 @@ async def test_sender_regrant_wakes_idle_receiver_and_commits_retained_message_o
         )
 
     owner.run_segment = model
-    owner.start()
     try:
-        await owner.pause(TaskCaller(sid, "human", human_action=True), receiver.handle)
-        if owner._controls:
-            await asyncio.gather(*tuple(owner._controls.values()))
         sender, grant = await asyncio.to_thread(prepare_sender)
         await asyncio.to_thread(history.record_grant, grant, observation_id="grant")
         mail = await asyncio.to_thread(
@@ -158,7 +154,10 @@ async def test_sender_regrant_wakes_idle_receiver_and_commits_retained_message_o
             grant.model_copy(update={"revoked_at": now()}),
             observation_id="revoked",
         )
-        await owner.resume(TaskCaller(sid, "human", human_action=True), receiver.handle)
+        # Start with only revoked peer mail pending. Human Resume is itself an
+        # eligible instruction, so it cannot isolate the grant-reentry contract.
+        owner.start()
+        owner.runner.signal(sid)
         await asyncio.sleep(0)
         pump = owner.runner._pumps.get(sid)
         if pump is not None:

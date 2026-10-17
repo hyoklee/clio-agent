@@ -25,7 +25,6 @@ from clio_agent.gact import context as gact_context
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.tools.execution import tool_workspace_context
-from clio_agent.tools.task_client import native_execution_identity
 
 SUBMISSION_ARGUMENT = "_clio_submission"
 SubmissionAuthorizer = Callable[[SubmissionContext], None]
@@ -85,6 +84,8 @@ class NativeWork:
         body: Callable[[SubmissionContext, WorkEvidence], Awaitable[dict[str, Any]]],
     ) -> dict[str, Any]:
         """Validate the queued invocation, then retain its cleanup across cancellation."""
+        from clio_agent.tools.task_client import native_execution_identity
+
         task = native_execution_identity()
         backend = self.backend.model_copy(
             update={"task_id": task.task_id, "auth_scope": task.auth_scope}

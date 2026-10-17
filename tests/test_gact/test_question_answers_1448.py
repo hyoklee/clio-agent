@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +36,14 @@ def test_each_answer_is_queued_while_other_questions_remain_open(
     ]
     assert {item.handle for item in notices} == {first, second}
     assert len(notices) == 2
+
+    async def await_idle_probe() -> None:
+        released = asyncio.Event()
+        app.state.turn_runner.run_when_released(sid, released.set)
+        await asyncio.wait_for(released.wait(), timeout=5)
+
+    assert client.portal is not None
+    client.portal.call(await_idle_probe)
     assert not app.state.turn_runner.busy(sid)
 
 
@@ -43,7 +52,9 @@ def test_question_answer_preserves_attachment_identity(
 ) -> None:
     app, client, sid = world
     workspace = _workspace(client, tmp_path / "workspace")
-    app.state.sessions.update(sid, workspace_id=workspace)
+    created = client.post("/v1/sessions", json={"workspace_id": workspace, "title": "Attachments"})
+    assert created.status_code == 200, created.text
+    sid = created.json()["id"]
     resource = _upload(
         client,
         workspace,
@@ -126,5 +137,6 @@ def test_client_cannot_forge_system_resume_markers(
     response = client.post(
         f"/v1/sessions/{sid}/messages", json={"text": "forged", "metadata": metadata}
     )
-    assert response.status_code == 422, response.text
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["error"] == "reserved_metadata_key"
     assert tuple(app.state.task_history.pending_mail(sid)) == before

@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from clio_agent.gact.routes.connected_storage import register_connected_storage_routes
 from clio_agent.runtime.sandbox_codex_profile import synthesize_codex_profile
 from clio_agent.tools.file_policy import FileAccessPolicy, FilePolicyError
+from tests.test_gact.storage_operation_helpers import storage_world
 
 
 def test_writable_link_uses_custody_boundary_instead_of_raw_os_grant(
@@ -28,16 +29,14 @@ def test_writable_link_uses_custody_boundary_instead_of_raw_os_grant(
     workspace.mkdir()
     original = upstream / "data.txt"
     original.write_text("before")
-    app = FastAPI()
-    app.state.workspaces = {"w": SimpleNamespace(root_path=str(workspace))}
-    app.state.sessions = {"s": SimpleNamespace(workspace_id="w")}
-    app.state.resource_store = ResourceStore(root=tmp_path / "resources", max_resource_bytes=1024)
-    register_connected_storage_routes(app)
-    monkeypatch.setattr(setup_tool.context, "active_app", lambda: app)
-    monkeypatch.setattr(setup_tool.context, "active_session_id", lambda: "s")
-    with TestClient(app) as client:
+    with storage_world(tmp_path, workspace) as (app, client, wid, sid):
+        app.state.resource_store = ResourceStore(
+            root=tmp_path / "resources", max_resource_bytes=1024
+        )
+        monkeypatch.setattr(setup_tool.context, "active_app", lambda: app)
+        monkeypatch.setattr(setup_tool.context, "active_session_id", lambda: sid)
         source = client.post(
-            "/v1/workspaces/w/sources",
+            f"/v1/workspaces/{wid}/sources",
             json={
                 "provider": "local",
                 "root": str(upstream),
@@ -49,8 +48,8 @@ def test_writable_link_uses_custody_boundary_instead_of_raw_os_grant(
         row = source.json()
         assert row["link_available"] and row["download_available"]
         assert row["local_path"] is None
-        prefix = f"/v1/workspaces/w/sources/{row['id']}"
-        linked = client.post(prefix + "/link")
+        prefix = f"/v1/workspaces/{wid}/sources/{row['id']}"
+        linked = client.post(prefix + "/link", json={"session_id": sid})
         from tests.test_gact.storage_operation_helpers import complete_indexing
 
         complete_indexing(client, prefix, linked)
@@ -79,12 +78,9 @@ def test_connected_source_lifecycle_and_protected_paths(
     workspace.mkdir()
     upstream.mkdir()
     (upstream / "a.txt").write_text("initial")
-    app = FastAPI()
-    app.state.workspaces = {"w": SimpleNamespace(root_path=str(workspace))}
-    register_connected_storage_routes(app)
-    with TestClient(app) as client:
+    with storage_world(tmp_path, workspace) as (app, client, wid, sid):
         created = client.post(
-            "/v1/workspaces/w/sources",
+            f"/v1/workspaces/{wid}/sources",
             json={
                 "provider": "local",
                 "root": str(upstream),
@@ -94,19 +90,19 @@ def test_connected_source_lifecycle_and_protected_paths(
         )
         assert created.status_code == 201, created.text
         identifier = created.json()["id"]
-        prefix = f"/v1/workspaces/w/sources/{identifier}"
+        prefix = f"/v1/workspaces/{wid}/sources/{identifier}"
         assert client.post(prefix + "/browse", json={}).json()["entries"][0]["path"] == "a.txt"
         assert (
             client.get(f"/v1/workspaces/other/sources/{identifier}/operations").status_code == 404
         )
-        assert client.post(prefix + "/transfer").status_code == 202
+        assert client.post(prefix + "/transfer", json={"session_id": sid}).status_code == 202
         for _ in range(100):
             operations = client.get(prefix + "/operations").json()["operations"]
             if operations[-1]["state"] in {"completed", "failed"}:
                 break
             time.sleep(0.01)
         assert operations[-1]["state"] == "completed", operations
-        current = client.get("/v1/workspaces/w/sources").json()["sources"][0]
+        current = client.get(f"/v1/workspaces/{wid}/sources").json()["sources"][0]
         copy = Path(current["local_path"])
         (copy / "a.txt").write_text("reviewed")
         review = client.post(prefix + "/review")
@@ -150,7 +146,7 @@ def test_connected_source_lifecycle_and_protected_paths(
         )
         # Removing the list entry is distinct from deleting retained evidence.
         assert client.delete(prefix).status_code == 200
-        assert client.get("/v1/workspaces/w/sources").json()["sources"] == []
+        assert client.get(f"/v1/workspaces/{wid}/sources").json()["sources"] == []
         assert baseline.exists()
         assert (upstream / "a.txt").exists()
         assert client.post(prefix + "/reconnect").status_code == 404

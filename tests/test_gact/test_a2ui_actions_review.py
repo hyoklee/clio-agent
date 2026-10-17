@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from pytest import MonkeyPatch
 
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
@@ -104,51 +105,54 @@ def test_concurrent_duplicate_submission_persists_exactly_one_record(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     app = build_app(sessions_path=tmp_path / "s.json")
-    session = app.state.sessions.create(workspace_id="ws_default", title="race")
-    sid = session.id
-    app.state.a2ui_store.apply_batch(sid, [_create_message()])
-    spawned = _capture_inputs(app, monkeypatch)
+    with TestClient(app):
+        session = app.state.sessions.create(workspace_id="ws_default", title="race")
+        sid = session.id
+        app.state.a2ui_store.apply_batch(sid, [_create_message()])
+        spawned = _capture_inputs(app, monkeypatch)
 
-    import clio_agent.gact.a2ui_actions.dispatcher as dispatcher_module
+        import clio_agent.gact.a2ui_actions.dispatcher as dispatcher_module
 
-    real_compute = dispatcher_module.compute_idempotency_key
-    barrier = threading.Barrier(2)
+        real_compute = dispatcher_module.compute_idempotency_key
+        barrier = threading.Barrier(2)
 
-    def delayed_compute(*args: Any, **kwargs: Any) -> str:
-        barrier.wait(timeout=5)
-        time.sleep(0.15)
-        return real_compute(*args, **kwargs)
+        def delayed_compute(*args: Any, **kwargs: Any) -> str:
+            barrier.wait(timeout=5)
+            time.sleep(0.15)
+            return real_compute(*args, **kwargs)
 
-    monkeypatch.setattr(dispatcher_module, "compute_idempotency_key", delayed_compute)
+        monkeypatch.setattr(dispatcher_module, "compute_idempotency_key", delayed_compute)
 
-    action = _event("earthscope.stations.selected", "surface_1", {"x": 1}, "2026-09-17T00:00:00Z")
-    results: list[Any] = []
-    errors: list[BaseException] = []
+        action = _event(
+            "earthscope.stations.selected", "surface_1", {"x": 1}, "2026-09-17T00:00:00Z"
+        )
+        results: list[Any] = []
+        errors: list[BaseException] = []
 
-    def worker() -> None:
-        async def _call() -> Any:
-            return await app.state.dispatch_a2ui_action(
-                sid, {"message": action}, protocol_version=A2UI_V091
-            )
+        def worker() -> None:
+            async def _call() -> Any:
+                return await app.state.dispatch_a2ui_action(
+                    sid, {"message": action}, protocol_version=A2UI_V091
+                )
 
-        try:
-            results.append(asyncio.run(_call()))
-        except BaseException as exc:  # noqa: BLE001 - captured for the assertion, not swallowed
-            errors.append(exc)
+            try:
+                results.append(asyncio.run(_call()))
+            except BaseException as exc:  # noqa: BLE001 - captured for the assertion, not swallowed
+                errors.append(exc)
 
-    threads = [threading.Thread(target=worker) for _ in range(2)]
-    for t in threads:
-        t.start()
-    for t in threads:
-        t.join(timeout=10)
+        threads = [threading.Thread(target=worker) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
 
-    assert not errors, errors
-    assert len(results) == 2
-    surface = app.state.a2ui_store.get(sid, "surface_1")
-    assert surface is not None
-    assert len(surface.actions) == 1, f"expected exactly one record, got {len(surface.actions)}"
-    assert len(spawned) == 1, "exactly one Core input must have been accepted"
-    assert results[0]["action_id"] == results[1]["action_id"]
+        assert not errors, errors
+        assert len(results) == 2
+        surface = app.state.a2ui_store.get(sid, "surface_1")
+        assert surface is not None
+        assert len(surface.actions) == 1, f"expected exactly one record, got {len(surface.actions)}"
+        assert len(spawned) == 1, "exactly one Core input must have been accepted"
+        assert results[0]["action_id"] == results[1]["action_id"]
 
 
 # --------------------------------------------------------------------------- #
@@ -244,7 +248,7 @@ def test_three_ghost_surface_errors_are_three_two_hundreds_zero_turns(
 # --------------------------------------------------------------------------- #
 
 
-def test_uncorrelated_waiting_user_repair_does_not_burn_the_repair_budget(
+def test_waiting_projection_does_not_reject_valid_repair_feedback(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
@@ -260,8 +264,11 @@ def test_uncorrelated_waiting_user_repair_does_not_burn_the_repair_budget(
     first = client.post(
         f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": envelope}
     )
-    assert first.status_code == 409
-    assert first.json()["error"]["error"] == "a2ui_waiting_user_uncorrelated"
+    assert first.status_code == 200, first.text
+    assert first.json()["delivery"] == "steer"
+    first_mail = tuple(app.state.task_history.pending_mail(sid))
+    assert first_mail
+    assert not app.state.task_history.acknowledged_notifications(sid)
 
     app.state.sessions.update(sid, status="idle")
     second = client.post(
@@ -269,7 +276,10 @@ def test_uncorrelated_waiting_user_repair_does_not_burn_the_repair_budget(
     )
 
     assert second.status_code == 200, second.text
-    assert second.json()["delivery"] == "start", "the repair budget must not have been burned"
+    assert second.json()["delivery"] == "steer"
+    assert {row.id for row in first_mail} <= {
+        row.id for row in app.state.task_history.pending_mail(sid)
+    }
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     assert surface.state != "failed"
@@ -371,7 +381,9 @@ def test_run_cancel_still_cancels_with_the_real_deps(tmp_path: Path) -> None:
     )
 
     assert response.status_code == 200, response.text
-    assert app.state.sessions.get(sid).status == "cancelled"
+    assert app.state.sessions.get(sid).status == "idle"
+    assert app.state.sessions.get(sid).metadata["composer_queue_paused"] is True
+    assert not app.state.turn_runner.busy(sid)
 
 
 # --------------------------------------------------------------------------- #

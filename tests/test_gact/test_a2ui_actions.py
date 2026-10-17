@@ -208,7 +208,11 @@ def _pending_question(sid: str, *, surface_id: str = "", qid: str = "q_1") -> Us
         allow_freeform=True,
         created_at=now,
         updated_at=now,
-        metadata={"resume_on_answer": True, "a2ui_surface_id": surface_id},
+        metadata={
+            "resume_on_answer": True,
+            "a2ui_surface_id": surface_id,
+            "a2ui_answer_action": "agent.submit",
+        },
     )
 
 
@@ -227,7 +231,9 @@ def test_waiting_user_surface_tagged_question_resumes_with_context(
     app.state.sessions.update(
         sid, status="waiting_user", metadata_patch={"pending_user_question_id": question.id}
     )
-    action = _event("agent.submit", "surface_1", {"text": "go"}, "2026-09-17T00:00:00Z")
+    action = _event(
+        "agent.submit", "surface_1", {"text": "go", "answer": "go"}, "2026-09-17T00:00:00Z"
+    )
 
     response = client.post(
         f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": action}
@@ -239,11 +245,17 @@ def test_waiting_user_surface_tagged_question_resumes_with_context(
     assert body["state"] == "delivered"
     answered = question_row(app, question.id)
     assert answered.status == "answered"
-    assert answered.answer_metadata["a2ui_action_context"] == {"text": "go"}
-    assert answered.answer_metadata["surface_id"] == "surface_1"
+    assert answered.answer == "go"
+    assert answered.answer_metadata["text"] == "go"
+    task = app.state.task_history.task_snapshot(question.id)
+    assert task is not None and task.result is not None
+    assert (
+        app.state.task_history.read_content(task.result)["source_action"]["surface_id"]
+        == "surface_1"
+    )
 
 
-def test_waiting_user_uncorrelated_action_refuses_409(
+def test_explicit_question_correlation_refuses_a_foreign_surface(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
@@ -262,16 +274,22 @@ def test_waiting_user_uncorrelated_action_refuses_409(
     action = _event("agent.submit", "surface_1", {"text": "go"}, "2026-09-17T00:00:00Z")
 
     response = client.post(
-        f"/v1/sessions/{sid}/a2ui/actions", headers=HEADERS, json={"message": action}
+        f"/v1/sessions/{sid}/a2ui/actions",
+        headers=HEADERS,
+        json={"message": action, "correlation": {"question_id": question.id}},
     )
 
     assert response.status_code == 409
-    assert response.json()["error"]["error"] == "a2ui_waiting_user_uncorrelated"
+    assert "does not address this Question" in response.json()["error"]["message"]
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
     assert record["state"] == "failed"
-    assert record["reason"] == "a2ui_waiting_user_uncorrelated"
+    assert record["reason"]
+    assert question_row(app, question.id).status == "pending"
+    assert not [
+        row for row in app.state.task_history.pending_mail(sid) if row.id.startswith("a2ui:")
+    ]
 
 
 # --------------------------------------------------------------------------- #
@@ -472,7 +490,9 @@ def test_run_cancel_destination_cancels_the_session(tmp_path: Path) -> None:
     body = response.json()
     assert body["delivery"] == "run_cancel"
     assert body["state"] == "delivered"
-    assert app.state.sessions.get(sid).status == "cancelled"
+    assert app.state.sessions.get(sid).status == "idle"
+    assert app.state.sessions.get(sid).metadata["composer_queue_paused"] is True
+    assert not app.state.turn_runner.busy(sid)
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
@@ -716,7 +736,7 @@ def test_interactions_row_flips_pending_to_answered_once_delivered(
     assert last_action["receivedAt"]
     assert last_action["context"] == {"text": "go"}
     assert last_action["action_id"]
-    assert last_action["delivery"] == "start"
+    assert last_action["delivery"] == "steer"
 
 
 # --------------------------------------------------------------------------- #

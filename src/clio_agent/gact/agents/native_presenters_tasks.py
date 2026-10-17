@@ -36,6 +36,21 @@ def _task_blocks(
     status = str(row.get("activity") or row.get("status") or "")
     error = row.get("error")
     blocks: list[dict[str, Any]] = []
+    result = row.get("result")
+    if result_body and result is None and isinstance(row.get("output"), str):
+        result = row["output"]  # Shipped getter alias; no separate result lookup.
+    if result_body and result is not None:
+        # The shared presentation projector owns paging and complete-text references.
+        blocks.append(
+            {
+                "id": f"task-{index}-result",
+                "type": "text",
+                "label": "Result",
+                "text": result
+                if isinstance(result, str)
+                else json.dumps(result, ensure_ascii=False, indent=2, default=str),
+            }
+        )
     owner = row.get("owner")
     session = owner.get("session_id") if isinstance(owner, Mapping) else row.get("session_id")
     if row.get("kind") in {"Session", "Subagent"} and isinstance(session, str) and session:
@@ -102,16 +117,7 @@ def _task_blocks(
                     "text": _detail("\n".join(errors)),
                 }
             )
-    if result_body and row.get("result") is not None:
-        blocks.append(
-            {
-                "id": f"task-{index}-result",
-                "type": "text",
-                "label": "Result",
-                "text": _detail(row["result"]),
-            }
-        )
-    if (row.get("result_reference") and row.get("result") is None) or (
+    if (row.get("result_reference") and result is None) or (
         not result_body and row.get("result") is not None
     ):
         blocks.append(

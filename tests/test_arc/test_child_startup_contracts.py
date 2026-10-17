@@ -213,7 +213,11 @@ async def test_cancelling_startup_settles_its_worker_before_terminal_publication
             and final.terminal_at
             and final.settlement == "confirmed"
         )
-        assert owner.runner.handle(accepted["session_id"]) is None and not models
+        slot = owner.runner.handle(accepted["session_id"])
+        assert slot is None or not slot.turn_id, "Cancelled startup cannot admit another segment"
+        assert not models
+        latest = await asyncio.to_thread(owner.history.latest_assignment, accepted["session_id"])
+        assert latest is not None and latest.handle == accepted["handle"]
         retained = await asyncio.to_thread(app.state.sessions.initialize, accepted["session_id"])
         assert retained.creation_hook_state == "interrupted" and not models
     finally:

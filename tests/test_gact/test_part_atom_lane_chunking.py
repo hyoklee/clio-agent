@@ -380,7 +380,9 @@ def test_delete_drops_every_chunk_and_next_mint_starts_at_chunk_one(
     assert lane_scopes(arc._segments, SID, MESSAGE_PART_SCOPE) == []
 
     mint_message_part_atoms(arc, SID, _message("fresh", "hello"))
-    assert lane_scopes(arc._segments, SID, MESSAGE_PART_SCOPE) == [MESSAGE_PART_SCOPE]
+    fresh_base = current_base(arc._segments, SID, MESSAGE_PART_SCOPE)
+    assert lane_scopes(arc._segments, SID, fresh_base) == [fresh_base]
+    assert [row.id for row in assemble_session_messages(arc, SID)] == ["fresh"]
 
 
 def test_replace_rematerializes_across_chunks_with_no_resurrected_atoms(
@@ -403,26 +405,10 @@ def test_replace_rematerializes_across_chunks_with_no_resurrected_atoms(
     assert not any(t and t.startswith("old-text") for t in texts)
 
 
-def test_repair_across_a_chunk_family_drops_every_chunk_no_orphan_survives(
+def test_explicit_replace_drops_every_chunk_despite_divergent_file_cache(
     tmp_path: Any, monkeypatch: pytest.MonkeyPatch, hermetic_conf: None
 ) -> None:
-    """#1339 review round: ``materialize_ledger``'s silent-divergence REPAIR path
-    (distinct from the explicit ``on_ledger_replaced`` above) must erase the WHOLE
-    chunk family, not just chunk 1 -- a bare ``drop_scope`` on chunk 1 alone would
-    leave chunks 2..N orphaned on disk (unreachable, but never re-minted either),
-    and ``chunk_for_append``'s cursor validation would then start a NEW chunk 1
-    while the stale chunks 2..N still sit on disk under the same family prefix.
-
-    Seeds a lane with capacity 2 and 5 atoms (chunks 1, 2, 3 holding 2/2/1 atoms),
-    then makes the RETAINED store diverge from the atom lane (a different ledger,
-    never persisted through the lane's own write seam -- exactly the
-    "concurrent_backfill_race" shape ``materialize_ledger`` detects by exact wire
-    comparison). Calling ``materialize_ledger`` OFF-LOOP (a bare sync call, no
-    running loop -- ``schedule_off_loop`` runs the repair mint inline before
-    returning) must drop chunks 1-3 entirely and re-mint the family from the
-    retained ledger alone: ``lane_scopes`` afterwards is EXACTLY the re-minted
-    family (two chunks, for two parts and two envelopes under capacity 2), and chunks 2
-    and 3 are provably gone (zero segments, not merely unreachable)."""
+    """Reads cannot repair Core from JSON; explicit replacement erases all old chunks."""
 
     monkeypatch.setenv("CLIO_ARC_MESSAGE_PART_CHUNK_SEGMENTS", "2")
     arc = ARCMemory(data_dir=str(tmp_path / "arc"))
@@ -442,7 +428,17 @@ def test_repair_across_a_chunk_family_drops_every_chunk_no_orphan_survives(
     new_messages = [_message("new0", "new-text-0"), _message("new1", "new-text-1")]
     app = _fake_app(arc, message_store=_FakeMessageStore(new_messages))
 
-    result = materialize_ledger(app, SID)  # off-loop: no running loop in this thread
+    result = materialize_ledger(app, SID)
+    assert result is not None
+    assert [m.id for m in result] == [f"old{i}" for i in range(5)]
+    assert lane_scopes(arc._segments, SID, MESSAGE_PART_SCOPE) == [
+        MESSAGE_PART_SCOPE,
+        chunk2,
+        chunk3,
+    ]
+
+    on_ledger_replaced(app, SID, new_messages)
+    result = materialize_ledger(app, SID)
 
     assert result is not None
     assert [m.id for m in result] == ["new0", "new1"]

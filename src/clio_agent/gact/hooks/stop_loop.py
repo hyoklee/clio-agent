@@ -330,7 +330,7 @@ def run_stop_hooks(
             prior_count=prior_count,
             hook_ids=list(result.blocking_hook_ids),
         )
-    elif result.redrive:
+    elif result.redrive and session is not None:
         _enqueue_redrive(app, session_id, result)
 
     return result

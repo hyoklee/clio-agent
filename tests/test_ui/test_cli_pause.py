@@ -114,8 +114,17 @@ class AskThenAnswerAgent:
 
     def forward(self, question: str, session_id: str) -> Any:
         self.calls.append((question, session_id))
-        if len(self.calls) == 1:
-            return _AskUserPred(ask_user={"action": "ask_user", "question": self.question})
+        import asyncio
+
+        from clio_agent.gact import context
+        from clio_agent.gact.task_declarations import build_ask_user_tool, build_task_tools
+
+        app = context.active_app()
+        boundary = app.state.builtin_boundary
+        receipt = asyncio.run(boundary.bind(build_ask_user_tool()).acall(question=self.question))
+        wait_tool = next(tool for tool in build_task_tools() if tool.name == "wait_tasks")
+        # Asking returns immediately; this assignment explicitly chooses to wait.
+        asyncio.run(boundary.bind(wait_tool).acall(tasks=receipt["handle"]))
         return _AnswerPred(answer=self.answer)
 
 
@@ -180,8 +189,8 @@ def test_ask_question_drives_ask_user_pause_and_resumes(
 
     result = _run_with_timeout(lambda: cli.ask_question("How well did it compress?"))
 
-    # No hang, and the agent was invoked twice: the initial turn + the resume.
-    assert len(agent.calls) == 2
+    # The explicit shared wait resumes within the same assignment and forward.
+    assert len(agent.calls) == 1
     # The resumed answer surfaced cleanly.
     assert result["error_info"] is None
     assert "3.2x" in result["answer"]

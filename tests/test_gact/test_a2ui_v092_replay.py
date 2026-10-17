@@ -43,6 +43,8 @@ from fastapi.testclient import TestClient
 
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
+from clio_agent.gact.transcript_projection import on_ledger_replaced
+from clio_agent.gact.types import Message
 from tests.test_gact.input_capture import capture_inputs
 
 FIXTURE_PATH = (
@@ -85,6 +87,9 @@ def _replayed_session(tmp_path: Path) -> tuple[TestClient, Any, str]:
     messages_dir.mkdir(parents=True, exist_ok=True)
     (messages_dir / f"{sid}.json").write_text(json.dumps(rows), encoding="utf-8")
 
+    # Seed the genuine historical Core lane too. JSON alone is preserved as
+    # unknown migration evidence and cannot authorize visible transcript replay.
+    on_ledger_replaced(app, sid, [Message.model_validate(row) for row in rows])
     return TestClient(app), app, sid
 
 

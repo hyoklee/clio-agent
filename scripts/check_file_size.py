@@ -477,7 +477,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # Ratchet down 2469 -> 2467 (naming reversal): removed the now-unneeded
     # codex->chatgpt boot migration call (the provider id never changed).
     # Ratchet down 2435 -> 2419: the transcript-store boot moved to gact/transcript_file.py.
-    "src/clio_agent/gact/app.py": 2308,
+    "src/clio_agent/gact/app.py": 2299,
     # #971 GAP A (S5 live gate): the artifact mint funnel was at the 800 cap; +24
     # adds the designation-by-RESULT channel (ndp_stage_resource writes an
     # intermediate whose path rides only ``local_path`` in the result — the arg
@@ -707,7 +707,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # gact/compaction.py::compact_session_context (one operation, two triggers); the
     # whole manual-compact body, gact/compact_memory.py's import, and the dead
     # session_archives snapshot are gone -- 1407 -> 1176.
-    "src/clio_agent/gact/routes/sessions.py": 853,  # fork and question routes have their own owners
+    "src/clio_agent/gact/routes/sessions.py": 852,  # fork and question routes have their own owners
     # #1215 S5: crossed the 800 new-file cap (793 -> 809) for enrich_turn_context —
     # a thin timed combinator wrapping the TWO existing enrichment calls
     # (_enrich_with_context_files + _enrich_with_requested_memory_search) in ONE
@@ -1041,7 +1041,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # _tool_visible_to_model moved to the new owner module
     # tools/tool_ui_metadata.py (re-exported here), landing well under either
     # recorded value.
-    "src/clio_agent/tools/mcp_executor.py": 869,
+    "src/clio_agent/tools/mcp_executor.py": 867,
     # AF-FOLD (PR #1298): ratcheted DOWN 817 -> 816. Credential redaction moved to
     # the owner module tools/mcp_redaction.py, which more than paid for the
     # ``declared`` pre-expansion field this file gained.
@@ -1106,7 +1106,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # run_doctor/--tune stub moved to their owner modules; the `--yes` flag (owner's
     # one-command install acceptance) adds it back slightly — net ratchet 1141 -> 1138 (still
     # a reduction vs the inherited baseline).
-    "src/clio_agent/ui/cli.py": 1137,
+    "src/clio_agent/ui/cli.py": 1135,
     # (agent_elicitation.py's entry retired, #1331 review round: the file was a
     # NEW god-file at 1001 lines, never a legitimate baseline target -- the 800
     # cap is a backstop, not a license. Split by behavior into owner modules

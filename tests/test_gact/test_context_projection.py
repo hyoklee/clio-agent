@@ -36,6 +36,7 @@ def _plane(arc: ARCMemory, **state: Any) -> Iterator[None]:
     app_token = ctx.set_app(app)
     scope_token = ctx.set_react_scope(SCOPE)
     session_token = ctx.set_react_session(SESSION)
+    ctx.set_primary_agent_id(SCOPE)
     try:
         yield
     finally:
@@ -154,23 +155,59 @@ def test_injections_are_recorded_once_before_the_user_message(arc: ARCMemory) ->
     ]
 
 
-def test_steers_and_child_results_arrive_at_the_step_boundary(arc: ARCMemory) -> None:
-    """What arrives mid-turn (a user steer, a finished child's result) reaches the model
-    at the next step boundary as a message of its own -- after any step, whatever tool
-    it ran -- and the tool observation it was once glued onto stays as it was."""
-    arrivals = [[], [("steer", "use 2024 only"), ("task_results", "child: done")]]
+def queue_step_arrivals(app: Any, sid: str) -> tuple[str, str]:
+    """Confirm real human and child-result mail without using the retired local inbox."""
+    from clio_agent.arc.task_types import MailItem
+    from clio_agent.gact.native_work import now
+    from clio_agent.gact.task_publication import publish_task_notice
+    from tests.test_gact.task_records import record_delegation_fixture
 
-    def drain() -> list[tuple[str, str]]:
-        return arrivals.pop(0) if arrivals else []
+    history = app.state.task_history
+    feedback_id = "step-feedback"
+    with history.serialized():
+        history.record_mail(
+            MailItem(
+                id=feedback_id,
+                recipient_session=sid,
+                sender_human=app.state.human_principal,
+                kind="human",
+                content=history.write_content(sid, {"text": "use 2024 only"}),
+                created_at=now(),
+            )
+        )
+        child = record_delegation_fixture(
+            app, sid, handle="task_step_child", completed=True, result={"answer": "child: done"}
+        )
+        publish_task_notice(history, child)
+    return feedback_id, "outcome:" + child.handle + ":" + sid
 
-    lm, engine = scripted_lm([calls(("search", {"q": "x"})), Reply(text="ok")])
-    with _plane(arc, pending_loop_inbox_drain=drain), dspy.context(lm=lm):
-        _agent()(question="q")
-    assert wire(engine.requests[1])[-3:] == [
-        ("tool", [("result", "call_0_0", "hits for x", False)]),
-        ("user", [("text", "use 2024 only")]),
-        ("user", [("text", "[clio: task_results]\nchild: done")]),
-    ]
+
+def test_steers_and_child_results_arrive_at_the_step_boundary(
+    clio_core_plane: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Actual Core arrivals enter the next model input after the original tool result."""
+    app, sid = clio_core_plane, ctx.active_session_id()
+    monkeypatch.setattr(app.state.conversations, "execution_gate", lambda _sid: "test_direct_loop")
+    identities: list[str] = []
+
+    def search(q: str) -> str:
+        identities.extend(queue_step_arrivals(app, sid))
+        return f"hits for {q}"
+
+    lm, engine = scripted_lm([calls(("search", {"q": "x"})), Reply(text="ok"), Reply(text="next")])
+    agent = ClioReAct("question -> answer", tools=[dspy.Tool(search, name="search")])
+    with dspy.context(lm=lm):
+        agent(question="q")
+        agent(question="next task")
+    observed = wire(engine.requests[1])
+    assert observed[-3] == ("tool", [("result", "call_0_0", "hits for x", False)])
+    assert observed[-2][0] == "user" and observed[-2][1][0][1].endswith("use 2024 only")
+    assert observed[-1][0] == "user" and "child: done" in observed[-1][1][0][1]
+    assert "[clio: task_result]" in observed[-1][1][0][1]
+    assert "use 2024 only" not in repr(engine.requests[0].messages)
+    assert set(identities) <= app.state.task_history.acknowledged_notifications(sid)
+    assert not set(identities) & {row.id for row in app.state.task_history.pending_mail(sid)}
+    assert repr(engine.requests[2].messages).count("child: done") == 1
 
 
 def _turn(arc: ARCMemory, turn: str, question: str, answer: str) -> None:
@@ -244,8 +281,8 @@ def test_a_scope_new_to_the_conversation_starts_from_its_earlier_turns(arc: ARCM
             [
                 (
                     "text",
-                    "[clio: earlier_turns]\nReconstructed 2 earlier context records from the saved transcript, "
-                    "including recorded tool inputs and results. Provider continuation state is unavailable.",
+                    "[clio: context_recovery]\nRecovered this session's context from saved transcript; "
+                    "provider continuation is unavailable. No operation was replayed.",
                 )
             ],
         ),

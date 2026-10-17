@@ -66,6 +66,7 @@ class AnswerRequest(BaseModel):
     """Validated answer payload; responder identity is assigned by this boundary."""
 
     answer: str = ""
+    value: str | None = None  # Released single-choice/freeform wire alias.
     selected_options: tuple[str, ...] = ()
     metadata: dict[str, Any] = Field(default_factory=dict)
     parts: tuple[dict[str, Any], ...] = ()
@@ -463,8 +464,21 @@ def register_task_routes(app: FastAPI) -> None:
     @app.post("/v1/sessions/{sid}/questions/{handle}/answer")
     async def answer(sid: str, handle: str, body: AnswerRequest) -> dict[str, Any]:
         def apply() -> dict[str, Any]:
-            reply = QuestionReply(**body.model_dump(), responder_human=app.state.human_principal)
             authorized = session_question(sid, handle)
+            payload = body.model_dump(exclude={"value"})
+            if body.value is not None:
+                if body.answer or body.selected_options:
+                    raise HTTPException(422, "Use value or answer/selected_options, not both")
+                if authorized.details is None:
+                    raise HTTPException(409, "The retained Question definition is unavailable")
+                definition = QuestionDefinition.model_validate(
+                    app.state.task_history.read_content(authorized.details)
+                )
+                if body.value in {option.value for option in definition.options}:
+                    payload["selected_options"] = (body.value,)
+                else:
+                    payload["answer"] = body.value
+            reply = QuestionReply(**payload, responder_human=app.state.human_principal)
             current = answer_question_response(app, caller(sid), authorized.handle, reply)
             return question_view(app, current)
 

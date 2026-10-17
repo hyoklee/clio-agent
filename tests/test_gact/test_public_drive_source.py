@@ -18,6 +18,7 @@ from googleapiclient.http import HttpMockSequence
 from clio_agent.gact.routes.connected_storage import register_connected_storage_routes
 from clio_agent.gact.storage import drive_filesystem
 from clio_agent.gact.storage.models import SourceRecord
+from tests.test_gact.storage_operation_helpers import storage_world
 
 
 @pytest.mark.parametrize("private", [False, True])
@@ -28,10 +29,7 @@ def test_public_drive_browse_or_private_login_after_refusal(
     monkeypatch.setenv("CLIO_STORAGE_GOOGLE_API_KEY", "clio-test-api-key")
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    app = FastAPI()
-    app.state.workspaces = {"w": SimpleNamespace(root_path=str(workspace))}
-    register_connected_storage_routes(app)
-    response = (
+    response: dict[str, Any] = (
         {"error": {"message": "Forbidden"}}
         if private
         else {
@@ -82,9 +80,9 @@ def test_public_drive_browse_or_private_login_after_refusal(
         )
 
     monkeypatch.setattr(drive_filesystem, "build", google_client)
-    with TestClient(app) as client:
+    with storage_world(tmp_path, workspace) as (app, client, wid, sid):
         created = client.post(
-            "/v1/workspaces/w/sources",
+            f"/v1/workspaces/{wid}/sources",
             json={
                 "provider": "google_drive",
                 "root": "public-folder",
@@ -94,19 +92,19 @@ def test_public_drive_browse_or_private_login_after_refusal(
         assert created.status_code == 201
         source = created.json()
         assert source["access_without_signin"] and not source["authenticated"]
-        path = f"/v1/workspaces/w/sources/{source['id']}"
+        path = f"/v1/workspaces/{wid}/sources/{source['id']}"
         result = client.post(path + "/browse", json={})
         if private:
             assert result.status_code == 403, result.text
             assert "Sign in to Google Drive" in result.text
-            status = client.get("/v1/workspaces/w/sources").json()["sources"][0]
+            status = client.get(f"/v1/workspaces/{wid}/sources").json()["sources"][0]
             assert not status["access_without_signin"]
             assert client.post(path + "/browse", json={}).status_code == 403
             assert len(calls) == 1
         else:
             assert result.status_code == 200, result.text
             assert result.json()["entries"][0]["path"] == "data.txt"
-            link_result = client.post(path + "/link", json={})
+            link_result = client.post(path + "/link", json={"session_id": sid})
             from tests.test_gact.storage_operation_helpers import complete_indexing
 
             complete_indexing(client, path, link_result)

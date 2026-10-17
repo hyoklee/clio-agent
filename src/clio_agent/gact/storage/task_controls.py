@@ -92,6 +92,27 @@ async def submit_source_action(
     return {**view, "acceptance": receipt}
 
 
+async def cancel_source_action(app: Any, source_id: str, handle: str) -> dict[str, Any]:
+    """Delegate a verified source operation to the shared human task control."""
+    from clio_agent.gact.human_controls import intervene
+
+    def resolve() -> str:
+        history = app.state.task_history
+        if handle not in history.resource_handles(source_id):
+            raise HTTPException(404, "Source operation unavailable")
+        task = history.task_snapshot(handle)
+        if task is None or task.owner.human_id != app.state.human_principal:
+            raise HTTPException(404, "Source operation unavailable")
+        return task.handle
+
+    selected = await app.state.task_history.io.run(resolve)
+    acknowledgement = await intervene(app, selected, "cancel")
+    return {
+        **acknowledgement,
+        "cancel_requested": acknowledgement.get("cancellation_requested", False),
+    }
+
+
 def operation_view(
     app: Any, task: TaskSnapshot, source_id: str, operation: TransferOperation | None = None
 ) -> dict[str, Any]:
