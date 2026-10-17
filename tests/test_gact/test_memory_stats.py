@@ -12,7 +12,6 @@ application lifespan, Core history and trusted session relationships. Covers:
 
 from __future__ import annotations
 
-import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
@@ -30,6 +29,7 @@ from clio_agent.gact.session_store import _replace_session_messages
 from clio_agent.gact.summarization_record import summarization_part
 from clio_agent.gact.types import Message, Part, Tokens
 from clio_agent.gact.workspaces import Workspace
+from tests.test_gact.test_streaming import _wait_for_turn_settlement
 
 # #948 S4b: default sessions run the blueprint react ``main``; route it to each
 # test's ``build_app(agent=...)`` host fake.
@@ -427,17 +427,16 @@ def _complete_turn_with_metadata(
         json={"parts": [{"type": "text", "text": text}], "metadata": metadata},
     )
     assert ack.status_code == 202, ack.text
-    user_id = ack.json()["message_id"]
-    deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
-        messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        for idx, message in enumerate(messages):
-            if message["id"] == user_id:
-                if idx > 0 and messages[idx - 1]["role"] == "assistant":
-                    return messages[idx - 1]
-                break
-        time.sleep(0.02)
-    raise AssertionError("turn did not settle")
+    accepted = ack.json()
+    _wait_for_turn_settlement(
+        _application(client), sid, timeout=30.0, handle=accepted["task_handle"]
+    )
+    messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+    for idx, message in enumerate(messages):
+        if message["id"] == accepted["message_id"]:
+            assert idx > 0 and messages[idx - 1]["role"] == "assistant"
+            return messages[idx - 1]
+    raise AssertionError("Settled turn has no accepted user message in its transcript")
 
 
 def test_memory_search_defaults_to_session_scope(client_with_arc: TestClient) -> None:

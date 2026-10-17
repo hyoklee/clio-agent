@@ -155,6 +155,15 @@ CI and affected live acceptance are still required.
 
 ### Memory caller identity and asynchronous receipt corrections — CI pending
 
+The later `40b5a3a1` report has 23 passing recall/stats cases and one failure:
+the turn helper returns an assistant placeholder before its model executes. It
+now reuses the existing assignment-settlement/physical-worker-retirement helper
+with the same 30-second diagnostic before reading the transcript. All 24 test
+functions, other helpers and classes are AST-identical. Scoped Ruff/format and
+Mypy pass; production source is unchanged and no local behavioral test ran.
+Receipt: `ci-memory-turn-settlement-40b5-audit.json` in D static evidence.
+Execution on the subsequent CI candidate remains required.
+
 `764121a2` Python 3.14 shard 1 completed with 4,033 passes, 110 failures and
 21 skips; the other shards/interpreters are still running. Six memory-module
 cases pass in this shard and two expose a production HTTP 500: the search route
