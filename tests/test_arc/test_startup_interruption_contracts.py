@@ -137,7 +137,7 @@ async def test_pause_resume_and_restart_preserve_startup_uncertainty_without_hoo
             assert effect.read_text() == "first\n"
             assert any(
                 item.kind == "attention" and item.handle == accepted["handle"]
-                for item in owner.history.pending_mail(caller.session_id)
+                for item in (await asyncio.to_thread(owner.history.pending_mail, caller.session_id))
             )
         await owner.resume(human, accepted["handle"])
         first_handle, first_text = await asyncio.wait_for(results.get(), 10)

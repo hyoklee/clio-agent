@@ -118,7 +118,7 @@ async def test_empty_wake_preserves_assignment_and_pending_work(
             assert observed.terminal_at is not None and observed.status == "failed"
             assert observed.result is not None
         assert await asyncio.to_thread(owner.history.task_snapshot, work.handle) == work
-        assert owner.history.pending_mail(current.owner.session_id) == ()
+        assert (await asyncio.to_thread(owner.history.pending_mail, current.owner.session_id)) == ()
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

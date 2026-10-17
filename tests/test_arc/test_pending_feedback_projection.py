@@ -131,7 +131,7 @@ async def test_paused_startup_restores_migrated_and_promoted_feedback_once(
         expected = ["feedback", "promoted-client-id", "later"]
         assert [row.id for row in app.state.messages[sid]] == expected
         assert app.state.sessions.get(sid).metadata["agent_paused"] is True
-        assert recovered.pending_mail(sid) == pending
+        assert (await asyncio.to_thread(recovered.pending_mail, sid)) == pending
         assert not recovered.acknowledged_notifications(sid)
         assert recovered.mail_withdrawn(sid, "withdrawn")
         await asyncio.to_thread(session_store.restore_pending_mail_messages, app, recovered)
@@ -147,7 +147,7 @@ async def test_paused_startup_restores_migrated_and_promoted_feedback_once(
             assert [row.id for row in saved or []] == expected
         else:
             assert not (tmp_path / "messages").exists()
-        assert recovered.pending_mail(sid) == pending
+        assert (await asyncio.to_thread(recovered.pending_mail, sid)) == pending
     finally:
         await owner.shutdown()
         await owner.recovery.drain()
@@ -192,7 +192,7 @@ async def test_pending_feedback_projection_rejects_foreign_message_identity(
         with pytest.raises(ValueError, match="identity differs"):
             await asyncio.to_thread(session_store.restore_pending_mail_messages, app, history)
         assert app.state.messages.get(sid, []) == []
-        assert len(history.pending_mail(sid)) == 1
+        assert len((await asyncio.to_thread(history.pending_mail, sid))) == 1
         assert not history.acknowledged_notifications(sid)
     finally:
         await owner.shutdown()

@@ -123,14 +123,17 @@ async def test_independent_declared_workflows_preserve_grants_and_recipient_deli
         )
         assert [row["handle"] for row in visible["tasks"]] == [peer.handle]
         await operations.observe(caller, peer.handle, notify=True)
-        before = tuple(history.pending_mail(second.owner.session_id))
+        before = tuple((await asyncio.to_thread(history.pending_mail, second.owner.session_id)))
         collected = await operations.wait(caller, peer.handle)
         assert not collected["pending"] and collected["outcomes"][0]["status"] == "completed"
-        assert tuple(history.pending_mail(second.owner.session_id)) == before
+        assert (
+            tuple((await asyncio.to_thread(history.pending_mail, second.owner.session_id)))
+            == before
+        )
         assert len([item for item in before if item.handle == peer.handle]) == 1
         peer_notice = next(
             item
-            for item in history.pending_mail(first.owner.session_id)
+            for item in (await asyncio.to_thread(history.pending_mail, first.owner.session_id))
             if item.handle == peer.handle
         )
         message = await asyncio.to_thread(
@@ -142,10 +145,9 @@ async def test_independent_declared_workflows_preserve_grants_and_recipient_deli
         )
         assert message.sender_session == first.owner.session_id
         assert message.recipient_session == second.owner.session_id
-        assert (
-            history.read_content(message.content)["text"]
-            == "Use the right workflow's retained result."
-        )
+        assert (await asyncio.to_thread(history.read_content, message.content))[
+            "text"
+        ] == "Use the right workflow's retained result."
         reverse = CoordinationGrant(
             id="human-reply-grant",
             granting_human="human",
@@ -165,7 +167,9 @@ async def test_independent_declared_workflows_preserve_grants_and_recipient_deli
         )
         assert reply.sender_session == second.owner.session_id
         assert reply.recipient_session == first.owner.session_id
-        assert history.read_content(reply.content)["reply_to"] == message.id
+        assert (await asyncio.to_thread(history.read_content, reply.content))[
+            "reply_to"
+        ] == message.id
         denied = await operations.cancel(caller, peer.handle)
         assert denied["outcomes"][0]["error"]
         assert history.task_snapshot(peer.handle) == peer
@@ -177,7 +181,9 @@ async def test_independent_declared_workflows_preserve_grants_and_recipient_deli
         staged = await asyncio.to_thread(owner.mail.stage, caller)
         assert peer_notice.id not in {item.id for item in staged.items}
         assert peer_notice.id not in history.acknowledged_notifications(first.owner.session_id)
-        assert tuple(history.pending_mail(second.owner.session_id)) == before + (message,)
+        assert tuple(
+            (await asyncio.to_thread(history.pending_mail, second.owner.session_id))
+        ) == before + (message,)
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

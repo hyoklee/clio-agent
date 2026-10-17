@@ -71,7 +71,7 @@ async def test_spawn_retry_reuses_the_child_address_without_replaying_creation_h
         child_id = children[0].id
         assert len(children[0].creation_digest) == 64
         assert "creation_digest" not in children[0].to_wire()
-        assert not owner.history.pending_mail(child_id)
+        assert not (await asyncio.to_thread(owner.history.pending_mail, child_id))
 
         def recover() -> None:
             owner.history.restore()
@@ -215,7 +215,8 @@ async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
         result = await asyncio.to_thread(owner.history.read_content, details.last_output)
         assert "unavailable" in str(result)
         assert any(
-            item.handle == outcome.handle for item in owner.history.pending_mail(caller.session_id)
+            item.handle == outcome.handle
+            for item in (await asyncio.to_thread(owner.history.pending_mail, caller.session_id))
         )
         children = [
             child
@@ -240,7 +241,7 @@ async def test_unconfirmed_hook_effects_are_not_replayed_by_session_reuse(
         else:
             with pytest.raises(RuntimeError, match="effects are unconfirmed"):
                 await asyncio.to_thread(app.state.sessions.initialize, child_id)
-            pending = owner.history.pending_mail(child_id)
+            pending = await asyncio.to_thread(owner.history.pending_mail, child_id)
             assert len(pending) == 1 and pending[0].delivery == "held"
             assert pending[0].held_reason == "execution_failed_before_input_commit"
             assert await asyncio.to_thread(owner.history.latest_assignment, child_id) == outcome

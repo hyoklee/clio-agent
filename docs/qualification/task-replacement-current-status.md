@@ -7,6 +7,59 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### R172–R175 goal dependencies, feedback and Question answers
+
+R175 used clio-agent `d289ea01` / GACT `0f9c00a4`, with production still identical
+to `38a8794b`. Actual Codex/Luna set an explicitly unbounded goal, received two
+native Shell handles and a Question handle, freshly read a sentinel, recorded
+both Shell dependencies with `return_when="all"`, and yielded Session assignment
+`task_e36c81924c7344ad9f2825dccb77fb19`. Both command bodies were actually running.
+
+Native output progress changed without another model input. The first command
+then completed while the second remained running; its final notice stayed
+Core-pending and the model stayed yielded. Ordinary human feedback woke the same
+assignment, followed independently by the Question answer. Both inputs reached
+the model while the second dependency remained active and the first result stayed
+pending. Completing the second command delivered the two results and completed
+the original assignment. Thirteen confirmed inputs retain one assignment; each
+native/Question final outcome appears once, with no pending input or model worker.
+The actual goal judge evaluated once and marked `goal_met`. Both 496-byte files
+match their reported SHA-256 and the model's final report.
+
+The original controller is **failed**: an unrelated copied assertion required
+every submit to omit its disposition. Actual submits were `yield`, null, null,
+null; explicit yield is supported. `r175-goal-behavior-audit.json` independently
+verifies the complete recorded idle-goal behavior and actual filesystem hashes,
+without changing `r175-live-goal-inputs.json`'s failed verdict. This supplies
+scoped M04 evidence; busy-goal next-iteration injection, Claude differences,
+fresh UI and final-candidate races remain separate gates.
+
+Earlier attempts remain failed. R172's model explicitly selected a 12,000-token
+goal budget and capped before judging. R173 selected a disallowed working
+directory for one command; confinement rejected it before its body started.
+R174's blueprint still advertised a worker despite its main expert's empty child
+list; the model spawned it and the controller incorrectly counted descendant
+Shell rows as the two original commands. R175 corrected the experiment's explicit
+limits/cwd and actual blueprint manifest, using a single expert. No production
+code, confinement rule, task owner, worker limit or diagnostic budget changed.
+
+All four services retired normally with exit zero, and cancellation of unfinished
+owned work was confirmed before retirement. All profile/temp roots are absent.
+R175 also verified both original producer PID/creation identities were absent;
+its 555,822,188-byte profile and 1,073,741,824-byte temp data are removed. Bounded
+run, independent-audit and cleanup receipts remain under the execution checkout's
+`.pytest-runtime/static/r172-*` through `r175-*`. Original auth/source hashes match.
+
+CI `38982891702` at `d289ea01` passed all 52 Codex direct-engine cases on Python
+3.14, including the HTTP fixture contracts. Its full Python 3.14 artifacts still
+show 591 failures, five errors and 53 skips; there is no passing regression
+baseline. CI identified 35 mail-read guard failures across eight test modules.
+Twenty-one test-only mailbox/content assertion reads now use finite off-loop
+calls, retaining every assertion, ordering check and resource/guard budget.
+Scoped Ruff/format/diff checks pass; these changes are built for CI and were not
+executed locally. Other regression failures remain unresolved, rather than being
+presumed stale. clio-core remains `iowarp-core==2.3.1`, unchanged.
+
 ### R170/R171 historical migration and real-model recovery
 
 R171 passed the scoped startup-migration experiment on clio-agent `2c7469c2` /

@@ -53,17 +53,19 @@ async def test_startup_attention_recovers_after_parent_write_before_self_input(
         owner.mail.history = owner.recovery.history = recovered
         assert not [
             item
-            for item in recovered.pending_mail(sid)
+            for item in (await asyncio.to_thread(recovered.pending_mail, sid))
             if item.id.startswith("startup-interrupted:")
         ]
         await asyncio.to_thread(owner.note_startup_interruption, sid)
         await asyncio.to_thread(owner.note_startup_interruption, sid)
         parent_notices = [
-            item for item in recovered.pending_mail(caller.session_id) if item.kind == "attention"
+            item
+            for item in (await asyncio.to_thread(recovered.pending_mail, caller.session_id))
+            if item.kind == "attention"
         ]
         child_notices = [
             item
-            for item in recovered.pending_mail(sid)
+            for item in (await asyncio.to_thread(recovered.pending_mail, sid))
             if item.id.startswith("startup-interrupted:")
         ]
         assert len(parent_notices) == len(child_notices) == 1
@@ -157,7 +159,10 @@ async def test_failed_startup_never_admits_a_successor_without_physical_proof(
         assert await asyncio.to_thread(owner.history.task_handles, kind="Subagent") == before
         latest = await asyncio.to_thread(owner.history.latest_assignment, sid)
         assert latest is not None and latest.handle == handle
-        assert any(item.id == message_id for item in owner.history.pending_mail(sid))
+        assert any(
+            item.id == message_id
+            for item in (await asyncio.to_thread(owner.history.pending_mail, sid))
+        )
         assert effect.read_text() == "an effect occurred before the cleanup receipt was lost"
         assert not owner.runner.busy(sid)
     finally:

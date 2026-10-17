@@ -119,7 +119,7 @@ async def test_revocation_at_tool_input_commit_preserves_the_assignment_and_late
         assert not owner.history.acknowledged_notifications("independent-owner")
         assert any(
             item.handle == "private_task_result"
-            for item in owner.history.pending_mail("independent-owner")
+            for item in (await asyncio.to_thread(owner.history.pending_mail, "independent-owner"))
         )
     finally:
         await owner.shutdown()

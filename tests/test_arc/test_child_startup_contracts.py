@@ -46,7 +46,10 @@ async def test_simultaneous_first_submissions_share_one_child_mail_and_startup(
         assert first == second and first["accepted"] is True
         children = [row for row in app.state.sessions.list() if row.parent_session_id]
         assert [row.id for row in children] == [first["session_id"]]
-        assert len(owner.history.pending_mail(first["session_id"])) == 1 and not hooks
+        assert (
+            len((await asyncio.to_thread(owner.history.pending_mail, first["session_id"]))) == 1
+            and not hooks
+        )
 
         async def model(segment: Any) -> Any:
             try:
@@ -64,7 +67,7 @@ async def test_simultaneous_first_submissions_share_one_child_mail_and_startup(
         await asyncio.wait_for(processed.wait(), 10)
         await idle(owner, first["session_id"])
         assert hooks == [first["session_id"]]
-        assert not owner.history.pending_mail(first["session_id"])
+        assert not (await asyncio.to_thread(owner.history.pending_mail, first["session_id"]))
         assert (
             await owner.spawn(caller, "Same original assignment", "worker", "simultaneous") == first
         )
