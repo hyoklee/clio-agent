@@ -19,6 +19,7 @@ from typing import Any
 
 import dspy
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.arc.memory import ARCMemory
@@ -193,7 +194,7 @@ def _run_turn(client: TestClient, app: Any, text: str = "stream me") -> str:
     accepted = client.post(
         f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": text}]}
     )
-    assert accepted.status_code == 200, accepted.text
+    assert accepted.status_code == 202, accepted.text
     _wait_for_turn_settlement(app, sid, handle=accepted.json()["task_handle"])
     return sid
 
@@ -420,7 +421,7 @@ def test_degradation_note_ledger_is_bounded_by_configuration() -> None:
         stream_fallback_notes,
     )
 
-    app = SimpleNamespace(state=SimpleNamespace())
+    app = FastAPI()
 
     set_config("gact.ledger_retention.stream_fallback_notes.max", 3)
     assert _max_notes_per_session() == 3
@@ -737,11 +738,14 @@ def test_non_text_parts_skip_deltas(tmp_path: Path) -> None:
     class _ToolObservingAgent:
         def forward(self, question: str, session_id: str) -> _Pred:
             from clio_agent.tools.execution import current_tool_runtime
+            from clio_agent.tools.tool_observation import notify_tool_observer
 
             observer = current_tool_runtime().tool_observer
             assert observer is not None
-            observer("fs_read_file", {"path": "README.md"}, "started", None)
-            observer("fs_read_file", {"path": "README.md"}, "completed", None, {"ok": True})
+            notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "started")
+            notify_tool_observer(
+                observer, "fs_read_file", {"path": "README.md"}, "completed", result={"ok": True}
+            )
             return _Pred(answer="tool turn done")
 
     from .conftest import complete_turn
@@ -919,7 +923,7 @@ def test_message_events_carry_turn_id_and_stream_source_batch(app_client) -> Non
         f"/v1/sessions/{sid}/messages",
         json={"parts": [{"type": "text", "text": "correlate me"}]},
     )
-    assert accepted.status_code == 200, accepted.text
+    assert accepted.status_code == 202, accepted.text
     _wait_for_turn_settlement(app, sid, handle=accepted.json()["task_handle"])
 
     history = app.state.bus._history.get(sid, [])

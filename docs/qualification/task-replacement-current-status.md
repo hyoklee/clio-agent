@@ -7,6 +7,41 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Memory caller identity and asynchronous receipt corrections — CI pending
+
+`764121a2` Python 3.14 shard 1 completed with 4,033 passes, 110 failures and
+21 skips; the other shards/interpreters are still running. Six memory-module
+cases pass in this shard and two expose a production HTTP 500: the search route
+reads `active.agent.id` although the session store holds an agent mapping. The
+route now uses the existing mapping/object identity helper. Summary/frame routes
+also derive attribution from their actual stored caller session, removing their
+trust in request-body caller metadata. Core authorization/filtering is unchanged.
+Granted search, permitted frame reads and denied summary reads assert actual
+response/audit attribution despite forged caller fields.
+
+The streaming shard also exposes an incorrect helper assertion introduced in
+`764121a2`: fresh asynchronous message submission correctly returns HTTP 202,
+while the helper required 200. Both POST helpers and the retained memory-turn
+helper now require the actual 202 receipt. Accepted-handle and physical-settlement
+checks remain. No product HTTP status is changed.
+
+Scoped type checking now also sees the source interface types: the stats-only
+agent explicitly refuses inference, the message role is typed, the note-only
+case uses a real FastAPI object, and its model double calls the existing typed
+tool-observer notification boundary. Existing behavior assertions remain, apart
+from the documented acceptance-status correction; attribution assertions are
+added. Ruff/format, three-file Mypy and removal/class/size guards pass. Receipt:
+`ci-memory-caller-7641-source-audit.json` in D static evidence. No local behavioral
+test or live model ran.
+
+Candidate Python-source SHA256:
+`2938b62e9e7342954cd1826061d22eb7cb707d97d5bfb75e54c3f79e63d0b5ca`.
+The frozen D Python source remains
+`a9c9ae58b09e073e456ee2f21bcf3746b34f8dff9a1c601871edf97fd5c8ccc6`.
+clio-core 2.3.1, dependencies, GACT, prompts and installed state are unchanged.
+Fresh CI and affected recall/attribution live acceptance remain pending; R184
+still holds another live launch.
+
 ### Transcript deletion visibility regressions — CI pending
 
 The retained deletion tests expected removal of the generation pointer. The

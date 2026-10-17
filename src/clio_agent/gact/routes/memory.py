@@ -8,9 +8,8 @@ orchestrator uses to reach across turns/sessions under explicit scope control.
   by default; cross-session recall is intentionally opt-in
   (``include_cross_session``) and never crosses a workspace boundary by default.
 * ``POST /v1/sessions/{sid}/memory/tools/search-sessions`` -- agent-callable
-  bounded transcript search. Same-workspace / global recall require explicit
-  user intent (or the matching scope) and every call is recorded in the audit
-  ledger with provenance.
+  bounded transcript search. Peer recall requires trusted Core relationships;
+  every call is recorded with its actual session agent identity and provenance.
 * ``POST /v1/sessions/{sid}/memory/tools/read-session-summary`` -- agent-callable
   compact session summary (recent excerpts + counts); never returns the raw full
   transcript.
@@ -38,6 +37,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from clio_agent.gact.events import Event
 from clio_agent.gact.off_loop import run_off_loop
+from clio_agent.gact.runtime.globals import _session_agent_id
 from clio_agent.gact.runtime.memory_search import (
     _memory_search_response,
     _message_text_excerpt,
@@ -367,13 +367,11 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
         query = str(body.get("query") or "").strip()
         scope = str(body.get("scope") or "session").strip() or "session"
         limit = max(1, min(int(body.get("limit") or 10), 50))
-        caller = body.get("caller", {})
-        caller_map = caller if isinstance(caller, Mapping) else {}
         user_intent = str(body.get("user_intent") or body.get("reason") or "").strip()
         from clio_agent.gact.runtime.memory_search import agent_memory_search
 
         active_workspace = active.workspace_id
-        caller_map = {"agent_id": active.agent.id}
+        caller_map = {"agent_id": _session_agent_id(active)}
         response = await run_off_loop(
             lambda: agent_memory_search(app, sid, query=query, scope=scope, limit=limit)
         )
@@ -438,9 +436,8 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
                 recoverable=True,
             )
         target_sid = str(body.get("target_session_id") or sid).strip() or sid
-        caller = body.get("caller", {})
-        caller_map = caller if isinstance(caller, Mapping) else {}
         policy = _memory_tool_policy(app, session_id=sid, target_session_id=target_sid, body=body)
+        caller_map = {"agent_id": _session_agent_id(policy["active_session"])}
         if not policy.get("allowed"):
             _raise_memory_policy_denied(
                 app,
@@ -507,8 +504,6 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
             )
         target_sid = str(body.get("target_session_id") or sid).strip() or sid
         frame_id = str(body.get("frame_id") or "").strip()
-        caller = body.get("caller", {})
-        caller_map = caller if isinstance(caller, Mapping) else {}
         if not frame_id:
             raise _memory_tool_error(
                 status_code=422,
@@ -518,6 +513,7 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
                 recoverable=True,
             )
         policy = _memory_tool_policy(app, session_id=sid, target_session_id=target_sid, body=body)
+        caller_map = {"agent_id": _session_agent_id(policy["active_session"])}
         if not policy.get("allowed"):
             _raise_memory_policy_denied(
                 app,

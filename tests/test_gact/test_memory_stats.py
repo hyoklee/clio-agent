@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from fastapi import FastAPI
@@ -97,6 +97,10 @@ class _StubProviderConfig:
 class _StubAgent:
     def __init__(self, chosen_context: int = 4000) -> None:
         self._provider_config = _StubProviderConfig(chosen_context)
+
+    def forward(self, question: str, session_id: str) -> Any:
+        """Keep stats-only fixtures from accidentally executing a model turn."""
+        raise AssertionError("Stats-only agent must not execute inference")
 
 
 class FakeAgent:
@@ -356,7 +360,7 @@ def _add_text_message(
     session_id: str,
     *,
     message_id: str,
-    role: str = "user",
+    role: Literal["user", "assistant", "system", "tool"] = "user",
     text: str,
     created_at: str,
 ) -> None:
@@ -422,7 +426,7 @@ def _complete_turn_with_metadata(
         f"/v1/sessions/{sid}/messages",
         json={"parts": [{"type": "text", "text": text}], "metadata": metadata},
     )
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
     user_id = ack.json()["message_id"]
     deadline = time.monotonic() + 30.0
     while time.monotonic() < deadline:
@@ -760,6 +764,10 @@ def test_memory_tool_search_same_workspace_requires_and_records_trusted_grant(
     assert audit["tool_name"] == "memory_search_sessions"
     assert audit["status"] == "completed"
     assert audit["policy_decision"] == "allow_core_relationship"
+    recorded_agent = _application(client_with_arc).state.sessions.get(sid_current).agent["id"]
+    assert body["metadata"]["caller"] == {"agent_id": recorded_agent}
+    assert audit["caller"] == {"agent_id": recorded_agent}
+    assert recorded_agent != "orchestrator"
     _application(client_with_arc).state.task_history.record_grant(
         grant.model_copy(update={"revoked_at": now()}), observation_id=grant.id + ":revoke"
     )
@@ -868,6 +876,7 @@ def test_memory_tool_read_context_frame_same_workspace_with_provenance(
             "frame_id": "ctx_test_1",
             "scope": "current_workspace",
             "user_intent": "reuse the context assembled for Monday's work",
+            "caller": {"agent_id": "forged-frame-reader"},
         },
     )
 
@@ -878,6 +887,11 @@ def test_memory_tool_read_context_frame_same_workspace_with_provenance(
     assert body["frame"]["metadata"]["source"] == "gact_context_frame"
     assert body["metadata"]["policy_decision"] == "allow_core_relationship"
     assert body["metadata"]["provenance"]["target_session_id"] == sid_prior
+    recorded_agent = _application(client_with_arc).state.sessions.get(sid_current).agent["id"]
+    assert body["metadata"]["caller"] == {"agent_id": recorded_agent}
+    assert _application(client_with_arc).state.memory_tool_audit[-1]["caller"] == {
+        "agent_id": recorded_agent
+    }
 
 
 def test_memory_tool_read_summary_denies_other_workspace(
@@ -906,6 +920,7 @@ def test_memory_tool_read_summary_denies_other_workspace(
             "target_session_id": sid_other,
             "scope": "current_workspace",
             "user_intent": "look across my recent work",
+            "caller": {"agent_id": "forged-summary-reader"},
         },
     )
 
@@ -913,6 +928,10 @@ def test_memory_tool_read_summary_denies_other_workspace(
     body = resp.json()
     assert body["error"]["error"] == "memory_policy_denied"
     assert body["error"]["details"]["policy_decision"] == "deny_session_unavailable"
+    recorded_agent = _application(client_with_arc).state.sessions.get(sid_current).agent["id"]
+    assert _application(client_with_arc).state.memory_tool_audit[-1]["caller"] == {
+        "agent_id": recorded_agent
+    }
 
 
 def test_memory_tool_global_search_requires_global_scope(client_with_arc: TestClient) -> None:
