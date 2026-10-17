@@ -7,6 +7,49 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### HTTP Stop regressions — physical retirement before terminal publication
+
+Four older cases still assumed idle Stop cancels a session, or required a
+terminal assistant while their forward thread was deliberately held. The latter
+contradicts R2's explicit Stopping/physical-retirement requirement and explained
+the two 120-second waits. The cases now require idle Stop to remain idle and
+an active Stop to expose Stopping, retain its busy slot, keep its assignment
+nonterminal/uncancelled and publish no final assistant while the forward is held.
+An accepted child record must remain unchanged before and after retirement.
+
+Release and actual slot join run in `finally`, sharing the original 120-second
+thread-completion backstop. Only then do the cases require the cancelled segment,
+one cancelled assistant and honest best-effort/late-tool telemetry. The assignment
+remains stopped/active and a later explicit message uses its same handle. Retired
+attempt counters and premature-envelope assertions are replaced by these owner
+and physical-work observations; the four other test bodies, provider fakes,
+negative telemetry checks and budget constants remain. Unknown-session 404 keeps
+its typed code and checks the current canonical message. The idle case is renamed
+from `test_cancel_flips_status_and_publishes_event` to
+`test_idle_stop_preserves_status_and_publishes_event`.
+
+Ruff/format, scoped Mypy with `--check-untyped-defs` and a static behavior/source
+audit pass. No production file or clio-core changes; no local behavioral test or
+live family ran. Fresh CI and final live Stop/worker/UI gates remain required.
+Receipt: `ci-http-stop-1f8d8e3f-audit.json`.
+
+### Fresh f7a4d00e Python 3.14 results
+
+All four artifacts for run `39030763012` report 12,221 passes, 239 failures,
+one error and 54 skips. The pending-feedback list/control and committed-input
+refusal, all three original withdrawal races, fanout fixture and both resource
+daemon-survival/startup cases pass. Composer tests have 20 passes and one error;
+configuration-reference tests have 25 passes and one failure. The ordinary
+concurrent legacy-input variant passes; its cancellation variant still fails
+and requires investigation.
+
+The error is the 1,005-message case: a real native call exceeds its existing
+15-second bound with AIO-STUCK diagnostics. It remains failed and unqualified;
+the workload, native bound and clio-core are unchanged. No timeout increase,
+smaller workload or backend workaround was introduced. Overall CI and all final
+live families/races remain incomplete. These results do not accept the later
+cancellation-recording or HTTP Stop test changes.
+
 ### Cancellation regressions — distinguish owner effect and intent recording
 
 Two retained cases failed on an absent `cancellation_requested_at` while their

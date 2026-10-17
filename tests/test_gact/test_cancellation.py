@@ -1,21 +1,26 @@
 """POST /v1/sessions/{sid}/cancel.
 
-Two scenarios:
-- Idle session: status -> cancelled, event fired, 204; a later user turn starts fresh.
+Stop is independent of assignment/task cancellation:
+- Idle session: remain idle, publish the control, 204; a later turn starts normally.
 - Unknown session: 404 with the v0.2 error envelope.
-- In-flight turn: cancellation settles that turn without poisoning the next one.
+- In-flight turn: Stopping holds the slot until real worker exit, then settles
+  the cancelled segment without cancelling accepted children or poisoning later input.
 """
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
+from tests.test_gact.conftest import settle_turn_slot
+from tests.test_gact.task_records import record_delegation_fixture
 from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S, wait_for_terminal_status
 
 # #948 S4b: default sessions run the blueprint react ``main``; route it to each
@@ -31,7 +36,7 @@ class _Pred:
 
 
 class _Agent:
-    def forward(self, question: str, session_id: str):
+    def forward(self, question: str, session_id: str) -> _Pred:
         return _Pred()
 
 
@@ -39,7 +44,7 @@ class _CountingAgent:
     def __init__(self) -> None:
         self.calls = 0
 
-    def forward(self, question: str, session_id: str):
+    def forward(self, question: str, session_id: str) -> _Pred:
         self.calls += 1
         return _Pred()
 
@@ -48,34 +53,32 @@ def _client(tmp_path: Path) -> TestClient:
     return TestClient(build_app(sessions_path=tmp_path / "s.json", agent=_Agent()))
 
 
-def test_cancel_flips_status_and_publishes_event(tmp_path: Path) -> None:
-    client = _client(tmp_path)
-    sess = client.post("/v1/sessions", json={"title": "t"}).json()
-    sid = sess["id"]
-
-    resp = client.post(f"/v1/sessions/{sid}/cancel")
-    assert resp.status_code == 204
-    assert resp.content == b""
-
-    # Session now reports cancelled.
-    row = client.get(f"/v1/sessions/{sid}").json()
-    assert row["status"] == "cancelled"
-    status_events = [
-        e
-        for e in client.app.state.bus._history.get(sid, [])
-        if e.type == "session.status_changed" and e.payload.get("status") == "cancelled"
-    ]
-    attempt = status_events[-1].payload["cancellation_attempt"]
-    assert attempt["session_id"] == sid
-    assert attempt["in_flight"] is False
-    # L1: the record reports what was ACTUALLY stopped -- no children/streams to
-    # stop for an idle session -- never the deleted, always-constant
-    # hard_abort_supported/upstream_abort/executor_work_may_continue triad.
-    assert "hard_abort_supported" not in attempt
-    assert "upstream_abort" not in attempt
-    assert "executor_work_may_continue" not in attempt
-    assert attempt["children_cancelled"] == 0
-    assert attempt["provider_streams_killed"] == 0
+def test_idle_stop_preserves_status_and_publishes_event(tmp_path: Path) -> None:
+    """Idle Stop reports its effect without inventing an active cancelled turn."""
+    with _client(tmp_path) as client:
+        app = client.app
+        assert isinstance(app, FastAPI)
+        sess = client.post("/v1/sessions", json={"title": "t"}).json()
+        sid = sess["id"]
+        before = app.state.bus.latest_event_id(sid)
+        resp = client.post(f"/v1/sessions/{sid}/cancel")
+        assert resp.status_code == 204
+        assert resp.content == b""
+        assert client.get(f"/v1/sessions/{sid}").json()["status"] == "idle"
+        reservation = app.state.turn_runner.handle(sid)
+        assert reservation is None or not reservation.turn_id
+        status_events = [
+            event
+            for event in app.state.bus.session_events_since(sid, cursor=before + 1)
+            if event.type == "session.status_changed"
+        ]
+        assert status_events and status_events[-1].payload["status"] == "idle"
+        effect = status_events[-1].payload
+        assert effect["session_id"] == sid
+        assert effect["accepted_tasks_continue"] is True
+        assert "hard_abort_supported" not in effect
+        assert "upstream_abort" not in effect
+        assert "executor_work_may_continue" not in effect
 
 
 def test_cancel_unknown_session_404s_with_v0_2_envelope(tmp_path: Path) -> None:
@@ -84,14 +87,14 @@ def test_cancel_unknown_session_404s_with_v0_2_envelope(tmp_path: Path) -> None:
     assert resp.status_code == 404
     body = resp.json()
     assert body["error"]["error"] == "not_found"
-    assert "session not found" in body["error"]["message"]
+    assert body["error"]["message"] == "Session unavailable"
 
 
 class _LateToolObserverAgent:
     """Agent that reports a successful tool completion after cancellation.
 
     The tool "runs" until the test releases it, so its late completion provably lands
-    after the cancelled envelope settled (no sleep racing the cancel route).
+    after Stop was requested, before physical retirement and envelope settlement.
     """
 
     def __init__(self) -> None:
@@ -101,7 +104,7 @@ class _LateToolObserverAgent:
         self.release = threading.Event()
         self.completed = threading.Event()
 
-    def forward(self, question: str, session_id: str):
+    def forward(self, question: str, session_id: str) -> Any:
         from clio_agent.tools.execution import notify_global_tool_observer
 
         notify_global_tool_observer("late_tool", {"question": question}, "started", None)
@@ -124,7 +127,7 @@ class _BlocksUntilReleasedAgent:
         self.release = threading.Event()
         self.completed = threading.Event()
 
-    def forward(self, question: str, session_id: str):
+    def forward(self, question: str, session_id: str) -> Any:
         self.started.set()
         assert self.release.wait(timeout=TURN_SIGNAL_BACKSTOP_S), "the test never released"
         self.completed.set()
@@ -133,36 +136,80 @@ class _BlocksUntilReleasedAgent:
         )()
 
 
-def test_cancel_during_turn_marks_turn_as_cancelled(tmp_path: Path) -> None:
-    """Cancelling the asyncio task does not kill executor-thread work.
+def _assert_stopping(
+    client: TestClient,
+    sid: str,
+    handle: str,
+    agent: _BlocksUntilReleasedAgent | _LateToolObserverAgent,
+    after_event_id: int,
+) -> None:
+    """Require truthful Stopping while the actual forward is still held."""
+    app = client.app
+    assert isinstance(app, FastAPI)
+    assert client.get(f"/v1/sessions/{sid}").json()["status"] == "stopping"
+    assert app.state.turn_runner.busy(sid) and not agent.completed.is_set()
+    task = app.state.task_history.task_snapshot(handle)
+    assert task is not None and task.terminal_at is None
+    assert task.activity in {"busy", "executing", "stopping"}
+    assert task.cancellation_requested_at is None
+    events = [
+        event
+        for event in app.state.bus.session_events_since(sid, cursor=after_event_id + 1)
+        if event.type == "session.status_changed"
+    ]
+    assert events and events[-1].payload["status"] == "stopping"
+    assert events[-1].payload["accepted_tasks_continue"] is True
+    assert events[-1].payload["handle"] == handle
+    assert all(event.payload["status"] not in {"idle", "error", "cancelled"} for event in events)
+    assert not [
+        message
+        for message in client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        if message["role"] == "assistant" and not message.get("metadata", {}).get("live")
+    ]
 
-    The forward blocks until released, so the cancel always lands mid-forward and the
-    envelope provably settles while the executor thread is still running (no wall-clock
-    window: the old 0.6 s forward + 3 s poll raced a loaded CI runner). The settle is
-    observed through the turn's own terminal ``session.status_changed``, published
-    after the cancel route's ``cooperative_pending`` one.
-    """
+
+def _retire_held_forward(
+    client: TestClient,
+    sid: str,
+    agent: _BlocksUntilReleasedAgent | _LateToolObserverAgent,
+) -> None:
+    """Release owned work and join its real slot within the original diagnostic bound."""
+    deadline = time.monotonic() + TURN_SIGNAL_BACKSTOP_S
+    agent.release.set()
+    if agent.started.is_set():
+        assert agent.completed.wait(timeout=max(0.0, deadline - time.monotonic()))
+    remaining = deadline - time.monotonic()
+    assert remaining > 0, "Worker retirement exhausted the diagnostic backstop"
+    settle_turn_slot(client, sid, timeout=remaining)
+
+
+def test_cancel_during_turn_marks_turn_as_cancelled(tmp_path: Path) -> None:
+    """Stop keeps the slot and assignment nonterminal until the real worker retires."""
 
     agent = _BlocksUntilReleasedAgent()
     app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
     with TestClient(app) as c:
         sid = c.post("/v1/sessions", json={"title": "x"}).json()["id"]
-        # Fire turn (returns ack immediately; turn runs in background).
-        c.post(
-            f"/v1/sessions/{sid}/messages",
-            json={"parts": [{"type": "text", "text": "hi"}]},
-        )
-        # Wait until the forward is actually running in the executor (the prologue
-        # now runs off the loop after the ack, so a fixed slice is not enough).
-        assert agent.started.wait(timeout=TURN_SIGNAL_BACKSTOP_S), "forward never started"
-        assert c.post(f"/v1/sessions/{sid}/cancel").status_code == 204
-        # The route published ``cooperative_pending`` synchronously; the next terminal
-        # status is the turn settling itself (after its assistant message persisted).
-        after_route = app.state.bus.latest_event_id(sid)
-        assert wait_for_terminal_status(app.state.bus, sid, after_event_id=after_route) == (
+        before_stop = app.state.bus.latest_event_id(sid)
+        try:
+            accepted = c.post(
+                f"/v1/sessions/{sid}/messages",
+                json={"parts": [{"type": "text", "text": "hi"}]},
+            )
+            assert accepted.status_code == 202, accepted.text
+            handle = accepted.json()["task_handle"]
+            assert agent.started.wait(timeout=TURN_SIGNAL_BACKSTOP_S), "forward never started"
+            child = record_delegation_fixture(app, sid, handle="task_stop_child")
+            before_stop = app.state.bus.latest_event_id(sid)
+            assert c.post(f"/v1/sessions/{sid}/cancel").status_code == 204
+            _assert_stopping(c, sid, handle, agent, before_stop)
+            assert app.state.task_history.task_snapshot(child.handle) == child
+        finally:
+            _retire_held_forward(c, sid, agent)
+        assert wait_for_terminal_status(app.state.bus, sid, after_event_id=before_stop) == (
             "cancelled"
         )
-        assert not agent.completed.is_set(), "the envelope must settle while forward runs"
+        assert agent.completed.is_set()
         assistants = [
             m
             for m in c.get(f"/v1/sessions/{sid}/messages").json()["messages"]
@@ -177,30 +224,21 @@ def test_cancel_during_turn_marks_turn_as_cancelled(tmp_path: Path) -> None:
         assert "executor_work_may_continue" not in assistant["error_info"]["details"]
         assert "hard_abort_supported" not in assistant["error_info"]["details"]
         assert "upstream_abort" not in assistant["error_info"]["details"]
-        attempt = assistant["error_info"]["details"]["cancellation_attempt"]
-        assert attempt["session_id"] == sid
-        assert attempt["in_flight"] is True
-        assert attempt["cooperative_signal_sent"] is True
-        assert attempt["asyncio_task_cancel_scheduled"] is True
-        assert "executor_work_may_continue" not in attempt
-        assert attempt["children_cancelled"] == 0
-        assert attempt["provider_streams_killed"] == 0
+        assert assistant["error_info"]["details"]["session_id"] == sid
+        assignment = app.state.task_history.task_snapshot(handle)
+        assert assignment is not None and assignment.terminal_at is None
+        assert assignment.activity == "stopped"
+        assert assignment.cancellation_requested_at is None
+        assert app.state.task_history.task_snapshot(child.handle) == child
         status_events = [
             e
             for e in app.state.bus._history.get(sid, [])
             if e.type == "session.status_changed" and e.payload.get("status") == "cancelled"
         ]
         assert [e.payload["execution_cancellation"] for e in status_events] == [
-            "cooperative_pending",
             "best_effort",
         ]
         assert "executor_work_may_continue" not in status_events[-1].payload
-        assert status_events[-1].payload["cancellation_attempt"]["id"] == attempt["id"]
-
-        # The executor thread still finishes after the GACT envelope has truthfully
-        # settled as cancelled.
-        agent.release.set()
-        assert agent.completed.wait(timeout=TURN_SIGNAL_BACKSTOP_S)
 
 
 def test_cancel_before_turn_skips_agent_forward(
@@ -264,14 +302,23 @@ def test_late_tool_completion_after_cancel_is_not_reported_as_success(
     app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
     with TestClient(app) as c:
         sid = c.post("/v1/sessions", json={"title": "x"}).json()["id"]
-        c.post(
-            f"/v1/sessions/{sid}/messages",
-            json={"parts": [{"type": "text", "text": "hi"}]},
-        )
-        assert agent.started.wait(timeout=TURN_SIGNAL_BACKSTOP_S), "forward never started"
-        assert c.post(f"/v1/sessions/{sid}/cancel").status_code == 204
-        after_route = app.state.bus.latest_event_id(sid)
-        assert wait_for_terminal_status(app.state.bus, sid, after_event_id=after_route) == (
+        before_stop = app.state.bus.latest_event_id(sid)
+        try:
+            accepted = c.post(
+                f"/v1/sessions/{sid}/messages",
+                json={"parts": [{"type": "text", "text": "hi"}]},
+            )
+            assert accepted.status_code == 202, accepted.text
+            handle = accepted.json()["task_handle"]
+            assert agent.started.wait(timeout=TURN_SIGNAL_BACKSTOP_S), "forward never started"
+            before_stop = app.state.bus.latest_event_id(sid)
+            assert c.post(f"/v1/sessions/{sid}/cancel").status_code == 204
+            _assert_stopping(c, sid, handle, agent, before_stop)
+        finally:
+            # The tool reports completion after Stop, and the cancelled segment
+            # may settle only once the actual worker has exited.
+            _retire_held_forward(c, sid, agent)
+        assert wait_for_terminal_status(app.state.bus, sid, after_event_id=before_stop) == (
             "cancelled"
         )
         assistants = [
@@ -280,9 +327,10 @@ def test_late_tool_completion_after_cancel_is_not_reported_as_success(
             if m["role"] == "assistant" and m.get("error_info", {}).get("error") == "cancelled"
         ]
         assert len(assistants) == 1, assistants
-        # Only now does the tool report success: strictly after the settle.
-        agent.release.set()
-        assert agent.completed.wait(timeout=TURN_SIGNAL_BACKSTOP_S)
+        assert agent.completed.is_set()
+        stopped = app.state.task_history.task_snapshot(handle)
+        assert stopped is not None and stopped.activity == "stopped"
+        assert stopped.terminal_at is None and stopped.cancellation_requested_at is None
 
         completed_events = [
             e
@@ -303,6 +351,7 @@ def test_late_tool_completion_after_cancel_is_not_reported_as_success(
             for part in next_assistant["parts"]
         )
         assert "tools_called" not in next_assistant.get("metadata", {})
+        assert app.state.task_history.latest_assignment(sid).handle == handle
 
 
 def test_idle_cancel_does_not_poison_next_turn(tmp_path: Path) -> None:
@@ -313,8 +362,7 @@ def test_idle_cancel_does_not_poison_next_turn(tmp_path: Path) -> None:
     with _client(tmp_path) as client:
         sess = client.post("/v1/sessions", json={"title": "t"}).json()
         sid = sess["id"]
-        # Cancelling an idle or restart-recovered session is a terminal transition
-        # for the old work, not a reservation to cancel an unrelated future turn.
+        # Idle Stop leaves no cancellation reservation that can poison later input.
         client.post(f"/v1/sessions/{sid}/cancel")
         a = complete_turn(client, sid, "hi")
         assert a.get("error_info") is None
