@@ -385,7 +385,7 @@ async def test_declared_fanout_limit_applies_only_during_inference(
                 dormant_reservation_retires(task.owner.session_id),
                 max(0.0, deadline - asyncio.get_running_loop().time()),
             )
-            assert not owner.history.pending_mail(task.owner.session_id)
+            assert not await owner.history.io.run(owner.history.pending_mail, task.owner.session_id)
         assert all(not app.state.turn_runner.busy(task.owner.session_id) for task in tasks)
         jobs = [asyncio.create_task(model_call(task.owner.session_id)) for task in tasks]
         await asyncio.wait_for(

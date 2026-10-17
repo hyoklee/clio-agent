@@ -7,6 +7,40 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Pending-feedback public routes — fresh CI pending
+
+Released `main` exposes pending-feedback list/cancel and `message-state` routes;
+the current GACT client still calls the pending-feedback routes. Their removal
+produced real 404s in three unchanged withdrawal regressions. They are restored
+as projections/commands over the existing Core recipient index and
+`withdraw_mail`, serialized with the sole recipient-input commit boundary.
+Committed input refuses cancellation; successful withdrawal retains history,
+removes the visible message and publishes the existing cancellation events.
+No intent store, claim/consumption writer, task owner or wake policy returns.
+The reconciliation cursor is captured before reading the snapshot so replay
+cannot skip a newer event.
+
+All prior queue functions are AST-identical after removing the new projection,
+three handlers and their imports. All 19 original test functions remain,
+including the three unchanged withdrawal cases. Two new public-route cases
+cover shared views, pending cancellation, repeat refusal and committed-input
+refusal. The 1,005-message fixture now uses distinct model iteration identities;
+resource-only feedback reads its retained message body, and empty feedback
+requires the canonical typed validation error. Explicit JSON type guards retain
+the original restored-content assertions.
+
+Current CI also exposed an application-loop read in the retained fanout fixture.
+That assertion now calls the existing Core I/O owner; the read guard, inference
+budgets, original assertions and diagnostic limit are unchanged. Ruff/format,
+Mypy with `--check-untyped-defs` across the three changed Python files, existing
+guards and static contract audits pass. No local behavioral test or live family
+ran. Receipt: `ci-pending-input-64a47f33-audit.json`.
+
+Candidate Python-source SHA256:
+`71073fdebf428b4d16805f585a278c04167c957f35335087e2f238bc0db1b92d`.
+clio-core 2.3.1, dependencies, GACT and frozen R184 production are unchanged.
+Fresh CI and live feedback/UI/input-withdrawal races remain required.
+
 ### Current CI and live hold
 
 Run `39027086751` at `ca1f3308` finished. All four Python 3.14 artifacts report
@@ -20,6 +54,9 @@ in run `39029250041`, including the admission-fixture and worker-stall repairs.
 Its source hash is recorded below. The R184 controller and verified API/private
 runtime processes remain live. No further live family has launched while its
 unresolved shutdown awaits the existing explicit human force-close decision.
+The first three Python 3.14 artifacts confirm the formerly deadlocked mode-PATCH
+case and blueprint-selection case pass. The current run still has failures;
+neither these partial artifacts nor that older source qualify the next packet.
 
 Four configuration-reference failures are addressed in the next documentation
 packet: retired special Relay configuration is no longer expected, and the

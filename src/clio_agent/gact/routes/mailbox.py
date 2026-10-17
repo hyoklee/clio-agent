@@ -10,8 +10,9 @@ from fastapi import FastAPI, HTTPException, Response
 from pydantic import BaseModel
 
 from clio_agent.arc.task_types import CoreReference, MailItem
+from clio_agent.gact.events import Event
 from clio_agent.gact.native_work import now
-from clio_agent.gact.types import PostMessageRequest
+from clio_agent.gact.types import Message, MessageBehavior, ModelRef, PostMessageRequest
 
 
 class PromoteRequest(BaseModel):
@@ -60,6 +61,40 @@ def wire(app: Any, item: MailItem) -> dict[str, Any]:
         "behavior": request.behavior.model_dump(mode="json"),
         "model": request.model.model_dump(mode="json") if request.model is not None else {},
     }
+
+
+def pending_steers(app: Any, sid: str) -> list[dict[str, Any]]:
+    """Project the shipped pending-input view from the sole Core recipient index."""
+    rows = []
+    history = app.state.task_history
+    for item in history.pending_mail(sid):
+        if item.kind not in {"human", "composer"} or item.delivery == "queued":
+            continue
+        content = history.read_content(item.content)
+        if not isinstance(content, dict) or "message" not in content:
+            continue
+        message = Message.model_validate(content["message"])
+        rows.append(
+            {
+                "message_id": item.id,
+                "session_id": sid,
+                "parts": [part.model_dump(mode="json") for part in message.parts],
+                "text": content.get("text", ""),
+                "metadata": message.metadata,
+                "accepted_at": item.created_at,
+                "behavior": MessageBehavior.model_validate(
+                    message.metadata.get("behavior", {})
+                ).model_dump(mode="json"),
+                "model": ModelRef.model_validate(
+                    message.metadata.get("effective_model", {})
+                ).model_dump(mode="json"),
+                "state": "pending",
+                "claimed_at": "",
+                "consumed_at": "",
+                "cancelled_at": "",
+            }
+        )
+    return rows
 
 
 def _require_available_message_id(
@@ -212,6 +247,68 @@ def register_mailbox_routes(app: FastAPI) -> None:
     def require_session(sid: str) -> None:
         if app.state.sessions.get(sid) is None:
             raise HTTPException(status_code=404, detail="Session unavailable")
+
+    @app.get("/v1/sessions/{sid}/pending-steers")
+    async def list_pending_steers(sid: str) -> dict[str, Any]:
+        require_session(sid)
+        return await app.state.task_history.io.run(
+            lambda: {"pending_steers": pending_steers(app, sid)}
+        )
+
+    @app.get("/v1/sessions/{sid}/message-state")
+    async def message_state(sid: str) -> dict[str, Any]:
+        require_session(sid)
+
+        def snapshot() -> dict[str, Any]:
+            with app.state.task_history.serialized():
+                # Capture the cursor first: a concurrent event may be replayed,
+                # but no event newer than this snapshot can be silently skipped.
+                cursor = app.state.bus.latest_event_id(sid)
+                return {
+                    "protocol_version": "0.3",
+                    "authoritative": True,
+                    "session": app.state.sessions.get(sid).to_wire(),
+                    "messages": [row.to_wire() for row in app.state.messages.get(sid, [])],
+                    "pending_steers": pending_steers(app, sid),
+                    "queued_messages": [wire(app, item) for item in queued(app, sid)],
+                    "next_cursor": cursor,
+                    "dropped_events": app.state.bus.dropped_total(sid),
+                }
+
+        return await app.state.task_history.io.run(snapshot)
+
+    @app.delete("/v1/sessions/{sid}/pending-steers/{message_id}")
+    async def cancel_pending_steer(sid: str, message_id: str) -> dict[str, str]:
+        require_session(sid)
+
+        def withdraw() -> None:
+            history = app.state.task_history
+            with history.serialized():
+                item = history.mail_item(sid, message_id)
+                if item is None or item.kind not in {"human", "composer"}:
+                    raise HTTPException(status_code=404, detail="Pending steer not found")
+                if history.mail_withdrawn(sid, message_id):
+                    state = "cancelled"
+                elif message_id in history.acknowledged_notifications(sid):
+                    state = "consumed"
+                else:
+                    state = "pending"
+                if state != "pending":
+                    raise HTTPException(
+                        status_code=409, detail={"error": "steer_already_settled", "state": state}
+                    )
+                if item.delivery == "queued":
+                    raise HTTPException(status_code=404, detail="Pending steer not found")
+                history.withdraw_mail(sid, message_id)
+                messages = [row for row in app.state.messages.get(sid, []) if row.id != message_id]
+                app.state.gact_deps.replace_session_messages(app, sid, messages)
+                app.state.sessions.update(sid, message_count=len(messages))
+
+        await app.state.task_history.io.run(withdraw)
+        payload = {"message_id": message_id, "session_id": sid}
+        for event_type in ("message.cancelled", "pending_steer.cancelled"):
+            app.state.bus.publish(Event(type=event_type, session_id=sid, payload=payload))
+        return payload
 
     @app.get("/v1/sessions/{sid}/queued-messages")
     async def list_queued(sid: str) -> dict[str, Any]:

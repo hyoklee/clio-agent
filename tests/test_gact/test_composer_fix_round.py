@@ -213,7 +213,11 @@ def test_core_retains_more_than_one_thousand_delivered_messages(arc: Any) -> Non
     history = TaskHistory(arc)
     for index in range(1005):
         item = history.record_mail(mail(history, f"message-{index}"))
-        history.record_input(input_record(item, identity=f"input-{index}"))
+        history.record_input(
+            input_record(item, identity=f"input-{index}").model_copy(
+                update={"iteration_id": f"iteration-{index}"}
+            )
+        )
     assert history.pending_mail("owner") == ()
     assert history.mail_item("owner", "message-0") is not None
     assert history.mail_item("owner", "message-1004") is not None
@@ -221,10 +225,11 @@ def test_core_retains_more_than_one_thousand_delivered_messages(arc: Any) -> Non
     restored.restore()
     assert restored.pending_mail("owner") == ()
     assert len(restored.acknowledged_notifications("owner")) == 1005
-    assert (
-        restored.read_content(restored.mail_item("owner", "message-0").content)["text"]
-        == "message-0"
-    )
+    first = restored.mail_item("owner", "message-0")
+    assert first is not None
+    content = restored.read_content(first.content)
+    assert isinstance(content, dict)
+    assert content["text"] == "message-0"
 
 
 def test_attachment_only_steer_remains_in_the_confirmed_input_batch(
@@ -259,7 +264,7 @@ def test_attachment_only_steer_remains_in_the_confirmed_input_batch(
         item = app.state.task_history.mail_item(sid, identity)
         assert item is not None
         content = app.state.task_history.read_content(item.content)
-        assert content["parts"][0]["resource_id"] == ready["id"]
+        assert content["message"]["parts"][0]["resource_id"] == ready["id"]
         batch = app.state.conversations.mail.stage(app.state.conversations.caller(sid))
         assert identity in {row.id for row in batch.items}
         assert identity not in app.state.task_history.acknowledged_notifications(sid)
@@ -278,7 +283,9 @@ def test_steer_with_no_text_and_no_parts_is_refused_typed(
         before = tuple(app.state.task_history.pending_mail(sid))
         response = client.post(f"/v1/sessions/{sid}/messages", json={"parts": []})
         assert response.status_code == 400, response.text
-        assert response.json()["error"]["error"] == "missing_input"
+        assert response.json()["error"]["error"] == "validation_error"
+        assert response.json()["error"]["details"]["session_id"] == sid
+        assert response.json()["error"]["recoverable"] is True
         assert tuple(app.state.task_history.pending_mail(sid)) == before
 
 
@@ -351,8 +358,82 @@ def test_confirmed_pending_steer_survives_core_restore(
         restored.restore()
         assert restored.mail_item(sid, identity) == original
         assert identity in {item.id for item in restored.pending_mail(sid)}
-        assert restored.read_content(original.content)["text"] == "retained feedback"
+        content = restored.read_content(original.content)
+        assert isinstance(content, dict)
+        assert content["text"] == "retained feedback"
         assert restored.committed_notification_input(sid, identity) is None
+
+
+def test_pending_steer_views_and_cancellation_share_the_core_mailbox(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Released views/control project Core input without another intent store."""
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "pending input"}).json()["id"]
+        record_assignment_fixture(app, sid)
+        hold_model_segment(app, sid, monkeypatch)
+        accepted = client.post(f"/v1/sessions/{sid}/messages", json={"text": "Check this sample"})
+        assert accepted.status_code == 202, accepted.text
+        identity = accepted.json()["message_id"]
+        history = app.state.task_history
+        original = history.mail_item(sid, identity)
+        pending = client.get(f"/v1/sessions/{sid}/pending-steers")
+        assert pending.status_code == 200, pending.text
+        row = next(row for row in pending.json()["pending_steers"] if row["message_id"] == identity)
+        assert row["text"] == "Check this sample"
+        assert row["parts"][0]["text"] == "Check this sample"
+        assert row["state"] == "pending" and row["consumed_at"] == ""
+        assert row["metadata"]["pending_steer"] is True
+        snapshot = client.get(f"/v1/sessions/{sid}/message-state")
+        assert snapshot.status_code == 200, snapshot.text
+        state = snapshot.json()
+        assert state["authoritative"] is True and state["session"]["id"] == sid
+        assert row in state["pending_steers"]
+        assert any(message["id"] == identity for message in state["messages"])
+        assert state["queued_messages"] == [] and state["next_cursor"] >= 0
+        assert identity not in history.acknowledged_notifications(sid)
+        cancelled = client.delete(f"/v1/sessions/{sid}/pending-steers/{identity}")
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json() == {"message_id": identity, "session_id": sid}
+        assert history.mail_item(sid, identity) == original
+        assert history.mail_withdrawn(sid, identity)
+        assert identity not in history.acknowledged_notifications(sid)
+        assert all(row["id"] != identity for row in _user_messages(client, sid))
+        repeated = client.delete(f"/v1/sessions/{sid}/pending-steers/{identity}")
+        assert repeated.status_code == 409, repeated.text
+        assert repeated.json() == {"error": "steer_already_settled", "state": "cancelled"}
+
+
+def test_pending_steer_control_cannot_withdraw_committed_input(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The recipient-input boundary remains authoritative over the REST alias."""
+    from tests.test_arc.test_task_history import input_record
+
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "committed input"}).json()["id"]
+        assignment = record_assignment_fixture(app, sid)
+        hold_model_segment(app, sid, monkeypatch)
+        accepted = client.post(f"/v1/sessions/{sid}/messages", json={"text": "Keep this input"})
+        assert accepted.status_code == 202, accepted.text
+        identity = accepted.json()["message_id"]
+        history = app.state.task_history
+        item = history.mail_item(sid, identity)
+        confirmed = history.record_input(
+            input_record(item).model_copy(update={"assignment_id": assignment.handle})
+        )
+        before = _user_messages(client, sid)
+        refused = client.delete(f"/v1/sessions/{sid}/pending-steers/{identity}")
+        assert refused.status_code == 409, refused.text
+        assert refused.json() == {"error": "steer_already_settled", "state": "consumed"}
+        assert history.committed_notification_input(sid, identity) == confirmed
+        assert not history.mail_withdrawn(sid, identity)
+        assert _user_messages(client, sid) == before
+        pending = client.get(f"/v1/sessions/{sid}/pending-steers")
+        assert pending.status_code == 200, pending.text
+        assert all(row["message_id"] != identity for row in pending.json()["pending_steers"])
 
 
 def test_withdrawn_head_does_not_hide_later_eligible_feedback(
