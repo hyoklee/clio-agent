@@ -44,6 +44,18 @@ from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
 
+def _use_external_client_class(monkeypatch: pytest.MonkeyPatch, client_cls: type[Any]) -> None:
+    """Inject an external-call double without replacing the native SDK class."""
+    from clio_agent.tools import mcp_runtime
+
+    original = mcp_runtime.make_mcp_client
+
+    def build(target: Any, **kwargs: Any) -> Any:
+        return original(target, **{**kwargs, "client_cls": client_cls})
+
+    monkeypatch.setattr(mcp_runtime, "make_mcp_client", build)
+
+
 def test_read_only_catalog_tool_fast_allows(tmp_path: Path) -> None:
     """#1032: a provably read-only call (static catalog ``read`` tag, no ``write``)
     fast-allows as the gate's FIRST branch — reads are never gated, even with no
@@ -367,7 +379,7 @@ def test_dynamic_external_mcp_requires_permission_before_client_invocation(
         def __init__(self, transport: Any) -> None:
             MustNotStartClient.constructed = True
 
-    monkeypatch.setattr("fastmcp.Client", MustNotStartClient)
+    _use_external_client_class(monkeypatch, MustNotStartClient)
     app = build_app(sessions_path=tmp_path / "s.json")
     info = {
         "name": "remote",
@@ -422,7 +434,7 @@ def test_dynamic_external_mcp_read_only_hint_invokes_client(
 
             return [Tool.model_validate({"name": "lookup", "inputSchema": {"type": "object"}})]
 
-    monkeypatch.setattr("fastmcp.Client", FakeClient)
+    _use_external_client_class(monkeypatch, FakeClient)
     monkeypatch.setattr(
         "clio_agent.tools.mcp_config.transport_from_spec",
         lambda spec: spec,
@@ -468,7 +480,7 @@ def test_external_mcp_route_requires_permission_before_client_invocation(
         def __init__(self, transport: Any) -> None:
             MustNotStartClient.constructed = True
 
-    monkeypatch.setattr("fastmcp.Client", MustNotStartClient)
+    _use_external_client_class(monkeypatch, MustNotStartClient)
     app = build_app(sessions_path=tmp_path / "s.json")
     app.state.external_mcp_servers = {
         "mcp_ext_test": {
@@ -1098,7 +1110,7 @@ def test_external_mcp_call_policy_allow_executes_without_prompt(
 
     import fastmcp.client.transports as transports
 
-    monkeypatch.setattr("fastmcp.Client", FakeClient)
+    _use_external_client_class(monkeypatch, FakeClient)
     monkeypatch.setattr(
         transports, "StdioTransport", lambda command, args, env=None: (command, args)
     )
@@ -1167,7 +1179,7 @@ def test_external_mcp_call_uses_explicit_session_for_policy_and_telemetry(
 
     import fastmcp.client.transports as transports
 
-    monkeypatch.setattr("fastmcp.Client", FakeClient)
+    _use_external_client_class(monkeypatch, FakeClient)
     monkeypatch.setattr(
         transports, "StdioTransport", lambda command, args, env=None: (command, args)
     )

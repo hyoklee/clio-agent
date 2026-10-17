@@ -81,6 +81,16 @@ The bounded audit receipt is `ci-fixture-migration-f989-source-audit.json` under
 the D qualification checkout's `.pytest-runtime/static`; it also verifies that
 the still-running R184 production files retain their original frozen hash.
 
+The first available `8db0a28d` shard passes nine export cases and one
+streamable-HTTP transport case. Two permission fixtures still fail in SDK
+inference: globally replacing `fastmcp.Client` with the test class makes the
+factory mistake that class for the native SDK and interpret fake transports as
+real server configuration. Their doubles now enter through the factory's existing
+explicit `client_cls` argument, leaving the SDK type and native application
+clients intact. All 38 permission-test assertion sets, signatures and markers
+remain unchanged; scoped Ruff/format and Mypy pass. This test-only correction
+requires fresh CI. No result is claimed for the other shards yet.
+
 ### Catalog startup and prologue test inputs — CI pending
 
 Eight catalog cases on `5d21491c` called blueprint activation without entering
