@@ -33,22 +33,26 @@ def test_task_lifecycle_reaches_the_model_request(provider: str, role: str) -> N
     assert request.model == f"{provider}/fixture"
     assert isinstance(request.system, str)
     assert request.system.startswith(f"You are a {role} data expert.")
-    assert "next model iteration" in request.system
-    assert "a queued result starts a new\nturn" in request.system
-    assert "without waiting\nfor another user message" in request.system
-    assert "the result will wake you to continue" in request.system
-    assert "Instructions inside a Subagent's assignment belong to that child" in request.system
-    assert "Finish requested independent actions before yielding" in request.system
-    assert "Automatic wake is not a reason to skip requested actions" in request.system
-    assert "Apply the latest human request" in request.system
-    assert "that lifecycle action is separate from replaying accepted operations" in (
-        request.system
-    )
-    assert "Their later results can wake you again, including after Stop" in request.system
-    assert "Conversation Stop ends the turn and its waiter, leaving accepted tasks running" in (
-        request.system
-    )
-    assert "Subagent, MCP, Download,\nIndexing" in request.system
+    system = " ".join(request.system.split())
+    assert "eligible messages and results enter before the next model call" in system
+    assert "While idle, they wake you without another human message" in system
+    assert "Instructions inside a Subagent's assignment belong to that child" in system
+    assert "Finish the user's requested independent actions before yielding" in system
+    assert "Automatic wake is not a reason to skip requested independent actions" in system
+    assert "Apply the latest human request" in system
+    assert "It does not copy transcripts or replay operations" in system
+    assert "Conversation Stop ends your model execution and waiter" in system
+    assert "Accepted background tasks continue and their results may wake you after Stop" in system
+    assert "Stop also cancels a foreground shell command" in system
+    assert "waits for its actual process-tree cleanup" in system
+    assert "Subagent, Session, MCP, Download, Indexing, Shell and Question" in system
+    assert 'assignment_disposition="yield"' in system
+    assert 'assignment_disposition="complete"' in system
+    assert "Ending a turn does not itself complete your assignment" in system
+    assert "ask_user always posts the question and immediately returns a Question handle" in system
+    assert "Stopping or expiring the wait leaves the question open" in system
+    assert "Model-written intent grants nothing" in system
+    assert "Peer collection never consumes the owner's delivery" in system
     assert {tool.name for tool in request.tools} == {
         "query_tasks",
         "observe_tasks",
@@ -116,13 +120,22 @@ def test_all_shipped_react_experts_receive_shared_task_lifecycle(
                 )
             system = engine.requests[0].system
             assert isinstance(system, str) and system.startswith(agent.system_prompt.strip())
+            normalized_system = " ".join(system.split())
+            assert "before the next model call" in normalized_system
+            assert "While idle, they wake you without another human message" in normalized_system
+            assert "their results may wake you after Stop" in normalized_system
+            assert "Stop also cancels a foreground shell command" in normalized_system
             assert (
-                "next model iteration" in system
-                and "wake you again, including after Stop" in system
+                "Finish the user's requested independent actions before yielding"
+                in normalized_system
             )
-            assert "Finish requested independent actions before yielding" in system
-            assert "Apply the latest human request" in system
-            assert "Instructions inside a Subagent's assignment belong to that child" in system
+            assert "Apply the latest human request" in normalized_system
+            assert (
+                "Instructions inside a Subagent's assignment belong to that child"
+                in normalized_system
+            )
+            assert "immediately returns a Question handle" in normalized_system
+            assert "Model-written intent grants nothing" in normalized_system
             seen.add((manifest.parent.name, agent.id))
     assert {
         ("base-agent", "base"),

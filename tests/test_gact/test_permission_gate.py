@@ -296,6 +296,7 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
     from clio_agent.tools.mcp_runtime import make_mcp_client
 
     server = FastMCP("declared-permission")
+    catalog = FastMCP("declared-catalog")
     calls: list[str] = []
     transports: list[Any] = []
 
@@ -310,15 +311,18 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
         return {"name": "jarvis_run", "args": {"pipeline_id": pipeline_id}}
 
     def client_factory(target: Any) -> Any:
-        transports.append(target)
-        return make_mcp_client(target, server_id="relay")
+        if target is server:
+            transports.append(target)
+        else:
+            assert target is catalog
+        return make_mcp_client(target, server_id="relay" if target is server else "catalog")
 
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         session_id = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
         record_assignment_fixture(app, session_id)
         executor = SyncMCPToolExecutor(
-            object(),
+            catalog,
             timeout=1.0,
             client_factory=client_factory,
             preloaded_tools={

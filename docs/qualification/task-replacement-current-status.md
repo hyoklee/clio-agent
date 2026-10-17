@@ -7,6 +7,60 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Shared task instructions and native permission fixture — CI pending
+
+The six provider/role prompt cases and marketplace prompt sweep still expect
+pre-R2 prose, including the obsolete claim that every accepted task survives
+Stop. They now check the reviewed background/foreground distinction, next-model-
+call injection, idle wakes, finite assignment disposition, immediate Questions,
+grant boundaries and independent owner delivery. Whitespace normalization avoids
+depending on Markdown line wrapping. Provider/role parameterization, declared
+tool sets, marketplace coverage and the four other test bodies are unchanged.
+
+Two useful earlier prompt requirements were missing from the replacement text:
+child assignments belong to the child, and automatic wakes do not excuse skipping
+the human's requested independent work. Three lines restore those instructions
+in the existing shared snippet. No provider-specific prompt, execution owner or
+admission path is added. The candidate snippet SHA256 is
+`3dc3abe51bca664c4cf8a5b9f9426b5bb6fa6fdc9a43f8f9ed59a176cafef55c`;
+the frozen R184 snippet remains
+`1197ebe2af97fb58158e91ea635bf4be9aa3f2f5c55a4a9b8582b976d650fc4e`.
+Affected actual-model acceptance remains required on the eventual candidate.
+
+Two available `e7094280` Python 3.14 shards contain 8,001 passes, 285 failures,
+two errors and 40 skips; the third shard is pending. Their permission subset
+has 26 passes/one failure and their finalizer subset has two passes. The remaining
+permission failure occurs while constructing the test executor from its old
+opaque root placeholder. That fixture now uses a real empty FastMCP catalog root
+and separately observes the actual mutation namespace. All original assertions
+remain: no mutation body or backend-client creation before human approval, one
+of each afterward, exact pending card/result and physical thread retirement.
+The catalog connection cannot execute the mutation. Budgets are unchanged.
+
+Scoped Ruff/format and Mypy pass. No local pytest/vitest or live model ran.
+The bounded prompt audit is `ci-task-guidance-9183-source-audit.json` in the D
+checkout's static evidence. iowarp-core, dependencies, installed state and frozen
+R184 execution remain unchanged. Full CI and live qualification remain incomplete.
+
+### Recall contract fixtures — CI pending
+
+Four recall-contract cases in `5fe0f422` fail before their behavior assertions
+because they construct applications without entering their lifespans. They now
+use the existing real Core fixture and actual application startup/shutdown. The
+reload case closes its first application before opening a fresh reader, retains
+its assignment through Core, and binds that assignment for the agent tool call.
+No model is substituted for the missing persistence/conversation owners.
+
+All four test signatures/markers and 27 of 28 original assertions are retained.
+The legacy `allow_same_session` policy-label assertion now requires the existing
+`allow_core_relationship` decision; two additional assertions pin the exact
+session and historical assignment handle. No authorization policy, recall
+algorithm or output bound changed. Scoped Ruff/format and Mypy pass; no local
+pytest/vitest or live model ran. The bounded source receipt is
+`ci-memory-summary-9183-source-audit.json` in the D checkout's static evidence.
+Production source remains `f8127171edb610a7d25b931f24effc7b0a0c98e75481421d8bff91f13bee94bf`;
+the frozen R184 source and iowarp-core 2.3.1 remain unchanged.
+
 ### Model-input additions and historical answer fixture — CI pending
 
 Complete `5fe0f422` Python 3.14 CI contains 11,987 passes, 431 failures, four
