@@ -142,7 +142,7 @@ def _duplicate_result(
                 payload={**lifecycle_event_payload(duplicate), "reason": "a2ui_action_duplicate"},
             )
         )
-    return {
+    result = {
         "action_id": existing.get("id", ""),
         "state": existing.get("state", ""),
         "delivery": existing.get("delivery", ""),
@@ -153,6 +153,13 @@ def _duplicate_result(
         "destination": destination,
         "surface": surface.to_wire(),
     }
+    if duplicate is not None:
+        message_id = duplicate.correlation.get("message_id")
+        if message_id:
+            result["message_id"] = message_id
+        if duplicate.client_data_model is not None:
+            result["a2ui_client_data_model"] = duplicate.client_data_model
+    return result
 
 
 async def dispatch_action(

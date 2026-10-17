@@ -7,6 +7,57 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Native wire, replay identity and retained Question API — CI pending
+
+The four Python 3.14 artifacts for `c0e6fa1a` / run `39018326969` report 12,110
+passes, 320 failures, four errors and 55 skips. Both input-commit A2UI modes now
+pass, including projection failure followed by restoration from the confirmed
+input. Declared narration, filtered client state in actual queued input and the
+mailbox-admission failure case pass. These are regression results; the complete
+baseline still fails and no fresh live qualification is claimed. Receipt:
+`ci-c0e6-complete-python314-counts.json` in D static evidence.
+
+Earlier `4a50a3ef` artifacts report 12,106 passes, 323 failures, four errors and
+55 skips. The retained empty-configuration case reaches a remaining serialization
+defect before native submission: only public custody was converted from typed SDK
+arguments; the wire digest still received a `SourceConfiguration` object. The
+same strict Pydantic JSON codec now normalizes the complete validated wire once,
+before deriving public custody, hashing or calling the SDK. Other native host
+methods are AST-identical; no execution, observation or cancellation driver changes.
+
+A2UI duplicate responses now echo the stored message identity and already-filtered
+client state, matching the initial accepted response. The refusal/event logic and
+all other dispatcher functions are AST-identical. The ownership-scope fixture
+copies the frozen `ConnectedSource`; all its assertions remain. The held-input
+test samples the actual busy predicate at reservation release, retaining every
+identity, pending-input, no-acknowledgement and duplicate-count requirement.
+
+The reviewed plan explicitly retains REST Question behavior (lines 126/275/380).
+`POST /v1/sessions/{sid}/questions` again returns 201 through the existing
+conversation assignment and Question command owners. It validates first, binds
+the authenticated session owner, honors closed descendant admission, uses the
+existing confirmed writer, and reports recording uncertainty with its handle.
+There is no Question mirror, separate scheduler, turn launch or blocking ask mode.
+
+Question creation/answer/invalid-choice/cancellation cases now cover REST and the
+registered FastMCP control over the same records. Additional cases cover invalid
+content before task changes, closed admission and a lost reply after actual
+acceptance. The stand-in model records the actual queued injections separately
+from its original request argument; same-assignment, result and duplicate guards
+remain. Retry settlement uses a pre-request event cursor and physical reservation
+release within the original total diagnostic backstop, rather than an initial
+idle status. These definitions have not run locally.
+
+Ruff/format, six-file Mypy and removal/class/size guards pass. Receipt:
+`ci-native-wire-a2ui-replay-4a50-audit.json` in D static evidence. Fresh CI and
+affected production-service/model/UI verification remain required.
+
+Candidate Python-source SHA256:
+`340ce92acad2c29f0b6f1b8d6122a8a460ad595da2e573fe23c3b8acdd6f8b87`.
+clio-core 2.3.1, dependencies, GACT, installed Desktop and frozen D/R184 source
+are unchanged. R184 remains held in unresolved HTTP shutdown; no successor live
+family launched.
+
 ### Input-recovery fixture and deletion guard — CI pending
 
 All four Python 3.14 artifacts for `d9191f82` / run `39017651189` are present:

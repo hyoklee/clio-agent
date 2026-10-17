@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Event
 
 import pytest
 from fastapi import FastAPI
@@ -78,7 +79,18 @@ def test_human_action_is_visible_while_pending_and_projection_retry_keeps_its_id
         assert item.id == "a2ui:" + body["action_id"] == body["message_id"]
         assert app.state.task_history.pending_mail(sid) == (item,)
         assert item.id not in app.state.task_history.acknowledged_notifications(sid)
-        assert not app.state.turn_runner.busy(sid)
+        released = Event()
+        release_state: dict[str, bool] = {}
+
+        def retired() -> None:
+            release_state["busy"] = app.state.turn_runner.busy(sid)
+            released.set()
+
+        app.state.conversations._loop.call_soon_threadsafe(
+            app.state.turn_runner.run_when_released, sid, retired
+        )
+        assert released.wait(5), "The held input's admission probe did not retire"
+        assert not release_state["busy"]
         users = [message for message in app.state.messages[sid] if message.role == "user"]
         assert len(users) == 1 and users[0].id == body["message_id"]
         assert users[0].metadata["a2ui_action_context"] == {"selection": "continue"}

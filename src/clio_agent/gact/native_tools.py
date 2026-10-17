@@ -214,14 +214,14 @@ class NativeTools:
         if not component.task_config.supports_tasks():
             raise ValueError("Workload is not registered for native task execution")
         reference, handle = uuid4().hex, "task_" + uuid4().hex
-        wire = coerce_task_arguments(
-            component, {**arguments, SUBMISSION_ARGUMENT: reference}, strict=True
-        )
-        public = _ARGUMENTS_JSON.dump_python(
-            {key: value for key, value in wire.items() if key != SUBMISSION_ARGUMENT},
+        wire = _ARGUMENTS_JSON.dump_python(
+            coerce_task_arguments(
+                component, {**arguments, SUBMISSION_ARGUMENT: reference}, strict=True
+            ),
             mode="json",
             warnings="error",
         )
+        public = {key: value for key, value in wire.items() if key != SUBMISSION_ARGUMENT}
         context = SubmissionContext(
             reference=reference,
             handle=handle,

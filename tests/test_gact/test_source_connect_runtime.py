@@ -253,7 +253,9 @@ def test_reused_source_requires_new_approval_when_its_scope_changes(
         elif change == "disconnected":
             record.connected = False
         else:
-            record.source.owner = record.source.owner.model_copy(update={"clio_id": "other-clio"})
+            record.source = record.source.model_copy(
+                update={"owner": record.source.owner.model_copy(update={"clio_id": "other-clio"})}
+            )
         service.store.put("source", source_id, record)
     prior_tasks = app.state.task_history.task_handles(
         kind="Indexing", session_id=connect_tool.context.active_session_id()

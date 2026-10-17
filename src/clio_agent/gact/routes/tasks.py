@@ -10,15 +10,24 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from clio_agent.arc.task_types import (
     CoordinationGrant,
+    QuestionDefinition,
+    QuestionOption,
     QuestionReply,
+    TaskOwner,
     TaskSnapshot,
 )
+from clio_agent.errors import ClioError
 from clio_agent.gact.auth import configured_bearer_token, has_valid_bearer
 from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.native_work import now
 from clio_agent.gact.question_surface import question_view
-from clio_agent.gact.routes.session_question_helpers import answer_question_response
+from clio_agent.gact.routes.session_question_helpers import (
+    answer_question_response,
+    normalize_question_options,
+)
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
+from clio_agent.gact.task_history import RecordingUnconfirmed
+from clio_agent.gact.types import CreateUserQuestionRequest, UserQuestion
 
 
 class SelectedTasks(BaseModel):
@@ -325,6 +334,77 @@ def register_task_routes(app: FastAPI) -> None:
             "session_id": task.owner.session_id,
             "status": effect.get("status", action + "_requested"),
         }
+
+    @app.post("/v1/sessions/{sid}/questions", response_model=UserQuestion, status_code=201)
+    async def create_question(sid: str, body: CreateUserQuestionRequest) -> dict[str, Any]:
+        """Retain the public creation contract through the shared Question owner."""
+        identity = "task_" + uuid4().hex
+        invocation = "http-question:" + uuid4().hex
+
+        def create() -> dict[str, Any]:
+            actor = caller(sid)
+            definition = QuestionDefinition(
+                prompt=body.prompt.strip(),
+                kind=body.kind,
+                options=tuple(
+                    QuestionOption.model_validate(option.model_dump(mode="json"))
+                    for option in normalize_question_options(body)
+                ),
+                allow_freeform=body.allow_freeform or body.kind == "freeform",
+                source=body.source or "orchestrator",
+                expires_at=body.expires_at or None,
+                metadata={
+                    **body.metadata,
+                    **({"source_user_message_id": body.turn_id} if body.turn_id else {}),
+                    **({"attempt_id": body.attempt_id} if body.attempt_id else {}),
+                },
+            )
+            app.state.questions.validate_definition(definition)
+            app.state.questions._deadline(definition)
+            with app.state.task_history.serialized():
+                parent = app.state.task_history.latest_assignment(sid)
+                if parent is not None:
+                    try:
+                        app.state.conversations.require_admission(parent)
+                    except ValueError as error:
+                        raise HTTPException(409, str(error)) from error
+                if parent is None or parent.terminal_at is not None:
+                    parent = app.state.conversations._new_assignment(
+                        sid,
+                        definition.prompt,
+                        actor.human_id,
+                        predecessor=parent,
+                        invocation_id=invocation,
+                    )
+                task = app.state.questions.create(
+                    TaskOwner(
+                        human_id=actor.human_id,
+                        session_id=sid,
+                        assignment_id=parent.handle,
+                        parent_handle=parent.handle,
+                    ),
+                    definition,
+                    invocation_id=invocation,
+                    handle=identity,
+                )
+                return question_view(app, task)
+
+        try:
+            return await app.state.task_history.io.run(create)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        except (ClioError, OSError, TimeoutError, RecordingUnconfirmed) as error:
+            raise HTTPException(
+                503,
+                {
+                    "error": {
+                        "error": "question_recording_unconfirmed",
+                        "message": "Question recording could not be confirmed. Inspect its handle before retrying.",
+                        "details": {"handle": identity},
+                        "recoverable": True,
+                    }
+                },
+            ) from error
 
     @app.get("/v1/sessions/{sid}/questions")
     async def questions(
