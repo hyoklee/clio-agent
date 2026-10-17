@@ -13,8 +13,8 @@ from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import AssignmentDetails, WorkflowCheckpoint, argument_digest
 from clio_agent.gact.agents.clio_react_record import StepRecorder
 from clio_agent.gact.conversations import ConversationOutcome, ConversationSegment
-from clio_agent.gact.events import EventBus
 from clio_agent.gact.provenance_wiring import install_session_lifecycle_observer
+from clio_agent.gact.question_events import QuestionEvents
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_operations import TaskOperations
@@ -113,7 +113,10 @@ async def test_historical_invocation_cannot_advance_retry_and_inputs_keep_prior_
     arc: ARCMemory, tmp_path: Path
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
-    app.state.bus, app.state.arc = EventBus(), arc
+    app.state.task_recovery = owner.recovery
+    presenter = QuestionEvents(app)
+    app.state.question_events = presenter
+    app.state.questions.on_change = presenter.changed
     app.state.task_operations = TaskOperations(owner.history, no_cancel)
     caller = TaskCaller(root.owner.session_id, "human")
     agent = AgentDef(
@@ -226,8 +229,11 @@ async def test_historical_invocation_cannot_advance_retry_and_inputs_keep_prior_
         if retry is not None and not retry.done():
             retry.cancel()
             await asyncio.gather(retry, return_exceptions=True)
-        await owner.shutdown()
-        await owner.recovery.drain()
+        try:
+            await owner.shutdown()
+            await owner.recovery.drain()
+        finally:
+            await presenter.close()
 
 
 @pytest.mark.asyncio

@@ -28,6 +28,23 @@ will finish unchanged. Its successor must execute all four shards and confirm
 complete counts before claiming a full report. This change adds no production
 code or execution owner; clio-core and the product/runtime tuple are unchanged.
 
+### Workflow checkpoint fixture — CI pending
+
+The retained workflow-retry case passed its business assertions in `764121a2`,
+then failed during recovery because its fixture omitted the production Question
+presenter. The fixture now installs the real `QuestionEvents`, uses the existing
+Core-bound bus and recovery owner, and closes the presenter during teardown.
+Production recovery remains enabled. All three tests retain their signatures,
+markers and behavioral assertions; only the affected fixture changes.
+
+Scoped Ruff, formatting and Mypy pass. No local behavioral test or model ran.
+Receipt: `ci-workflow-presenter-7641-source-audit.json` in D static evidence.
+Production Python SHA256 remains
+`1ce710e7611bbbf5bc2e64023374b3b148457c6becadec0a3b6a22d72decdaa0`.
+clio-core remains `iowarp-core 2.3.1`; the dependency declaration and lockfile are
+unchanged. The current three-shard CI continues; this fixture needs execution on
+the next coherent four-shard candidate.
+
 ### Fresh-message acceptance assertions — CI pending
 
 The complete `764121a2` Python 3.14 report contains 12,030 passes, 390 failures,
