@@ -17,10 +17,11 @@ These tests pin the P1.6d contract:
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.app import (
@@ -29,7 +30,6 @@ from clio_agent.gact.app import (
     build_app,
 )
 from clio_agent.gact.permission_gate import _policy_action_for_tool
-from clio_agent.gact.plan_mode import resolve_plan_exit_answer
 from clio_agent.gact.planning import (
     PLAYBOOK_EXECUTION_METADATA_KEY,
     Playbook,
@@ -53,8 +53,8 @@ from clio_agent.gact.replanning import (
 )
 from clio_agent.gact.semantic_events import SSE_TRACE_ONLY_EVENT_TYPES
 from clio_agent.gact.todos import _write_todos
+from tests.test_gact import test_plan_exit as plan_approval
 from tests.test_gact.conftest import complete_turn
-from tests.test_gact.task_records import record_question_fixture
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -190,9 +190,12 @@ def test_scoring_and_suggestion_emit_typed_events(tmp_path: Path, monkeypatch) -
     import clio_agent.gact.runtime.globals as g
 
     events: list[str] = []
-    monkeypatch.setattr(
-        g, "_emit_semantic_event", lambda app, sid, et, **kw: events.append(et) or {}
-    )
+
+    def capture(_app: Any, _sid: str, event_type: str, **_kwargs: Any) -> dict[str, Any]:
+        events.append(event_type)
+        return {}
+
+    monkeypatch.setattr(g, "_emit_semantic_event", capture)
     app, sid = _exec_session(tmp_path)
     _finalize(app, sid)
     assert STALL_SCORED_EVENT in events
@@ -206,54 +209,9 @@ def test_scoring_and_suggestion_emit_typed_events(tmp_path: Path, monkeypatch) -
 # --------------------------------------------------------------------------- #
 
 
-def _fake_deps() -> SimpleNamespace:
-    calls: dict[str, list[Any]] = {"resume": [], "replace": []}
-
-    def start_background_user_turn(sid, sess, user_text, *, metadata=None, prev_status="", **kw):
-        calls["resume"].append({"sid": sid, "text": user_text})
-        return SimpleNamespace(id=f"msg_resume_{len(calls['resume'])}")
-
-    def replace_session_messages(app, sid, messages):
-        calls["replace"].append({"sid": sid})
-
-    return SimpleNamespace(
-        start_background_user_turn=start_background_user_turn,
-        replace_session_messages=replace_session_messages,
-        _calls=calls,
-    )
-
-
-def _pending_plan_exit_question(app: Any, sess: Any, *, plan_file: str):
-    from clio_agent.gact.plan_mode import PLAN_EXIT_APPROVAL_META, _plan_exit_options
-    from clio_agent.gact.types import UserQuestion
-
-    q = UserQuestion(
-        id="q_plan_exit",
-        session_id=sess.id,
-        prompt="approve?",
-        status="pending",
-        kind="choice",
-        options=_plan_exit_options(),
-        created_at="2026-07-29T00:00:00+00:00",
-        updated_at="2026-07-29T00:00:00+00:00",
-        source="plan_exit",
-        metadata={PLAN_EXIT_APPROVAL_META: True, "resume_on_answer": True, "plan_file": plan_file},
-    )
-    q = record_question_fixture(app, q)
-    app.state.sessions.update(
-        sess.id, status="waiting_user", metadata_patch={"pending_user_question_id": q.id}
-    )
-    app.state.agent = object()
-    return q
-
-
-def _answer(question: Any, *, selected: list[str], answer: str = ""):
-    return question.model_copy(
-        update={"status": "answered", "selected_options": selected, "answer": answer}
-    )
-
-
-def test_playbook_carried_into_execution_on_plan_exit_approve(tmp_path: Path) -> None:
+def test_playbook_carried_into_execution_on_plan_exit_approve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """The P1.6b residual fix: an active playbook does not just clear on approve — it becomes an
     execution record so its per-step tools_allowed keeps narrowing during execution."""
     app = build_app(sessions_path=tmp_path / "s.json")
@@ -263,19 +221,22 @@ def test_playbook_carried_into_execution_on_plan_exit_approve(tmp_path: Path) ->
     plan_file.write_text("# Plan\n", encoding="utf-8")
     app.state.sessions.update(sess.id, metadata_patch={"plan_file": str(plan_file)})
 
-    q = _pending_plan_exit_question(app, app.state.sessions.get(sess.id), plan_file=str(plan_file))
-    resolve_plan_exit_answer(app, _fake_deps(), sess.id, _answer(q, selected=["auto"]))
+    with TestClient(app) as client:
+        review = plan_approval.surface_approval(app, client, sess.id, monkeypatch)
+        plan_approval.answer(review, ["auto"])
+        fresh = app.state.sessions.get(sess.id)
+        assert fresh.mode == "edit"
+        assert recorded_playbook(fresh) is None  # the PLAN-phase key is cleared
+        execution = recorded_execution_playbook(fresh)
+        assert execution is not None  # ... but carried into an EXECUTION record
+        assert [s.name for s in execution.steps] == ["Triage", "Fix", "Verify"]
+        assert execution.active_step == 0
+        assert len(review.resume_items()) == 1
 
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"
-    assert recorded_playbook(fresh) is None  # the PLAN-phase key is cleared
-    execution = recorded_execution_playbook(fresh)
-    assert execution is not None  # ... but carried into an EXECUTION record
-    assert [s.name for s in execution.steps] == ["Triage", "Fix", "Verify"]
-    assert execution.active_step == 0
 
-
-def test_no_playbook_plan_exit_leaves_no_execution_record(tmp_path: Path) -> None:
+def test_no_playbook_plan_exit_leaves_no_execution_record(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A plan with no playbook approves cleanly and leaves no stale execution record."""
     app = build_app(sessions_path=tmp_path / "s.json")
     sess = app.state.sessions.create(workspace_id="ws_default", title="t", mode="plan")
@@ -283,10 +244,12 @@ def test_no_playbook_plan_exit_leaves_no_execution_record(tmp_path: Path) -> Non
     plan_file.write_text("# Plan\n", encoding="utf-8")
     app.state.sessions.update(sess.id, metadata_patch={"plan_file": str(plan_file)})
 
-    q = _pending_plan_exit_question(app, app.state.sessions.get(sess.id), plan_file=str(plan_file))
-    resolve_plan_exit_answer(app, _fake_deps(), sess.id, _answer(q, selected=["auto"]))
-
-    assert recorded_execution_playbook(app.state.sessions.get(sess.id)) is None
+    with TestClient(app) as client:
+        review = plan_approval.surface_approval(app, client, sess.id, monkeypatch)
+        plan_approval.answer(review, ["auto"])
+        assert recorded_execution_playbook(app.state.sessions.get(sess.id)) is None
+        assert app.state.sessions.get(sess.id).mode == "edit"
+        assert len(review.resume_items()) == 1
 
 
 def test_execution_step_narrows_web_fetch_via_live_gate(tmp_path: Path) -> None:
@@ -538,12 +501,12 @@ def test_finalize_hook_scores_bucket_through_real_turn(tmp_path: Path) -> None:
         sid = client.post("/v1/sessions", json={"title": "finalize-wiring"}).json()["id"]
         _arm_execution_playbook(client.app, sid)
 
-        before = client.app.state.sessions.get(sid).metadata.get(STALL_STATE_KEY)
+        before = cast(FastAPI, client.app).state.sessions.get(sid).metadata.get(STALL_STATE_KEY)
         assert not before  # no bucket before any turn
 
         complete_turn(client, sid, "do the work")
 
-        state = client.app.state.sessions.get(sid).metadata.get(STALL_STATE_KEY)
+        state = cast(FastAPI, client.app).state.sessions.get(sid).metadata.get(STALL_STATE_KEY)
         assert isinstance(state, dict), (
             "the finalize stall-monitor hook did not run on the real turn"
         )
@@ -567,7 +530,7 @@ def test_enrichment_injection_reaches_real_turn_input(tmp_path: Path) -> None:
     with TestClient(build_app(sessions_path=tmp_path / "s.json", agent=agent)) as client:
         sid = client.post("/v1/sessions", json={"title": "enrich-wiring"}).json()["id"]
         # Edit mode (not plan) + a pending suggestion the enrichment step must inject exactly once.
-        client.app.state.sessions.update(
+        cast(FastAPI, client.app).state.sessions.update(
             sid,
             mode="edit",
             metadata_patch={REPLAN_SUGGESTION_KEY: {"pending": True, "score": 3, "turn_id": "t"}},
@@ -602,7 +565,7 @@ def test_finalize_and_enrichment_compose_end_to_end(tmp_path: Path) -> None:
         # seeds the pending suggestion (no direct dispatch calls).
         for _ in range(STALL_THRESHOLD):
             complete_turn(client, sid, "keep working")
-        state = client.app.state.sessions.get(sid).metadata[STALL_STATE_KEY]
+        state = cast(FastAPI, client.app).state.sessions.get(sid).metadata[STALL_STATE_KEY]
         assert state["score"] == STALL_THRESHOLD and state["fired_count"] == 1
         assert _pending(client.app, sid) is not None
 

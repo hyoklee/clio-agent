@@ -149,58 +149,62 @@ class ApprovalWorld:
         ]
 
 
+def surface_approval(
+    app: FastAPI, client: TestClient, sid: str, monkeypatch: pytest.MonkeyPatch
+) -> ApprovalWorld:
+    """Surface an existing plan through its real owner and hold subsequent model input."""
+    session = app.state.sessions.get(sid)
+    record_assignment_fixture(app, sid)
+    user = Message(
+        id="user_plan",
+        session_id=sid,
+        role="user",
+        parts=[],
+        created_at=session.created_at,
+        updated_at=session.updated_at,
+    )
+    state = TurnState(
+        app=app,
+        sid=sid,
+        sess=session,
+        bus=app.state.bus,
+        user_msg=user,
+        user_text="Review this plan",
+        turn_agent_id="main",
+        turn_id=user.id,
+        trace_id="trace_plan",
+        retry_attempt_id="",
+        native_images=[],
+        context_frame={"id": "fixture_plan_frame"},
+    )
+    state.transcript = app.state.turn_transcripts.open_turn(
+        sid, user.id, EventBusTranscriptPublisher(app.state.bus, sid)
+    )
+    # Context-frame finalization is independent of approval arbitration.
+    monkeypatch.setattr("clio_agent.gact.enrichment._finalize_context_frame", lambda *a, **k: None)
+    with active_turn_fixture(app, sid):
+        _call_plan_exit(app, sid, summary="ship it", recommendedMode="auto")
+        assert maybe_pause_for_plan_exit(state)
+    history = app.state.task_history
+    handles = history.session_handles(sid) & history.task_handles(kind="Question")
+    assert len(handles) == 1
+    question = history.task_snapshot(next(iter(handles)))
+    assert question is not None and question.raw_status == "pending"
+    assert app.state.sessions.get(sid).status == "waiting_user"
+    assignment = history.latest_assignment(sid)
+    assert assignment is not None
+    paused = client.post(f"/v1/sessions/{sid}/agent-controls/{assignment.handle}/pause")
+    assert paused.status_code == 200, paused.text
+    assert app.state.conversations.model_paused(sid)
+    return ApprovalWorld(app, client, sid, question, state)
+
+
 @pytest.fixture
 def approval_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[ApprovalWorld]:
     app = _make_app(tmp_path)
     with TestClient(app) as client:
         session = _plan_session(app, tmp_path)
-        record_assignment_fixture(app, session.id)
-        user = Message(
-            id="user_plan",
-            session_id=session.id,
-            role="user",
-            parts=[],
-            created_at=session.created_at,
-            updated_at=session.updated_at,
-        )
-        state = TurnState(
-            app=app,
-            sid=session.id,
-            sess=session,
-            bus=app.state.bus,
-            user_msg=user,
-            user_text="Review this plan",
-            turn_agent_id="main",
-            turn_id=user.id,
-            trace_id="trace_plan",
-            retry_attempt_id="",
-            native_images=[],
-            context_frame={"id": "fixture_plan_frame"},
-        )
-        state.transcript = app.state.turn_transcripts.open_turn(
-            session.id, user.id, EventBusTranscriptPublisher(app.state.bus, session.id)
-        )
-        # Context-frame finalization is independent of approval arbitration.
-        monkeypatch.setattr(
-            "clio_agent.gact.enrichment._finalize_context_frame", lambda *a, **k: None
-        )
-        with active_turn_fixture(app, session.id):
-            _call_plan_exit(app, session.id, summary="ship it", recommendedMode="auto")
-            assert maybe_pause_for_plan_exit(state)
-        history = app.state.task_history
-        handles = history.session_handles(session.id) & history.task_handles(kind="Question")
-        assert len(handles) == 1
-        question = history.task_snapshot(next(iter(handles)))
-        assert question is not None and question.raw_status == "pending"
-        assert app.state.sessions.get(session.id).status == "waiting_user"
-        # Inspect committed approval mail under a real hold; an unpaused owner
-        # correctly admits eligible input immediately through TurnRunner.
-        assignment = history.latest_assignment(session.id)
-        assert assignment is not None
-        paused = client.post(f"/v1/sessions/{session.id}/agent-controls/{assignment.handle}/pause")
-        assert paused.status_code == 200, paused.text
-        assert app.state.conversations.model_paused(session.id)
-        yield ApprovalWorld(app, client, session.id, question, state)
+        yield surface_approval(app, client, session.id, monkeypatch)
 
 
 def answer(world: ApprovalWorld, selected: list[str], text: str = "") -> dict[str, Any]:

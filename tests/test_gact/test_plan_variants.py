@@ -15,17 +15,16 @@ the variants changed nothing about planning. These tests pin the consumption con
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
 from clio_agent.gact.plan_mode import (
     _PLAN_REMINDER_STATE_KEY,
     _plan_mode_reminder_block,
     plan_mode_reminder,
-    resolve_plan_exit_answer,
 )
 from clio_agent.gact.planning import (
     PLAN_VARIANT_METADATA_KEY,
@@ -34,7 +33,7 @@ from clio_agent.gact.planning import (
     plan_variant_guidance,
     recorded_plan_variant,
 )
-from tests.test_gact.task_records import record_question_fixture
+from tests.test_gact import test_plan_exit as plan_approval
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -225,69 +224,26 @@ def test_recorded_plan_variant_reads_metadata(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _fake_deps() -> SimpleNamespace:
-    calls: dict[str, list[Any]] = {"resume": [], "replace": []}
-
-    def start_background_user_turn(sid, sess, user_text, *, metadata=None, prev_status="", **kw):
-        calls["resume"].append({"sid": sid, "text": user_text, "metadata": metadata or {}})
-        return SimpleNamespace(id=f"msg_resume_{len(calls['resume'])}")
-
-    def replace_session_messages(app, sid, messages):
-        calls["replace"].append({"sid": sid, "messages": messages})
-
-    return SimpleNamespace(
-        start_background_user_turn=start_background_user_turn,
-        replace_session_messages=replace_session_messages,
-        _calls=calls,
-    )
-
-
-def _pending_plan_exit_question(app: Any, sess: Any, *, plan_file: str):
-    from clio_agent.gact.plan_mode import PLAN_EXIT_APPROVAL_META, _plan_exit_options
-    from clio_agent.gact.types import UserQuestion
-
-    q = UserQuestion(
-        id="q_plan_exit",
-        session_id=sess.id,
-        prompt="approve?",
-        status="pending",
-        kind="choice",
-        options=_plan_exit_options(),
-        created_at="2026-07-27T00:00:00+00:00",
-        updated_at="2026-07-27T00:00:00+00:00",
-        source="plan_exit",
-        metadata={PLAN_EXIT_APPROVAL_META: True, "resume_on_answer": True, "plan_file": plan_file},
-    )
-    q = record_question_fixture(app, q)
-    app.state.sessions.update(
-        sess.id, status="waiting_user", metadata_patch={"pending_user_question_id": q.id}
-    )
-    app.state.agent = object()
-    return q
-
-
-def _answer(question: Any, *, selected: list[str], answer: str = ""):
-    return question.model_copy(
-        update={"status": "answered", "selected_options": selected, "answer": answer}
-    )
-
-
-def test_plan_variant_cleared_after_plan_exit_approve(tmp_path: Path) -> None:
+def test_plan_variant_cleared_after_plan_exit_approve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app, sess = _plan_session(tmp_path, variant=PLAN_VARIANT_WORKFLOW)
     plan_file = tmp_path / "plan.md"
     plan_file.write_text("# Plan\n", encoding="utf-8")
     app.state.sessions.update(sess.id, metadata_patch={"plan_file": str(plan_file)})
     assert recorded_plan_variant(app.state.sessions.get(sess.id)) == PLAN_VARIANT_WORKFLOW
 
-    q = _pending_plan_exit_question(app, app.state.sessions.get(sess.id), plan_file=str(plan_file))
-    resolve_plan_exit_answer(app, _fake_deps(), sess.id, _answer(q, selected=["auto"]))
+    with TestClient(app) as client:
+        review = plan_approval.surface_approval(app, client, sess.id, monkeypatch)
+        plan_approval.answer(review, ["auto"])
+        fresh = app.state.sessions.get(sess.id)
+        assert fresh.mode == "edit"  # left plan mode
+        assert recorded_plan_variant(fresh) == ""  # variant cleared
 
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"  # left plan mode
-    assert recorded_plan_variant(fresh) == ""  # variant cleared
 
-
-def test_plan_variant_preserved_after_plan_exit_reject(tmp_path: Path) -> None:
+def test_plan_variant_preserved_after_plan_exit_reject(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A rejected plan-exit stays in plan mode — the variant must survive so the revision turn
     still gets the same scaffold."""
     app, sess = _plan_session(tmp_path, variant=PLAN_VARIANT_WORKFLOW)
@@ -295,11 +251,9 @@ def test_plan_variant_preserved_after_plan_exit_reject(tmp_path: Path) -> None:
     plan_file.write_text("# Plan\n", encoding="utf-8")
     app.state.sessions.update(sess.id, metadata_patch={"plan_file": str(plan_file)})
 
-    q = _pending_plan_exit_question(app, app.state.sessions.get(sess.id), plan_file=str(plan_file))
-    resolve_plan_exit_answer(
-        app, _fake_deps(), sess.id, _answer(q, selected=["reject"], answer="add rollback")
-    )
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "plan"  # stayed in plan mode
-    assert recorded_plan_variant(fresh) == PLAN_VARIANT_WORKFLOW  # variant preserved
+    with TestClient(app) as client:
+        review = plan_approval.surface_approval(app, client, sess.id, monkeypatch)
+        plan_approval.answer(review, ["reject"], "add rollback")
+        fresh = app.state.sessions.get(sess.id)
+        assert fresh.mode == "plan"  # stayed in plan mode
+        assert recorded_plan_variant(fresh) == PLAN_VARIANT_WORKFLOW  # variant preserved

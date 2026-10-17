@@ -25,6 +25,7 @@ from clio_agent.gact.artifacts.records import ArtifactKind, Custody, IdentityEvi
 from clio_agent.gact.artifacts.registry import ArtifactRegistry
 from clio_agent.gact.auth import BearerAuthMiddleware
 from clio_agent.gact.messages import MessageStore
+from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.routes.session_export import (
     _ExportFileResponse,
 )
@@ -47,6 +48,7 @@ def export_app(tmp_path: Path, arc: ARCMemory) -> tuple[FastAPI, str, str]:
     # Start from the real application's projections instead of a partial State.
     app = build_app(sessions_path=tmp_path / "state" / "sessions.json", arc=arc)
     app.state.task_history = TaskHistory(arc)
+    app.state.questions = QuestionCommands(app.state.task_history)
     app.state.human_principal = "human"
     app.state.sessions = SessionStore(path=tmp_path / "state" / "sessions.json")
     app.state.workspaces = WorkspaceStore(path=tmp_path / "state" / "workspaces.json")

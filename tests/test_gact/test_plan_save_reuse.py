@@ -21,15 +21,14 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from fastapi.testclient import TestClient
 
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.agents.skill_runtime import SkillRuntime, build_load_skill_tool
 from clio_agent.gact.app import build_app
 from clio_agent.gact.plan_mode import (
-    _plan_exit_options,
     plan_mode_reminder,
     plan_mode_reminder_block,
-    resolve_plan_exit_answer,
 )
 from clio_agent.gact.plan_reuse import (
     SAVED_PLAN_KIND,
@@ -45,8 +44,8 @@ from clio_agent.gact.planning import (
     recorded_playbook,
 )
 from clio_agent.gact.skills import SkillCatalog
-from clio_agent.gact.types import AgentDef, UserQuestion
-from tests.test_gact.task_records import record_question_fixture
+from clio_agent.gact.types import AgentDef
+from tests.test_gact import test_plan_exit as plan_approval
 
 _PLAN_MD = """# Plan
 
@@ -96,55 +95,6 @@ def _capture_semantic_events(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, 
     return events
 
 
-def _pending_question(app: Any, sess: Any, plan_file: str) -> UserQuestion:
-    q = UserQuestion(
-        id="q_plan_exit",
-        session_id=sess.id,
-        prompt="approve?",
-        status="pending",
-        kind="choice",
-        options=_plan_exit_options(),
-        created_at="2026-07-29T00:00:00+00:00",
-        updated_at="2026-07-29T00:00:00+00:00",
-        source="plan_exit",
-        metadata={
-            "plan_exit_approval": True,
-            "resume_on_answer": True,
-            "plan_file": plan_file,
-            "recommended_mode": "auto",
-        },
-    )
-    q = record_question_fixture(app, q)
-    app.state.sessions.update(
-        sess.id, status="waiting_user", metadata_patch={"pending_user_question_id": q.id}
-    )
-    app.state.agent = object()
-    return q
-
-
-def _fake_deps() -> SimpleNamespace:
-    calls: dict[str, list[Any]] = {"resume": [], "replace": []}
-
-    def start_background_user_turn(sid, sess, user_text, *, metadata=None, prev_status="", **kw):
-        calls["resume"].append({"sid": sid, "text": user_text, "metadata": metadata or {}})
-        return SimpleNamespace(id=f"msg_resume_{len(calls['resume'])}")
-
-    def replace_session_messages(app, sid, messages):
-        calls["replace"].append({"sid": sid, "messages": messages})
-
-    return SimpleNamespace(
-        start_background_user_turn=start_background_user_turn,
-        replace_session_messages=replace_session_messages,
-        _calls=calls,
-    )
-
-
-def _answer(question: UserQuestion, *, selected: list[str], answer: str = "") -> UserQuestion:
-    return question.model_copy(
-        update={"status": "answered", "selected_options": selected, "answer": answer}
-    )
-
-
 # --------------------------------------------------------------------------- #
 # (1) REGISTER                                                                #
 # --------------------------------------------------------------------------- #
@@ -175,20 +125,20 @@ def test_save_approved_plan_registers_artifact_with_provenance(tmp_path: Path) -
     assert fresh.metadata[SAVED_PLAN_METADATA_KEY]["artifact_id"] == ref["artifact_id"]
 
 
-def test_plan_exit_approve_triggers_registration(tmp_path: Path) -> None:
-    """A plan-exit APPROVE (via resolve_plan_exit_answer) registers the plan + resumes execution."""
+def test_plan_exit_approve_triggers_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A real plan approval retains the reviewed artifact and queues execution input."""
     app = _plan_app(tmp_path)
-    sess, plan_file = _plan_session(app, tmp_path)
-    q = _pending_question(app, sess, str(plan_file))
-    deps = _fake_deps()
-
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto"]))
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"  # transition still fired
-    assert len(deps._calls["resume"]) == 1  # execution resumed
-    saved = fresh.metadata.get(SAVED_PLAN_METADATA_KEY)
-    assert saved is not None and saved.get("saved") is True and saved.get("artifact_id")
+    sess, _plan_file = _plan_session(app, tmp_path)
+    with TestClient(app) as client:
+        review = plan_approval.surface_approval(app, client, sess.id, monkeypatch)
+        plan_approval.answer(review, ["auto"])
+        fresh = app.state.sessions.get(sess.id)
+        assert fresh.mode == "edit"  # transition still fired
+        assert len(review.resume_items()) == 1  # one confirmed continuation
+        saved = fresh.metadata.get(SAVED_PLAN_METADATA_KEY)
+        assert saved is not None and saved.get("saved") is True and saved.get("artifact_id")
 
 
 # --------------------------------------------------------------------------- #
@@ -244,21 +194,21 @@ def test_plan_exit_resume_proceeds_despite_save_failure(
 ) -> None:
     """A degraded save NEVER blocks the plan-exit resume — the plan still executes."""
     app = _plan_app(tmp_path)
-    sess, plan_file = _plan_session(app, tmp_path)
-    q = _pending_question(app, sess, str(plan_file))
-    deps = _fake_deps()
+    sess, _plan_file = _plan_session(app, tmp_path)
 
     monkeypatch.setattr(
         "clio_agent.gact.plan_reuse.mint_artifact_outcome",
         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
-    resolve_plan_exit_answer(app, deps, sess.id, _answer(q, selected=["auto"]))
-
-    fresh = app.state.sessions.get(sess.id)
-    assert fresh.mode == "edit"
-    assert len(deps._calls["resume"]) == 1  # resumed despite the degraded save
-    assert fresh.metadata[SAVED_PLAN_METADATA_KEY]["saved"] is False
+    with TestClient(app) as client:
+        # Capture fails during actual review, before the immutable approval is surfaced.
+        review = plan_approval.surface_approval(app, client, sess.id, monkeypatch)
+        plan_approval.answer(review, ["auto"])
+        fresh = app.state.sessions.get(sess.id)
+        assert fresh.mode == "edit"
+        assert len(review.resume_items()) == 1  # retained despite the degraded save
+        assert fresh.metadata[SAVED_PLAN_METADATA_KEY]["saved"] is False
 
 
 # --------------------------------------------------------------------------- #

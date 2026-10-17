@@ -32,6 +32,35 @@ The current production hash is
 Fresh CI and actual-model acceptance remain required. The still-live R184 source,
 GACT, dependencies and clio-core 2.3.1 remain unchanged.
 
+### Plan/playbook owner fixtures and complete Question export — CI pending
+
+Six approval cases in plan reuse, plan variants and stall-playbook continuation
+now enter the actual application lifespan, surface the real plan Question and
+answer through the authenticated HTTP route. They share the existing approval
+setup, including a real model hold, and inspect the indexed Core continuation
+mail. Nine fabricated Question/answer/resume helpers are deleted. Save-failure
+injection occurs during actual immutable-plan capture, before approval.
+
+All original behavior assertions are retained, except the two synthetic callback
+counts replaced by a count of confirmed Core continuation items. The no-playbook
+case additionally requires the approved mode and a queued continuation, preventing
+a rejected/no-op answer from satisfying the absence check. AST comparison also
+confirms that extracting the shared approval setup preserves the original owner
+operations after substituting its explicit session-id argument. No model runs
+in these unit scenarios; they are not live acceptance.
+
+All `8db0a28d` Python 3.14 shards are now available: 11,963 passed, 453 failed,
+four errors and 53 skips. All three transport cases, all eight strategy cases and
+24 of 25 export cases pass. The remaining export case lacked the real Question
+commands for its 105 historical answers. Its data-only fixture now installs those
+commands on the same confirmed writer; every retention/correlation assertion is
+unchanged. No competing store or execution owner is introduced.
+
+Scoped Ruff/format and Mypy pass for all five changed test modules. No local
+pytest/vitest ran. Fresh CI remains required; the production hash is still
+`7ffd923c684ff07bdb3b3e39128b0b6bb43d61eadcee2019e661a26b436d0f89`.
+The broader regression baseline and final live qualification remain incomplete.
+
 ### Initial plan-answer correction — scoped CI evidence, wider acceptance pending
 
 Exact `5d21491c` CI exposed a plan-answer mismatch: the question advertises
