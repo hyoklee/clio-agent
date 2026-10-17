@@ -21,7 +21,6 @@ grant_resolver resolution (tighten-only). These tests pin that contract:
 from __future__ import annotations
 
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -37,7 +36,6 @@ from clio_agent.gact.app import (
 from clio_agent.gact.permission_gate import _policy_action_for_tool
 from clio_agent.gact.plan_mode import (
     plan_mode_reminder,
-    resolve_plan_exit_answer,
 )
 from clio_agent.gact.planning import (
     PLAN_VARIANT_METADATA_KEY,
@@ -52,7 +50,10 @@ from clio_agent.gact.planning import (
 from clio_agent.gact.runtime.grant_resolver import resolve
 from clio_agent.gact.skills import SkillCatalog
 from clio_agent.gact.types import AgentDef
-from tests.test_gact.task_records import record_question_fixture
+from tests.test_gact import test_plan_exit as plan_approval
+from tests.test_gact.test_plan_exit import ApprovalWorld
+
+approval_world = plan_approval.approval_world
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -459,81 +460,31 @@ def test_no_playbook_reminder_is_unchanged(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def _fake_deps() -> SimpleNamespace:
-    calls: dict[str, list[Any]] = {"resume": [], "replace": []}
-
-    def start_background_user_turn(sid, sess, user_text, *, metadata=None, prev_status="", **kw):
-        calls["resume"].append({"sid": sid, "text": user_text, "metadata": metadata or {}})
-        return SimpleNamespace(id=f"msg_resume_{len(calls['resume'])}")
-
-    def replace_session_messages(app, sid, messages):
-        calls["replace"].append({"sid": sid, "messages": messages})
-
-    return SimpleNamespace(
-        start_background_user_turn=start_background_user_turn,
-        replace_session_messages=replace_session_messages,
-        _calls=calls,
-    )
-
-
-def _pending_plan_exit_question(app: Any, sess: Any, *, plan_file: str):
-    from clio_agent.gact.plan_mode import PLAN_EXIT_APPROVAL_META, _plan_exit_options
-    from clio_agent.gact.types import UserQuestion
-
-    q = UserQuestion(
-        id="q_plan_exit",
-        session_id=sess.id,
-        prompt="approve?",
-        status="pending",
-        kind="choice",
-        options=_plan_exit_options(),
-        created_at="2026-07-27T00:00:00+00:00",
-        updated_at="2026-07-27T00:00:00+00:00",
-        source="plan_exit",
-        metadata={PLAN_EXIT_APPROVAL_META: True, "resume_on_answer": True, "plan_file": plan_file},
-    )
-    q = record_question_fixture(app, q)
-    app.state.sessions.update(
-        sess.id, status="waiting_user", metadata_patch={"pending_user_question_id": q.id}
-    )
-    app.state.agent = object()
-    return q
-
-
-def _answer(question: Any, *, selected: list[str], answer: str = ""):
-    return question.model_copy(
-        update={"status": "answered", "selected_options": selected, "answer": answer}
-    )
-
-
-def test_playbook_cleared_after_plan_exit_approve(tmp_path: Path) -> None:
-    app, sess = _plan_session(tmp_path)
+def test_playbook_cleared_after_plan_exit_approve(approval_world: ApprovalWorld) -> None:
+    app = approval_world.app
+    sess = app.state.sessions.get(approval_world.sid)
     record_playbook(app, sess.id, parse_playbook(_PLAYBOOK_JSON))
-    plan_file = tmp_path / "plan.md"
-    plan_file.write_text("# Plan\n", encoding="utf-8")
-    app.state.sessions.update(sess.id, metadata_patch={"plan_file": str(plan_file)})
     assert recorded_playbook(app.state.sessions.get(sess.id)) is not None
 
-    q = _pending_plan_exit_question(app, app.state.sessions.get(sess.id), plan_file=str(plan_file))
-    resolve_plan_exit_answer(app, _fake_deps(), sess.id, _answer(q, selected=["auto"]))
+    plan_approval.answer(approval_world, ["auto"])
 
     fresh = app.state.sessions.get(sess.id)
     assert fresh.mode == "edit"
     assert recorded_playbook(fresh) is None  # playbook cleared on leaving plan mode
+    assert len(approval_world.resume_items()) == 1
+    assert app.state.conversations.model_paused(sess.id)
 
 
-def test_playbook_preserved_after_plan_exit_reject(tmp_path: Path) -> None:
-    app, sess = _plan_session(tmp_path)
+def test_playbook_preserved_after_plan_exit_reject(approval_world: ApprovalWorld) -> None:
+    app = approval_world.app
+    sess = app.state.sessions.get(approval_world.sid)
     record_playbook(app, sess.id, parse_playbook(_PLAYBOOK_JSON))
-    plan_file = tmp_path / "plan.md"
-    plan_file.write_text("# Plan\n", encoding="utf-8")
-    app.state.sessions.update(sess.id, metadata_patch={"plan_file": str(plan_file)})
 
-    q = _pending_plan_exit_question(app, app.state.sessions.get(sess.id), plan_file=str(plan_file))
-    resolve_plan_exit_answer(
-        app, _fake_deps(), sess.id, _answer(q, selected=["reject"], answer="tighten step 2")
-    )
+    plan_approval.answer(approval_world, ["reject"], "tighten step 2")
 
     fresh = app.state.sessions.get(sess.id)
     assert fresh.mode == "plan"  # stayed in plan mode
     assert recorded_playbook(fresh) is not None  # playbook preserved for the revision turn
+    [revision] = approval_world.resume_items()
+    assert "tighten step 2" in app.state.task_history.read_content(revision.content)["text"]
+    assert app.state.conversations.model_paused(sess.id)

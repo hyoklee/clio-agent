@@ -188,6 +188,13 @@ def approval_world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[
         question = history.task_snapshot(next(iter(handles)))
         assert question is not None and question.raw_status == "pending"
         assert app.state.sessions.get(session.id).status == "waiting_user"
+        # Inspect committed approval mail under a real hold; an unpaused owner
+        # correctly admits eligible input immediately through TurnRunner.
+        assignment = history.latest_assignment(session.id)
+        assert assignment is not None
+        paused = client.post(f"/v1/sessions/{session.id}/agent-controls/{assignment.handle}/pause")
+        assert paused.status_code == 200, paused.text
+        assert app.state.conversations.model_paused(session.id)
         yield ApprovalWorld(app, client, session.id, question, state)
 
 

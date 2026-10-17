@@ -46,7 +46,7 @@ from clio_agent.gact.tool_observer import _install_tool_runtime_hooks
 from clio_agent.tools import execution as _execution
 from clio_agent.tools.execution import TOOL_OBSERVED_ATTR
 from scripts.check_tool_instrumentation import check_tool_instrumentation
-from tests.test_gact.task_records import record_assignment_fixture
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -269,7 +269,7 @@ def test_stale_declaration_from_before_this_call_never_attaches_to_it(
                 )
             ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             # Simulate a PRIOR call's declaration that leaked past its own
             # cleanup (one of the three proven leak paths) — set BEFORE this
             # call's wrapper ever runs.
@@ -299,7 +299,7 @@ def test_real_p5_tool_declared_structured_content_does_not_leak_across_sequentia
     app, client, sid = _observing_app(tmp_path)
     try:
         (tool,) = _instrument_in_app(app, [build_goal_status_tool()])
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             session_token = _ctx.set_session_id(sid)
             try:
                 assert tool()["active"] is False  # first call: no goal armed
@@ -356,7 +356,7 @@ def test_row_tool_lands_tool_parts_with_curated_title(tmp_path: Path) -> None:
                 )
             ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             assert tool(city="LA") == "ranked LA"
 
         parts = (app.state.live_assistant_parts or {}).get(sid, [])
@@ -386,7 +386,7 @@ def test_uncurated_bare_tool_lands_parts_without_title(tmp_path: Path) -> None:
             return "done"
 
         (tool,) = _instrument_in_app(app, [_bare_tool(plain, "plain")])
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             tool()
         parts = (app.state.live_assistant_parts or {}).get(sid, [])
         call_parts = [p for p in parts if p.type == "tool_call"]
@@ -434,7 +434,7 @@ def test_handoff_representation_notifies_but_appends_no_tool_parts(tmp_path: Pat
                 )
             ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             assert tool(task="t1") == "did t1"
 
         # Telemetry recorded: bus lifecycle events carry the declared representation…
@@ -491,7 +491,7 @@ def test_chip_representation_notifies_and_still_appends_tool_parts(tmp_path: Pat
                 )
             ],
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             assert tool(task="t1") == "did t1"
 
         # Telemetry recorded exactly like handoff…
@@ -639,11 +639,17 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             "refresh_provider_models": {},
             "connected_data_status": {},
             "connected_data_download": {"source_id": "missing-source"},
+            "connected_data_index": {"source_id": "missing-source"},
             "query_tasks": {},
             "observe_tasks": {"tasks": "missing-task"},
             "wait_tasks": {"tasks": "missing-task", "timeout_s": 0},
             "cancel_tasks": {"tasks": "missing-task"},
             "get_task_result": {"handle": "missing-task"},
+            "ask_user": {"question": "Which report should I produce?"},
+            "send_agent_message": {"target": "missing-session", "message": "Status?"},
+            "pause_agent": {"handle": "missing-task"},
+            "resume_agent": {"handle": "missing-task"},
+            "restart_agent": {"handle": "missing-task"},
             # Invalid source locations and missing source records refuse before
             # permission prompts, account access or network operations. They
             # must still record the exact executed inputs and failure result.
@@ -694,7 +700,7 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
         monkeypatch.setattr(
             "clio_agent.providers.model_discovery.refresh.refresh_all_sync", lambda: []
         )
-        with _gact_app_context(app), _tool_session_context(sid):
+        with active_turn_fixture(app, sid), _tool_session_context(sid):
             for name, kwargs in calls.items():
                 try:
                     auto_tools[name](**kwargs)

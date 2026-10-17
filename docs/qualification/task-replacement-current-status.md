@@ -78,6 +78,27 @@ fixture. Every original assertion and test signature is AST-identical; scoped
 Ruff/format pass. This migration awaits CI execution and does not qualify runtime
 observation behavior. No local pytest/vitest or fresh live family ran during it.
 
+Fresh `7e3d026e` Python 3.14 artifacts pass all ten prompt-stability cases and all
+three original optional-schema cases. The unchanged wait-schema assertion still
+exposes the duplicate-null defect corrected in `21c4311a`; that correction awaits
+its own CI. `c755e36d` also passes the four native declaration/presentation cases.
+Its remaining actual-call setup failures distinguish recorded ownership from
+active invocation context: the observation sites now bind the complete recorded
+turn identity, and the unchanged catalog-equality assertion covers six newly
+attached tools in its call table. The real Goal-status case reaches MCP and
+records two results, but loses declared structured presentation data across the
+worker/MCP boundary. That is an unresolved production adapter defect; no test
+expectation has been relaxed to hide it.
+
+Playbook approval tests now reuse the production Question answer route instead
+of copied Question views and synthetic resume callbacks. Their common fixture
+pauses the owner through the real control route before inspecting accepted mail;
+eligible input on an unpaused owner otherwise correctly races TurnRunner
+admission. Original mode/playbook assertions remain, with additional checks for
+queued revision content and the preserved hold. All tests/markers/assertions are
+retained; scoped Ruff/format pass. This test-only migration needs fresh CI and
+supplies no actual-model acceptance claim.
+
 Artifact export and grounding fixtures now explicitly accept the existing real
 Core ARC fixture and install the production `TaskHistory` reader. Thirty-two
 tests retain their original algorithm assertions while supplying the lineage
