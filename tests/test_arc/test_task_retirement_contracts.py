@@ -4,21 +4,76 @@ from __future__ import annotations
 
 import asyncio
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import ContextBoundary, MailItem, TaskSnapshot
+from clio_agent.arc.task_types import AssignmentDetails, ContextBoundary, MailItem, TaskSnapshot
 from clio_agent.gact import conversation_assignments
 from clio_agent.gact.conversations import ConversationOutcome, Conversations, ConversationSegment
 from clio_agent.gact.native_work import now
 from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.session_input import capture_retry_input
 from clio_agent.gact.task_access import TaskCaller
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_operations import TaskOperations
 from tests.test_arc.test_conversation_owner_contracts import create_environment
+
+
+@pytest.mark.asyncio
+async def test_settlement_confirms_delayed_cancel_intent_before_terminal_publication(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A fast retirement cannot outrun the same owner's deferred intent recording."""
+    _app, owner, root = await create_environment(arc, tmp_path)
+    delayed: list[Callable[[], object]] = []
+    observations: list[TaskSnapshot] = []
+    original = owner.recovery.defer_recording
+
+    def postpone(identity: str, operation: Callable[[], object]) -> None:
+        if identity == "conversation-cancel:" + root.handle:
+            delayed.append(operation)
+        else:
+            original(identity, operation)
+
+    def changed(_revision: int) -> None:
+        current = owner.history.task_snapshot(root.handle)
+        if current is not None:
+            observations.append(current)
+
+    monkeypatch.setattr(owner.recovery, "defer_recording", postpone)
+    remove = owner.history.listen(changed, handles=(root.handle,))
+    caller = TaskCaller(root.owner.session_id, "human")
+    operations = TaskOperations(owner.history, lambda task, actor: owner.cancel(actor, task.handle))
+    try:
+        assert (await owner.cancel(caller, root.handle))["cancellation_requested"]
+        assert len(delayed) == 1
+        outcome = await asyncio.wait_for(operations.wait(caller, root.handle), 10)
+        assert not outcome["pending"] and outcome["outcomes"][0]["status"] == "cancelled"
+        terminal = owner.history.task_snapshot(root.handle)
+        assert terminal is not None and terminal.cancellation_requested_at is not None
+        terminal_index = next(i for i, task in enumerate(observations) if task.terminal_at)
+        assert any(
+            task.cancellation_requested_at is not None and task.terminal_at is None
+            for task in observations[:terminal_index]
+        )
+        assert terminal.details is not None
+        details = AssignmentDetails.model_validate(
+            await asyncio.to_thread(owner.history.read_content, terminal.details)
+        )
+        assert details.cancellation_members is not None
+        await asyncio.to_thread(delayed[0])
+        assert owner.history.task_snapshot(root.handle) == terminal
+        restored = TaskHistory(arc)
+        await asyncio.to_thread(restored.restore)
+        assert restored.task_snapshot(root.handle) == terminal
+    finally:
+        remove()
+        await owner.shutdown()
+        await owner.recovery.drain()
 
 
 async def accept(owner: Conversations, sid: str, identity: str, text: str) -> MailItem:

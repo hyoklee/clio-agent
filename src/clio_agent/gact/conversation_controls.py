@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
@@ -303,7 +304,10 @@ async def cancel(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
     job = self._controls.get(handle)
     if job is None or job.done():
         self.retain_control(
-            handle, asyncio.create_task(_cancel_subtree(self, current, members=members))
+            handle,
+            asyncio.create_task(
+                _cancel_subtree(self, current, members=members, confirm_request=request)
+            ),
         )
     return {"handle": handle, "cancellation_requested": True, "recording": "unconfirmed"}
 
@@ -434,6 +438,7 @@ async def _cancel_subtree(
     *,
     members: tuple[str, ...] | None = None,
     request_members: bool = True,
+    confirm_request: Callable[[], None] | None = None,
 ) -> None:
     self.require_execution_owner(assignment)
     sid = assignment.owner.session_id
@@ -670,7 +675,11 @@ async def _cancel_subtree(
                             assignment.handle,
                             asyncio.create_task(
                                 _cancel_subtree(
-                                    self, assignment, members=tuple(handles), request_members=False
+                                    self,
+                                    assignment,
+                                    members=tuple(handles),
+                                    request_members=False,
+                                    confirm_request=confirm_request,
                                 )
                             ),
                         )
@@ -713,6 +722,8 @@ async def _cancel_subtree(
 
         def finish() -> None:
             with self.history.serialized():
+                if confirm_request is not None:
+                    confirm_request()
                 current = self.history.task_snapshot(assignment.handle)
                 if current is None:
                     return

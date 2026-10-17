@@ -24,7 +24,7 @@ from clio_agent.tools.mcp_connection_era import (
     latest_mcp_connection_era,
     resolved_connect_mode,
 )
-from clio_agent.tools.mcp_errors import typed_mcp_protocol_error
+from clio_agent.tools.mcp_errors import typed_mcp_call_error, typed_mcp_protocol_error
 from clio_agent.tools.mcp_namespace_executor import AsyncNamespacePreparationMixin
 from clio_agent.tools.mcp_result_json import pydantic_json_default
 from clio_agent.tools.mcp_result_projection import (
@@ -69,13 +69,7 @@ class MCPClientProtocol(Protocol):
         progress_handler: Callable[[float, float | None, str | None], Awaitable[None]]
         | None = None,
     ) -> Any:
-        """Call a named tool on the backing server.
-
-        ``progress_handler`` (#1282 F3a) is optional -- a test double may
-        ignore it entirely; a real ``fastmcp.Client`` forwards it so
-        ``tools/mcp_wait_ladder.py``'s activity-driven backstop can reset its
-        deadline on progress notifications.
-        """
+        """Call a tool and forward optional native progress notifications."""
         ...
 
     async def read_resource(self, uri: str) -> Any:
@@ -381,64 +375,72 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
 
         from clio_agent.gact import context
 
-        app = context.active_app()
-        loop = getattr(getattr(app, "state", None), "mcp_app_loop", None)
-        if app is not None and loop is not None:
-            captured = contextvars.copy_context()
+        try:
+            app = context.active_app()
+            loop = getattr(getattr(app, "state", None), "mcp_app_loop", None)
+            if app is not None and loop is not None:
+                captured = contextvars.copy_context()
 
-            async def product_call() -> _MCPCallOutcome:
-                if name in {"bash", "shell_bash"}:
-                    value = await app.state.builtin_boundary.native_call(name, dict(args), captured)
-                    result = mcp_types.CallToolResult(
-                        content=[mcp_types.TextContent(type="text", text=json.dumps(value))],
-                        structured_content=value,
+                async def product_call() -> _MCPCallOutcome:
+                    if name in {"bash", "shell_bash"}:
+                        value = await app.state.builtin_boundary.native_call(
+                            name, dict(args), captured
+                        )
+                        result = mcp_types.CallToolResult(
+                            content=[mcp_types.TextContent(type="text", text=json.dumps(value))],
+                            structured_content=value,
+                        )
+                        return _MCPCallOutcome(json.dumps(value), result, "shell")
+                    namespace, _, bare = name.partition("_")
+                    proxy = self._namespace_servers.get(namespace)
+                    if proxy is not None:
+                        configured, decision = resolve_and_build_direct_client(
+                            namespace, self._clio_namespace_direct_factories
+                        )
+                        record_namespace_route_decision(namespace, decision)
+                        if configured is None:
+                            configured = self._client_factory(proxy)
+                        server, tool = namespace, bare
+                        spec = getattr(self, "_clio_namespace_specs", {}).get(namespace, {})
+                    else:
+                        configured, server, tool = (
+                            self._client_factory(self._server),
+                            self._server_id or "primary",
+                            name,
+                        )
+                        transport = getattr(configured, "transport", None)
+                        if transport is None:
+                            raise ValueError("Product Tasks require a native SDK client transport")
+                        spec = {"server": server, "transport": type(transport).__name__}
+                    auth_scope = hashlib.sha256(
+                        json.dumps(spec, sort_keys=True, default=str).encode()
+                    ).hexdigest()
+                    result = await app.state.external_tasks.call(
+                        server,
+                        configured,
+                        tool,
+                        dict(args),
+                        auth_scope=auth_scope,
+                        progress_handler=progress_handler,
                     )
-                    return _MCPCallOutcome(json.dumps(value), result, "shell")
-                namespace, _, bare = name.partition("_")
-                proxy = self._namespace_servers.get(namespace)
-                if proxy is not None:
-                    configured, decision = resolve_and_build_direct_client(
-                        namespace, self._clio_namespace_direct_factories
+                    return _MCPCallOutcome(
+                        _result_to_text(result), result, namespace if proxy is not None else None
                     )
-                    record_namespace_route_decision(namespace, decision)
-                    if configured is None:
-                        configured = self._client_factory(proxy)
-                    server, tool = namespace, bare
-                    spec = getattr(self, "_clio_namespace_specs", {}).get(namespace, {})
-                else:
-                    configured, server, tool = (
-                        self._client_factory(self._server),
-                        self._server_id or "primary",
-                        name,
-                    )
-                    transport = getattr(configured, "transport", None)
-                    if transport is None:
-                        raise ValueError("Product Tasks require a native SDK client transport")
-                    spec = {"server": server, "transport": type(transport).__name__}
-                auth_scope = hashlib.sha256(
-                    json.dumps(spec, sort_keys=True, default=str).encode()
-                ).hexdigest()
-                result = await app.state.external_tasks.call(
-                    server,
-                    configured,
-                    tool,
-                    dict(args),
-                    auth_scope=auth_scope,
-                    progress_handler=progress_handler,
-                )
-                return _MCPCallOutcome(
-                    _result_to_text(result), result, namespace if proxy is not None else None
-                )
 
-            coroutine = product_call()
-            if asyncio.get_running_loop() is loop:
-                return await coroutine
-            return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(coroutine, loop))
-        # CLI callers retain ordinary SDK inline/input behavior. Product Tasks
-        # require the application owner, and never inherit a resident executor.
-        client, tool, namespace = await self._route(name)
-        result = await client.call_tool(tool, dict(args), progress_handler=progress_handler)
-        return _MCPCallOutcome(_result_to_text(result), result, namespace)
+                coroutine = product_call()
+                if asyncio.get_running_loop() is loop:
+                    return await coroutine
+                return await asyncio.wrap_future(asyncio.run_coroutine_threadsafe(coroutine, loop))
+            # CLI callers retain ordinary SDK inline/input behavior. Product Tasks
+            # require the application owner, and never inherit a resident executor.
+            client, tool, namespace = await self._route(name)
+            result = await client.call_tool(tool, dict(args), progress_handler=progress_handler)
+            return _MCPCallOutcome(_result_to_text(result), result, namespace)
+        except Exception as error:
+            translated = typed_mcp_call_error(error, tool=name)
+            if translated is not None:
+                raise translated from error
+            raise
 
     async def read_resource(self, namespace: str | None, uri: str) -> Any:
         """Read ``uri`` from exactly ``namespace`` (or the composite gateway).
@@ -479,16 +481,9 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         for the default/boot executor and for any namespace not backed by a
         cold-cacheable stdio spec, both of which skip the lock entirely).
 
-        #1281 (C1-S1): before building the proxy-path ``ctx``,
-        ``resolve_and_build_direct_client`` resolves the typed,
-        capability-keyed route AND attempts to build the direct client in
-        one step (never probed -- see ``tools/mcp_task_routing.py``); its
-        returned decision (which may differ from the raw intent -- a
-        missing/failing factory demotes to proxy, typed -- adversarial
-        review F4/F9) is recorded to the audit ring unconditionally. A
-        successful direct client's tasks extension attaches automatically
-        (default client class), fixing #1274 for THIS namespace; otherwise
-        today's proxy path is unchanged, byte-identical.
+        Resolve the declared direct route and its client factory before opening
+        a namespace connection. Record the actual routing decision, including
+        any failed direct-client construction, for diagnosis.
         """
 
         specs: Mapping[str, Any] = getattr(self, "_clio_namespace_specs", None) or {}

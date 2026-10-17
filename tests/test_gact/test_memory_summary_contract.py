@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
 from clio_agent.gact.memory_tools import build_memory_summary_tool
+from clio_agent.gact.session_store import _replace_session_messages
 from clio_agent.gact.types import Message, Part
 from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
@@ -67,7 +68,7 @@ def test_agent_summary_tool_and_route_read_the_same_persisted_messages(tmp_path:
             title="Retained decision", workspace_id="ws_default"
         ).id
         record_assignment_fixture(original, sid)
-        original.state.message_store.replace_session(sid, [_message(sid, 0, "Fernhill: 8:15")])
+        _replace_session_messages(original, sid, [_message(sid, 0, "Fernhill: 8:15")])
     restored = build_app(sessions_path=sessions_path, agent=None)
     with TestClient(restored) as client:
         route = client.post(f"/v1/sessions/{sid}/memory/tools/read-session-summary", json={})

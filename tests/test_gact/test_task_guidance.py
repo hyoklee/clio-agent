@@ -59,6 +59,10 @@ def test_task_lifecycle_reaches_the_model_request(provider: str, role: str) -> N
         "wait_tasks",
         "cancel_tasks",
         "get_task_result",
+        "pause_agent",
+        "resume_agent",
+        "restart_agent",
+        "send_agent_message",
         "submit",
     }
 

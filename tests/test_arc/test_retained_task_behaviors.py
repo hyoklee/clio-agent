@@ -9,11 +9,13 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+from pydantic import JsonValue
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import (
     AssignmentDetails,
     BackendReference,
+    DeferredCompletion,
     MailItem,
     QuestionDefinition,
     QuestionOption,
@@ -69,7 +71,9 @@ async def test_old_pause_metadata_cannot_hold_a_successor_after_restore(
         successor = await asyncio.to_thread(prepare)
         owner._paused.clear()
         await owner.restore()
-        assert owner.history.latest_assignment(root.owner.session_id).handle == successor.handle
+        latest = owner.history.latest_assignment(root.owner.session_id)
+        assert latest is not None
+        assert latest.handle == successor.handle
         assert not owner.model_paused(root.owner.session_id)
     finally:
         await owner.shutdown()
@@ -82,7 +86,7 @@ async def test_deferred_stop_hook_cannot_complete_an_expired_assignment(
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
 
-    def prepare() -> None:
+    def prepare() -> DeferredCompletion:
         output = owner.history.write_content(root.owner.session_id, {"answer": "Retained work"})
         details = owner.history.write_content(
             root.owner.session_id,
@@ -95,11 +99,15 @@ async def test_deferred_stop_hook_cannot_complete_an_expired_assignment(
             root.model_copy(update={"details": details, "activity": "yielded"}),
             observation_id="expired-held-output",
         )
+        return DeferredCompletion(result=output)
 
     try:
-        await asyncio.to_thread(prepare)
-        await owner.complete_deferred(root.owner.session_id, root.handle)
+        completion = await asyncio.to_thread(prepare)
+        await owner.complete_deferred(
+            root.owner.session_id, root.handle, context_epoch="", completion=completion
+        )
         current = await asyncio.to_thread(owner.history.task_snapshot, root.handle)
+        assert current is not None
         assert current.terminal_at is None and current.status != "completed"
     finally:
         await owner.shutdown()
@@ -202,7 +210,9 @@ async def test_cancelled_plan_gate_repairs_after_resume_mail_was_saved(
         assert [item.id for item in after].count(resumes[0].id) == 1
         session = app.state.sessions.get(sid)
         assert session.mode == "plan" and session.metadata["execution_gate"] == ""
-        assert owner.history.task_snapshot(question.handle).raw_status == "cancelled"
+        current_question = owner.history.task_snapshot(question.handle)
+        assert current_question is not None
+        assert current_question.raw_status == "cancelled"
     finally:
         await owner.shutdown()
         await owner.recovery.drain()
@@ -223,7 +233,11 @@ async def test_approval_repair_preserves_execution_playbook_and_later_feedback(
         app.state.messages[session] = list(messages)
 
     app.state.gact_deps = SimpleNamespace(replace_session_messages=replace_messages)
-    artifact = {"saved": True, "artifact_id": "reviewed-original", "sha256": "captured"}
+    artifact: dict[str, JsonValue] = {
+        "saved": True,
+        "artifact_id": "reviewed-original",
+        "sha256": "captured",
+    }
     question = await asyncio.to_thread(
         app.state.questions.create,
         root.owner,
@@ -303,10 +317,16 @@ async def test_approval_repair_preserves_execution_playbook_and_later_feedback(
         resumes = [item for item in pending if item.id == "plan-answer:" + question.handle]
         assert len(resumes) == 1
         content = await asyncio.to_thread(owner.history.read_content, resumes[0].content)
-        assert content["metadata"]["approved_plan"]["artifact_ref"] == artifact
+        assert isinstance(content, dict)
+        metadata = content["metadata"]
+        assert isinstance(metadata, dict)
+        approved_plan = metadata["approved_plan"]
+        assert isinstance(approved_plan, dict)
+        assert approved_plan["artifact_ref"] == artifact
         assert app.state.sessions.get(sid).metadata["execution_gate"] == ""
         assert app.state.sessions.get(sid).message_count == 1
         assignment = await asyncio.to_thread(owner.history.latest_assignment, sid)
+        assert assignment is not None and assignment.details is not None
         details = AssignmentDetails.model_validate(
             await asyncio.to_thread(owner.history.read_content, assignment.details)
         )
@@ -366,6 +386,7 @@ async def test_resume_without_hold_does_not_rewrite_busy_activity_or_mail(
             TaskCaller(root.owner.session_id, "human", human_action=True), root.handle
         )
         current = await asyncio.to_thread(owner.history.task_snapshot, root.handle)
+        assert current is not None
         assert outcome["resumed"] is False and current.activity == "busy"
         assert await asyncio.to_thread(owner.history.pending_mail, root.owner.session_id) == before
     finally:
@@ -403,9 +424,12 @@ async def test_explicit_assignment_deadline_survives_parent_waiter_absence(
         changed(0)
         await asyncio.wait_for(settled.wait(), 5)
         child = await asyncio.to_thread(owner.history.task_snapshot, handle)
+        assert child is not None
         assert child.status == "cancelled" and child.settlement == "confirmed"
         assert child.cancellation_requested_at is not None
-        assert owner.history.task_snapshot(root.handle).cancellation_requested_at is None
+        parent = owner.history.task_snapshot(root.handle)
+        assert parent is not None
+        assert parent.cancellation_requested_at is None
     finally:
         if remove is not None:
             remove()
@@ -443,6 +467,7 @@ async def test_uncertain_backend_evidence_is_readable_without_final_collection(
             attention_episode="lost-cleanup",
         )
         owner.history.record_snapshot(task, observation_id="external-unknown")
+        assert task.attention_episode is not None
         publish_task_notice(owner.history, task, episode=task.attention_episode)
         return task
 
@@ -459,6 +484,7 @@ async def test_uncertain_backend_evidence_is_readable_without_final_collection(
             and result["result"]["result"]["structuredContent"]["value"] == 42
         )
         current = await asyncio.to_thread(owner.history.task_snapshot, task.handle)
+        assert current is not None
         assert (
             current.result is None
             and current.terminal_at is None
@@ -519,6 +545,7 @@ async def test_uncertain_cancellation_retires_waiter_and_late_proof_settles_pare
         assert control is not None
         await asyncio.wait_for(asyncio.shield(control), 5)
         parent = await asyncio.to_thread(owner.history.task_snapshot, root.handle)
+        assert parent is not None
         assert parent.status == "task_state_uncertain" and parent.terminal_at is None
         assert root.handle in owner._cancel_watches
         assert owner.history.acknowledged_notifications(root.owner.session_id) == frozenset()
@@ -539,6 +566,7 @@ async def test_uncertain_cancellation_retires_waiter_and_late_proof_settles_pare
 
         remove = owner.history.listen(parent_changed, handles=(root.handle,))
         current_member = await asyncio.to_thread(owner.history.task_snapshot, member.handle)
+        assert current_member is not None
         progressing = current_member.model_copy(
             update={"status": "running", "settlement": "cleanup_pending", "attention_episode": None}
         )
@@ -564,6 +592,7 @@ async def test_uncertain_cancellation_retires_waiter_and_late_proof_settles_pare
         )
         await asyncio.wait_for(settled.wait(), 5)
         final = await asyncio.to_thread(owner.history.task_snapshot, root.handle)
+        assert final is not None
         assert final.status == "cancelled" and final.settlement == "confirmed"
         assert root.handle not in owner._cancel_watches
     finally:

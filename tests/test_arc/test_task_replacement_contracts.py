@@ -58,7 +58,9 @@ def record_task(
         supported_actions=("observe", "wait", "cancel", "get_result"),
     )
     history.record_snapshot(task, observation_id="start:" + handle)
-    return task
+    recorded = history.task_snapshot(handle)
+    assert recorded is not None
+    return recorded
 
 
 def finish(history: TaskHistory, task: TaskSnapshot, *, status: str = "completed") -> None:
@@ -352,7 +354,11 @@ def test_revoking_observe_holds_published_subscriber_input(arc: ARCMemory) -> No
     history.record_grant(grant, observation_id="grant-initial")
     history.record_subscription(
         TaskSubscription(
-            handle=task.handle, recipient_session="peer", enabled=True, updated_at=STAMP
+            handle=task.handle,
+            recipient_session="peer",
+            recipient_human="human",
+            enabled=True,
+            updated_at=STAMP,
         )
     )
     finish(history, task)
@@ -418,7 +424,11 @@ def test_collection_receipt_cannot_consume_another_recipient(arc: ARCMemory) -> 
     )
     history.record_subscription(
         TaskSubscription(
-            handle=task.handle, recipient_session="peer", enabled=True, updated_at=STAMP
+            handle=task.handle,
+            recipient_session="peer",
+            recipient_human="human",
+            enabled=True,
+            updated_at=STAMP,
         )
     )
     finish(history, task)
@@ -522,4 +532,4 @@ def test_explicit_collection_of_held_result_uses_its_durable_observation(arc: AR
     restored.restore()
     assert restored.pending_mail("owner") == ()
     assert held.id in restored.acknowledged_notifications("owner")
-    assert restored.committed_observations("owner", "main") == frozenset({"collect"})
+    assert restored.committed_observations("owner", "main") == frozenset({str(observation.id)})

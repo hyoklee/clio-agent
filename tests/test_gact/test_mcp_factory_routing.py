@@ -35,7 +35,7 @@ class _RecordingObserver:
 def test_builders_external_tool_call_routes_through_factory(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    core_arc: Any,
+    arc: Any,
 ) -> None:
     from fastmcp import FastMCP
 
@@ -61,7 +61,7 @@ def test_builders_external_tool_call_routes_through_factory(
     monkeypatch.setattr("clio_agent.tools.mcp_config.transport_from_spec", lambda spec: server)
     monkeypatch.setattr("clio_agent.tools.mcp_runtime.make_mcp_client", spy)
 
-    app = build_app(sessions_path=tmp_path / "sessions.json", arc=core_arc)
+    app = build_app(sessions_path=tmp_path / "sessions.json", arc=arc)
     info = {"name": "ext", "spec": {"transport": "stdio", "command": "x"}}
 
     with TestClient(app) as client:

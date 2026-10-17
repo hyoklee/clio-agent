@@ -52,7 +52,7 @@ async def test_applied_stop_completion_repairs_only_its_original_gate_after_rest
             "answer": "Approved exact output"
         }
         assert app.state.sessions.get(root.owner.session_id).metadata["execution_gate"] == handle
-        frozen = app.state.questions.resolution(handle)
+        frozen = await asyncio.to_thread(app.state.questions.resolution, handle)
         restored = TaskHistory(arc)
         await asyncio.to_thread(restored.restore)
         app.state.task_history = owner.history = restored
@@ -65,7 +65,7 @@ async def test_applied_stop_completion_repairs_only_its_original_gate_after_rest
         assert restored.task_snapshot(root.handle) == terminal
         latest = restored.latest_assignment(root.owner.session_id)
         assert latest is not None and latest.handle == root.handle
-        assert app.state.questions.resolution(handle) == frozen
+        assert await asyncio.to_thread(app.state.questions.resolution, handle) == frozen
     finally:
         await owner.shutdown()
         await owner.recovery.drain()

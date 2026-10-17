@@ -7,6 +7,61 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Cancellation recording order and native SDK errors — CI pending
+
+The explicit-deadline regression exposes a recording race: physical cancellation
+can settle before the deferred request write, leaving a cancelled assignment with
+no request timestamp. The existing conversation owner now carries its same
+idempotent recording operation into final settlement and confirms it under the
+existing writer before publishing terminal status. Late-proof rechecks retain
+that operation. Physical controls still start independently of Core availability;
+failed confirmation remains recording-unconfirmed through existing recovery.
+No new coordinator, store, worker or cancellation policy is introduced.
+
+One deterministic regression delays background request recording, performs real
+owner cancellation, requires a confirmed nonterminal request observation before
+the terminal observation, flushes the delayed operation harmlessly, and checks a
+fresh Core reader. The existing deadline/cancellation assertions are unchanged.
+
+Complete `25718e58` Python 3.14 CI contains 11,987 passes, 431 failures, five
+errors and 53 skips. All 50 permission cases pass, including the actual SDK sync
+and async paths with exact invocation/observer correlation. All four observer
+error/privacy cases pass. Nine MRTR cases pass; exhaustion leaks the raw SDK
+error from the generic executor. That existing public boundary now applies the
+already-shared typed-error translator. AST comparison confirms its native
+dispatch body is unchanged. The SDK still owns input re-entry and the unchanged
+two-round safeguard; no custom retry loop is restored. Obsolete wait-ladder and
+task-extension prose is removed, and the executor's size ratchet tightens from
+874 to 869 lines.
+
+Complete `918348a1` CI passes all 20 replanning cases. Its new child/workflow
+failures share a partial test-state carrier missing the restored additions field;
+that helper now uses the real `TurnState`, including its normal defaults. Other
+fixtures now use confirmed snapshots, persist the subscribing human identity,
+check the actual stored observation ID, and move Question-resolution reads off
+the server loop. Deferred-completion inputs and historical human answers use the
+current typed contracts. Presence/type assertions strengthen retained cases.
+
+The `4ba4a69b` report passes three of four recall cases and 48 of 49 permission
+cases. Its reload fixture wrote only the transcript cache; it now uses the
+canonical replacement seam. All six provider/role cases reach their final exact
+catalog assertion after passing the prompt clauses; that assertion now also
+requires the four requested lifecycle/message tools. Marketplace prompt coverage
+passes. The factory-routing setup now requests the fixture's actual registered
+name, `arc`; its previous setup error is not claimed as an executed case.
+
+Scoped Ruff/format, Mypy for 11 files and removal/class/size guards pass. Across
+41 existing test functions the source audit preserves signatures/markers and
+assertions after equivalent typed aliases/off-loop reads, except the documented
+observation-ID and exact-catalog contract updates. No local pytest/vitest or live
+model ran. Receipt: `ci-cancel-intent-2571-source-audit.json` in D static evidence.
+Candidate Python-source SHA256:
+`123f8827c066d105772a044b93c1bed9115304f463ca29d57ccd18fc3990815f`.
+The R184 source, shared prompt, iowarp-core 2.3.1, dependencies, GACT and installed
+state are unchanged. Fresh CI and affected cancellation/deadline/Core-outage/
+input-handling live gates remain required. The unresolved R184 shutdown still
+prevents another live launch; full qualification remains incomplete.
+
 ### External MCP observation boundary — CI pending
 
 Complete `e7094280` Python 3.14 CI contains 11,991 passes, 427 failures, four

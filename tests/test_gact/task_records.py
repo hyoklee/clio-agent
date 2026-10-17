@@ -240,7 +240,7 @@ def record_question_fixture(app: Any, row: Any) -> Any:
                 answer=row.answer or "",
                 selected_options=tuple(row.selected_options or ()),
                 metadata=dict(row.answer_metadata or {}),
-                answered_by="human",
+                responder_human=app.state.human_principal,
             ),
         )
     elif row.status == "cancelled":
