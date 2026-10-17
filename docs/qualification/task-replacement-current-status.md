@@ -7,6 +7,44 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### External MCP observation boundary — CI pending
+
+Complete `e7094280` Python 3.14 CI contains 11,991 passes, 427 failures, four
+errors and 53 skips. All seven finalizer cases pass. Permission coverage has
+47 passes/two failures: the catalog placeholder corrected in `4ba4a69b`, and
+a production external-call failure. Its real application-loop SDK test reaches
+synchronous semantic-event persistence from the observer, which the unchanged
+off-loop guard correctly rejects.
+
+The existing synchronous external-tool entry now owns permission and both
+observer phases on the same worker. Its native client construction and SDK call
+remain on the application loop under the existing external owner. The async entry
+delegates through the existing owned-call boundary and waits for actual worker
+retirement. The obsolete private-loop/thread fallback is deleted. Invocation
+identity is captured on the observing worker before SDK dispatch; no new task
+registry, scheduler, observer worker pool or driving policy is added.
+
+The real FastMCP/SDK regression now covers both sync and async callers and requires
+application-loop client construction, one backend execution, unchanged read-only
+permission behavior and matching nonempty invocation/start/completion IDs. The
+factory-routing case now uses the real application, Core assignment and SDK;
+three obsolete fake-client classes are deleted. Its exact transport assertion
+now names the actual resolved server rather than a synthetic string. The isolated
+structured-result unit supplies its hosting loop; all privacy/error assertions
+are retained. Its test-double schema spelling and non-suppressing exit annotation
+match the pinned MCP API. No execution or test timeout is changed.
+
+Scoped Ruff/format, Mypy and removal/class/size guards pass. No local pytest/vitest
+or live model ran. The bounded source receipt is
+`ci-external-observer-4ba4-source-audit.json` in the D checkout's static evidence.
+The candidate Python-source SHA256 is
+`c9771f6c337f0b3bae85c513c9aaaea0c0135d74779d44e6dbea3be2a7b99423`;
+the shared snippet remains `3dc3abe51bca664c4cf8a5b9f9426b5bb6fa6fdc9a43f8f9ed59a176cafef55c`.
+Native-client/Stop/input/reconnect and invocation-correlation live checks must use
+the eventual frozen candidate. R184 source, iowarp-core 2.3.1, dependency pins,
+GACT and installed state are unchanged. Full regression and live qualification
+remain incomplete; R184's unresolved shutdown still prevents a new live family.
+
 ### Shared task instructions and native permission fixture — CI pending
 
 The six provider/role prompt cases and marketplace prompt sweep still expect

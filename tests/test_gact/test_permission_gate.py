@@ -409,16 +409,21 @@ def test_dynamic_external_mcp_requires_permission_before_client_invocation(
     assert MustNotStartClient.constructed is False
 
 
+@pytest.mark.parametrize("route", ["async", "sync"])
 def test_dynamic_external_mcp_read_only_hint_invokes_client(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    route: str,
 ) -> None:
     from fastmcp import FastMCP
 
     from clio_agent.gact.agents import builders
+    from clio_agent.tools.task_call_context import TASK_CALL
 
     server = FastMCP("read-only-permission")
     calls: list[str] = []
+    request_loops: list[asyncio.AbstractEventLoop] = []
+    invocation_ids: list[str] = []
 
     @server.tool(name="lookup", annotations={"readOnlyHint": True}, task=False)
     def lookup(resource_id: str) -> str:
@@ -426,10 +431,15 @@ def test_dynamic_external_mcp_read_only_hint_invokes_client(
         calls.append(resource_id)
         return "lookup:ok"
 
-    monkeypatch.setattr(
-        "clio_agent.tools.mcp_config.transport_from_spec",
-        lambda _spec: server,
-    )
+    def resolve_transport(_spec: Any) -> Any:
+        """Observe the production client boundary without substituting its implementation."""
+        request_loops.append(asyncio.get_running_loop())
+        task_call = TASK_CALL.get()
+        assert task_call.invocation_id
+        invocation_ids.append(task_call.invocation_id)
+        return server
+
+    monkeypatch.setattr("clio_agent.tools.mcp_config.transport_from_spec", resolve_transport)
     app = build_app(sessions_path=tmp_path / "s.json")
     info = {
         "name": "remote",
@@ -441,8 +451,7 @@ def test_dynamic_external_mcp_read_only_hint_invokes_client(
         record_assignment_fixture(app, session_id)
         assert client.portal is not None
         with active_turn_fixture(app, session_id):
-            result = client.portal.call(
-                builders._call_enabled_external_mcp_tool,
+            arguments = (
                 app,
                 "srv",
                 info,
@@ -450,9 +459,22 @@ def test_dynamic_external_mcp_read_only_hint_invokes_client(
                 {"resource_id": "resource-1"},
                 {"readOnlyHint": True},
             )
+            if route == "async":
+                result = client.portal.call(builders._call_enabled_external_mcp_tool, *arguments)
+            else:
+                result = builders._run_external_mcp_tool_sync(*arguments)
         assert calls == ["resource-1"]
         assert result == "lookup:ok"
         assert app.state.permissions == {}
+        assert request_loops == [app.state.mcp_app_loop]
+        events = [
+            event
+            for event in app.state.bus._history.get(session_id, [])
+            if event.type in {"tool.call.started", "tool.call.completed"}
+        ]
+        assert [event.type for event in events] == ["tool.call.started", "tool.call.completed"]
+        assert events[0].payload["call_id"] == events[1].payload["call_id"]
+        assert invocation_ids == [events[0].payload["call_id"]]
 
 
 @pytest.mark.parametrize(

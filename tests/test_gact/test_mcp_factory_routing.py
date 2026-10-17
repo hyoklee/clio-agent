@@ -12,52 +12,11 @@ Covers the two gact execution sites the factory now owns:
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
-
-
-class _FakeContent:
-    def __init__(self, text: str) -> None:
-        self.type = "text"
-        self.text = text
-
-    def model_dump(self, **_kwargs: Any) -> dict[str, str]:
-        return {"type": self.type, "text": self.text}
-
-
-class _FakeResult:
-    def __init__(self, text: str) -> None:
-        self.content = [_FakeContent(text)]
-        self.data = None
-        self.isError = False
-        self.structured_content = None
-        self.meta = None
-
-
-class _FakeClient:
-    """Async-context fastmcp.Client stand-in returning a canned result."""
-
-    def __init__(self, target: Any, **_kwargs: Any) -> None:
-        self.target = target
-
-    async def __aenter__(self) -> "_FakeClient":
-        return self
-
-    async def __aexit__(self, *exc: Any) -> bool:
-        return False
-
-    async def list_tools(self) -> list[Any]:
-        return [SimpleNamespace(name="do_thing", outputSchema=None)]
-
-    async def call_tool(
-        self, tool_name: str, tool_args: Any, *, progress_handler: Any = None
-    ) -> _FakeResult:
-        return _FakeResult("hello-from-tool")
 
 
 class _RecordingObserver:
@@ -75,38 +34,55 @@ class _RecordingObserver:
 
 def test_builders_external_tool_call_routes_through_factory(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    core_arc: Any,
 ) -> None:
+    from fastmcp import FastMCP
+
     from clio_agent.gact.agents import builders
+    from clio_agent.gact.app import build_app
+    from clio_agent.tools.mcp_runtime import make_mcp_client
+    from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
     calls: list[Any] = []
+    executions: list[int] = []
+    server = FastMCP("factory-routing")
 
-    def spy(target: Any, **kwargs: Any) -> _FakeClient:
+    @server.tool(name="do_thing", annotations={"readOnlyHint": True}, task=False)
+    def do_thing(a: int) -> str:
+        """Return one inline response through the actual native factory and SDK."""
+        executions.append(a)
+        return "hello-from-tool"
+
+    def spy(target: Any, **kwargs: Any) -> Any:
         calls.append(target)
-        return _FakeClient(target)
+        return make_mcp_client(target, **kwargs)
 
-    monkeypatch.setattr("clio_agent.tools.mcp_config.transport_from_spec", lambda spec: "TSPORT")
-    # #1113: builders now builds via make_elicitation_client, which still routes
-    # through the ONE make_mcp_client factory (plus the wired elicitation handler).
+    monkeypatch.setattr("clio_agent.tools.mcp_config.transport_from_spec", lambda spec: server)
     monkeypatch.setattr("clio_agent.tools.mcp_runtime.make_mcp_client", spy)
 
-    observer = _RecordingObserver()
-    app = SimpleNamespace(
-        state=SimpleNamespace(
-            pending_permission_gate=lambda name, args: "allow",
-            pending_tool_observer=observer,
-            # session resolution for the elicitation invocation context (#1113)
-            sessions=SimpleNamespace(list=lambda: [], get=lambda sid: None),
-        )
-    )
+    app = build_app(sessions_path=tmp_path / "sessions.json", arc=core_arc)
     info = {"name": "ext", "spec": {"transport": "stdio", "command": "x"}}
 
-    result = asyncio.run(
-        builders._call_enabled_external_mcp_tool(app, "srv", info, "do_thing", {"a": 1})
-    )
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Factory routing"}).json()["id"]
+        record_assignment_fixture(app, sid)
+        assert client.portal is not None
+        with active_turn_fixture(app, sid):
+            result = client.portal.call(
+                builders._call_enabled_external_mcp_tool,
+                app,
+                "srv",
+                info,
+                "do_thing",
+                {"a": 1},
+                {"readOnlyHint": True},
+            )
 
-    assert result == "hello-from-tool"
-    # The client was constructed via the factory, given the resolved transport.
-    assert calls == ["TSPORT"]
+        assert result == "hello-from-tool"
+        # The real client is constructed once from the exact resolved server.
+        assert calls == [server]
+        assert executions == [1]
 
 
 # --------------------------------------------------------------------------- #

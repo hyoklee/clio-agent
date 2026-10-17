@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -63,14 +63,14 @@ class _FakeClient:
     async def __aenter__(self) -> "_FakeClient":
         return self
 
-    async def __aexit__(self, *exc: Any) -> bool:
+    async def __aexit__(self, *exc: Any) -> Literal[False]:
         return False
 
     async def list_tools(self) -> list[Any]:
         """Advertise the real discovery contract used before external dispatch."""
         from mcp.types import Tool
 
-        return [Tool(name="do_thing", inputSchema={"type": "object"})]
+        return [Tool(name="do_thing", input_schema={"type": "object"})]
 
     async def call_tool(
         self, tool_name: str, tool_args: Any, *, progress_handler: Any = None
@@ -186,9 +186,14 @@ def test_builders_observer_receives_structured_mcp_result(
     )
     info = {"name": "ext", "spec": {"transport": "stdio", "command": "x"}}
 
-    result = asyncio.run(
-        builders._call_enabled_external_mcp_tool(app, "srv", info, "do_thing", {"a": 1})
-    )
+    async def call() -> str:
+        """Supply the actual hosting loop to this isolated result-projection unit."""
+        app.state.mcp_app_loop = asyncio.get_running_loop()
+        return await builders._call_enabled_external_mcp_tool(
+            app, "srv", info, "do_thing", {"a": 1}
+        )
+
+    result = asyncio.run(call())
 
     assert result == "human projection"
     completed = next(call for call in observer.calls if call[2] == "completed")
