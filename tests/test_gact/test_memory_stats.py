@@ -431,6 +431,14 @@ def _complete_turn_with_metadata(
     _wait_for_turn_settlement(
         _application(client), sid, timeout=30.0, handle=accepted["task_handle"]
     )
+    history = _application(client).state.task_history
+    assignment = history.task_snapshot(accepted["task_handle"])
+    assert assignment is not None and assignment.status == "completed", {
+        "assignment": assignment,
+        "result": history.read_content(assignment.result)
+        if assignment is not None and assignment.result is not None
+        else None,
+    }
     messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
     for idx, message in enumerate(messages):
         if message["id"] == accepted["message_id"]:

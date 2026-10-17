@@ -135,12 +135,17 @@ than a fabricated success. The one-approval assertion remains strict.
 
 The feedback fixture's unchanged publication body now runs through the real
 application Core writer; shared-LM-loop writes remain rejected. Its test bodies
-are AST-identical. A memory-turn failure still sees a busy reservation after a
-release callback; the unchanged assertion now reports the observed settlement
-and current reservation for diagnosis. No retry, timeout increase or production
-change is introduced by these fixture corrections. Three-file Ruff/format/Mypy
-pass; no local behavioral test ran. Receipt:
-`ci-native-fixture-boundaries-6e9d-audit.json` in D static evidence. CI is pending.
+are AST-identical. A memory-turn failure observes busy after the release callback:
+TurnRunner has removed the old reservation and may already reserve the next
+admission probe. The helper now samples the actual idle predicate inside the
+existing release callback, asserting it after its waiter returns. It preserves
+the physical-release requirement without demanding that subsequent work stay
+idle. The memory helper also requires the requested assignment to have completed,
+reporting its stored error if it failed. All 48 test bodies and other helpers are
+AST-identical. No retry, timeout increase or production change is introduced.
+Scoped Ruff/format/Mypy pass; no local behavioral test ran. Receipts:
+`ci-native-fixture-boundaries-6e9d-audit.json` and
+`ci-release-boundary-fixture-6e9d-audit.json` in D static evidence. CI is pending.
 
 The retained source-connection module in `40b5a3a1` calls a removed direct tool
 function. Its fixture also replaces the storage service after native worker

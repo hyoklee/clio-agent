@@ -178,7 +178,12 @@ def _wait_for_turn_settlement(
         assert len(result["outcomes"]) == 1 and "error" not in result["outcomes"][0], result
         observed.update(result)
         released = asyncio.Event()
-        app.state.turn_runner.run_when_released(sid, released.set)
+
+        def retired() -> None:
+            observed["busy_at_release"] = app.state.turn_runner.busy(sid)
+            released.set()
+
+        app.state.turn_runner.run_when_released(sid, retired)
         await released.wait()
 
     waiting = asyncio.run_coroutine_threadsafe(settled(), app.state.conversations._loop)
@@ -187,7 +192,7 @@ def _wait_for_turn_settlement(
     except TimeoutError as error:
         waiting.cancel()  # End only the diagnostic waiter; lifespan cleanup owns the work.
         raise AssertionError("background turn did not settle before event assertions") from error
-    assert not app.state.turn_runner.busy(sid), {
+    assert not observed["busy_at_release"], {
         "requested_assignment": handle,
         "settlement": observed,
         "reservation": app.state.turn_runner.handle(sid),
