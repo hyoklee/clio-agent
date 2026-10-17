@@ -7,7 +7,42 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Goal and schedule input admission — CI pending
+### Selected-model acceptance and schedule deletion — CI pending
+
+The retained first-message model tests exposed missing calls to the existing
+host construction, Claude discovery reprobe and selected-model discovery helpers.
+The shared asynchronous message boundary now calls those helpers before preparing
+references. A confirmed per-message choice updates only the session's model;
+idempotent replay returns its original acceptance without replacing a later
+selection. Global provider configuration, authentication and defaults are unchanged.
+
+Schedule deletion now awaits its complete existing guarded operation off the
+application loop, including confirmed mailbox withdrawal. The operation's body is
+AST-identical; it uses the existing off-loop helper, without another owner or
+driver. The HTTP fixture enters the actual service lifespan, and a fresh case
+requires pending input to be withdrawn, its history retained and no delivery
+acknowledgement fabricated.
+
+Retained post-message assertions now correlate opaque server IDs through their
+original client-message IDs. Host fixtures retain their actual test ARC. All old
+test functions and parameter decorators remain, with assertion counts preserved;
+fresh cases cover reserved input and idempotent model-choice replay. Scoped type
+corrections change no production behavior. Five-file Mypy, Ruff/format and the
+removal, size and class guards pass. No local behavioral test or new live family
+ran. Static audit: `ci-model-acceptance-schedule-89107014-audit.json`.
+
+Candidate Python-source SHA256:
+`bafc59c0191e8e1927096d2cfe1f2ec92d1cc3d6b77b2f2fc3d560e99680c738`.
+Exact-head CI and affected actual-model/UI acceptance remain required. clio-core
+2.3.1, dependencies, GACT and the frozen R184 production runtime are unchanged.
+
+### Goal and schedule input admission — affected CI cases passed
+
+Run `39023256797` at `89107014` is completed with a failing conclusion. All four
+Python 3.14 reports contain 12,166 passes, 283 failures, four errors and 55 skips.
+The 39 autonomy, six task-control presentation, eight accepted-transcript repair
+and 15 source-connection cases pass. This is a failing regression baseline, not
+live qualification; other interpreter results remain separately recorded.
 
 Source inspection found an expired-goal admission gap: the conversation owner
 checked goal identity while the older expiry-aware helper had no production

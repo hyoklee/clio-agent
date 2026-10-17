@@ -20,9 +20,10 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
@@ -51,6 +52,9 @@ class FakePrediction:
 class FakeClioAgent:
     """Minimal stand-in for ClioAgent. Records invocations so tests
     can assert on them without a real LM."""
+
+    _routing_mode_override: Any
+    _provider_config: Any
 
     def __init__(
         self,
@@ -284,7 +288,7 @@ def test_turn_id_correlates_user_and_assistant_durably(client: TestClient) -> No
 
 
 def app_history(client: TestClient, sid: str) -> list[Any]:
-    return client.app.state.bus._history.get(sid, [])  # type: ignore[attr-defined]
+    return cast(FastAPI, client.app).state.bus._history.get(sid, [])
 
 
 def test_capabilities_and_provider_catalog_report_image_part_support(client: TestClient) -> None:
@@ -685,6 +689,7 @@ def test_an_untyped_forward_failure_logs_its_traceback(
         sid = c.post("/v1/sessions", json={"title": "x"}).json()["id"]
         complete_turn(c, sid, "hi")
     [record] = [r for r in caplog.records if r.name == "clio_agent.gact.turn" and r.exc_info]
+    assert record.exc_info is not None
     assert "simulated agent failure" in str(record.exc_info[1])
     assert sid in record.getMessage()
 
@@ -1303,12 +1308,13 @@ def test_post_message_tool_user_agent_executes_registered_agent(
 
     def fake_tool_agent(base_agent: Any, agent_def: Any, question: str, session_id: str) -> Any:
         from clio_agent.tools.execution import current_tool_runtime
+        from clio_agent.tools.tool_observation import notify_tool_observer
 
         calls.append((agent_def.id, question, session_id))
         observer = current_tool_runtime().tool_observer
         assert observer is not None
-        observer("fs_read_file", {"path": "README.md"}, "started", None)
-        observer("fs_read_file", {"path": "README.md"}, "completed", None)
+        notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "started")
+        notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "completed")
         return FakePrediction(
             answer="TOOL_USER_AGENT_OK",
             selected_expert=agent_def.id,
@@ -1549,7 +1555,7 @@ def test_post_message_live_discovered_model_override_executes_and_records_route(
 
     from .conftest import complete_turn
 
-    client.app.state.provider_catalog = {
+    cast(FastAPI, client.app).state.provider_catalog = {
         "providers": [
             {
                 "id": "codex",
@@ -1580,7 +1586,12 @@ def test_post_message_live_discovered_model_override_executes_and_records_route(
         },
     )
     messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-    user = next(row for row in messages if row["id"] == "msg_spark_route")
+    user = next(
+        row
+        for row in messages
+        if row["role"] == "user"
+        and row.get("metadata", {}).get("client_message_id") == "msg_spark_route"
+    )
 
     assert fake_agent.calls == [("route this turn", sid)]
     assert user["metadata"]["effective_model"] == {
@@ -1615,7 +1626,7 @@ def test_accepted_per_message_model_becomes_the_session_model(
 
     from .conftest import complete_turn
 
-    client.app.state.provider_catalog = {
+    cast(FastAPI, client.app).state.provider_catalog = {
         "providers": [
             {
                 "id": "codex",
@@ -1652,7 +1663,11 @@ def test_accepted_per_message_model_becomes_the_session_model(
         "codex",
         "gpt-5.3-cg-spark",
     )
-    updates = [e for e in client.app.state.bus._history.get(sid, []) if e.type == "session.updated"]
+    updates = [
+        e
+        for e in cast(FastAPI, client.app).state.bus._history.get(sid, [])
+        if e.type == "session.updated"
+    ]
     assert any(e.payload["model"]["model_id"] == "gpt-5.3-cg-spark" for e in updates)
 
 
@@ -2086,7 +2101,7 @@ def test_post_message_reasoning_effort_with_unknown_levels_passes_through(
 
     from .conftest import complete_turn
 
-    client.app.state.lm_config = {
+    cast(FastAPI, client.app).state.lm_config = {
         "provider_id": "openai",
         "provider": "openai",
         "model": "gpt-undiscovered-9",
@@ -2124,7 +2139,11 @@ def test_post_message_reasoning_effort_is_applied_and_recorded(
     # KNOWN-levels path is what this test exercises.
     seed_litellm_cost_map()
     # A real active provider, so the recorded level is the provider-mapped one.
-    client.app.state.lm_config = {"provider_id": "openai", "provider": "openai", "model": "gpt-5"}
+    cast(FastAPI, client.app).state.lm_config = {
+        "provider_id": "openai",
+        "provider": "openai",
+        "model": "gpt-5",
+    }
     sid = _create_session(client)
     with_effort = complete_turn(
         client,
@@ -2139,7 +2158,9 @@ def test_post_message_reasoning_effort_is_applied_and_recorded(
         client, sid, "default please", json_override={"client_message_id": "msg_plain"}
     )
     messages = {
-        row["id"]: row for row in client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        row["metadata"]["client_message_id"]: row
+        for row in client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        if row["role"] == "user" and row.get("metadata", {}).get("client_message_id")
     }
 
     reasoning = with_effort["metadata"]["agent_runtime"]["reasoning"]

@@ -30,6 +30,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import Response
 
 from clio_agent.gact.cron_tools import cancel_schedule
+from clio_agent.gact.off_loop import join_off_loop
 from clio_agent.gact.routes._body import json_body
 from clio_agent.gact.scheduler import CronError, default_timezone_name
 from clio_agent.gact.types import ErrorEnvelope, ErrorInfo
@@ -158,8 +159,7 @@ def register_schedules_routes(app: FastAPI, deps: "GactDeps") -> None:
             ) from exc
         return sch.to_wire()
 
-    @app.delete("/v1/schedules/{schedule_id}")
-    async def delete_schedule(schedule_id: str) -> Response:
+    def delete_schedule_sync(schedule_id: str) -> Response:
         sch = app.state.schedules.get(schedule_id)
         if sch is None:
             raise HTTPException(
@@ -197,3 +197,7 @@ def register_schedules_routes(app: FastAPI, deps: "GactDeps") -> None:
                 ).model_dump(exclude_none=True),
             )
         return Response(status_code=204)
+
+    @app.delete("/v1/schedules/{schedule_id}")
+    async def delete_schedule(schedule_id: str) -> Response:
+        return await join_off_loop(delete_schedule_sync, schedule_id)

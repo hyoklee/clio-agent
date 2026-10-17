@@ -11,9 +11,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact import session_host_agent
@@ -41,9 +42,9 @@ class _Prediction:
 class _HostAgent:
     """The runtime host the lazy build produces (records its turns)."""
 
-    def __init__(self, provider_config: Any) -> None:
+    def __init__(self, provider_config: Any, arc: Any) -> None:
         self._provider_config = provider_config
-        self.arc = None
+        self.arc = arc
         self.calls: list[str] = []
 
     def forward(self, question: str, session_id: str) -> Any:
@@ -58,12 +59,12 @@ def built(monkeypatch: pytest.MonkeyPatch) -> list[_HostAgent]:
     hosts: list[_HostAgent] = []
 
     def _construct(*, verbose: bool, arc: Any, provider_config: Any) -> _HostAgent:
-        host = _HostAgent(provider_config)
+        host = _HostAgent(provider_config, arc)
         hosts.append(host)
         return host
 
-    async def _arc(app: Any) -> None:
-        return None
+    async def _arc(app: Any) -> Any:
+        return app.state.arc
 
     monkeypatch.setattr("clio_agent.agent.ClioAgent", _construct)
     monkeypatch.setattr(session_host_agent, "process_arc_off_loop", _arc)
@@ -112,9 +113,11 @@ def test_first_message_with_a_model_ref_builds_the_host_and_runs(
     cfg = built[0]._provider_config
     assert (cfg.provider_id, cfg.model) == ("codex", "gpt-5.5")
     assert built[0].calls == ["hi"]
-    assert client.app.state.agent is built[0]
+    assert cast(FastAPI, client.app).state.agent is built[0]
     assert assistant.get("error_info") is None
     assert "hello from the session's model" in str(assistant["parts"])
+    chosen = client.get(f"/v1/sessions/{sid}").json()["model"]
+    assert (chosen["provider_id"], chosen["model_id"]) == ("codex", "gpt-5.5")
 
 
 def test_a_session_default_model_is_enough(client: TestClient, built: list[_HostAgent]) -> None:
@@ -149,14 +152,53 @@ def test_no_model_anywhere_still_reports_no_agent(
     assert built == []
 
 
+def test_reserved_input_does_not_construct_a_session_host(
+    client: TestClient, built: list[_HostAgent]
+) -> None:
+    sid = _session(client)
+    history = cast(FastAPI, client.app).state.task_history
+    previous = history.latest_assignment(sid)
+    response = client.post(
+        f"/v1/sessions/{sid}/messages",
+        json={"text": "hi", "model": _CODEX, "metadata": {"scheduled": True}},
+    )
+    assert response.status_code == 400, response.text
+    assert built == []
+    assert history.latest_assignment(sid) == previous
+    assert client.get(f"/v1/sessions/{sid}/messages").json()["messages"] == []
+
+
+def test_replaying_an_accepted_choice_preserves_a_later_session_selection(
+    client: TestClient, built: list[_HostAgent]
+) -> None:
+    from .conftest import complete_turn
+
+    sid = _session(client)
+    choice: dict[str, Any] = {"model": _CODEX, "client_message_id": "first-choice"}
+    complete_turn(client, sid, "hi", json_override=choice)
+    app = cast(FastAPI, client.app)
+    original = app.state.task_history.latest_assignment(sid)
+    assert original is not None
+    # Arrange a later independent human model selection in the actual session store.
+    app.state.sessions.update(sid, model={"provider_id": "codex", "model_id": "gpt-6-luna"})
+    replay = client.post(f"/v1/sessions/{sid}/messages", json={"text": "hi", **choice})
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["idempotent_replay"] is True
+    assert replay.json()["task_handle"] == original.handle
+    assert replay.json()["effective_model"]["model_id"] == "gpt-5.5"
+    assert client.get(f"/v1/sessions/{sid}").json()["model"]["model_id"] == "gpt-6-luna"
+    assert app.state.task_history.latest_assignment(sid).handle == original.handle
+    assert len(built) == 1 and built[0].calls == ["hi"]
+
+
 def test_a_failed_host_build_is_a_typed_refusal(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     def _boom(*, verbose: bool, arc: Any, provider_config: Any) -> Any:
         raise RuntimeError("provider exploded")
 
-    async def _arc(app: Any) -> None:
-        return None
+    async def _arc(app: Any) -> Any:
+        return app.state.arc
 
     monkeypatch.setattr("clio_agent.agent.ClioAgent", _boom)
     monkeypatch.setattr(session_host_agent, "process_arc_off_loop", _arc)

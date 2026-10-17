@@ -17,6 +17,7 @@ from clio_agent.gact.a2ui_capabilities import (
     A2UICapabilitiesError,
     apply_client_metadata_guards,
 )
+from clio_agent.gact.claude_code_auth_reprobe import reprobe_for_message
 from clio_agent.gact.context_reference_delivery import (
     context_reference_deliveries,
     enrich_with_context_references,
@@ -58,6 +59,9 @@ from clio_agent.gact.runtime.globals import (
     _ContextFileAccessError,
     _new_message_id,
 )
+from clio_agent.gact.selected_model_refresh import refresh_for_selected_model
+from clio_agent.gact.session_host_agent import ensure_host_agent
+from clio_agent.gact.session_model_ref import remember_session_model
 from clio_agent.gact.session_store import project_accepted_mail_messages
 from clio_agent.gact.thinking_level_guard import raise_if_selection_unusable
 from clio_agent.gact.types import (
@@ -636,6 +640,10 @@ def accept_message(
             turn_agent_id=req.extract_agent_id(),
             user_msg_id=identity,
         )
+        if req.model is not None and not _model_ref_is_empty(req.model):
+            current = app.state.sessions.get(sid)
+            if current is not None:
+                remember_session_model(app, sid, current.model, selected)
         _commit_resource_deliveries(app, sid, deliveries)
         return PostMessageResponse(
             message_id=message.id,
@@ -657,9 +665,12 @@ async def accept_message_async(
     internal_model_text: str | None = None,
     server_metadata: dict[str, Any] | None = None,
 ) -> tuple[PostMessageResponse, int]:
-    """Keep validation, references and confirmed Core I/O off the application loop."""
+    """Prepare the selected runtime, then validate and confirm input off the application loop."""
     from clio_agent.gact.off_loop import join_off_loop
 
+    await ensure_host_agent(app, sid, req)
+    await reprobe_for_message(app, sid, req)
+    await refresh_for_selected_model(app, sid, req)
     prepared = await prepare_references(app, sid, req)
     return await join_off_loop(
         accept_message,

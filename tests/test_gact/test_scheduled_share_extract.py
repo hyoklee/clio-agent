@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
@@ -37,8 +40,9 @@ def test_cron_matches_comma_list() -> None:
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> TestClient:
-    return TestClient(build_app(sessions_path=tmp_path / "s.json"))
+def client(tmp_path: Path) -> Iterator[TestClient]:
+    with TestClient(build_app(sessions_path=tmp_path / "s.json")) as active:
+        yield active
 
 
 def test_schedules_crud(client: TestClient) -> None:
@@ -60,6 +64,45 @@ def test_schedule_create_requires_fields(client: TestClient) -> None:
     sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
     resp = client.post(f"/v1/sessions/{sid}/schedules", json={"cron": "* * * * *"})
     assert resp.status_code == 422
+
+
+def test_schedule_delete_withdraws_pending_input_without_acknowledging_it(
+    client: TestClient,
+) -> None:
+    from clio_agent.arc.task_types import MailItem
+    from clio_agent.gact.session_input import accept_session_input
+
+    app = cast(FastAPI, client.app)
+    sid = client.post("/v1/sessions", json={"title": "held schedule"}).json()["id"]
+    created = client.post(
+        f"/v1/sessions/{sid}/schedules",
+        json={"cron": "0 9 * * *", "question": "Inspect the pending work"},
+    )
+    assert created.status_code == 200, created.text
+    schedule = created.json()
+
+    def stage() -> MailItem:
+        app.state.sessions.update(sid, metadata_patch={"execution_gate": "held-for-assertions"})
+        identity = accept_session_input(
+            app,
+            sid,
+            schedule["question"],
+            metadata={"scheduled": True, "schedule_id": schedule["id"], "schedule_one_shot": False},
+            steer_message_id=f"schedule:{schedule['id']}:0",
+        )
+        item = app.state.task_history.mail_item(sid, identity)
+        assert item is not None
+        return item
+
+    assert client.portal is not None
+    item = client.portal.call(app.state.task_history.io.run, stage)
+    removed = client.delete(f"/v1/schedules/{schedule['id']}")
+    assert removed.status_code == 204, removed.text
+    assert app.state.schedules.get(schedule["id"]) is None
+    assert app.state.task_history.mail_withdrawn(sid, item.id)
+    assert app.state.task_history.mail_item(sid, item.id) == item
+    assert app.state.task_history.pending_mail(sid) == ()
+    assert not app.state.task_history.acknowledged_notifications(sid)
 
 
 def test_schedules_unknown_session_404s(client: TestClient) -> None:
@@ -92,7 +135,7 @@ def test_share_expiry(client: TestClient) -> None:
     # Force expiry by overwriting the row's expires_at.
     import time
 
-    state = client.app.state
+    state = cast(FastAPI, client.app).state
     state.shared_tokens[share["token"]]["expires_at"] = time.time() - 10
     resp = client.get(f"/v1/shared/{share['token']}")
     assert resp.status_code == 410
@@ -112,7 +155,7 @@ def test_extract_agent_from_sessions(client: TestClient) -> None:
     # need to drive a fake agent through POST /messages here.
     from clio_agent.gact.types import Message, Part
 
-    state = client.app.state
+    state = cast(FastAPI, client.app).state
     for sid, tools in [
         (sid1, ["hdf5_list_datasets", "hdf5_analyze_file"]),
         (sid2, ["hdf5_list_datasets", "parquet_analyze_schema"]),
