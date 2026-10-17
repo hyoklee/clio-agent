@@ -9,6 +9,21 @@ bug corrections and qualification remain in progress. clio-core is unchanged.
 
 ### R183/R184 UI review and unresolved isolated shutdown
 
+New CI on `7e3d026e` reaches the unchanged wait-declaration assertions and exposes
+a production schema defect: `ClioNativeTool` wraps an already-nullable argument in
+another nullable union. The clio-agent adapter now preserves schemas that already
+validate null. Three added regression cases cover `anyOf`, `oneOf` and type-list
+forms while retaining bounds, descriptions, defaults and caller-owned input.
+All existing assertions remain unchanged. Scoped Ruff/format, adapter Mypy and
+the removal/class/size guards pass; CI and fresh model qualification are pending.
+Production hash is now
+`174e03587d170482e6567b62fd2ec4e8c2693004525b064131cefff783f65518`.
+Dependencies, GACT and clio-core 2.3.1 are unchanged. The live R184 checkout remains
+frozen at its earlier source; its files have not been overwritten. The prepared
+R185 source guard must be explicitly rebound to the corrected candidate before
+that run, after R184 retirement. Earlier model evidence is historical, not
+acceptance of this changed tool declaration candidate.
+
 Subsequent read-only Python 3.14 async inspection identifies R184's awaited
 dependency: `uvicorn.Server._wait_tasks_to_complete` is inside
 `asyncio.Server.wait_closed`, before the application lifespan teardown starts.

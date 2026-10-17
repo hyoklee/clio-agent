@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import copy
+from typing import Any
+
 import pytest
 from jsonschema import Draft202012Validator
 
@@ -81,3 +84,45 @@ def test_none_default_is_valid_on_wire_and_in_native_execution() -> None:
     assert declared == {
         "expected_view_revision": {"type": "integer", "description": description, "default": None}
     }
+
+
+@pytest.mark.parametrize(
+    "nullable",
+    [
+        {"anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]},
+        {"oneOf": [{"type": "number", "minimum": 0}, {"type": "null"}]},
+        {"type": ["number", "null"], "minimum": 0},
+    ],
+)
+def test_explicit_null_schema_retains_its_shape_and_constraints(nullable: dict[str, Any]) -> None:
+    """Native binding preserves existing null alternatives and numeric bounds."""
+
+    def select_limit(limit: float | None = None) -> float | None:
+        return limit
+
+    declared = {
+        "limit": {**nullable, "description": "Nonnegative limit, or no limit.", "default": None}
+    }
+    original = copy.deepcopy(declared)
+    tool = native_tool(
+        select_limit,
+        name="select_limit",
+        desc="Read the selected limit.",
+        args=declared,
+        presentation="text",
+        domain="resources",
+        read_only=True,
+    )
+    for candidate in (tool, instrument_tools([tool])[0]):
+        parameters = candidate.format_as_litellm_function_call()["function"]["parameters"]
+        assert parameters["required"] == []
+        schema = parameters["properties"]["limit"]
+        assert schema == original["limit"]
+        validator = Draft202012Validator(schema)
+        assert validator.is_valid(None)
+        assert validator.is_valid(0)
+        assert not validator.is_valid(-1)
+        assert not validator.is_valid("0")
+    assert tool(limit=None) is None
+    assert tool(limit=0) == 0
+    assert declared == original

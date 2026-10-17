@@ -6,7 +6,12 @@ Regression execution, repairs and actual-model qualification are underway; see
 [test construction map](task-replacement-test-construction.md). Scoped passes
 below do not pass a broader row or the final frozen-candidate race matrix.
 
-Revision: R2. Starting source: core `5475042feda49c1354f9f88b19051cb53d7fa740`; GACT `32044a387472b1495f60a24c862c6b9e4292abc3`. All evidence from earlier engines is a source/test lesson only, not replacement acceptance.
+Revision: R2. Starting source: clio-agent `5475042feda49c1354f9f88b19051cb53d7fa740`; GACT `32044a387472b1495f60a24c862c6b9e4292abc3`. All evidence from earlier engines is a source/test lesson only, not replacement acceptance.
+
+Current CI exposed duplicate null alternatives in clio-agent's native tool
+declarations. The adapter correction and three added public-schema cases require
+fresh CI/model acceptance; previous live captures do not qualify that correction.
+clio-core remains `iowarp-core==2.3.1`; this changes no execution owner or dependency.
 
 Initial production source review: **Astra GO and Claude Code Fable GO** for clio-agent
 `ff9dc136630a5f329afa27a8ea0263dbe2fbb343`, GACT
@@ -41,7 +46,7 @@ at 21:45:08.409 UTC and does not change the deadline result. Current regression
 migration and qualification status is in
 [task-replacement-current-status.md](task-replacement-current-status.md).
 
-Status values: **blocked**, **failed**, **passed**. Initial production wiring is present; rows remain blocked until fresh replacement evidence is recorded. Removing an old test never removes its required behavior below. Source paths are relative to core unless marked GACT. Test doubles belong only in tests; live rows require actual production implementations and models.
+Status values: **blocked**, **failed**, **passed**. Initial production wiring is present; rows remain blocked until fresh replacement evidence is recorded. Removing an old test never removes its required behavior below. Source paths are relative to clio-agent unless marked GACT. Test doubles belong only in tests; live rows require actual production implementations and models.
 
 Each evidence entry must record candidate identity, invocation/handle, timestamps, raw outcome and bounded receipt path. Required unavailable/skipped cases remain blocked. Harness deadlines are diagnostics:120s native/Core,600s models,900s capacity/recovery. Expiry requires owned cancellation and physical settlement before another family. These are not product deadlines.
 
