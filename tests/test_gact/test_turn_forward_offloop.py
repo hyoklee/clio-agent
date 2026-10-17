@@ -145,7 +145,7 @@ async def test_the_module_runs_native_input_resolve_off_the_loop(
     monkeypatch.setattr(turn_forward, "native_input_kwargs", _spy)
 
     agent = _NativeInputAgent()
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
+    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "s.json", agent=agent)
     state = SimpleNamespace(
         app=app,
         sid="sid",

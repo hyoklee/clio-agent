@@ -8,6 +8,7 @@ the prediction lands as one batch part stamped ``sync_execution_path``.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import threading
 import time
@@ -356,7 +357,7 @@ async def test_imageless_turn_runs_an_agent_without_an_images_parameter(tmp_path
     """
 
     agent = _DevelopEraAgent("develop era answer")
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
+    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "s.json", agent=agent)
 
     result = await _run_module(_turn_state(app, "no attachments here"), agent, _never_cancelled)
 
@@ -382,7 +383,7 @@ async def test_images_on_an_agent_without_an_images_parameter_are_typed_not_sile
     """A real attachment that cannot be delivered is a typed reason, not a drop."""
 
     agent = _DevelopEraAgent("answered without seeing the image")
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
+    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "s.json", agent=agent)
     state = _turn_state(app, "describe the attachment", images=[object()], files=[object()])
 
     result = await _run_module(state, agent, _never_cancelled)
@@ -432,7 +433,7 @@ async def test_native_inputs_reach_an_agent_that_declares_them(tmp_path: Path) -
     """The gate must not become a blanket refusal: a capable forward still gets them."""
 
     agent = _NativeInputAgent()
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
+    app = await asyncio.to_thread(build_app, sessions_path=tmp_path / "s.json", agent=agent)
     first, second, only_file = object(), object(), object()
 
     await _run_module(
@@ -463,7 +464,9 @@ async def test_a_module_that_raises_is_run_once_and_the_error_propagates(tmp_pat
             calls["n"] += 1
             raise TypeError("internal boom")
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=_Agent("unused"))
+    app = await asyncio.to_thread(
+        build_app, sessions_path=tmp_path / "s.json", agent=_Agent("unused")
+    )
 
     with pytest.raises(TypeError, match="internal boom"):
         await _run_module(_turn_state(app, "hi"), _Raising(), _never_cancelled)

@@ -49,6 +49,7 @@ async def test_startup_attention_recovers_after_parent_write_before_self_input(
             await asyncio.to_thread(owner.note_startup_interruption, sid)
         assert history.requires_recovery
         recovered = await asyncio.to_thread(TaskHistory, arc)
+        await asyncio.to_thread(recovered.restore)
         owner.history = app.state.task_history = recovered
         owner.mail.history = owner.recovery.history = recovered
         assert not [

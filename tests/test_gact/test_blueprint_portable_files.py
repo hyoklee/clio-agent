@@ -39,7 +39,7 @@ async def test_capability_projection_does_not_run_discovery_on_the_request_loop(
 ) -> None:
     import clio_agent.gact.routes.system as system
 
-    app = build_app(agent=None, sessions_path=tmp_path / "sessions.json")
+    app = await asyncio.to_thread(build_app, agent=None, sessions_path=tmp_path / "sessions.json")
 
     def project(*args: Any, **kwargs: Any) -> dict[str, Any]:
         with pytest.raises(RuntimeError, match="no running event loop"):

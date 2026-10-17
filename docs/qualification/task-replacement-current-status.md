@@ -7,6 +7,57 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### R176 busy-goal next-iteration delivery passed
+
+R176 passed on clio-agent `e894dddf` / GACT `0f9c00a4`, with unchanged production
+hash `abe140a51dc1cad7205c3f8553549eca2c81da441441bfd4026e024137bc9728`.
+Actual Codex/Luna accepted two background Shell handles and a Question, freshly
+read the sentinel, declared the two native dependencies and yielded assignment
+`task_e0935bc397634d83a41fb28176e28024`. The first background command completed;
+its result stayed pending while the second command kept running.
+
+Human feedback then requested one real foreground Shell gate. Its process entered
+and the parent's single session worker remained busy inside that tool call.
+Another human message and the Question answer were accepted while it ran. Both
+remained Core-pending; the confirmed input list and worker count did not change.
+After the actual foreground tool returned, both notification IDs appeared together
+in the **next model input**, iteration
+`msg_user_928d0b6c7116:c4777517a000470e:1`, within the same running turn
+`msg_user_928d0b6c7116`. The model reported the new answer, freshly read steering
+value and real gate nonce, then yielded again. The first background result was
+still pending; the second background command was still active.
+
+Releasing that second command delivered the original dependency outcomes and
+completed the original assignment. All twelve confirmed inputs retain one
+assignment. Each background/Question final outcome appears once; no pending input,
+new assignment, child or worker remains. Both actual 496-byte payloads match their
+reported SHA-256 and final answer. The actual goal judge marked completion.
+Together with R175's separate idle-goal audit, this supplies current Codex busy
+and idle M04 evidence; fresh Claude differences, UI and final-candidate races
+remain unqualified.
+
+The service exited zero. All three producer PID/creation identities, private Core
+and listeners were absent before removing the 555,621,248-byte profile and
+1,073,741,824-byte temp root. Both exact roots are absent. Auth and production
+hashes match. Bounded evidence is `r176-live-busy-goal-inputs.json`, the three
+result receipts and `r176-cleanup-audit.json` / `r176-cleanup.json` in the execution
+checkout's `.pytest-runtime/static`. No clio-core source/dependency changed.
+
+Between families, 24 setup sites in six existing test modules were migrated to
+finite off-loop app construction. Prior exact-head CI exposed 24 cases failing
+at `task.restore` before their behavior assertions ran. The app still constructs
+through the same production function and the Core loop guard remains strict.
+An independent AST comparison verifies all non-setup code, assertions, markers
+and budgets are unchanged. Ruff/format/diff checks pass; no local pytest/vitest
+ran. CI `38985031067` on `e894dddf` subsequently supplied all Python 3.14
+artifacts: 11,842 passed, 556 failed, four errors and 53 skips. Thirty-four of
+the prior 35 mailbox-read failures now pass. The remaining startup-recovery
+fixture constructed a fresh passive `TaskHistory` but never restored its Core
+records before requesting the owning assignment. It now explicitly performs
+the same data-only restore as production startup; all partial-write, idempotence
+and acknowledgement assertions remain. This additional fixture correction and
+the async app-setup changes await CI. The full regression baseline is unproven.
+
 ### R172–R175 goal dependencies, feedback and Question answers
 
 R175 used clio-agent `d289ea01` / GACT `0f9c00a4`, with production still identical

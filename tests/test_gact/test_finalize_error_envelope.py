@@ -11,6 +11,7 @@ and a terminal session status.
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -226,7 +227,9 @@ async def test_prologue_never_ran_settles_typed_instead_of_crashing_finalize(
         lambda stage, **fields: audits.append((stage, fields)),
     )
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = await asyncio.to_thread(
+        build_app, sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok")
+    )
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
     app.state.sessions.update(sid, status="running")
     state = _new_prologue_shaped_state(app, sid, "msg_user_1")
@@ -280,7 +283,9 @@ async def test_prologue_exception_settles_with_real_cause_not_never_ran(
     from clio_agent.gact.turn_start_offloop import prepare_turn_off_loop
     from clio_agent.gact.turn_state import DeferredTranscriptJob
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = await asyncio.to_thread(
+        build_app, sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok")
+    )
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
     app.state.sessions.update(sid, status="running")
     state = _new_prologue_shaped_state(app, sid, "msg_user_boom")
@@ -330,7 +335,9 @@ async def test_orphaned_transcript_job_settles_as_never_ran(tmp_path: Path) -> N
     )
     from clio_agent.gact.turn_state import PROLOGUE_NOT_STARTED, DeferredTranscriptJob
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = await asyncio.to_thread(
+        build_app, sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok")
+    )
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
     app.state.sessions.update(sid, status="running")
     state = _new_prologue_shaped_state(app, sid, "msg_user_orphan")
@@ -386,7 +393,9 @@ async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
     )
     install_global_dispatcher(dispatcher)
     try:
-        app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+        app = await asyncio.to_thread(
+            build_app, sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok")
+        )
         sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
         app.state.sessions.update(sid, status="running")
         state = _new_prologue_shaped_state(app, sid, "msg_user_cancel")
