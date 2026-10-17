@@ -7,6 +7,28 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Cancellation regressions — distinguish owner effect and intent recording
+
+Two retained cases failed on an absent `cancellation_requested_at` while their
+workers were still held and nonterminal. The existing conversation control
+returns `recording="unconfirmed"` and closes admission/dispatches cancellation
+without awaiting its deferred Core write. Neither failure demonstrated early
+terminal publication.
+
+When the acknowledgement explicitly reports unconfirmed recording, the cases
+now await the existing recovery recording drain before checking the durable
+stamp. Workers remain held throughout; every original cancellation-dispatch,
+nonterminal, descendant-admission, uncertain-settlement and actual-retirement
+assertion remains. The wait uses a five-second test diagnostic, without changing
+product execution or test/hook budgets. A confirmed acknowledgement still must
+satisfy the original assertions immediately.
+
+Only these two test bodies change. Production control/outage behavior and its
+owners are unchanged. Ruff/format, scoped Mypy with `--check-untyped-defs` and
+whole-module assertion/parameter/source audits pass. No local behavioral test
+or live family ran. Fresh CI is required. Receipt:
+`ci-cancel-recording-f7a4d00e-audit.json`.
+
 ### Resource fault fixture — private runtime isolation retained
 
 Full CI XML names the materialization-failure test as stopping its worker's

@@ -186,6 +186,10 @@ async def test_cancelling_startup_settles_its_worker_before_terminal_publication
         acknowledgement = await owner.cancel(caller, accepted["handle"])
         assert acknowledgement["cancellation_requested"] is True
         assert await asyncio.to_thread(cancelling.wait, 5)
+        # The cancellation effect reaches the held hook before its deferred
+        # Core stamp; this wait confirms recording, not physical settlement.
+        if acknowledgement.get("recording") == "unconfirmed":
+            await asyncio.wait_for(owner.recovery.drain(), 5)
         current = await asyncio.to_thread(owner.history.task_snapshot, accepted["handle"])
         assert (
             current is not None

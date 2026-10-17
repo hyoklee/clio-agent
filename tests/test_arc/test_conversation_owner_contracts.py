@@ -862,11 +862,15 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         lambda _revision: loop.call_soon_threadsafe(uncertain.set), handles=(root.handle,)
     )
     try:
-        await owner.cancel(
+        acknowledgement = await owner.cancel(
             TaskCaller(root.owner.session_id, "human", human_action=True), root.handle
         )
         await asyncio.gather(retiring.wait(), cancellation_dispatched.wait())
         assert dispatched == [active.handle]
+        # The owner effect does not await Core; confirm its deferred recording
+        # while physical retirement remains held before inspecting the stamp.
+        if acknowledgement.get("recording") == "unconfirmed":
+            await asyncio.wait_for(owner.recovery.drain(), 5)
         stopping = await asyncio.to_thread(history.task_snapshot, root.handle)
         assert stopping is not None and stopping.terminal_at is None
         assert stopping.cancellation_requested_at is not None
