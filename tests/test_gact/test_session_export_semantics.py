@@ -19,6 +19,7 @@ from starlette.types import Message as ASGIMessage
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.errors import ClioError
+from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.minting import mint_artifact
 from clio_agent.gact.artifacts.records import ArtifactKind, Custody, IdentityEvidence, Mechanism
 from clio_agent.gact.artifacts.registry import ArtifactRegistry
@@ -26,7 +27,6 @@ from clio_agent.gact.auth import BearerAuthMiddleware
 from clio_agent.gact.messages import MessageStore
 from clio_agent.gact.routes.session_export import (
     _ExportFileResponse,
-    register_session_export_routes,
 )
 from clio_agent.gact.semantic_events import SemanticEvent
 from clio_agent.gact.semantic_trace_file import FileSemanticTraceBackend
@@ -43,8 +43,9 @@ from tests.test_gact.task_records import record_question_fixture
 
 @pytest.fixture
 def export_app(tmp_path: Path, arc: ARCMemory) -> tuple[FastAPI, str, str]:
-    app = FastAPI()
-    app.state.arc = arc
+    # Export includes Questions, permissions and transcript-backed surfaces.
+    # Start from the real application's projections instead of a partial State.
+    app = build_app(sessions_path=tmp_path / "state" / "sessions.json", arc=arc)
     app.state.task_history = TaskHistory(arc)
     app.state.human_principal = "human"
     app.state.sessions = SessionStore(path=tmp_path / "state" / "sessions.json")
@@ -57,7 +58,6 @@ def export_app(tmp_path: Path, arc: ARCMemory) -> tuple[FastAPI, str, str]:
     app.state.context_files = {}
     app.state.semantic_trace_backend = FileSemanticTraceBackend(tmp_path / "state" / "traces")
     app.state.artifact_registry = ArtifactRegistry()
-    register_session_export_routes(app)
     return app, session.id, workspace.id
 
 

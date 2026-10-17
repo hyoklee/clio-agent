@@ -37,6 +37,25 @@ No local pytest/vitest ran. Candidate production hash:
 `43593e67ded67853b1b89c387a5b852f3a497c25b5c38a1a6ca32347afc82978`.
 GACT, dependencies, clio-core 2.3.1 and the still-live R184 source are unchanged.
 
+### Export, MCP permission and variant assembly fixtures — CI pending
+
+The next fixture-only migration addresses three exact `5d21491c` setup clusters:
+18 export cases lacking interaction projections, 15 MCP cases patching the
+removed receipt-module client name, and two child-strategy cases assembling
+against a partial application. Export now starts from the real application
+builder; client-construction doubles target the actual SDK seam; strategy
+assembly uses recorded real child sessions and the installed built-in boundary.
+Protocol-alias examples still validate the original camel-case wire fields
+through the SDK model, rather than changing their expected normalization.
+
+All original test assertions and markers across the five modules are
+AST-identical. Two strategy tests add only the real application fixture argument.
+Scoped Ruff/format and Mypy pass; behavior remains pending CI execution. No
+production source, dependency or runtime identity changes in this batch.
+The bounded audit receipt is `ci-fixture-migration-f989-source-audit.json` under
+the D qualification checkout's `.pytest-runtime/static`; it also verifies that
+the still-running R184 production files retain their original frozen hash.
+
 ### Short MCP result conversion — scoped CI passed; model acceptance pending
 
 The declared-presentation loss is repaired in the common clio-agent adapter,
