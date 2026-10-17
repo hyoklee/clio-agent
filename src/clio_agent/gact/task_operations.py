@@ -471,7 +471,12 @@ class TaskOperations:
                     return result
                 remaining = None if deadline is None else max(0.0, deadline - loop.time())
                 if remaining == 0:
-                    return {**result, "timed_out": True}
+                    return {
+                        **result,
+                        "search_start_cursor": search_start,
+                        "scanned_pages": scanned_pages,
+                        "timed_out": True,
+                    }
                 previous = _decode(result["cursor"])
                 if result["has_more"]:
                     scanned_pages += 1

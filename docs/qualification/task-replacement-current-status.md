@@ -7,7 +7,30 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Observation expiry recovery metadata — CI pending
+
+The `89107014` CI comparison exposed an initial-read expiry path in `observe`
+that returned available rows without the search-recovery metadata. It now returns
+the existing `search_start_cursor` and `scanned_pages` fields, matching the other
+timeout path. No poll, deadline, task owner or completion acknowledgement is added.
+
+The retained positive-timeout case now also runs with zero timeout. The initial
+Core read may exhaust the wait while returning available observations; a later
+timeout snapshot may contain no new rows. Both cases require honest timeout,
+no false pattern match, the original output recoverable from the start cursor,
+continued task activity and no delivery acknowledgement. The original 0.03-second
+case remains; fixture resources drain even after assertion failure.
+
+Scoped Ruff/format, two-file Mypy and the size guard pass. Source AST comparison
+changes only `TaskOperations.observe`; all other methods remain identical. Receipt:
+`ci-observation-expiry-48c8-audit.json`. No local behavioral test or live launch ran.
+Candidate Python-source SHA256:
+`45af517bdbbdeb0d90d40fde8ba7f31cedaee9938012fb0e8b71926a24d88121`.
+Exact-head CI and affected live observation acceptance remain required.
+
 ### Selected-model acceptance and schedule deletion — CI pending
+
+These repairs are pushed at `48c8f4d6`; run `39025058382` is in progress.
 
 The retained first-message model tests exposed missing calls to the existing
 host construction, Claude discovery reprobe and selected-model discovery helpers.

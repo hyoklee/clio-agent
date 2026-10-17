@@ -171,24 +171,38 @@ async def test_truncated_match_continuation_keeps_budget_and_does_not_repeat_the
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("timeout_s", [0.0, 0.03])
 async def test_expired_pattern_wait_retains_its_search_recovery_metadata(
     arc: ARCMemory,
     tmp_path: Path,
+    timeout_s: float,
 ) -> None:
     _app, owner, root = await create_environment(arc, tmp_path)
-    task = await asyncio.to_thread(running_shell, owner.history, root, "shell")
-    task = await asyncio.to_thread(append_output, owner.history, task, "no match")
-    result = await TaskOperations(owner.history, forbidden_cancel).observe(
-        TaskCaller(root.owner.session_id, "human"),
-        task.handle,
-        pattern="READY",
-        timeout_s=0.03,
-    )
-    assert result["timed_out"] is True and result["tasks"] == []
-    assert "search_start_cursor" in result and result["scanned_pages"] == 0
-    pending = await asyncio.to_thread(owner.history.task_snapshot, task.handle)
-    assert pending is not None and pending.terminal_at is None
-    await owner.recovery.drain()
+    try:
+        task = await asyncio.to_thread(running_shell, owner.history, root, "shell")
+        task = await asyncio.to_thread(append_output, owner.history, task, "no match")
+        operations = TaskOperations(owner.history, forbidden_cancel)
+        caller = TaskCaller(root.owner.session_id, "human")
+        result = await operations.observe(caller, task.handle, pattern="READY", timeout_s=timeout_s)
+        assert result["timed_out"] is True
+        # If the initial Core read exhausts the wait, its available observations
+        # are returned. Otherwise the timeout snapshot may have no new rows.
+        assert all(row["handle"] == task.handle for row in result["tasks"])
+        assert not any(
+            "pattern_match" in chunk for row in result["tasks"] for chunk in row.get("output", [])
+        )
+        if timeout_s == 0:
+            assert result["tasks"][0]["output"][0]["output"] == "no match"
+        assert result["search_start_cursor"] is None and result["scanned_pages"] == 0
+        recovered = await operations.observe(
+            caller, task.handle, cursor=result["search_start_cursor"]
+        )
+        assert recovered["tasks"][0]["output"][0]["output"] == "no match"
+        pending = await asyncio.to_thread(owner.history.task_snapshot, task.handle)
+        assert pending is not None and pending.terminal_at is None
+        assert not owner.history.acknowledged_notifications(root.owner.session_id)
+    finally:
+        await owner.recovery.drain()
 
 
 @pytest.mark.asyncio
