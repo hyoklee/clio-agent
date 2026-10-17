@@ -7,6 +7,36 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### Retained recall regressions — CI pending
+
+The `1b7e0281` report contains 14 failures in the retained memory/stats module.
+Recall cases used a stats-only FakeARC with no canonical history and an unentered
+client; turn/rewind cases likewise supplied that incomplete execution dependency.
+Those scenarios now use the actual application lifespan and existing Core fixture.
+Transcript setup uses the canonical replacement writer. Only cache counters remain
+fixed test data, preserving the isolated stats assertions.
+
+Peer recall now receives trusted human/configuration read grants through the
+existing writer. Model-supplied intent is no authority. The granted-search case
+also revokes the relationship and requires the matching peer result and discovery
+entry to disappear, even when the request repeats its claimed intent. Ungranted
+search requires filtered discovery with no leaked content; explicit unauthorized
+summary reads still require 403 without disclosing another workspace's existence.
+
+All 24 cases remain. The source audit retains 19 complete assertion sets after
+equivalent application-type narrowing; five obsolete policy expectations are
+explicitly replaced by the reviewed relationship authorization contract. Markers
+and diagnostic budgets are unchanged. Scoped Ruff/format and Mypy pass. Receipt:
+`ci-memory-grants-e828-source-audit.json` in D static evidence. No local behavioral
+test or live model ran, and no production source changed in this packet.
+
+R185's preparer now validates the backend/build prerequisites and compiles all
+templates before writing any family scaffolding. It no longer describes backend
+changes as test-only build reuse. The preparer was only edited/syntax-checked;
+no preparation, launch, cleanup or candidate rebind ran. R158's recorded slow
+restart remains unresolved; no speculative runtime change was made from its
+timing alone. R184 remains in its previously reported unresolved shutdown.
+
 ### Closed plan gates and regression setup — CI pending
 
 The `1b7e0281` Python 3.14 artifacts contain 12,017 passes, 402 failures,
