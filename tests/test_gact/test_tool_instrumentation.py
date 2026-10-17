@@ -62,13 +62,15 @@ def _bare_tool(func, name: str):
     return dspy.Tool(func=func, name=name, desc=func.__doc__ or name)
 
 
-def _observing_app(tmp_path: Path) -> tuple[Any, TestClient, str]:
+def _observing_app(tmp_path: Path, *, approval_mode: str = "ask") -> tuple[Any, TestClient, str]:
     """A built app with its per-app tool-runtime hooks installed + one session."""
 
     app = build_app(sessions_path=tmp_path / "s.json")
     client = TestClient(app)
     client.__enter__()
-    sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
+    sid = client.post("/v1/sessions", json={"title": "t", "approval_mode": approval_mode}).json()[
+        "id"
+    ]
     record_assignment_fixture(app, sid)
     _install_tool_runtime_hooks(app)
     return app, client, sid
@@ -551,7 +553,9 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
     from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
     from clio_agent.gact.agents.auto_tools import build_auto_react_tools
 
-    app, client, sid = _observing_app(tmp_path)
+    # This wire-evidence test executes non-read tools without a human responder.
+    # Authorize them through the real session policy, not a mocked permission gate.
+    app, client, sid = _observing_app(tmp_path, approval_mode="bypass")
     try:
         agent_def = SimpleNamespace(id="tester")
         auto_tools = {
@@ -650,9 +654,9 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             "pause_agent": {"handle": "missing-task"},
             "resume_agent": {"handle": "missing-task"},
             "restart_agent": {"handle": "missing-task"},
-            # Invalid source locations and missing source records refuse before
-            # permission prompts, account access or network operations. They
-            # must still record the exact executed inputs and failure result.
+            # The session explicitly permits calls through the real gate. Invalid
+            # source locations and missing records then refuse before account
+            # access or network operations, retaining inputs and failure results.
             "connected_data_connect": {
                 "provider": "github",
                 "root": "not-a-repository",

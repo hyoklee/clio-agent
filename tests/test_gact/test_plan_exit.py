@@ -16,7 +16,12 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from clio_agent.arc.task_types import AssignmentDetails, TaskSnapshot
+from clio_agent.arc.task_types import (
+    AssignmentDetails,
+    QuestionDefinition,
+    QuestionOption,
+    TaskSnapshot,
+)
 from clio_agent.gact import context as _ctx
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
@@ -249,7 +254,13 @@ def test_approval_decision_commits_posture_and_exact_resume_input(
             assert "<approved-plan>\n# Plan\n- do a thing\n</approved-plan>" in content["text"]
             assert content["metadata"]["approved_plan"]["content_status"] == "complete"
             assert content["metadata"]["approved_plan"]["content"] == "# Plan\n- do a thing\n"
-    assert not world.app.state.turn_runner.busy(world.sid)
+    # A paused owner may transiently reserve admission to inspect new mail.
+    # The durable input boundary proves that no model received that input.
+    assert world.app.state.conversations.model_paused(world.sid)
+    assert all(
+        world.app.state.task_history.committed_notification_input(world.sid, item.id) is None
+        for item in items
+    )
     with active_turn_fixture(world.app, world.sid):
         assert maybe_pause_for_plan_exit(world.state) is False
     # Repeated delivery of the same answer cannot mint approval or resume again.
@@ -326,6 +337,80 @@ def test_clear_context_retains_core_history_and_announces_removed_surfaces(
         if event.type == "a2ui.surface.deleted"
     ]
     assert deletions == [{"surface_id": "plan_surface", "reason": "plan_exit_context_cleared"}]
+
+
+@pytest.mark.parametrize(
+    "selection",
+    [
+        ["auto", "interactive", "clear_context"],
+        ["auto", "clear_context", "clear_context"],
+    ],
+)
+def test_plan_modifier_keeps_primary_and_duplicate_choice_checks(
+    approval_world: ApprovalWorld, selection: list[str]
+) -> None:
+    """An auxiliary modifier grants neither two decisions nor duplicate options."""
+    world = approval_world
+    response = world.client.post(
+        f"/v1/sessions/{world.sid}/questions/{world.question.handle}/answer",
+        json={"selected_options": selection},
+    )
+    assert response.status_code == 422
+    current = world.app.state.task_history.task_snapshot(world.question.handle)
+    assert current is not None and current.raw_status == "pending"
+    assert world.app.state.sessions.get(world.sid).mode == "plan"
+    assert world.resume_items() == []
+
+
+def test_context_modifier_forms_share_one_canonical_answer(
+    approval_world: ApprovalWorld,
+) -> None:
+    """Old selected-option and explicit-metadata forms have one retained outcome."""
+    world = approval_world
+    first = answer(world, ["auto", "clear_context"])
+    current = world.app.state.task_history.task_snapshot(world.question.handle)
+    assert current is not None and current.result is not None
+    stored = world.app.state.task_history.read_content(current.result)
+    assert stored["selected_options"] == ["auto"]
+    assert stored["metadata"]["clear_context"] is True
+    response = world.client.post(
+        f"/v1/sessions/{world.sid}/questions/{world.question.handle}/answer",
+        json={"selected_options": ["auto"], "metadata": {"clear_context": True}},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == first
+    assert len(world.resume_items()) == 1
+    assert world.app.state.task_history.read_content(current.result) == stored
+
+
+def test_plan_modifier_does_not_relax_an_ordinary_choice(
+    approval_world: ApprovalWorld,
+) -> None:
+    """An unrelated question cannot acquire plan semantics from an option's name."""
+    world = approval_world
+    history = world.app.state.task_history
+    assignment = history.latest_assignment(world.sid)
+    assert assignment is not None
+    question = world.app.state.questions.create(
+        assignment.owner.model_copy(update={"parent_handle": assignment.handle}),
+        QuestionDefinition(
+            prompt="Choose one label.",
+            kind="choice",
+            source="ask_user",
+            options=(
+                QuestionOption(label="Auto", value="auto"),
+                QuestionOption(label="Clear", value="clear_context"),
+            ),
+        ),
+        invocation_id="ordinary-choice",
+    )
+    response = world.client.post(
+        f"/v1/sessions/{world.sid}/questions/{question.handle}/answer",
+        json={"selected_options": ["auto", "clear_context"]},
+    )
+    assert response.status_code == 422
+    current = history.task_snapshot(question.handle)
+    assert current is not None and current.raw_status == "pending"
 
 
 def test_plan_posture_is_updated_before_approved_work_enters_mailbox(

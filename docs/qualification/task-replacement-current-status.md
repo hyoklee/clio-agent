@@ -7,7 +7,37 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
-### Short MCP result conversion — CI and model acceptance pending
+### Plan-answer correction — CI and model acceptance pending
+
+Exact `5d21491c` CI exposed a plan-answer mismatch: the question advertises
+`clear_context` as an auxiliary option, while generic single-choice validation
+rejects it alongside the primary approval decision. The authenticated plan-answer
+boundary now canonicalizes that modifier into answer metadata before the existing
+Question owner validates and records it. Ordinary choices and permissions retain
+their existing validation. The explanatory option text now correctly distinguishes
+fresh model context from retained session history.
+
+Four added cases cover two primary decisions, duplicate modifiers, canonical
+answer retries and an ordinary option with the same name. The pre-existing plan
+cases retain their original assertions except one architecture-dependent busy
+check: paused admission can briefly reserve the owner while examining mail.
+Its replacement requires both the public paused state and no committed model
+input for the resume notifications. AST comparison confirms all other original
+assertions, test signatures and markers are retained.
+
+The all-auto-tool wire test timed out in the real permission gate, with no human
+responder. Only that test now explicitly selects the existing session approval
+policy for its harmless missing-input calls. It still traverses the production
+gate, executes actual tool bodies and retains every original wire assertion.
+No permission policy or timeout changes in production.
+
+Scoped Ruff/format, Mypy for all five changed code/test files and
+removal/class/size guards pass.
+No local pytest/vitest ran. Candidate production hash:
+`43593e67ded67853b1b89c387a5b852f3a497c25b5c38a1a6ca32347afc82978`.
+GACT, dependencies, clio-core 2.3.1 and the still-live R184 source are unchanged.
+
+### Short MCP result conversion — scoped CI passed; model acceptance pending
 
 The declared-presentation loss is repaired in the common clio-agent adapter,
 without changing execution owners. `BuiltinTool` now uses FastMCP's public
@@ -21,9 +51,12 @@ routes clear it on success or failure. There is no new scheduler or result store
 Ten constructed real-Core/real-SDK cases cover seven JSON value forms, overlapping
 async declarations, and sync/async failures followed by ordinary untrusted JSON.
 All pre-existing short-control assertions, markers and signatures are unchanged.
-Scoped Ruff/format, Mypy for the three production files and SDK test module, and removal/class/size
-guards pass. No local pytest/vitest ran. CI and actual-model acceptance of this
-repair are pending. Candidate production hash:
+Scoped Ruff/format, Mypy for the three production files and SDK test module, and
+removal/class/size guards pass. Exact `5d21491c` Python 3.14 CI passes all ten added
+SDK cases and the original Goal structured-presentation regression. The three
+interpreter shards contain 11,924 passes, 487 failures, five errors and 53 skips;
+the broad regression baseline remains failed. No local pytest/vitest ran.
+Actual-model acceptance of this repair is pending. This repair's production hash:
 `4b27e5d132b4fd1884e790b6a1fb08f7fc90ee8552b653694646277a723dbbc6`.
 R184 remains frozen on its old source, with unresolved shutdown; the prepared
 R185 guard still requires an explicit new source binding after retirement.

@@ -181,8 +181,12 @@ def answer_question(
     definition = QuestionDefinition.model_validate(
         app.state.task_history.read_content(task.details)
     )
-    if definition.source == "plan_exit" and not caller.human_action:
-        raise PermissionError("Plan approval requires the authenticated human control channel")
+    if definition.source == "plan_exit":
+        if not caller.human_action:
+            raise PermissionError("Plan approval requires the authenticated human control channel")
+        from clio_agent.gact.plan_exit_resolution import normalize_plan_exit_reply
+
+        reply = normalize_plan_exit_reply(definition, reply)
     if definition.source == "hook_defer":
         from clio_agent.gact.hooks.turn_approval import restore_gate
 

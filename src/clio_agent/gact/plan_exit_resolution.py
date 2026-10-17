@@ -7,7 +7,12 @@ from typing import TYPE_CHECKING, Any
 
 from pydantic import BaseModel, ConfigDict
 
-from clio_agent.arc.task_types import AssignmentDetails, QuestionDefinition, TaskSnapshot
+from clio_agent.arc.task_types import (
+    AssignmentDetails,
+    QuestionDefinition,
+    QuestionReply,
+    TaskSnapshot,
+)
 from clio_agent.gact.plan_exit_resume import approved_plan_resume_text, rejected_plan_resume_text
 from clio_agent.gact.planning import PLAN_VARIANT_METADATA_KEY, transition_playbook_to_execution
 
@@ -24,6 +29,28 @@ class PlanApproval(BaseModel):
     assignment: str
     context_epoch: str
     request: dict[str, Any]
+
+
+def normalize_plan_exit_reply(
+    definition: QuestionDefinition, reply: QuestionReply
+) -> QuestionReply:
+    """Separate the advertised context modifier from the single plan decision."""
+    from clio_agent.gact.plan_mode import _PLAN_EXIT_CLEAR_CONTEXT
+
+    if _PLAN_EXIT_CLEAR_CONTEXT not in reply.selected_options or not any(
+        option.value == _PLAN_EXIT_CLEAR_CONTEXT for option in definition.options
+    ):
+        return reply
+    if len(set(reply.selected_options)) != len(reply.selected_options):
+        raise ValueError("An option cannot be selected twice")
+    return reply.model_copy(
+        update={
+            "selected_options": tuple(
+                value for value in reply.selected_options if value != _PLAN_EXIT_CLEAR_CONTEXT
+            ),
+            "metadata": {**reply.metadata, "clear_context": True},
+        }
+    )
 
 
 def restore_gate(app: Any, task: TaskSnapshot, definition: QuestionDefinition) -> bool:

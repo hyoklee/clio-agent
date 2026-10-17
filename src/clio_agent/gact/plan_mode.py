@@ -451,7 +451,7 @@ def _plan_exit_options() -> list[Any]:
         UserQuestionOption(
             label="Also clear context (modifier)",
             value="clear_context",
-            description="Modifier: clear the conversation history before resuming execution.",
+            description="Modifier: start execution with fresh model context; retain session history.",
         ),
     ]
 
