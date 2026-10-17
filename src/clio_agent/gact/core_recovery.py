@@ -65,6 +65,10 @@ class CoreRecovery:
         """Expose recording/reattachment holds without inventing task completion."""
         return tuple(self._pending)
 
+    def is_pending(self, identity: str) -> bool:
+        """Inspect one owner reconciliation without copying the pending collection."""
+        return identity in self._pending
+
     async def drain(self) -> None:
         """Retain unresolved evidence through orderly shutdown, without a hidden cutoff."""
         while self._worker is not None:

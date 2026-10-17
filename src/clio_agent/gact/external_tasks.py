@@ -642,7 +642,11 @@ class ExternalTasks:
                 "backend_observation": result,
                 "supported_actions": ("get_result",),
             }
-            if current.cancellation_requested_at is not None:
+            # The verified owner can act before its Core stamp is confirmed.
+            # Preserve uncertainty even when the inline reply wins that write.
+            if current.cancellation_requested_at is not None or self.recovery.is_pending(
+                "external-cancel:" + handle
+            ):
                 updates.update(
                     status="task_state_uncertain",
                     activity="cancelling",

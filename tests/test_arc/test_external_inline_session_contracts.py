@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +78,23 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
 
     await asyncio.to_thread(setup_workspace)
     external = ExternalTasks(app)
+    recording_release = asyncio.Event()
+    original_defer = external.recovery.defer_recording
+
+    def defer_cancel_recording(identity: str, operation: Callable[[], object]) -> None:
+        if not cancel_before_reply or not identity.startswith("external-cancel:"):
+            original_defer(identity, operation)
+            return
+
+        async def record() -> bool:
+            if not recording_release.is_set():
+                return False
+            await history.io.run(operation)
+            return True
+
+        external.recovery.defer(identity, record)
+
+    monkeypatch.setattr(external.recovery, "defer_recording", defer_cancel_recording)
     script = tmp_path / "legacy_input_server.py"
     script.write_text(SERVER, encoding="utf-8")
     receipts = [tmp_path / f"stdio-{tag}.json" for tag in ("first", "second")]
@@ -167,6 +185,8 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
                 acknowledgement = await external.cancel(invocation.handle)
                 assert acknowledgement["cancellation_requested"] is True
                 assert acknowledgement["settlement"] == "unknown"
+                assert acknowledgement["recording"] == "unconfirmed"
+                assert external.recovery.is_pending("external-cancel:" + invocation.handle)
             value = "answer-" + invocation.invocation_id.removeprefix("legacy-")
             await asyncio.to_thread(
                 app.state.questions.answer,
@@ -188,7 +208,7 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
             if cancel_before_reply:
                 assert invocation.status == "task_state_uncertain"
                 assert invocation.terminal_at is None and invocation.result is None
-                assert invocation.cancellation_requested_at is not None
+                assert external.recovery.is_pending("external-cancel:" + invocation.handle)
             else:
                 assert invocation.status == "completed" and invocation.result is not None
             answered = await asyncio.to_thread(history.task_snapshot, question.handle)
@@ -198,6 +218,7 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
         assert not external.connections, "Completed exclusive sessions must not accumulate"
     finally:
         # Release every owned input before awaiting transport shutdown, even on failure.
+        recording_release.set()
         pending = await asyncio.to_thread(history.task_handles, kind="Question", active_only=True)
         for handle in pending:
             await asyncio.to_thread(app.state.questions.cancel, handle)
@@ -205,6 +226,14 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
         await external.close()
         await conversations.shutdown()
         await conversations.recovery.drain()
+    if cancel_before_reply:
+        for question in posted:
+            assert question.owner.parent_handle is not None
+            invocation = await asyncio.to_thread(
+                history.task_snapshot, question.owner.parent_handle
+            )
+            assert invocation is not None
+            assert invocation.cancellation_requested_at is not None
     for receipt in receipts:
         process = json.loads(receipt.read_text())
         try:

@@ -7,6 +7,41 @@ between families; failures remain failures and do not substitute for actual-mode
 or real-service UI evidence. Initial implementation is done; regression repairs,
 bug corrections and qualification remain in progress. clio-core is unchanged.
 
+### October 17 morning checkpoint — failing baseline, live hold
+
+Initial feature implementation is done. Regression testing has begun and its
+baseline is failing; final actual-model/UI qualification and release readiness
+are not complete. Run `39030763012` at `f7a4d00e` is now completed with failure.
+Its four Python 3.14 artifacts report 12,221 passes, 239 failures, one error and
+54 skips. Later corrections still require fresh CI. No new live family has run
+during the R184 shutdown hold. The verified API/private-runtime processes remain
+present, and the previously requested human force-close approval is unanswered.
+Neither cleanup nor qualification completion is claimed.
+
+### Inline MCP cancellation intent survives a late result
+
+The cancellation variant exposed a production race: the existing owner acts
+before its deferred cancellation stamp is confirmed, so an inline result could
+publish success during that interval. The existing inline uncertainty branch now
+also consults the same recovery owner's pending intent. This adds only a direct
+membership read, without a second state owner, execution driver or retry policy.
+Raw backend output remains retained; external cleanup is still unverified.
+
+The actual-SDK regression holds cancellation-intent recording open while replies
+arrive. All 24 original assertions remain, with five additional assertions;
+the durable cancellation-stamp check runs after recording drains. Both variants,
+server workload, process-retirement checks and diagnostic budgets are retained.
+Three configuration notes for keys with no production consumers are removed;
+the generated reference already matches, with no runtime configuration change.
+
+Scoped Ruff/format, Mypy with `--check-untyped-defs`, reference/removal/size/class
+guards and static source/assertion audits pass. No local behavioral tests ran.
+Fresh CI and final live cancellation/recovery acceptance remain required.
+Receipt: `ci-legacy-cancel-69f952d8-audit.json`. Candidate Python-source SHA256:
+`be39f71f4c3f4c74728cba55c91886b4ccf7270374e42f4c4fac8180ca446c78`.
+clio-core 2.3.1, dependencies, GACT, installed state and frozen R184 production
+are unchanged.
+
 ### HTTP Stop regressions — physical retirement before terminal publication
 
 Four older cases still assumed idle Stop cancels a session, or required a

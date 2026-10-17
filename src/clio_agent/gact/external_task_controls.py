@@ -113,7 +113,7 @@ async def cancel(
             "cancellation_requested": True,
             "settlement": "external_acknowledged" if acknowledged else "unknown",
             "recording": "unconfirmed"
-            if "external-cancel:" + handle in owner.recovery.pending
+            if owner.recovery.is_pending("external-cancel:" + handle)
             else "confirmed",
         }
     return {

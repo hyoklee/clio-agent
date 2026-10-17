@@ -441,10 +441,6 @@ KEY_NOTES: dict[str, str] = {
         "How many recent messages a referenced session's bounded summary carries; raise to give "
         "the model more of the referenced conversation."
     ),
-    "gact.cancellation_grace_s": (
-        "Seconds a cooperative session cancel is given before the turn task is hard-cancelled; "
-        "raise to let a mid-tool-call turn unwind cleanly."
-    ),
     "gact.allowed_hosts": (
         "Comma-separated host names (no ports) a request without a bearer token may address, "
         "besides localhost/127.0.0.1/[::1]; set for a LAN or container deployment reached by "
@@ -1153,12 +1149,6 @@ KEY_NOTES: dict[str, str] = {
         "Seconds between background re-probes of MCP namespaces that failed discovery; lower to "
         "recover faster, raise to cut retry noise."
     ),
-    "tools.mcp.elicitation.agent_audience.answer_mode": (
-        "Which answerer fulfills a routed agent-audience elicitation: 'inline' (default) runs "
-        "one bounded tool-less completion on the session's own model; 'turn' spawns the child "
-        "answer turn (deadlocks while the parent tool call holds the session's turn slot -- "
-        "retained for lifecycle parity only)."
-    ),
     "tools.mcp.elicitation.agent_audience.default_unhinted": (
         "Whether an UNHINTED form-mode elicitation defaults to the agent. fastmcp drops the "
         "nested _meta on the InputRequiredResult round-trip, so an explicit "
@@ -1178,10 +1168,6 @@ KEY_NOTES: dict[str, str] = {
     "tools.mcp.elicitation.agent_audience.max_depth": (
         "Recursion bound for agent-answer turns: a nested agent-audience elicitation beyond this "
         "depth falls back typed to the human; raise only for deliberately layered server flows."
-    ),
-    "tools.mcp.elicitation.agent_audience.timeout_s": (
-        "Seconds an agent-answer turn may take before the question falls back typed to the human; "
-        "bounds the 'agent is answering' window a pending question can sit in."
     ),
     "tools.mcp.elicitation.url_trusted_origins": (
         "CSV allow-list of origins a url-mode elicitation may point to; add one to enable url "
