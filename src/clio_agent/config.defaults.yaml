@@ -296,6 +296,18 @@ limits.lm_call_s: 1800.0
 # stalled; raise to tolerate slower generation, lower to catch it faster.
 limits.lm_inter_token_idle_s: 120.0
 
+# CLIO_LM_MAX_CONCURRENT_REQUESTS  (int)  <- src/clio_agent/lm/admission.py
+# Maximum CLIO model calls per endpoint origin and credential in this
+# process, across sessions, models and agent depths. Zero disables the local
+# cap; provider quotas still apply.
+limits.lm_max_concurrent_requests: 8
+
+# CLIO_LM_REQUEST_QUEUE_S  (float)  <- src/clio_agent/lm/admission.py
+# Maximum seconds waiting for local model admission or a provider
+# concurrency cooldown. Cancellation removes queued work without sending a
+# request.
+limits.lm_request_queue_s: 120.0
+
 # CLIO_LM_TRANSIENT_RETRIES  (float)  <- src/clio_agent/lm/policy.py
 # Bounded retry count for a transient (non-parse) provider failure before
 # giving up; raise on a flaky provider connection.

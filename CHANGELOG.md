@@ -4,6 +4,59 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
+## Unreleased
+
+## [0.9.5-beta.8] - 2026-10-18
+
+### Added
+
+- Connect National Data Platform datasets, select resources, filter publishers and
+  sign in with the public device flow. Connect existing Endpoints by direct URL
+  or saved SSH profile; query operations and retain bounded stream captures.
+- Run generated HTML with WebGL and offline libraries. Adapt HTML/SVG previews
+  to content and theme, render inline math, and attach configurable large pastes
+  as clickable Sources.
+- Offer Pele diagrams, explicit workspace-folder navigation and an image-based
+  publish, inspect and revise workflow for diagrams and dashboards. Choose layouts
+  according to content instead of imposing uneven columns.
+- Configure concurrent subagents, per-agent workers and nesting depth, including
+  Unlimited. Show model context limits and support filtering by context size.
+- Present one navigable attention tray for permissions and questions, retain draft
+  answers, and submit required question bundles together.
+
+### Changed
+
+- Keep additional permitted folders visible in Files. Track hashes and versions
+  for files used or written; request approval before accessing external folders,
+  update grants and continue after access is effective.
+- Open the model picker progressively, prioritize the selected provider, cache
+  selected models and warm discovery at startup. Preserve provider and model names
+  in the compact selector and show full names on hover.
+- Separate native and container installation choices. Install llama.cpp without
+  requiring a model, expose supported AMD acceleration and offer native service
+  paths independently of a container runtime.
+- Coordinate Desktop and its managed Agent update from one product action, while
+  retaining explicit remote-service update ownership.
+- Hide SSH hosts from pickers, or remove their saved CLIO entry after confirmation
+  (#1780).
+
+### Fixed
+
+- Reuse goal work clients across iterations and close checker-owned clients on
+  success, failure or cancellation. Refresh credentials without leaking pools.
+- Report waiting, reasoning and goal-judging activity; preserve steering order and
+  distinguish model thinking from tool execution time.
+- Preserve conversations and grants when editing workspace folders, accept typed
+  folder paths directly and remove grants without deleting files.
+- Extract native SearXNG sources correctly on Windows and resolve bundled Python
+  launch paths. Keep native MCP runtime caches short, preserve MXC's private temp
+  profile and pass the real workspace through the OS fence.
+- End owned MCP processes when their runtime closes, including task-capable
+  clients and shared proxy transports; keep borrowed clients under their owner.
+- Keep exactly one active question-gallery panel during rapid tab switches.
+- Reject release memory measurements when delegated tasks fail or remain active,
+  even when their parent session is idle.
+
 ## [0.9.5-beta.7.2] - 2026-10-16
 
 ### Fixed

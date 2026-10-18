@@ -192,7 +192,9 @@ from clio_agent.gact.app import build_app
 # 372 -> 376: source-scoped knowledge snapshot/open and Sync status/action routes,
 # owned by routes/knowledge.py and registered from routes/connected_storage.py.
 # 381 -> 383: read-only search-session POST and bounded workspace file-passage GET.
-EXPECTED_ROUTE_METHOD_PAIRS = 403  # NDP discovery/Endpoint routes and the stateless HTML renderer.
+# 403 -> 405: NDP Endpoint edit PATCH and uncaptured metadata browse POST,
+# owned by routes/storage_ndp_endpoints.py.
+EXPECTED_ROUTE_METHOD_PAIRS = 405
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
@@ -236,6 +238,8 @@ def test_build_app_registers_expected_route_count() -> None:
     assert ("/v1/html-renderer", "GET") in route_pairs
     assert ("/v1/infrastructure/targets/{target_id}/models/{job_id}/remove", "POST") in route_pairs
     assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}/request", "POST") in route_pairs
+    assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}", "PATCH") in route_pairs
+    assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}/browse", "POST") in route_pairs
     pairs = len(route_pairs)
 
     assert pairs == EXPECTED_ROUTE_METHOD_PAIRS, (

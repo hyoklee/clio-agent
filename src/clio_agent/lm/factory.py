@@ -72,13 +72,14 @@ def _construct_lm(*, model: str, **lm_kwargs: Any) -> dspy.LM:
     from clio_agent.lm.call_trace import LM_CALL_TRACE  # noqa: PLC0415 - dspy stays lazy
     from clio_agent.lm.policy import lm_retries  # noqa: PLC0415
 
-    dspy = _dspy()
     lm_kwargs.setdefault("num_retries", lm_retries())
     if model.startswith("hosted_vllm/"):
         from clio_agent.lm.attention_lm import attention_lm_class  # noqa: PLC0415
 
         return attention_lm_class()(model=model, callbacks=[LM_CALL_TRACE], **lm_kwargs)
-    return dspy.LM(model=model, callbacks=[LM_CALL_TRACE], **lm_kwargs)
+    from clio_agent.lm.admitted_dspy import AdmittedLM  # noqa: PLC0415
+
+    return AdmittedLM(model=model, callbacks=[LM_CALL_TRACE], **lm_kwargs)
 
 
 def create_lm(config: LMProviderConfig) -> dspy.LM:

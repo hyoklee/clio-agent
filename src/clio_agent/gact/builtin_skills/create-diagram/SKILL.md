@@ -1,15 +1,17 @@
 ---
 name: create-diagram
 title: Create Diagram
-description: Explain relationships, workflows, protocols, branches, grammars or hierarchies with a readable diagram when useful. Choose a fitting diagram type, keep folder navigation explicit, and inspect the rendered result.
+description: Create or revise Mermaid-family diagrams with CLIO's bundled Pele renderer for workflows, protocols, branch histories, grammars or hierarchies. Includes source syntax, workspace folder links and rendered image review.
 ---
 
 Use a diagram when its relationships are easier to understand visually. Prose,
 a list or a table can be a better answer; the availability of this skill is not
 a requirement to draw something.
 
-CLIO renders Mermaid syntax with bundled Pele and retains compatibility rendering
-for existing Mermaid documents. It handles flowcharts, sequences, git graphs,
+CLIO renders Mermaid source with bundled Pele: Pele is the rendering engine,
+not a different component or a JavaScript API the agent needs to call. Keep the
+`mermaid` fence and `clio.mermaid.v1` component name. CLIO retains compatibility
+rendering for existing Mermaid documents. It handles flowcharts, sequences, git graphs,
 mindmaps, states, timelines, railroad grammars and other supported diagram types.
 The renderer adapts to the viewing width and active theme. Do not install a browser,
 fetch a CDN or embed renderer code merely to display an ordinary diagram.
@@ -21,7 +23,9 @@ in CLIO's chart/data views when their filtering, units and shared selection help
 Authored HTML/SVG remains available for a custom illustration or interaction;
 use the declared file tools and normal artifact registration for that result.
 
-For concrete syntax, load `references/diagram-examples.md` when useful. It has
+For engine differences, theme/size behavior, CLIO's input shape and recovery,
+load `references/pele-in-clio.md`. For concrete syntax, load
+`references/diagram-examples.md` when useful. It has
 small rendered examples of flowcharts, sequences, git graphs, mindmaps and
 Pele's `railroad-ebnf-beta` grammar; no need to load every example for each diagram.
 
@@ -55,3 +59,6 @@ Inspect the actual captured image at the person's viewing width, identify
 cropping, unreadable text, unused space or misleading relationships, revise,
 and inspect a fresh capture. Keep graph structure and any folder targets intact.
 The raw source and a successful render are not evidence that the result is clear.
+A hand-authored gallery checks the renderer, not your ability to interpret the
+person's request. Review the artifact you actually authored from their material;
+distinguish a synthetic example, a real agent run and a production-data workflow.

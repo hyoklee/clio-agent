@@ -42,7 +42,7 @@ def existing_selection(
                 "ndp-selection", record.configuration.ndp_selection_id, NDPSelection
             )
             if (
-                prior.dataset.endpoint == dataset.endpoint
+                prior.dataset.endpoint.same_destination(dataset.endpoint)
                 and prior.dataset.id == dataset.id
                 and {item.id for item in prior.dataset.resources}
                 == {item.id for item in dataset.resources}

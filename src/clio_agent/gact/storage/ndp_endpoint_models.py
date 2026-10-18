@@ -45,6 +45,17 @@ class EndpointConnection(EndpointConnectionInput):
     principal: str
     schema_document: dict[str, Any]
     observed_at: str
+    hidden: bool = False
+
+
+class EndpointConnectionUpdate(StorageModel):
+    """Edit a saved destination or its visibility without discarding captured data."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=120)
+    url: str | None = Field(default=None, max_length=4096)
+    ssh_profile: str | None = None
+    authentication: Literal["none", "ndp"] | None = None
+    hidden: bool | None = None
 
 
 class EndpointRequest(StorageModel):
@@ -100,3 +111,6 @@ class EndpointCapture(StorageModel):
     events: int = 0
     workspace_path: str = ""
     source_artifact_id: str = ""
+    endpoint_name: str = ""
+    endpoint_url: str = ""
+    ssh_profile: str = ""
