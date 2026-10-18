@@ -1,43 +1,44 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 18:51 UTC
+## Current execution gate — October 18, 19:01 UTC
 
-No product/model family is active. Current pushed agent is **c3efb1e9** /
-GACT **07cf095f**. Both c3 CI runs completed cancelled; its invalid helper
-import is corrected in the coordinated follow-up. New CI and independent delta
-review are required before candidate freeze.
+No product/model family is active. Production source is **8462da2b** /
+GACT **07cf095f**; the new follow-up changes only logical-time test assertions
+and reports. Its exact hash/equivalence is recorded in source-state-r204.json.
+Both independent reviewers identified the same test defect; confirmation of
+the correction and regression CI remain required.
 
-Both preceding 8265 CI contexts are inventoried. Direct A2UI/retention and all
-42 earlier repair cases passed; parallel PR CI adds A2UI timeouts, a partial
-PID fixture and a real storage shutdown wait. Question synchronization is the
-fourth distinct failing behavior. Corrections and shutdown await-chain
-diagnostics are prepared together. The shutdown cause remains unproved;
-no speculative production shutdown fix is included.
+[8462 CI](https://github.com/iowarp/clio-agent/actions/runs/39156226461)
+is running with the known assertion defect. The unresolved storage failure is
+a shutdown wait, not startup. Async-owner diagnostics preserve its 120-second
+guard and production shutdown behavior. A2UI/Question/PID corrections remain
+subject to current CI; preceding direct passes do not erase parallel PR failures.
 
-The GACT 07 online build and five applicable CI jobs passed. Four event/release
-skips remain conditional. The build's actual source is 8265de4e; record explicit
-UI impact before reusing unchanged assets with new backend source. Do not
-relabel the build as freshly compiled or call it real-service acceptance.
+GACT 07's five applicable jobs and online build passed. Preserve the build's
+actual 8265de4e identity and index hash. The unlaunched R195 controller now
+requires an explicit backend/test/report impact check, unchanged GACT/compiler
+and dependency/version inputs, and a matching entry hash. Backend changes
+require fresh real-service UI review even when recompilation is unnecessary.
 
-The no-follow disposal inventory has 157 exact paths / 25.85 GiB logical,
-zero read errors and no overlap. C had 1.01 GiB free; D 0.81 GiB. Sixty-nine
-candidates are prior-rejected/manual-only. Refresh attempted no removal.
+The inventory has 157 exact paths / 25.85 GiB logical and seventy prior-rejected
+boundaries. Latest C/D free space is 0.80/0.81 GiB. The newest
+guarded retired-root removal was rejected before execution. Do not retry,
+bypass, delegate or remove a parent. No new local Core/model family may launch
+against the known capacity deficit.
 
 After actual capacity recovery:
-1. Freeze the corrected exact source/GACT/dependency/schema/runtime tuple and
-   preflight Codex/Luna and Claude's distinct supported bridge.
-2. Validate the UI hash and record backend-only impact before asset reuse;
-   repeat affected live behavior on the new source.
-3. Refresh unlaunched R195 ownership/source records. Retired processes and
-   unused ports are prerequisites; protected R184 folder absence never is.
-4. Execute Q1-Q9 and all thirty final races with actual workloads/models/UI.
-   Use two actual declared workflows; session_workflow_tasks.py is obsolete.
-5. Settle each family and remove disposable state within permitted boundaries.
-   Record bytes/hashes/manifests, input/reconnect, oversized SSE, capacity,
-   grants/revocations, recovery and desktop/phone outcomes.
+1. Freeze exact source/GACT/dependency/schema/runtime identities and preflight
+   Codex/Luna and Claude's distinct bridge.
+2. Validate UI reuse proof; refresh unlaunched R195 ownership/source records.
+   Retired processes and unused ports are prerequisites; R184 absence never is.
+3. Execute finite Q1-Q9 and thirty final races with real workloads/models/UI.
+   Two actual declared workflows are required; session_workflow_tasks.py is obsolete.
+4. Settle each family, clean permissible disposable state, retain bounded receipts
+   and selected real-service screenshots. Cover bytes/hashes/manifests, input/
+   reconnect, oversized SSE, capacity/retirement, grants/revocation and recovery.
 
-All final-candidate rows remain unaccepted. Older model, CI and fixture results
-are scoped predecessor evidence. No deadline, required row or budget changes.
+Every final-candidate row remains unaccepted. Earlier results are scoped
+predecessor evidence; no required row, load or deadline is weakened.
 
 ## Regression and live-verification loop
 

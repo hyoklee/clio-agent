@@ -1,41 +1,37 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 18:51 UTC
+## Current candidate — October 18, 19:01 UTC
 
-Initial implementation and initial test construction remain complete.
-Current pushed agent **c3efb1e9** / GACT **07cf095f** is not qualified. Both
-c3 CI runs are confirmed cancelled after its test migration used a nonexistent
-helper. The correction uses settle_turn_slot and requires new CI.
+Initial implementation and test construction are complete. Production is
+**8462da2b** / GACT **07cf095f**. This follow-up only corrects the added
+logical-time order assertions and reports; exact identity/equivalence follows
+in source-state-r204.json.
 
-The complete preceding 8265 inventory includes
-[direct CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108)
-and [PR-context CI](https://github.com/iowarp/clio-agent/actions/runs/39151586073).
-Four distinct failing behaviors remain accounted for: Question synchronization,
-A2UI repeated order scans, non-atomic test PID publication, and queued-storage
-shutdown. The first three have coordinated source/test corrections; the fourth
-has new async-owner diagnostics and remains unresolved. Its thread trace does
-not prove startup failure or justify cancelling a result observer.
+Astra and actual Claude Code/Fable both rejected 8462's incorrect test
+expectation and found no blocking production defect in its allocator change.
+The two assertions now follow the unchanged lane reader. Corrected-source
+confirmation remains pending; no review is called live qualification.
 
-Direct CI's 42/42 earlier repair regressions, original A2UI/1,005-message load
-and coverage gates passed all three interpreters. Parallel PR load timeouts
-remain failures. Fifty exclusions per interpreter remain excluded.
+[8462 CI](https://github.com/iowarp/clio-agent/actions/runs/39156226461)
+is running, with its known assertion defect explicitly retained as a failure.
+The complete preceding direct/PR inventory has four distinct behaviors:
+Question synchronization, A2UI repeated scans, partial fixture PID JSON and
+queued-storage shutdown. The first three have scoped repairs. Shutdown has
+new async diagnostics, an unchanged deadline and no unproved production fix.
 
-Astra and actual Claude Code/Fable approved source 8265/07, then rejected c3's
-wrong import. Corrected combined-source approval is pending.
-[GACT CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834) passed
-five applicable jobs with four conditional event/release skips.
-Scoped Ruff/format, five-file Mypy and nine guards pass. New tests have not run locally.
-No assertion, workload, deadline or required gate is reduced.
+Scoped Ruff/format, five-file Mypy and nine guards pass. Preceding direct
+42/42 repair cases, A2UI/1,005-message loads and coverage passed, but parallel
+PR timeouts remain failures. Fifty exclusions per interpreter remain excluded.
+GACT passed five applicable jobs with four conditional event/release skips.
 
-**Every Q1-Q9 final-candidate row, migration/recovery obligation and all thirty
-R1-R6 repetitions remain unaccepted.** No product/model family is active.
-D free space is about 0.81 GiB; the refreshed 157-path / 25.85 GiB logical
-disposal inventory preserves every prior rejection and active source.
-The inventory refresh is not a deletion or disk-recovery claim.
+**All Q1-Q9, migration/recovery and thirty R1-R6 final repetitions remain
+unaccepted.** No product/model family is active. Latest D free space is
+0.81 GiB. The 157-path / 25.85 GiB logical inventory records seventy
+prior-rejected paths; the newest exact-root command did not run. No cleanup
+retry or freed-space claim. Preserve active source and every earlier boundary.
 
-See [current status](task-replacement-current-status.md) for exact identities,
-both inventories, review state and cleanup, and the
-[execution sheet](task-replacement-live-experiments.md) for required live work.
+See [current status](task-replacement-current-status.md) and
+[execution sheet](task-replacement-live-experiments.md) for evidence and remaining work.
 
 ## Construction and preceding evidence
 

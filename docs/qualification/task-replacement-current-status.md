@@ -1,85 +1,85 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 18:51 UTC
+## Current state — October 18, 19:01 UTC
 
 Initial implementation and initial test construction are **complete**.
-Regression repair and actual-model/service/UI qualification remain **incomplete**.
-No release, merge or daily Desktop installation is made.
+Regression repair and live qualification remain **incomplete**. No release,
+merge or daily Desktop installation is made.
 
-Current pushed source is **c3efb1e98e3b1b515c2a2a30fb258253708bb66b** with GACT
-**07cf095fc632ff93bae3b8089c94a5b05d37e47e**. Both c3 runs
-[39153889146](https://github.com/iowarp/clio-agent/actions/runs/39153889146)
-and [39153892286](https://github.com/iowarp/clio-agent/actions/runs/39153892286)
-are confirmed completed/cancelled. Its Question-test migration imported a
-nonexistent helper; that error is corrected locally to the existing
-settle_turn_slot. Neither cancelled run is acceptance evidence.
+Production source is **8462da2b84862e4327699f4156fb0f369800ec83** with GACT
+**07cf095fc632ff93bae3b8089c94a5b05d37e47e**. This test/report-only follow-up
+corrects two assertions to preserve the lane reader's actual logical-time
+ordering. Its exact commit and production equivalence are recorded after commit
+in source-state-r204.json in the D execution checkout.
 
-The complete preceding **8265de4e** inventory includes both
-[direct-head CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108)
-and [parallel PR-context CI](https://github.com/iowarp/clio-agent/actions/runs/39151586073).
-The earlier direct-head-only report was incomplete. The combined inventory
-has four distinct failing behaviors:
+Astra and actual Claude Code/Fable independently reviewed frozen 8462/07.
+Both found the same blocking test expectation, now corrected: changing a
+segment's render order does not change its logical-time append position.
+Neither found a blocking production defect in the allocator delta.
+Their verdicts were NO-GO as committed; corrected-source confirmation is pending.
+Fable exited normally, source stayed frozen and original authentication was
+unchanged. Review/controller PIDs 24216/43036 and descendants are verified absent.
+No prior source approval is represented as live qualification.
 
-| Behavior | Evidence | Coordinated follow-up |
-| --- | --- | --- |
-| Question-answer test retirement | Direct 3.13 observed one reservation release before the next admission probe | Use the real full-pump helper, unchanged five-second bound, preserve both notices and require no unfinished pump |
-| A2UI sustained load | PR 3.12/3.13 hit the existing 180-second guard; sampled stack repeatedly scans chunk orders | Reserve maximum order once per unpublished chunk, retaining gaps, original order, confirmation and rollback |
-| Hook descendant identity fixture | PR 3.13 read JSON after file creation but before its write completed | Publish the complete PID/birth record by atomic replacement; keep real descendant settlement assertions |
-| Queued storage shutdown | PR 3.13 exceeded 120 seconds in TestClient.wait_shutdown | Capture actual coroutine await chains, retained calls/attempt receipts and recovery holds before the unchanged guard; cause and repair are not yet established |
+[8462 PR CI](https://github.com/iowarp/clio-agent/actions/runs/39156226461)
+is running. The known assertion failure is not called passed. Lint, lock,
+filesystem and both native lifecycle jobs passed; regression shards remain.
+The complete preceding 8265 inventory includes
+[direct CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108) and
+[PR CI](https://github.com/iowarp/clio-agent/actions/runs/39151586073).
+The direct-head-only account was incomplete. Four distinct behaviors are tracked:
 
-The storage trace proves a shutdown wait, **not a startup failure**. Astra's
-read-only investigation found insufficient async evidence to identify its
-owner. Production shutdown behavior is unchanged; no speculative observer
-cancellation, transport close, timeout or new driver is introduced.
+| Behavior | Current action |
+| --- | --- |
+| Question-answer admission synchronization | Correct actual settle_turn_slot import; retain five-second bound, notices and pump-retirement assertions |
+| A2UI load | Allocate max order once per unpublished chunk; test traversal, gaps and unchanged live ordering |
+| Hook descendant PID fixture | Atomically publish complete PID/birth JSON; retain real descendant cleanup assertions |
+| Queued-storage shutdown | Async await-chain/call/attempt/recovery diagnostics under the unchanged 120-second guard; cause remains unproved |
 
-The direct-head run had 23 successful jobs and one failure; all three coverage
-jobs passed. Interpreter totals are 12,981/12,980/12,981 passed,
-zero/one/zero failed, zero errors and fifty excluded entries each. All fourteen
-earlier repair regressions passed on each interpreter: **42/42 executed,
-zero skipped**. Direct A2UI timings were 119.968/108.741/80.138 seconds and
-1,005-message retention 169.441/105.905/155.894 seconds. Those passes do not
-erase the parallel PR failures. Bounded inventories are ci-8265de4e.json
-and ci-8265de4e-pr.json in the D execution checkout.
+The shutdown trace shows TestClient.wait_shutdown, not startup failure.
+Production shutdown remains unchanged: no speculative observer cancellation,
+transport close, deadline or new execution owner.
 
-The follow-up constructs three order regressions before execution: bounded
-traversal work with real Core publication, continuation of noncontiguous
-orders, and refusal of explicit ordering on a live append. Raw atoms, locks,
-cleanup, 260 actions, 1,005 messages, deadlines, workers, assertions, output
-limits and coverage gates remain intact. No local pytest or product/model
-family has been launched for this batch. Scoped Ruff/format and all nine guards
-pass. Scoped Mypy passed all five changed source/test files, including the
-actual Question-helper import; new regression execution belongs to CI.
+Preceding direct CI had 23 successful jobs / one failed; all coverage gates
+passed. Python 3.12/3.13/3.14 totals were 12,981/12,980/12,981 passed,
+0/1/0 failed, zero errors, fifty exclusions each. All fourteen earlier repair
+cases passed on each interpreter: 42/42 executed, zero skipped. Its A2UI times
+119.968/108.741/80.138s and 1,005-message retention
+169.441/105.905/155.894s do not erase parallel PR load timeouts.
+Bounded inventories: ci-8265de4e.json and ci-8265de4e-pr.json.
+The two c3 runs completed cancelled after its wrong import was found.
 
-Astra and actual Claude Code/Fable R202 gave **source GO to 8265de4e/07cf095f**,
-then both gave **NO-GO to c3's invalid test import**. The corrected combined
-follow-up needs independent delta review; prior GO is not approval of new changes.
+Scoped Ruff/format, five-file Mypy, fixture-script syntax and all nine guards
+passed for the repair. The two-assertion follow-up changes no imports, types,
+production code or budget; scoped lint/format are rechecked. New tests run in
+CI, not a new local Core deployment.
 
-[GACT 07cf095f CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834)
-passed all five applicable jobs; four release/event jobs are conditional skips.
-The matching online build contains 653 files / 31,897,379 bytes, index SHA256
+[GACT 07 CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834)
+passed all five applicable jobs; four release/event skips are conditional.
+Online build: 653 files / 31,897,379 bytes; index SHA256
 7d71c5b7893c9cde5b5a1f4067e84a7ca8724d36fd09936bb135138d1826fdc8.
-Its build record retains actual 8265de4e source identity. Reuse requires an
-explicit UI-impact record for new backend source; it is not live UI acceptance.
+Its original build source remains 8265de4e. The unlaunched R195 harness now
+checks the exact backend/test/report delta, unchanged GACT/compiler inputs,
+dependency/version files and actual index hash before reuse. New backend source
+still requires fresh real-service UI acceptance.
 
-Remote develop remains **35fdd5fe0d85328093ac615909ae6edc2e3a9231**, already
-included with zero commits behind. GACT includes main
-**f2b96308458d039d72391a88adb97166e72ef7ad**. Dependencies/schema remain:
-Python 3.14.6, iowarp-core 2.3.2, DSPy 3.4.0, FastMCP/fastmcp-tasks 4.1.0,
-MCP 2.0.0, Docket 0.26.2, schema 0.6.0b13, Claude SDK 0.2.159.
-No Core-library or storage-adapter implementation change is included.
+Develop **35fdd5fe0d85328093ac615909ae6edc2e3a9231** is included, zero behind.
+GACT includes main **f2b96308458d039d72391a88adb97166e72ef7ad**.
+Runtime remains Python 3.14.6, iowarp-core 2.3.2, DSPy 3.4.0,
+FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2,
+schema 0.6.0b13 and Claude SDK 0.2.159. No Core library/storage adapter change.
 
-The refreshed deletion inventory has **157 paths / 25.85 GiB logical**,
-zero read errors and no overlapping candidates: C 4.05 GiB / D 21.80 GiB.
-Free space was C 1.01 GiB / D 0.81 GiB. Sixty-nine exact paths have prior
-rejected-removal boundaries; no retry, bypass, delegation or parent removal.
-The inventory refresh deleted nothing. Active source, human design files,
-current execution environment, installed Desktop/auth/defaults/released pins
-and unrelated work remain protected.
+Disposal inventory: 157 existing paths / 25.85 GiB logical; no overlap/read errors.
+Seventy paths now have rejected-removal boundaries. The new guarded removal of
+D:/Temp/clio-v3-mailbox-live-c812a6f0 was rejected before execution; it remains
+manual-only. No retry, bypass, delegation or parent removal. No deletion or disk
+recovery is claimed. Latest free space: C 0.80 / D 0.81 GiB.
 
-Fresh Core-backed families remain below their preflight capacity requirement.
 **Q1-Q9, migration/recovery, all thirty final races and replacement-service
-website media remain unaccepted.** Required provider/Windows exclusions are not
-passed tests. No product/model family is active; the full delivery goal stays active.
+website media remain unaccepted.** Required provider/Windows exclusions remain
+open. Capacity prevents a fresh Core-backed family; no product/model family
+is active. Preserve active source/human files, installed Desktop/auth/defaults/
+released pins, unrelated work and every manual-only boundary. The goal stays active.
 
 ## Earlier dated execution records
 

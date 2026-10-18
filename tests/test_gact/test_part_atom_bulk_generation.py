@@ -323,8 +323,8 @@ def test_staged_order_continues_from_the_maximum_of_an_existing_chunk(arc: Any) 
     replace_lane(store, sid, part_atoms.MESSAGE_PART_SCOPE, write)
     base = current_base(store, sid, part_atoms.MESSAGE_PART_SCOPE)
     recorded = list(lane_segments(store, sid, base, include_tombstoned=False))
-    assert [segment.order for segment in recorded] == [2, 10, 11, 12, 13, 14]
-    assert [segment.content for segment in recorded] == [contents[1], contents[0], *contents[2:]]
+    assert [segment.order for segment in recorded] == [10, 2, 11, 12, 13, 14]
+    assert [segment.content for segment in recorded] == contents
 
 
 def test_live_atom_cannot_override_the_existing_order_allocator(arc: Any) -> None:
