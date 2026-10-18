@@ -118,8 +118,8 @@ class NDPSource:
         revision_check=True,
         supported_modes=["read_only"],
         unavailable_reasons={
-            "working_copy": "NDP connections are read-only.",
-            "write_enabled": "NDP connections are read-only.",
+            "working_copy": "Linked NDP dataset resources are read-only; publish results through an Endpoint.",
+            "write_enabled": "Linked NDP dataset resources are read-only; publish results through an Endpoint.",
         },
     )
 

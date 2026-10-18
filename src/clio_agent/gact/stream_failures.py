@@ -228,7 +228,16 @@ def provider_failure_message(exc: BaseException, *, provider_label: str) -> str 
     if leaf is None:
         return None
     text = _provider_own_words(str(getattr(leaf, "message", "") or leaf))
-    return f"{provider_label}: {text} (HTTP {leaf.status})"
+    message = f"{provider_label}: {text} (HTTP {leaf.status})"
+    admission = getattr(leaf, "clio_request_admission", None)
+    if isinstance(admission, dict):
+        message += (
+            f" At refusal, this CLIO process had {admission['active']} admitted model calls"
+            f" (including this call) and {admission['queued']} queued for this endpoint and credential."
+            " The provider reports account-wide capacity, which may include other clients"
+            " or requests it has not yet released."
+        )
+    return message
 
 
 def turn_failure_message(exc: BaseException, provider_id: str, otherwise: str) -> str:
@@ -346,6 +355,9 @@ def forward_error_info(state: Any, exc: BaseException, partial_answer: str) -> A
         )
     provider_message = turn_failure_message(exc, provider_id=provider_id, otherwise="")
     if provider_message:
+        leaf = _provider_error_leaf(exc)
+        if isinstance(admission := getattr(leaf, "clio_request_admission", None), dict):
+            details["model_request_admission"] = admission
         return ErrorInfo(
             error="provider_error", message=provider_message, details=details, recoverable=True
         )

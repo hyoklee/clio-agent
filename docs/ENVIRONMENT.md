@@ -161,11 +161,13 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_LM_DEFER_TIKTOKEN` | `lm.defer_tiktoken` | bool | `true` | `src/clio_agent/lm/factory.py` |
 | `CLIO_LM_GUIDED_OUTPUT` | `lm.guided_output` | bool | `false` | `src/clio_agent/lm/adapters.py` |
 | `CLIO_LM_INTER_TOKEN_IDLE_S` | `limits.lm_inter_token_idle_s` | float | `120.0` | `src/clio_agent/runtime/lm_activity.py` |
+| `CLIO_LM_MAX_CONCURRENT_REQUESTS` | `limits.lm_max_concurrent_requests` | int | `8` | `src/clio_agent/lm/admission.py` |
 | `CLIO_LM_MAX_TOKENS` | `lm.max_tokens` | int | _(unset)_ | `src/clio_agent/config.py` |
 | `CLIO_LM_MIN_P` | `lm.min_p` | float | _(unset)_ | `src/clio_agent/config.py` |
 | `CLIO_LM_MODEL` | `lm.model` | str | _(unset)_ | `src/clio_agent/config.py` |
 | `CLIO_LM_PRESENCE_PENALTY` | `lm.presence_penalty` | float | _(unset)_ | `src/clio_agent/config.py` |
 | `CLIO_LM_PROVIDER` | `lm.provider` | str | `lm_studio` | `src/clio_agent/config.py` |
+| `CLIO_LM_REQUEST_QUEUE_S` | `limits.lm_request_queue_s` | float | `120.0` | `src/clio_agent/lm/admission.py` |
 | `CLIO_LM_STOP_SEQUENCES` | `lm.stop_sequences` | str | _(unset)_ | `src/clio_agent/lm/request_builder.py` |
 | `CLIO_LM_TEMPERATURE` | `lm.temperature` | float | _(unset)_ | `src/clio_agent/config.py` |
 | `CLIO_LM_THINKING_BUDGET` | `lm.thinking_budget` | int | _(unset)_ | `src/clio_agent/config.py` |

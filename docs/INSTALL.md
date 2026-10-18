@@ -31,13 +31,13 @@ Installs `clio-agent` from PyPI + the `clio-tui` binary + the `clio` launcher. W
 
 ## Beta releases
 
-To opt into CLIO v0.9.5-beta.5.2, pin the backend explicitly:
+To opt into CLIO v0.9.5-beta.8, pin the backend explicitly:
 
 ```sh
-uv tool install --python 3.13 --with dspy==3.4.0 --with fastmcp==4.0.0b5 --with fastmcp-slim==4.0.0b5 --with fastmcp-tasks==4.0.0b5 clio-agent==0.9.5b5.post2
+uv tool install --python 3.14 --with dspy==3.4.0 --with fastmcp==4.0.0b5 --with fastmcp-slim==4.0.0b5 --with fastmcp-tasks==4.0.0b5 clio-agent==0.9.5b8
 ```
 
-Use `CLIO_VERSION=v0.9.5-beta.5.2` with the complete installer when you also want
+Use `CLIO_VERSION=v0.9.5-beta.8` with the complete installer when you also want
 the matching frontend. Desktop's beta update preference controls later updates;
 the default install channel continues to select published stable releases.
 
@@ -76,19 +76,19 @@ the `-bundled` `.msi`/`.exe` (Windows), `.dmg` (Apple Silicon macOS), or `.deb`/
 without `-bundled` in the name, including every Linux `.AppImage` and the Intel macOS
 `.dmg`, are attach-only: they connect to a clio-agent you install and run separately.
 
-### Desktop from a terminal (beta 4)
+### Desktop from a terminal
 
 macOS 14 or newer, without Python/uv/Node prerequisites:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/iowarp/clio-agent/main/install/desktop.sh \
-  | CLIO_VERSION=v0.9.5-beta.5.2 bash
+  | CLIO_VERSION=v0.9.5-beta.8 bash
 ```
 
 Windows (bundled x64 setup, including x64 emulation on ARM):
 
 ```powershell
-$env:CLIO_VERSION = 'v0.9.5-beta.5.2'
+$env:CLIO_VERSION = 'v0.9.5-beta.8'
 irm https://raw.githubusercontent.com/iowarp/clio-agent/main/install/desktop.ps1 | iex
 ```
 

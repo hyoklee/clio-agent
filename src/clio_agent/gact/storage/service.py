@@ -151,9 +151,9 @@ class StorageService:
             selection = self.store.get(
                 "ndp-selection", body.configuration.ndp_selection_id, NDPSelection
             )
-            if (
-                selection.dataset.id != root
-                or selection.dataset.endpoint not in self.ndp.endpoints()
+            if selection.dataset.id != root or not any(
+                selection.dataset.endpoint.same_destination(endpoint)
+                for endpoint in self.ndp.endpoints()
             ):
                 raise ValueError("Choose resources from the configured NDP Endpoint")
         if body.create_vault:
@@ -376,7 +376,10 @@ class StorageService:
             selected = self.store.get(
                 "ndp-selection", record.configuration.ndp_selection_id, NDPSelection
             )
-            if selected.dataset.endpoint not in self.ndp.endpoints():
+            if not any(
+                selected.dataset.endpoint.same_destination(endpoint)
+                for endpoint in self.ndp.endpoints()
+            ):
                 raise PermissionError("This NDP Endpoint changed; attach the dataset again")
             if selected.dataset.id != source.root:
                 raise PermissionError("This NDP selection belongs to another dataset")

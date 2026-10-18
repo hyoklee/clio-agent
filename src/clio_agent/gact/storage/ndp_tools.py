@@ -34,13 +34,9 @@ def connected_data_search_ndp(
     if offset < 0 or len(query) > 1000 or len(organization) > 512:
         raise ValueError("Use a nonnegative offset and a bounded catalog query")
     service = _service()
-    result = service.ndp.search(query, endpoint_id, organization=organization)
-    datasets = result["datasets"]
-    return {
-        **result,
-        "datasets": datasets[offset : offset + 50],
-        "next_offset": offset + 50 if offset + 50 < len(datasets) else None,
-    }
+    return service.ndp.search(
+        query, endpoint_id, organization=organization, offset=offset, limit=50
+    )
 
 
 def connected_data_ndp_organizations(query: str = "", endpoint_id: str = "") -> dict[str, Any]:

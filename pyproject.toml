@@ -1,6 +1,6 @@
 [project]
 name = "clio-agent"
-version = "0.9.5b7.post2"
+version = "0.9.5b8"
 description = "CLIO Agent — Autonomous AI agent framework for scientific data management. Part of the IOWarp platform."
 authors = [
     { name = "Jaime Cernuda", email = "jcernudagarcia@illinoistech.edu" },
@@ -69,7 +69,7 @@ dependencies = [
     "fastmcp-tasks==4.1.0",
     "mcp==2.0.0",  # reviewed native Tasks wire/client contract
     "pydocket==0.26.2",  # fastmcp-tasks 4.1 requires >=0.26; native execution owner
-  "clio-schemas==0.6.0b13",
+    "clio-schemas==0.6.0b14",
     "pydantic>=2.12,<2.14",
     # A2UI catalog validation: official catalog.json files are validated at runtime
     # with Draft 2020-12 (docs/design/a2ui-compat-campaign-2026-09.md, S2).
@@ -360,4 +360,5 @@ also_copy = ["src/clio_agent/", "tests/"]
 override-dependencies = ["mcp==2.0.0"]
 
 [tool.uv.sources]
-clio-schemas = { git = "https://github.com/iowarp/clio-schemas.git", rev = "972c7be399c53baaf317a9b8d916bf193af480c6" }
+# Develop consumes the merged canonical guidance until the next schema publication.
+clio-schemas = { git = "https://github.com/iowarp/clio-schemas.git", rev = "3224a7970d9271b2ff4ca9fe7bec2e227c4eea19" }

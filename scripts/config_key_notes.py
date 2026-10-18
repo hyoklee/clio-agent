@@ -608,6 +608,14 @@ KEY_NOTES: dict[str, str] = {
         "Bounded retry count for a transient (non-parse) provider failure before giving up; raise "
         "on a flaky provider connection."
     ),
+    "limits.lm_max_concurrent_requests": (
+        "Maximum CLIO model calls per endpoint origin and credential in this process, across "
+        "sessions, models and agent depths. Zero disables the local cap; provider quotas still apply."
+    ),
+    "limits.lm_request_queue_s": (
+        "Maximum seconds waiting for local model admission or a provider concurrency cooldown. "
+        "Cancellation removes queued work without sending a request."
+    ),
     "limits.mcp_content_block_max_bytes": (
         "Byte cap on one MCP content block's decoded binary payload (image/audio/resource) before "
         "it's elided; raise for larger images."

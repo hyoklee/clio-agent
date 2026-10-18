@@ -30,11 +30,14 @@ def _approve(app: Any, session: Any, tool: str, args: dict[str, Any]) -> None:
         app.state.conversations.require_admission(assignment)
     gate = getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
     destination = args.get("endpoint") or args.get("name") or "NDP Endpoint"
-    summary = (
-        f"Run {args['operation_id']} on {destination}"
-        if args.get("operation_id")
-        else f"Connect to {destination}"
-    )
+    if args.get("artifact_id"):
+        summary = f"Upload {args['filename']} to {destination} / {args['bucket']}"
+    else:
+        summary = (
+            f"Run {args['operation_id']} on {destination}"
+            if args.get("operation_id")
+            else f"Connect to {destination}"
+        )
     if args.get("ssh_profile"):
         summary += f" via SSH {args['ssh_profile']}"
     if (
@@ -113,7 +116,10 @@ def connected_data_ndp_endpoint_request(
     """Execute a discovered API operation after approval and retain actual response bytes.
 
     Parameters are advertised query/path fields. JSON body is validated against
-    the API contract. Read operations, finite SSE samples and bridge start/status/
+    the API contract. For organizations, dataset creation and edits, load
+    work-with-ndp and references/catalog-authoring.md. Artifact uploads use
+    connected_data_ndp_upload_artifact, then register its resource descriptors.
+    Read operations, finite SSE samples and bridge start/status/
     stop use the same route. Starting a remote job is NOT consuming its output:
     inspect its status, capture actual data, and stop only sessions you own.
     Capture closes its HTTP/SSH connection on completion, error or time/event/
@@ -163,13 +169,74 @@ def connected_data_ndp_endpoint_request(
     )
 
 
+def connected_data_ndp_upload_artifact(
+    endpoint_id: str,
+    artifact_id: str,
+    bucket_name: str,
+    key_prefix: str = "clio-artifacts",
+) -> dict[str, Any]:
+    """Store an exact artifact version at an approved NDP Endpoint and verify its bytes.
+
+    Load work-with-ndp's references/catalog-authoring.md for the full workflow.
+    Reuse an existing chosen bucket; this tool does not create storage. Requires
+    advertised POST /s3/objects/{bucket_name} multipart and object GET operations.
+    artifact_id is an immutable version ID from this workspace, not a filename
+    or latest alias. The approval identifies the artifact's SHA-256 and exact
+    destination. Keys include the content hash; a retry checks stored bytes
+    before uploading again. The returned resource describes the verified S3
+    object. Register descriptors in new or existing datasets according to the
+    requested collection grouping, then read the changed records back. Upload
+    is separate from catalog creation and federation publication. No credentials
+    in arguments.
+    """
+    from clio_agent.gact.storage.ndp_artifact_upload import (
+        prepare_artifact_upload,
+        upload_artifact,
+    )
+
+    app, session, service = _owner()
+    record = service.ndp_endpoints.get(session.workspace_id, endpoint_id)
+    token = None
+    if record.authentication == "ndp":
+        account = service.auth.account_login(service.principal, service.store.clio_id, "ndp")
+        if not service.auth.connected(account):
+            from clio_agent.gact.storage.setup_tool import connected_data_status
+
+            return {"state": "sign_in_required", **connected_data_status()}
+        token = service.auth.token(account)
+    with prepare_artifact_upload(
+        app, session.workspace_id, record, artifact_id, bucket_name, key_prefix
+    ) as upload:
+        _approve(
+            app,
+            session,
+            "connected_data_ndp_upload_artifact",
+            {
+                "endpoint": record.name,
+                "url": record.url,
+                "ssh_profile": record.ssh_profile,
+                "method": "POST",
+                "operation_id": "POST /s3/objects/{bucket_name}",
+                "artifact_id": upload.artifact_id,
+                "filename": upload.filename,
+                "sha256": upload.sha256,
+                "bytes": upload.size,
+                "bucket": upload.bucket,
+                "key": upload.key,
+            },
+        )
+        return upload_artifact(service.store, record, upload, token)
+
+
 def endpoint_presentation(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
     """Describe actual operation/capture progress without exposing authentication."""
     row = structured if isinstance(structured, Mapping) else result
     if not isinstance(row, Mapping):
         return {"summary": "NDP Endpoint operation", "blocks": []}
     summary = (
-        f"{row['bytes_received']} bytes captured · {row['stop_reason']}"
+        f"{row['size']} bytes verified in NDP storage"
+        if row.get("state") == "verified" and row.get("artifact_id")
+        else f"{row['bytes_received']} bytes captured · {row['stop_reason']}"
         if "bytes_received" in row
         else f"{len(row.get('operations', []))} Endpoint operations"
     )
@@ -195,6 +262,16 @@ def build_ndp_endpoint_tools() -> list[Any]:
             {
                 "endpoint_id": {"type": "string"},
                 "query": {"type": "string"},
+            },
+        ),
+        (
+            connected_data_ndp_upload_artifact,
+            "Store artifact in NDP",
+            {
+                "endpoint_id": {"type": "string"},
+                "artifact_id": {"type": "string"},
+                "bucket_name": {"type": "string"},
+                "key_prefix": {"type": "string"},
             },
         ),
         (

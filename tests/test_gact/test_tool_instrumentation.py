@@ -649,6 +649,11 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             "connected_data_ndp_organizations": {"query": "x" * 1001},
             "connected_data_ndp_endpoint_connect": {"name": "Missing", "url": "invalid"},
             "connected_data_ndp_endpoint_operations": {"endpoint_id": "missing"},
+            "connected_data_ndp_upload_artifact": {
+                "endpoint_id": "missing",
+                "artifact_id": "missing",
+                "bucket_name": "missing",
+            },
             "connected_data_ndp_endpoint_request": {
                 "endpoint_id": "missing",
                 "operation_id": "GET /missing",
