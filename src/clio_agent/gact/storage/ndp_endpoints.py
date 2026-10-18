@@ -15,6 +15,7 @@ from clio_agent.gact.storage.ndp_endpoint_models import (
     EndpointCapture,
     EndpointConnection,
     EndpointConnectionInput,
+    EndpointConnectionUpdate,
     EndpointRequest,
 )
 from clio_agent.gact.storage.ndp_endpoint_operations import operations, resolve_request
@@ -28,25 +29,28 @@ class NDPEndpointService:
     def __init__(self, store: SourceStore, principal: str) -> None:
         self.store, self.principal = store, principal
 
-    def connections(self, workspace_id: str) -> list[EndpointConnection]:
+    def connections(
+        self, workspace_id: str, *, include_hidden: bool = False
+    ) -> list[EndpointConnection]:
         """List only this workspace and principal's connections."""
         return [
             row
             for row in self.store.list("ndp_endpoint", EndpointConnection)
-            if row.workspace_id == workspace_id and row.principal == self.principal
+            if row.workspace_id == workspace_id
+            and row.principal == self.principal
+            and (include_hidden or not row.hidden)
         ]
 
     def get(self, workspace_id: str, identifier: str) -> EndpointConnection:
         """Refuse cross-workspace connections, including guessed identifiers."""
-        for row in self.connections(workspace_id):
+        for row in self.connections(workspace_id, include_hidden=True):
             if row.id == identifier:
                 return row
         raise KeyError("NDP Endpoint not connected in this workspace")
 
-    def connect(
-        self, workspace_id: str, choice: EndpointConnectionInput, token: str | None = None
-    ) -> EndpointConnection:
-        """Observe the actual API, then save the approved destination without installation."""
+    @staticmethod
+    def _discover(choice: EndpointConnectionInput, token: str | None) -> dict[str, Any]:
+        """Read the contract from this explicitly reviewed authentication destination."""
         with endpoint_client(choice) as client:
             headers = (
                 {"Authorization": "Bearer " + token}
@@ -67,10 +71,17 @@ class NDPEndpointService:
         document = json.loads(data)
         if not isinstance(document, dict) or not operations(document):
             raise ValueError("This URL does not expose an OpenAPI service; use its API base URL")
+        return document
+
+    def connect(
+        self, workspace_id: str, choice: EndpointConnectionInput, token: str | None = None
+    ) -> EndpointConnection:
+        """Observe the actual API, then save the approved destination without installation."""
+        document = self._discover(choice, token)
         previous = next(
             (
                 row
-                for row in self.connections(workspace_id)
+                for row in self.connections(workspace_id, include_hidden=True)
                 if row.url == choice.url
                 and row.ssh_profile == choice.ssh_profile
                 and row.authentication == choice.authentication
@@ -87,6 +98,38 @@ class NDPEndpointService:
         )
         self.store.put("ndp_endpoint", record.id, record)
         return record
+
+    def update(
+        self,
+        workspace_id: str,
+        identifier: str,
+        update: EndpointConnectionUpdate,
+        token: str | None = None,
+    ) -> EndpointConnection:
+        """Persist edits; rediscover changed destinations before replacing the saved record."""
+        record = self.get(workspace_id, identifier)
+        changes = update.model_dump(exclude_none=True)
+        choice = EndpointConnectionInput.model_validate(
+            {
+                **record.model_dump(include=set(EndpointConnectionInput.model_fields)),
+                **{key: value for key, value in changes.items() if key != "hidden"},
+            }
+        )
+        changed_destination = any(
+            getattr(choice, key) != getattr(record, key)
+            for key in ("url", "ssh_profile", "authentication")
+        )
+        document = self._discover(choice, token) if changed_destination else record.schema_document
+        edited = record.model_copy(
+            update={
+                **choice.model_dump(),
+                "hidden": changes.get("hidden", record.hidden),
+                "schema_document": document,
+                "observed_at": now() if changed_destination else record.observed_at,
+            }
+        )
+        self.store.put("ndp_endpoint", record.id, edited)
+        return edited
 
     @staticmethod
     def describe(record: EndpointConnection) -> dict[str, Any]:
@@ -111,6 +154,44 @@ class NDPEndpointService:
             for row in self.store.list("ndp_capture", EndpointCapture)
             if row.workspace_id == workspace_id and row.endpoint_id == identifier
         ]
+
+    def browse(
+        self,
+        workspace_id: str,
+        identifier: str,
+        request: EndpointRequest,
+        token: str | None = None,
+    ) -> Any:
+        """Read bounded catalog/station/session metadata without creating capture files."""
+        allowed = {
+            "GET /organization",
+            "GET /search",
+            "GET /resources/search",
+            "GET /data/csv-files",
+            "GET /active-streams",
+            "GET /bridge/stations/catalog",
+            "GET /bridge/stations",
+            "GET /bridge/sessions",
+        }
+        if request.operation_id not in allowed or request.body is not None:
+            raise ValueError("Choose a supported catalog, station or stream listing")
+        record = self.get(workspace_id, identifier)
+        _, url, query = resolve_request(record, request)
+        headers = {"Accept": "application/json"}
+        if record.authentication == "ndp":
+            if not token:
+                raise PermissionError("Connect your NDP account before browsing this Endpoint")
+            headers["Authorization"] = "Bearer " + token
+        deadline = time.monotonic() + 30
+        with endpoint_client(record, 30) as client:
+            with client.stream("GET", url, params=query, headers=headers) as response:
+                if response.status_code in {401, 403}:
+                    raise PermissionError("Endpoint access denied; check its account and role")
+                response.raise_for_status()
+                data, reason, _ = capture_response(response, request, deadline)
+                if reason != "completed":
+                    raise ValueError("Listing exceeded its size or time limit; narrow the search")
+        return json.loads(data)
 
     def invoke(
         self,
@@ -170,6 +251,9 @@ class NDPEndpointService:
         capture = EndpointCapture(
             id=identifier_capture,
             endpoint_id=record.id,
+            endpoint_name=record.name,
+            endpoint_url=record.url,
+            ssh_profile=record.ssh_profile,
             workspace_id=workspace_id,
             operation_id=request.operation_id,
             method=operation["method"],

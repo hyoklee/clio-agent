@@ -17,6 +17,7 @@ import httpx
 from pydantic import Field, field_validator
 
 from clio_agent.gact.storage.models import StorageModel
+from clio_agent.gact.storage.ndp_ckan import PUBLIC_CATALOG_URL, NDPCkanCatalog, catalog_description
 
 
 class NDPEndpoint(StorageModel):
@@ -27,6 +28,17 @@ class NDPEndpoint(StorageModel):
     url: str = Field(max_length=4096)
     server: Literal["local", "global"] = "local"
     authenticated: bool = False
+    catalog_url: str = ""
+
+    @field_validator("catalog_url")
+    @classmethod
+    def validate_catalog_url(cls, value: str) -> str:
+        """An optional public CKAN catalog is operator-owned, never taken from dataset metadata."""
+        return cls.validate_url(value) if value else ""
+
+    def same_destination(self, other: NDPEndpoint) -> bool:
+        """Keep existing source identity when only the public metadata transport improves."""
+        return self.model_dump(exclude={"catalog_url"}) == other.model_dump(exclude={"catalog_url"})
 
     @field_validator("url")
     @classmethod
@@ -100,6 +112,7 @@ class NDPCatalog:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._results: dict[tuple[str, str], NDPDataset] = {}
+        self._public_catalog = NDPCkanCatalog()
 
     @staticmethod
     def endpoints() -> list[NDPEndpoint]:
@@ -120,7 +133,15 @@ class NDPCatalog:
                 raise ValueError("Authenticated NDP Endpoints require HTTPS")
             return endpoints
         client = _catalog_module().NDPClient()
-        return [NDPEndpoint(id="ndp", name="NDP catalog", url=client.base_url, server="global")]
+        return [
+            NDPEndpoint(
+                id="ndp",
+                name="NDP catalog",
+                url=client.base_url,
+                server="global",
+                catalog_url=PUBLIC_CATALOG_URL,
+            )
+        ]
 
     @staticmethod
     def access(
@@ -158,14 +179,20 @@ class NDPCatalog:
         only_groups: bool = False,
         token: str | None = None,
         organization: str = "",
+        offset: int = 0,
+        limit: int = 50,
     ) -> dict[str, Any]:
         """Search configured catalogs and preserve exact selections without downloading bytes."""
+        if offset < 0 or not 1 <= limit <= 100:
+            raise ValueError("Use a nonnegative offset and a page size from 1 to 100")
         endpoints = [item for item in self.endpoints() if not endpoint_id or item.id == endpoint_id]
         if not endpoints:
             raise ValueError("Choose a configured NDP Endpoint")
         datasets: list[NDPDataset] = []
         warnings: list[str] = []
+        total, has_more = 0, False
         for endpoint in endpoints:
+            count = 0
             access, warning = self.access(endpoint, token)
             if warning:
                 warnings.append(warning)
@@ -177,10 +204,26 @@ class NDPCatalog:
                 continue
             try:
                 client = _catalog_module().NDPClient(base_url=endpoint.url)
-                # Field filters avoid the catalog's optional Solr full-text
-                # dependency. Its term-search route remains available when
-                # that dependency is down (as on the public NDP deployment).
-                if organization:
+                client.max_retries = 1
+                client.timeout = httpx.Timeout(15, connect=5)
+                if endpoint.catalog_url:
+                    records, count = self._public_catalog.search(
+                        endpoint.catalog_url, query, organization, offset, limit
+                    )
+                    rows = [
+                        _catalog_module().Dataset(
+                            **{
+                                **record,
+                                "notes": record.get("notes") or record.get("description"),
+                                "owner_org": (record.get("organization") or {}).get("name")
+                                or record.get("owner_org"),
+                                # CKAN extras are a list; the picker does not need them.
+                                "extras": None,
+                            }
+                        )
+                        for record in records
+                    ]
+                elif organization:
                     rows = asyncio.run(
                         client.search_datasets_advanced(
                             owner_org=organization, server=endpoint.server
@@ -208,6 +251,13 @@ class NDPCatalog:
                     rows = asyncio.run(
                         client.search_datasets_simple(terms=[query], server=endpoint.server)
                     )
+                if not endpoint.catalog_url:
+                    count = min(len(rows), 500)
+                    if len(rows) > 500:
+                        warnings.append(
+                            f"{endpoint.name}: this Endpoint exposes only the first 500 matching datasets. Refine the query or organization."
+                        )
+                    rows = rows[offset : min(offset + limit, 500)]
             except Exception as exc:
                 cause = exc if isinstance(exc, httpx.HTTPStatusError) else exc.__cause__
                 status = (
@@ -219,11 +269,9 @@ class NDPCatalog:
                     f"{endpoint.name} could not complete this search{status}. "
                     "Try again later or choose another Endpoint."
                 ) from exc
-            if len(rows) > 500:
-                warnings.append(
-                    f"{endpoint.name}: showing the first 500 of {len(rows)} datasets. Refine the query or organization."
-                )
-            for item in rows[:500]:
+            total += count
+            has_more = has_more or offset + limit < count
+            for item in rows:
                 resources = []
                 for index, resource in enumerate(item.resources[:1000]):
                     url = str(resource.get("url", ""))
@@ -258,7 +306,7 @@ class NDPCatalog:
                     id=item.id,
                     name=item.name,
                     title=item.title,
-                    description=item.notes or "",
+                    description=catalog_description(item.notes or ""),
                     organization=item.owner_org or "",
                     endpoint=endpoint,
                     resources=resources,
@@ -273,6 +321,8 @@ class NDPCatalog:
         return {
             "datasets": [self.visible(item) for item in datasets],
             "warnings": list(dict.fromkeys(warnings)),
+            "total": total,
+            "next_offset": offset + limit if has_more else None,
         }
 
     def organizations(self, query: str = "", endpoint_id: str = "") -> dict[str, Any]:
@@ -283,9 +333,15 @@ class NDPCatalog:
         organizations: list[dict[str, str]] = []
         for endpoint in endpoints:
             client = _catalog_module().NDPClient(base_url=endpoint.url)
+            client.max_retries = 1
+            client.timeout = httpx.Timeout(15, connect=5)
             try:
-                names = asyncio.run(
-                    client.list_organizations(name_filter=query or None, server=endpoint.server)
+                names = (
+                    self._public_catalog.organizations(endpoint.catalog_url)
+                    if endpoint.catalog_url
+                    else asyncio.run(
+                        client.list_organizations(name_filter=query or None, server=endpoint.server)
+                    )
                 )
             except Exception as exc:
                 raise ValueError(
@@ -326,7 +382,7 @@ class NDPCatalog:
 
     def refresh(self, dataset: NDPDataset) -> NDPDataset:
         """Refresh selected catalog identities without broadening the approved resource set."""
-        if dataset.endpoint not in self.endpoints():
+        if not any(current.same_destination(dataset.endpoint) for current in self.endpoints()):
             raise PermissionError("This NDP Endpoint changed; attach the dataset again")
         self.search(dataset.name, dataset.endpoint.id)
         updated = self.selected(

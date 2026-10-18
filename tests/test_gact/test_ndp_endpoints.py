@@ -13,17 +13,26 @@ from typing import Any
 
 import httpx
 import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 from clio_agent.gact.resource_custody import ResourceStore
-from clio_agent.gact.storage.ndp_endpoint_models import EndpointConnectionInput, EndpointRequest
+from clio_agent.gact.routes.storage_ndp_endpoints import register_ndp_endpoint_routes
+from clio_agent.gact.storage.ndp_endpoint_models import (
+    EndpointConnectionInput,
+    EndpointConnectionUpdate,
+    EndpointRequest,
+)
 from clio_agent.gact.storage.ndp_endpoint_operations import resolve_request
 from clio_agent.gact.storage.ndp_endpoints import MAX_RESPONSE, NDPEndpointService
+from clio_agent.gact.storage.service import StorageService
 from clio_agent.gact.storage.store import SourceStore
 
 SCHEMA: dict[str, Any] = {
     "openapi": "3.1.0",
     "info": {"title": "Test endpoint"},
     "paths": {
+        "/organization": {"get": {}, "post": {}},
         "/stations": {
             "get": {
                 "parameters": [
@@ -92,8 +101,10 @@ class EndpointHandler(BaseHTTPRequestHandler):
                 self.wfile.flush()
             time.sleep(2)
             return
-        if self.path == "/openapi.json":
+        if self.path in {"/openapi.json", "/v2/openapi.json"}:
             body, mime = json.dumps(SCHEMA).encode(), "application/json"
+        elif self.path == "/organization":
+            body, mime = b'["earthscope", "services"]', "application/json"
         elif self.path.startswith("/stream/"):
             body, mime = (
                 b"".join(
@@ -159,7 +170,8 @@ def test_discovery_post_capture_and_restart(tmp_path: Path, peer: str) -> None:
     row = owner.connect("ws", EndpointConnectionInput(name="Lab", url=peer))
     description = owner.describe(row)
     assert description["api_title"] == "Test endpoint"
-    assert description["operations"][2]["body_schema"]["required"] == ["station"]
+    job = next(item for item in description["operations"] if item["id"] == "POST /jobs")
+    assert job["body_schema"]["required"] == ["station"]
     result = owner.invoke(
         "ws",
         row.id,
@@ -179,6 +191,129 @@ def test_discovery_post_capture_and_restart(tmp_path: Path, peer: str) -> None:
     restarted.disconnect("ws", row.id)
     assert restarted.connections("ws") == []
     assert resources.get("ws", result["resource_id"]) is not None
+
+
+def test_edit_hide_restore_preserves_identity_and_captures(tmp_path: Path, peer: str) -> None:
+    """Rename/visibility are durable metadata edits and do not contact the API again."""
+    owner, resources = owners(tmp_path)
+    row = owner.connect("ws", EndpointConnectionInput(name="Lab", url=peer))
+    capture = owner.invoke("ws", row.id, EndpointRequest(operation_id="GET /stations"), resources)
+    calls = len(EndpointHandler.calls)
+    edited = owner.update("ws", row.id, EndpointConnectionUpdate(name="My lab", hidden=True))
+    assert len(EndpointHandler.calls) == calls
+    assert edited.id == row.id and edited.name == "My lab" and edited.hidden
+    restarted, _ = owners(tmp_path)
+    assert restarted.connections("ws") == []
+    assert restarted.connections("ws", include_hidden=True)[0].id == row.id
+    assert restarted.captures("ws", row.id)[0].resource_id == capture["resource_id"]
+    restarted.update("ws", row.id, EndpointConnectionUpdate(hidden=False))
+    assert restarted.connections("ws")[0].name == "My lab"
+    restarted.disconnect("ws", row.id)
+    assert resources.get("ws", capture["resource_id"]) is not None
+
+
+def test_destination_edit_rediscovery_is_atomic_and_receipts_keep_origin(
+    tmp_path: Path, peer: str
+) -> None:
+    """Successful URL edits reuse identity; a failed discovery leaves the old record intact."""
+    owner, resources = owners(tmp_path)
+    row = owner.connect("ws", EndpointConnectionInput(name="Lab", url=peer))
+    before = owner.invoke("ws", row.id, EndpointRequest(operation_id="GET /stations"), resources)
+    edited = owner.update("ws", row.id, EndpointConnectionUpdate(url=peer + "/v2"))
+    assert edited.id == row.id and edited.url == peer + "/v2"
+    after = owner.invoke("ws", row.id, EndpointRequest(operation_id="GET /stations"), resources)
+    assert before["endpoint_url"] == peer
+    assert after["endpoint_url"] == peer + "/v2"
+    receipts = owner.captures("ws", row.id)
+    assert {item.endpoint_url for item in receipts} == {peer, peer + "/v2"}
+    with pytest.raises(ValueError):
+        owner.update("ws", row.id, EndpointConnectionUpdate(url=peer + "/protected"))
+    assert owner.get("ws", row.id).url == edited.url
+    with pytest.raises(ValueError, match="HTTPS"):
+        owner.update("ws", row.id, EndpointConnectionUpdate(authentication="ndp"))
+    assert owner.get("ws", row.id).authentication == "none"
+
+
+def test_endpoint_edits_cannot_cross_owner_or_workspace(tmp_path: Path, peer: str) -> None:
+    """Hidden records retain the same owner checks as visible API connections."""
+    owner, _ = owners(tmp_path)
+    row = owner.connect("ws", EndpointConnectionInput(name="Lab", url=peer))
+    with pytest.raises(KeyError):
+        owner.update("other", row.id, EndpointConnectionUpdate(hidden=True))
+    other = NDPEndpointService(owner.store, "someone-else")
+    with pytest.raises(KeyError):
+        other.update("ws", row.id, EndpointConnectionUpdate(name="Stolen"))
+    assert owner.get("ws", row.id).name == "Lab"
+
+
+def test_semantic_browse_reads_lists_without_saving_capture_files(
+    tmp_path: Path, peer: str
+) -> None:
+    """Refreshing metadata never starts streams or creates a growing capture history."""
+    owner, _ = owners(tmp_path)
+    row = owner.connect("ws", EndpointConnectionInput(name="Lab", url=peer))
+    assert owner.browse("ws", row.id, EndpointRequest(operation_id="GET /organization")) == [
+        "earthscope",
+        "services",
+    ]
+    assert owner.captures("ws", row.id) == []
+    calls = len(EndpointHandler.calls)
+    for operation in ("POST /organization", "GET /stream/{station}"):
+        with pytest.raises(ValueError, match="supported catalog"):
+            owner.browse("ws", row.id, EndpointRequest(operation_id=operation))
+    with pytest.raises(KeyError):
+        owner.browse("other", row.id, EndpointRequest(operation_id="GET /organization"))
+    assert len(EndpointHandler.calls) == calls
+
+
+def test_endpoint_management_http_contract(tmp_path: Path, peer: str) -> None:
+    """Actual HTTP routes persist edits and validate their narrow update contract."""
+    service = StorageService(tmp_path / "data", tmp_path / "private" / "credentials.json")
+    app = FastAPI()
+    app.state.workspaces = {"ws": object(), "other": object()}
+
+    async def run(change: Any) -> Any:
+        try:
+            return change()
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+    register_ndp_endpoint_routes(app, service, run)
+    with TestClient(app) as client:
+        connected = client.post(
+            "/v1/workspaces/ws/ndp-endpoints", json={"name": "Lab", "url": peer}
+        )
+        assert connected.status_code == 201
+        identifier = connected.json()["id"]
+        path = f"/v1/workspaces/ws/ndp-endpoints/{identifier}"
+        assert client.post(path + "/browse", json={"operation_id": "GET /organization"}).json() == [
+            "earthscope",
+            "services",
+        ]
+        assert (
+            client.post(path + "/browse", json={"operation_id": "POST /organization"}).status_code
+            == 409
+        )
+        response = client.patch(path, json={"name": "Research", "hidden": True})
+        assert response.status_code == 200
+        assert response.json()["id"] == identifier and response.json()["hidden"]
+        assert client.get("/v1/workspaces/ws/ndp-endpoints").json() == {"endpoints": []}
+        listing = client.get("/v1/workspaces/ws/ndp-endpoints?include_hidden=true").json()
+        assert listing["endpoints"][0]["name"] == "Research"
+        assert client.patch(path, json={"id": "replacement"}).status_code == 422
+        assert (
+            client.patch(path.replace("/ws/", "/other/"), json={"hidden": False}).status_code == 404
+        )
+        assert client.patch(path, json={"url": peer + "/protected"}).status_code == 409
+        assert client.get("/v1/workspaces/ws/ndp-endpoints?include_hidden=true").json() == listing
+        assert client.patch(path, json={"hidden": False}).status_code == 200
+        assert len(client.get("/v1/workspaces/ws/ndp-endpoints").json()["endpoints"]) == 1
+        assert client.delete(path).status_code == 200
+        assert client.get("/v1/workspaces/ws/ndp-endpoints?include_hidden=true").json() == {
+            "endpoints": []
+        }
 
 
 def test_sse_limits_preserve_exact_bytes(tmp_path: Path, peer: str) -> None:

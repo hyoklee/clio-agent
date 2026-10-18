@@ -84,6 +84,13 @@ def operations(document: dict[str, Any]) -> list[dict[str, Any]]:
                         .get("schema"),
                         document,
                     ),
+                    "multipart_schema": local_schema(
+                        operation.get("requestBody", {})
+                        .get("content", {})
+                        .get("multipart/form-data", {})
+                        .get("schema"),
+                        document,
+                    ),
                     "body_required": operation.get("requestBody", {}).get("required", False),
                     "read_only": method == "get",
                     "security": operation.get("security", document.get("security", [])),
@@ -112,7 +119,7 @@ def validate_value(value: Any, schema: dict[str, Any], document: dict[str, Any])
 
 
 def resolve_request(
-    connection: EndpointConnection, request: EndpointRequest
+    connection: EndpointConnection, request: EndpointRequest, *, multipart: bool = False
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
     """Validate a discovered route and return a same-origin, traversal-free URL."""
     operation = next(
@@ -161,7 +168,11 @@ def resolve_request(
             query[name] = str(value).lower() if isinstance(value, bool) else value
     if set(request.parameters) - names:
         raise ValueError("Only parameters advertised by this operation can be sent")
-    if request.body is None and operation["body_required"]:
+    if multipart and (operation["multipart_schema"] is None or request.body is not None):
+        raise ValueError("Choose an advertised multipart upload without a JSON body")
+    if request.body is None and operation["body_required"] and not multipart:
+        if operation["multipart_schema"] is not None and operation["body_schema"] is None:
+            raise ValueError("Use connected_data_ndp_upload_artifact for artifact file uploads")
         raise ValueError("This Endpoint operation requires a JSON body")
     if request.body is not None:
         if operation["body_schema"] is None:

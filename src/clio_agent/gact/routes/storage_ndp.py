@@ -26,6 +26,8 @@ class NDPSearch(StorageModel):
     endpoint_id: str = Field(default="", max_length=120)
     only_groups: bool = False
     organization: str = Field(default="", max_length=512)
+    offset: int = Field(default=0, ge=0)
+    limit: int = Field(default=30, ge=1, le=100)
 
 
 class NDPAttach(StorageModel):
@@ -60,7 +62,13 @@ def register_storage_ndp_routes(
         def discover() -> dict[str, Any]:
             warning = ""
             try:
-                token = account_token()
+                # Public metadata must not wait for an unrelated account refresh.
+                needs_account = any(
+                    endpoint.authenticated
+                    for endpoint in service.ndp.endpoints()
+                    if not body.endpoint_id or endpoint.id == body.endpoint_id
+                )
+                token = account_token() if needs_account else None
             except (PermissionError, ValueError):
                 token = None
                 warning = "NDP sign-in could not be refreshed. Public catalog browsing is still available; sign in again for protected data."
@@ -70,6 +78,8 @@ def register_storage_ndp_routes(
                 only_groups=body.only_groups,
                 token=token,
                 organization=body.organization,
+                offset=body.offset,
+                limit=body.limit,
             )
             if warning:
                 result["warnings"].append(warning)

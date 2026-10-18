@@ -40,12 +40,24 @@ class _ChannelSocket:
         self.channel.sendall(data)
 
     def close(self) -> None:
-        self.channel.close()
+        """Leave channel closure to the response owner.
+
+        HTTPConnection closes its socket as soon as it sees an HTTP/1.0 or
+        Connection: close response. Unlike a real socket makefile, our reader
+        has no independent descriptor; closing here would truncate the body.
+        """
 
 
 class _SSHBody(httpx.SyncByteStream):
-    def __init__(self, response: http.client.HTTPResponse, connection: Any, client: Any) -> None:
+    def __init__(
+        self,
+        response: http.client.HTTPResponse,
+        connection: Any,
+        client: Any,
+        channel: paramiko.Channel,
+    ) -> None:
         self.response, self.connection, self.client = response, connection, client
+        self.channel = channel
 
     def __iter__(self) -> Iterator[bytes]:
         while chunk := self.response.read1(8192):
@@ -56,7 +68,10 @@ class _SSHBody(httpx.SyncByteStream):
             self.response.close()
             self.connection.close()
         finally:
-            self.client.close()
+            try:
+                self.channel.close()
+            finally:
+                self.client.close()
 
 
 class EndpointSSHTransport(httpx.BaseTransport):
@@ -69,6 +84,7 @@ class EndpointSSHTransport(httpx.BaseTransport):
         """Open exactly one channel and close its SSH owner with the response."""
         client = connect_profile(self.profile)
         connection = http.client.HTTPConnection(request.url.host, request.url.port or 80)
+        channel = None
         try:
             transport = client.get_transport()
             if transport is None:
@@ -81,23 +97,30 @@ class EndpointSSHTransport(httpx.BaseTransport):
             )
             channel.settimeout(self.timeout)
             connection.sock = cast(Any, _ChannelSocket(channel))
+            if not isinstance(request.stream, httpx.SyncByteStream):
+                raise ValueError("Endpoint SSH requests require a synchronous byte stream")
             connection.request(
                 request.method,
                 request.url.raw_path.decode("ascii"),
-                body=request.read() or None,
+                body=iter(request.stream),
                 headers=dict(request.headers),
+                encode_chunked="content-length" not in request.headers,
             )
             response = connection.getresponse()
             return httpx.Response(
                 response.status,
                 headers=response.getheaders(),
-                stream=_SSHBody(response, connection, client),
+                stream=_SSHBody(response, connection, client, channel),
                 request=request,
                 extensions={"ndp_ssh_channel": channel},
             )
         except BaseException:
-            connection.close()
-            client.close()
+            try:
+                connection.close()
+                if channel is not None:
+                    channel.close()
+            finally:
+                client.close()
             raise
 
 

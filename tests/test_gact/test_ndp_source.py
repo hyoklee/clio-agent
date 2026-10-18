@@ -263,7 +263,7 @@ def test_expired_account_does_not_block_public_catalog(
     monkeypatch.setattr(service.auth, "connected", lambda record: True)
 
     def unavailable(record: SourceRecord) -> str:
-        raise ValueError("Authorization was rejected")
+        pytest.fail("Public metadata should not wait for an unrelated private account refresh")
 
     monkeypatch.setattr(service.auth, "token", unavailable)
     app = FastAPI()
@@ -277,7 +277,7 @@ def test_expired_account_does_not_block_public_catalog(
     assert response.status_code == 200
     assert response.json()["datasets"][0]["id"] == "weather"
     assert response.json()["datasets"][0]["access"] is None
-    assert "could not be refreshed" in response.json()["warnings"][0]
+    assert response.json()["warnings"] == []
 
 
 def dataset(url: str) -> NDPDataset:
