@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import time
+from typing import Any, Protocol
 
 from fastapi.testclient import TestClient
-from httpx import Response
 
 
-def complete_indexing(client: TestClient, prefix: str, accepted: Response) -> None:
+class StorageResponse(Protocol):
+    """Response fields shared by the HTTP clients supported by FastAPI's test client."""
+
+    @property
+    def status_code(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
+
+    def json(self) -> Any: ...
+
+
+def complete_indexing(client: TestClient, prefix: str, accepted: StorageResponse) -> None:
     """Require acceptance, then successful owner settlement before checking linked content."""
     assert accepted.status_code == 202, accepted.text
     operation = accepted.json()["indexing_operation"]

@@ -335,6 +335,7 @@ def test_default_root_auto_declares_workspace_skills_on_real_runtime_rows(
         "present-interactive-analysis",
         "review-visual-presentation",
         "update-models",
+        "work-with-ndp",
         "work-with-pdfs",
         "work-with-presentations",
         "work-with-spreadsheets",

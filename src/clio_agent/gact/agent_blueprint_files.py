@@ -34,6 +34,7 @@ from clio_agent.gact.agents.resolution import (
     _runtime_active_agent_blueprint_path,
     _runtime_workspace_catalog_cwd,
 )
+from clio_agent.platform_paths import win_extended_path
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -219,7 +220,7 @@ class BlueprintFileTooLargeError(ValueError):
 def write_blueprint_text_file(root: Path, relative_path: str, content: str) -> dict[str, Any]:
     """Atomically replace one existing textual file beneath a blueprint root."""
 
-    target = resolve_blueprint_file_path(root, relative_path)
+    target = Path(win_extended_path(resolve_blueprint_file_path(root, relative_path)))
     if not target.is_file():
         raise FileNotFoundError(relative_path)
     previous = target.read_bytes()
@@ -234,7 +235,7 @@ def write_blueprint_text_file(root: Path, relative_path: str, content: str) -> d
         with tempfile.NamedTemporaryFile(
             mode="wb",
             dir=target.parent,
-            prefix=f".{target.name}.",
+            prefix=".edit-",
             suffix=".tmp",
             delete=False,
         ) as temporary:

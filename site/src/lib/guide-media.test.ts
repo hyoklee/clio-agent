@@ -35,3 +35,13 @@ test("unresolved expressions do not invent media references", () => {
   ).toEqual([]);
   expect(guideMediaSources("<WidgetRecording name={unknown} />")).toEqual([]);
 });
+
+test("tutorial captures keep their directory when filenames overlap", () => {
+  const media = guideMediaSources(`import catalog from '../../../../assets/tutorials/ndp/ndp-catalog.jpg';
+import other from '../../../../assets/tutorials/another/ndp-catalog.jpg';
+<Capture image={await captureImage(catalog)} alt="NDP catalog" caption="Actual result" />
+<Capture image={await captureImage(other)} alt="Another catalog" caption="Separate source" />`);
+  expect(media.map((item) => item.source)).toEqual([
+    "tutorials/ndp/ndp-catalog.jpg", "tutorials/another/ndp-catalog.jpg",
+  ]);
+});

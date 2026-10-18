@@ -200,6 +200,11 @@ def effective_declared_skills(
                 ):
                     declared.append(ref.id)
     catalog_skill_ids: list[str] = []
+    # Agents that already declare source setup share the NDP procedure, while
+    # retaining curated specialist boundaries and normal workspace overrides.
+    if "connect-data" in declared and "work-with-ndp" not in declared:
+        if catalog.resolve("work-with-ndp").status == "resolved":
+            declared.append("work-with-ndp")
     if app is not None and session_id and wants_a2ui_catalogs:
         catalog_skill_ids = _producible_a2ui_catalog_skill_ids(catalog)
         for skill_id in catalog_skill_ids:

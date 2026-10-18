@@ -22,6 +22,7 @@ the same semantic bound.
 from __future__ import annotations
 
 import asyncio
+import codecs
 import math
 import time
 from pathlib import Path
@@ -334,18 +335,41 @@ def read_workspace_resource_text(
     resource_id: str,
     derivative_id: str = "",
 ) -> dict[str, Any]:
-    """Read one bounded textual original or named textual derivative."""
+    """Read bounded text, returning a prefix for files above the scan ceiling.
+
+    A preview never scans the whole oversized input. Its total character count
+    is unknown (None); total_bytes and truncated describe the remaining data.
+    """
 
     record = _record(app, workspace_id, resource_id)
     path, representation = _text_path(app, record, derivative_id)
     scan_bytes = text_scan_max_bytes()
-    if path.stat().st_size > scan_bytes:
-        raise ResourceQueryError(
-            "read_input_too_large",
-            "text representation exceeds the bounded read limit; use search or structure tools",
-            max_scan_bytes=scan_bytes,
-        )
+    size = path.stat().st_size
     read_chars = text_read_max_chars()
+    if size > scan_bytes:
+        # Four bytes per UTF-8 code point, plus one boundary code point. Never
+        # exceed the configured scan ceiling or split a multibyte character.
+        budget = max(1, min(scan_bytes, max(1, read_chars) * 4 + 4))
+        with path.open("rb") as stream:
+            prefix = stream.read(budget)
+        try:
+            content = codecs.getincrementaldecoder("utf-8")().decode(prefix, final=False)
+        except UnicodeDecodeError as exc:
+            raise ResourceQueryError(
+                "resource_not_decodable",
+                "resource preview is not valid UTF-8 text",
+                detail=str(exc),
+            ) from exc
+        return {
+            "resource_id": resource_id,
+            "revision": record.revision,
+            "representation": representation,
+            "content": content[:read_chars],
+            "total_chars": None,
+            "total_bytes": size,
+            "truncated": True,
+            "preview": True,
+        }
     content = _read_text(path)
     return {
         "resource_id": resource_id,
@@ -524,7 +548,9 @@ def build_resource_tools(agent_def: "AgentDef") -> list[Any]:
             desc=(
                 "Read a bounded textual upload or named Docling textual derivative. Use this "
                 "for immutable source or conversion text; the resource's workspace_path is the "
-                "separate working copy for filesystem tools."
+                "separate working copy for filesystem tools. Large text files return a UTF-8 "
+                "prefix preview with truncated=true and total_chars=null; analyze downloaded "
+                "data with filesystem or scientific tools instead of treating the preview as complete."
             ),
             args={
                 "resource_id": {"type": "string", "description": "Immutable resource id."},

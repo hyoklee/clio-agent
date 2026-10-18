@@ -1,0 +1,90 @@
+---
+title: Analyze EarthScope data from NDP
+description: Select a station CSV, check its time coverage, and resume a finite stream sample without repeating records.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import Capture from '../../../../components/overview/Capture';
+import { captureImage } from '../../../../lib/captures';
+import chart from '../../../../assets/tutorials/ndp/station-chart.png';
+
+Use this example to take a public EarthScope station dataset from catalog search
+to a local analysis. It uses the default agent's NDP tools; it does not require
+the separate EarthScope blueprint.
+
+<Aside type="note" title="Development build">
+  Requires the [NDP development build](/docs/files/ndp/). The example was run
+  against real public data on 18 October 2026. Catalog availability can change.
+</Aside>
+
+## Select and analyze one station
+
+<Steps>
+
+1. [Connect a model](/docs/connect-a-model/) that supports tools and open a
+   conversation in a workspace for this example.
+2. Ask CLIO to find and inspect the measurement file:
+
+   ```text
+   Find WWMT.CI.LY_.40 in NDP's EarthScope Consortium catalog. Select only
+   its CSV and request connection approval. Download a local copy, inspect
+   the columns, timestamp encoding, coverage and gaps, and check component
+   units against metadata. Chart one-minute means of east, north and up.
+   Save a report and PNG with dataset/resource IDs and the input SHA-256.
+   Preserve the source file; identify anything you cannot verify.
+   ```
+
+3. Review the selected resource. It is **WWMT.CI.LY_.40.csv**, under publisher
+   **earthscope_consortium**. Approve only the data you intend to use. If CLIO
+   presents a sign-in button, finish the private browser flow and return.
+4. Open the report and chart artifacts. Compare the reported columns, time range,
+   missing values and gaps with the actual file. Ask for corrections before using
+   the result in your own research.
+
+</Steps>
+
+## What the recorded run found
+
+The CSV contained **857,957 data rows** and **50,084,343 bytes**, with columns
+`time`, `east`, `north`, `up`, `sigEE`, `sigNN`, `sigUU` and `qChannel`. Interpreting
+the time field as Unix milliseconds gave **3–12 December 2024, UTC**. There were
+64 consecutive timestamp steps other than one second. Physical component units
+were not established by the inspected metadata, so the chart labels source units.
+
+<Capture client:visible image={await captureImage(chart)}
+  alt="Three panels charting one-minute means of the EarthScope WWMT station east, north and up components from December 3 through 12, 2024, in source units"
+  caption="Actual agent-generated PNG from the public station CSV. Means summarize available records; inspect the report's time-gap checks before interpreting changes." />
+
+The selected dataset ID was `2611eeb1-4efd-4ab3-badd-abacc6b64d9f` and its CSV
+resource ID was `9ed2d1f4-6fd4-4720-9724-7280c2db9b4e`, pointing to the publisher's
+[public CSV](https://ds2.datacollaboratory.org/Earthscope_api_dec2024/raw_csv/WWMT.CI.LY_.40.csv).
+Retain your own run's
+identities and hash: matching a station name alone does not establish the same
+data version.
+
+## Try a resumable sample
+
+With an existing on-demand service connected through
+[Endpoints & streams](/docs/files/ndp/#connect-an-existing-endpoint), ask:
+
+```text
+Use the connected EarthScope on-demand API's finite remote-CSV SSE operation
+for the approved WWMT.CI.LY_.40 CSV. Capture three measurement rows, retain
+the returned cursor, then request the next two. Use finite server and client
+limits. Verify timestamps, hashes and no repeated records across segments;
+save a short report. Do not start a background producer.
+```
+
+In the recorded run, the first segment contained three measurements at
+`00:00:00–00:00:02 UTC` on 3 December 2024. The returned cursor resumed at the
+next two seconds. All five records matched the downloaded CSV with no overlap;
+both retained responses matched their returned hashes. These are **archived
+measurements replayed over SSE**.
+
+A remote Endpoint reached through SSH also returned station metadata for
+`IU.ANMO` through its registered EarthScope service. Station metadata and GNSS
+measurements are different inputs. Protected live Kafka sampling requires the
+service's accepted account and role; that path was not qualified in this run.
+
+Continue to [check the evidence](/docs/evidence/) or
+[save and share the result](/docs/exports/).

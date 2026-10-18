@@ -29,6 +29,7 @@ diagnostic and provenance records.
 |---|---|---|
 | Prompts, files you attach, and tool results sent to the model | Every model call | Only the provider you chose. With a local provider such as LM Studio or Ollama, this stays on your machine. |
 | Requests made by tools and tool servers | When you add a tool or tool server that uses the network | Whatever that tool contacts |
+| NDP catalog searches, selected resource reads and Endpoint operations | When you use the NDP connection | The catalog, selected resource host or approved Endpoint; SSH operations go through the chosen remote computer. Captured responses stay on the CLIO machine and can be sent to the selected model when used in conversation. |
 | Update check by the `clio` command | About once a day, on macOS and Linux | PyPI, to see whether a newer `clio-agent` exists |
 | Model information catalog | When CLIO needs model limits, cached for 24 hours | models.dev |
 | Update check by the desktop app | When the app checks for updates | GitHub releases |
