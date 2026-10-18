@@ -6,11 +6,25 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from clio_agent.gact.storage.models import CreateSource, SourceConfiguration, SourceRecord
+from pydantic import Field
+
+from clio_agent.gact.storage.models import (
+    CreateSource,
+    SourceConfiguration,
+    SourceRecord,
+    StorageModel,
+)
 from clio_agent.gact.storage.ndp_catalog import NDPDataset, NDPSelection
 
 if TYPE_CHECKING:
     from clio_agent.gact.storage.service import StorageService
+
+
+class NDPConnectionSelection(StorageModel):
+    """Public catalog identities selected for one approved NDP connection."""
+
+    endpoint_id: str = Field(min_length=1, max_length=120)
+    resource_ids: list[str] = Field(min_length=1, max_length=1000)
 
 
 def existing_selection(

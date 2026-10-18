@@ -94,18 +94,15 @@ def _ndp_connection(
     mode: str,
     configuration: dict[str, Any],
 ) -> SourceRecord:
-    from pydantic import Field
-
-    from clio_agent.gact.storage.models import StorageModel
-    from clio_agent.gact.storage.ndp_selection import existing_selection, select_source
-
-    class Selection(StorageModel):
-        endpoint_id: str = Field(min_length=1, max_length=120)
-        resource_ids: list[str] = Field(min_length=1, max_length=1000)
+    from clio_agent.gact.storage.ndp_selection import (
+        NDPConnectionSelection,
+        existing_selection,
+        select_source,
+    )
 
     if mode != "read_only":
         raise ValueError("NDP connections are read-only; download an editable local copy instead")
-    choice = Selection.model_validate(configuration)
+    choice = NDPConnectionSelection.model_validate(configuration)
     dataset = service.ndp.selected(choice.endpoint_id, root, choice.resource_ids)
     with service.ndp_selection_lock:
         existing = existing_selection(service, workspace_id, dataset)
