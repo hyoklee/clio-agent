@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import http.client
 import io
+import logging
 import os
 import platform
 import shutil
@@ -22,8 +24,10 @@ import truststore
 from filelock import FileLock
 
 if TYPE_CHECKING or __package__:
+    from . import office_compat
     from .process import DocumentError, inherit_parent_access, run
 else:
+    import office_compat
     from process import DocumentError, inherit_parent_access, run
 
 VERSION = "26.2.6"
@@ -61,6 +65,11 @@ ASSETS = {
     ),
 }
 MAX_DOWNLOAD = 600 * 1024 * 1024
+logger = logging.getLogger(__name__)
+
+
+class _RetryableDownloadError(DocumentError):
+    """A network failure or unverified response permits a bounded fresh request."""
 
 
 def asset() -> tuple[str, str, str]:
@@ -81,6 +90,7 @@ def asset() -> tuple[str, str, str]:
 def executable(root: Path) -> Path | None:
     """Find an executable only inside a private renderer tree."""
     candidates = [
+        *([root / office_compat.WRAPPER] if office_compat.supported() else []),
         root / "program" / "soffice.com",
         root / "LibreOffice" / "program" / "soffice.com",
         root / "LibreOffice.app" / "Contents" / "MacOS" / "soffice",
@@ -90,21 +100,54 @@ def executable(root: Path) -> Path | None:
 
 
 def _download(url: str, target: Path, checksum: str) -> None:
+    """Fetch verified bytes with three fresh attempts under one time budget."""
+    started = time.monotonic()
+    try:
+        for attempt in range(3):
+            if time.monotonic() - started >= 600:
+                raise DocumentError("LibreOffice download exceeded 600 seconds")
+            try:
+                _download_once(url, target, checksum, started)
+                return
+            except _RetryableDownloadError as exc:
+                target.unlink(missing_ok=True)
+                if attempt == 2:
+                    raise DocumentError(f"{exc}; all three download attempts failed") from exc
+                logger.warning(
+                    "reason=office_download_retry attempt=%d url=%s error=%s", attempt + 1, url, exc
+                )
+                time.sleep(2**attempt)
+    except DocumentError:
+        target.unlink(missing_ok=True)
+        raise
+
+
+def _download_once(url: str, target: Path, checksum: str, started: float) -> None:
     digest = hashlib.sha256()
     count = 0
-    started = time.monotonic()
+    source_url = url
     try:
         context = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
         try:
-            response = urllib.request.urlopen(url, timeout=30, context=context)
+            request = urllib.request.Request(
+                url, headers={"Cache-Control": "no-cache", "Accept-Encoding": "identity"}
+            )
+            response = urllib.request.urlopen(request, timeout=30, context=context)
         except urllib.error.HTTPError as exc:
-            if exc.code not in {404, 410}:
+            if exc.code not in {404, 410} or not url.startswith(
+                "https://download.documentfoundation.org/"
+            ):
                 raise
             archive = url.replace(
                 "download.documentfoundation.org", "downloadarchive.documentfoundation.org"
             ).replace(f"/stable/{VERSION}/", f"/old/{VERSION}.2/")
-            response = urllib.request.urlopen(archive, timeout=30, context=context)
+            request = urllib.request.Request(
+                archive, headers={"Cache-Control": "no-cache", "Accept-Encoding": "identity"}
+            )
+            response = urllib.request.urlopen(request, timeout=30, context=context)
         with response, target.open("wb") as output:
+            get_url = getattr(response, "geturl", None)
+            source_url = str(get_url()) if callable(get_url) else url
             while chunk := response.read(1024 * 1024):
                 count += len(chunk)
                 if count > MAX_DOWNLOAD:
@@ -113,10 +156,19 @@ def _download(url: str, target: Path, checksum: str) -> None:
                     raise DocumentError("LibreOffice download exceeded 600 seconds")
                 digest.update(chunk)
                 output.write(chunk)
-    except OSError as exc:
-        raise DocumentError(f"LibreOffice download failed: {exc}") from exc
-    if digest.hexdigest() != checksum:
-        raise DocumentError("LibreOffice download failed its pinned SHA-256 check")
+    except urllib.error.HTTPError as exc:
+        error_type = (
+            _RetryableDownloadError if exc.code in {408, 429} or exc.code >= 500 else DocumentError
+        )
+        raise error_type(f"LibreOffice download failed: HTTP {exc.code} from {source_url}") from exc
+    except (OSError, http.client.HTTPException) as exc:
+        raise _RetryableDownloadError(f"LibreOffice download failed: {exc}") from exc
+    actual = digest.hexdigest()
+    if actual != checksum:
+        raise _RetryableDownloadError(
+            f"LibreOffice download failed its pinned SHA-256 check: expected {checksum}, "
+            f"received {actual} for {count} bytes from {source_url}"
+        )
 
 
 def _deb_data(stream: BinaryIO) -> bytes:
@@ -208,6 +260,13 @@ def ensure_office(root: Path) -> str:
     with FileLock(str(root.parent / f"{root.name}.lock"), timeout=600):
         existing = executable(root)
         if existing:
+            if office_compat.supported():
+                office_compat.prepare(root, download=_download, deb_data=_deb_data)
+                existing = executable(root)
+                if existing is None:
+                    raise DocumentError(
+                        "Private LibreOffice launcher disappeared during preparation"
+                    )
             inherit_parent_access(root)
             run([str(existing), "--version"], cwd=root, timeout=30)
             return str(existing)
@@ -230,6 +289,8 @@ def ensure_office(root: Path) -> str:
             image.mkdir()
             try:
                 _extract(archive, image)
+                if office_compat.supported():
+                    office_compat.prepare(image, download=_download, deb_data=_deb_data)
                 inherit_parent_access(image)
                 candidate = executable(image)
                 if candidate is None:

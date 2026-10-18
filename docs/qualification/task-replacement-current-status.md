@@ -1,5 +1,24 @@
 # Tasks replacement status — October 18 UTC
 
+## October 18 UTC — upstream integration and dependency alignment
+
+The human confirmed that upgrading the isolated iowarp-core dependency is
+authorized. Dependency alignment is ordinary integration work, with no pending
+approval gate. The feature integrates clio-agent develop `7bae65cb` and GACT's
+matching upstream desktop/tool-history repair `a722557d`; its resulting GACT
+commit is `7a75edcf`. FastMCP 4.1.0, MCP 2.0.0 and Docket 0.26.2 remain intact.
+The lockfile changes iowarp-core 2.3.1 to 2.3.2, adds upstream zstandard 0.25.0
+and carries upstream's application version. No iowarp-core library source is
+modified. The merged tool-history projection reports missing outcomes as
+Unknown; its retained regression still checks completed calls, later live calls
+and continuing accepted tasks across all stopped/ended turn reasons.
+
+Scoped Ruff/format and Mypy on thirteen production files pass, as do lockfile,
+removal and existing static guards. The tool-observer size baseline decreases
+from 1035 to 1029. The three native AIO stalls and separate watchdog timeout
+are not claimed fixed. Regression execution and the complete final-candidate
+live matrix remain required; no new model qualification has run for this tuple.
+
 ## October 18 UTC — owned-process retirement and approval-rule removal
 
 The human revoked the human-only force-close requirement and explicitly

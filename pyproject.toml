@@ -1,6 +1,6 @@
 [project]
 name = "clio-agent"
-version = "0.9.5b7.post1"
+version = "0.9.5b7.post2"
 description = "CLIO Agent — Autonomous AI agent framework for scientific data management. Part of the IOWarp platform."
 authors = [
     { name = "Jaime Cernuda", email = "jcernudagarcia@illinoistech.edu" },
@@ -43,6 +43,7 @@ dependencies = [
     # Runtime preparation must also work for pip-installed Clio without a host uv.
     "uv>=0.8,<1",
     "truststore==0.10.4",
+    "zstandard==0.25.0",  # Pinned private LibreOffice ABI packages use data.tar.zst.
     # Intentional exact prereleases: registry-backed uv installs must declare DSPy,
     # FastMCP, and FastMCP Tasks as explicit roots because the top-level release is stable.
     "dspy==3.4.0",
@@ -99,12 +100,14 @@ dependencies = [
     # clio-agent` (or the bundled runtime's unlocked `uv pip install`) silently
     # resolve onto clio-core 2.2.1 while uv.lock/CI were still on 2.1.0 -- a
     # real incident (a 2.1.0 client talking to a 2.2.1 daemon on one host).
-    # ~=2.3.1 == ">=2.3.1,<2.4.0": follow patches within the tested minor series;
+    # ~=2.3.2 == ">=2.3.2,<2.4.0": follow patches within the tested minor series;
     # a new minor requires an explicit bump and compatibility validation.
     # 2.3.1 is the first published 2.3 wheel release: it includes the indexer
     # module missing from 2.2.1 and the unpublished 2.3.0 wheels, plus the 2.3.0
     # Windows IPC/memory and storage correctness fixes.
-    "iowarp-core~=2.3.1",
+    # 2.3.2 adds capacity queries and stable async target registration required
+    # for bounded automatic recovery of full managed conversation storage.
+    "iowarp-core~=2.3.2",
     # Cross-platform process lifecycle for the shared clio-core runtime daemon
     # (connect-or-spawn + last-one-out release). clio-core deploys identically on
     # Linux/macOS/Windows (per upstream), so only the host-side primitives differ:
