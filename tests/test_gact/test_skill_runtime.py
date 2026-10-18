@@ -1055,9 +1055,10 @@ def test_mermaid_component_lookup_returns_its_authoring_guide_in_the_same_call(
     )
     decoded, _ = json.JSONDecoder().raw_decode(loaded)
     _, catalog = load_builtin_catalogs()
-    assert decoded["x-clio-authoring"] == catalog.file["components"]["clio.mermaid.v1"][
-        "x-clio-authoring"
-    ]
+    assert (
+        decoded["x-clio-authoring"]
+        == catalog.file["components"]["clio.mermaid.v1"]["x-clio-authoring"]
+    )
 
 
 def test_catalog_skill_basic_exposes_both_sidecar_and_catalog_file_roots(
