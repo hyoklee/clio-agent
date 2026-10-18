@@ -68,6 +68,7 @@ def test_producer_expert_can_load_review_and_bundled_example(
     assert declared == [
         "present-interactive-analysis",
         SKILL_ID,
+        "create-diagram",
         *(["create-dashboard"] if tool_name == "publish_dashboard_report" else []),
     ]
     runtime = SkillRuntime(resolutions=catalog.resolve_declared(declared))
@@ -110,7 +111,7 @@ def test_main_discovers_review_and_workspace_override_wins(tmp_path: Path) -> No
         skills=[SKILL_ID],
     )
     declared = effective_declared_skills(agent, catalog)
-    assert declared == [SKILL_ID, "present-interactive-analysis"]
+    assert declared == [SKILL_ID, "present-interactive-analysis", "create-diagram"]
     runtime = SkillRuntime(resolutions=catalog.resolve_declared(declared))
     assert runtime.resolved[SKILL_ID].skill is not None
     assert runtime.resolved[SKILL_ID].skill.scope == "workspace"
