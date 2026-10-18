@@ -47,7 +47,7 @@ Open **Work** in the session's information surface. **Background work** lists
 tasks with their name, kind, status and available progress. Open a row to read
 its assignment and result. A subagent's row also opens its conversation.
 
-<GuideScreenshot name="tasks-desktop-running" format="png" alt="Work lists a running Bash task and a running worker while the parent has finished its response" caption="Real Codex/Luna execution: the parent has ended its response while a Shell task and its Subagent remain running. This is a qualification assignment, not a scientific analysis example." />
+<GuideScreenshot name="tasks-workflow-work" format="png" alt="Work shows the running parent Session, its paused child and an open Question, with the child's assignment expanded" caption="Current replacement service, actual Codex/Luna: a workflow child is paused while its Question remains open. The original assignment appears only when its row is expanded. This is a qualification assignment." />
 
 Assignments and results stay behind the row disclosure. **Technical details**
 contains the handle, host and backend state when you need to diagnose an issue.
@@ -57,8 +57,8 @@ The observability view and Runs controls expose the same underlying work.
 
 | Action | Effect |
 | --- | --- |
-| **Stop** | Stops the current response and its waiter. Tasks continue. A later result can wake the agent again. |
-| **Pause** | Holds a subagent's model execution and context until resume. Background work continues; messages and results accumulate. |
+| **Stop** | Stops the current response and its waiter. Background tasks continue and may wake the agent later. A foreground Shell is cancelled and cleaned up. |
+| **Pause** | Holds the selected agent's model execution and context until resume. Background work continues; messages and results accumulate. |
 | **Cancel task** | Requests cancellation. A Subagent cancellation also cancels its descendants. Settlement waits for the required cleanup. |
 
 Stopping a response does not cancel a download. Pausing a child does not kill its

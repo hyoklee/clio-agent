@@ -1,141 +1,185 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 21:08 UTC
+## Current state — October 18, 22:39 UTC
 
-Initial implementation and initial test construction are complete. The remaining
-work is regression/live bug repair, final integrated qualification and independent
-review. Publication and daily Desktop installation remain separate.
+Initial implementation and initial test construction are complete. Regression
+checks pass for the current production tuple. Full live qualification remains
+incomplete; publication and daily Desktop installation remain separate.
 
-| Milestone | Evidence |
+| Milestone | Current evidence |
 | --- | --- |
-| Initial implementation | Complete; subsequent defects remain repairs, not missing initial implementation. |
-| Initial regression construction | Complete; new defect-specific regressions precede their execution. |
-| Completed agent CI | `fcd8737cbfb43bdc2183e57bc355036b6fddd072`: 24 successful jobs, all twelve Python reports collected, zero failures/errors. Each interpreter has 12,992 passes and fifty exclusions. Exclusions are not passes. |
-| Current repair | This commit excludes reserved task-body/output scopes from semantic-event replay and records GACT `c813c1b7d3064c5b6125dc21c9aec70117c78ca4`. Fresh combined-head CI/review and UI build remain required. |
-| Live qualification | Scoped R210 actual-model/external recovery and desktop/phone interactions passed. The full Q1–Q9 matrix, migration/recovery obligations and all thirty final-candidate races remain unaccepted. |
-| Release readiness | No-go until those required gates and independent reviews pass. |
+| Production candidate | clio-agent `a0645c216fad81fb36a063dbdb4b9f5bee1d87b0`; GACT `c813c1b7d3064c5b6125dc21c9aec70117c78ca4`. |
+| Regression CI | Agent run 39166370524: all 24 jobs successful; twelve Python reports, zero failures/errors. Python 3.12/3.13/3.14 each have 12,993 passes and 50 exclusions. Exclusions are not passes or live acceptance. |
+| UI CI | GACT runs 39166228634 and 39166224687 succeeded at c813c1b7. The first has six applicable successes and three conditional release skips. The second has five successes, the conditional native-proof job skipped and three conditional release skips. |
+| Matching build | R219 online/offline builds passed at the exact tuple; 655 files / 60,368,527 bytes. Index SHA256 `0d8febb24e4855dbf402427e697355a142b83bed7a0f95ea68f2b26ce77ded0a`. |
+| Independent source reviews | Astra and actual Claude Code/Fable both returned source GO for a0645c21 / c813c1b7. These do not qualify runtime behavior. |
+| Current live proof | R227 child peers and R234 root Session peers passed two-workflow coordination; R234 also passed observe-only privacy and real desktop/phone grant/revoke. R230 passed native Shell/model/physical-output checks. Current SSE size evidence passed. Scope and remaining gates below. |
+| Final acceptance | Q1–Q9 as a whole, migration/recovery obligations and all 30 final-candidate race repetitions remain unaccepted. No Tasks release or daily installation. |
 
-[Completed agent CI](https://github.com/iowarp/clio-agent/actions/runs/39163180395)
-retained all existing assertions and limits. The 1,005-message retention case
-passed on Python 3.12/3.13/3.14 in 111.705/81.823/50.541 seconds under the unchanged
-180-second guard. The A2UI load case also passed on all three interpreters.
-The twelve-report inventory is D `.pytest-runtime/static/ci-fcd8737c-complete.json`.
-Its fifty exclusions include live-provider prerequisites and Windows-only cases;
-they are not presented as executed or as full platform/provider qualification.
+[Agent CI](https://github.com/iowarp/clio-agent/actions/runs/39166370524),
+[GACT workspace](https://github.com/iowarp/gact-tui/actions/runs/39166228634),
+[second GACT workspace](https://github.com/iowarp/gact-tui/actions/runs/39166224687).
 
-## Current fixes and evidence
+The unchanged 180-second retention guard passed with all 1,005 messages:
+112.641 / 81.668 / 97.780 seconds on Python 3.12 / 3.13 / 3.14.
+A2UI load passed in 154.509 / 158.972 / 67.013 seconds under its unchanged guard.
+Fifty exclusions per interpreter include provider prerequisites and platform-only
+cases. No skipped live/platform route is presented as qualified.
 
-R205/R206 measured actual Core writes while preserving all 1,005 messages and
-replay assertions. Reserved task-body storage reduced working-context index writes
-from 105,815,856 to 44,701 bytes. No backend, execution owner or production chunk
-default was replaced. R207's 32-event chunk setting remains an operator experiment.
+## R227: two distinct declared workflows
 
-Claude's source review then identified that cold semantic replay still fetched
-reserved task bodies and Shell output before discarding them. R212 reproduced
-that defect. The correction uses ARC's existing canonical chunk grammar when
-selecting semantic-event scopes; broad metadata exclusions remain unchanged.
-R213 passed the real-Core cold replay case with 48 linked Shell outputs, twenty
-pending messages, identical semantic events and explicit content reads:
-one executed pass, zero skips. Scoped Ruff/format, Mypy and the removal guard pass.
+Actual Codex/Luna used the production direct-SSE bridge, conversation engine,
+Core task history/mailbox and normal authenticated human grant/control endpoints.
+No fixture UI or executor-only probe substitutes for these model actions.
 
-R210's actual UI review found an unconfirmed visibility error repeated as progress
-and again as a red failure. GACT 8eaea05f keeps useful numeric progress, shows
-“Needs inspection,” and discloses the raw issue once in existing technical details.
-R214 executed three new behavior cases successfully; other filtered test names
-were not executed. Scoped lint/format and all six frontend guards passed.
-The correct workspace TypeScript 6.0.3 check passed after correcting a new fixture's
-non-nullable progress unit. An earlier root TypeScript 5.6 invocation was invalid
-for this workspace; no production schema or compiler setting was weakened.
+- Workflow A: `workflow_e33c5a19008e6f44c3d22e329b6d3ad109c9d05a42487c428d2cbd0ca7dd24e8`.
+- Workflow B: `workflow_08fd7cc5c7116f131c97075fdd5bb48dac8361dda58dcf4fe87388de06ffa87e`.
+- Step A: `task_a8d9b1c6148335630c947375ceb8c15fe91d6b8cd37020c71beae78662caba70`.
+- Step B: `task_d56a261f3ba45b52b5974723757735bacb586aa468fead50d9260b31db8938f1`.
 
-## Actual-model evidence — R210
+Both steps posted one asynchronous Question, read an independent file and yielded
+under their original handles. Before a grant, peer query returned no task/count.
+After human read/observe/message grants, the model discovered and observed the
+peer, subscribed, expired a wait while the peer continued, attempted one denied
+cancellation, read independently, sent a message and received a reply.
 
-Frozen source was agent fcd8737c / GACT 07cf095f, Python 3.14.6, DSPy 3.4.0,
-FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, pydocket 0.26.2 and iowarp-core 2.3.2.
-Codex/Luna used the real direct SSE inference bridge. The external workload was
-synthetic owned work on production FastMCP/SDK/CLIO implementations.
+Pause held A while the reply remained Core-pending. Revocation prevented its
+injection and peer disclosure; restoring the sender's message right admitted the
+retained reply automatically. It had one recipient-input commit. Answering B's
+Question completed B's step and workflow; A woke, explicitly collected B's actual
+result while its own Question remained open, then completed after its own answer.
+Owner and subscriber each had one independent completion input commit. Each root
+called its declared runner once; no workflow or Question was replayed.
 
-Session `sess_a01bbcc45575`, assignment
-`task_3f7f22197bbb4918912d6229e275a9cb`, and external task
-`task_369161b034094783aee65ae093c5ec3b` retained their original identities.
-The model received a running handle, performed an independent filesystem read,
-and yielded. Observation loss produced one attention episode and an idle wake.
-Repeated failed observations caused no duplicate wake. Reconnection used the
-original backend identity without resubmission. The original result then woke
-the same assignment once and the model reported the verified 77-byte payload,
-nonce, request tag and SHA256
-`b21cfce748f6fc023ce9afd9632f80bc4224073d970c6fbade5a22ca0e781abe`.
-There was one backend execution and one long-job submission.
+This proves the child-peer workflow scenario. R234 below supplies root Session
+handles and observe-only redaction. Historical-handle pinning, busy-peer cases,
+additional permission cases and final race repeats remain required. R227 grants/revokes were
+through authenticated human REST, not UI controls.
 
-Real desktop/390px-phone Work/disclosure, Runs and final-result interactions
-passed with no connected-UI errors or viewport overflow. All six selected images
-were visually inspected; the corrected GACT UI still needs real-service review. These technical qualification images do not complete the website media.
-This family does not prove approved-provider jobs, partial input answers, every
-task kind, the full UI matrix or the final race repetitions.
+The separate read-only R227 UI inspection opened the real root Work panel, expanded
+the paused child, opened its conversation in the center and displayed its actual
+session-access rights. The successful inspection has no page errors. Two console
+connection failures were captured without a persisted post-connect boundary;
+therefore it is not claimed as the complete clean-console Q9 gate. Earlier
+browser failures were locating hidden panels; product source was not changed.
 
-R210's owned API, external worker, proxy and browser exited normally; physical
-external cleanup was confirmed. Original authentication and product source stayed
-unchanged. Its isolated supported Core configuration used 32 MiB metadata,
-measured at 33,554,432 bytes. Product defaults and execution limits were unchanged.
-Bounded receipts, controllers and selected real images are in D
-`.pytest-runtime/static/r210-*`. Actual SSE inference passed; no measured maximum
-raw SSE-line size is claimed. The native-parser over-64-KiB contract also passed.
+## R234: root Session handles, permissions and real UI
 
-## Review, source and remaining work
+Two distinct declared workflow roots retained their original Session handles
+through Questions, peer feedback, pause/resume and completion:
+`task_d345b106c3e54e3ab306dede05797821` and
+`task_bd4a4dbd679b4a43b8cebfd100c2123f`. Their workflow IDs are
+`workflow_62bc4118ffe5ec1caac6daa5cdcfa75de771ca6d9f90797b9133efd4554eb81a`
+and `workflow_3cf9e088499c44c0552a2ae0601600c6689a9150c1a2ce9526a7a85275b9795d`.
+Each workflow ran once; its child read the actual sentinel file and completed.
 
-Astra returned source GO for fcd8737c. Actual Claude Code/Fable returned source GO
-for 99e7c13e and identified the cold-read cost addressed here. Source review missed
-99e's invalid SDK import, subsequently repaired at fcd. Neither review qualifies
-the current combined delta or substitutes for tests/live acceptance.
+Before grants, peer query disclosed no task/count. Observe-only query and observe
+returned safe status/numeric progress with no assignment, owner, message, output
+or result. Explicit result reading was denied. The desktop UI then granted
+read/observe/message, leaving control and descendant access separate. The model
+discovered, observed/subscribed, expired its wait without cancelling the peer,
+was denied cancellation, and sent an attributed message.
 
-Astra returned source NO-GO for e0e011b4 / 8eaea05f: Runs compared raw progress
-with a shortened diagnostic and failed to disclose complete structured/long text.
-R218 reproduced the structured case, then passed both structured and long cases
-individually/sequentially after preserving the original diagnostic separately
-from its concise summary. Scoped lint/format, all six guards and workspace types
-pass. New independent review is required. The first R217 Fable preflight exited
-before launching its CLI because the copied access token was too near expiry;
-a subsequent read-only check found refreshed original credentials. No model
-review or authentication write is claimed for that failed preflight.
-Local SSE receipts preceded final formatting; exact fcd CI and R210 provide the
-later evidence. Request bounded independent review of this combined delta.
+One root initially declined to reply, incorrectly claiming the standard control
+was undeclared. One recorded operator clarification entered the regular feedback
+queue under the same handle; the model then used the actual control successfully.
+This run is not represented as an unassisted first-attempt model success.
 
-Remote develop `35fdd5fe0d85328093ac615909ae6edc2e3a9231` and GACT main
-`f2b96308458d039d72391a88adb97166e72ef7ad` were freshly checked and are included.
-The isolated runtime uses iowarp-core 2.3.2 through ARC's existing Core adapter.
-The dependency lock hash remains
-`04d97494089a6fdbdb28a105b7119bedaf4957f0984e3a17c3d3a88892b81508`.
-Primary source/human work, released pins and installed Desktop remain preserved.
+With A paused, B's reply remained Core-pending. Real phone UI revocation blocked
+its injection and peer disclosure. Regrant admitted it once; answering B woke A
+with one subscribed completion, and both roots completed after their own answers.
+There was one Session handle per root, one reply input commit, one subscription
+completion commit and no human-root self-completion wake. Desktop/390px keyboard,
+permission controls and containment passed with zero connected-console/page errors.
+The four selected images were visually inspected. Pending busy-peer, historical
+handle and race cases are not inferred from this proof.
 
-Next: rebuild the matching GACT UI; obtain fresh combined CI/Astra/Fable review;
-execute the remaining Q1–Q9 campaigns and all thirty final races; update website
-walkthroughs with reviewed replacement-service images. Freeze source/runtime/UI
-within every family. See the acceptance ledger and live execution sheet for the
-unchanged required behaviors and diagnostic limits.
+## Current native and SSE evidence
 
-## Owned data and cleanup
+R230 on the same tuple passed actual Codex/Luna background Shell acceptance,
+running snapshots before/after independent file reading, expired wait, observation,
+unbounded wait and explicit result collection. The 45-second process produced
+619 output bytes and its actual completion file; canonical Shell handle
+`task_4d057a41769e49e1b1795be4ae2f2604` completed before cleanup.
 
-No product/model family is active. The October 18 no-follow inventory lists 171
-known disposable paths / 28.91 GiB logical data, with zero read errors/overlaps.
-Logical size is not a reclaimed-space promise. Seventy-six listed paths now
-intersect prior automatic-review rejections and remain manual-only.
+R231's model-side Indexing evidence passed with 48,098 entries, but its physical
+checker incorrectly expected a flattened result in a legacy UI projection.
+The run remains failed and its data was removed. Both storage scenarios now read
+canonical task/result endpoints and retain independent complete manifest/path/
+byte/hash assertions. The large-result reader respects pagination/references and
+does not parse truncated JSON as a complete native result. Fresh full storage
+checks remain required.
 
-R195's two roots, R208's exact native metadata file and the R215 cleanup attempt
-are recorded separately. R215's three exact targets were rejected before execution:
-`.pytest-runtime/live/r208-external-recovery`,
-`.pytest-runtime/live/r210-external-recovery`, and `.r210-live-tmp`.
-No retry, bypass, delegation or parent removal. Earlier boundaries remain intact.
-The latest audit found no process matching campaign paths and no campaign-port
-listener; remaining disposable files are still present.
+R234 observed 12,242 actual native SSE lines: 87 exceeded 65,536 bytes and the
+maximum was 82,331 bytes. All passed at configured 1,048,576 bytes; zero observer
+errors. The harness used read-only CPython monitoring of the original parser's
+existing size-check line, recording lengths/limits only. It changed no parser,
+request, response bytes or timeout. `lm15.sse_limit` / `CLIO_LM15_SSE_LIMIT`
+therefore has current actual-model over-64-KiB evidence. R229 separately measured
+73,563 bytes; its later provenance-lookup failure remains a failed family.
 
-Current inventory/custody files are
-`D:/Libraries/Documents/projects/clio-agent-task-qualification/TASKS-CLEANUP-LIST-2026-10-18.{md,csv,json}`
-and `TASKS-CLEANUP-CUSTODY-2026-10-18.json`. R215's rejection receipt is
-`.pytest-runtime/static/r215-disposal-rejection.json`. No archive was created.
-Earlier owner cleanup recovered 4.72 GiB on C and 5.35 GiB on D, plus pnpm pruning;
-those removed items are excluded from the remaining inventory.
+## Scoped preceding evidence and source reviews
 
-Keep the protected human design documents, active source/runtime, canonical
-product history, authentication/defaults/released pins and unrelated work.
-Retain every prior rejected/manual-only boundary; no manual cleanup script or
-retired service is executed. Historical dated status is available in Git;
-required source/test lessons and acceptance rows remain in the ledger.
+R212 reproduced reserved task-body downloads during cold semantic replay; R213
+passed the correction using ARC's existing event-chunk grammar. Actual-Core
+coverage retained 48 linked outputs and 20 pending messages. Exact-head CI adds
+this regression. Core index write work previously fell from 105,815,856 to
+44,701 bytes with all 1,005 messages preserved. Actual-model large-history restart
+and the complete F03 performance gate remain pending.
+
+R218 reproduced Runs losing/doubling structured diagnostics. The correction
+retains the original issue for deduplication and disclosure, with a separate short
+summary. Both new cases, scoped checks, six guards and workspace types passed.
+R219 built the matching UI. No schema, production budgets or assertion was weakened.
+
+Astra current review turn `01a150d6-e54d-7651-aed1-30b6468d4f4d` returned source GO.
+Actual Claude Code/Fable R219 also returned source GO. Remaining review advisories
+are nonblocking: workflow-derived Runs may omit their concise reason in Details;
+the private SDK hook lacks a direct attribute assertion; one ARC docstring is
+stale. External attention paths that replace numeric progress are not represented
+as numeric-preservation acceptance.
+
+R210 remains scoped predecessor evidence at fcd8737c / GACT 07cf095f: actual SSE
+acceptance, independent work, one uncertainty attention, original-identity
+reconnection without replay and one final wake under the same assignment.
+Its 77-byte result/hash/execution-count check and desktop/phone views passed.
+It does not prove a measured actual SSE line over 64 KiB or the final matrix.
+
+## Runtime, evidence and remaining work
+
+The D runtime is Python 3.14.6, iowarp-core 2.3.2, DSPy 3.4.0,
+FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and clio-schemas 0.6.0b13.
+Lock SHA256 `04d97494089a6fdbdb28a105b7119bedaf4957f0984e3a17c3d3a88892b81508`.
+No clio-core source was changed. The supported isolated Core configuration uses
+256 MiB main and 32 MiB metadata segments; product defaults remain unchanged.
+
+Bounded receipts and inspected images live under
+`D:/Libraries/Documents/projects/clio-agent-task-qualification/.pytest-runtime/static/`:
+`ci-a0645c21-complete.json`, `r219-web-build.json`, `r219-claude-review.json`,
+`r227-live-workflows.json`, `r227-ui2-inspection.json`, `r226-cleanup.json`
+and `r227-cleanup.json`. Three canonical reports remain this status document,
+the acceptance ledger and the live experiment sheet. Older dated construction
+notes are historical and do not override this current state.
+
+Next: complete current-tuple native storage/mixed work and remaining peer cases; Claude-specific
+delivery/child controls; external input/provider-job recovery; Core/input-commit
+and visible-effect recovery; migration twice and actual large-history restart;
+capacity/retirement, real desktop/phone controls and the 30 final races. Website
+walkthroughs and selected current-service screenshots remain required. Relay's
+special transport/lifecycle is outside qualification scope.
+
+## Owned cleanup
+
+R226/R227/R228/R229/R230/R231/R234 services exited normally; active tasks were
+empty after cleanup, launched browsers closed and all fourteen fresh data/temp
+roots are confirmed absent. Their cleanup receipts total 4,225,608,895 logical bytes. These are
+logical counts, not claims about total volume free-space changes.
+
+The 21:54 UTC inventory measured 173 remaining paths / 29.46 GiB before R226
+disposal. Its two paths are now absent; subsequent fresh paths were also removed.
+Seventy-six earlier rejected boundaries remain manual-only. No retry, bypass,
+delegation, parent removal or archive was used. Current source, human design
+files, the D execution environment, installed Desktop, authentication, defaults,
+released pins and unrelated work remain preserved. The 22:04 UTC volume reading
+was C 6.77 GiB / D 50.54 GiB; the larger external free-space increase is not
+attributed to this campaign's bounded cleanup.

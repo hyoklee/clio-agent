@@ -1,35 +1,29 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 21:08 UTC
+## Current candidate — October 18, 22:39 UTC
 
-Initial implementation and initial test construction remain complete.
-Agent fcd8737cbfb43bdc2183e57bc355036b6fddd072 completed all 24 CI jobs.
-All twelve Python reports have zero failures/errors: 12,992 passes and fifty
-exclusions per interpreter. The unchanged retention/load guards passed.
-Exclusions are not executed passes and do not establish live/platform acceptance.
+Initial implementation and initial test construction are complete. Frozen product
+source is clio-agent a0645c216fad81fb36a063dbdb4b9f5bee1d87b0 / GACT
+c813c1b7d3064c5b6125dc21c9aec70117c78ca4. Agent CI 39166370524 passed all
+24 jobs and twelve Python reports: 12,993 passes / 50 exclusions per interpreter,
+zero failures/errors. Both exact-head GACT workspace runs succeeded. Required
+skipped/unavailable live/platform gates are not converted into passes.
 
-This commit adds the cold semantic-replay correction and records GACT
-c813c1b7d3064c5b6125dc21c9aec70117c78ca4. R212 reproduced the cold-read defect;
-R213 passed the actual-Core regression. Three focused UI behavior cases, six
-guards and the correct workspace type check passed. R218 additionally reproduces and fixes Astra's structured/long diagnostic
-finding, with both focused cases, six guards and workspace types passing.
-Combined-head CI, independent review, matching UI build and fresh rendered
-review remain required.
+R219 matching online/offline builds passed. Astra and actual Claude Code/Fable
+both returned current-tuple source GO. R227 and R234 passed actual Codex/Luna child/root two-workflow
+child-peer discovery/message/observe/expired wait/subscription/denied-control,
+revocation-before-injection and regrant delivery. Both workflows completed with
+one owner and one independent subscriber completion commit. Real read-only UI
+opened the paused child and its access view; this is not the complete Q9 gate.
 
-R210 on frozen fcd8737c / GACT 07cf095f passed actual Codex/Luna direct-SSE
-acceptance, independent work, one attention episode during observation loss,
-original-identity reconnection without replay, and one final result delivered to
-the same assignment. Real desktop/phone interactions passed; their duplicate
-visibility text prompted the current UI repair. See the current-status document
-for handles, byte/hash evidence and runtime identities.
+**Full Q1–Q9, migration/recovery and all 30 final-candidate race repetitions remain
+unaccepted.** R234 explicitly demonstrated root Session handles, observe-only privacy and real
+desktop/phone grant/revoke. Busy-peer, historical-handle and final-repeat gates
+remain; one root model required a recorded feedback clarification. See current status for exact identities and receipts.
+R226/R227 services/browsers settled; disposable roots were removed. Earlier cleanup
+rejections remain manual-only, and no archive or installed-state change was made.
 
-**Full Q1–Q9, migration/recovery and thirty final-candidate race repetitions
-remain unaccepted.** R210 is scoped predecessor evidence, not acceptance of
-unexecuted scenarios. Earlier Astra/Fable source GO applies only to its reviewed
-source. Current cleanup has 171 known disposable paths and 76 prior-rejected
-boundaries; rejected removals did not run. No archive or installed-state change.
-
-## Construction and preceding evidence
+## Historical construction and preceding evidence (superseded status)
 
 Initial production implementation and regression construction are complete.
 Regression execution, repairs and actual-model qualification are underway; see
@@ -138,7 +132,7 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | Q2 | Codex/Luna mixed progress, cursor/pattern, any/all/expired wait, failure and uncertainty | R2 finite live matrix Q2 | Q1 and shared controls | Real pending work continues; honest per-member outcomes | blocked — R113 canonical proof records mixed Shell/Subagent/Question, progress, any/all/expired waits and partial failure. Pattern/cursor recovery, uncertainty and final repeats remain pending |
 | Q3 | Codex/Luna and Claude distinct delivery routes, goal/Question/child combinations | R2 finite live matrix Q3 | Usable actual provider profiles | Busy/idle/postStop/pause input evidence with no ordinary duplicate | blocked — R104/R112 prove idle/post-Stop Question wakes; R147 on 30a769f2 freshly proves actual Claude child Question yield, answer retention while paused, resume under the same handle, busy-parent Stop independence and automatic parent result wake with one delivery each. Full goal combinations and final repeats remain pending |
 | Q4 | Codex/Luna and Claude child/control routes and inherited subtree settlement | R2 finite live matrix Q4 | Q3 and child lifecycle | Same child handle; human notices and physical descendant outcomes | blocked — R118 proves pause/steer/resume/restart/inherited reads; R119 proves UI cancellation and subtree retirement. R147 freshly proves Claude child pause/answer/resume and attributed human pause/resume notices committed once to the original parent's model input, followed by original parent/child completion. Wider Claude cancellation/restart differences and final repeats remain pending |
-| Q5 | Independent sessions and two actual declared workflows | gact/workflows.py; R2 Q5 | Authenticated grants and existing runner | Discovery/replies/observe/wait/subscription/denied control; provenance root/step/session links | blocked — R125/R126 passed the actual Codex/Luna two-workflow case: discovery/messages/observe/expired wait/subscription/denied control, revoke-before-injection, automatic regrant wake, both runner completions and independent recipient commits. R126 added desktop grant/phone revoke controls and keyboard/containment. Original R122–R124 failures remain historical. R138 subsequently qualified native provenance correction; wider Q9 and final-candidate repeats remain unverified. |
+| Q5 | Independent sessions and two actual declared workflows | gact/workflows.py; R2 Q5 | Authenticated grants and existing runner | Discovery/replies/observe/wait/subscription/denied control; provenance root/step/session links | blocked — R227 child peers and R234 root Session peers at a0645c21 / c813c1b7 passed two distinct declared workflows, discovery/messages/observe/expired wait/subscription, denied control, pause, revoke-before-injection and automatic regrant delivery. R234 additionally passed observe-only redaction/denied reads and real desktop/390px grant/revoke/keyboard/containment with clean connected console/page output. One model required recorded feedback to attempt messaging; no runtime patch was made. One stable Session handle per root, one subscriber input commit and no root self-wake. Busy-peer/historical-handle cases and final race repeats remain required. |
 | Q6 | Actual external MCP/provider input/reconnect/surviving job | R2 Q6 | Available actual MCP and approved provider | Original immutable task/input/job identities; partial/lost-update answers | blocked — R121 passed actual-model native stdio input/result. R128 passed native HTTP partial answers and a lost accepted-update reply: original identity/submission, two Questions, one file effect and one final delivery. R177 on ec3a405f / GACT 0f9c00a4 passed a real visibility outage with one attention episode followed by one original final result. R180 passed actual caller-process restart with the external job completing offline: a new SDK client performed MCP v2 discovery and read the original task identity/schema without replay; Codex/Luna automatically woke, collected verified bytes/hash and completed the same assignment, with one delivery. R178/R179 harness failures and R179's separate behavior audit remain recorded. All owned processes and disposable roots retired/removed. Workloads are synthetic on actual production server/SDK/CLIO/model implementations; approved-provider jobs, UI recovery and final-candidate repeats remain unverified. |
 | Q7 | Isolated Core/native outage, migration twice, input crash and lost result after effects | R2 Q7 | Owned isolated runtime; restart permissions | Honest uncertainty, agent inspection and deliberate linked retry; attention then final | blocked — R145 passed actual-model input-commit crash cases; R154/R157 supplied scoped provisional native/external controls. R167 on 38a8794b passed actual native result loss after one visible effect and physical cleanup: honest original-handle interruption/no replay, model inspection before deliberate revised work, original assignment completion and one delivery per outcome. Revised command/effect metadata reference the original handle; no first-class retry-lineage claim. R171 supplied scoped data-only migration twice over nine retained historical rows, stable identities/results/acknowledgements/pending mail/Question/subscription, no native replay and an actual-model answer wake. R177 passed external attention-then-final; R180 passed new-caller recovery of an external job completed offline without replay. All owned processes and disposable roots retired/removed. Broader historical/provider formats, UI recovery and final repeated races remain unqualified. |
 | Q8 | Native pool isolation, capacity-one children/peers, constrained executor and resource cleanup | R2 Q8 | Independent native roots; actual models | No starvation; worker exit before next turn and bounded owned residue | blocked — R132/R133 supply native pool separation, exact 514-entry indexing during a held Shell, never-started queued withdrawal and peer progress while a parent waits. R135 on bf2df179/6669ac3a supplies actual nested-parent waits with released inference permits and an independent same-depth child completing while the leaf Question remains pending, under a one-worker finite-I/O executor. Parent A required feedback; the original controller failed a Session-only result lookup before UI acceptance. The scoped audit preserves the canonical Subagent result. All owned sessions/processes and disposable data, including the reused build, are settled/removed. Full integrated acceptance and final repeats remain pending. |

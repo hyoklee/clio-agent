@@ -5,6 +5,7 @@ description: Durable session run handles, authorized peer observation and indepe
 
 import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
 import TasksPreview from '../../../../components/TasksPreview.astro';
+import GuideScreenshot from '../../../../components/GuideScreenshot.astro';
 
 <TasksGuideNav active="coordination" />
 
@@ -50,6 +51,25 @@ on another run must not consume that run's own parent notification. Permission t
 message or observe a peer does not grant lifecycle control.
 Human interventions continue to notify the actual owning agent.
 
+## Choose what another session can do
+
+1. Open the receiving session's **Work** view and expand **Access to other sessions**.
+2. Choose the target conversation. Select read, observation and messaging rights
+   according to the work you want these sessions to share.
+3. Select lifecycle control separately if that agent may pause, restart or cancel
+   the target. Including delegated children is also a separate choice.
+4. Choose **Grant access**. Use **Revoke** to remove that exact relationship later.
+
+An observation-only grant exposes status and numeric progress, not assignments,
+answers or output. Subscribing to the eventual result requires both read and
+observation rights. Revocation is checked again before queued content is injected.
+
+<GuideScreenshot name="tasks-session-access" format="png" alt="A real child conversation's Work view shows session access rights and the target-conversation selector" caption="Current replacement service: the child has explicit read, observe and message access to a peer. Its own Question stays open. This capture shows the real access view, not a mocked permission panel." />
+
+<GuideScreenshot name="tasks-session-grant-desktop" format="png" alt="A root session's Work view offers separate read, observe, message, lifecycle-control and delegated-child choices before granting access" caption="Real desktop grant: read, observe and message are selected. Lifecycle control and delegated children remain separate, unselected choices. The transcript records an intentionally denied read under the preceding observe-only grant." />
+
+<GuideScreenshot name="tasks-session-revoke-phone" format="png" portrait alt="At phone width, the current peer grant shows Read, Observe, Message and a Revoke button" caption="The same root-session grant at phone width. Revoke removes this exact relationship; pending content is checked again before it reaches the model." />
+
 <details>
 <summary>Find a run and subscribe to its result</summary>
 
@@ -86,20 +106,22 @@ The scheduler adapter must distinguish job submission from job completion. The
 workflow also needs explicit outcomes for partial failure, interruption and
 cancellation; a finished submission command cannot stand in for them.
 
-## Earlier development evidence
+## What the current demonstration proves
 
-Five actual Codex/Luna cycles used independent root sessions with distinct
-activated blueprints. They covered busy and idle messages, attributed replies,
-mixed session/shell observation and any/all waits, independent completion and
-failure delivery, Stop independence and denied peer cancellation. The runs used
-the earlier isolated Linux Core 2.3.1/Python 3.14 candidate and the Codex WebSocket
-route. They exercised the predecessor, not the native-task replacement described
-by this guide.
+Actual Codex/Luna agents in two distinct declared workflows used the replacement
+service on Windows through the direct SSE bridge. Separate root and child runs discovered
+authorized peers, exchanged attributed messages, observed and subscribed to work,
+expired a wait while the work continued, and were denied cancellation without
+control rights. A queued reply remained private after revocation and arrived once
+access was restored. Child-owner and subscriber completion records were independent;
+a completed human-owned root did not wake itself.
 
-These were separate single-expert blueprints, not a distributed workflow graph
-or Slurm job integration. Claude, alternate inference routes, SSE transport and
-Windows/native qualification still have outstanding gates. Session coordination
-does not imply that these wider integrations are ready.
+The root run also demonstrated observation-only redaction, a denied result read,
+desktop granting and phone revocation through the real UI. One model initially
+declined messaging and needed one feedback clarification before using the exposed
+control. These scoped demonstrations do not accept every busy-message case,
+historical-handle case, inference route or recovery race. They also do not
+demonstrate a distributed scheduler or Slurm integration.
 
 Read [Messages and feedback](/docs/tasks/messages/) for the implemented addressing
 and mailbox behavior, and [Background work](/docs/tasks/) for accepted task execution.

@@ -1,40 +1,38 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 21:08 UTC
+## Current execution gate — October 18, 22:39 UTC
 
-The completed fcd8737c CI inventory has 24 successful jobs, twelve Python reports
-and zero failures/errors. Each interpreter has 12,992 passes and fifty exclusions.
-Retention and A2UI load passed under unchanged guards. Fresh combined-head CI
-remains required after this cold-replay/UI correction.
+Frozen product source: agent a0645c21 / GACT c813c1b7. Agent exact-head CI passed
+all 24 jobs with 12,993 passes and 50 exclusions per interpreter; zero failures.
+Both GACT workspace runs succeeded; conditional jobs and excluded tests remain
+explicit exclusions. Matching R219 online/offline UI builds and independent
+Astra/actual Claude Code/Fable source reviews passed.
 
-R210 passed on frozen fcd8737c / GACT 07cf095f using actual Codex/Luna direct SSE,
-production CLIO/FastMCP/SDK and owned external work. It proves immediate task
-acceptance plus independent model action, one uncertainty attention wake,
-original-identity reconnection with no replay, and one verified final result/wake
-under the original assignment. Desktop and 390px-phone interactions passed.
-It does not complete Q1–Q9, partial-input/provider-job coverage or thirty races.
+R227 freshly passed actual Codex/Luna two-declared-workflow child-peer coordination:
+discovery, messaging/replies, observation/subscription, expired wait, denied control,
+pause, revocation-before-injection, automatic retained-reply wake after regrant and
+independent owner/subscriber completion commits. Grants used authenticated human
+REST. The real read-only browser opened Work, the paused child and its access view.
+This does not establish root Session peers, every permission variant or full Q9.
 
-R212 reproduced cold replay fetching unrequested task bodies; R213 passed the
-existing-chunk-grammar correction. GACT 8eaea05f moves duplicate uncertain-error
-text into existing details while retaining numeric progress. The three focused
-UI cases and correct workspace type check pass. R217 built online/offline e0e011b4 / 8eaea05f successfully; a newer R218
-review correction now preserves full diagnostics alongside concise summaries.
-The structured defect reproduced before correction, then structured/long cases
-passed individually. All six guards and workspace types pass. New build,
-real-service review and independent Astra/Fable reviews remain required.
+R226/R227 services/browsers settled and disposable roots are absent. No model
+family remains active at this report boundary. Earlier rejected paths remain
+manual-only. The full matrix and all 30 races below remain required, along with
+website walkthroughs and current-service media. R210 is predecessor-scoped SSE
+recovery evidence, not a measured actual over-64-KiB line or final acceptance.
 
-No product/model family is currently active. R210's owned processes exited and
-its worker confirmed cleanup. R215's removal of three retired proof/temp roots
-was rejected before execution; those exact paths and their parents remain
-manual-only. Preserve every earlier boundary. The inventory/custody and bounded
-receipts are in the D execution repository. No archives or installed changes.
+R234 adds current root Session/workflow/observe-only/privacy and actual desktop/
+phone grant/revoke evidence. One root needed a recorded operator clarification
+before attempting standard messaging. The same original handles completed;
+one subscription commit and no root self-wake were recorded. R230 passed real
+native Shell/model/physical output. R234 measured 87 real SSE lines over 64 KiB
+(maximum 82,331 bytes) at the unchanged configured 1 MiB ceiling.
 
-Next family must use the matching new UI and record a frozen source/dependency/
-schema/runtime tuple. Keep unused search auto-install disabled only when the
-family does not exercise search. Continue using supported small isolated native
-Core allocations and measure actual files; do not change product defaults,
-execution deadlines or acceptance guards. Fresh qualification still requires
-the experiments and races below; preceding scoped evidence does not pass them.
+R228's premature-idle harness and R231's legacy-projection checker remain failed,
+not product-runtime passes. Their owned data is absent. Fresh storage readers
+use canonical public task/results and independent manifests/hashes; they retain
+all original effect checks. All seven fresh family services and fourteen roots
+are settled/absent. The remaining matrix and all 30 races still block completion.
 
 ## Regression and live-verification loop
 

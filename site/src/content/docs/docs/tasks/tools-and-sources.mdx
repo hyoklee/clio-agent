@@ -91,6 +91,22 @@ effects before deciding whether to retry. Native worker redelivery after failure
 can repeat or overlap effects. CLIO records observed attempts and reports uncertainty.
 An explicit retry creates a new linked handle; it does not rewrite the old outcome.
 
+<details>
+<summary>Large responses on the Codex subscription API</summary>
+
+The direct HTTP route receives server-sent events (SSE). CLIO's `lm15.sse_limit`
+setting, also exposed as `CLIO_LM15_SSE_LIMIT`, sets a positive byte ceiling for
+each line. The default is 1,048,576 bytes. This is a response-size setting, not an
+inference or task timeout. Long-running work does not exceed it merely by taking
+more time.
+
+Current actual-model measurement observed 87 lines above 65,536 bytes, with a
+maximum of 82,331 bytes, passing through the production parser at the default
+1 MiB ceiling. This verifies that specific transport boundary, not the entire
+Tasks qualification matrix.
+
+</details>
+
 ## Combining kinds
 
 A parent can review files while a download and a child analysis run, observe both,

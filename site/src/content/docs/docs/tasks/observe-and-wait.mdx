@@ -60,7 +60,7 @@ working. Stopping or cancelling a waiter also leaves accepted tasks running.
 Execution limits are separate. A shell command with its own explicit timeout
 still has that limit even if a wait is unbounded.
 
-## Results arrive once, and remain readable
+## Collect results and read them again
 
 Waiting and explicit terminal-result collection share the completion-delivery
 guard with automatic notifications. A result already collected by the agent
@@ -70,6 +70,10 @@ explicitly read the stored result again.
 Querying status or observing progress does not consume that completion. Larger
 results use the existing bounded output and references rather than filling the
 conversation with an unlimited log.
+
+CLIO records which notifications entered each model input so interrupted delivery
+can recover. This does not promise exactly-once model execution after a crash or
+exactly-once effects from an external worker. Inspect uncertain work before retrying.
 
 <details>
 <summary>Agent tool reference</summary>
