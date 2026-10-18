@@ -242,6 +242,7 @@ def find_drift(
 
 def verify_runtime(python: Path, lock: Path, project: Path) -> int:
     """Check a built runtime against the lock; return a process exit code."""
+    verify_product_release(python, project)
     locked = load_lock_versions(lock)
     scope = load_bundle_scope(project, BUNDLE_EXTRAS)
     installed = load_installed_versions(python)
@@ -290,6 +291,47 @@ def verify_runtime(python: Path, lock: Path, project: Path) -> int:
     return 0
 
 
+def verify_product_release(python: Path, project: Path) -> None:
+    """Reject a runtime whose installed or imported product differs from this release.
+
+    Dependency lock agreement alone is insufficient: clio-agent is a local
+    project and deliberately excluded from dependency drift comparisons.
+    Use isolated Python so the checkout cannot shadow the packaged runtime.
+    """
+    with (project / "pyproject.toml").open("rb") as handle:
+        expected = tomllib.load(handle)["project"]["version"]
+    try:
+        probe = subprocess.run(  # noqa: S603 - trusted bundled interpreter, fixed probe
+            [
+                str(python),
+                "-I",
+                "-c",
+                "import json,importlib.metadata as m,clio_agent; "
+                "print(json.dumps({'imported':clio_agent.__version__,"
+                "'installed':[d.version for d in m.distributions(name='clio-agent')]}))",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError(f"Bundled product probe failed: {error}") from error
+    if probe.returncode:
+        raise RuntimeError(f"Bundled product cannot load: {probe.stderr.strip()}")
+    try:
+        observed = json.loads(probe.stdout)
+    except json.JSONDecodeError as error:
+        raise RuntimeError(
+            f"Bundled product returned invalid version evidence: {probe.stdout}"
+        ) from error
+    if observed != {"imported": expected, "installed": [expected]}:
+        raise RuntimeError(
+            f"Bundled product release mismatch: expected {expected}, observed {observed}"
+        )
+    print(f"OK: installed and imported clio-agent match release {expected}.")
+
+
 def resolve_bundle(project: Path) -> int:
     """Resolve the bundle's install set against the lock export on every target."""
     failures = 0
@@ -335,7 +377,7 @@ def resolve_bundle(project: Path) -> int:
 
 def main() -> int:
     """Parse arguments and run the selected mode."""
-    parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n", 1)[0])
     mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--python", type=Path, help="Path to the built runtime's python executable")
     mode.add_argument(
