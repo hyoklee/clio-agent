@@ -82,6 +82,9 @@ from clio_agent.gact.permission_context import (
     _normalize_mcp_tool_annotations as _normalize_mcp_tool_annotations,
 )
 from clio_agent.gact.permission_delivery import publish_permission_event
+from clio_agent.gact.permission_delivery import (
+    record_resolved_permission as _record_resolved_permission,
+)
 from clio_agent.gact.planning import active_playbook_allowed_tools
 from clio_agent.gact.runtime.globals import _resolve_tool_session
 from clio_agent.gact.runtime.grant_resolver import (
@@ -264,51 +267,6 @@ def _policy_detail_for_tool(
         mode=mode,
         playbook_allowed=active_playbook_allowed_tools(session),
     )
-
-
-def _record_resolved_permission(
-    app: "FastAPI",
-    *,
-    session_id: str,
-    tool_name: str,
-    args: Mapping[str, Any],
-    status: str,
-    action: str,
-    summary: str,
-    reason: str,
-) -> str:
-    pid = f"perm_{uuid.uuid4().hex[:12]}"
-    now_iso = datetime.now(timezone.utc).isoformat()
-    row = {
-        "id": pid,
-        "session_id": session_id,
-        "tool_call": {
-            "tool_name": tool_name,
-            "input": dict(args),
-        },
-        "summary": summary,
-        "created_at": now_iso,
-        "status": status,
-        "action": action,
-        "resolved_at": now_iso,
-        "reason": reason,
-    }
-    if hasattr(app.state, "permissions"):
-        app.state.permissions[pid] = row
-        enforce_dict_bound(app, app.state.permissions, "permissions", session_id=session_id)
-    if hasattr(app.state, "bus"):
-        publish_permission_event(
-            app,
-            "permission.resolved",
-            owner_session_id=session_id,
-            payload={
-                "permission_id": pid,
-                "action": action,
-                "session_id": session_id,
-                "reason": reason,
-            },
-        )
-    return pid
 
 
 def _direct_permission_denied(
