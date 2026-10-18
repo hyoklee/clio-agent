@@ -1,4 +1,26 @@
-# Tasks replacement status — October 17
+# Tasks replacement status — October 18 UTC
+
+## October 18 UTC — owned-process retirement and approval-rule removal
+
+The human revoked the human-only force-close requirement and explicitly
+authorized the implementing agent to stop or force-close its own stuck processes
+and remove its disposable generated data without another permission request.
+The active R2/V3 plans and repository instructions now record that ownership.
+Earlier dated approval-pending entries below are historical and superseded.
+
+R184 API PID `63128` and private runtime PID `45180` were checked against their
+original creation times, executable identities and qualification paths, then
+force-closed. Both exited. Controller session `24122` ended with the expected
+abnormal API-exit error. The receipt is
+`.pytest-runtime/static/r184-force-close-authorized.json` in the D: qualification
+checkout. Graceful application/Core shutdown remains unverified; process exit
+does not establish successful settlement of unknown work.
+
+The process-retirement approval blocker is resolved. Initial implementation
+remains done; regression repair and final actual-model/UI qualification remain
+unfinished. Local corrections are committed at `3eedee24`; this documentation
+update changes no runtime code, dependency or GACT pointer. No new service or
+model run was launched. The daily Desktop is unchanged.
 
 ## October 17 — c64 CI result and complete next-batch inventory
 

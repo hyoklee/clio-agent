@@ -1,5 +1,15 @@
 # Repository Guidelines
 
+## Agent-owned resources and cleanup
+
+Own the lifecycle of processes, ports, environments and disposable data created
+for this work. Record them before launch or creation and confirm retirement or
+removal afterward. Stop and, when stuck, force-close your own verified processes
+without requesting additional permission. Remove your disposable generated data
+after use without creating archives. Verify process identity and resolved target
+paths before cleanup. Keep runtime and test state inside repository-owned D:
+directories. Report forced shutdown honestly when graceful settlement is unknown.
+
 ## Project Structure & Module Organization
 `src/clio_agent/` contains production code, organized by responsibility:
 - `gact/` for the GACT server — the shipped API surface gact-tui talks to (FastAPI app, turn orchestration, SSE streaming, sessions/messages, `routes/`, `agents/`, `runtime/`, `workflow_state/`, `providers/`)

@@ -8,6 +8,8 @@ Target a Tasks release on October 14, America/Chicago. This is a target, not per
 
 Use codex/agent-facing-async-tasks in core and GACT, starting from core 5475042f / GACT 32044a38. Core owns runtime/tools/REST/persistence/prompts and website; GACT owns UI/API bindings and browser acceptance. Preserve the installed Desktop, auth, defaults, released pins and unrelated human work.
 
+The implementing agent owns retirement of the processes and disposable data it creates. Record those resources before use, verify exact process identities and resolved paths, then stop or force-close stuck owned processes and remove disposable state without another permission request. Confirm actual exits/removal and retain bounded outcome receipts; do not archive disposable state. Keep runtime/test data inside repository-owned D: directories. This standing authorization supersedes the previous human-only force-close requirement.
+
 Delete the accumulated task integration before adding replacement production code. The removal commit is deliberately allowed to fail import/build/test collection. No stub implementations, parallel old/new execution, renamed mutable stores or runtime fallback.
 
 Final responsibility table:
@@ -97,7 +99,7 @@ Application lifespan runs one pending-only recovery coroutine: first provisional
 
 Core outage rejects new undurable submissions/messages. Trusted pause/cancel of verified live work still acts and reports recording-unconfirmed; volatile evidence cannot promise crash recovery. On recovery reconcile observations/notices and release only the matching holds.
 
-Shutdown closes admission, cancels/withdraws owned local native executions and awaits actual settlement/worker retirement before leaving lifespans/Core. Show unresolved state; only explicit human process force-close can end it with uncertainty. Remove inherited automatic drain cutoffs. Surviving external jobs are not declared dead merely because local observation stops.
+Shutdown closes admission, cancels/withdraws owned local native executions and awaits actual settlement/worker retirement before leaving lifespans/Core. Show unresolved state. An operator or the implementing agent supervising its own verified qualification processes may force-close a stuck process; record interruption or uncertainty rather than claiming graceful settlement. No additional human approval is required for agent-owned qualification processes. Remove inherited automatic drain cutoffs. Surviving external jobs are not declared dead merely because local observation stops.
 
 ## 4. Rebuild: assignments, controls, input and UI
 
@@ -113,7 +115,7 @@ Session-exclusive ownership spans a model turn, including waits. Inference permi
 
 One session-owned synchronous worker exists only while a synchronous turn is active. Replace whole-turn/default/per-depth pool dependence. Convert long blocking queue/lock waits in Codex direct and Claude stream/session bridges to asynchronous waits or session-owned execution; shared default executor must not be occupied by unbounded queue.get/lock.acquire. It may serve finite I/O, not a resource needed by blocked parents to launch children/peers. Async paths retain async execution.
 
-Stop shows stopping while cooperative cancellation/interruptible waits unwind. Session ownership releases only after actual worker exit, even if its asyncio waiter is cancelled. New input stays Core-pending during stopping; no second worker/model turn may start. Await worker retirement without blocking application loop or consuming another bounded executor. Uncancellable unresolved work remains visibly stopping until retirement or explicit human process force-close. Dormant/yielded assignments have no worker. Measure thread/memory growth; do not hide it by restoring assignment-status caps.
+Stop shows stopping while cooperative cancellation/interruptible waits unwind. Session ownership releases only after actual worker exit, even if its asyncio waiter is cancelled. New input stays Core-pending during stopping; no second worker/model turn may start. Await worker retirement without blocking application loop or consuming another bounded executor. Uncancellable unresolved work remains visibly stopping until retirement or supervised process force-close; the implementing agent may retire its own stuck qualification processes under the standing resource-ownership rule. Dormant/yielded assignments have no worker. Measure thread/memory growth; do not hide it by restoring assignment-status caps.
 
 Pause holds model execution and lets background work continue. Resume releases it. Explicit agent cancellation closes descendant admission first, then cancels all active inherited/delegated work, including background Shell/downloads; already-terminal outcomes remain historical. Cancelling an individual task affects only that task. Human steering/pause/resume/cancel/restart records intent/effect and derives an attributed parent mailbox notice independent of peer capacity. Restart does not bypass unsettled cancellation.
 
