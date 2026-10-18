@@ -192,7 +192,7 @@ from clio_agent.gact.app import build_app
 # 372 -> 376: source-scoped knowledge snapshot/open and Sync status/action routes,
 # owned by routes/knowledge.py and registered from routes/connected_storage.py.
 # 381 -> 383: read-only search-session POST and bounded workspace file-passage GET.
-EXPECTED_ROUTE_METHOD_PAIRS = 391  # Model registry details GET and owned model removal POST.
+EXPECTED_ROUTE_METHOD_PAIRS = 402  # NDP discovery/account routes (+6) and Endpoint operations (+5).
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
@@ -234,6 +234,7 @@ def test_build_app_registers_expected_route_count() -> None:
     assert len(set(route_pairs)) == len(route_pairs), "duplicate (route, method) registrations"
     assert ("/v1/infrastructure/models/details", "GET") in route_pairs
     assert ("/v1/infrastructure/targets/{target_id}/models/{job_id}/remove", "POST") in route_pairs
+    assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}/request", "POST") in route_pairs
     pairs = len(route_pairs)
 
     assert pairs == EXPECTED_ROUTE_METHOD_PAIRS, (
