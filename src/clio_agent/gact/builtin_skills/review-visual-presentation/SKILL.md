@@ -17,6 +17,9 @@ For a substantial authored dashboard or diagram, close this concrete loop:
    Check whether the main idea is apparent, text is readable, the whole diagram
    fits, and empty space or narrow columns obscure relationships. Ask whether
    a full-width view, equal panels or a simpler arrangement would explain it better.
+   Include the surrounding frame/component headings, not only the plotted marks:
+   a title cut off with an ellipsis is a defect even when the graph fits. Check
+   whether labels can actually be read at this size, rather than merely seen.
 3. Identify a concrete defect and change the source or a declared view control.
    Changing column counts is useful only when it fixes the observed problem.
 4. Capture the revised view and inspect its image to confirm the correction.
@@ -30,6 +33,9 @@ Repeat while a material defect remains. State the actual visual checks and any
 unresolved limitation. Schema validation, a capture receipt and an uninspected
 image do not establish visual quality. A small inline diagram does not require
 building a dashboard or following an elaborate layout recipe.
+Keep docked and expanded findings separate: readability in an expanded image
+does not establish readability in a narrow pane. When text remains too small,
+revise the view or state that limitation instead of declaring the review clear.
 
 Read the current surface with `inspect_a2ui_surface` and load the relevant
 active catalog schemas. `update_a2ui_components` replaces complete definitions
