@@ -8,7 +8,7 @@ for (const theme of ['light', 'dark']) {
       await page.goto('/');
       const section = page.getByRole('region', { name: 'Find a dataset. Work with its evidence.' });
       await section.scrollIntoViewIfNeeded();
-      await expect(section.getByText('Development preview', { exact: true })).toBeVisible();
+      await expect(section.getByText('CLIO v0.9.5-beta.8', { exact: true })).toBeVisible();
       const logo = section.getByRole('img', { name: 'National Data Platform', exact: true }).filter({ visible: true });
       await expect(logo).toHaveCount(1);
       expect(await logo.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true);
@@ -18,7 +18,7 @@ for (const theme of ['light', 'dark']) {
       await section.getByRole('link', { name: 'Explore NDP in CLIO', exact: true }).click();
       await expect(page).toHaveURL(/\/docs\/files\/ndp\/$/);
       await expect(page.getByRole('heading', { level: 1, name: 'Work with National Data Platform' })).toBeVisible();
-      await expect(page.locator('.starlight-aside')).toContainText('not in a published installer');
+      await expect(page.locator('.starlight-aside')).toContainText('Requires CLIO v0.9.5-beta.8 or later.');
       const capture = page.getByRole('button', { name: /^View larger: NDP dataset search/ });
       await capture.scrollIntoViewIfNeeded();
       await capture.click();
@@ -41,7 +41,7 @@ for (const theme of ['light', 'dark']) {
       await page.screenshot({ path: test.info().outputPath(`ndp-example-${width}-${theme}.png`) });
       const media = await (await page.request.get('/media/guides.json')).json();
       const ndp = media.guides.find((guide: { id: string }) => guide.id === 'docs/files/ndp');
-      expect(ndp.availability).toBe('development');
+      expect(ndp.availability).toBeUndefined();
       expect(ndp.media).toHaveLength(2);
       for (const item of ndp.media) expect((await page.request.get(item.src)).ok()).toBe(true);
     });

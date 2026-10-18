@@ -18,9 +18,9 @@ Find scientific data in [National Data Platform](https://nationaldataplatform.or
 choose the resources you need, and work with them in CLIO. You can also connect
 an existing remote API to query a service or capture a finite stream segment.
 
-<Aside type="note" title="Development build">
-  This guide covers the NDP development build, captured on 18 October 2026.
-  The NDP changes are under review and are not in a published installer.
+<Aside type="note" title="CLIO v0.9.5-beta.8">
+  Requires CLIO v0.9.5-beta.8 or later. Screenshots were captured during
+  qualification on 18 October 2026.
   See [Features and versions](/docs/versions/).
 </Aside>
 
@@ -57,7 +57,7 @@ Choose **Sign in to NDP** and finish NDP's browser sign-in. Credentials and toke
 stay in the private account flow. The account is reusable across workspaces on
 the same connected CLIO; signing in does not select or attach data.
 
-The development default uses NDP's **test** identity service with public client
+The default connection uses NDP's **test** identity service with public client
 `clio`. A production deployment needs a client registered for its identity service.
 An Endpoint can require a different issuer or role. Check an actual access denial
 rather than assuming a successful sign-in grants every dataset.
