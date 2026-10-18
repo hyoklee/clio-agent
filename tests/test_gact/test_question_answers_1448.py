@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from clio_agent.arc.task_types import QuestionReply
+from tests.test_gact.conftest import await_idle
 from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_interactions import post_question
 from tests.test_gact.test_resources import _upload, _workspace
@@ -38,14 +38,18 @@ def test_each_answer_is_queued_while_other_questions_remain_open(
     assert {item.handle for item in notices} == {first, second}
     assert len(notices) == 2
 
-    async def await_idle_probe() -> None:
-        released = asyncio.Event()
-        app.state.turn_runner.run_when_released(sid, released.set)
-        await asyncio.wait_for(released.wait(), timeout=5)
-
-    assert client.portal is not None
-    client.portal.call(await_idle_probe)
+    # A release callback ends one reservation; a second answer may already have
+    # scheduled the next real admission probe. Keep the same five-second bound
+    # and inspect the existing runner's full quiescence boundary instead.
+    await_idle(client, sid, timeout=5)
     assert not app.state.turn_runner.busy(sid)
+    pump = app.state.turn_runner._pumps.get(sid)
+    assert pump is None or pump.done()
+    assert {
+        item.id
+        for item in app.state.task_history.pending_mail(sid)
+        if item.kind == "question_answer"
+    } == {item.id for item in notices}
 
 
 def test_question_answer_preserves_attachment_identity(

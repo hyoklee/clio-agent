@@ -1,49 +1,49 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 17:50 UTC
+## Current execution gate — October 18, 18:21 UTC
 
-No new production/model family is active. Current production source
-**8d4db341458c98064fb06bd9ed453f86523164f0** records GACT
-**07cf095fc632ff93bae3b8089c94a5b05d37e47e**. Both target branches were
-freshly fetched and integrated with zero commits behind. Freeze any
-subsequent report-only commit in the source/runtime/UI receipt before launch.
+No product/model family is active. Reviewed frozen source is
+clio-agent **8265de4e** / GACT **07cf095f**, with production **8d4db341**.
+Both independent R202 reviews gave source GO, without qualifying live behavior.
+The follow-up is only one Question test plus reports; record its exact commit
+and unchanged-production proof before reusing the matching UI or launching work.
 
-Complete 345eb4d1 CI has two owning causes: the three new timestamp-fixture
-failures (corrected in 947eb0c2), and the retained A2UI load timeout on two
-interpreters. Retention and all coverage jobs passed. GACT 43098e53 passed
-five applicable jobs; the integrated pair still needs exact-head CI and
-independent Astra/Fable review. The new retained-content repair does not
-change a task owner, persistence acknowledgement or storage adapter.
+The complete 8265 CI inventory has one test-synchronization failure on 3.13;
+production remains unchanged. All fourteen repair regressions, A2UI load,
+1,005-message retention and coverage gates passed across all three interpreters.
+The Question test keeps its five-second bound and strengthens final pending-mail
+and pump-retirement checks. New CI must validate it. Fifty exclusions remain
+explicit, including required Windows/provider live behavior not proved here.
 
-The full no-follow cleanup inventory currently accounts for 156 existing
-paths / 25.85 GiB logical, with no read errors. Actual free space was C
-1.24 GiB / D 0.82 GiB. Six check-cache removals and a generated 1 MiB C
-TypeScript build-info removal were rejected before execution. They are now
-manual-only; no retry, bypass, delegation or parent removal. Earlier
-successful UV cleanup/owned-process retirement remain recorded separately.
-Inventory is not proof of deletion. The added C build-info file is recorded
-separately; future build info stays on D.
+[GACT 07cf095f CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834) completed success, with 5 successful jobs. Browser/fixture results remain separate from real-service qualification.
 
-The existing 1 GiB reserve plus native file allocation still blocks a fresh
-Core-backed family. Do not launch and then diagnose this known prerequisite
-as a task-engine defect. Do not substitute a different adapter or reduce the
-reserve/allocation budget.
+The matching production online UI is built in the ordinary D web/dist:
+current-web-build.json / r202-web-build.json. It replaced older disposable
+output without touching protected dated builds. Do not rebuild unchanged UI
+merely for this test/report-only follow-up; verify the recorded impact proof.
 
-After capacity recovery:
-1. Record the final clio-agent/GACT/dependency/schema/runtime tuple and preflight
-   actual Codex/Luna and Claude bridge availability.
-2. Build matching UI from D dependencies; old/protected R193 output is not
-   current-source acceptance.
-3. Refresh R195 identities/ownership manifest. Retired processes and unused ports
-   are prerequisites; protected R184 folder absence is never a launch gate.
-4. Run native/mixed work, assignment delivery/lifecycle, external input/reconnect,
-   two actual declared workflows with human grants, capacity/recovery and real
-   desktop/phone UI. The obsolete session_workflow_tasks.py is not a Q5 harness.
+Latest D free capacity is about 0.81 GiB, below the existing 1 GiB reserve
+before native allocation. The exact cleanup list records 157 present paths /
+25.85 GiB logical. Six caches, one C generated file and two ownership-confirmed
+old native roots were rejected before execution and remain manual-only.
+Do not retry, bypass, delegate or delete their parents. Earlier boundaries
+remain. No new Core/model family may be launched against this known deficit.
+
+After actual capacity recovery:
+1. Freeze the exact final source/GACT/dependency/schema/runtime tuple, record
+   test/report-only impact, and preflight real Codex/Luna and Claude availability.
+2. Reuse the matching UI only after validating its source/production identity.
+3. Refresh R195 ownership/source records. Retired processes and unused ports are
+   launch prerequisites; protected R184 folder absence is never required.
+4. Run native/mixed work, agent delivery/lifecycle, external input/reconnect,
+   two actual declared workflows with human grants, recovery/capacity and
+   desktop/phone UI. The obsolete session_workflow_tasks.py is not Q5 evidence.
 5. Reconcile Q1-Q9 and repeat every R1-R6 race five times on the final tuple.
 
-The oversized-SSE route still requires actual provider/model evidence.
-Required failures, skips and unavailable routes block acceptance; preserve
-honest uncertainty and physical settlement. Relay has no special gate.
+Q8 must prove actual transient stdio-child retirement, including many-server
+teardown; a source advisory or cancellation acknowledgement is insufficient.
+Oversized-SSE still needs actual provider/model evidence. Required unavailable,
+failed or skipped gates prevent completion. Relay has no special test route.
 
 ## Regression and live-verification loop
 

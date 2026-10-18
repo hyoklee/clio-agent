@@ -1,40 +1,41 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 17:50 UTC
+## Current candidate — October 18, 18:21 UTC
 
 Initial implementation and initial test construction remain complete.
-Production source is **8d4db341458c98064fb06bd9ed453f86523164f0**, GACT
-**07cf095fc632ff93bae3b8089c94a5b05d37e47e**, including freshly fetched
-develop 35fdd5fe and UI main f2b96308 with zero commits behind.
+The reviewed frozen pair is clio-agent **8265de4e** / GACT **07cf095f**;
+production code is **8d4db341**. Astra and actual Claude Code/Fable R202 both
+gave source GO with no blocking findings. The pending follow-up changes one
+Question test and three reports; no production/dependency/schema/UI change.
 
-Complete [345eb4d1 CI](https://github.com/iowarp/clio-agent/actions/runs/39148071374)
-has twelve reports/four distinct cases: three new fixture-validation failures
-corrected locally in 947eb0c2 and the original A2UI load timeout on 3.12/3.13.
-That load passed on 3.14; 1,005-message retention passed all interpreters, as did
-all coverage jobs. Fifty excluded tests per interpreter remain exclusions.
-The retained-payload repair and four new regressions await exact-head CI;
-the original 260 actions, 180-second deadline, retained history, confinement,
-delivery, cancellation and output assertions remain unchanged.
+[Complete 8265 CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108)
+has twelve reports and one distinct failure: a Question test observed a single
+reservation release rather than complete admission-pump quiescence. The
+follow-up retains the five-second bound and all answer/notice assertions,
+using the existing full-idle helper and adding no-pump/retained-notice checks.
 
-[GACT 43098e53](https://github.com/iowarp/gact-tui/actions/runs/39148052043)
-passed five applicable jobs; four conditional jobs did not execute. Those
-results precede 07cf095f and are not its acceptance.
+All fourteen repair regressions passed on each interpreter: 42/42 executed,
+zero skipped. The original 260-action/180-second A2UI load and 1,005-message
+retention cases passed all three interpreters; all coverage jobs passed.
+Broad suites have 12,981/12,980/12,981 passes, zero/one/zero failures and fifty
+excluded entries per interpreter. Exclusions are not passed tests; required
+Windows/provider live gates remain open. New CI must execute the test migration.
 
-Astra R201 identified a blocking live-chunk lock window, also noted by Fable
-R201 in its source GO. 947eb0c2 repairs the lock and adds the concurrent-reader
-case. Current integrated source requires independent frozen review from both;
-no earlier review is accepted for the new delta.
+[GACT 07cf095f CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834) completed success, with 5 successful jobs. Browser/fixture results remain separate from real-service qualification.
 
-All Q1-Q9 and R1-R6 final-candidate rows remain unaccepted, including each of
-the thirty required race repetitions. Fresh model/service/UI launches are
-held by actual disk capacity (D 0.82 GiB, below the existing 1 GiB reserve
-before allocation). No deadline or capacity gate is reduced. New cleanup
-rejections are recorded in the exact inventory and remain manual-only.
+The matching production online UI build and web/core TypeScript passed.
+Source reviews and build results do not accept real model/UI outcomes.
+Both owned review/build process families have settled; the profile remains
+manual-only and no cleanup rejection is retried.
 
-See [current status](task-replacement-current-status.md) for CI totals,
-review scope, measured CPU/native I/O, source/runtime identities and cleanup,
-and [execution sheet](task-replacement-live-experiments.md) for required
-production/model/UI launches. Tests and source review do not pass live rows.
+**Every Q1-Q9 final-candidate row, migration/recovery obligation and each of
+the thirty R1-R6 repetitions remains unaccepted.** D capacity remains below
+the existing 1 GiB reserve before allocation; protected/rejected cleanup roots
+remain present. This prevents fresh Core-backed family launches.
+
+See [current status](task-replacement-current-status.md) for exact totals,
+identities, review receipts and cleanup, and the
+[execution sheet](task-replacement-live-experiments.md) for required live work.
 
 ## Construction and preceding evidence
 
