@@ -1,40 +1,40 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 17:06 UTC
+## Current candidate — October 18, 17:50 UTC
 
-Follow-up GACT is **43098e53df655525096157d45a3ba064eb9958ce**; new CI/review is pending. The 053f results below belong to its predecessor.
+Initial implementation and initial test construction remain complete.
+Production source is **8d4db341458c98064fb06bd9ed453f86523164f0**, GACT
+**07cf095fc632ff93bae3b8089c94a5b05d37e47e**, including freshly fetched
+develop 35fdd5fe and UI main f2b96308 with zero commits behind.
 
-The complete a0096b72 regression inventory has twelve reports and five distinct
-failure/error cases. The follow-up batch repairs accepted/client identity
-correlation, permission publication, transcript splice write amplification and
-Core-wait accounting, plus cancellation-test synchronization. It constructs nine
-new regressions before execution and retains the 260-action, 1,005-message,
-watchdog, coverage, confinement and cancellation assertions and budgets.
+Complete [345eb4d1 CI](https://github.com/iowarp/clio-agent/actions/runs/39148071374)
+has twelve reports/four distinct cases: three new fixture-validation failures
+corrected locally in 947eb0c2 and the original A2UI load timeout on 3.12/3.13.
+That load passed on 3.14; 1,005-message retention passed all interpreters, as did
+all coverage jobs. Fifty excluded tests per interpreter remain exclusions.
+The retained-payload repair and four new regressions await exact-head CI;
+the original 260 actions, 180-second deadline, retained history, confinement,
+delivery, cancellation and output assertions remain unchanged.
 
-The 1,005-message case passed all three interpreters under its original deadline.
-Core CI remains failed, including Python 3.14's 77% versus 78% coverage gate.
-The default matrix now requires the locked Claude SDK so four provider contracts
-execute rather than skip. Skips remain exclusions.
+[GACT 43098e53](https://github.com/iowarp/gact-tui/actions/runs/39148052043)
+passed five applicable jobs; four conditional jobs did not execute. Those
+results precede 07cf095f and are not its acceptance.
 
-GACT 053fca84 branch CI passed all five jobs, including workspace
-unit/build/browser steps and three native debug builds. Its synthetic PR-merge
-run failed the Mermaid error-text contract after a current-main validator change;
-the follow-up aligns that distinction and strengthens executable-click refusals.
+Astra R201 identified a blocking live-chunk lock window, also noted by Fable
+R201 in its source GO. 947eb0c2 repairs the lock and adds the concurrent-reader
+case. Current integrated source requires independent frozen review from both;
+no earlier review is accepted for the new delta.
 
-Astra and actual frozen Fable R199 found no blocking a009/053f source defect.
-The current batch still needs independent frozen review and fresh CI.
-Actual-model/service/UI Q1–Q9 and all thirty final race repetitions remain
-unaccepted; a source or fixture pass does not pass those rows.
+All Q1-Q9 and R1-R6 final-candidate rows remain unaccepted, including each of
+the thirty required race repetitions. Fresh model/service/UI launches are
+held by actual disk capacity (D 0.82 GiB, below the existing 1 GiB reserve
+before allocation). No deadline or capacity gate is reduced. New cleanup
+rejections are recorded in the exact inventory and remain manual-only.
 
-Owned orphaned C: Core processes have retired. Normal UV cleanup recovered about
-0.47 GiB actual D: space, leaving 1,106,403,328 bytes at that observation.
-Fresh Core-backed families still need allocation headroom beyond the existing
-1 GiB reserve. A newly rejected Node setup-cache removal is manual-only, along
-with all previous prohibited roots. No new product family is active.
-
-See [current status](task-replacement-current-status.md) for exact CI links,
-dependency identities, failure groups, cleanup receipts and review limits, and
-the [execution sheet](task-replacement-live-experiments.md) for remaining launches.
+See [current status](task-replacement-current-status.md) for CI totals,
+review scope, measured CPU/native I/O, source/runtime identities and cleanup,
+and [execution sheet](task-replacement-live-experiments.md) for required
+production/model/UI launches. Tests and source review do not pass live rows.
 
 ## Construction and preceding evidence
 
