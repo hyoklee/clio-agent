@@ -211,7 +211,11 @@ def effective_declared_skills(
         # the same presentation/review procedures. Catalog shapes alone do not
         # teach composition or pixel review. Resolve the shared built-ins normally
         # so pack/workspace overrides retain precedence; never copy their bodies.
-        presentation_skills = ["present-interactive-analysis", "review-visual-presentation"]
+        presentation_skills = [
+            "present-interactive-analysis",
+            "review-visual-presentation",
+            "create-diagram",
+        ]
         if automatic_producer or "publish_dashboard_report" in agent_def.tools:
             presentation_skills.append("create-dashboard")
         for skill_id in presentation_skills:
