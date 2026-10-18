@@ -308,6 +308,23 @@ def drive_session(base: str, sid: str, prompt: str, out: dict[int, str], idx: in
             except Exception:  # noqa: BLE001 - server sheds keepalives under load; retry
                 time.sleep(10)
                 continue
+            if status == "idle":
+                tasks_response = s.get(f"{base}/v1/sessions/{sid}/agent-tasks", timeout=30)
+                tasks_response.raise_for_status()
+                tasks = tasks_response.json().get("tasks", [])
+                failed = [
+                    row
+                    for row in tasks
+                    if row.get("status") in {"failed", "cancelled", "interrupted"}
+                ]
+                if failed:
+                    out[idx] = "failed_tasks: " + ", ".join(
+                        str(row.get("error_reason") or row.get("status")) for row in failed
+                    )
+                    return
+                if any(row.get("status") != "completed" for row in tasks):
+                    time.sleep(10)
+                    continue
             if status in {"idle", "error"}:
                 out[idx] = status
                 return

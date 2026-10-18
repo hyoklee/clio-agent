@@ -14,6 +14,7 @@ for (const width of [390, 1440]) {
       const tab = tabs.getByRole('tab', { name, exact: true });
       await tab.click();
       await expect(tab).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('tabpanel')).toHaveCount(1);
       const image = page.getByRole('tabpanel').getByRole('img');
       await expect.poll(() => image.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true);
       sources.add(await image.getAttribute('src'));

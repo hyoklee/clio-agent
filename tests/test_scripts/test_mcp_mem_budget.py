@@ -421,3 +421,38 @@ def test_memory_session_rejects_an_unexpected_workspace_owner(
     with pytest.raises(ValueError, match="measurement workspace"):
         _mod.prepare_session("http://gate", tmp_path, 0, "workspace-gate")
     assert session.post.call_count == 1
+
+
+@pytest.mark.parametrize("task_status", ["failed", "cancelled", "interrupted"])
+def test_idle_parent_with_failed_child_cannot_pass_the_memory_load(
+    monkeypatch: pytest.MonkeyPatch, task_status: str
+) -> None:
+    """An unavailable MCP expert is a failed workload, even after its parent becomes idle."""
+    session = MagicMock()
+    session.get.return_value.json.side_effect = [
+        {"status": "idle"},
+        {"tasks": [{"status": task_status, "error_reason": "custom_agent_tools_unavailable"}]},
+    ]
+    monkeypatch.setattr(_mod.requests, "Session", lambda: session)
+    out: dict[int, str] = {}
+    _mod.drive_session("http://gate", "session-0", "Read the CSV", out, 0)
+    assert out[0] == "failed_tasks: custom_agent_tools_unavailable"
+    session.close.assert_called_once()
+
+
+def test_idle_parent_waits_for_real_child_completion(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Yielding to accepted background work cannot finish the gate early."""
+    session = MagicMock()
+    session.get.return_value.json.side_effect = [
+        {"status": "idle"},
+        {"tasks": [{"status": "running"}]},
+        {"status": "idle"},
+        {"tasks": [{"status": "completed"}]},
+    ]
+    monkeypatch.setattr(_mod.requests, "Session", lambda: session)
+    sleep = MagicMock()
+    monkeypatch.setattr(_mod.time, "sleep", sleep)
+    out: dict[int, str] = {}
+    _mod.drive_session("http://gate", "session-0", "Read the CSV", out, 0)
+    assert out[0] == "idle"
+    sleep.assert_called_once_with(10)

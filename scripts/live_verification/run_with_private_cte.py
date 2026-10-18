@@ -24,6 +24,8 @@ wrapper reuses that exact machinery for the standalone leg scripts:
 
 The isolation root (config + 512MB ``storage.bin`` + daemon logs) is kept
 under ``out/live-verification/`` as run evidence, NOT auto-deleted.
+Set ``CLIO_LIVE_VERIFICATION_ROOT`` to retain that private evidence on another
+volume when the checkout's volume has insufficient capacity.
 
 Usage::
 
@@ -52,6 +54,16 @@ from tests._cte_isolation import (  # noqa: E402
 from tests._process_hygiene import release_this_process_client  # noqa: E402
 
 
+def verification_root() -> Path:
+    """Choose the retained evidence parent without changing private Core capacity."""
+    configured = os.environ.get("CLIO_LIVE_VERIFICATION_ROOT", "").strip()
+    return (
+        Path(configured).expanduser().resolve()
+        if configured
+        else REPO_ROOT / "out" / "live-verification"
+    )
+
+
 def main(argv: list[str]) -> int:
     """Isolate, attach, run ``argv`` as a child, release, reap."""
     if not argv:
@@ -66,7 +78,7 @@ def main(argv: list[str]) -> int:
         return 2
 
     stamp = _dt.datetime.now(tz=_dt.UTC).strftime("%Y%m%dT%H%M%SZ")
-    root = REPO_ROOT / "out" / "live-verification" / f"cte-private-{stamp}"
+    root = verification_root() / f"cte-private-{stamp}"
     root.mkdir(parents=True, exist_ok=True)
     isolation = isolate_cte_env(root, os.environ)
     print(f"[private-cte] root={root} port={isolation.port} user={os.environ['USER']}")
