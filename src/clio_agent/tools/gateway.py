@@ -29,6 +29,8 @@ from collections.abc import Callable, Iterable, Mapping
 from contextlib import suppress
 from typing import TYPE_CHECKING, Any
 
+from clio_agent.tools.mcp_client_lifecycle import owned_transport_lifespan
+
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
@@ -162,18 +164,16 @@ def _proxy_for_spec(
             fresh._transport_options = replace(fresh._transport_options, backend_mode=mode)
         elif mode is not None:
             fresh.mode = "auto"
-        # Applied to THIS clone: base_backend is never entered directly (only
-        # its .new() clones are, per-request), so this is where the one REAL
-        # backend connect this factory ever produces actually gets classified.
+        # Classify the call-owned clone that actually connects to the backend.
         return instrument_client_era(fresh, server_id=spec.name)
 
-    # provider_error_strategy="raise": FastMCPProxy IS an AggregateProvider
-    # wrapping exactly ONE child provider (its own ProxyProvider) -- never a
-    # second one to skip past. "warn" (fastmcp's default) would let
-    # aggregate.py swallow ANY non-NotFoundError from that one provider -- a
-    # real connect/protocol failure included -- into a fabricated "not
-    # found"; NotFoundError itself is unaffected either way.
-    return FastMCPProxy(client_factory=_client_factory, provider_error_strategy="raise")
+    # Surface upstream connection failures and close the shared backend only
+    # when its owning proxy lifetime ends, after all borrowed call clients exit.
+    return FastMCPProxy(
+        client_factory=_client_factory,
+        provider_error_strategy="raise",
+        lifespan=owned_transport_lifespan(transport),
+    )
 
 
 def _proxy_factory_accepts_cwd(factory: Callable[..., FastMCP]) -> bool:
@@ -659,12 +659,12 @@ def _await_spawned_exit(before: frozenset[int], timeout: float = 10.0) -> None:
     import psutil  # noqa: PLC0415
 
     deadline = time.monotonic() + timeout
+    lingering: frozenset[int] = frozenset()
     while time.monotonic() < deadline:
         now = _descendant_pids()
         lingering = now - before
         if not lingering:
             return
-        # conhost windows tear down on their own schedule; don't wait on them.
         real = []
         for pid in lingering:
             try:
