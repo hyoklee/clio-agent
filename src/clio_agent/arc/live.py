@@ -309,8 +309,13 @@ class LiveRuntimeContext:
         index, so the reads can concatenate ``render`` across it and the lifecycle can
         erase the whole family. Chunk order is also global event order (each chunk is
         filled before the next opens; ``logical_time`` is store-wide monotonic)."""
+        # Reserved siblings hold message atoms, task bodies and output. They
+        # are metadata, not chunks of the semantic log: never fetch their bodies
+        # merely to discard them by kind during replay.
         scopes = [
-            s for s in self._segments.scan_scopes(session_id, EVENTS_SCOPE) if is_events_scope(s)
+            s
+            for s in self._segments.scan_scopes(session_id, EVENTS_SCOPE)
+            if lane_chunking.is_chunk_of(EVENTS_SCOPE, s)
         ]
         return sorted(scopes, key=events_chunk_index)
 

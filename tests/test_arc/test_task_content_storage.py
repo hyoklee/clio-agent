@@ -7,12 +7,13 @@ from typing import Any
 
 import pytest
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import CoreReference, TaskProgress
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_history_projection import _encoded
 from clio_agent.gact.task_output_pages import output_page
 from tests.test_arc.store_workload_probe import StoreWorkloadProbe
-from tests.test_arc.test_task_history import snapshot
+from tests.test_arc.test_task_history import mail, snapshot
 
 
 def test_task_body_write_volume_does_not_grow_with_retained_history(
@@ -73,3 +74,49 @@ def test_legacy_task_body_addresses_remain_readable(arc: Any, output: bool) -> N
                 {"pending": {"reference": reference.model_dump(mode="json"), "anchor": digest}},
                 None,
             )
+
+
+def test_cold_task_replay_does_not_download_unrequested_mail_or_shell_output(
+    arc: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Metadata replay stays independent of retained body volume; explicit reads still work."""
+    history = TaskHistory(arc)
+    task = snapshot()
+    history.record_snapshot(task, observation_id="output-owner")
+    previous = None
+    for index in range(48):
+        previous = history.write_output(
+            task.handle,
+            {
+                "chunk_id": str(index),
+                "output": f"{index:04d}:" + "x" * 4096,
+                "previous": previous.model_dump(mode="json") if previous is not None else None,
+            },
+        )
+        task = task.model_copy(update={"progress": TaskProgress(output=previous)})
+        history.record_snapshot(task, observation_id=f"progress-{index}")
+    for index in range(20):
+        history.record_mail(mail(history, f"retained-{index}"))
+    expected = [segment.content for segment in arc._live.iter_session_event_segments("owner")]
+    cold = ARCMemory(store=arc._store)
+    get = arc._store.get
+
+    def read(kind: str, name: str, *args: Any, **kwargs: Any) -> Any:
+        scope = name.split("__", 1)[-1].replace("~", "/")
+        assert not scope.startswith(("_events/t/content/", "_events/t/output/")), name
+        return get(kind, name, *args, **kwargs)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(arc._store, "get", read)
+        assert [segment.content for segment in cold._live.iter_session_event_segments("owner")] == (
+            expected
+        )
+        restored = TaskHistory(cold)
+        restored.restore()
+    assert restored.task_snapshot(task.handle) == history.task_snapshot(task.handle)
+    assert len(restored.pending_mail("owner")) == 20
+    assert previous is not None
+    output = restored.read_content(previous)
+    assert isinstance(output, dict) and output["output"] == "0047:" + "x" * 4096
+    item = restored.mail_item("owner", "retained-0")
+    assert item is not None and restored.read_content(item.content) == {"text": "retained-0"}

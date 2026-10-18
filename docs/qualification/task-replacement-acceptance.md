@@ -1,72 +1,31 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 20:23 UTC
+## Current candidate — October 18, 20:57 UTC
 
-Implementation/test construction remain complete; regression repair and live
-acceptance remain incomplete. The combined repair was pushed at 99e7c13e.
-Its unavailable SDK type import failed CI collection and prevented live model
-configuration; this follow-up fixes that boundary without changing execution owners.
-1ef00b1f CI completed with 23 successful jobs and one Python 3.13 retention
-timeout; fifty exclusions per interpreter remain excluded.
+Initial implementation and initial test construction remain complete.
+Agent fcd8737cbfb43bdc2183e57bc355036b6fddd072 completed all 24 CI jobs.
+All twelve Python reports have zero failures/errors: 12,992 passes and fifty
+exclusions per interpreter. The unchanged retention/load guards passed.
+Exclusions are not executed passes and do not establish live/platform acceptance.
 
-R205/R206 real Core measurements preserve all 1,005 messages and replay
-assertions. Moving task bodies into ARC's existing reserved metadata hierarchy
-reduces index writes from 105,815,856 to 44,701 bytes. Local body/replay time
-changes from 49.991 to 48.686 seconds; the CI timeout is not claimed fixed.
-Legacy reads, bounded output and exact-task cursor authorization remain required.
+This commit adds the cold semantic-replay correction and records GACT
+8eaea05f80df9b85fb0457ef9dbad12c779af1ed. R212 reproduced the cold-read defect;
+R213 passed the actual-Core regression. Three focused UI behavior cases, six
+guards and the correct workspace type check passed. Combined-head CI,
+independent review, matching UI build and fresh rendered review remain required.
 
-R195 actual Codex/Luna hit an oversized SSE line after two tool actions.
-Its yield/recovery/final/UI assertions did not run. Accepted external work was
-cancelled and physically cleaned; owned processes/ports retired. The new SSE
-policy requires fresh CI, independent review and actual-model evidence. Its five
-native-SDK cases pass with one worker and no skips. The full Linux type check
-passes all 1,219 production files. R208 submitted no model/workload, retired all
-owned servers and retains a new exact-file cleanup rejection. Source review does
-not establish qualification.
+R210 on frozen fcd8737c / GACT 07cf095f passed actual Codex/Luna direct-SSE
+acceptance, independent work, one attention episode during observation loss,
+original-identity reconnection without replay, and one final result delivered to
+the same assignment. Real desktop/phone interactions passed; their duplicate
+visibility text prompted the current UI repair. See the current-status document
+for handles, byte/hash evidence and runtime identities.
 
-**All Q1–Q9 and thirty final race repetitions remain unaccepted.** R204 source
-GO does not approve the new delta. Source/runtime identities and bounded receipts
-are recorded in the current-status and execution-sheet documents. Disk capacity
-is available; 72 rejected cleanup boundaries remain manual-only.
-
-## Previous candidate — October 18, 19:03 UTC
-
-Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
-source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,
-with no remaining blocking finding in the delta. This reporting update changes
-no production or test code. New exact-head CI remains required; source GO is
-not regression or live acceptance.
-
-Initial implementation and test construction are complete. Production is
-**8462da2b** / GACT **07cf095f**. This follow-up only corrects the added
-logical-time order assertions and reports; exact identity/equivalence follows
-in source-state-r204.json.
-
-Astra and actual Claude Code/Fable both rejected 8462's incorrect test
-expectation and found no blocking production defect in its allocator change.
-The two assertions now follow the unchanged lane reader. R204 confirms the
-correction; no review is called live qualification.
-
-[8462 CI](https://github.com/iowarp/clio-agent/actions/runs/39156226461)
-is running, with its known assertion defect explicitly retained as a failure.
-The complete preceding direct/PR inventory has four distinct behaviors:
-Question synchronization, A2UI repeated scans, partial fixture PID JSON and
-queued-storage shutdown. The first three have scoped repairs. Shutdown has
-new async diagnostics, an unchanged deadline and no unproved production fix.
-
-Scoped Ruff/format, five-file Mypy and nine guards pass. Preceding direct
-42/42 repair cases, A2UI/1,005-message loads and coverage passed, but parallel
-PR timeouts remain failures. Fifty exclusions per interpreter remain excluded.
-GACT passed five applicable jobs with four conditional event/release skips.
-
-**All Q1-Q9, migration/recovery and thirty R1-R6 final repetitions remain
-unaccepted.** No product/model family is active. Latest D free space is
-0.81 GiB. The 157-path / 25.85 GiB logical inventory records seventy
-prior-rejected paths; the newest exact-root command did not run. No cleanup
-retry or freed-space claim. Preserve active source and every earlier boundary.
-
-See [current status](task-replacement-current-status.md) and
-[execution sheet](task-replacement-live-experiments.md) for evidence and remaining work.
+**Full Q1–Q9, migration/recovery and thirty final-candidate race repetitions
+remain unaccepted.** R210 is scoped predecessor evidence, not acceptance of
+unexecuted scenarios. Earlier Astra/Fable source GO applies only to its reviewed
+source. Current cleanup has 171 known disposable paths and 76 prior-rejected
+boundaries; rejected removals did not run. No archive or installed-state change.
 
 ## Construction and preceding evidence
 
@@ -131,7 +90,7 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | --- | --- | --- | --- | --- | --- |
 | F01 | One typed snapshot for all seven kinds; immutable ownership and missing legacy descriptions | gact/task_projection.py; agent_tasks.py; mcp_task_records.py; question_tasks.py | Core writer and typed schema | Fresh public query/resolve tests and actual model Q1 | blocked — fresh replacement evidence pending |
 | F02 | Confirmed content-first submission and input writes; no put_many transaction assumption | gact/core_task_journal.py; tests/test_gact/test_task_context_commit.py | Real Core; fault injection in tests | Before/after commit crash receipts, persisted content and replayed fixed input | blocked — R145 on 0755ba0a supplies actual-model before/after input-commit crash recovery; submission persistence fault gates remain pending |
-| F03 | One passive Core task and recipient index; bounded hot reads | gact/core_task_journal.py; task_projection.py | Indexed replacement | Read-work measurements with retained history over 1000 messages; startup replay measurement | blocked — R158 actual-model retention/delivery passed for 1005 human inputs. Ten hot owner reads made no store calls; data-only replay took 59.26s. Actual restart exceeded 120s readiness and the 900s family diagnostic; no restart acceptance |
+| F03 | One passive Core task and recipient index; bounded hot reads | gact/core_task_journal.py; task_projection.py | Indexed replacement | Read-work measurements with retained history over 1000 messages; startup replay measurement | blocked — fcd CI retained all 1,005 messages on three interpreters; R205/R206 reduced index writes from 105,815,856 to 44,701 bytes. R213 cold replay fetched no unrequested task-body/output bytes and retained twenty pending messages. Final-candidate actual-model large-history restart and bounded-read acceptance remain pending. |
 | F04 | Data-only migration twice; stable handles/aliases/lineage/results/mail/Questions/subscriptions; no replay | gact/mcp_task_store.py; assignment_history.py; user_question_ledger.py | Committed legacy fixture formats | Two migration passes, same identities and pending notices, zero backend submissions | blocked — R171 on 2c7469c2 passed two production startup migration passes for nine event/context/JSON historical fixture tasks, stable identities/results/acknowledgements/pending mail/Question/subscription and zero native submissions. Actual Codex inspected retained results and completed the original new assignment after the migrated Question answer. Future queue stayed paused; all processes and disposable roots are absent. Other legacy provider/metadata/active-job variants and final-candidate acceptance remain pending; R170's unpaused-queue harness failure remains historical. |
 | F05 | Ambiguous aliases/delivery stay unknown; historical relay stays readable without runtime | tools/mcp_task_records.py; gact/relay_timeline.py | Data-only migration | Collision and missing-description fixtures; no invented receipts or special relay owner | blocked — fresh replacement evidence pending |
 | N01 | SDK inline/pre-task re-entry preserved; accepted handle distinctly typed | tools/task_receipt.py; mcp_task_extension.py | Pinned SDK transport adapter | Native and inline MCP contract tests; actual model handle before settlement | blocked — fresh replacement evidence pending |

@@ -1,84 +1,37 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 20:23 UTC
+## Current execution gate — October 18, 20:57 UTC
 
-The current exact-head CI inventory is complete: 23 successful jobs and one
-Python 3.13 retention timeout at 1ef00b1f. Combined storage/SSE repairs are
-were pushed at 99e7c13e. CI exposed an invalid public SDK type import; the
-follow-up uses the actual exported event classes and a narrow private-hook
-boundary. Full Linux types and five focused SDK cases pass; they are not live
-acceptance.
-R205/R206 actual Core tests retain all 1,005 messages and demonstrate removal
-of quadratic index write volume, with only a small local time improvement.
-R207 is an operator-setting experiment, not a production-default change.
+The completed fcd8737c CI inventory has 24 successful jobs, twelve Python reports
+and zero failures/errors. Each interpreter has 12,992 passes and fifty exclusions.
+Retention and A2UI load passed under unchanged guards. Fresh combined-head CI
+remains required after this cold-replay/UI correction.
 
-R195 actual Codex/Luna direct SSE failed with a 65,949-byte line exceeding
-lm15's 65,536-byte ceiling. External task acceptance and a later filesystem
-tool action occurred; explicit yield, attention/final recovery and browser
-acceptance did not. Do not count planned later assertions as executed.
+R210 passed on frozen fcd8737c / GACT 07cf095f using actual Codex/Luna direct SSE,
+production CLIO/FastMCP/SDK and owned external work. It proves immediate task
+acceptance plus independent model action, one uncertainty attention wake,
+original-identity reconnection with no replay, and one verified final result/wake
+under the original assignment. Desktop and 390px-phone interactions passed.
+It does not complete Q1–Q9, partial-input/provider-job coverage or thirty races.
 
-The accepted external task was cancelled through its production owner and its
-worker confirmed cleanup. All owned service/proxy/observer processes and their
-ports retired. The original failure and bounded outcomes are retained in static
-receipts. Exact R195 directory removal was rejected; do not retry or remove via
-a parent. No model/product family is currently running.
+R212 reproduced cold replay fetching unrequested task bodies; R213 passed the
+existing-chunk-grammar correction. GACT 8eaea05f moves duplicate uncertain-error
+text into existing details while retaining numeric progress. The three focused
+UI cases and correct workspace type check pass. Build and real-service review
+of that exact UI are pending, as are new independent Astra/Fable reviews.
 
-Next family must freeze the new source and record its dependency/UI impact.
-Use the existing search auto-install setting to avoid provisioning unused
-SearXNG during a narrowly scoped external-task family. This changes only the
-isolated operator configuration and cannot qualify a search route.
-R208 failed provider configuration before any model request or workload was
-submitted. It is a failed prerequisite check, not a model cycle. Its owned servers
-exited normally; exact metadata-file deletion was rejected and cannot be retried
-or bypassed through its parent. The new SSE policy requires actual-model evidence;
-WebSocket success is not a substitute. Q1–Q9, migration and thirty final races
-remain unaccepted.
+No product/model family is currently active. R210's owned processes exited and
+its worker confirmed cleanup. R215's removal of three retired proof/temp roots
+was rejected before execution; those exact paths and their parents remain
+manual-only. Preserve every earlier boundary. The inventory/custody and bounded
+receipts are in the D execution repository. No archives or installed changes.
 
-## Previous execution gate — October 18, 19:03 UTC
-
-Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
-source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,
-with no remaining blocking finding in the delta. This reporting update changes
-no production or test code. New exact-head CI remains required; source GO is
-not regression or live acceptance.
-
-No product/model family is active. Production source is **8462da2b** /
-GACT **07cf095f**; the new follow-up changes only logical-time test assertions
-and reports. Its exact hash/equivalence is recorded in source-state-r204.json.
-Both independent reviewers confirmed the corrected test contract; regression
-CI and real-service qualification remain required.
-
-[8462 CI](https://github.com/iowarp/clio-agent/actions/runs/39156226461)
-is running with the known assertion defect. The unresolved storage failure is
-a shutdown wait, not startup. Async-owner diagnostics preserve its 120-second
-guard and production shutdown behavior. A2UI/Question/PID corrections remain
-subject to current CI; preceding direct passes do not erase parallel PR failures.
-
-GACT 07's five applicable jobs and online build passed. Preserve the build's
-actual 8265de4e identity and index hash. The unlaunched R195 controller now
-requires an explicit backend/test/report impact check, unchanged GACT/compiler
-and dependency/version inputs, and a matching entry hash. Backend changes
-require fresh real-service UI review even when recompilation is unnecessary.
-
-The inventory has 157 exact paths / 25.85 GiB logical and seventy prior-rejected
-boundaries. Latest C/D free space is 0.80/0.81 GiB. The newest
-guarded retired-root removal was rejected before execution. Do not retry,
-bypass, delegate or remove a parent. No new local Core/model family may launch
-against the known capacity deficit.
-
-After actual capacity recovery:
-1. Freeze exact source/GACT/dependency/schema/runtime identities and preflight
-   Codex/Luna and Claude's distinct bridge.
-2. Validate UI reuse proof; refresh unlaunched R195 ownership/source records.
-   Retired processes and unused ports are prerequisites; R184 absence never is.
-3. Execute finite Q1-Q9 and thirty final races with real workloads/models/UI.
-   Two actual declared workflows are required; session_workflow_tasks.py is obsolete.
-4. Settle each family, clean permissible disposable state, retain bounded receipts
-   and selected real-service screenshots. Cover bytes/hashes/manifests, input/
-   reconnect, oversized SSE, capacity/retirement, grants/revocation and recovery.
-
-Every final-candidate row remains unaccepted. Earlier results are scoped
-predecessor evidence; no required row, load or deadline is weakened.
+Next family must use the matching new UI and record a frozen source/dependency/
+schema/runtime tuple. Keep unused search auto-install disabled only when the
+family does not exercise search. Continue using supported small isolated native
+Core allocations and measure actual files; do not change product defaults,
+execution deadlines or acceptance guards. Fresh qualification still requires
+the experiments and races below; preceding scoped evidence does not pass them.
 
 ## Regression and live-verification loop
 
