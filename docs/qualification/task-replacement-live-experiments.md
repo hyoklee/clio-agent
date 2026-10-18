@@ -1,49 +1,43 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 18:21 UTC
+## Current execution gate — October 18, 18:51 UTC
 
-No product/model family is active. Reviewed frozen source is
-clio-agent **8265de4e** / GACT **07cf095f**, with production **8d4db341**.
-Both independent R202 reviews gave source GO, without qualifying live behavior.
-The follow-up is only one Question test plus reports; record its exact commit
-and unchanged-production proof before reusing the matching UI or launching work.
+No product/model family is active. Current pushed agent is **c3efb1e9** /
+GACT **07cf095f**. Both c3 CI runs completed cancelled; its invalid helper
+import is corrected in the coordinated follow-up. New CI and independent delta
+review are required before candidate freeze.
 
-The complete 8265 CI inventory has one test-synchronization failure on 3.13;
-production remains unchanged. All fourteen repair regressions, A2UI load,
-1,005-message retention and coverage gates passed across all three interpreters.
-The Question test keeps its five-second bound and strengthens final pending-mail
-and pump-retirement checks. New CI must validate it. Fifty exclusions remain
-explicit, including required Windows/provider live behavior not proved here.
+Both preceding 8265 CI contexts are inventoried. Direct A2UI/retention and all
+42 earlier repair cases passed; parallel PR CI adds A2UI timeouts, a partial
+PID fixture and a real storage shutdown wait. Question synchronization is the
+fourth distinct failing behavior. Corrections and shutdown await-chain
+diagnostics are prepared together. The shutdown cause remains unproved;
+no speculative production shutdown fix is included.
 
-[GACT 07cf095f CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834) completed success, with 5 successful jobs. Browser/fixture results remain separate from real-service qualification.
+The GACT 07 online build and five applicable CI jobs passed. Four event/release
+skips remain conditional. The build's actual source is 8265de4e; record explicit
+UI impact before reusing unchanged assets with new backend source. Do not
+relabel the build as freshly compiled or call it real-service acceptance.
 
-The matching production online UI is built in the ordinary D web/dist:
-current-web-build.json / r202-web-build.json. It replaced older disposable
-output without touching protected dated builds. Do not rebuild unchanged UI
-merely for this test/report-only follow-up; verify the recorded impact proof.
-
-Latest D free capacity is about 0.81 GiB, below the existing 1 GiB reserve
-before native allocation. The exact cleanup list records 157 present paths /
-25.85 GiB logical. Six caches, one C generated file and two ownership-confirmed
-old native roots were rejected before execution and remain manual-only.
-Do not retry, bypass, delegate or delete their parents. Earlier boundaries
-remain. No new Core/model family may be launched against this known deficit.
+The no-follow disposal inventory has 157 exact paths / 25.85 GiB logical,
+zero read errors and no overlap. C had 1.01 GiB free; D 0.81 GiB. Sixty-nine
+candidates are prior-rejected/manual-only. Refresh attempted no removal.
 
 After actual capacity recovery:
-1. Freeze the exact final source/GACT/dependency/schema/runtime tuple, record
-   test/report-only impact, and preflight real Codex/Luna and Claude availability.
-2. Reuse the matching UI only after validating its source/production identity.
-3. Refresh R195 ownership/source records. Retired processes and unused ports are
-   launch prerequisites; protected R184 folder absence is never required.
-4. Run native/mixed work, agent delivery/lifecycle, external input/reconnect,
-   two actual declared workflows with human grants, recovery/capacity and
-   desktop/phone UI. The obsolete session_workflow_tasks.py is not Q5 evidence.
-5. Reconcile Q1-Q9 and repeat every R1-R6 race five times on the final tuple.
+1. Freeze the corrected exact source/GACT/dependency/schema/runtime tuple and
+   preflight Codex/Luna and Claude's distinct supported bridge.
+2. Validate the UI hash and record backend-only impact before asset reuse;
+   repeat affected live behavior on the new source.
+3. Refresh unlaunched R195 ownership/source records. Retired processes and
+   unused ports are prerequisites; protected R184 folder absence never is.
+4. Execute Q1-Q9 and all thirty final races with actual workloads/models/UI.
+   Use two actual declared workflows; session_workflow_tasks.py is obsolete.
+5. Settle each family and remove disposable state within permitted boundaries.
+   Record bytes/hashes/manifests, input/reconnect, oversized SSE, capacity,
+   grants/revocations, recovery and desktop/phone outcomes.
 
-Q8 must prove actual transient stdio-child retirement, including many-server
-teardown; a source advisory or cancellation acknowledgement is insufficient.
-Oversized-SSE still needs actual provider/model evidence. Required unavailable,
-failed or skipped gates prevent completion. Relay has no special test route.
+All final-candidate rows remain unaccepted. Older model, CI and fixture results
+are scoped predecessor evidence. No deadline, required row or budget changes.
 
 ## Regression and live-verification loop
 

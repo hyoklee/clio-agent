@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from clio_agent.arc.task_types import QuestionReply
-from tests.test_gact.conftest import await_idle
+from tests.test_gact.conftest import settle_turn_slot
 from tests.test_gact.task_records import record_assignment_fixture
 from tests.test_gact.test_interactions import post_question
 from tests.test_gact.test_resources import _upload, _workspace
@@ -41,7 +41,7 @@ def test_each_answer_is_queued_while_other_questions_remain_open(
     # A release callback ends one reservation; a second answer may already have
     # scheduled the next real admission probe. Keep the same five-second bound
     # and inspect the existing runner's full quiescence boundary instead.
-    await_idle(client, sid, timeout=5)
+    settle_turn_slot(client, sid, timeout=5)
     assert not app.state.turn_runner.busy(sid)
     pump = app.state.turn_runner._pumps.get(sid)
     assert pump is None or pump.done()

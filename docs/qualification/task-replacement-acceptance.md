@@ -1,40 +1,40 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 18:21 UTC
+## Current candidate — October 18, 18:51 UTC
 
 Initial implementation and initial test construction remain complete.
-The reviewed frozen pair is clio-agent **8265de4e** / GACT **07cf095f**;
-production code is **8d4db341**. Astra and actual Claude Code/Fable R202 both
-gave source GO with no blocking findings. The pending follow-up changes one
-Question test and three reports; no production/dependency/schema/UI change.
+Current pushed agent **c3efb1e9** / GACT **07cf095f** is not qualified. Both
+c3 CI runs are confirmed cancelled after its test migration used a nonexistent
+helper. The correction uses settle_turn_slot and requires new CI.
 
-[Complete 8265 CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108)
-has twelve reports and one distinct failure: a Question test observed a single
-reservation release rather than complete admission-pump quiescence. The
-follow-up retains the five-second bound and all answer/notice assertions,
-using the existing full-idle helper and adding no-pump/retained-notice checks.
+The complete preceding 8265 inventory includes
+[direct CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108)
+and [PR-context CI](https://github.com/iowarp/clio-agent/actions/runs/39151586073).
+Four distinct failing behaviors remain accounted for: Question synchronization,
+A2UI repeated order scans, non-atomic test PID publication, and queued-storage
+shutdown. The first three have coordinated source/test corrections; the fourth
+has new async-owner diagnostics and remains unresolved. Its thread trace does
+not prove startup failure or justify cancelling a result observer.
 
-All fourteen repair regressions passed on each interpreter: 42/42 executed,
-zero skipped. The original 260-action/180-second A2UI load and 1,005-message
-retention cases passed all three interpreters; all coverage jobs passed.
-Broad suites have 12,981/12,980/12,981 passes, zero/one/zero failures and fifty
-excluded entries per interpreter. Exclusions are not passed tests; required
-Windows/provider live gates remain open. New CI must execute the test migration.
+Direct CI's 42/42 earlier repair regressions, original A2UI/1,005-message load
+and coverage gates passed all three interpreters. Parallel PR load timeouts
+remain failures. Fifty exclusions per interpreter remain excluded.
 
-[GACT 07cf095f CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834) completed success, with 5 successful jobs. Browser/fixture results remain separate from real-service qualification.
+Astra and actual Claude Code/Fable approved source 8265/07, then rejected c3's
+wrong import. Corrected combined-source approval is pending.
+[GACT CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834) passed
+five applicable jobs with four conditional event/release skips.
+Scoped Ruff/format, five-file Mypy and nine guards pass. New tests have not run locally.
+No assertion, workload, deadline or required gate is reduced.
 
-The matching production online UI build and web/core TypeScript passed.
-Source reviews and build results do not accept real model/UI outcomes.
-Both owned review/build process families have settled; the profile remains
-manual-only and no cleanup rejection is retried.
+**Every Q1-Q9 final-candidate row, migration/recovery obligation and all thirty
+R1-R6 repetitions remain unaccepted.** No product/model family is active.
+D free space is about 0.81 GiB; the refreshed 157-path / 25.85 GiB logical
+disposal inventory preserves every prior rejection and active source.
+The inventory refresh is not a deletion or disk-recovery claim.
 
-**Every Q1-Q9 final-candidate row, migration/recovery obligation and each of
-the thirty R1-R6 repetitions remains unaccepted.** D capacity remains below
-the existing 1 GiB reserve before allocation; protected/rejected cleanup roots
-remain present. This prevents fresh Core-backed family launches.
-
-See [current status](task-replacement-current-status.md) for exact totals,
-identities, review receipts and cleanup, and the
+See [current status](task-replacement-current-status.md) for exact identities,
+both inventories, review state and cleanup, and the
 [execution sheet](task-replacement-live-experiments.md) for required live work.
 
 ## Construction and preceding evidence

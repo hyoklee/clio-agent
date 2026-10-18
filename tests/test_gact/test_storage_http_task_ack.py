@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import sys
 import threading
 import time
 from pathlib import Path
@@ -17,6 +19,88 @@ from clio_agent.gact.storage.models import FileEntry, TransferOperation
 from clio_agent.platform_paths import win_extended_path
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
+
+
+def _await_chain(coroutine: Any) -> list[str]:
+    """Describe suspended asyncio owners without advancing or cancelling them."""
+    chain: list[str] = []
+    seen: set[int] = set()
+    while coroutine is not None and id(coroutine) not in seen:
+        seen.add(id(coroutine))
+        frame = (
+            getattr(coroutine, "cr_frame", None)
+            or getattr(coroutine, "gi_frame", None)
+            or getattr(coroutine, "ag_frame", None)
+        )
+        if frame is None:
+            chain.append(type(coroutine).__name__)
+        else:
+            chain.append(f"{frame.f_code.co_filename}:{frame.f_lineno}:{frame.f_code.co_name}")
+        coroutine = (
+            getattr(coroutine, "cr_await", None)
+            or getattr(coroutine, "gi_yieldfrom", None)
+            or getattr(coroutine, "ag_await", None)
+        )
+    return chain
+
+
+def _diagnose_shutdown(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep real shutdown behavior and capture its async owners before the hard guard."""
+    from clio_agent.gact import task_runtime
+    from tests import _hang_guard
+
+    original_close = task_runtime.close
+
+    async def describe(app: Any) -> None:
+        while True:
+            await asyncio.sleep(20)  # Diagnostic sampling only; the 120s test limit is unchanged.
+            native = app.state.native_tools
+            history = app.state.task_history
+            calls = []
+            for handle in tuple(native._calls):
+                current = history._tasks.get(handle)
+                calls.append(
+                    {
+                        "handle": handle,
+                        "status": current.status if current else None,
+                        "raw_status": current.raw_status if current else None,
+                        "settlement": current.settlement if current else None,
+                        "terminal_at": current.terminal_at if current else None,
+                        "attempts": [
+                            {
+                                "incarnation": attempt.incarnation,
+                                "cleanup_state": attempt.cleanup_state,
+                                "cleanup_receipt": str(attempt.cleanup_receipt),
+                                "finished_at": attempt.finished_at,
+                            }
+                            for attempt in tuple(history._attempts.get(handle, {}).values())
+                        ],
+                    }
+                )
+            diagnostic = {
+                "calls": calls,
+                "recovery_pending": app.state.task_recovery.pending,
+                "drivers": tuple(native._drivers),
+                "rpcs": tuple(native._rpc),
+                "tasks": [
+                    {"name": task.get_name(), "await_chain": _await_chain(task.get_coro())}
+                    for task in asyncio.all_tasks()
+                ],
+            }
+            # Use the hang guard's stream so xdist attaches this to a killed worker's report.
+            stream = _hang_guard._dump_stream or sys.stderr
+            print("Storage shutdown owners: " + json.dumps(diagnostic, default=str), file=stream)
+            stream.flush()
+
+    async def observed_close(app: Any) -> tuple[BaseException, ...]:
+        diagnostic = asyncio.create_task(describe(app), name="storage-shutdown-diagnostic")
+        try:
+            return await original_close(app)
+        finally:
+            diagnostic.cancel()
+            await asyncio.gather(diagnostic, return_exceptions=True)
+
+    monkeypatch.setattr(task_runtime, "close", observed_close)
 
 
 def _storage_result(client: TestClient, sid: str, handle: str) -> dict[str, Any]:
@@ -123,6 +207,7 @@ def test_queued_storage_is_visible_and_cancellable_before_worker_start(
     """The REST surface controls Core-reserved work even before a resource operation exists."""
     from clio_agent.gact.storage.linked import FsspecFolder
 
+    _diagnose_shutdown(monkeypatch)
     monkeypatch.setenv("CLIO_AGENT_HOME", str(tmp_path / "agent"))
     monkeypatch.setenv("CLIO_TASKS_STORAGE_CONCURRENCY", "1")
     entered, release = threading.Event(), threading.Event()

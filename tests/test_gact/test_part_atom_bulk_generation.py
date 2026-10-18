@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 import pytest
 
 from clio_agent.arc.lane_chunking import lane_segments
 from clio_agent.arc.lane_generations import current_base, replace_lane
+from clio_agent.arc.schema import Segment
 from clio_agent.gact import part_atoms
 from clio_agent.gact.types import Message, Part
 
@@ -259,3 +261,88 @@ def test_retained_atom_replay_rejects_another_kind(arc: Any) -> None:
             [incompatible],
             lane=part_atoms.MESSAGE_PART_SCOPE + "/g/test",
         )
+
+
+def test_staged_order_allocation_does_not_rescan_every_prior_atom(
+    arc: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confirm linear traversal work while preserving actual Core chunk publication."""
+    store = arc._segments
+    original = store._segs
+    visited = 0
+
+    class CountedSegments(list[Segment]):
+        """Count Python traversal without replacing storage or segment behavior."""
+
+        def __iter__(self) -> Iterator[Segment]:
+            nonlocal visited
+            visited += len(self)
+            return super().__iter__()
+
+    def observed(sid: str, scope: str) -> list[Segment]:
+        result = original(sid, scope)
+        if scope.startswith(part_atoms.MESSAGE_PART_SCOPE + "/g/") and not isinstance(
+            result, CountedSegments
+        ):
+            result = CountedSegments(result)
+            store._scopes[sid, scope] = result
+        return result
+
+    monkeypatch.setattr(store, "_segs", observed)
+    contents = [{"message_id": f"linear-{index}", "part_index": 0} for index in range(200)]
+    replace_lane(
+        store,
+        "bulk-generation",
+        part_atoms.MESSAGE_PART_SCOPE,
+        lambda lane: part_atoms.append_part_atoms(store, "bulk-generation", contents, lane=lane),
+    )
+    assert visited <= len(contents) * 6, "An unpublished batch repeatedly scanned its whole prefix"
+    base = current_base(store, "bulk-generation", part_atoms.MESSAGE_PART_SCOPE)
+    recorded = list(lane_segments(store, "bulk-generation", base, include_tombstoned=False))
+    assert [segment.content for segment in recorded] == contents
+    assert [segment.order for segment in recorded] == list(range(1, 201))
+
+
+def test_staged_order_continues_from_the_maximum_of_an_existing_chunk(arc: Any) -> None:
+    """Continued batches retain legacy gaps even if physical storage order differs."""
+    store, sid = arc._segments, "bulk-generation"
+    contents = _atoms(6)
+
+    def write(lane: str) -> None:
+        first = part_atoms._append_segment_raw(
+            store, sid, lane, part_atoms.MESSAGE_PART_KIND, contents[0], persist=False
+        )
+        part_atoms._append_segment_raw(
+            store, sid, lane, part_atoms.MESSAGE_PART_KIND, contents[1], persist=False
+        )
+        first.order = 10
+        store._persist(sid, lane)
+        part_atoms.append_part_atoms(store, sid, contents[2:5], lane=lane)
+        part_atoms.append_part_atoms(store, sid, contents[5:], lane=lane)
+
+    replace_lane(store, sid, part_atoms.MESSAGE_PART_SCOPE, write)
+    base = current_base(store, sid, part_atoms.MESSAGE_PART_SCOPE)
+    recorded = list(lane_segments(store, sid, base, include_tombstoned=False))
+    assert [segment.order for segment in recorded] == [2, 10, 11, 12, 13, 14]
+    assert [segment.content for segment in recorded] == [contents[1], contents[0], *contents[2:]]
+
+
+def test_live_atom_cannot_override_the_existing_order_allocator(arc: Any) -> None:
+    """The staged optimization cannot rewrite ordering on a visible live append."""
+    with pytest.raises(ValueError, match="unpublished batch"):
+        part_atoms._append_segment_raw(
+            arc._segments,
+            "bulk-generation",
+            part_atoms.MESSAGE_PART_SCOPE,
+            part_atoms.MESSAGE_PART_KIND,
+            _atoms(1)[0],
+            order=20,
+        )
+    assert not list(
+        lane_segments(
+            arc._segments,
+            "bulk-generation",
+            part_atoms.MESSAGE_PART_SCOPE,
+            include_tombstoned=False,
+        )
+    )

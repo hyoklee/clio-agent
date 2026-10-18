@@ -550,6 +550,7 @@ def _append_segment_raw(
     content: dict[str, Any] | Segment,
     *,
     persist: bool = True,
+    order: float | None = None,
 ) -> Segment:
     """Append one segment to ``scope`` WITHOUT invoking the op-logger (§2.9 raw lane).
 
@@ -572,9 +573,12 @@ def _append_segment_raw(
 
     ``persist=False`` stages one atom for the same writer's unpublished chunk
     batch; that caller confirms the chunk before exposing its generation.
+    Its explicit ``order`` continues the maximum reserved once for that chunk.
     """
     from clio_agent.arc.segments import _coerce_content  # noqa: PLC0415 - avoid import cycle
 
+    if order is not None and persist:
+        raise ValueError("Explicit atom order requires an unpublished batch")
     with store._lock_for(session_id, scope):
         if isinstance(content, Segment):
             if persist or content.session_id != session_id or content.kind != kind:
@@ -588,7 +592,8 @@ def _append_segment_raw(
         else:
             payload = _coerce_content(content)
         segs = store._segs(session_id, scope)
-        order = max((s.order for s in segs), default=0.0) + 1.0
+        if order is None:
+            order = max((s.order for s in segs), default=0.0) + 1.0
         seg = Segment(
             scope=scope,
             kind=kind,
@@ -644,17 +649,36 @@ def append_part_atoms(
     with store._lock_for(session_id, MESSAGE_PART_SCOPE):
         base = lane if lane is not None else current_base(store, session_id, MESSAGE_PART_SCOPE)
         scope: str | None = None
+        next_order: float | None = None
         appended: list[Segment] = []
         for content in contents:
             selected = chunk_for_append(store, session_id, base, capacity=_chunk_capacity())
-            if scope is not None and selected != scope:
-                store._persist(session_id, scope)
+            if selected != scope:
+                if scope is not None:
+                    store._persist(session_id, scope)
+                if lane is not None:
+                    with store._lock_for(session_id, selected):
+                        next_order = (
+                            max(
+                                (segment.order for segment in store._segs(session_id, selected)),
+                                default=0.0,
+                            )
+                            + 1.0
+                        )
             scope = selected
             appended.append(
                 _append_segment_raw(
-                    store, session_id, scope, MESSAGE_PART_KIND, content, persist=lane is None
+                    store,
+                    session_id,
+                    scope,
+                    MESSAGE_PART_KIND,
+                    content,
+                    persist=lane is None,
+                    order=next_order,
                 )
             )
+            if next_order is not None:
+                next_order += 1.0
         if scope is not None and lane is not None:
             store._persist(session_id, scope)
         return appended

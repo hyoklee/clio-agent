@@ -1,100 +1,85 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 18:21 UTC
+## Current state — October 18, 18:51 UTC
 
 Initial implementation and initial test construction are **complete**.
-The production repair is independently source-reviewed. Regression assurance
-and actual-model/service/UI qualification remain **incomplete**; no release,
-merge or daily Desktop installation is made.
+Regression repair and actual-model/service/UI qualification remain **incomplete**.
+No release, merge or daily Desktop installation is made.
 
-Production code is **8d4db341458c98064fb06bd9ed453f86523164f0**. Astra and
-actual Claude Code/Fable R202 both gave source GO to frozen clio-agent
-**8265de4ede757c12be923903f28d6cd1059de1ef** / GACT
-**07cf095fc632ff93bae3b8089c94a5b05d37e47e**, with no blocking findings.
-This follow-up changes one Question test and these three reports; production,
-dependencies, schema and GACT are unchanged. Its exact commit and equivalence
-proof are recorded after commit in source-state-question-test-migration.json.
+Current pushed source is **c3efb1e98e3b1b515c2a2a30fb258253708bb66b** with GACT
+**07cf095fc632ff93bae3b8089c94a5b05d37e47e**. Both c3 runs
+[39153889146](https://github.com/iowarp/clio-agent/actions/runs/39153889146)
+and [39153892286](https://github.com/iowarp/clio-agent/actions/runs/39153892286)
+are confirmed completed/cancelled. Its Question-test migration imported a
+nonexistent helper; that error is corrected locally to the existing
+settle_turn_slot. Neither cancelled run is acceptance evidence.
 
-The branch includes develop **35fdd5fe0d85328093ac615909ae6edc2e3a9231** and
-GACT main **f2b96308458d039d72391a88adb97166e72ef7ad**, freshly fetched with
-zero commits behind at the production freeze. The D runtime remains Python
-3.14.6, iowarp-core 2.3.2, DSPy 3.4.0, FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0,
-Docket 0.26.2, schema 0.6.0b13 and Claude SDK 0.2.159. No Core-library
-implementation or storage-adapter change is included.
+The complete preceding **8265de4e** inventory includes both
+[direct-head CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108)
+and [parallel PR-context CI](https://github.com/iowarp/clio-agent/actions/runs/39151586073).
+The earlier direct-head-only report was incomplete. The combined inventory
+has four distinct failing behaviors:
 
-[Complete 8265de4e CI](https://github.com/iowarp/clio-agent/actions/runs/39151581108)
-has twelve reports, 23 successful jobs and one failed job. All three coverage
-jobs passed the unchanged gate.
+| Behavior | Evidence | Coordinated follow-up |
+| --- | --- | --- |
+| Question-answer test retirement | Direct 3.13 observed one reservation release before the next admission probe | Use the real full-pump helper, unchanged five-second bound, preserve both notices and require no unfinished pump |
+| A2UI sustained load | PR 3.12/3.13 hit the existing 180-second guard; sampled stack repeatedly scans chunk orders | Reserve maximum order once per unpublished chunk, retaining gaps, original order, confirmation and rollback |
+| Hook descendant identity fixture | PR 3.13 read JSON after file creation but before its write completed | Publish the complete PID/birth record by atomic replacement; keep real descendant settlement assertions |
+| Queued storage shutdown | PR 3.13 exceeded 120 seconds in TestClient.wait_shutdown | Capture actual coroutine await chains, retained calls/attempt receipts and recovery holds before the unchanged guard; cause and repair are not yet established |
 
-| Python | Passed | Failed | Errors | Excluded |
-| --- | ---: | ---: | ---: | ---: |
-| 3.12 | 12,981 | 0 | 0 | 50 |
-| 3.13 | 12,980 | 1 | 0 | 50 |
-| 3.14 | 12,981 | 0 | 0 | 50 |
+The storage trace proves a shutdown wait, **not a startup failure**. Astra's
+read-only investigation found insufficient async evidence to identify its
+owner. Production shutdown behavior is unchanged; no speculative observer
+cancellation, transport close, timeout or new driver is introduced.
 
-All fourteen constructed repair regressions passed on each interpreter:
-**42 executed / 42 passed / zero skipped**. The prior missing-timestamp fixtures,
-physical-chunk confirmation race, retained-copy/identity cases, permission
-publication and Core-wait accounting cases passed.
+The direct-head run had 23 successful jobs and one failure; all three coverage
+jobs passed. Interpreter totals are 12,981/12,980/12,981 passed,
+zero/one/zero failed, zero errors and fifty excluded entries each. All fourteen
+earlier repair regressions passed on each interpreter: **42/42 executed,
+zero skipped**. Direct A2UI timings were 119.968/108.741/80.138 seconds and
+1,005-message retention 169.441/105.905/155.894 seconds. Those passes do not
+erase the parallel PR failures. Bounded inventories are ci-8265de4e.json
+and ci-8265de4e-pr.json in the D execution checkout.
 
-The original 260-action/180-second A2UI load now passed in **119.968, 108.741
-and 80.138 seconds** on 3.12/3.13/3.14. The 1,005-message retention case passed
-in **169.441, 105.905 and 155.894 seconds**. Native I/O and atom/persistence
-timing remain observable; no load, retention, timeout, worker, output,
-assertion or coverage budget was reduced.
+The follow-up constructs three order regressions before execution: bounded
+traversal work with real Core publication, continuation of noncontiguous
+orders, and refusal of explicit ordering on a live append. Raw atoms, locks,
+cleanup, 260 actions, 1,005 messages, deadlines, workers, assertions, output
+limits and coverage gates remain intact. No local pytest or product/model
+family has been launched for this batch. Scoped Ruff/format and all nine guards
+pass. Scoped Mypy passed all five changed source/test files, including the
+actual Question-helper import; new regression execution belongs to CI.
 
-The single failure is Question-test synchronization on 3.13. Its two answers
-were already durably answered and queued. A callback marks one reservation's
-release; a queued second answer can already reserve another admission probe
-before the caller resumes. The follow-up test uses the existing full-idle
-helper with the same five-second bound and additionally verifies no pump
-remains and both original notices are still pending. The production runner and
-Question behavior are unchanged. This corrected test awaits new CI.
+Astra and actual Claude Code/Fable R202 gave **source GO to 8265de4e/07cf095f**,
+then both gave **NO-GO to c3's invalid test import**. The corrected combined
+follow-up needs independent delta review; prior GO is not approval of new changes.
 
-The fifty exclusions per interpreter remain exclusions: 32 ALCF live cases
-outside the finite Luna/Claude matrix, ten Windows-only cases, four provider
-live probes, and four duplicate collection-skip entries for Flowcept. The
-separate Flowcept integration job passed. Required provider/Windows behavior
-still needs its live/platform gates; these exclusions are not called passed.
-The complete bounded report, including skipped case identities/reasons, is
-ci-8265de4e.json in the D checkout.
-
-[GACT 07cf095f CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834) completed success, with 5 successful jobs. Browser/fixture results remain separate from real-service qualification.
-
-The matching production online UI build passed: 653 files, 31,897,379 logical
-bytes, index SHA256
+[GACT 07cf095f CI](https://github.com/iowarp/gact-tui/actions/runs/39151576834)
+passed all five applicable jobs; four release/event jobs are conditional skips.
+The matching online build contains 653 files / 31,897,379 bytes, index SHA256
 7d71c5b7893c9cde5b5a1f4067e84a7ca8724d36fd09936bb135138d1826fdc8.
-It replaced the ordinary D web/dist in place (previously 54,655,647 bytes);
-protected dated outputs were untouched. It is reusable only with the recorded
-unchanged-production impact proof. This is a build, not real-service UI acceptance.
+Its build record retains actual 8265de4e source identity. Reuse requires an
+explicit UI-impact record for new backend source; it is not live UI acceptance.
 
-Scoped Ruff/format, changed-production Mypy, all nine guards, and actual GACT
-web/core TypeScript passed. The new test-only migration passed scoped
-Ruff/format. Earlier C TypeScript failed stale dependency resolution; the
-successful integrated checks used D dependencies. No new local pytest/model
-family was run.
+Remote develop remains **35fdd5fe0d85328093ac615909ae6edc2e3a9231**, already
+included with zero commits behind. GACT includes main
+**f2b96308458d039d72391a88adb97166e72ef7ad**. Dependencies/schema remain:
+Python 3.14.6, iowarp-core 2.3.2, DSPy 3.4.0, FastMCP/fastmcp-tasks 4.1.0,
+MCP 2.0.0, Docket 0.26.2, schema 0.6.0b13, Claude SDK 0.2.159.
+No Core-library or storage-adapter implementation change is included.
 
-Both independent source reviews completed with no blocking findings. Fable's
-source remained frozen and original authentication was unchanged. Its advisory
-about transient stdio-proxy teardown remains an actual child-exit obligation in
-Q8; source approval does not prove physical settlement. The owned review and
-build processes are verified absent. The reused 47,404-byte review profile
-remains manual-only; no removal was retried.
+The refreshed deletion inventory has **157 paths / 25.85 GiB logical**,
+zero read errors and no overlapping candidates: C 4.05 GiB / D 21.80 GiB.
+Free space was C 1.01 GiB / D 0.81 GiB. Sixty-nine exact paths have prior
+rejected-removal boundaries; no retry, bypass, delegation or parent removal.
+The inventory refresh deleted nothing. Active source, human design files,
+current execution environment, installed Desktop/auth/defaults/released pins
+and unrelated work remain protected.
 
-The updated cleanup list has **157 remaining paths / 25.85 GiB logical**.
-Latest observed free space is C about 0.91 GiB / D about 0.81 GiB. Six check
-caches, a generated 1 MiB C TypeScript file, and two retired D:/Temp native roots
-were rejected for removal before execution; the last two map to already-retired
-Core 40456/42908 and hold 2.73 GiB logical. All are now manual-only. No retry,
-bypass, delegation or parent removal. Original normal UV cleanup and process
-retirement remain recorded; no additional deletion is claimed.
-
-Fresh Core-backed families remain blocked by capacity below the existing
-1 GiB reserve before allocation. No product/model family is active.
+Fresh Core-backed families remain below their preflight capacity requirement.
 **Q1-Q9, migration/recovery, all thirty final races and replacement-service
-website media remain unaccepted.** Previous R186/R191 results are predecessor
-evidence. Preserve daily Desktop/auth/defaults/released pins, unrelated work
-and all three human design files.
+website media remain unaccepted.** Required provider/Windows exclusions are not
+passed tests. No product/model family is active; the full delivery goal stays active.
 
 ## Earlier dated execution records
 
