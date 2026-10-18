@@ -80,7 +80,8 @@ def inspect_delimited(text: str, delimiter: str | None = None) -> dict[str, Any]
     header = [column.strip() for column in header]
     if not header or not any(header):
         raise ValueError("Delimited capture has no header")
-    missing, samples = [0] * len(header), []
+    missing = [0] * len(header)
+    samples: list[list[str]] = []
     count, ragged = 0, 0
     for row in reader:
         if not row:

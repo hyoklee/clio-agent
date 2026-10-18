@@ -203,8 +203,9 @@ def upload_artifact(
         if not token:
             raise PermissionError("Sign in to NDP before uploading artifacts")
         headers["Authorization"] = "Bearer " + token
+    receipt_id = "ndpupload_" + uuid.uuid4().hex
     receipt = {
-        "id": "ndpupload_" + uuid.uuid4().hex,
+        "id": receipt_id,
         "workspace_id": connection.workspace_id,
         "endpoint_id": connection.id,
         "endpoint_url": connection.url,
@@ -227,7 +228,7 @@ def upload_artifact(
     with endpoint_client(connection, 120) as client:
         reused = _read_back(client, upload, headers)
         if not reused:
-            store.put("ndp_upload", receipt["id"], EndpointUploadReceipt.model_validate(receipt))
+            store.put("ndp_upload", receipt_id, EndpointUploadReceipt.model_validate(receipt))
             try:
                 with client.stream(
                     "POST",
@@ -255,5 +256,5 @@ def upload_artifact(
                     "artifact/destination to check storage before writing again"
                 ) from exc
     receipt.update(state="verified", reused=reused, completed_at=now())
-    store.put("ndp_upload", receipt["id"], EndpointUploadReceipt.model_validate(receipt))
+    store.put("ndp_upload", receipt_id, EndpointUploadReceipt.model_validate(receipt))
     return receipt
