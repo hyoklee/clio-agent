@@ -280,7 +280,7 @@ class NDPCatalog:
         endpoints = [item for item in self.endpoints() if not endpoint_id or item.id == endpoint_id]
         if not endpoints:
             raise ValueError("Choose a configured NDP Endpoint")
-        organizations = []
+        organizations: list[dict[str, str]] = []
         for endpoint in endpoints:
             client = _catalog_module().NDPClient(base_url=endpoint.url)
             try:
