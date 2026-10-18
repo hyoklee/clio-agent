@@ -101,7 +101,7 @@ def fake_searxng(instance: str, results: list[dict[str, Any]]) -> Iterator[int]:
 def service_root(tmp_path: Path, port: int = 18890, secret: str = "s" * 64) -> Path:
     root = tmp_path / "searxng"
     (root / "evidence").mkdir(parents=True)
-    manifest = shipped_manifest()
+    manifest = shipped_manifest(port=str(port))
     manifest["port"] = port
     (root / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     for name, content in manifest["files"].items():

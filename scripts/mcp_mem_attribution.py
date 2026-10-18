@@ -231,19 +231,22 @@ def check_budget(peak_gb: float, final_gb: float, budget: dict) -> tuple[bool, s
     return peak_gb <= peak_cap and final_gb <= final_cap, detail
 
 
-def prepare_session(base: str, pack: Path, idx: int) -> str:
+def prepare_session(base: str, pack: Path, idx: int, workspace_id: str | None = None) -> str:
     """Create and configure one session before any acceptance turn starts."""
 
     with requests.Session() as session:
-        response = session.post(
-            f"{base}/v1/sessions", json={"title": f"membudget {idx}"}, timeout=30
-        )
+        session_input = {"title": f"membudget {idx}"}
+        if workspace_id:
+            session_input["workspace_id"] = workspace_id
+        response = session.post(f"{base}/v1/sessions", json=session_input, timeout=30)
         response.raise_for_status()
         sid = response.json()["id"]
         if not isinstance(sid, str) or not sid:
             raise ValueError(f"session {idx} creation returned an invalid id")
         session.post(
-            f"{base}/v1/sessions/{sid}/agent-blueprint", json={"path": str(pack)}, timeout=120
+            f"{base}/v1/sessions/{sid}/agent-blueprint",
+            json={"path": str(pack.resolve())},
+            timeout=120,
         ).raise_for_status()
     return sid
 
@@ -253,12 +256,17 @@ def drive_load(
     plan: list[tuple[Path, str]],
     out: dict[int, str],
     sids: dict[int, str],
+    workspace_id: str | None = None,
 ) -> bool:
     """Prepare every blueprint, then drive the complete concurrent acceptance load."""
 
     for idx, (pack, _prompt) in enumerate(plan):
         try:
-            sids[idx] = prepare_session(base, pack, idx)
+            sids[idx] = (
+                prepare_session(base, pack, idx, workspace_id=workspace_id)
+                if workspace_id
+                else prepare_session(base, pack, idx)
+            )
         except (requests.RequestException, KeyError, ValueError) as exc:
             out[idx] = f"setup error: {exc!r}"
             print(f"GATE: FAIL (session {idx} setup failed: {exc!r})")
@@ -638,6 +646,15 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
             )
             return 2
         print(f"substrate verified: arc ready, storage_mode={storage_mode!r}")
+        workspace_response = requests.post(
+            f"{base}/v1/workspaces",
+            json={"name": "Memory qualification", "root_path": str(args.workspace.resolve())},
+            timeout=30,
+        )
+        workspace_response.raise_for_status()
+        workspace_id = workspace_response.json()["id"]
+        if not isinstance(workspace_id, str) or not workspace_id:
+            raise ValueError("Memory qualification workspace has no usable id")
         requests.put(
             f"{base}/v1/policies",
             json={
@@ -681,7 +698,7 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
         started = time.time()
         # Sampling already covers setup. No blueprint may change workspace
         # access after another session starts its turn.
-        if not drive_load(base, plan, out, sids):
+        if not drive_load(base, plan, out, sids, workspace_id=workspace_id):
             return 2
         print(f"\nsessions: {json.dumps(out)}  wall: {time.time() - started:.0f}s")
         time.sleep(args.settle_s)  # let reclamation (once it exists, #933) act

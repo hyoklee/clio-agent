@@ -358,3 +358,34 @@ def test_invalid_created_session_id_cannot_start_a_turn(
     assert not _mod.drive_load("http://gate", [(tmp_path, "prompt")] * 3, out, {})
     assert session.post.call_count == 1
     assert "invalid id" in out[0]
+
+
+def test_memory_session_is_created_in_the_explicit_measurement_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The source checkout must not become the live model's default workspace."""
+    session = MagicMock()
+    session.__enter__.return_value = session
+    session.post.return_value.json.return_value = {"id": "session-0"}
+    monkeypatch.setattr(_mod.requests, "Session", lambda: session)
+    assert _mod.prepare_session("http://gate", tmp_path, 0, "workspace-gate") == "session-0"
+    session.post.assert_any_call(
+        "http://gate/v1/sessions",
+        json={"title": "membudget 0", "workspace_id": "workspace-gate"},
+        timeout=30,
+    )
+
+
+def test_concurrent_memory_load_preserves_its_workspace_owner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every concurrent session must receive the same explicitly prepared workspace."""
+    prepare = MagicMock(side_effect=["session-0", "session-1", "session-2"])
+    monkeypatch.setattr(_mod, "prepare_session", prepare)
+    monkeypatch.setattr(_mod, "drive_session", MagicMock())
+    assert _mod.drive_load(
+        "http://gate", [(tmp_path, "prompt")] * 3, {}, {}, workspace_id="workspace-gate"
+    )
+    assert prepare.call_count == 3
+    for call in prepare.call_args_list:
+        assert call.kwargs == {"workspace_id": "workspace-gate"}

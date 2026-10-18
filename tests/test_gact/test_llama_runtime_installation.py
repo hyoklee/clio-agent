@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from clio_agent.gact.infrastructure.drivers import build_driver_plan
@@ -42,7 +44,7 @@ def test_installation_prepares_image_without_a_model_or_server(action: str, runt
 
 @pytest.mark.parametrize("action", ["install", "reinstall"])
 def test_native_windows_installation_requires_no_gguf(action: str) -> None:
-    """Windows install runs only the pinned archive's version check, never inference."""
+    """Windows install prepares the pinned runtime with no model or inference flags."""
     target = InfrastructureTarget(
         id="local", label="local", kind="local", install_root="C:/owned/runtime"
     )
@@ -51,15 +53,21 @@ def test_native_windows_installation_requires_no_gguf(action: str) -> None:
         action=action,
         variant_id="native-windows-cpu",
         configuration={},
-        facts=_facts(os="windows", target_id="local"),
+        facts=_facts(os="windows", target_id="local").model_copy(update={"uv_available": True}),
         target=target,
     )
-    scripts = "\n".join(command.args[-1] for command in plan.commands)
-    assert "--version" in scripts and "SHA256]::Create" in scripts
-    assert "c17f1e3233fc5f5b8915472affa939adee0c95785882503b106d5b14aba01002" in scripts
-    assert "Start-Process" not in scripts and "server.pid') -Value" not in scripts
-    assert plan.connection_port is None and plan.readiness is None and plan.before_launch is None
-    assert '"installed":true' in scripts and '"serving":false' in scripts
+    request = json.loads(plan.commands[-1].stdin or "{}")
+    assert request["action"] == "install"
+    runtime = request["manifest"]["native_model"]
+    assert runtime["executable"] == "llama-server.exe"
+    assert runtime["artifacts"][0]["sha256"] == (
+        "c17f1e3233fc5f5b8915472affa939adee0c95785882503b106d5b14aba01002"
+    )
+    assert runtime["artifacts"][0]["url"].endswith("/llama-b11206-bin-win-cpu-x64.zip")
+    assert "runtime_files" not in request and "api_key" not in request
+    assert "--version" in request["manifest"]["files"]["native_model_hook.py"]
+    assert plan.readiness and plan.readiness.capability == "installed"
+    assert plan.before_launch is None
 
 
 @pytest.mark.parametrize("runtime", ["docker", "podman", "apptainer"])

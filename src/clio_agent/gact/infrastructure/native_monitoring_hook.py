@@ -529,7 +529,8 @@ def main() -> None:
             import redis  # noqa: PLC0415
             from pymongo import MongoClient  # type: ignore[import-untyped]  # noqa: PLC0415
 
-            redis.Redis.from_url(credentials["redis_url"]).ping()
+            with redis.Redis.from_url(credentials["redis_url"]) as task_backend:
+                task_backend.execute_command("PING")
             with MongoClient(credentials["mongodb_uri"], serverSelectionTimeoutMS=5000) as client:
                 client.admin.command("ping")
         # CMF's readiness only succeeds after its PostgreSQL-backed lifespan initializes.
