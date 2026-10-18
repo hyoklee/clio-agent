@@ -225,6 +225,9 @@ def register_connected_storage_routes(app: FastAPI) -> None:
     from clio_agent.gact.routes.storage_ndp import register_storage_ndp_routes
 
     register_storage_ndp_routes(app, service, run, workspace_root, visible)
+    from clio_agent.gact.routes.storage_ndp_endpoints import register_ndp_endpoint_routes
+
+    register_ndp_endpoint_routes(app, service, run)
 
     def connect_write_grant(wid: str, record: SourceRecord) -> None:
         # Live edits use SourceFileSystem, which captures originals before writing.

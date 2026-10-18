@@ -86,6 +86,9 @@ class StorageService:
         # Bind to that OS owner, not an ephemeral Desktop launch token or a
         # client-supplied username. Future multi-user auth supplies distinct subjects.
         self.principal = "os-owner:" + getpass.getuser()
+        from clio_agent.gact.storage.ndp_endpoints import NDPEndpointService
+
+        self.ndp_endpoints = NDPEndpointService(self.store, self.principal)
         self.tasks: dict[str, asyncio.Task[None]] = {}
         self.transfer_settled: Callable[[], None] | None = None
         self.target_source: Callable[[SourceRecord], SshTargetSource | SftpSource] | None = None

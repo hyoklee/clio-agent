@@ -1,0 +1,114 @@
+"""Finite HTTP requests over direct URLs or verified SSH direct-tcpip channels."""
+
+from __future__ import annotations
+
+import http.client
+import io
+from collections.abc import Iterator
+from typing import Any, cast
+
+import httpx
+import paramiko
+
+from clio_agent.gact.storage.ndp_endpoint_models import EndpointConnectionInput
+from clio_agent.gact.storage.sftp import connect_profile
+
+
+class _ChannelReader(io.RawIOBase):
+    def __init__(self, channel: paramiko.Channel) -> None:
+        self.channel = channel
+
+    def readable(self) -> bool:
+        return True
+
+    def readinto(self, buffer: Any) -> int:
+        data = self.channel.recv(len(buffer))
+        buffer[: len(data)] = data
+        return len(data)
+
+
+class _ChannelSocket:
+    """Give http.client a standard buffered stream that supports incremental read1."""
+
+    def __init__(self, channel: paramiko.Channel) -> None:
+        self.channel = channel
+
+    def makefile(self, mode: str) -> io.BufferedReader:
+        return io.BufferedReader(_ChannelReader(self.channel))
+
+    def sendall(self, data: bytes) -> None:
+        self.channel.sendall(data)
+
+    def close(self) -> None:
+        self.channel.close()
+
+
+class _SSHBody(httpx.SyncByteStream):
+    def __init__(self, response: http.client.HTTPResponse, connection: Any, client: Any) -> None:
+        self.response, self.connection, self.client = response, connection, client
+
+    def __iter__(self) -> Iterator[bytes]:
+        while chunk := self.response.read1(8192):
+            yield chunk
+
+    def close(self) -> None:
+        try:
+            self.response.close()
+            self.connection.close()
+        finally:
+            self.client.close()
+
+
+class EndpointSSHTransport(httpx.BaseTransport):
+    """Reuse CLIO's strict SSH profile validation without a listening local tunnel."""
+
+    def __init__(self, profile: str, timeout: float) -> None:
+        self.profile, self.timeout = profile, timeout
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        """Open exactly one channel and close its SSH owner with the response."""
+        client = connect_profile(self.profile)
+        connection = http.client.HTTPConnection(request.url.host, request.url.port or 80)
+        try:
+            transport = client.get_transport()
+            if transport is None:
+                raise OSError("The SSH connection closed before opening the Endpoint")
+            channel = transport.open_channel(
+                "direct-tcpip",
+                (request.url.host, request.url.port or 80),
+                ("127.0.0.1", 0),
+                timeout=self.timeout,
+            )
+            channel.settimeout(self.timeout)
+            connection.sock = cast(Any, _ChannelSocket(channel))
+            connection.request(
+                request.method,
+                request.url.raw_path.decode("ascii"),
+                body=request.read() or None,
+                headers=dict(request.headers),
+            )
+            response = connection.getresponse()
+            return httpx.Response(
+                response.status,
+                headers=response.getheaders(),
+                stream=_SSHBody(response, connection, client),
+                request=request,
+                extensions={"ndp_ssh_channel": channel},
+            )
+        except BaseException:
+            connection.close()
+            client.close()
+            raise
+
+
+def endpoint_client(connection: EndpointConnectionInput, seconds: float = 15) -> httpx.Client:
+    """Create a request owner; do not inherit proxy credentials or follow redirects."""
+    transport = (
+        EndpointSSHTransport(connection.ssh_profile, seconds) if connection.ssh_profile else None
+    )
+    return httpx.Client(
+        transport=transport,
+        timeout=httpx.Timeout(seconds, connect=10),
+        follow_redirects=False,
+        trust_env=False,
+    )

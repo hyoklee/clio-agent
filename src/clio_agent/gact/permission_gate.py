@@ -704,7 +704,11 @@ def _make_permission_gate(app: "FastAPI"):
                 "tool_name": name,
                 "input": dict(args),
             },
-            "summary": f"{subject} call: {name}",
+            "summary": (
+                str(context["summary"])[:500]
+                if context and context.get("kind") == "native" and context.get("summary")
+                else f"{subject} call: {name}"
+            ),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "pending",
         }

@@ -111,6 +111,10 @@ def connected_data_status() -> dict[str, Any]:
         ],
         "accounts": accounts,
         "sources": sources,
+        "ndp_endpoints": [
+            row.model_dump(exclude={"schema_document", "principal"})
+            for row in service.ndp_endpoints.connections(session.workspace_id)
+        ],
     }
 
 
