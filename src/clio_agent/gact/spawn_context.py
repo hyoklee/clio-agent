@@ -38,8 +38,8 @@ def prepare_child_session(
     app: FastAPI, parent_id: str, agent_id: str, target_scope: dict[str, Any] | None
 ) -> CreatePreparedChild:
     """Resolve target configuration outside task locking; return finite acceptance metadata work."""
+    from clio_agent.gact.agent_task_limits import max_spawn_depth  # noqa: PLC0415
     from clio_agent.gact.agents.resolution import _resolve_runtime_dynamic_agent  # noqa: PLC0415
-    from clio_agent.gact.session_descendants import MAX_SPAWN_DEPTH  # noqa: PLC0415
 
     store: SessionStore = app.state.sessions
     parent = store.snapshot(parent_id)
@@ -75,7 +75,8 @@ def prepare_child_session(
         while cursor is not None and cursor.owner.parent_handle is not None:
             depth += 1
             cursor = history.task_snapshot(cursor.owner.parent_handle)
-        if depth > MAX_SPAWN_DEPTH:
+        limit = max_spawn_depth()
+        if limit and depth > limit:
             raise ValueError("Subagent spawn depth exceeds the configured safety boundary")
         inherited = {**launch["metadata"], **(target_scope or {}), **initial_metadata}
         return store.create(

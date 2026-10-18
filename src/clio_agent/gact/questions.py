@@ -158,7 +158,11 @@ class QuestionCommands:
             Draft202012Validator.check_schema(definition.requested_schema)
         if definition.kind != "freeform" and not definition.options:
             raise ValueError("Choice and confirmation Questions require offered options")
-        if definition.kind == "freeform" and not definition.allow_freeform:
+        if (
+            definition.kind == "freeform"
+            and not definition.allow_freeform
+            and not definition.metadata.get("question_bundle")
+        ):
             raise ValueError("Freeform Questions must allow a freeform answer")
         if len({option.value for option in definition.options}) != len(definition.options):
             raise ValueError("Question option values must be unique")
@@ -305,6 +309,17 @@ class QuestionCommands:
         """Confirm one validated answer; a concurrent answer/cancel cannot overwrite it."""
         with self.history.serialized():
             current = self._question(handle)
+            definition = self._definition(current)
+            if definition.metadata.get("question_bundle") and reply.action == "accept":
+                from clio_agent.gact.question_bundle import validate_question_answer
+
+                reply = reply.model_copy(
+                    update={
+                        "answer": validate_question_answer(
+                            definition, reply.answer, dict(reply.metadata)
+                        )
+                    }
+                )
             if current.raw_status != "pending":
                 if (
                     current.raw_status == "answered"
@@ -330,6 +345,7 @@ class QuestionCommands:
             if (
                 reply.action == "accept"
                 and not definition.allow_freeform
+                and not definition.metadata.get("question_bundle")
                 and not reply.selected_options
             ):
                 raise ValueError("Question requires an offered option")

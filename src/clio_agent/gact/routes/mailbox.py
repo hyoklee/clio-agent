@@ -352,6 +352,8 @@ def register_mailbox_routes(app: FastAPI) -> None:
     async def create(sid: str, body: PostMessageRequest) -> dict[str, Any]:
         require_session(sid)
         history = app.state.task_history
+        if body.metadata.get("answers_question_id"):
+            raise HTTPException(422, "Submit Question answers through the Question answer control")
         key = body.idempotency_key or body.client_message_id
         identity = (
             "queued_" + hashlib.sha256((sid + "\0" + key).encode()).hexdigest()

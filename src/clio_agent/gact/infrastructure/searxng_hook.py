@@ -72,7 +72,11 @@ def _members(archive: tarfile.TarFile) -> list[tarfile.TarInfo]:
         parts = member.name.split("/", 1)
         if len(parts) != 2 or not parts[1]:
             continue
-        member.name = parts[1]
+        # tar names use POSIX separators. Python normalizes them while extracting
+        # files, but not in extractall's directory-metadata pass. Windows rejects
+        # that mixed path under a Desktop-supplied \\?\ prefix (WinError 123).
+        # Normalize on the host before BOTH passes; keep filter="data" below.
+        member.name = os.path.normpath(parts[1])
         selected.append(member)
     return selected
 
@@ -134,7 +138,8 @@ def running(root: Path) -> bool:
     """Whether the server on the owned port is this installation (see module docstring)."""
 
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-    base = f"http://127.0.0.1:{int(manifest['port'])}"
+    port = manifest["searxng"]["settings"]["server"]["port"]
+    base = f"http://127.0.0.1:{int(port)}"
     try:
         expected = instance_name(read_secret(root))
     except (OSError, RuntimeError):

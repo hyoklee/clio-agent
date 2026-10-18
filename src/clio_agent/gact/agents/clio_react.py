@@ -43,7 +43,6 @@ import dataclasses
 import inspect
 import itertools
 import logging
-import math
 import threading
 import traceback
 import uuid
@@ -52,7 +51,6 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
-import anyio
 import dspy
 from dspy.lm15 import (
     CacheConfig,
@@ -61,32 +59,26 @@ from dspy.lm15 import (
     DocumentPart,
     FunctionTool,
     ImagePart,
-    LM15Error,
     Message,
     Request,
-    Response,
     TextPart,
     ThinkingPart,
     ToolCallPart,
     ToolResultPart,
 )
-from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError, LMUnexpectedError
+from dspy.utils.exceptions import AdapterParseError, ContextWindowExceededError
 
 from clio_agent.errors import ClioError, MCPProtocolError
 from clio_agent.gact.agents import clio_react_extract as extract
 from clio_agent.gact.agents import clio_react_record as record
 from clio_agent.gact.agents import clio_react_stream as stream
-from clio_agent.gact.agents.clio_react_submit import (
-    active_react_scope_safe,
-    record_submit_audit,
-)
-from clio_agent.gact.agents.clio_react_submit import (
-    submit_tool as _submit_tool,
-)
+from clio_agent.gact.agents.clio_react_recovery import recover_stream
+from clio_agent.gact.agents.clio_react_stream_call import call_lm as _call_lm
+from clio_agent.gact.agents.clio_react_submit import active_react_scope_safe, record_submit_audit
+from clio_agent.gact.agents.clio_react_submit import submit_tool as _submit_tool
 from clio_agent.gact.agents.github_shell_guidance import github_shell_guidance
 from clio_agent.gact.agents.task_guidance import task_guidance
 from clio_agent.gact.injection_parts import emit_injection
-from clio_agent.lm.engines.lm_loop import run_on_lm_loop
 from clio_agent.lm.engines.text_tools import INVALID_TOOL_CALL
 from clio_agent.lm.request_builder import sendable_lm_kwargs
 from clio_agent.lm.request_config import config_from_lm_kwargs
@@ -409,14 +401,17 @@ class _Loop:
         """Tell an agent with tools, once, that one step may call several at once."""
         return [("tool_use", TOOL_USE_NOTE)] if set(self.agent.tools) - {"submit"} else []
 
-    def _arrivals(self) -> bool:
+    def _arrivals(self, *, human_only: bool = False) -> bool:
         """Inspect Core-pending arrivals; only the next input commit delivers them."""
         from clio_agent.gact import context
 
         owner = getattr(getattr(context.active_app(), "state", None), "conversations", None)
         if owner is None or context.current().react_run >= 0:
             return False
-        return bool(owner.mail.stage(owner.caller(self.session)).items)
+        return any(
+            not human_only or item.kind in {"human", "composer"}
+            for item in owner.mail.stage(owner.caller(self.session)).items
+        )
 
     def _one_step(self) -> dspy.Prediction | None:
         from clio_agent.gact import context as _ctx  # noqa: PLC0415
@@ -425,16 +420,22 @@ class _Loop:
         _raise_if_cancelled()
         self._arrivals()
         maybe_autocompact(self.autocompact)
-        self.recorder.commit_input(self.step)
-        request = Request(
-            model=self.lm.model,
-            system=self.system,
-            messages=tuple(_place_tool_media(self._context(), self.tool_media)),
-            tools=self.tools,
-            config=self.config,
-        )
+        attempt = 0
+
+        def request() -> Request:
+            nonlocal attempt
+            self.recorder.commit_input(self.step, attempt=attempt)
+            attempt += 1
+            return Request(
+                model=self.lm.model,
+                system=self.system,
+                messages=tuple(_place_tool_media(self._context(), self.tool_media)),
+                tools=self.tools,
+                config=self.config,
+            )
+
         try:
-            response = _call_lm(self.lm, request)
+            response = recover_stream(self.lm, request, _call_lm, _raise_if_cancelled)
         except (ContextWindowExceededError, ContextLengthError):
             return self._stop("context_window_exceeded")
         if response.finish_reason == "length":
@@ -451,6 +452,14 @@ class _Loop:
                 # before closing the turn, even if that call chose no tools.
                 return None
             return self._end({"answer": text}, "direct_response", self.step + 1)
+        if self._arrivals(human_only=True):
+            # Already streamed prose precedes the newly delivered human message.
+            # These calls were proposals, not executions: replan before opening
+            # tool spans or recording calls that never ran.
+            if text or thinking:
+                self._record(text, thinking, [], {}, origin)
+            _log.info("Tool proposal superseded by steer at step=%s", self.step)
+            return None
         thought_token = _ctx.set_step_thought(text, "".join(t.text for t in thinking))
         try:
             self.recorder.step_open(self.step, self.span, text, calls)
@@ -631,99 +640,6 @@ class _Loop:
             logical_time=max((row.logical_time for row in view.segments), default=0),
         )
         return prediction
-
-
-# --------------------------------------------------------------------------- #
-# The streamed LM call                                                        #
-# --------------------------------------------------------------------------- #
-#: How often an in-flight LM call checks the turn's cooperative cancellation.
-_CANCEL_POLL_SECONDS = 0.25
-
-
-def _call_lm(lm: Any, request: Request) -> Response:
-    """One streamed call: text and thinking reach the live lanes as they arrive."""
-    from clio_agent.gact import context as _ctx  # noqa: PLC0415
-
-    session_id = _ctx.active_session_id() or ""
-
-    async def run() -> Response:
-        send, receive = anyio.create_memory_object_stream(math.inf)
-        response: Response | None = None
-        router = stream.StreamRouter()
-
-        async def consume() -> None:
-            async with receive:
-                async for chunk in receive:
-                    stream.route_pieces(router.feed(chunk))
-            stream.route_pieces(router.finish(), unclosed=router.incomplete)
-
-        async def watch_cancel() -> None:
-            # A cancel lands mid-call too (F038): raising here cancels the call's
-            # scope, which closes the HTTP stream so the server stops generating
-            # instead of finishing a prefill and a full answer nobody reads.
-            while not finished.is_set():
-                with anyio.move_on_after(_CANCEL_POLL_SECONDS):
-                    await finished.wait()
-                if not finished.is_set():
-                    _raise_if_cancelled()
-
-        finished = anyio.Event()
-        handle = None
-        try:
-            async with anyio.create_task_group() as group:
-                handle = stream.register_stream(lm, session_id, group.cancel_scope)
-                group.start_soon(consume)
-                group.start_soon(watch_cancel)
-                try:
-                    with dspy.context(send_stream=send):
-                        owner = getattr(
-                            getattr(_ctx.active_app(), "state", None), "conversations", None
-                        )
-                        slot = (
-                            owner.inference_slot(session_id)
-                            if owner is not None
-                            else contextlib.nullcontext()
-                        )
-                        async with slot:
-                            response = await lm.acall(request)
-                finally:
-                    finished.set()
-                    await send.aclose()
-                    stream.unregister_stream(handle)
-        except BaseExceptionGroup as group_error:
-            # The task group wraps the call's own error; the caller handles it typed.
-            # (Not ``from None``: that would erase the leaf's own ``__cause__``.)
-            leaf = _sole(group_error)
-            leaf.__suppress_context__ = True
-            raise leaf  # noqa: B904 - the leaf keeps its own cause chain
-        if response is None and handle is not None and handle.aborted:
-            raise _turn_cancelled()  # the session cancel closed the stream (abort handle)
-        assert response is not None
-        return response
-
-    try:
-        # One persistent LM loop: connections survive across steps, turns and agents.
-        return run_on_lm_loop(run)
-    except LMUnexpectedError as exc:
-        # DSPy wraps an engine's own typed error (a refused sign-in, an exhausted plan,
-        # a Codex transport failure) as unexpected; the turn classifies the original.
-        cause = exc.__cause__
-        if isinstance(cause, Exception) and not isinstance(cause, LM15Error):
-            raise cause from exc
-        raise
-
-
-def _sole(group: BaseExceptionGroup) -> BaseException:
-    """The one leaf error of a task-group failure (the group itself when there are more)."""
-    leaves: list[BaseException] = []
-    pending: list[BaseException] = [group]
-    while pending:
-        exc = pending.pop()
-        if isinstance(exc, BaseExceptionGroup):
-            pending.extend(exc.exceptions)
-        else:
-            leaves.append(exc)
-    return leaves[0] if len(leaves) == 1 else group
 
 
 # --------------------------------------------------------------------------- #

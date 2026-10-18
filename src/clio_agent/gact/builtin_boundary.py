@@ -305,18 +305,16 @@ class BuiltinBoundary:
         session = self.app.state.sessions.get(sid)
         if session is None:
             raise ValueError("Task submission requires an active session")
-        approved = None
+        approved, permission_arguments, selection_digest = None, public, None
         if name == "connected_data_connect":
-            from clio_agent.gact.storage.connect_tool import approved_source
-            from clio_agent.gact.storage.models import CreateSource
+            from clio_agent.gact.storage.connect_tool import connection_approval
 
-            approved = await self.app.state.task_history.io.run(
-                approved_source,
-                self.app.state.connected_storage,
-                session.workspace_id,
-                CreateSource.model_validate(
-                    {**public, "configuration": public.get("configuration") or {}}
-                ),
+            (
+                approved,
+                permission_arguments,
+                selection_digest,
+            ) = await self.app.state.task_history.io.run(
+                connection_approval, self.app.state.connected_storage, session.workspace_id, public
             )
         if approved is None:
             gate = (
@@ -324,7 +322,9 @@ class BuiltinBoundary:
                 or self.app.state.make_permission_gate()
             )
             decision = await run_owned_callable(
-                functools.partial(_invoke_permission_gate, gate, name, public, {"kind": "native"}),
+                functools.partial(
+                    _invoke_permission_gate, gate, name, permission_arguments, {"kind": "native"}
+                ),
                 captured=captured.copy(),
                 name="clio-permission-" + name,
             )
@@ -338,6 +338,8 @@ class BuiltinBoundary:
         workspace = self.app.state.workspaces.get(session.workspace_id)
         call = captured.run(TASK_CALL.get)
         attribution: dict[str, Any] = {"agent": captured.run(context.active_react_scope)}
+        if selection_digest is not None:
+            attribution["ndp_selection_digest"] = selection_digest
         if root == "storage" and "source_id" in public:
             from clio_agent.gact.native_storage import source_submission_identity
 

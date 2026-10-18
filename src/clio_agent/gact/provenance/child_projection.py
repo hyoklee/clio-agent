@@ -59,15 +59,13 @@ def _task_index(app: "FastAPI", root_session_id: str) -> dict[str, dict[str, Any
 
 
 def child_session_lineage(
-    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+    app: "FastAPI", root_session_id: str, *, max_depth: int | None = _DEFAULT_DESCENDANT_DEPTH
 ) -> tuple[list[dict[str, Any]], bool]:
-    """Return a bounded, breadth-first lineage plus whether the walk was cut short.
+    """Return breadth-first lineage with optional explicit truncation.
 
-    "Bounded" used to be a docstring claim only: the walk had no depth cap at all,
-    while ``descendant_sessions`` -- the substrate the SAME routes use to pick
-    which sessions to read -- stopped at ``MAX_SPAWN_DEPTH``. The two therefore
-    disagreed about what the tree is. Both now stop at the same constant, and a
-    walk that hit the cap says so instead of serving a partial tree as complete.
+    The shared descendant walk includes all existing children by default,
+    independently of the limit for admitting new work. An explicitly bounded
+    caller receives the same truncation signal as descendant aggregation.
 
     The root is included at depth zero; descendants carry their owning task and a
     complete task path so clients can render nested branches without timing

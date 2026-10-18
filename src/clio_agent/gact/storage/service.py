@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import logging
+import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -30,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 def provider_capabilities(provider: str) -> SourceCapabilities:
     """Describe provider semantics before sign-in; node checks may narrow them."""
+    if provider == "ndp":
+        from clio_agent.gact.storage.ndp_source import NDPSource
+
+        return NDPSource.capabilities
     if provider == "globus":
         return GlobusSource.capabilities.model_copy(update={"link_folder": True})
     if provider == "github":
@@ -66,6 +71,10 @@ class StorageService:
         self.store = SourceStore(root)
         self.auth = StorageAuth(credential_path)
         self.github = GitHubAccess()
+        from clio_agent.gact.storage.ndp_catalog import NDPCatalog
+
+        self.ndp = NDPCatalog()
+        self.ndp_selection_lock = threading.RLock()
         from clio_agent.gact.storage.obsidian_account import ObsidianAccount
         from clio_agent.gact.storage.obsidian_sync import ObsidianSync
 
@@ -73,17 +82,21 @@ class StorageService:
             credential_path.parent / "obsidian", root.parent / "knowledge-vaults"
         )
         self.obsidian_sync = ObsidianSync(self.obsidian_account)
-        self.transfer_settled: Callable[[], None] | None = None
         # GACT currently authenticates one owner (loopback or the instance bearer).
         # Bind to that OS owner, not an ephemeral Desktop launch token or a
         # client-supplied username. Future multi-user auth supplies distinct subjects.
         self.principal = "os-owner:" + getpass.getuser()
+        from clio_agent.gact.storage.ndp_endpoints import NDPEndpointService
+
+        self.ndp_endpoints = NDPEndpointService(self.store, self.principal)
         self.target_source: Callable[[SourceRecord], SshTargetSource | SftpSource] | None = None
 
     def set_link_access(
         self, record: SourceRecord, access: Literal["read_only", "publish_later", "write_through"]
     ) -> None:
         """Keep approved link access and advertised knowledge write capability in agreement."""
+        if record.source.provider == "ndp" and access != "read_only":
+            raise PermissionError("NDP sources are read-only")
         record.link_access = access
         if record.source.source_kind == "knowledge":
             record.source = record.source.model_copy(
@@ -130,6 +143,19 @@ class StorageService:
             if body.mode not in capabilities.supported_modes:
                 raise ValueError("This SSH connection currently supports read-only transfers")
         root = body.root
+        if body.provider == "ndp":
+            from clio_agent.gact.storage.ndp_catalog import NDPSelection
+
+            if not body.configuration.ndp_selection_id:
+                raise ValueError("Choose NDP resources in the dataset picker")
+            selection = self.store.get(
+                "ndp-selection", body.configuration.ndp_selection_id, NDPSelection
+            )
+            if (
+                selection.dataset.id != root
+                or selection.dataset.endpoint not in self.ndp.endpoints()
+            ):
+                raise ValueError("Choose resources from the configured NDP Endpoint")
         if body.create_vault:
             vault = self.store.root.parent / "knowledge-vaults" / uuid.uuid4().hex
             vault.mkdir(parents=True, exist_ok=False)
@@ -343,6 +369,20 @@ class StorageService:
             adapter = DriveSource(
                 source.root, self.auth.token(record), writable=source.mode == "write_enabled"
             )
+        elif source.provider == "ndp":
+            from clio_agent.gact.storage.ndp_catalog import NDPSelection
+            from clio_agent.gact.storage.ndp_source import NDPSource
+
+            selected = self.store.get(
+                "ndp-selection", record.configuration.ndp_selection_id, NDPSelection
+            )
+            if selected.dataset.endpoint not in self.ndp.endpoints():
+                raise PermissionError("This NDP Endpoint changed; attach the dataset again")
+            if selected.dataset.id != source.root:
+                raise PermissionError("This NDP selection belongs to another dataset")
+            if selected.dataset.endpoint.authenticated:
+                self.auth.token(record)
+            adapter = NDPSource(selected.dataset, lambda: self.auth.token(record))
         elif source.provider == "globus":
             adapter = GlobusSource(record, self.auth.token(record))
         elif source.provider == "github":

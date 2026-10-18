@@ -1,5 +1,9 @@
 # Tasks replacement acceptance ledger
 
+## 2026-10-18 14:06 UTC integration impact
+
+The integrated candidate merges develop 303edbce and GACT 86e87fb8. Replacement owners remain unchanged. Required impact coverage: Q1/Q2 native Shell/storage argument schemas; Q3/Q4 Core input commitment during model retry and human steering; Q3/Q9 Question bundle forms; Q8 configurable inference/depth limits; Q9 current UI. All affected rows remain pending fresh regression/live evidence. No predecessor evidence is promoted to final acceptance.
+
 ## Current candidate — October 18, 2026
 
 Runtime candidate: clio-agent `e700f15fb8784f06de8900ee30b66730d2e53508`, GACT

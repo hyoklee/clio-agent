@@ -9,6 +9,28 @@ control or component, inspect the resulting image, reason, and refine.
 Choose changes that resolve a concrete uncertainty or presentation problem.
 This applies to maps, charts, tables, images, models and interconnected reports.
 
+For a substantial authored dashboard or diagram, close this concrete loop:
+
+1. Open the actual published viewer, inspect its current capture target, and
+   capture the overview at the width the person will use.
+2. Look at the returned image, not just its URI, source JSON or tool success.
+   Check whether the main idea is apparent, text is readable, the whole diagram
+   fits, and empty space or narrow columns obscure relationships. Ask whether
+   a full-width view, equal panels or a simpler arrangement would explain it better.
+3. Identify a concrete defect and change the source or a declared view control.
+   Changing column counts is useful only when it fixes the observed problem.
+4. Capture the revised view and inspect its image to confirm the correction.
+   Check an expanded view as well when the docked and expanded arrangements differ.
+5. Exercise important declared controls or linked selections. For a workflow
+   folder link, verify the target with filesystem tools. If interaction tools are
+   available, check that clicking selects that folder in Files. Claim a navigation
+   check only when it was observed; a highlighted box alone does not prove it.
+
+Repeat while a material defect remains. State the actual visual checks and any
+unresolved limitation. Schema validation, a capture receipt and an uninspected
+image do not establish visual quality. A small inline diagram does not require
+building a dashboard or following an elaborate layout recipe.
+
 Read the current surface with `inspect_a2ui_surface` and load the relevant
 active catalog schemas. `update_a2ui_components` replaces complete definitions
 for the named components; preserve the other properties, references and links.

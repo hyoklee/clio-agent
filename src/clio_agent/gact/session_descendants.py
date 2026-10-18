@@ -18,21 +18,11 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-#: Runaway backstop on spawn depth (NOT a 3-tier rule): ``tier`` is semantic
-#: weight, not depth, so deep declared chains are legitimate. A spawn whose
-#: computed depth would exceed this is refused (``spawn_depth_exceeded``). Defined
-#: here, in the leaf module both the spawn path and every read-side walk import,
-#: rather than duplicating it in the conversation owner.
+#: Historical import alias; new admission reads agent_tasks.max_depth dynamically.
 MAX_SPAWN_DEPTH = 8
 
-#: Ceiling on descendant-session traversal (:func:`descendant_sessions`,
-#: :func:`~clio_agent.gact.provenance.child_projection.child_session_lineage`).
-#: Deliberately THE SAME constant as the spawn backstop: a walk that stopped
-#: shallower would silently hide legitimate children, and one that went deeper
-#: could only find a graph that spawning refuses to create. Two independent
-#: numbers is how the aggregation walk and the lineage walk came to disagree
-#: about what the tree even is.
-_DEFAULT_DESCENDANT_DEPTH = MAX_SPAWN_DEPTH
+#: Existing lineage is never hidden by the configured limit for new work.
+_DEFAULT_DESCENDANT_DEPTH = None
 
 #: A descendant delegated by a durable Core child assignment.
 AGENT_TASK_ATTRIBUTION = "agent_task"
@@ -75,7 +65,7 @@ def _session_store_index(app: "FastAPI") -> dict[str, list[str]]:
 
 
 def descendant_walk(
-    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+    app: "FastAPI", root_session_id: str, *, max_depth: int | None = _DEFAULT_DESCENDANT_DEPTH
 ) -> tuple[list[SessionDescendant], bool]:
     """Read delegated Core lineage and independent session-fork topology."""
     history = app.state.task_history
@@ -95,7 +85,7 @@ def descendant_walk(
         for child in dict.fromkeys(children.get(parent, ())):
             if child in visited:
                 continue
-            if depth >= max_depth:
+            if max_depth is not None and depth >= max_depth:
                 truncated = True
                 continue
             visited.add(child)
@@ -114,7 +104,7 @@ def descendant_walk(
 
 
 def descendant_sessions(
-    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+    app: "FastAPI", root_session_id: str, *, max_depth: int | None = _DEFAULT_DESCENDANT_DEPTH
 ) -> list[SessionDescendant]:
     """The rows-only view of :func:`descendant_walk`."""
 
@@ -122,7 +112,7 @@ def descendant_sessions(
 
 
 def descendant_session_ids(
-    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+    app: "FastAPI", root_session_id: str, *, max_depth: int | None = _DEFAULT_DESCENDANT_DEPTH
 ) -> list[str]:
     """The id-only view of :func:`descendant_sessions`, in the same order.
 

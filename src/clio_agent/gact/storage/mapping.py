@@ -33,6 +33,9 @@ def mapping_options(service: StorageService, record: SourceRecord) -> dict[str, 
         }
     if provider in {"local", "obsidian"}:
         allowed = os.access(record.source.root, os.W_OK)
+    elif provider == "ndp":
+        allowed = False
+        reason = "NDP originals cannot be changed through this connection."
     elif provider in {"github", "google_drive"} and not service.auth.connected(record):
         allowed = False
         reason = "Sign in with an account that can edit this folder to enable publishing."

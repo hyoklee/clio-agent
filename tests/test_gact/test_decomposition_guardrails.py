@@ -195,7 +195,7 @@ from clio_agent.gact.app import build_app
 # Measured on the production factory: 387 unique pairs, including legacy receipt GET.
 # CI f7a4d00e measured 391; the source-operation cancellation delegate adds one.
 # The authorized exact-Question receipt GET adds one further intentional pair.
-EXPECTED_ROUTE_METHOD_PAIRS = 393
+EXPECTED_ROUTE_METHOD_PAIRS = 405
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
@@ -248,7 +248,9 @@ def test_build_app_registers_expected_route_count() -> None:
         ("/v1/sessions/{sid}/legacy-transcript", "GET"),
     } <= set(route_pairs)
     assert ("/v1/infrastructure/models/details", "GET") in route_pairs
+    assert ("/v1/html-renderer", "GET") in route_pairs
     assert ("/v1/infrastructure/targets/{target_id}/models/{job_id}/remove", "POST") in route_pairs
+    assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}/request", "POST") in route_pairs
     pairs = len(route_pairs)
 
     assert pairs == EXPECTED_ROUTE_METHOD_PAIRS, (

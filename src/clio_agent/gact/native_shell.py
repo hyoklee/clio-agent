@@ -37,6 +37,8 @@ def register_native_shell(root: NativeRoot, work: NativeWork) -> None:
         timeout_s: float = _DEFAULT_TIMEOUT_S,
         max_output_bytes: int = _SHELL_LIMITS.default_output_bytes,
         background: bool = False,
+        access_paths: list[str] | None = None,
+        access_reason: str = "",
     ) -> dict[str, Any]:
         async def body(submission: SubmissionContext, evidence: WorkEvidence) -> dict[str, Any]:
             return await execute_shell(
@@ -46,6 +48,7 @@ def register_native_shell(root: NativeRoot, work: NativeWork) -> None:
                 timeout_s,
                 max_output_bytes,
                 cleanup=evidence,
+                access_paths=access_paths,
             )
 
         return await work.run(
@@ -57,6 +60,8 @@ def register_native_shell(root: NativeRoot, work: NativeWork) -> None:
                 "timeout_s": timeout_s,
                 "max_output_bytes": max_output_bytes,
                 "background": background,
+                "access_paths": access_paths,
+                "access_reason": access_reason,
             },
             body,
         )

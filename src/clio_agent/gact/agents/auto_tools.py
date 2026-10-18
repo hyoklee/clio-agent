@@ -70,6 +70,8 @@ from clio_agent.gact.storage.connect_tool import (
     build_connected_data_index_tool,
 )
 from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
+from clio_agent.gact.storage.ndp_endpoint_tools import build_ndp_endpoint_tools
+from clio_agent.gact.storage.ndp_tools import build_ndp_discovery_tools
 from clio_agent.gact.storage.setup_tool import (
     build_connected_data_open_tool,
     build_connected_data_status_tool,
@@ -180,6 +182,8 @@ def build_auto_react_tools(
             tools.append(build_weather_forecast_tool())
         tools.append(build_refresh_provider_models_tool())
         tools.append(build_connected_data_status_tool())
+        tools.extend(build_ndp_discovery_tools())
+        tools.extend(build_ndp_endpoint_tools())
         tools.append(build_connected_data_connect_tool())
         tools.append(build_connected_data_index_tool())
         tools.append(build_connected_data_open_tool())

@@ -643,6 +643,16 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             # makes a provider "configured" and the real probe reach the network.
             "refresh_provider_models": {},
             "connected_data_status": {},
+            # Invalid/missing NDP inputs refuse before approvals or any network
+            # discovery, while still proving that every native tool is observed.
+            "connected_data_search_ndp": {"offset": -1},
+            "connected_data_ndp_organizations": {"query": "x" * 1001},
+            "connected_data_ndp_endpoint_connect": {"name": "Missing", "url": "invalid"},
+            "connected_data_ndp_endpoint_operations": {"endpoint_id": "missing"},
+            "connected_data_ndp_endpoint_request": {
+                "endpoint_id": "missing",
+                "operation_id": "GET /missing",
+            },
             "connected_data_download": {"source_id": "missing-source", "paths": ["missing.txt"]},
             "connected_data_index": {"source_id": "missing-source"},
             "query_tasks": {},

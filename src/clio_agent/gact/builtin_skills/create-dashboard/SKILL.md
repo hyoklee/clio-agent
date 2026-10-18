@@ -56,14 +56,14 @@ properties or make hidden content the only place the answer can be found.
 Annotations and linked selections can connect an explanation or question to
 specific evidence; they do not replace the question's explicit answer action.
 
-Choose layout deliberately. `Grid` suits KPI cards or equal comparisons. For
-unequal widths, use a `Row` whose child `Frame` or `Column` components declare
-`weight`: 2 and 1 for a wide central plot beside a smaller comparison; 1.5 and
-1.5 in the next row for equal map/image and evidence panels. Weights are relative
-shares, not grid spans; no new span property is needed. Nest Rows in a Column
-to vary proportions by row. Put an image beside its explanation or measurement,
-and controls near the views they affect. Narrow docks stack analytical panels;
-expanded views retain their proportions. Check both actual layouts. Dividers, lists, images, icons, and modals
+Choose the layout that fits the content. A single full-width diagram, equal
+columns, a simple vertical report and uneven columns are all valid. Give wide
+workflows and dense diagrams enough width to keep their labels readable. Use
+unequal `Row` child `weight` values when one view needs more space, and `Grid`
+for equal comparisons. These are options, not a template to reproduce. Weights
+are relative shares, not grid spans. Put related evidence and its controls
+together. Review the actual docked and expanded layouts before deciding whether
+to stack panels, change proportions or use separate views. Dividers, lists, images, icons, and modals
 remain available when they serve the presentation; do not add them solely to
 exercise the catalog.
 

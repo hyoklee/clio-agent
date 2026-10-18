@@ -9,7 +9,9 @@ fails on version drift AND on packages the lock export does not cover.
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
@@ -125,14 +127,14 @@ def test_build_scripts_pin_nothing_outside_the_lock(path: Path) -> None:
     assert not any("--prerelease" in line for line in _code_lines(path))
 
 
-def test_bundle_extras_exist_and_desktop_carries_clio_kit() -> None:
-    """Every bundle extra is declared; clio-kit is locked through the desktop extra."""
+def test_bundle_extras_exist_and_base_carries_clio_kit() -> None:
+    """Every extra is declared; all services carry the pinned NDP catalog client."""
     pyproject = tomllib.loads((REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     extras = pyproject["project"]["optional-dependencies"]
     for extra in cbl.BUNDLE_EXTRAS:
         assert extra in extras, extra
-    desktop = extras["desktop"]
-    clio_kit = [req for req in desktop if req.startswith("clio-kit")]
+    base = pyproject["project"]["dependencies"]
+    clio_kit = [req for req in base if req.startswith("clio-kit")]
     assert len(clio_kit) == 1
     locked = cbl.load_lock_versions(REPO_ROOT / "uv.lock")
     assert clio_kit[0] == f"clio-kit=={locked['clio-kit']}"
@@ -141,7 +143,7 @@ def test_bundle_extras_exist_and_desktop_carries_clio_kit() -> None:
 def test_real_lock_export_covers_the_bundle_packages() -> None:
     """The real export for BUNDLE_EXTRAS includes what the bundle ships.
 
-    clio-kit and the Web Search adapter's deps come from the desktop extra;
+    clio-kit is a base dependency; the Web Search adapter's deps come from the desktop extra;
     pytz is pulled in by those deps (the package that drifted unlocked).
     """
     scope = cbl.load_bundle_scope(REPO_ROOT, cbl.BUNDLE_EXTRAS)
@@ -202,6 +204,7 @@ def test_verify_runtime_reports_named_packages_and_fails_on_drift(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     """The verifier prints the named packages and a drift table, exiting 1."""
+    monkeypatch.setattr(cbl, "verify_product_release", lambda _python, _project: None)
     monkeypatch.setattr(cbl, "load_lock_versions", lambda _lock: {"click": "8.3.3"})
     monkeypatch.setattr(cbl, "load_bundle_scope", lambda _p, _e: {"click"})
     monkeypatch.setattr(
@@ -219,6 +222,7 @@ def test_verify_runtime_passes_on_exact_install(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     """Zero drift exits 0 with an OK line."""
+    monkeypatch.setattr(cbl, "verify_product_release", lambda _python, _project: None)
     versions = {"click": "8.3.3", "clio-kit": "2.10.6", "iowarp-core": "2.2.1"}
     monkeypatch.setattr(cbl, "load_lock_versions", lambda _lock: versions)
     monkeypatch.setattr(cbl, "load_bundle_scope", lambda _p, _e: set(versions))
@@ -299,6 +303,7 @@ def test_verify_runtime_names_user_updated_components_and_passes(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
 ) -> None:
     """A runtime whose SDK was updated in place still verifies, and says so by name."""
+    monkeypatch.setattr(cbl, "verify_product_release", lambda _python, _project: None)
     locked = {"click": "8.3.3", "openai-codex-cli-bin": "0.157.1"}
     monkeypatch.setattr(cbl, "load_lock_versions", lambda _lock: locked)
     monkeypatch.setattr(cbl, "load_bundle_scope", lambda _p, _e: set(locked))
@@ -312,3 +317,52 @@ def test_verify_runtime_names_user_updated_components_and_passes(
         "user-updatable component: openai-codex-cli-bin locked='0.157.1' installed='0.158.0'"
         in (capsys.readouterr().out)
     )
+
+
+@pytest.mark.parametrize(
+    ("imported", "installed", "matches"),
+    [
+        ("0.9.5b7.post2", ["0.9.5b7.post2"], True),
+        ("0.9.5b7.post1", ["0.9.5b7.post2"], False),
+        ("0.9.5b7.post2", ["0.9.5b7.post1"], False),
+        ("0.9.5b7.post2", ["0.9.5b7.post2", "0.9.5b7.post1"], False),
+        ("0.9.5b7.post2", [], False),
+    ],
+)
+def test_product_release_rejects_partial_or_duplicate_runtime_updates(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    imported: str,
+    installed: list[str],
+    matches: bool,
+) -> None:
+    """A dependency-clean runtime still fails if its own release is wrong."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion="0.9.5b7.post2"\n')
+
+    def probe(args: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert args[:3] == [str(tmp_path / "python"), "-I", "-c"]
+        assert kwargs["timeout"] == 60
+        return subprocess.CompletedProcess(
+            args, 0, json.dumps({"imported": imported, "installed": installed}), ""
+        )
+
+    monkeypatch.setattr(cbl.subprocess, "run", probe)
+    if matches:
+        cbl.verify_product_release(tmp_path / "python", tmp_path)
+    else:
+        with pytest.raises(RuntimeError, match="release mismatch"):
+            cbl.verify_product_release(tmp_path / "python", tmp_path)
+
+
+def test_product_release_reports_real_import_failures(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An interpreter that cannot import the runtime cannot qualify a release."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion="0.9.5b7.post2"\n')
+    monkeypatch.setattr(
+        cbl.subprocess,
+        "run",
+        lambda *_a, **_kw: subprocess.CompletedProcess([], 1, "", "missing native dependency"),
+    )
+    with pytest.raises(RuntimeError, match="missing native dependency"):
+        cbl.verify_product_release(tmp_path / "python", tmp_path)

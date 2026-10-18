@@ -3,14 +3,32 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Any
 
 import httpx
 import pytest
 
+from clio_agent.gact.agent_blueprint_files import write_blueprint_text_file
 from clio_agent.gact.app import build_app
 from clio_agent.gact.blueprint_install_files import copy_blueprint_tree, tree_checksum
+from clio_agent.platform_paths import win_extended_path
+
+
+def test_draft_text_edit_handles_long_roots_and_names(tmp_path: Path) -> None:
+    """Actual writes work beyond MAX_PATH without exceeding a staging component's limit."""
+    root = tmp_path / "draft"
+    while len(str(root)) < 320:
+        root = root / "nested-blueprint-directory"
+    os.makedirs(win_extended_path(root))
+    name = "expert-" + "a" * 180 + ".md"
+    target = Path(win_extended_path(root / name))
+    target.write_text("Original", encoding="utf-8")
+    result = write_blueprint_text_file(root, name, "Updated station analysis")
+    assert target.read_text(encoding="utf-8") == "Updated station analysis"
+    assert result["path"] == name and result["size"] == len(b"Updated station analysis")
+    assert [row.name for row in Path(win_extended_path(root)).iterdir()] == [name]
 
 
 def test_runtime_caches_are_neither_copied_nor_hashed(tmp_path: Path) -> None:

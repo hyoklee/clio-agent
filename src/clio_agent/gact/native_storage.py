@@ -31,6 +31,7 @@ from clio_agent.gact.storage.models import (
     SourceRecord,
     TransferOperation,
 )
+from clio_agent.gact.storage.ndp_selection import NDPConnectionSelection
 from clio_agent.gact.task_history import RecordingUnconfirmed
 from clio_agent.tools.native_roots import NativeRoot
 
@@ -580,6 +581,12 @@ def register_native_storage(
                     if not isinstance(selected_source, str):
                         raise PermissionError("Approved source identity is unavailable")
                     approved_source_id = selected_source
+                if context.attribution.get("ndp_selection_digest") is not None:
+                    from clio_agent.gact.storage.connect_tool import connection_approval
+
+                    _, _, digest = connection_approval(service, session.workspace_id, arguments)
+                    if digest != context.attribution["ndp_selection_digest"]:
+                        raise PermissionError("Approved NDP selection changed before execution")
                 prepared = prepare_connect(
                     app,
                     arguments,
@@ -634,7 +641,7 @@ def register_native_storage(
         label: str,
         _clio_submission: str,
         mode: str = "read_only",
-        configuration: SourceConfiguration | None = None,
+        configuration: SourceConfiguration | NDPConnectionSelection | None = None,
     ) -> dict[str, Any]:
         """Connect and index a folder as a task; Stop leaves accepted indexing running."""
         arguments = {

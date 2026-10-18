@@ -1,5 +1,9 @@
 # Tasks replacement: finite live experiments
 
+## 2026-10-18 14:06 UTC — next frozen family
+
+The selected integration snapshot is develop 303edbce / GACT 86e87fb8, with native dependency versions unchanged. Retire the earlier e700/7a75 build identity from new launch prerequisites. Build the matching UI once after the paired source commit; record Core/schema/dependency/model identities before launch. Reuse the R186 readiness/reconnect scenario with actual Runs filtering, then run the remaining campaign families. No source changes are permitted during a live family. Regression CI and independent reviews remain separate gates.
+
 This is the execution sheet for the existing R2 Q1–Q9 and R1–R6 acceptance
 rows. Earlier candidates have scoped live evidence in the acceptance ledger;
 that evidence does not qualify the current tuple. No new feature scope is added.

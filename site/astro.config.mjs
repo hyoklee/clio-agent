@@ -61,6 +61,7 @@ export default defineConfig({
 						{ label: 'Attach files and folders', slug: 'docs/files/attach' },
 						{ label: 'Refer to a file with @', slug: 'docs/files/references' },
 						{ label: 'Connect a data source', slug: 'docs/files/connect' },
+						{ label: 'National Data Platform', slug: 'docs/files/ndp' },
 						{ label: 'Copies and original files', slug: 'docs/files/download-or-link' },
 						{ label: 'Explore research notes', slug: 'docs/files/knowledge' },
 						{ label: 'Manage your sources', slug: 'docs/files/manage' },
@@ -115,6 +116,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Choose an example', slug: 'docs/examples' },
 						{ label: 'Explore ground motion', slug: 'docs/examples/ground-motion' },
+						{ label: 'EarthScope data from NDP', slug: 'docs/examples/ndp-earthscope' },
 						{ label: 'Find a decision in research notes', slug: 'docs/examples/research-notes' },
 						{ label: 'Create a report and slides', slug: 'docs/examples/reports-and-slides' },
 					],

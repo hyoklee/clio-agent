@@ -1,0 +1,15 @@
+---
+import light from '../assets/providers/ndp-light.png';
+import dark from '../assets/providers/ndp-dark.png';
+---
+<span class="ndp-brand">
+  <img class="light" src={light.src} width="650" height="114" alt="National Data Platform" loading="lazy" />
+  <img class="dark" src={dark.src} width="650" height="114" alt="National Data Platform" loading="lazy" />
+</span>
+<style>
+  .ndp-brand { display: block; width: min(100%, 20rem); }
+  img { display: block; width: 100%; height: auto; }
+  .dark { display: none; }
+  :global([data-theme='dark']) .light { display: none; }
+  :global([data-theme='dark']) .dark { display: block; }
+</style>

@@ -40,10 +40,10 @@ def _connect(
 
 
 def _collect(
-    app: Any, accepted: dict[str, Any], *, session_id: str | None = None
+    app: Any, accepted: dict[str, Any], *, session_id: str | None = None, kind: str = "Indexing"
 ) -> tuple[dict[str, Any], ClientGetTaskResult]:
     """Collect actual native execution using shared waits and confirmed stored output."""
-    assert accepted["accepted"] is True and accepted["kind"] == "Indexing"
+    assert accepted["accepted"] is True and accepted["kind"] == kind
     caller = TaskCaller(
         session_id or connect_tool.context.active_session_id(), app.state.human_principal
     )

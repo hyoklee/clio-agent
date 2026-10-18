@@ -145,11 +145,13 @@ def _message_block_delta(event: Event, payload: dict[str, Any], session: Any) ->
 def _message_block_completed(event: Event, payload: dict[str, Any], session: Any) -> _Projection:
     del event, session
     block_id = str(payload.get("part_id") or "")
-    projected = {
+    projected: dict[str, Any] = {
         "message_id": str(payload.get("message_id") or ""),
         "block_id": block_id,
         "text": str(payload.get("final_text") or ""),
     }
+    if part := _mapping(payload.get("part")):
+        projected["block"] = part_to_v3_block(part)
     return _Projection("message.block.completed", projected, block_id)
 
 

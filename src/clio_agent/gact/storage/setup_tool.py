@@ -35,9 +35,11 @@ def session_data_status(app: Any, sid: str) -> dict[str, Any]:
     if workspace is None:
         raise ValueError("The session workspace is unavailable on this CLIO")
     from clio_agent.gact.storage.auth import application
+    from clio_agent.gact.storage.ndp_oauth import configuration as ndp_configuration
+    from clio_agent.gact.storage.ndp_source import public_selection
 
     accounts = []
-    for provider in ("github", "google_drive", "globus"):
+    for provider in ("github", "google_drive", "globus", "ndp"):
         authenticated = service.auth.account_connected(
             service.principal, service.store.clio_id, provider
         )
@@ -46,7 +48,9 @@ def session_data_status(app: Any, sid: str) -> dict[str, Any]:
                 "provider": provider,
                 "authenticated": authenticated,
                 "sign_in_available": bool(
-                    application(provider).client_id and application(provider).redirect_uri
+                    ndp_configuration()[1]
+                    if provider == "ndp"
+                    else (application(provider).client_id and application(provider).redirect_uri)
                 ),
                 "login_action": {
                     "name": f"data_source/login/{provider}",
@@ -83,6 +87,8 @@ def session_data_status(app: Any, sid: str) -> dict[str, Any]:
                 "download_access": "read_only" if record.download_read_only else "editable",
                 "connected": record.connected,
                 "authenticated": service.auth.connected(record),
+                "access_without_signin": source.provider == "ndp"
+                and public_selection(service.store, record),
                 "materialization": source.materialization,
                 "revision": source.revision,
                 "local_path": source.local_path,
@@ -110,6 +116,10 @@ def session_data_status(app: Any, sid: str) -> dict[str, Any]:
         ],
         "accounts": accounts,
         "sources": sources,
+        "ndp_endpoints": [
+            row.model_dump(exclude={"schema_document", "principal"})
+            for row in service.ndp_endpoints.connections(session.workspace_id)
+        ],
     }
 
 

@@ -1,5 +1,15 @@
 # Tasks replacement status — October 18 UTC
 
+## 2026-10-18 14:06 UTC — upstream integration before candidate freeze
+
+The 8 AM target remains missed. Initial implementation and test construction remain complete; regression repair and integrated qualification are in progress. The selected upstream snapshot is develop 303edbce53ca024e1fd80243c52d25b10382ff53. Further upstream movement is outside this freeze.
+
+GACT is 86e87fb8418fe99b88c729de559c07fb70e1da02; marketplace is c4325a770c9c0883668eb1e6a977ef11c96ed4bb. The merge retains current product changes without restoring the deleted task owners. Adaptations cover durable input identities for upstream model-stream retries; human steering before proposed tools; current Question bundles through the common Question owner; native NDP approval/selection; and configurable child inference/depth limits.
+
+Fresh regression cases were constructed for those integrations before execution. Scoped Ruff/format, integrated GACT TypeScript, the 16-file production Mypy pass, the final three-file native Mypy pass, removal guard and file-size guard passed. The new paired CI run, fresh model families and independent candidate reviews have not yet executed. These static checks do not qualify the candidate.
+
+The completed R191 retention pass and R186 Luna/SSE uncertainty/reconnect family remain predecessor evidence only. R186 is settled and disposable state removed; its Runs attention-filter defect is corrected in source. No new live family is active during this merge.
+
 ## October 18, overnight finish execution — target missed; work continues
 
 The execution goal is active. Initial implementation and initial test construction

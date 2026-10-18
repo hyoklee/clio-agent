@@ -20,6 +20,10 @@ attached sources, and signed-in provider accounts. This read returns status,
 not a setup control. If this tool is absent in a child session, return to the
 main session for setup.
 
+For National Data Platform requests, load `work-with-ndp`. Its catalog discovery
+tools resolve organizations, datasets and selected resource IDs before connecting;
+do not invent the private NDP selection configuration or ask for a URL first.
+
 When an account needs sign-in, explain the need in your answer and use its
 returned `login_action` as an ordinary A2UI Button's action. Load the active
 catalog for the exact component shape. The user sees and clicks this control

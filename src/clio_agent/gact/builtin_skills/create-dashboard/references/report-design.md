@@ -10,10 +10,10 @@ without requiring hidden tabs to make sense of it.
 
 - Lead with a short finding, scope and time period using Text. Use a few metric
   components for quantities that support the finding; retain units and bases.
-- Give the central comparison the most space. Use a Row of Frames or Columns
-  with weight 2 and weight 1 for a wide chart beside a narrower comparison.
-  Put another Row beneath with weights 1.5 and 1.5 for an equal map/image and
-  table/explanation pair. A 2:1 row followed by a 1:1 row is supported today.
+- Allocate space according to the content. A full-width workflow, equal
+  comparisons, a vertical report or unequal panels can each be the clearest
+  choice. Use relative `weight` values only when a view benefits from more room.
+  A diagram should not be squeezed into a narrow cell to imitate an example.
 - Use Grid for equal KPI cards. Frame gives each analysis its own title and
   context. Use space for readable evidence, not repetitive borders and prose.
 - Keep the images, viewports and explanations that interpret the same object
@@ -27,7 +27,8 @@ without requiring hidden tabs to make sense of it.
   size, retain authored proportions. Inspect both; do not make the expanded
   report a single long column merely because the dock is narrow.
 
-Example structure (replace child Text with actual catalog views):
+One possible structure, not a required arrangement (replace child Text with
+actual catalog views). Omit a row or use one full-width view when that fits better:
 
 ```json
 [

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import math
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -12,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
 
-from clio_agent import conf
+import anyio
+
 from clio_agent.arc.task_types import (
     AssignmentDetails,
     CoreReference,
@@ -27,6 +29,7 @@ from clio_agent.gact import (
     conversation_controls,
     conversation_recovery,
 )
+from clio_agent.gact.agent_task_limits import max_inference_concurrency
 from clio_agent.gact.conversation_assignments import ConversationOutcome, ConversationSegment
 from clio_agent.gact.conversation_recovery import _confirm_segment_write
 from clio_agent.gact.core_recovery import CoreRecovery
@@ -81,7 +84,7 @@ class Conversations:
         self._control_holds: set[str] = set()
         self._model_recording: dict[str, set[str]] = {}
         self._paused: dict[str, str] = {}
-        self._inference: dict[int, asyncio.Semaphore] = {}
+        self._inference: dict[int, anyio.CapacityLimiter] = {}
         self._fanout_inference: dict[str, _InferenceGroup] = {}
         self._restarting: set[str] = set()
         self._pause_tokens: dict[str, str] = {}
@@ -137,8 +140,6 @@ class Conversations:
             if self._controls.get(identity) is done:
                 self._controls.pop(identity)
             if not done.cancelled() and done.exception() is not None:
-                import logging
-
                 logging.getLogger(__name__).error(
                     "Conversation control failed id=%s", identity, exc_info=done.exception()
                 )
@@ -146,9 +147,7 @@ class Conversations:
         task.add_done_callback(retired)
 
     _restore_input_projections = conversation_recovery._restore_input_projections
-
     restore = conversation_recovery.restore
-
     _record_interrupted_calls = conversation_recovery._record_interrupted_calls
 
     def eligible(self, sid: str, item: MailItem) -> bool:
@@ -544,6 +543,13 @@ class Conversations:
                 raise ValueError("Assignment ancestry is unavailable")
             task = parent
 
+    def set_inference_capacity(self, capacity: int) -> None:
+        """Update inference admission on the application loop without stopping active calls."""
+        if capacity < 0:
+            raise ValueError("Child inference concurrency must be nonnegative")
+        for limiter in self._inference.values():
+            limiter.total_tokens = capacity or math.inf
+
     @asynccontextmanager
     async def inference_slot(self, sid: str) -> AsyncIterator[None]:
         """Reserve child inference only during a model call, never during tools/waits."""
@@ -574,15 +580,10 @@ class Conversations:
             level, parent, fanout = await self.history.io.run(limits)
             if level == 0:
                 return ()  # roots retain their provider's existing budgets
-            capacity = conf.resolve(
-                "agent_tasks.max_concurrent",
-                env="CLIO_MAX_CONCURRENT_AGENT_TASKS",
-                default=3,
-                cast=conf.as_int,
-            )
-            if capacity < 1:
-                raise ValueError("Child inference concurrency must be positive")
-            semaphore = self._inference.setdefault(level, asyncio.Semaphore(capacity))
+            capacity = max_inference_concurrency()
+            limiter = self._inference.setdefault(level, anyio.CapacityLimiter(capacity or math.inf))
+            limiter.total_tokens = capacity or math.inf
+            borrower = object()
             reserved: list[Callable[[], None]] = []
             try:
                 if fanout is not None and parent is not None:
@@ -604,8 +605,8 @@ class Conversations:
                         leave_group(False)
                         raise
                     reserved.append(leave_group)
-                await semaphore.acquire()
-                reserved.append(semaphore.release)
+                await limiter.acquire_on_behalf_of(borrower)
+                reserved.append(lambda: limiter.release_on_behalf_of(borrower))
                 return tuple(reserved)
             except BaseException:
                 for release in reserved:
@@ -767,7 +768,6 @@ class Conversations:
     complete_deferred = conversation_assignments.complete_deferred
 
     pause = conversation_controls.pause
-
     resume = conversation_controls.resume
 
     cancel = conversation_controls.cancel

@@ -1612,6 +1612,39 @@ def test_bounded_resource_read_returns_original_text_without_custody_path(
         assert "path" not in result
 
 
+@pytest.mark.parametrize(
+    "content",
+    [b"time,east,north\n" + b"1,2,3\n" * 100, ("Name,Value\n" + "café,地球\n" * 100).encode()],
+)
+def test_large_text_returns_a_bounded_utf8_preview(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: bytes
+) -> None:
+    """A CSV preview does not scan the full file or invent its character count."""
+    from clio_agent.gact import resource_tools
+
+    monkeypatch.setattr(resource_tools, "text_scan_max_bytes", lambda: 97)
+    monkeypatch.setattr(resource_tools, "text_read_max_chars", lambda: 30)
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(answer="unused"))
+    with TestClient(app) as client:
+        workspace_id = _workspace(client, tmp_path / "workspace")
+        resource = _upload(
+            client, workspace_id, name="large.csv", content=content, media_type="text/csv"
+        )
+
+        def no_full_read(path: Path) -> str:
+            raise AssertionError("Oversized previews must not read the whole text")
+
+        monkeypatch.setattr(resource_tools, "_read_text", no_full_read)
+        result = read_workspace_resource_text(app, workspace_id, str(resource["id"]))
+        assert result["content"] == content.decode()[:30]
+        assert result["total_chars"] is None and result["total_bytes"] == len(content)
+        assert result["preview"] and result["truncated"]
+        with pytest.raises(resource_tools.ResourceQueryError, match="bounded search limit"):
+            resource_tools.search_workspace_resource(
+                app, workspace_id, str(resource["id"]), "Value"
+            )
+
+
 # ---------------------------------------------------------------------------
 # S2 hardening: materialization moves off GET and is unified behind one
 # never-raising, state-updating, retrying owner (materialize_once); names

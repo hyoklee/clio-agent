@@ -380,7 +380,7 @@ class StepRecorder:
             return  # only the confirmed input record admits this head to context
         self.head_id = self._write("user", content, 0, "")
 
-    def commit_input(self, step: int) -> None:
+    def commit_input(self, step: int, *, attempt: int = 0) -> None:
         """Confirm staged Core input immediately before constructing the model request."""
         from clio_agent.arc.task_types import ContextBoundary
         from clio_agent.gact import context
@@ -484,7 +484,8 @@ class StepRecorder:
             caller,
             staged,
             assignment_id=assignment,
-            iteration_id=f"{self.turn_id}:{self.expert_span_id}:{step}",
+            iteration_id=f"{self.turn_id}:{self.expert_span_id}:{step}"
+            + (f":recovery:{attempt}" if attempt else ""),
             boundary=boundary,
             turn_id=self.turn_id,
             rendered_content=references,

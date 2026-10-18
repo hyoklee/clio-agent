@@ -89,6 +89,10 @@ def autonomous_input_is_current(
         if (
             not goal.get("active")
             or goal.get("goal_id") != metadata["goal_id"]
+            or (
+                "goal_iters" in metadata
+                and metadata["goal_iters"] != int(goal.get("iters_elapsed", 0) or 0)
+            )
             or goal_budget_exhausted(app, sid, goal)
         ):
             return False
@@ -111,6 +115,18 @@ def autonomous_input_is_current(
         }:
             return False
     return True
+
+
+def goal_redrive_is_current(app: Any, sid: str, metadata: Mapping[str, Any]) -> bool:
+    """Delegate the retained goal-redrive predicate to the shared admission policy."""
+    if not metadata.get("goal_redrive"):
+        return True
+    from clio_agent.gact.goal_steering import pending_steer
+
+    session = app.state.sessions.get(sid)
+    return autonomous_input_is_current(
+        app, sid, metadata, (getattr(session, "metadata", None) or {})
+    ) and not pending_steer(app, sid)
 
 
 def expire_goal_budget(app: Any, sid: str, goal: Mapping[str, Any]) -> bool:

@@ -329,10 +329,12 @@ def test_default_root_auto_declares_workspace_skills_on_real_runtime_rows(
         "user-skill",
         "connect-data",
         "create-dashboard",
+        "create-diagram",
         "planning",
         "present-interactive-analysis",
         "review-visual-presentation",
         "update-models",
+        "work-with-ndp",
         "work-with-pdfs",
         "work-with-presentations",
         "work-with-spreadsheets",
@@ -832,6 +834,7 @@ def test_root_agent_declares_one_catalog_skill_line_per_declared_catalog_in_orde
         "a2ui-catalog-basic",
         "present-interactive-analysis",
         "review-visual-presentation",
+        "create-diagram",
         "create-dashboard",
     ]
     lines = rt.prompt_block.splitlines()
@@ -908,6 +911,7 @@ def test_pack_blueprint_keeps_its_catalog_and_shared_presentation_procedures(
         "a2ui-catalog-minimal",
         "present-interactive-analysis",
         "review-visual-presentation",
+        "create-diagram",
         "create-dashboard",
     ]
 

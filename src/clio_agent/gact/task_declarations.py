@@ -296,6 +296,7 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
 
     async def ask_user(
         question: str,
+        questions: list[dict[str, Any]] | None = None,
         kind: str = "freeform",
         options: list[dict[str, Any]] | None = None,
         allow_freeform: bool = True,
@@ -306,6 +307,9 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
         allowFreeform: bool | None = None,  # noqa: N803 - released parameter
     ) -> dict[str, Any]:
         app, caller = _runtime()
+        from clio_agent.gact.question_bundle import normalize_question_bundle
+
+        bundle = normalize_question_bundle(questions) if questions is not None else None
 
         def post() -> dict[str, Any]:
             history = app.state.task_history
@@ -349,13 +353,14 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
                 definition = QuestionDefinition.model_validate(
                     {
                         "prompt": question,
-                        "kind": kind,
-                        "options": options or (),
-                        "allow_freeform": allow_freeform
-                        if allowFreeform is None
-                        else allowFreeform,
+                        "kind": "freeform" if bundle else kind,
+                        "options": () if bundle else options or (),
+                        "allow_freeform": False
+                        if bundle
+                        else (allow_freeform if allowFreeform is None else allowFreeform),
                         "expires_at": expiry,
                         "metadata": {
+                            **({"question_bundle": bundle} if bundle else {}),
                             **({"reason": reason} if reason else {}),
                             **(
                                 {
@@ -396,6 +401,11 @@ def build_ask_user_tool(agent_def: Any = None) -> Any:
         "ask_user",
         {
             "question": {"type": "string"},
+            "questions": {
+                "anyOf": [{"type": "array", "items": {"type": "object"}}, {"type": "null"}],
+                "default": None,
+                "description": "Optional bundle of questions with stable ids; all answers submit together.",
+            },
             "kind": {
                 "type": "string",
                 "enum": ["freeform", "choice", "multi_choice", "confirmation"],

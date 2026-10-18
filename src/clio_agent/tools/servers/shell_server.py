@@ -371,6 +371,8 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
     """
     limits_text = _limits_text(limits or _SHELL_LIMITS)
     task_text = (
+        "For files outside permitted folders, declare access_paths and access_reason so CLIO "
+        "asks the user before execution. Include source and destination for moves. "
         "By default background=false waits for command completion. Set background=true to "
         "return a durable Shell task handle as soon as the command starts, before completion. "
         "Continue independent work; use query_tasks, observe_tasks, wait_tasks, get_task_result "
@@ -460,6 +462,15 @@ async def bash(
             description="True returns a durable task handle before completion; false waits for exit."
         ),
     ] = False,
+    access_paths: Annotated[
+        list[str] | None,
+        Field(
+            description="Files or folders outside the workspace needed by this command. CLIO asks the user for folder access before running. Include both source and destination for a move."
+        ),
+    ] = None,
+    access_reason: Annotated[
+        str, Field(description="Explain why this command needs the declared external paths.")
+    ] = "",
 ) -> dict[str, Any]:
     """Run one local shell command and return stdout, stderr, and exit code.
 
@@ -470,14 +481,16 @@ async def bash(
     directory must be inside ``CLIO_ALLOWED_ROOTS``. Output that does not fit the
     result budget is spilled in full under Agent-managed ``tool-output/`` state and excerpted
     (:mod:`clio_agent.tools.servers.shell_output`). Foreground turn cancellation
-    kills its process tree. Accepted background tasks require explicit cancellation.
+    kills its process tree; background tasks require explicit cancellation.
     """
 
     if background:
         return _error(
             "native_submission_required", "Background shell must use the native MCP task client."
         )
-    return await execute_shell(ctx, command, cwd, timeout_s, max_output_bytes)
+    return await execute_shell(
+        ctx, command, cwd, timeout_s, max_output_bytes, access_paths=access_paths
+    )
 
 
 class ShellCleanupObserver(Protocol):
@@ -498,6 +511,7 @@ async def execute_shell(
     max_output_bytes: int = _SHELL_LIMITS.default_output_bytes,
     *,
     cleanup: ShellCleanupObserver | None = None,
+    access_paths: list[str] | None = None,
 ) -> dict[str, Any]:
     """Execute the retained confined workload, shared by both native shell modes."""
     if not isinstance(command, str) or not command.strip():
@@ -506,6 +520,12 @@ async def execute_shell(
             "command must be a non-empty string.",
             details={"field": "command"},
         )
+    if access_paths:
+        # Declaring a path never grants it; execution rechecks actual folder rights.
+        from clio_agent.gact.folder_access import requested_folders
+
+        if requested_folders("shell_bash", {"access_paths": access_paths}):
+            return _error("folder_access_required", "Ask the user to permit these folders first.")
     command = command.strip()
     max_chars = _SHELL_LIMITS.max_command_chars
     if len(command) > max_chars:
