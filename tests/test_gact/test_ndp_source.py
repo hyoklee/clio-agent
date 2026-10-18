@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterator
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 import pytest
@@ -36,6 +37,9 @@ def catalog_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, list[st
         def do_POST(self) -> None:
             requests.append(self.path)
             payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            self.catalog_response(payload)
+
+        def catalog_response(self, payload: dict[str, Any]) -> None:
             if payload.get("search_term") == "service-down":
                 self.send_response(400)
                 self.send_header("Content-Type", "application/json")
@@ -53,6 +57,7 @@ def catalog_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, list[st
                             "name": "weather",
                             "title": "Sea observations",
                             "notes": "A catalog fixture",
+                            "owner_org": "earthscope_consortium",
                             "resources": [
                                 {
                                     "id": "stations",
@@ -68,8 +73,19 @@ def catalog_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, list[st
             )
 
         def do_GET(self) -> None:
-            requests.append(self.path)
+            path = urlsplit(self.path)
+            requests.append(path.path)
             assert not self.headers.get("Authorization")
+            if path.path == "/search":
+                terms = parse_qs(path.query).get("terms", [""])
+                self.catalog_response({"search_term": terms[0]})
+                return
+            if path.path == "/organization":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'["earthscope_consortium", "weather"]')
+                return
             self.send_response(200)
             self.send_header("Content-Length", "10")
             self.end_headers()

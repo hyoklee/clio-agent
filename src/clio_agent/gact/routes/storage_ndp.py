@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import threading
-import uuid
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
@@ -12,12 +10,10 @@ from pydantic import Field
 
 from clio_agent.gact.routes.storage_inputs import CompleteSignIn
 from clio_agent.gact.storage.models import (
-    CreateSource,
-    SourceConfiguration,
     SourceRecord,
     StorageModel,
 )
-from clio_agent.gact.storage.ndp_catalog import NDPSelection
+from clio_agent.gact.storage.ndp_selection import select_source
 from clio_agent.gact.storage.service import StorageService
 
 Action = Callable[[Callable[[], Any]], Awaitable[Any]]
@@ -29,6 +25,7 @@ class NDPSearch(StorageModel):
     query: str = Field(default="", max_length=1000)
     endpoint_id: str = Field(default="", max_length=120)
     only_groups: bool = False
+    organization: str = Field(default="", max_length=512)
 
 
 class NDPAttach(StorageModel):
@@ -47,8 +44,6 @@ def register_storage_ndp_routes(
     visible: Callable[[SourceRecord], dict[str, Any]],
 ) -> None:
     """Register NDP discovery/selection in the existing source control plane."""
-
-    selections = threading.RLock()
 
     def account_token() -> str | None:
         record = service.auth.account_login(service.principal, service.store.clio_id, "ndp")
@@ -70,13 +65,22 @@ def register_storage_ndp_routes(
                 token = None
                 warning = "NDP sign-in could not be refreshed. Public catalog browsing is still available; sign in again for protected data."
             result = service.ndp.search(
-                body.query, body.endpoint_id, only_groups=body.only_groups, token=token
+                body.query,
+                body.endpoint_id,
+                only_groups=body.only_groups,
+                token=token,
+                organization=body.organization,
             )
             if warning:
                 result["warnings"].append(warning)
             return result
 
         return await run(discover)
+
+    @app.get("/v1/storage/ndp/organizations")
+    async def organizations(query: str = "", endpoint_id: str = "") -> dict[str, Any]:
+        """Discover catalog publishers; this does not change account membership."""
+        return await run(lambda: service.ndp.organizations(query, endpoint_id))
 
     @app.post("/v1/workspaces/{wid}/sources/ndp", status_code=201)
     async def attach(wid: str, body: NDPAttach) -> dict[str, Any]:
@@ -88,35 +92,12 @@ def register_storage_ndp_routes(
                 raise PermissionError(
                     "Sign in to NDP before attaching protected Endpoint resources"
                 )
-            for existing in service.sources(wid):
-                if existing.source.provider == "ndp" and existing.connected:
-                    prior = service.store.get(
-                        "ndp-selection", existing.configuration.ndp_selection_id, NDPSelection
-                    )
-                    if prior.dataset == dataset:
-                        return visible(existing)
-            selection = NDPSelection(id="ndp_" + uuid.uuid4().hex, dataset=dataset)
-            service.store.put("ndp-selection", selection.id, selection)
-            record = service.create(
-                wid,
-                CreateSource(
-                    provider="ndp",
-                    root=dataset.id,
-                    label=dataset.title,
-                    mode="read_only",
-                    configuration=SourceConfiguration(ndp_selection_id=selection.id),
-                ),
-                root,
-            )
+            record = select_source(service, wid, dataset, root)
             # The ordinary source review owns the user's Download/Link choice.
             # Connecting catalog metadata must not silently link selected resources.
             return visible(record)
 
-        def serialized() -> dict[str, Any]:
-            with selections:
-                return select()
-
-        return await run(serialized)
+        return await run(select)
 
     @app.post("/v1/storage/accounts/{provider}/auth/cancel")
     async def cancel(provider: str, body: CompleteSignIn) -> dict[str, bool]:

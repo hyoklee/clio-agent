@@ -31,6 +31,7 @@ def connected_data_status() -> dict[str, Any]:
         raise ValueError("The session workspace is unavailable on this CLIO")
     from clio_agent.gact.storage.auth import application
     from clio_agent.gact.storage.ndp_oauth import configuration as ndp_configuration
+    from clio_agent.gact.storage.ndp_source import public_selection
 
     accounts = []
     for provider in ("github", "google_drive", "globus", "ndp"):
@@ -81,6 +82,8 @@ def connected_data_status() -> dict[str, Any]:
                 "download_access": "read_only" if record.download_read_only else "editable",
                 "connected": record.connected,
                 "authenticated": service.auth.connected(record),
+                "access_without_signin": source.provider == "ndp"
+                and public_selection(service.store, record),
                 "materialization": source.materialization,
                 "revision": source.revision,
                 "local_path": source.local_path,

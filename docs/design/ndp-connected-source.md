@@ -47,6 +47,37 @@ overrides it uses that client's existing public global catalog. CLIO loads
 the installed client; it does not launch another MCP process or maintain a
 second catalog protocol implementation.
 
+Catalog organization identities are discoverable in the picker and through
+`GET /v1/storage/ndp/organizations`. They name publishers, not account groups.
+`POST /v1/storage/ndp/search` accepts `organization` and `endpoint_id` to browse
+one publisher; query filtering retains that scope. Term search uses the existing
+client's GET route; organization search uses its `owner_org` field filter. These
+routes work independently of the optional full-text Solr search dependency.
+An empty term is still sent as a required `terms` parameter. Catalog errors are
+reported with their real HTTP status. Searches showing more than 500 datasets
+ask the user to refine the query rather than silently implying completeness.
+
+The shared built-in `work-with-ndp` skill is discovered by the default agent;
+agents declaring `connect-data` also receive it through the existing skill
+resolver, preserving workspace overrides and specialist scopes. Root agents get
+`connected_data_ndp_organizations` and `connected_data_search_ndp`. To connect a
+server-observed result they use the ordinary `connected_data_connect` tool:
+
+```json
+{"provider":"ndp","root":"<dataset-id>","label":"<dataset-title>",
+ "configuration":{"endpoint_id":"<catalog-endpoint-id>","resource_ids":["<resource-id>"]}}
+```
+
+The normal permission request shows the selected Endpoint and resource names.
+Deny persists no source or selection. Approval reuses the picker selection owner
+and starts an Indexing task, without fetching resource bytes. Public HTTP
+selections need no account login. Protected selections return the existing
+`data_source/login/ndp` action, canonically declared with a client destination in
+clio-schemas 0.6.0b12; clicking it opens the private device flow rather than an
+agent turn. The agent retries the same selection after sign-in, opens individual
+linked files through resource custody, or uses `connected_data_download` and its
+durable task handle to obtain a local copy for analysis.
+
 Configure the deployment's actual Endpoints on the CLIO service, for example:
 
 ```dotenv
@@ -125,10 +156,26 @@ timestamp. The AAI `/api/information` returned HTTP 200 and no group memberships
 for the test account. The saved login survived restarting the backend. Signing
 out through the UI removed it, and NDP rejected the revoked refresh token with
 `invalid_grant`. The existing public catalog returned HTTP 400 because its
-Solr service could not connect; protected reads still need a working Endpoint
+Solr service could not connect. A subsequent live audit found that term search
+and organization-filtered search remained operational: `earthscope_consortium`
+returned 1,116 datasets. The actual UI connected and linked the
+`WWMT.CI.LY_.40` CSV and downloaded its 50,084,343 bytes through the normal storage
+transfer. A live Codex-backed CLIO agent loaded the new skill, discovered the
+publisher and station, and read the linked CSV through `connected_data_open`
+and `workspace_resource_read`. Protected reads still need a working Endpoint
 that accepts the test realm and the account's intended access grant. A forced
 local expiry exercises refresh but does not claim an elapsed five-hour token
 lifetime.
+
+The live agent also analyzed the downloaded station copy, matching its SHA-256
+against the linked input, counting 857,957 rows and registering a report and
+visually inspected PNG chart. That run exposed the generic text reader's refusal
+of large CSVs. It now returns a bounded UTF-8 prefix within the existing scan
+ceiling, with `preview=true`, `truncated=true`, `total_bytes` and an unknown
+`total_chars=null`; it never invents a full-file character count or raises the
+scan ceiling. The subsequent live turn previewed the same 50 MB CSV successfully
+and connected only the `.20` station CSV through the normal permission gate.
+Its Indexing task completed with one entry and zero transferred bytes.
 
 API contracts checked against
 [ep-api read authorization](https://github.com/national-data-platform/ep-api/blob/main/docs/roles-and-permissions.md),

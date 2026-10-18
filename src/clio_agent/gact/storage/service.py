@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import logging
+import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -73,6 +74,7 @@ class StorageService:
         from clio_agent.gact.storage.ndp_catalog import NDPCatalog
 
         self.ndp = NDPCatalog()
+        self.ndp_selection_lock = threading.RLock()
         from clio_agent.gact.storage.obsidian_account import ObsidianAccount
         from clio_agent.gact.storage.obsidian_sync import ObsidianSync
 

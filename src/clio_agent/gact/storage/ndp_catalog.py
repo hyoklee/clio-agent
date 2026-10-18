@@ -66,6 +66,7 @@ class NDPDataset(StorageModel):
     name: str
     title: str
     description: str = ""
+    organization: str = ""
     endpoint: NDPEndpoint
     resources: list[NDPResource]
     access: Literal["viewer", "request_access"] | None = None
@@ -156,6 +157,7 @@ class NDPCatalog:
         *,
         only_groups: bool = False,
         token: str | None = None,
+        organization: str = "",
     ) -> dict[str, Any]:
         """Search configured catalogs and preserve exact selections without downloading bytes."""
         endpoints = [item for item in self.endpoints() if not endpoint_id or item.id == endpoint_id]
@@ -175,11 +177,37 @@ class NDPCatalog:
                 continue
             try:
                 client = _catalog_module().NDPClient(base_url=endpoint.url)
-                rows = asyncio.run(
-                    client.search_datasets_advanced(
-                        search_term=query or None, server=endpoint.server
+                # Field filters avoid the catalog's optional Solr full-text
+                # dependency. Its term-search route remains available when
+                # that dependency is down (as on the public NDP deployment).
+                if organization:
+                    rows = asyncio.run(
+                        client.search_datasets_advanced(
+                            owner_org=organization, server=endpoint.server
+                        )
                     )
-                )
+                    if query:
+                        terms = re.findall(r"\w+", query.casefold())
+                        rows = [
+                            row
+                            for row in rows
+                            if all(
+                                term
+                                in " ".join(
+                                    [
+                                        row.name,
+                                        row.title,
+                                        row.notes or "",
+                                        json.dumps(row.resources),
+                                    ]
+                                ).casefold()
+                                for term in terms
+                            )
+                        ]
+                else:
+                    rows = asyncio.run(
+                        client.search_datasets_simple(terms=[query], server=endpoint.server)
+                    )
             except Exception as exc:
                 cause = exc if isinstance(exc, httpx.HTTPStatusError) else exc.__cause__
                 status = (
@@ -191,6 +219,10 @@ class NDPCatalog:
                     f"{endpoint.name} could not complete this search{status}. "
                     "Try again later or choose another Endpoint."
                 ) from exc
+            if len(rows) > 500:
+                warnings.append(
+                    f"{endpoint.name}: showing the first 500 of {len(rows)} datasets. Refine the query or organization."
+                )
             for item in rows[:500]:
                 resources = []
                 for index, resource in enumerate(item.resources[:1000]):
@@ -227,6 +259,7 @@ class NDPCatalog:
                     name=item.name,
                     title=item.title,
                     description=item.notes or "",
+                    organization=item.owner_org or "",
                     endpoint=endpoint,
                     resources=resources,
                     access=access,
@@ -241,6 +274,29 @@ class NDPCatalog:
             "datasets": [self.visible(item) for item in datasets],
             "warnings": list(dict.fromkeys(warnings)),
         }
+
+    def organizations(self, query: str = "", endpoint_id: str = "") -> dict[str, Any]:
+        """List catalog organization identities without granting membership or fetching data."""
+        endpoints = [item for item in self.endpoints() if not endpoint_id or item.id == endpoint_id]
+        if not endpoints:
+            raise ValueError("Choose a configured NDP Endpoint")
+        organizations = []
+        for endpoint in endpoints:
+            client = _catalog_module().NDPClient(base_url=endpoint.url)
+            try:
+                names = asyncio.run(
+                    client.list_organizations(name_filter=query or None, server=endpoint.server)
+                )
+            except Exception as exc:
+                raise ValueError(
+                    f"{endpoint.name} could not list organizations. Try again later."
+                ) from exc
+            organizations.extend(
+                {"id": name, "endpoint_id": endpoint.id, "endpoint_name": endpoint.name}
+                for name in names[:1000]
+                if not query or query.casefold() in name.casefold()
+            )
+        return {"organizations": organizations}
 
     @staticmethod
     def visible(dataset: NDPDataset) -> dict[str, Any]:
