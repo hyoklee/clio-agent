@@ -1,33 +1,40 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 16:24 UTC
+## Current candidate — October 18, 17:06 UTC
 
-Latest production correction is core f5d885154a97b1f60a5758e2a7efce4a6fa24613,
-GACT 053fca842f25739b4a6ad4c3a8f14badd4d6a3df, marketplace c4325a77.
-Dependencies and retained develop merge are unchanged. See current status for
-the exact runtime tuple and CI links.
+Follow-up GACT is **43098e53df655525096157d45a3ba064eb9958ce**; new CI/review is pending. The 053f results below belong to its predecessor.
 
-Complete 3f CI has twelve reports and three distinct problems: the old queue
-pause expectation, the 260-action timeout, and one progressing-turn watchdog
-failure. All three 1,005-message retention runs passed under the unchanged
-deadline. Current repairs/diagnostics do not yet have a passing regression result.
-Skips remain exclusions.
+The complete a0096b72 regression inventory has twelve reports and five distinct
+failure/error cases. The follow-up batch repairs accepted/client identity
+correlation, permission publication, transcript splice write amplification and
+Core-wait accounting, plus cancellation-test synchronization. It constructs nine
+new regressions before execution and retains the 260-action, 1,005-message,
+watchdog, coverage, confinement and cancellation assertions and budgets.
 
-Astra approved 3f/e2e source; actual frozen Fable R197 blocked its startup-read
-recovery gap. That gap is corrected with six constructed real-Core fault cases.
-The native fast-reply path has three new constructed cases; actual performance
-needs CI/load evidence. No deadline, assertion, worker budget or guard is relaxed.
-Other Fable observations remain visible in current status.
+The 1,005-message case passed all three interpreters under its original deadline.
+Core CI remains failed, including Python 3.14's 77% versus 78% coverage gate.
+The default matrix now requires the locked Claude SDK so four provider contracts
+execute rather than skip. Skips remain exclusions.
 
-Live launches remain blocked by directly measured D: capacity: about 704 MiB,
-below the existing Core reserve before fresh allocation. No alternate storage
-adapter or resource-budget reduction is introduced. Current UI requires a matching
-build; R193 is obsolete and its removal was rejected before execution.
-No required Q1–Q9 or thirty-race row is accepted on this correction.
+GACT 053fca84 branch CI passed all five jobs, including workspace
+unit/build/browser steps and three native debug builds. Its synthetic PR-merge
+run failed the Mermaid error-text contract after a current-main validator change;
+the follow-up aligns that distinction and strengthens executable-click refusals.
 
-The shared reporting set is [current status](task-replacement-current-status.md)
-and [execution sheet](task-replacement-live-experiments.md). The earlier records
-below describe named predecessors and do not override this state.
+Astra and actual frozen Fable R199 found no blocking a009/053f source defect.
+The current batch still needs independent frozen review and fresh CI.
+Actual-model/service/UI Q1–Q9 and all thirty final race repetitions remain
+unaccepted; a source or fixture pass does not pass those rows.
+
+Owned orphaned C: Core processes have retired. Normal UV cleanup recovered about
+0.47 GiB actual D: space, leaving 1,106,403,328 bytes at that observation.
+Fresh Core-backed families still need allocation headroom beyond the existing
+1 GiB reserve. A newly rejected Node setup-cache removal is manual-only, along
+with all previous prohibited roots. No new product family is active.
+
+See [current status](task-replacement-current-status.md) for exact CI links,
+dependency identities, failure groups, cleanup receipts and review limits, and
+the [execution sheet](task-replacement-live-experiments.md) for remaining launches.
 
 ## Construction and preceding evidence
 

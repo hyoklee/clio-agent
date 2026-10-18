@@ -1,7 +1,7 @@
 """Report deliberate waits to the existing per-session turn watchdog.
 
-Shared task controls, foreground native work and legacy MCP commitments retain
-their own timeout and cancellation rules. Silence during those waits must not
+Shared task controls, Core RPCs, foreground native work and legacy MCP commitments
+retain their own timeout and cancellation rules. Silence during those waits must not
 trigger an unrelated turn deadline. Counts belong to the verified waiting
 session, so activity in another conversation cannot keep a wedged turn alive.
 This transient activity signal neither schedules work nor owns task state.
@@ -10,7 +10,8 @@ This transient activity signal neither schedules work nor owns task state.
 from __future__ import annotations
 
 import threading
-from collections.abc import Iterator
+import time
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 _LOCK = threading.Lock()
@@ -19,6 +20,30 @@ _LOCK = threading.Lock()
 # bound. A session's count is DROPPED once it drains to zero (mirrors
 # lm_activity.note_lm_end) so this dict never grows past currently-open waits.
 _INFLIGHT: dict[str, int] = {}
+# Completion timestamps exist only while a turn watchdog observes that session.
+# They are transient progress evidence, not task state or retained history.
+_COMPLETIONS: dict[str, dict[object, float]] = {}
+
+
+@contextmanager
+def observe_completions(session_id: str) -> Iterator[Callable[[], float]]:
+    """Observe actual wait completion across delayed watchdog polls, then discard it."""
+    token = object()
+    with _LOCK:
+        _COMPLETIONS.setdefault(session_id, {})[token] = 0.0
+
+    def latest() -> float:
+        with _LOCK:
+            return _COMPLETIONS.get(session_id, {}).get(token, 0.0)
+
+    try:
+        yield latest
+    finally:
+        with _LOCK:
+            watchers = _COMPLETIONS.get(session_id, {})
+            watchers.pop(token, None)
+            if not watchers:
+                _COMPLETIONS.pop(session_id, None)
 
 
 def _active_session() -> str:
@@ -56,6 +81,11 @@ def note_commitment_end(session_id: str | None = None) -> None:
             _INFLIGHT.pop(key, None)
         else:
             _INFLIGHT[key] = remaining
+        watchers = _COMPLETIONS.get(key, {})
+        if watchers:
+            completed_at = time.monotonic()
+            for token in watchers:
+                watchers[token] = completed_at
 
 
 def commitment_wait_in_flight(session_id: str | None = None) -> bool:

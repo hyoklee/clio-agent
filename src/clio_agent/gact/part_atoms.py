@@ -58,7 +58,7 @@ the internals the S2 fold's ``FoldingSegmentStore._append_raw`` already uses.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
@@ -541,7 +541,13 @@ def _incomplete_envelope(atoms: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _append_segment_raw(
-    store: Any, session_id: str, scope: str, kind: SegmentKind, content: dict[str, Any]
+    store: Any,
+    session_id: str,
+    scope: str,
+    kind: SegmentKind,
+    content: dict[str, Any],
+    *,
+    persist: bool = True,
 ) -> Segment:
     """Append one segment to ``scope`` WITHOUT invoking the op-logger (§2.9 raw lane).
 
@@ -561,6 +567,9 @@ def _append_segment_raw(
 
     Returns:
         The appended segment (its store-assigned ``logical_time`` + ``order``).
+
+    ``persist=False`` stages one atom for the same writer's unpublished chunk
+    batch; that caller confirms the chunk before exposing its generation.
     """
     from clio_agent.arc.segments import _coerce_content  # noqa: PLC0415 - avoid import cycle
 
@@ -578,7 +587,8 @@ def _append_segment_raw(
         )
         segs.append(seg)
         store._index.add(session_id, scope, seg)
-        store._persist(session_id, scope)
+        if persist:
+            store._persist(session_id, scope)
         return seg
 
 
@@ -599,10 +609,38 @@ def append_part_atom(
     batch mints and the replace.
     """
 
+    return append_part_atoms(store, session_id, [content], lane=lane)[0]
+
+
+def append_part_atoms(
+    store: Any, session_id: str, contents: Sequence[dict[str, Any]], *, lane: str | None = None
+) -> list[Segment]:
+    """Use the canonical atom writer, confirming each affected chunk once.
+
+    Raw identities, ordering and cursor reservations are unchanged. A staged
+    generation remains invisible until the existing generation pointer commits.
+    Single streaming atoms still confirm immediately; a persistence error keeps
+    the existing store failure and generation rollback behavior.
+    """
+    if lane is None and len(contents) > 1:
+        raise ValueError("A multi-atom batch requires an unpublished generation")
     with store._lock_for(session_id, MESSAGE_PART_SCOPE):
         base = lane if lane is not None else current_base(store, session_id, MESSAGE_PART_SCOPE)
-        scope = chunk_for_append(store, session_id, base, capacity=_chunk_capacity())
-        return _append_segment_raw(store, session_id, scope, MESSAGE_PART_KIND, content)
+        scope: str | None = None
+        appended: list[Segment] = []
+        for content in contents:
+            selected = chunk_for_append(store, session_id, base, capacity=_chunk_capacity())
+            if scope is not None and selected != scope:
+                store._persist(session_id, scope)
+            scope = selected
+            appended.append(
+                _append_segment_raw(
+                    store, session_id, scope, MESSAGE_PART_KIND, content, persist=False
+                )
+            )
+        if scope is not None:
+            store._persist(session_id, scope)
+        return appended
 
 
 def mint_message_part_atoms(
@@ -653,7 +691,7 @@ def mint_message_part_atoms(
         for index, part in enumerate(message.parts)
     ]
     contents.append(build_envelope_atom(message))
-    return [append_part_atom(store, session_id, content, lane=lane) for content in contents]
+    return append_part_atoms(store, session_id, contents, lane=lane)
 
 
 def load_message_part_atoms(arc: Any, session_id: str) -> dict[str, list[dict[str, Any]]]:

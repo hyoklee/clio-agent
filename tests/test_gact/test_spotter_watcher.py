@@ -84,12 +84,23 @@ def test_explicit_disarm_uses_conversation_cancellation(
     ).result(timeout=10)
 
     async def await_release() -> None:
-        released = asyncio.Event()
-        app.state.turn_runner.run_when_released(child, released.set)
-        await asyncio.wait_for(released.wait(), 5)
-        pump = app.state.turn_runner._pumps.get(child)
-        if pump is not None:
-            await asyncio.wait_for(asyncio.shield(pump), 5)
+        # Terminal publication/collection can enqueue a final admission probe.
+        # Inspect quiescence on its owning loop, after every already-signalled
+        # probe, rather than sampling a transient reservation from this thread.
+        async with asyncio.timeout(5):
+            control = app.state.conversations._controls.get(task.handle)
+            if control is not None:
+                await asyncio.shield(control)
+            while True:
+                pump = app.state.turn_runner._pumps.get(child)
+                if pump is not None and not pump.done():
+                    await asyncio.shield(pump)
+                    continue
+                if not app.state.turn_runner.busy(child):
+                    return
+                released = asyncio.Event()
+                app.state.turn_runner.run_when_released(child, released.set)
+                await released.wait()
 
     asyncio.run_coroutine_threadsafe(await_release(), app.state.mcp_app_loop).result(timeout=10)
     current = app.state.task_history.task_snapshot(task.handle)
@@ -97,6 +108,12 @@ def test_explicit_disarm_uses_conversation_cancellation(
     assert current.settlement == "confirmed"
     assert _live_watcher_tasks(app, parent) == []
     assert not app.state.turn_runner.busy(child)
+    assert app.state.task_history.latest_assignment(child).handle == task.handle
+    assert not [
+        event
+        for event in app.state.bus.session_events_since(child, cursor=1)
+        if event.type == "turn.started"
+    ]
 
 
 def test_watcher_profile_allows_containment_but_never_release_without_approval() -> None:

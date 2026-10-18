@@ -212,9 +212,6 @@ def park_pretool_defer(
         "status": "pending",
         "reason": REASON_HOOK_DEFER,
     }
-    app.state.permissions[pid] = row
-    app.state.permission_events[pid] = evt
-    enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
     _record_pending_meta(
         app,
         sid,
@@ -226,6 +223,11 @@ def park_pretool_defer(
             "created_at": row["created_at"],
         },
     )
+    # Discovery and immediate human responses must see a recoverable request.
+    # A failed metadata write leaves no resolvable row or stranded waiter.
+    app.state.permission_events[pid] = evt
+    app.state.permissions[pid] = row
+    enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
     _publish_pending(app, sid, row)
 
     resolved = evt.wait(timeout=defer_timeout_s())

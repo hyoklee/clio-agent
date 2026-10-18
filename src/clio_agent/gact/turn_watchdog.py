@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 from clio_agent.gact._params import _gact_turn_timeout_s
@@ -35,6 +36,7 @@ from clio_agent.gact.runtime.globals import _TurnTimedOut
 from clio_agent.runtime.commitment_activity import (
     commitment_wait_in_flight as _commitment_wait_in_flight,
 )
+from clio_agent.runtime.commitment_activity import observe_completions
 from clio_agent.runtime.lm_activity import lm_call_in_flight as _lm_call_in_flight
 
 if TYPE_CHECKING:
@@ -87,6 +89,14 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
 
     if state.turn_progress_timeout_s <= 0:
         return await awaitable
+    with observe_completions(state.sid) as completed_wait:
+        return await _await_observed_work(state, awaitable, completed_wait)
+
+
+async def _await_observed_work(
+    state: "TurnState", awaitable: Any, completed_wait: Callable[[], float]
+) -> Any:
+    """Apply the existing watchdog with active and just-completed owner waits."""
     # Drive the work as a task and poll for completion. asyncio.wait (unlike
     # wait_for) does NOT cancel the task when the poll interval elapses, so a
     # still-running turn is never disturbed by the watchdog tick. We seed the
@@ -104,7 +114,7 @@ async def await_turn_work(state: "TurnState", awaitable: Any) -> Any:
             done, _pending = await asyncio.wait({task}, timeout=state._watchdog_poll_s)
             if done:
                 return task.result()
-            heartbeat = state.bus.last_publish_monotonic(state.sid)
+            heartbeat = max(state.bus.last_publish_monotonic(state.sid), completed_wait())
             if heartbeat > last_progress:
                 last_progress = heartbeat
             # An LM call that is actively generating IS progress, even when it

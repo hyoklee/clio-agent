@@ -43,6 +43,7 @@ from clio_agent.arc.clio_core_liveness import (
     ClioCoreRuntimeLostError,
 )
 from clio_agent.arc.loop_guard import assert_store_write_off_loop, audit_store_read_on_loop
+from clio_agent.runtime.commitment_activity import track as track_owned_wait
 
 # Store ops that WRITE: waited on from the loop thread they are a typed defect (#1334).
 # The rest (get / exists / search / scan) are audited, not refused: a loop-thread read
@@ -306,6 +307,7 @@ def _stall_reason(outcome: str) -> str:
     return DAEMON_PID_UNRESOLVED_REASON if outcome == DAEMON_PID_UNRESOLVED else RPC_STALLED_REASON
 
 
+@track_owned_wait(True)
 def call_with_liveness(
     make_call: Callable[[], Any],
     *,
@@ -317,6 +319,9 @@ def call_with_liveness(
     _sleep: Callable[[float], None] = time.sleep,
 ) -> Any:
     """Run one clio-core RPC with stall (failure-to-progress) detection + recovery.
+
+    This wait has its own native liveness owner. It must not be attributed to
+    model silence while a session confirms input or other Core records.
 
     ``make_call`` MUST re-establish any per-op native handle it needs each time it is
     invoked (e.g. re-create the CTE ``Tag``), because it is re-run after a reconnect --

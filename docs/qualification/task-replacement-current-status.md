@@ -1,94 +1,98 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 16:24 UTC
+## Current state — October 18, 17:06 UTC
+
+Follow-up GACT is **43098e53df655525096157d45a3ba064eb9958ce**; new CI/review is pending. The 053f results below belong to its predecessor.
 
 Initial implementation and initial test construction are complete. The 8 AM
 target was missed. Regression repair and actual-model/service/UI qualification
-are unfinished. This is **not a qualified candidate**; no release or daily
+remain unfinished. This is not a qualified candidate; no merge, release or daily
 Desktop installation is authorized.
 
-Latest production correction is clio-agent f5d885154a97b1f60a5758e2a7efce4a6fa24613,
-recording GACT 053fca842f25739b4a6ad4c3a8f14badd4d6a3df and marketplace
-c4325a770c9c0883668eb1e6a977ef11c96ed4bb. It preserves the develop
-303edbce53ca024e1fd80243c52d25b10382ff53 merge. This reporting update is
-documentation only. Runtime remains Python 3.14.6, iowarp-core 2.3.2,
+The complete a0096b72 CI run has twelve regression reports and five distinct
+failure/error cases. This follow-up batch retains the develop 303edbce merge and
+the dependency/runtime tuple: Python 3.14.6, iowarp-core 2.3.2,
 FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and Claude SDK 0.2.159.
-The shared ARC native-RPC wait helper changed; the Core library and canonical
-storage adapter did not.
-
-Complete [3f CI](https://github.com/iowarp/clio-agent/actions/runs/39142759152)
-has twelve reports and three distinct failure/error cases:
+No Core-library implementation or storage-adapter change is included.
 
 | Python | Passed | Failed | Errors | Skipped |
 | --- | ---: | ---: | ---: | ---: |
-| 3.12 | 12,929 | 2 | 1 | 54 |
-| 3.13 | 12,930 | 1 | 1 | 54 |
-| 3.14 | 12,930 | 1 | 1 | 54 |
+| 3.12 | 12,938 | 2 | 1 | 54 |
+| 3.13 | 12,937 | 3 | 1 | 54 |
+| 3.14 | 12,938 | 1 | 2 | 54 |
 
-The 1,005-message retention case passed on all three interpreters in 172.782,
-178.636 and 104.195 seconds, preserving its load and deadline. Lint, coverage
-and other non-regression jobs passed. Skips remain exclusions. This is not
-large-history restart or final live acceptance. Bounded complete inventory:
-.pytest-runtime/static/ci-3f8cfbf9-inventory.json in the D: checkout.
+[Exact a009 CI](https://github.com/iowarp/clio-agent/actions/runs/39145110926)
+failed. The 1,005-message retention case passed all three interpreters in 171.237,
+89.041 and 152.885 seconds, retaining the original load and deadline. Other lint,
+native and ancillary jobs passed. Python 3.14 coverage was 77%, below the unchanged
+78% gate; two workers exited during timed-out tests. No coverage pass is claimed.
+The bounded complete report is .pytest-runtime/static/ci-a0096b72-inventory.json
+in the D: checkout.
 
-The combined correction and remaining diagnostics are:
-- Manual Send now preserves the independent future-queue pause. The conflicting
-  older assertion is corrected; the scenario now proves one delivery, another
-  item remaining paused, and normal explicit sending resuming that item. Astra
-  independently confirmed this contract. No production queue-resume patch.
-- The 260-action case still exceeded its unchanged 180-second limit. Current
-  stacks show native PutBlob waits and daemon-process sampling. Fast replies
-  now receive one millisecond before expensive health discovery; still-pending
-  calls retain the existing health/progress policy. Three constructed cases
-  prohibit configuration/process discovery for fast replies. The load case now
-  reports bounded real-store operation counts/latencies; no load or budget change.
-- The intermittent progressing-turn watchdog case still failed on 3.12. Its
-  0.2-second window and all assertions remain. Added diagnostics identify whether
-  the stand-in model began and the actual phase gaps. The I/O correction needs
-  fresh CI; this failure is not claimed repaired.
-- Actual Fable found a transient startup Core read could leave restoration held
-  without arming recovery. The existing recovery boundary now covers these reads.
-  Six constructed real-Core cases cover both details reads and context reads,
-  OSError/ClioError, original handles, retained pending mail and no execution replay.
-- GACT 053f corrects one stale class assertion for the composer-coloured attention
-  tray; keyboard/scroll checks remain. GACT e2e CI had 3,783 web passes / one
-  failure, and all three native debug builds passed. Browser/build steps after
-  the failed unit step did not execute.
+The coordinated follow-up addresses the complete inventory:
+- Stop/queue regression now distinguishes accepted server message identity from
+  client correlation identity, proving one retained user row and one correlation
+  for each send. Queue pause, accepted order and delivery assertions remain.
+- PreToolUse permission discovery now follows confirmed recovery metadata.
+  Immediate approval cannot race an absent durable row; persistence failure
+  exposes no resolvable request or stranded waiting event. Two new cases cover
+  these boundaries; the existing actual Core/subprocess scenario remains.
+- A2UI acceptance writes its domain receipt before projecting its earlier input.
+  That ordered splice previously rewrote every atom through a separate Core put.
+  The same atom/cursor/generation writer now confirms each staged chunk once.
+  Eager atoms still confirm immediately; bulk writes require an unpublished
+  generation, and the existing pointer owns visibility. Three new real-Core cases
+  preserve raw content/order, cursor continuity, partial-failure isolation and
+  bounded writes. The original 260-action/180-second gate remains.
+- Actual Core RPC waits now enter the existing session-scoped commitment tracker,
+  retaining Core liveness and error policy. Model silence remains independently
+  guarded. Completion timestamps exist only during an active watchdog observation
+  so a delayed poll cannot miss a completed wait. Four new cases cover same/other
+  sessions, release, typed error preservation and between-poll completion.
+- SPOTTER cancellation tests now join the real retained cancellation controller
+  before draining its final admission probes. Terminal/settlement/no-watcher/idle
+  assertions remain, with added no-successor and no-model-turn proof.
+- CI explicitly installs the already-locked Claude SDK. Four previously
+  import-skipped SDK contract cases must execute; the locked dependency version
+  and all skip/timeout/coverage policies remain unchanged.
 
-Astra gave 3f/e2e a source GO. Actual Claude Code/Fable R197 gave that frozen
-tuple a source NO-GO for the startup-read defect above. Its CLI/controller retired,
-authentication is unchanged, and source stayed frozen. The new correction needs
-independent review. Non-blocking Fable notes on normal control-recording delay and
-peer visibility during Core holds remain open; source review is not live acceptance.
+[GACT branch CI](https://github.com/iowarp/gact-tui/actions/runs/39144976132)
+passed all five jobs for 053fca84, including actual workspace unit/build/browser
+steps and all three native debug builds. These are regression/fixture results,
+not real-service UI/model qualification. Its separate
+[PR merge preview](https://github.com/iowarp/gact-tui/actions/runs/39144979510)
+failed one Mermaid error-text assertion: the synthetic merge includes the current
+main validator's specific executable-directive refusal. The follow-up aligns that
+same distinction on the branch and strengthens forbidden-click/path tests;
+rendering, navigation confinement and sanitization stay enforced.
 
-[3f Pages](https://github.com/iowarp/clio-agent/actions/runs/39142760735) built
-successfully; feature deployment was correctly skipped. Fresh replacement-service
-website media remains pending. The old R193 build predates the production tray
-change; it cannot qualify the current UI.
+Astra and actual Claude Code/Fable R199 found no blocking source defect in
+a009/053f; this is separate from failed CI and live qualification. Astra also
+independently traced the SPOTTER synchronization and Core-wait accounting defects.
+The current coordinated source changes require a new frozen review. Earlier
+non-blocking Fable observations remain open: readiness-tail read recovery, corrupt
+record handling, normal control-recording delay, peer visibility during Core holds
+and concurrent restoration. No source review is a release approval.
 
-Scoped Ruff/format, two-source Linux Mypy and all seven architecture guards pass.
-Scoped GACT Oxlint parsed one changed test file without diagnostics; Prettier
-matches. New regressions were constructed before execution. They have not run
-locally; the combined CI batch is the next regression result.
+Owned cleanup progressed. Two orphaned Oct12 Core executables from the C: feature
+environment and their console children were identity-checked, stopped and verified
+absent. Normal UV cleanup removed 88,922 files, reporting 2.9 GiB logical cache
+content and recovering about 0.47 GiB actual D: space. D: then had 1,106,403,328
+free bytes. This is still too tight for a fresh Core file allocation plus the
+existing 1 GiB reserve. No product/model family is active. Node setup-cache removal
+was rejected before execution and is now manual-only; no retry, bypass, delegation
+or parent removal. Earlier rejected roots remain protected.
 
-Current qualification capacity was checked directly at 16:09:43 UTC: D: had
-737,710,080 free bytes (about 704 MiB), below the existing 1 GiB Core file-tier
-reserve before fresh allocations. This is an availability observation, not a
-manual-cleanup result or reclaimed-space claim. No new Core-backed product
-family was launched. Token lifetimes are adequate; this alone does not establish
-provider availability. Preflight: .pytest-runtime/static/r198-runtime-preflight.json.
+The requested exact cleanup inventory is TASKS-CLEANUP-LIST-2026-10-18.md
+in the D: checkout, with CSV/JSON; its initial snapshot measured 156 candidate
+paths and 28.71 GiB logical data. Subsequent cleanup is recorded separately,
+without treating logical bytes as actual reclaimed capacity.
 
-Automatic review rejected audited obsolete builds/r193-web removal before any
-command ran. Its 653 files / 31,895,892 logical bytes remain manual-only. Earlier
-five Mypy caches, r185-web, review profiles and every older rejected/manual root
-also remain protected. Read-only audit confirmed .r44/.r45/.r49 live temp roots
-have prior rejection receipts; no deletion was attempted. No retry, bypass,
-delegation or parent removal. No product service or accepted task is active.
-
-Q1–Q9, migration/recovery obligations, all thirty final races, current-source
-reviews and fresh website media remain unaccepted. R186/R191 and other earlier
-runs below are predecessor evidence. Daily Desktop, auth, defaults, released pins
-and protected human edits remain preserved.
+Q1–Q9, remaining migration/recovery obligations, thirty final races, current-source
+review and fresh replacement-service website media remain unaccepted. Earlier
+R186/R191 results are predecessor evidence. Matching current UI must be built
+before real-service review; obsolete R193 output remains manual-only. Daily
+Desktop, auth, defaults, released pins and protected human edits are preserved.
 
 ## Earlier dated execution records
 

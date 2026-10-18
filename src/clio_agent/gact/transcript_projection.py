@@ -17,7 +17,7 @@ from clio_agent.errors import ClioError
 from clio_agent.gact.messages import retained_message_position
 from clio_agent.gact.part_atoms import (
     MESSAGE_PART_SCOPE,
-    append_part_atom,
+    append_part_atoms,
     build_message_part_atoms,
     fully_retracted,
     group_atoms_in_order,
@@ -271,8 +271,7 @@ def ensure_accepted_message(app: "FastAPI", session_id: str, message: Message) -
                     ]
 
                     def write(lane: str) -> None:
-                        for atom in merged:
-                            append_part_atom(store, session_id, atom, lane=lane)
+                        append_part_atoms(store, session_id, merged, lane=lane)
 
                     replace_lane(store, session_id, MESSAGE_PART_SCOPE, write)
     from clio_agent.gact.transcript_recording import project_message

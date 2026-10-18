@@ -82,7 +82,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers
+      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers --extra claude-code
       - run: uv run ruff check src/ tests/ scripts/create_demo_data.py scripts/validate_marketplace_blueprints.py scripts/mcp_mem_attribution.py
       # Formatting is checked, never rewritten by CI: drift fails the job and the
       # author runs `uv run ruff format src/ tests/ scripts/` locally.
@@ -154,7 +154,11 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers
+      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers --extra claude-code
+      # These provider contracts must execute against the locked real SDK,
+      # rather than silently importorskip in the regular regression matrix.
+      - name: Require the Claude SDK provider contract dependency
+        run: uv run python -c "import claude_agent_sdk"
       # Coverage flags are explicit here on purpose: pyproject addopts is empty so
       # local pytest runs stay lean (iowarp/clio-agent#773). Each shard records
       # branch coverage; the coverage job below combines the shards and checks the
@@ -281,5 +285,5 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-      - run: uv sync --extra dev --extra optimizers
+      - run: uv sync --extra dev --extra optimizers --extra claude-code
       - run: uv run python -B scripts/run_tests.py -m concurrency -n 4 --dist loadfile --count 3 -p no:cacheprovider -rs

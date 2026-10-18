@@ -74,6 +74,7 @@ from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.a2ui_catalogs.reasons import A2UI_CATALOG_REASON_RING_MAXLEN
 from clio_agent.gact.app import build_app
 from clio_agent.gact.messages import MessageStore
+from tests import _hang_guard
 from tests.test_gact.input_capture import capture_inputs
 
 WORKSPACE_CATALOG_ID = workspace_catalog_id()
@@ -348,7 +349,7 @@ def test_sustained_actions_keep_the_per_session_reason_ring_at_256(
                         + json.dumps(
                             {"actions": i + 1, "seconds": time.monotonic() - started, "io": io}
                         ),
-                        file=sys.__stderr__,
+                        file=_hang_guard._dump_stream or sys.__stderr__,
                         flush=True,
                     )
 

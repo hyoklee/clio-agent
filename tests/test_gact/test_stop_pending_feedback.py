@@ -230,8 +230,24 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == []
         assert len(agent.questions) == 5
         final_rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        for identity in ("msg_future", "msg_remaining", "msg_explicit_resume"):
-            assert len([row for row in final_rows if row["id"] == identity]) == 1
+        for identity, client_id in (
+            ("msg_future", "msg_future"),
+            ("msg_remaining", "msg_remaining"),
+            (resumed.json()["message_id"], "msg_explicit_resume"),
+        ):
+            [recorded] = [row for row in final_rows if row["id"] == identity]
+            assert recorded["role"] == "user"
+            assert recorded["metadata"]["client_message_id"] == client_id
+            assert (
+                len(
+                    [
+                        row
+                        for row in final_rows
+                        if row["metadata"].get("client_message_id") == client_id
+                    ]
+                )
+                == 1
+            )
 
 
 def test_queue_pause_survives_completed_feedback_and_store_reload(tmp_path: Path) -> None:

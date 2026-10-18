@@ -1,41 +1,45 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 16:24 UTC
+## Current execution gate — October 18, 17:06 UTC
 
-The direct resource preflight at 16:09:43 UTC found 737,710,080 bytes free on D:
-(about 704 MiB), below the existing 1 GiB Core file-tier reserve before fresh
-allocations. This establishes the launch blocker without claiming manual cleanup
-or recovered space. No new product family, service or accepted task is active.
+Follow-up GACT is **43098e53df655525096157d45a3ba064eb9958ce**; new CI/review is pending. The 053f results below belong to its predecessor.
 
-Latest production correction is core f5d88515 / GACT 053fca84 / marketplace
-c4325a77, with the retained develop merge and unchanged runtime dependencies.
-Complete parent 3f CI has twelve reports and three distinct failure/error cases;
-the current batch fixes the queue contract conflict and startup-read recovery,
-improves fast-RPC waiting and adds diagnostics for the remaining load/watchdog
-failures. No fresh passing regression or final source approval is claimed.
+No new product/model family is active. Normal cleanup of the owned UV setup cache
+reported 2.9 GiB logical content / 88,922 files and recovered about 0.47 GiB actual
+D: space. D: then had 1,106,403,328 free bytes: too little headroom for a fresh
+native file allocation plus the existing 1 GiB reserve. No alternate adapter or
+reduced budget is used. Two orphaned C: test Core executables and console children
+were stopped after identity checks; installed Desktop was not touched.
 
-Fable R197 is retired with a frozen-source verdict and unchanged authentication.
-Its source NO-GO is recorded in current status. All earlier prohibited/manual-only
-boundaries remain, including the newly rejected obsolete R193 UI-build removal.
+The separate Node setup-cache deletion was rejected before execution and is now
+manual-only. All prior rejected/manual boundaries remain. The exact cleanup list
+is TASKS-CLEANUP-LIST-2026-10-18.md with CSV/JSON in the D: checkout. It is an
+inventory, not proof those paths were removed.
 
-After resource recovery:
-1. Refresh/freeze the integrated source/dependency/schema/runtime tuple and
-   preflight actual Codex and Claude bridges. Keep generated state inside D:.
-2. Build matching UI; e2e changed the attention tray, so R193 cannot be reused.
-3. Update the prepared R195 family's source/UI identities before launch. Protected
-   R184 roots and manual residues are never absence prerequisites.
-4. Execute external recovery/UI, native/mixed work, assignment delivery/lifecycle,
-   two declared workflows with human Core grants, then capacity/recovery families.
-   The old session_workflow_tasks.py still uses removed arguments and distinct
-   blueprints instead of declared workflows; do not launch it unchanged or count
-   it as Q5 evidence.
-5. Reconcile Q1–Q9 and run thirty final R1–R6 repetitions. Required failures,
-   skips and unavailable routes remain blockers; document uncertainty/settlement.
+Complete a009 CI has twelve reports/five distinct cases, with retained history
+passing all interpreters and Python 3.14 coverage below its unchanged gate.
+GACT 053f branch CI passed unit/build/browser and three native builds; its PR
+merge-preview error-text conflict is addressed in the coordinated follow-up.
+Current source repairs/constructed regressions need CI and independent frozen
+review. Previous source GO from Astra/Fable R199 applies only to a009/053f.
 
-The oversized-SSE route still needs actual provider/model evidence. Current
-instrumentation observes sync and async SDK parsers without changing bytes,
-options or limits. Unit cases do not qualify the live route. No product
-clio.lm15.sse_limit setting is claimed exposed.
+After capacity recovery:
+1. Refresh/freeze the source/GACT/dependency/schema/runtime tuple and preflight
+   actual Codex/Luna and Claude bridge availability.
+2. Build matching UI; do not reuse the obsolete/protected R193 output.
+3. Update R195 source/UI identities and ownership manifest. Retired processes and
+   unused ports are prerequisites; protected R184 roots are never absence gates.
+4. Execute external recovery/UI, native/mixed work, assignment lifecycle/delivery,
+   two actual declared workflows with human Core grants, and capacity/recovery.
+   The old session_workflow_tasks.py has removed arguments and two blueprints
+   rather than declared workflow executions; it is not an acceptable Q5 harness.
+5. Reconcile Q1–Q9 and repeat each R1–R6 race five times on the final candidate.
+   Required unavailable/failed/skipped routes block acceptance; preserve honest
+   uncertainty, custody and physical settlement.
+
+The oversized-SSE route still requires actual provider/model evidence.
+Existing parser diagnostics and constructed regressions are not live acceptance.
+No relay-specific gate is added; relay remains an ordinary MCP future integration.
 
 ## Regression and live-verification loop
 
