@@ -4,9 +4,9 @@
 
 The integrated candidate merges develop 303edbce and GACT 86e87fb8. Replacement owners remain unchanged. Required impact coverage: Q1/Q2 native Shell/storage argument schemas; Q3/Q4 Core input commitment during model retry and human steering; Q3/Q9 Question bundle forms; Q8 configurable inference/depth limits; Q9 current UI. All affected rows remain pending fresh regression/live evidence. No predecessor evidence is promoted to final acceptance.
 
-## Current candidate — October 18, 15:20 UTC
+## Current candidate — October 18, 15:30 UTC
 
-Latest pushed core is 1f17ee5b / GACT 49f4d09f / marketplace c4325a77; this
+Latest pushed core is f21cdb91 / GACT 76930e5d / marketplace c4325a77; this
 commit contains the next combined correction. Runtime dependencies remain
 iowarp-core 2.3.2, FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2,
 Claude Agent SDK 0.2.159 and the locked schema. The D: installed source remains
@@ -15,8 +15,10 @@ Claude Agent SDK 0.2.159 and the locked schema. The D: installed source remains
 1f CI failed 59 distinct cases across eleven reports (one Python 3.12 report
 missing). GACT unit suites passed; browser evidence is 152 passed / 2 failed.
 The combined corrections and fresh regressions are described in current status.
-Astra cleared 1f source, while actual Fable required a cancellation-liveness
-correction. Both must review this correction; neither source review passes live
+Astra cleared the cancellation change but found incomplete post-terminal
+publication recovery at f21. This commit repairs that existing owner path and
+adds eighteen fault/restart scenarios. Actual Fable's 1f cancellation-liveness
+finding was corrected at f21. Both must review this correction; neither source review passes live
 acceptance. Astra approved removal of unused duplicate physical indexes as a
 bounded simplification. F03/Q7 retention/replay performance remains unverified,
 with all 1,005 messages and existing deadlines retained.

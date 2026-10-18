@@ -1,15 +1,17 @@
 # Tasks replacement: finite live experiments
 
-## Current execution hold — October 18, 15:20 UTC
+## Current execution hold — October 18, 15:30 UTC
 
 D: writes failed with OS error 112. No new product family launches until actual
 resource recovery. Protected/rejected roots are never absence prerequisites.
 No service/accepted task is active; R195 is prepared but unlaunched.
 
-Latest pushed tuple is core 1f17ee5b / GACT 49f4d09f / marketplace c4325a77,
+Latest pushed tuple is core f21cdb91 / GACT 76930e5d / marketplace c4325a77,
 retaining develop 303edbce. The combined correction in this commit needs fresh
-CI and independent review. Current source status: Astra GO on 1f, Fable NO-GO
-on terminal external cancellation. That correction and duplicate physical-index
+CI and independent review. Current source status: Astra found a terminal-publication
+recovery hole at f21; this commit repairs it. Fable's 1f cancellation-liveness
+finding was corrected at f21, pending its fresh review. Publication recovery,
+terminal cancellation and duplicate physical-index
 removal require affected live requalification. Current CI: 59 distinct core
 failures, GACT unit suites passed / browser 152 passed and 2 failed.
 

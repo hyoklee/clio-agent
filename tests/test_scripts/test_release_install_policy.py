@@ -35,6 +35,19 @@ def _text(relative_path: str) -> str:
     return (ROOT / relative_path).read_text(encoding="utf-8")
 
 
+def test_pages_feature_dispatch_builds_without_publishing() -> None:
+    """Qualification can dispatch a feature build without replacing the public site."""
+    jobs = yaml.safe_load(_text(".github/workflows/pages.yml"))["jobs"]
+    main_only = "github.ref == 'refs/heads/main' && github.event_name != 'pull_request'"
+    assert jobs["deploy"]["if"] == main_only
+    upload = next(
+        step
+        for step in jobs["build"]["steps"]
+        if step.get("uses", "").startswith("actions/upload-pages-artifact@")
+    )
+    assert upload["if"] == main_only
+
+
 def test_release_installers_explicitly_root_intentional_prereleases() -> None:
     """Every official uv path admits exact betas without a global prerelease policy."""
 

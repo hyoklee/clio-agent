@@ -14,7 +14,6 @@ from clio_agent.arc.task_types import (
     QuestionReply,
     TaskProgress,
     TaskSnapshot,
-    argument_digest,
 )
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_publication import publish_task_notice
@@ -25,6 +24,22 @@ from clio_agent.tools.task_receipt import validate_terminal
 
 if TYPE_CHECKING:
     from clio_agent.gact.external_tasks import ExternalConnection, ExternalTasks
+
+
+def finish_terminal(self: ExternalTasks, handle: str) -> None:
+    """Finish publication from the saved outcome; retries never reopen execution."""
+    with self.history.serialized():
+        current = self.history.task_snapshot(handle)
+        if current is None or current.terminal_at is None:
+            return
+        publish_task_notice(self.history, current)
+        for key in self._details(current).get("requests", {}):
+            question = "task_" + hashlib.sha256((handle + "\0" + key).encode()).hexdigest()
+            if self.history.task_snapshot(question) is not None:
+                # A previous closure may have persisted before its notice failed.
+                # Question cancellation preserves existing answers and republishes
+                # missing notices through that owner's idempotent command.
+                self.app.state.questions.cancel(question)
 
 
 def _record_reply(
@@ -43,14 +58,7 @@ def _record_reply(
         ):
             raise ValueError("External reply differs from its captured submission/backend identity")
         if current.terminal_at is not None:
-            return
-        if (
-            reply.status in {"completed", "failed", "cancelled"}
-            and current.raw_status == reply.status
-            and current.connection_freshness == "fresh"
-            and current.backend_observation is not None
-            and current.backend_observation.sha256 == argument_digest(reply.model_dump(mode="json"))
-        ):
+            finish_terminal(self, current.handle)
             return
         details = self._details(current)
         requests = details.setdefault("requests", {})
@@ -101,21 +109,8 @@ def _record_reply(
                 )
         observed = current.model_copy(update=updates)
         self.history.record_snapshot(observed, observation_id=uuid4().hex)
-        publish_task_notice(
-            self.history,
-            observed,
-            episode=(observed.attention_episode or "")
-            if observed.status == "task_state_uncertain"
-            else "",
-        )
         if observed.terminal_at is not None:
-            for key in details.get("requests", {}):
-                question = (
-                    "task_" + hashlib.sha256((current.handle + "\0" + key).encode()).hexdigest()
-                )
-                pending = self.history.task_snapshot(question)
-                if pending is not None and pending.terminal_at is None:
-                    self.app.state.questions.cancel(question)
+            finish_terminal(self, observed.handle)
 
 
 async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, request: Any) -> Any:

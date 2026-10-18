@@ -81,10 +81,21 @@ class ExternalTasks:
         selected = (
             handles
             if handles is not None
-            else await self.history.io.run(self.history.task_handles, kind="MCP", active_only=True)
+            else await self.history.io.run(self.history.task_handles, kind="MCP")
         )
         for handle in selected:
             current = await self.history.io.run(self.history.task_snapshot, handle)
+            if current is not None and current.terminal_at is not None:
+                if (
+                    current.backend is not None
+                    and current.backend.owner == "external_mcp"
+                    and current.backend_observation is not None
+                ):
+                    await self._record_or_defer(
+                        "external-publication:" + handle,
+                        partial(external_task_inputs.finish_terminal, self, handle),
+                    )
+                continue
             if current is None or current.submission is None:
                 continue
             submission = SubmissionContext.model_validate(

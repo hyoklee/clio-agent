@@ -53,7 +53,20 @@ test("the guide media index points to published images and videos in document or
   const exports = index.guides.find(
     (item: { id: string }) => item.id === "docs/exports",
   );
-  for (const media of [...guide.media, ...exports.media]) {
+  const questions = index.guides.find(
+    (item: { id: string }) => item.id === "docs/questions",
+  );
+  expect(questions.media.length).toBeGreaterThanOrEqual(3);
+  for (const caption of ["Waiting for your answer", "Phone", "Cancel"]) {
+    expect(
+      questions.media.some((item: { caption: string; alt: string }) =>
+        (item.caption + " " + item.alt)
+          .toLowerCase()
+          .includes(caption.toLowerCase()),
+      ),
+    ).toBe(true);
+  }
+  for (const media of [...guide.media, ...exports.media, ...questions.media]) {
     expect(media.src).toMatch(/^\//);
     expect((await request.get(media.src)).ok()).toBe(true);
     expect(media.caption.length).toBeGreaterThan(0);

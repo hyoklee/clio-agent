@@ -1,13 +1,13 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 15:20 UTC
+## Current state — October 18, 15:30 UTC
 
 Initial implementation and initial test construction remain complete. The 8 AM
 target was missed. Regression repair and live qualification remain unfinished:
 this candidate is **not qualified**, and no release/install is authorized.
 
-Latest pushed source is clio-agent 1f17ee5b8a263d104770233ac69174b808657d83,
-GACT 49f4d09fbf623038e8214649d19e9b3c31ae665f and marketplace
+Latest pushed source is clio-agent f21cdb91d0520569a6580e7753a0de48daa94fac,
+GACT 76930e5d3f91bbf8762ea08deb631c3b05d8b758 and marketplace
 c4325a770c9c0883668eb1e6a977ef11c96ed4bb. The merge of develop
 303edbce53ca024e1fd80243c52d25b10382ff53 is retained. This commit contains
 the next combined correction; it adds no execution owner or storage adapter.
@@ -38,8 +38,15 @@ release/native-proof skips are exclusions. This correction opens the Question
 composer through the actual tracker and Other answer controls before retaining
 the existing visual assertions. No production UI changes are needed.
 
-Astra reviewed 1f and returned source GO, subject to CI/live gates. Actual Claude
-Code/Fable returned source NO-GO: terminal external cancellation was left pending
+Astra cleared the terminal-cancellation correction at f21, but returned source
+NO-GO for a recovery defect: terminal persistence could succeed before notice or
+Question closure failed, and the retry's terminal guard skipped both. This commit
+finishes those effects idempotently from the saved outcome, including startup,
+without reconnecting/replaying execution. Eighteen constructed fault regressions
+cover completed/failed/cancelled outcomes, owner/subscriber/Question mail failures
+and process-local/startup recovery. A further regression preserves old uncertain
+cancellation records rather than dropping an identical terminal observation.
+Actual Claude Code/Fable's prior 1f review returned NO-GO: cancellation stayed pending
 forever after its driver retired. The correction preserves the server's cancelled
 outcome as terminal/external_acknowledged, stores raw evidence and states remote
 cleanup remains unverified. A cancel-RPC acknowledgement alone still cannot settle
@@ -57,7 +64,11 @@ no registry, fallback, migration replay or new checkpoint. The 1,005-message and
 Core AIO; neither their performance nor the Core I/O cause is claimed fixed.
 
 Scoped Ruff/format, all seven architecture guards and full Linux-platform Mypy
-(1,217 source files) pass on this batch. Its new CI result is pending. New regressions
+(1,217 source files) passed at f21. The two further external-owner files pass
+scoped Mypy, Ruff/format and removal/size guards; new regressions were constructed
+before execution. [f21 CI](https://github.com/iowarp/clio-agent/actions/runs/39140283791)
+is running with nine non-regression jobs passed and twelve regression shards pending.
+This final correction needs fresh CI and both independent reviews. New regressions
 were constructed before execution. Both independent final correction reviews,
 Q1–Q9, all thirty final races, migration/recovery and website media remain
 unaccepted. R186/R191 below are predecessor evidence, not this tuple's acceptance.
@@ -74,6 +85,11 @@ The matching production UI receipt remains r193-web-build.json (GACT 86e87fb8,
 653 files / 31,895,892 bytes). Later GACT changes are test-only; record explicit
 compatibility with the final pair before reusing these assets. R195 is prepared,
 not launched, and does not constitute model/UI evidence.
+
+The 1f Pages build failed because its capture glob excluded nested folders. This
+commit includes nested assets and extends the existing media-route browser check
+to the actual Question captures. Feature dispatch is explicitly build-only;
+upload/deploy require main. A release-policy regression protects that boundary.
 
 ## Earlier dated execution records
 

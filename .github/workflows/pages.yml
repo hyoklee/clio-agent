@@ -4,6 +4,7 @@ name: Pages
 # Pages at clio.iowarp.ai on push to main. Pull requests that touch the site
 # run the same build and tests without deploying, so a broken page or link
 # is caught before it reaches main.
+# Feature-branch manual dispatch also builds only; publication requires main.
 #
 # The site reads the release version from pyproject.toml at build time, so a
 # version bump redeploys it. Product captures live in site/src/assets/captures;
@@ -93,12 +94,12 @@ jobs:
           name: site-browser-evidence
           path: site/test-results
       - uses: actions/upload-pages-artifact@v3
-        if: github.event_name != 'pull_request'
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: site/dist
 
   deploy:
-    if: github.event_name != 'pull_request'
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     permissions:
       pages: write
