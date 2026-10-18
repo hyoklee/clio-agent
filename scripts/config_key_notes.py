@@ -13,7 +13,7 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
     ),
     (
         "Language models + providers",
-        ("lm", "providers", "summarizer"),
+        ("lm", "lm15", "providers", "summarizer"),
         "LM sampling/provider selection and the per-provider transport knobs (Claude Code, Codex).",
     ),
     (
@@ -673,6 +673,11 @@ KEY_NOTES: dict[str, str] = {
     "lm.codex_transport": (
         'Selects the Codex transport; "websocket" (default, with delta continuation) or "sse" '
         "to force the stateless HTTP transport."
+    ),
+    "lm15.sse_limit": (
+        "Maximum SSE line size in bytes for CLIO's Codex direct HTTP bridge; defaults to "
+        "1 MiB. Positive values above 1 MiB also raise its event ceiling. Does not alter "
+        "WebSocket frames or other providers' native transports."
     ),
     "lm.context_sizing_strategy": (
         "Default Fit-to-GPU strategy that sizes a CLIO-managed model server's context (vLLM, "

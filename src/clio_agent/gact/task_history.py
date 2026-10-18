@@ -39,8 +39,10 @@ from clio_agent.gact.task_history_projection import _encoded
 if TYPE_CHECKING:
     from clio_agent.arc.memory import ARCMemory
 
-CONTENT_SCOPE = "_task_content/"
-OUTPUT_SCOPE = "_task_output/"
+CONTENT_SCOPE = "_events/t/content/"
+OUTPUT_SCOPE = "_events/t/output/"
+_CONTENT_SCOPES = (CONTENT_SCOPE, "_task_content/")
+_OUTPUT_SCOPES = (OUTPUT_SCOPE, "_task_output/")
 logger = logging.getLogger(__name__)
 _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 
@@ -48,6 +50,12 @@ _JSON_VALUE: TypeAdapter[JsonValue] = TypeAdapter(JsonValue)
 def output_scope(handle: str) -> str:
     """Derive a task-local content namespace for untrusted observation continuations."""
     return OUTPUT_SCOPE + hashlib.sha256(handle.encode()).hexdigest() + "/"
+
+
+def owns_output_reference(handle: str, reference: CoreReference) -> bool:
+    """Bind current and retained output addresses to their original exact task."""
+    suffix = hashlib.sha256(handle.encode()).hexdigest() + "/" + reference.content_id
+    return any(reference.scope == prefix + suffix for prefix in _OUTPUT_SCOPES)
 
 
 class MailboxFull(ValueError):
@@ -165,12 +173,16 @@ class TaskHistory:
     def read_content(self, reference: CoreReference) -> JsonValue:
         """Read an exact reference, rejecting missing or changed content."""
         assert_store_write_off_loop("task.content.read")
-        scoped_output = (
-            reference.scope.startswith(OUTPUT_SCOPE)
-            and len(reference.scope.split("/")) == 3
+        scoped_output = any(
+            reference.scope.startswith(prefix)
+            and reference.scope[len(prefix) :].count("/") == 1
             and reference.scope.endswith("/" + reference.content_id)
+            for prefix in _OUTPUT_SCOPES
         )
-        if reference.scope != CONTENT_SCOPE + reference.content_id and not scoped_output:
+        if (
+            not any(reference.scope == prefix + reference.content_id for prefix in _CONTENT_SCOPES)
+            and not scoped_output
+        ):
             rows = [
                 row
                 for row in self.arc.list_segments(

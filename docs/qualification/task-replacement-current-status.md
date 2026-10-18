@@ -1,6 +1,61 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 19:03 UTC
+## Current state — October 18, 20:12 UTC
+
+Initial implementation and initial test construction remain complete. Regression
+repair, independent review of the new changes and live qualification are incomplete.
+The combined repair below is not yet pushed or accepted. GACT remains 07cf095f.
+
+Exact 1ef00b1f CI completed: **23 successful jobs, one failed Python 3.13 shard**.
+All twelve reports were collected. Python 3.12/3.13/3.14 each report 12,984 passes
+and fifty exclusions; Python 3.13 additionally reports the 180-second retention
+timeout as one error. The other previously repaired cases and A2UI loads passed.
+The timeout remains open until fresh CI proves the repair.
+
+Real Core measurement R205 retained and replayed all 1,005 messages: zero failures
+or skips, 49.991 seconds measured body/replay. It wrote 105,815,856 bytes of
+working-context index data because every immutable task body was indexed as a
+new working-context scope. New task bodies now use ARC's existing reserved
+metadata hierarchy; legacy references remain readable and output cursors remain
+bound to the exact task. No execution owner or storage backend is added.
+
+R206 repeated the unchanged 1,005-message assertions and 180-second guard on the
+repair: one pass, zero skips, 48.686 seconds body/replay and 44,701 index bytes.
+The small local time improvement is not proof that the contended CI failure is
+fixed. R207 tried the existing 32-event chunk setting: 46.909 seconds and much
+lower event write volume. It is an experiment; the production default remains 512.
+New regressions cover write-volume growth, legacy body reads and task-local cursor
+authorization. Bounded receipts/logs are in D .pytest-runtime/static/r205–r207.
+
+Actual Codex/Luna R195 failed after accepting an external MCP task and performing
+an independent filesystem tool call. The model stream rejected a **65,949-byte
+SSE line against 65,536 bytes**. This does not prove yielding, reconnect, final
+delivery or UI acceptance. The external task was explicitly cancelled, physical
+cleanup was recorded, and the service/proxy/observer processes and ports retired.
+Removal of its exact two disposable roots was rejected before execution; both
+remain manual-only. There is no submission replay or replacement-session claim.
+
+The new Codex HTTP adapter uses lm15's native parser with configurable
+`lm15.sse_limit` / `CLIO_LM15_SSE_LIMIT`, default 1 MiB. It preserves native
+request/response mapping, error attribution, stream closure and byte limits.
+It changes neither WebSocket nor other providers' native transports. Five new
+regression cases are constructed; CI and fresh actual-model acceptance remain.
+
+R204 Astra/Claude source GO applies only to the preceding source. New repair
+review is required. Dependency versions, GACT and released pins are unchanged.
+Remote develop remains 35fdd5fe and is included; primary local work is untouched.
+
+Owner cleanup recovered 4.72 GiB on C (UV cache), 5.35 GiB on D (old debug Cargo
+output), plus the normal pnpm prune. The current disposal inventory lists 159
+paths / 27.35 GiB logical, including 72 rejected-removal paths. Latest inventory
+free space is C 5.54 / D 5.64 GiB; disk no longer blocks a small isolated family.
+No rejected removal is retried, bypassed or delegated. Installed Desktop,
+authentication, defaults, human files and unrelated work remain preserved.
+
+**Q1–Q9, migration/recovery, all thirty final races and website media remain
+unaccepted.** No merge, publication or daily Desktop installation is made.
+
+## Previous state — October 18, 19:03 UTC
 
 Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
 source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,

@@ -257,9 +257,9 @@ class AsyncCodexDirectEngine:
                 raise ValueError(
                     "A custom HTTP wire requires its explicit asynchronous counterpart"
                 )
-            from dspy.lm15 import AsyncOpenAICodexLM
+            from clio_agent.providers.codex.sse_wire import CodexSSEWire
 
-            self.http_wire = AsyncOpenAICodexLM(
+            self.http_wire = CodexSSEWire(
                 api_key=self.wire.api_key,
                 account_id=self.wire.account_id,
                 base_url=self.wire.base_url,

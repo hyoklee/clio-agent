@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from clio_agent.arc.task_types import AssignmentDetails, CoreReference, TaskSnapshot
-from clio_agent.gact.task_history import TaskHistory, output_scope
+from clio_agent.gact.task_history import TaskHistory, owns_output_reference
 
 
 def validate_output_cursor(state: Any) -> None:
@@ -50,9 +50,8 @@ def output_page(
     chunks: list[dict[str, Any]] = []
     used = 0
     while reference is not None and reference.content_id != stop:
-        if (
-            reference.session_id != task.owner.session_id
-            or reference.scope != output_scope(task.handle) + reference.content_id
+        if reference.session_id != task.owner.session_id or not owns_output_reference(
+            task.handle, reference
         ):
             # Pre-replacement generic/SSE history has no independently verifiable
             # task-local cursor provenance. Do not turn its address into authority.

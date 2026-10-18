@@ -1,6 +1,29 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 19:03 UTC
+## Current candidate — October 18, 20:12 UTC
+
+Implementation/test construction remain complete; regression repair and live
+acceptance remain incomplete. The combined repair is not yet pushed/reviewed.
+1ef00b1f CI completed with 23 successful jobs and one Python 3.13 retention
+timeout; fifty exclusions per interpreter remain excluded.
+
+R205/R206 real Core measurements preserve all 1,005 messages and replay
+assertions. Moving task bodies into ARC's existing reserved metadata hierarchy
+reduces index writes from 105,815,856 to 44,701 bytes. Local body/replay time
+changes from 49.991 to 48.686 seconds; the CI timeout is not claimed fixed.
+Legacy reads, bounded output and exact-task cursor authorization remain required.
+
+R195 actual Codex/Luna hit an oversized SSE line after two tool actions.
+Its yield/recovery/final/UI assertions did not run. Accepted external work was
+cancelled and physically cleaned; owned processes/ports retired. New SSE policy
+and regression cases require CI, independent review and fresh model evidence.
+
+**All Q1–Q9 and thirty final race repetitions remain unaccepted.** R204 source
+GO does not approve the new delta. Source/runtime identities and bounded receipts
+are recorded in the current-status and execution-sheet documents. Disk capacity
+is available; 72 rejected cleanup boundaries remain manual-only.
+
+## Previous candidate — October 18, 19:03 UTC
 
 Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
 source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,

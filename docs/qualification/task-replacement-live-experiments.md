@@ -1,6 +1,33 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 19:03 UTC
+## Current execution gate — October 18, 20:12 UTC
+
+The current exact-head CI inventory is complete: 23 successful jobs and one
+Python 3.13 retention timeout at 1ef00b1f. Combined storage/SSE repairs are
+constructed and scoped checks are underway; they are not live acceptance.
+R205/R206 actual Core tests retain all 1,005 messages and demonstrate removal
+of quadratic index write volume, with only a small local time improvement.
+R207 is an operator-setting experiment, not a production-default change.
+
+R195 actual Codex/Luna direct SSE failed with a 65,949-byte line exceeding
+lm15's 65,536-byte ceiling. External task acceptance and a later filesystem
+tool action occurred; explicit yield, attention/final recovery and browser
+acceptance did not. Do not count planned later assertions as executed.
+
+The accepted external task was cancelled through its production owner and its
+worker confirmed cleanup. All owned service/proxy/observer processes and their
+ports retired. The original failure and bounded outcomes are retained in static
+receipts. Exact R195 directory removal was rejected; do not retry or remove via
+a parent. No model/product family is currently running.
+
+Next family must freeze the new source and record its dependency/UI impact.
+Use the existing search auto-install setting to avoid provisioning unused
+SearXNG during a narrowly scoped external-task family. This changes only the
+isolated operator configuration and cannot qualify a search route.
+The new SSE policy requires actual-model evidence; WebSocket success is not a
+substitute. Q1–Q9, migration and thirty final races remain unaccepted.
+
+## Previous execution gate — October 18, 19:03 UTC
 
 Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
 source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,

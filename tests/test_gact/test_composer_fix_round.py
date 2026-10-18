@@ -206,10 +206,15 @@ def test_idempotency_collision_cannot_replace_accepted_input(
     assert app.state.task_history.mail_item(sid, row["id"]) == original
 
 
-def test_core_retains_more_than_one_thousand_delivered_messages(arc: Any) -> None:
+def test_core_retains_more_than_one_thousand_delivered_messages(
+    arc: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from clio_agent.gact.task_history import TaskHistory
+    from tests.test_arc.store_workload_probe import StoreWorkloadProbe
     from tests.test_arc.test_task_history import input_record, mail
 
+    probe = StoreWorkloadProbe(arc._store, monkeypatch)
+    probe.report("started")
     history = TaskHistory(arc)
     for index in range(1005):
         item = history.record_mail(mail(history, f"message-{index}"))
@@ -218,11 +223,14 @@ def test_core_retains_more_than_one_thousand_delivered_messages(arc: Any) -> Non
                 update={"iteration_id": f"iteration-{index}"}
             )
         )
+        if (index + 1) % 250 == 0:
+            probe.report(f"committed-{index + 1}")
     assert history.pending_mail("owner") == ()
     assert history.mail_item("owner", "message-0") is not None
     assert history.mail_item("owner", "message-1004") is not None
     restored = TaskHistory(arc)
     restored.restore()
+    probe.report("restored")
     assert restored.pending_mail("owner") == ()
     assert len(restored.acknowledged_notifications("owner")) == 1005
     first = restored.mail_item("owner", "message-0")
