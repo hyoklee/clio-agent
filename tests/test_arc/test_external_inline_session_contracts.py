@@ -205,12 +205,12 @@ async def test_concurrent_legacy_callbacks_have_bound_invocations_and_retire_pro
             )
             assert invocation is not None and invocation.raw_status == "inline"
             assert invocation.backend_observation is not None
-            if cancel_before_reply:
-                assert invocation.status == "task_state_uncertain"
-                assert invocation.terminal_at is None and invocation.result is None
-                assert external.recovery.is_pending("external-cancel:" + invocation.handle)
-            else:
-                assert invocation.status == "completed" and invocation.result is not None
+            assert invocation.status == "completed" and invocation.result is not None
+            assert invocation.terminal_at is not None
+            assert invocation.settlement == "external_acknowledged"
+            retained = await asyncio.to_thread(history.read_content, invocation.result)
+            tag = invocation.invocation_id.removeprefix("legacy-")
+            assert retained["structuredContent"] == {"tag": tag, "value": "answer-" + tag}
             answered = await asyncio.to_thread(history.task_snapshot, question.handle)
             assert answered is not None and answered.status == "completed"
         if external._retiring:

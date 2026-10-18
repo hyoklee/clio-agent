@@ -642,23 +642,8 @@ class ExternalTasks:
                 "backend_observation": result,
                 "supported_actions": ("get_result",),
             }
-            # The verified owner can act before its Core stamp is confirmed.
-            # Preserve uncertainty even when the inline reply wins that write.
-            if current.cancellation_requested_at is not None or self.recovery.is_pending(
-                "external-cancel:" + handle
-            ):
-                updates.update(
-                    status="task_state_uncertain",
-                    activity="cancelling",
-                    terminal_at=None,
-                    settlement="unknown",
-                    result=None,
-                    attention_episode=current.attention_episode or uuid4().hex,
-                    progress=TaskProgress(
-                        message="The inline result arrived after cancellation; external cleanup is unverified."
-                    ),
-                    supported_actions=("observe", "wait", "cancel", "get_result"),
-                )
+            # An actual inline result settles this invocation, even if cancellation
+            # was requested while it ran. It is not a remote cleanup receipt.
             observed = current.model_copy(update=updates)
             self.history.record_snapshot(observed, observation_id=uuid4().hex)
             if observed.attention_episode is not None:

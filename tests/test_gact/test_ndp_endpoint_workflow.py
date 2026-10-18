@@ -79,3 +79,43 @@ def test_native_permission_names_the_operation_and_destination(
         assert not future.done()
         resolve_permission(app, pending["id"], "allow")
         assert future.result(timeout=5)["status_code"] == 200
+
+
+@pytest.mark.parametrize("during_approval", [False, True])
+def test_cancelled_assignment_cannot_open_an_endpoint(
+    bound: tuple[Any, Any, Path],
+    peer: str,
+    during_approval: bool,
+) -> None:
+    """Revocation before approval or while it waits prevents the real remote effect."""
+    import asyncio
+
+    from clio_agent.gact import context
+
+    service, app, _ = bound
+    sid = context.active_session_id()
+    owner = app.state.conversations
+    task = app.state.task_history.latest_assignment(sid)
+    assert task is not None
+
+    def cancel() -> None:
+        future = asyncio.run_coroutine_threadsafe(
+            owner.cancel(owner.caller(sid), task.handle), app.state.mcp_app_loop
+        )
+        future.result(timeout=5)
+
+    decisions = []
+
+    def approve(*args: Any) -> str:
+        decisions.append(args)
+        if during_approval:
+            cancel()
+        return "allow"
+
+    app.state.pending_permission_gate = approve
+    if not during_approval:
+        cancel()
+    with pytest.raises(ValueError, match="admission|cancel|settled"):
+        ndp_endpoint_tools.connected_data_ndp_endpoint_connect("blocked", peer)
+    assert len(decisions) == int(during_approval)
+    assert service.ndp_endpoints.connections("ws_default") == []

@@ -94,7 +94,7 @@ def _record_reply(
             )
             # A backend cancellation never proves remote cleanup, including when
             # its reply beats the deferred recording of our control intent.
-            if reply.status == "cancelled" or current.cancellation_requested_at is not None:
+            if reply.status == "cancelled":
                 updates.update(
                     status="task_state_uncertain",
                     activity="cancelling",

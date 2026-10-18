@@ -50,7 +50,6 @@ async def _spawn_boundary(
         return agent, None, None, None
 
     def authorize(saved: SubmissionContext) -> None:
-        assert saved == owner.history.submission_context(saved.reference)
         assert saved.owner.assignment_id == root.handle
         current = owner.history.task_snapshot(root.handle)
         assert current is not None

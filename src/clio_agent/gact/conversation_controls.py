@@ -162,7 +162,7 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
             inject_locked()
 
     def inject_locked() -> None:
-        current = self.history.task_snapshot(handle)
+        current = TaskAccess(self.history, caller).require(handle, "control")
         latest = self.history.latest_assignment(sid)
         if (
             current is None
@@ -351,7 +351,7 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
 
         def create() -> None:
             with self.history.serialized():
-                previous = self.history.task_snapshot(handle)
+                previous = TaskAccess(self.history, caller).require(handle, "control")
                 if (
                     previous is None
                     or previous.terminal_at is None
@@ -430,6 +430,22 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
 
     self.retain_control("restart:" + handle, asyncio.create_task(restart_once()))
     return {"handle": handle, "restart_requested": True, "pending": True}
+
+
+def _member_settled(task: TaskSnapshot | None) -> bool:
+    """Accept owner-confirmed local retirement or a definitive external call outcome."""
+    return (
+        task is not None
+        and task.terminal_at is not None
+        and (
+            task.settlement in {"confirmed", "never_started"}
+            or task.kind == "MCP"
+            and task.settlement == "external_acknowledged"
+            and task.raw_status in {"completed", "failed", "inline"}
+            and task.status in {"completed", "failed"}
+            and task.result is not None
+        )
+    )
 
 
 async def _cancel_subtree(
@@ -540,12 +556,7 @@ async def _cancel_subtree(
             if (
                 retired_cleanly
                 and not startup_error
-                and all(
-                    task is not None
-                    and task.terminal_at is not None
-                    and task.settlement in {"confirmed", "never_started"}
-                    for task in states
-                )
+                and all(_member_settled(task) for task in states)
             ):
                 break
             uncertain = [
@@ -555,7 +566,7 @@ async def _cancel_subtree(
                 or (
                     task.status == "task_state_uncertain"
                     or task.terminal_at is not None
-                    and task.settlement not in {"confirmed", "never_started"}
+                    and not _member_settled(task)
                 )
             ]
             retirement_error = (
@@ -743,6 +754,13 @@ async def _cancel_subtree(
                         "handle": current.handle,
                         "status": "cancelled",
                         "settlement": "confirmed",
+                        "members": [
+                            task.model_dump(
+                                include={"handle", "status", "raw_status", "settlement"}
+                            )
+                            for task in states
+                            if task is not None
+                        ],
                     },
                 )
                 settled = current.model_copy(
@@ -770,7 +788,6 @@ async def _cancel_subtree(
                 from clio_agent.gact.conversation_assignments import observe_child_lifecycle
 
                 await self.history.io.run(observe_child_lifecycle, self, settled, started=False)
-            # Confirmed settlement makes previously vetoed mailbox arrivals eligible.
             self.runner.signal(sid)
 
         try:

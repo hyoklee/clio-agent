@@ -87,6 +87,7 @@ RESERVED_CLIENT_METADATA_KEYS: frozenset[str] = frozenset(
         "plan_exit_mode",  # plan_mode.py — approved plan-exit mode
         "plan_exit_context_cleared",  # plan_mode.py — plan-exit context-clear marker
         "stop_defer_redrive",  # hooks/defer.py — Stop-defer redrive
+        "recipient_input",  # derived from confirmed Core input; never a client claim
         "goal_redrive",  # goal.py (P4) — goal redrive
         "goal_id",  # goal.py (P4)
         "goal_iters",  # goal.py (P4)

@@ -11,7 +11,6 @@ from clio_agent.gact.permission_gate import _invoke_permission_gate
 from clio_agent.gact.storage.ndp_endpoint_models import EndpointConnectionInput, EndpointRequest
 from clio_agent.gact.storage.ndp_endpoint_operations import resolve_request
 from clio_agent.gact.storage.ndp_endpoints import materialize_capture
-from clio_agent.tools.task_call_context import require_admission
 
 
 def _owner() -> tuple[Any, Any, Any]:
@@ -23,7 +22,12 @@ def _owner() -> tuple[Any, Any, Any]:
 
 
 def _approve(app: Any, session: Any, tool: str, args: dict[str, Any]) -> None:
-    require_admission(app, session.id)
+    history = app.state.task_history
+    with history.serialized():
+        assignment = history.latest_assignment(session.id)
+        if assignment is None:
+            raise ValueError("NDP Endpoint operation requires a confirmed assignment")
+        app.state.conversations.require_admission(assignment)
     gate = getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
     destination = args.get("endpoint") or args.get("name") or "NDP Endpoint"
     summary = (
@@ -38,6 +42,8 @@ def _approve(app: Any, session: Any, tool: str, args: dict[str, Any]) -> None:
         != "allow"
     ):
         raise PermissionError("NDP Endpoint operation was not approved")
+    with history.serialized():
+        app.state.conversations.require_admission(assignment)
 
 
 def connected_data_ndp_endpoint_connect(

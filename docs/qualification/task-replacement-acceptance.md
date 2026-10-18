@@ -6,11 +6,16 @@ The integrated candidate merges develop 303edbce and GACT 86e87fb8. Replacement 
 
 ## Current candidate — October 18, 2026
 
-Runtime candidate: clio-agent `e700f15fb8784f06de8900ee30b66730d2e53508`, GACT
-`7a75edcf8a5b1a0827f7dedf2db151e8fc8929b9`, iowarp-core 2.3.2,
+Reviewed candidate: clio-agent `4a8bfd6c5068fd3b018dcaf040da48513ba761d4`, GACT
+`86e87fb8418fe99b88c729de559c07fb70e1da02`, iowarp-core 2.3.2,
 FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and locked Claude Agent
-SDK 0.2.159. It is installed in the isolated D: checkout; the matching UI build
-passed. Its complete CI run failed with sixteen distinct cases. R186 demonstrated
+SDK 0.2.159. It is installed in the isolated D: checkout; its matching UI build
+passed. CI failed collection before regression execution. Astra and actual
+Claude Code/Fable returned source NO-GO with the concrete findings recorded in
+current status. This commit combines their corrections and regression coverage;
+GACT `49f4d09f` corrects three failing test contracts. Fresh CI and correction
+review remain pending. D: write failure currently prevents new live launches.
+Earlier R186 demonstrated
 actual Luna/SSE handle delivery, independent work, attention, reconnect and final
 delivery, but failed the real Runs attention filter; that scoped evidence and its
 cleanup receipts are recorded in the current-status document. The coordinated
@@ -19,8 +24,8 @@ Neither Q1–Q9 nor the thirty final race repetitions is accepted for this tuple
 The dated evidence below belongs to its named earlier candidate unless stated
 otherwise; old dependency/version statements do not describe the current one.
 The [execution sheet](task-replacement-live-experiments.md) records the agreed
-CI/live-family loop. The complete candidate's final independent review remains
-outstanding; scoped predecessor review is not a substitute.
+CI/live-family loop. Both independent reviewers must clear the corrected candidate;
+their prior verdicts and predecessor live evidence are not final acceptance.
 
 ## Construction and preceding evidence
 

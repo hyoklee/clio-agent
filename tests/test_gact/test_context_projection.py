@@ -289,3 +289,52 @@ def test_a_scope_new_to_the_conversation_starts_from_its_earlier_turns(arc: ARCM
         ("user", [("text", "by how much?")]),
     ]
     assert texts_after_first.count("which station moved most?") == 1  # carried over once
+
+
+def test_message_receipt_projects_the_existing_confirmed_core_input(
+    clio_core_plane: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from fastapi.testclient import TestClient
+
+    from clio_agent.arc.task_types import MailItem
+    from clio_agent.gact.native_work import now
+    from clio_agent.gact.session_store import project_accepted_mail_messages
+    from clio_agent.gact.types import Message, Part
+
+    app, sid = clio_core_plane, ctx.active_session_id()
+    monkeypatch.setattr(app.state.conversations, "execution_gate", lambda _sid: "test_direct_loop")
+    history = app.state.task_history
+    message = Message(
+        id="feedback-receipt",
+        session_id=sid,
+        role="user",
+        created_at=now(),
+        updated_at=now(),
+        parts=[Part(type="text", text="Use dataset B")],
+    )
+    item = history.record_mail(
+        MailItem(
+            id=message.id,
+            recipient_session=sid,
+            sender_human=app.state.human_principal,
+            kind="human",
+            created_at=now(),
+            content=history.write_content(
+                sid, {"message": message.model_dump(mode="json"), "text": "Use dataset B"}
+            ),
+        )
+    )
+    project_accepted_mail_messages(app, history, sid, (item,))
+    client = TestClient(app)
+    path = f"/v1/sessions/{sid}/messages/{message.id}"
+    assert client.get(path).json()["metadata"]["recipient_input"] is None
+    lm, engine = scripted_lm([Reply(text="Using B")])
+    with dspy.context(lm=lm):
+        ClioReAct("question -> answer", tools=[])(question="Continue")
+    record = history.committed_notification_input(sid, message.id)
+    assert record is not None and "Use dataset B" in repr(engine.requests[0].messages)
+    response = client.get(path)
+    assert response.status_code == 200, response.text
+    assert response.json()["metadata"]["recipient_input"]["id"] == record.id
+    assert response.json()["metadata"]["recipient_input"]["turn_id"] == record.turn_id

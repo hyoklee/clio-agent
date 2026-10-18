@@ -1,6 +1,19 @@
 # Tasks replacement: finite live experiments
 
-## 2026-10-18 14:06 UTC — next frozen family
+## Current execution hold — October 18, 14:44 UTC
+
+D: writes failed with OS error 112. No new product family launches until a real
+resource-state change is established. Rejected cleanup targets remain manual-only;
+they are not harness absence prerequisites. The source correction and remote CI
+work continue. The independent frozen reviews returned NO-GO; corrections are
+batched before the next candidate refresh.
+
+The completed matching UI receipt is `.pytest-runtime/static/r193-web-build.json`.
+It is built from GACT 86e87fb8. GACT 49f4d09f changes tests only; explicitly record
+that production-asset compatibility when refreshing the corrected core candidate.
+No final-tuple model execution or race acceptance has occurred during this hold.
+
+## 2026-10-18 14:06 UTC — integration snapshot
 
 The selected integration snapshot is develop 303edbce / GACT 86e87fb8, with native dependency versions unchanged. Retire the earlier e700/7a75 build identity from new launch prerequisites. Build the matching UI once after the paired source commit; record Core/schema/dependency/model identities before launch. Reuse the R186 readiness/reconnect scenario with actual Runs filtering, then run the remaining campaign families. No source changes are permitted during a live family. Regression CI and independent reviews remain separate gates.
 
@@ -10,10 +23,10 @@ that evidence does not qualify the current tuple. No new feature scope is added.
 
 Current candidate, checked October 18, 2026:
 
-- clio-agent: `e700f15fb8784f06de8900ee30b66730d2e53508`;
-  [CI run](https://github.com/iowarp/clio-agent/actions/runs/39099942879).
-- GACT: `7a75edcf8a5b1a0827f7dedf2db151e8fc8929b9`;
-  [workspace run](https://github.com/iowarp/gact-tui/actions/runs/39099943301).
+- reviewed clio-agent: `4a8bfd6c5068fd3b018dcaf040da48513ba761d4`;
+  [CI run](https://github.com/iowarp/clio-agent/actions/runs/39134640939), collection failed.
+- reviewed GACT: `86e87fb8418fe99b88c729de559c07fb70e1da02`; corrections
+  `49f4d09fbf623038e8214649d19e9b3c31ae665f` are test-only.
 - Isolated D: environment installed: iowarp-core 2.3.2, FastMCP/fastmcp-tasks
   4.1.0, MCP 2.0.0, Docket 0.26.2 and locked Claude Agent SDK 0.2.159.
 - Initial implementation and regression construction are complete. Regression

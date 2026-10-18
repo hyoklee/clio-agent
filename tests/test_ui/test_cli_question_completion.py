@@ -187,3 +187,126 @@ def test_each_answered_question_needs_its_own_confirmed_input(
     assert error is None and event is not None and message.id == "both_consumed"
     assert all(question.status == "answered" for question in questions.values())
     assert reads == 2
+
+
+@pytest.mark.parametrize("target", ["existing_segment", "later_wake"])
+def test_ordinary_busy_input_uses_confirmed_receipt(target: str) -> None:
+    """The ack's message ID is not necessarily the segment that consumes it."""
+    reads = 0
+
+    def fetch(_sid: str, identity: str) -> SimpleNamespace:
+        nonlocal reads
+        if identity == "new-feedback":
+            reads += 1
+            return SimpleNamespace(
+                id=identity,
+                metadata={"recipient_input": {"turn_id": target} if reads > 1 else None},
+            )
+        return SimpleNamespace(id=identity)
+
+    client = SimpleNamespace(
+        sessions=SimpleNamespace(
+            events=lambda *_args, **_kwargs: _FakeStream(
+                [
+                    completed("unrelated", "wrong", 1),
+                    completed(target, "uses-feedback", 2),
+                ]
+            )
+        ),
+        messages=SimpleNamespace(get=fetch),
+    )
+    cli = ClioAgentCLI(client, console=_recording_console())
+    event, message, error = cli._consume_turn("root", "new-feedback")
+    assert error is None and event is not None and message.id == "uses-feedback"
+    assert reads == 2
+
+
+def test_cli_collects_bundle_fields_and_submits_one_atomic_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    question = UserQuestion(
+        id="bundle",
+        session_id="root",
+        prompt="Analysis choices",
+        status="pending",
+        metadata={
+            "question_bundle": {
+                "questions": [
+                    {
+                        "id": "view",
+                        "question": "Which view?",
+                        "options": [{"value": "table", "label": "Station table"}],
+                        "allow_freeform": False,
+                    },
+                    {
+                        "id": "notes",
+                        "question": "What matters?",
+                        "options": [],
+                        "allow_freeform": True,
+                    },
+                ]
+            }
+        },
+    )
+    submitted = []
+
+    def answer(sid: str, handle: str, **kwargs: Any) -> UserQuestion:
+        assert sid == "root" and handle == "bundle"
+        submitted.append(kwargs)
+        return question.model_copy(update={"status": "answered"})
+
+    client = SimpleNamespace(
+        sessions=SimpleNamespace(
+            question=lambda *_args: question,
+            answer_question=answer,
+        )
+    )
+    cli = ClioAgentCLI(client, console=_recording_console())
+    answers = iter(["invalid", "table", "Uncertainty"])
+    monkeypatch.setattr(cli, "_prompt", lambda *_args, **_kwargs: next(answers))
+    error, answered = cli._resolve_waiting_user("root", interactive=True, question_id="bundle")
+    assert error is None and answered.status == "answered"
+    assert submitted == [
+        {
+            "metadata": {
+                "answers": {
+                    "view": {"answer": "", "selected_options": ["table"]},
+                    "notes": {"answer": "Uncertainty", "selected_options": []},
+                }
+            }
+        }
+    ]
+
+
+def test_cli_preserves_single_question_choice_restriction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SDK decoding retains the server's freeform restriction and offered option identity."""
+    question = UserQuestion.model_validate(
+        {
+            "id": "choice",
+            "session_id": "root",
+            "prompt": "Which view?",
+            "kind": "choice",
+            "allow_freeform": False,
+            "options": [{"value": "table", "label": "Station table"}],
+        }
+    )
+    submitted: list[dict[str, Any]] = []
+
+    def answer(_sid: str, _handle: str, **kwargs: Any) -> UserQuestion:
+        submitted.append(kwargs)
+        return question.model_copy(update={"status": "answered"})
+
+    client = SimpleNamespace(
+        sessions=SimpleNamespace(
+            question=lambda *_args: question,
+            answer_question=answer,
+        )
+    )
+    cli = ClioAgentCLI(client, console=_recording_console())
+    replies = iter(["unlisted", "table"])
+    monkeypatch.setattr(cli, "_prompt", lambda *_args, **_kwargs: next(replies))
+    error, answered = cli._resolve_waiting_user("root", interactive=True, question_id="choice")
+    assert error is None and answered.status == "answered"
+    assert submitted == [{"answer": "", "selected_options": ["table"]}]

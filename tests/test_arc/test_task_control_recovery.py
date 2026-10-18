@@ -216,3 +216,93 @@ async def test_cancelled_queued_child_does_not_relaunch_from_its_retained_delega
     finally:
         await owner.shutdown()
         await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("action", ["resume", "restart"])
+async def test_deferred_peer_control_rechecks_revoked_rights_before_input(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    action: str,
+) -> None:
+    """A grant revoked after initial authorization cannot release or restart a peer."""
+    from clio_agent.arc.task_types import CoordinationGrant
+    from clio_agent.gact.native_work import now
+    from clio_agent.gact.task_access import TaskAccessDenied
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    history, sid = owner.history, root.owner.session_id
+    human = TaskCaller(sid, "human")
+    if action == "resume":
+        await owner.pause(human, root.handle)
+    else:
+        await owner.cancel(human, root.handle)
+        cancellation = owner._controls.get(root.handle)
+        if cancellation is not None:
+            await asyncio.wait_for(asyncio.shield(cancellation), 10)
+        await asyncio.sleep(0)
+        assert history.task_snapshot(root.handle).terminal_at is not None
+
+    def grant_peer() -> tuple[str, CoordinationGrant]:
+        peer = app.state.sessions.create(workspace_id="workspace", title="Peer controller")
+        grant = CoordinationGrant(
+            id="peer-control",
+            granting_human="human",
+            recipient_session=peer.id,
+            target_session=sid,
+            rights=("control",),
+            created_at=now(),
+        )
+        history.record_grant(grant, observation_id="grant-control")
+        return peer.id, grant
+
+    peer, grant = await history.io.run(grant_peer)
+    entered, release = asyncio.Event(), asyncio.Event()
+    original = history.io.run
+
+    async def hold(function: Any, *args: Any, **kwargs: Any) -> Any:
+        name = getattr(function, "__qualname__", "")
+        if (
+            action == "resume"
+            and name.endswith("resume.<locals>.inject")
+            or action == "restart"
+            and name.endswith("restart_settled.<locals>.create")
+        ):
+            entered.set()
+            await release.wait()
+        return await original(function, *args, **kwargs)
+
+    monkeypatch.setattr(history.io, "run", hold)
+    operation = asyncio.create_task(getattr(owner, action)(TaskCaller(peer, "human"), root.handle))
+    try:
+        await asyncio.wait_for(entered.wait(), 10)
+        continuation = (
+            owner._controls.get("restart:" + root.handle) if action == "restart" else None
+        )
+        await original(
+            history.record_grant,
+            grant.model_copy(update={"revoked_at": now()}),
+            observation_id="revoke-control",
+        )
+        release.set()
+        if action == "resume":
+            with pytest.raises(TaskAccessDenied):
+                await operation
+            assert owner.model_paused(sid)
+        else:
+            assert (await operation)["restart_requested"]
+            assert continuation is not None
+            with pytest.raises(TaskAccessDenied):
+                await asyncio.wait_for(asyncio.shield(continuation), 10)
+            assert history.latest_assignment(sid).handle == root.handle
+        assert not [
+            item
+            for item in history.pending_mail(sid)
+            if item.id.startswith(("resume:", "restart:"))
+        ]
+    finally:
+        release.set()
+        await asyncio.gather(operation, return_exceptions=True)
+        await owner.shutdown()
+        await owner.recovery.drain()

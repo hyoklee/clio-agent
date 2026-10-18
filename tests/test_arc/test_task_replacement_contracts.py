@@ -11,6 +11,7 @@ import pytest
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import (
+    AssignmentDetails,
     BackendReference,
     ContextBoundary,
     CoordinationGrant,
@@ -21,6 +22,7 @@ from clio_agent.arc.task_types import (
     RecipientInput,
     TaskAlias,
     TaskOwner,
+    TaskProgress,
     TaskSnapshot,
     TaskSubscription,
 )
@@ -178,6 +180,55 @@ def test_description_reference_survives_core_restore(arc: ARCMemory) -> None:
     restored = TaskHistory(arc)
     restored.restore()
     assert restored.task_snapshot(original.handle) == retained
+
+
+def test_progress_replay_reads_immutable_assignment_content_once(
+    arc: ARCMemory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Retain every progress event without rereading unchanged assignment bodies per event."""
+    history = TaskHistory(arc)
+    details = history.write_content("owner", AssignmentDetails().model_dump(mode="json"))
+    task = TaskSnapshot(
+        handle="task_session_replay",
+        kind="Session",
+        tool="conversation",
+        label="Assignment",
+        owner=TaskOwner(human_id="human", session_id="owner", assignment_id="task_session_replay"),
+        invocation_id="human",
+        created_at=STAMP,
+        updated_at=STAMP,
+        description="Original immutable assignment",
+        description_missing=False,
+        status="active",
+        details=details,
+    )
+    for index in range(32):
+        history.record_snapshot(
+            task.model_copy(update={"progress": TaskProgress(message=str(index))}),
+            observation_id="progress:" + str(index),
+        )
+    original = history.task_snapshot(task.handle)
+    assert original is not None and original.description_reference is not None
+    reads: list[CoreReference] = []
+    read_content = TaskHistory.read_content
+
+    def counted(self: TaskHistory, reference: CoreReference) -> Any:
+        reads.append(reference)
+        return read_content(self, reference)
+
+    monkeypatch.setattr(TaskHistory, "read_content", counted)
+    restored = TaskHistory(arc)
+    restored.restore()
+    assert restored.task_snapshot(task.handle) == original
+    assert reads.count(original.description_reference) == 1
+    assert reads.count(details) == 1
+    observations = [
+        event
+        for event in arc._live.iter_event_contents()
+        if event.get("event_type") == "task.observed"
+    ]
+    assert len(observations) == 32
 
 
 @pytest.mark.asyncio

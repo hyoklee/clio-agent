@@ -7,13 +7,15 @@ from collections.abc import Callable
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
-from uuid import uuid4
 
 import pytest
+from fastmcp import Client, FastMCP
+from fastmcp_tasks.client_models import ClientGetTaskResult
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import (
     AssignmentDetails,
+    BackendReference,
     MailItem,
     MailKind,
     QuestionDefinition,
@@ -21,12 +23,14 @@ from clio_agent.arc.task_types import (
     TaskAlias,
     TaskOwner,
     TaskSnapshot,
+    argument_digest,
 )
 from clio_agent.gact import context
 from clio_agent.gact.agents.clio_react_record import StepRecorder
 from clio_agent.gact.conversations import ConversationOutcome, Conversations, ConversationSegment
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.events import EventBus
+from clio_agent.gact.external_tasks import ExternalConnection, ExternalTasks
 from clio_agent.gact.native_work import now
 from clio_agent.gact.provenance_wiring import install_session_lifecycle_observer
 from clio_agent.gact.question_surface import answer_question
@@ -38,6 +42,7 @@ from clio_agent.gact.spawn_context import CreatePreparedChild
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.turn_runner import TurnRunner
+from clio_agent.tools.task_client import TaskSubmission, restore_native_call
 
 
 @pytest.mark.asyncio
@@ -811,14 +816,38 @@ async def test_explicit_message_deletion_withdraws_only_uncommitted_human_inputs
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("final_status", ["completed", "failed"])
 async def test_cancellation_keeps_work_settling_during_worker_retirement(
     arc: ARCMemory,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    final_status: str,
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
     history = app.state.task_history
     stamp = now()
+    backend = BackendReference(
+        owner="external_mcp", server="external", session="original", task_id="external-task"
+    )
+    submission = TaskSubmission(
+        "task_external",
+        "external",
+        await history.io.run(history.write_content, root.owner.session_id, {"arguments": {}}),
+        None,
+        None,
+        argument_digest({}),
+    )
+    app.state.task_recovery = owner.recovery
+    external = ExternalTasks(app)
+    accepted = restore_native_call(
+        Client(FastMCP("unused-result-transport")),
+        submission,
+        task_id=backend.task_id,
+        status="working",
+        created_at=stamp,
+        updated_at=stamp,
+    )
+    connection = ExternalConnection(backend.model_copy(update={"task_id": ""}))
     active = TaskSnapshot(
         handle="task_external",
         kind="MCP",
@@ -829,6 +858,8 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         created_at=stamp,
         updated_at=stamp,
         status="running",
+        backend=backend,
+        submission=submission.context,
     )
     old = active.model_copy(
         update={
@@ -837,6 +868,7 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
             "status": "interrupted",
             "terminal_at": stamp,
             "settlement": "unknown",
+            "backend": None,
         }
     )
     await asyncio.to_thread(history.record_snapshot, active, observation_id="active")
@@ -874,15 +906,16 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         stopping = await asyncio.to_thread(history.task_snapshot, root.handle)
         assert stopping is not None and stopping.terminal_at is None
         assert stopping.cancellation_requested_at is not None
-        terminal = active.model_copy(
-            update={
+        cancelled = ClientGetTaskResult.model_validate(
+            {
+                "resultType": "complete",
+                "taskId": backend.task_id,
                 "status": "cancelled",
-                "raw_status": "cancelled",
-                "terminal_at": now(),
-                "settlement": "external_acknowledged",
+                "createdAt": stamp,
+                "lastUpdatedAt": now(),
             }
         )
-        await asyncio.to_thread(history.record_snapshot, terminal, observation_id="ack")
+        await history.io.run(external._record_reply, connection, accepted, cancelled)
         uncertain.clear()
         assert not release.is_set()
         release.set()
@@ -901,18 +934,45 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         await asyncio.to_thread(restored.restore)
         saved = await asyncio.to_thread(restored.task_snapshot, root.handle)
         assert saved is not None and saved.details == parent.details
-        await asyncio.to_thread(
-            history.record_snapshot,
-            terminal.model_copy(update={"settlement": "confirmed"}),
-            observation_id=uuid4().hex,
+        final = ClientGetTaskResult.model_validate(
+            {
+                "resultType": "complete",
+                "taskId": backend.task_id,
+                "status": final_status,
+                "createdAt": stamp,
+                "lastUpdatedAt": now(),
+                "result": {
+                    "content": [],
+                    "structuredContent": {"value": "actual result"},
+                    "isError": final_status == "failed",
+                },
+            }
         )
-        await owner._controls[root.handle]
-        settled = await asyncio.to_thread(history.task_snapshot, root.handle)
+        await history.io.run(external._record_reply, connection, accepted, final)
+        while True:
+            settled = await history.io.run(history.task_snapshot, root.handle)
+            if settled is not None and settled.terminal_at is not None:
+                break
+            await uncertain.wait()
+            uncertain.clear()
         assert (
             settled is not None
             and settled.status == "cancelled"
             and settled.settlement == "confirmed"
         )
+        member = await history.io.run(history.task_snapshot, active.handle)
+        assert member is not None and member.status == final_status
+        assert member.settlement == "external_acknowledged" and member.result is not None
+        assert (await history.io.run(history.read_content, member.result))["result"] == final.result
+        outcome = await history.io.run(history.read_content, settled.result)
+        assert outcome["members"] == [
+            {
+                "handle": active.handle,
+                "status": final_status,
+                "raw_status": final_status,
+                "settlement": "external_acknowledged",
+            }
+        ]
         assert await asyncio.to_thread(history.task_snapshot, old.handle) == old
     finally:
         release.set()

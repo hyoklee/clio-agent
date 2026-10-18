@@ -75,7 +75,6 @@ def register_connected_storage_routes(app: FastAPI) -> None:
         if owner is None:
             owner = SourceDrafts(service, app.state.resource_store)
             app.state.source_drafts = owner
-            service.transfer_settled = owner.cleanup
         return owner
 
     def target_source(record: SourceRecord) -> SshTargetSource | SftpSource:

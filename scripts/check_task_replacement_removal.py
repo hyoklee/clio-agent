@@ -68,6 +68,7 @@ REMOVED_MODULES = frozenset(
         "clio_agent.gact.routes.async_processes",
         "clio_agent.gact.routes.relay",
         "clio_agent.tools.mcp_tasks",
+        "clio_agent.tools.task_call_context.require_admission",
         "clio_agent.tools.mcp_task_records",
         "clio_agent.tools.mcp_task_lease",
         "clio_agent.tools.mcp_task_extension",
@@ -196,6 +197,7 @@ REMOVED_STATE = frozenset(
         "core_task_journal",
         "automatic_input_hold",
         "pending_loop_inbox_drain",
+        "transfer_settled",
     }
 )
 REMOVED_CONFIG = frozenset(

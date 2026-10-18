@@ -437,7 +437,13 @@ def _prepare_snapshot(self: TaskHistory, payload: dict[str, Any]) -> TaskSnapsho
         else TaskSnapshot.model_validate(record)
     )
     if snapshot.description_reference is not None:
-        description = self.read_content(snapshot.description_reference)
+        previous = self._tasks.get(snapshot.handle) if self._replaying else None
+        description = (
+            previous.description
+            if previous is not None
+            and previous.description_reference == snapshot.description_reference
+            else self.read_content(snapshot.description_reference)
+        )
         if not isinstance(description, str):
             raise ValueError("Task assignment content must be text")
         snapshot = snapshot.model_copy(update={"description": description})
@@ -461,9 +467,15 @@ def _project(
     elif event_type == "task.observed":
         if snapshot is None:
             raise ValueError("Task projection requires its prepared confirmed snapshot")
-        known = snapshot.handle in self._tasks
+        prior_task = self._tasks.get(snapshot.handle)
+        known = prior_task is not None
         self._tasks[snapshot.handle] = snapshot
-        if self._replaying and snapshot.kind in {"Session", "Subagent"} and snapshot.details:
+        if (
+            self._replaying
+            and snapshot.kind in {"Session", "Subagent"}
+            and snapshot.details
+            and (prior_task is None or prior_task.details != snapshot.details)
+        ):
             _legacy_workflow(self, snapshot)
         self._session_tasks.setdefault(snapshot.owner.session_id, set()).add(snapshot.handle)
         self._kind_tasks.setdefault(snapshot.kind, set()).add(snapshot.handle)

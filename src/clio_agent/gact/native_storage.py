@@ -219,6 +219,9 @@ def register_native_storage(
                     settled.state in {"completed", "failed", "cancelled"}
                     and settled.provider_cleanup_confirmed
                 ):
+                    drafts = getattr(app.state, "source_drafts", None)
+                    if drafts is not None:
+                        await join_off_loop(drafts.cleanup)
                     evidence.confirm_cleanup()
                     if previous_publication_absent:
 
@@ -519,6 +522,9 @@ def register_native_storage(
                 if settled.state in {"completed", "failed", "cancelled"} and (
                     record.source.provider != "globus" or settled.provider_cleanup_confirmed
                 ):
+                    drafts = getattr(app.state, "source_drafts", None)
+                    if drafts is not None:
+                        await join_off_loop(drafts.cleanup)
                     evidence.confirm_cleanup()
                 if record.source.provider == "globus" and (
                     retired or not settled.provider_cleanup_confirmed

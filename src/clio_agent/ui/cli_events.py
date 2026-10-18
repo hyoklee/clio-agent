@@ -51,6 +51,12 @@ def consume_turn(
                     identity = str(event.payload.get("turn_id") or "")
                     completions[identity] = event
                     targets = {ack_message_id}
+                    if not root_answers and identity != ack_message_id:
+                        submitted = cli.client.messages.get(session_id, ack_message_id)
+                        metadata = getattr(submitted, "metadata", {})
+                        if "recipient_input" in metadata:
+                            receipt = metadata["recipient_input"]
+                            targets = {str(receipt.get("turn_id") or "") if receipt else ""}
                     if root_answers:
                         targets = set()
                         for handle in dict.fromkeys(root_answers):
@@ -189,15 +195,59 @@ def resolve_waiting_user(
             ),
         }, None
 
-    body = f"[bold]{escape(question.prompt)}[/bold]"
-    if question.options:
-        lines = "\n".join(
-            f"  - {escape(opt.value or opt.label)}: {escape(opt.label)}" for opt in question.options
+    bundle = question.metadata.get("question_bundle")
+    if isinstance(bundle, dict) and isinstance(bundle.get("questions"), list):
+        answers = {}
+        for field in bundle["questions"]:
+            answer, selected = _prompt_question_field(
+                cli,
+                str(field["question"]),
+                [(str(option["value"]), str(option["label"])) for option in field["options"]],
+                allow_freeform=bool(field["allow_freeform"]),
+                status=status,
+            )
+            answers[field["id"]] = {"answer": answer, "selected_options": selected}
+        answered = cli.client.sessions.answer_question(
+            session_id, question.id, metadata={"answers": answers}
         )
+    else:
+        answer, selected = _prompt_question_field(
+            cli,
+            question.prompt,
+            [(opt.value or opt.label, opt.label) for opt in question.options],
+            allow_freeform=question.allow_freeform,
+            status=status,
+        )
+        if selected:
+            answered = cli.client.sessions.answer_question(
+                session_id, question.id, answer=answer, selected_options=selected
+            )
+        else:
+            answered = cli.client.sessions.answer_question(session_id, question.id, answer=answer)
+    return None, answered
+
+
+def _prompt_question_field(
+    cli: ClioAgentCLI,
+    prompt: str,
+    options: list[tuple[str, str]],
+    *,
+    allow_freeform: bool,
+    status: Any,
+) -> tuple[str, list[str]]:
+    """Collect one field, preserving offered option identity and escaping model text."""
+    body = f"[bold]{escape(prompt)}[/bold]"
+    if options:
+        lines = "\n".join(f"  - {escape(value)}: {escape(label)}" for value, label in options)
         body = f"{body}\n\n[dim]Options:[/dim]\n{lines}"
     cli.console.print(
         Panel(body, title="[#FFAA00]CLIO needs your input[/#FFAA00]", border_style="#FFAA00")
     )
-    answer = cli._prompt("Your answer: ", status=status).strip()
-    answered = cli.client.sessions.answer_question(session_id, question.id, answer=answer)
-    return None, answered
+    while True:
+        answer = cli._prompt("Your answer: ", status=status).strip()
+        selected = next((value for value, label in options if answer in {value, label}), None)
+        if selected is not None:
+            return "", [selected]
+        if answer and allow_freeform:
+            return answer, []
+        cli.console.print("Choose an offered option." if options else "An answer is required.")

@@ -74,13 +74,11 @@ class BuiltinTool(Tool):
             or invocation.submission.tool != self._public_name
         ):
             raise PermissionError("Unknown or mismatched built-in invocation")
-        saved = await self._boundary.app.state.task_history.io.run(
-            self._boundary.app.state.task_history.submission_context, reference
-        )
-        if saved != invocation.submission or saved.argument_digest != argument_digest(supplied):
+        saved = invocation.submission
+        if saved.argument_digest != argument_digest(supplied):
             raise PermissionError("Built-in arguments differ from trusted request context")
-        await self._boundary.app.state.task_history.io.run(self._boundary.authorize, saved)
         invocation.claimed = True
+        await self._boundary.app.state.task_history.io.run(self._boundary.authorize, saved)
         try:
             if inspect.iscoroutinefunction(invocation.function):
 
@@ -161,7 +159,7 @@ class BuiltinBoundary:
     async def call(
         self, tool: Any, arguments: dict[str, Any], captured: contextvars.Context
     ) -> Any:
-        """Validate public input, persist trusted context, and call the registered MCP tool."""
+        """Validate a short in-process RPC; accepted background work persists in its native owner."""
         if self._closing or "_clio_submission" in arguments:
             raise ValueError("Built-in admission is closed or contains an internal argument")
         if tool.name in {
@@ -210,9 +208,9 @@ class BuiltinBoundary:
             execution_limits={},
             backend=BackendReference(owner="conversation", server="clio-builtins"),
         )
-        await self.app.state.task_history.io.run(
-            self.app.state.task_history.record_submission, submission
-        )
+        if self.app.state.task_history.requires_recovery:
+            raise ValueError("Built-in calls require confirmed Core input recording")
+
         identity = (
             tool.name
             + ":"

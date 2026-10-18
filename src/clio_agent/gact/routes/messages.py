@@ -488,7 +488,28 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             if msg.id == message_id:
                 # #731: slim, arrival-ordered parts (matches SSE). #732/S2: read-
                 # boundary single-representation normalization (see list_messages).
-                return normalize_thought_ownership(msg).to_wire()
+                value = normalize_thought_ownership(msg).to_wire()
+                if msg.role == "user":
+                    receipt = await app.state.task_history.io.run(
+                        app.state.task_history.committed_notification_input, sid, msg.id
+                    )
+                    value["metadata"] = {
+                        **value.get("metadata", {}),
+                        "recipient_input": receipt.model_dump(
+                            mode="json",
+                            include={
+                                "id",
+                                "session_id",
+                                "assignment_id",
+                                "iteration_id",
+                                "turn_id",
+                                "boundary",
+                            },
+                        )
+                        if receipt is not None
+                        else None,
+                    }
+                return value
         raise HTTPException(
             status_code=404,
             detail=ErrorEnvelope(

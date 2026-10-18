@@ -252,6 +252,5 @@ def retain_attachment_resources(app: object, identifiers: set[str]) -> None:
     if state is not None and drafts is None and service is not None and resources is not None:
         drafts = SourceDrafts(service, resources)
         state.source_drafts = drafts
-        service.transfer_settled = drafts.cleanup
     if drafts is not None:
         drafts.retain_resources(identifiers)

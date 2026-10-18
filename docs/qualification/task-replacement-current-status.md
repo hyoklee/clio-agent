@@ -1,5 +1,77 @@
 # Tasks replacement status — October 18 UTC
 
+## Current state — October 18, 14:44 UTC
+
+Initial implementation and initial test construction are complete. The 8 AM
+delivery target was missed. Regression repair, independent correction review and
+final live qualification remain unfinished. This candidate is **not qualified**.
+
+The reviewed/pushed source is clio-agent
+`4a8bfd6c5068fd3b018dcaf040da48513ba761d4`, GACT
+`86e87fb8418fe99b88c729de559c07fb70e1da02`, marketplace
+`c4325a770c9c0883668eb1e6a977ef11c96ed4bb`. It retains the merge of develop
+`303edbce53ca024e1fd80243c52d25b10382ff53`. The combined correction is the
+commit containing this entry; its GACT pointer is the test-only
+`49f4d09fbf623038e8214649d19e9b3c31ae665f`. No new execution owner is added.
+
+The [4a CI run](https://github.com/iowarp/clio-agent/actions/runs/39134640939)
+failed collection in every regression shard, flake-hunt and Flowcept: an NDP
+module still imported removed `require_admission`. No regression cases executed.
+Lint additionally found the removed `transfer_settled` callback. Both references
+are removed; draft cleanup runs in the existing native Download owner before its
+cleanup receipt. Removal guard coverage now rejects both references.
+
+Both GACT workspace runs failed the same three unit cases: two NDP fixtures
+omitted their tracking session; one Mermaid assertion expected the older error
+message. The correction retains exact transfer/selection/security assertions.
+The completed run reports 312 core tests passed and 3,781 web tests passed,
+three web tests failed. Build/browser steps after unit tests did not execute.
+Native debug builds passed on all three operating systems; conditional release
+and native-proof jobs skipped and are not acceptance.
+
+Astra and actual Claude Code/Fable independently reviewed the frozen tuple:
+**NO-GO**. Astra found revocation races in deferred resume/restart, ordinary CLI
+feedback completion miscorrelation and missing CLI Question-bundle answering.
+Claude found external-result cancellation liveness and unnecessary short-call
+submission/replay growth. The correction addresses those findings and adds
+regressions before execution. Raw external cancellation still reports unknown
+cleanup; definitive external completion/failure retains `external_acknowledged`
+and can settle parent membership without fabricating remote cleanup.
+
+Claude's replay concern is reduced by resolving unchanged assignment descriptions
+and details once per identity/reference during replay. Latest-index repair remains
+one startup pass; its measured large-history restart is still required by F03/Q7.
+No new checkpoint, mutable registry or fallback is introduced. Historical relay
+placement stays unavailable by the reviewed removal contract. Existing ARC adapter
+access and provisional control acknowledgements retain their declared scope;
+neither becomes another authority.
+
+The matching production UI build at GACT 86e87fb8 completed (653 files,
+31,895,892 bytes; receipt `.pytest-runtime/static/r193-web-build.json` in D).
+GACT 49f4d09f changes tests only; compatibility must be recorded before reusing it.
+No new final-tuple model family has run. R186 and R191 below are predecessor
+evidence; Q1–Q9 and all thirty final races remain unaccepted.
+
+D: writes failed with OS error 112. New product qualification is held for a real
+resource-state change; no free-volume measurement or recovered-space claim is
+made. Automatic review rejected cleanup of five static Mypy caches and the exact
+old `builds/r185-web` output, and separately the settled 2,823-byte
+`review/r192-profile`. Those commands did not run. These exact targets join the
+existing manual-only boundaries; no retry, alternate shell, delegation or parent
+removal is permitted. The review's CLI/controller processes are retired and its
+bounded verdict is retained. No product service or accepted task is active.
+
+Ruff/format pass on the correction. Full Linux-platform Mypy exposed six new
+annotation errors during construction; their corrections need the final type
+result. Fresh CI, independent correction verdicts and actual-model/UI acceptance
+remain separate pending gates. Daily Desktop/auth/defaults/released pins remain
+unchanged.
+
+## Earlier dated execution records
+
+The snapshots below describe their named revisions; they do not override the
+current state above.
+
 ## 2026-10-18 14:06 UTC — upstream integration before candidate freeze
 
 The 8 AM target remains missed. Initial implementation and test construction remain complete; regression repair and integrated qualification are in progress. The selected upstream snapshot is develop 303edbce53ca024e1fd80243c52d25b10382ff53. Further upstream movement is outside this freeze.

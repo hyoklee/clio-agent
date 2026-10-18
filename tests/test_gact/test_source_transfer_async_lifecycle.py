@@ -20,6 +20,9 @@ from clio_agent.gact.storage import transfers
 from clio_agent.gact.storage.adapters import LocalSource, SourceAdapter
 from clio_agent.gact.storage.models import FileEntry, SourceRecord
 from clio_agent.platform_paths import win_extended_path
+from tests.test_gact.test_source_connect_runtime import bound as storage_runtime_fixture
+
+bound = storage_runtime_fixture
 
 
 class _PausedReader(io.BufferedReader):
@@ -209,3 +212,55 @@ def test_cancel_is_requested_then_settled_without_publishing_partial_data(
     owner_root = app.state.connected_storage.store.root / source_id
     with os.scandir(win_extended_path(owner_root)) as entries:
         assert not any(entry.name.startswith("stage-") for entry in entries)
+
+
+def test_native_download_settles_abandoned_attachment_cleanup(bound: Any, monkeypatch: Any) -> None:
+    """Real native cleanup finishes before publishing the terminal task observation."""
+    import asyncio
+    import threading
+
+    from clio_agent.gact.storage import download_tool
+    from clio_agent.gact.storage.drafts import SourceDraft, SourceDrafts
+    from clio_agent.gact.storage.models import TransferOperation
+    from tests.test_gact.test_source_connect_runtime import _body, _collect, _connect
+
+    service, app, upstream = bound
+    first = _connect(app, "local", str(upstream), "Draft source", configuration={})
+    outcome, reply = _collect(app, first)
+    assert outcome["status"] == "completed"
+    source_id = _body(reply)["source_id"]
+    record = service.get("ws_default", source_id)
+    drafts = SourceDrafts(service, app.state.resource_store)
+    app.state.source_drafts = drafts
+    lease = drafts.begin(record)
+    entered, release = threading.Event(), threading.Event()
+    original = service.execute_transfer
+
+    async def held(*args: Any, **kwargs: Any) -> Any:
+        entered.set()
+        await asyncio.to_thread(release.wait)
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "execute_transfer", held)
+    tool = app.state.builtin_boundary.bind(download_tool.build_connected_data_download_tool())
+    receipt = asyncio.run(tool.acall(source_id=source_id, paths=["measurements.csv"]))
+    try:
+        assert entered.wait(5)
+        drafts.finish(source_id, lease)
+        [operation] = [
+            row
+            for row in service.store.list("operation", TransferOperation)
+            if row.id == receipt["handle"]
+        ]
+        assert operation.cancel_requested
+    finally:
+        release.set()
+    outcome, reply = _collect(app, receipt, kind="Download")
+    assert outcome["status"] == "cancelled" and _body(reply)["state"] == "cancelled"
+    assert (upstream / "measurements.csv").read_text() == "x,y\n1,2\n"
+    restored = service.get("ws_default", source_id)
+    assert restored.manifest_id == record.manifest_id
+    assert restored.source.local_path == record.source.local_path
+    assert not (Path(record.workspace_root) / "connected-data" / source_id).exists()
+    [draft] = service.store.list("source-draft", SourceDraft)
+    assert draft.state == "removed" and not draft.leases

@@ -482,6 +482,7 @@ class UserQuestion(_WireModel):
     status: str = "pending"
     kind: str = "freeform"
     options: list[UserQuestionOption] = Field(default_factory=list)
+    allow_freeform: bool = True
     created_at: str = ""
     updated_at: str = ""
     expires_at: str = ""

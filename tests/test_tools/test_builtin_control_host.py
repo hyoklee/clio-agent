@@ -1,4 +1,4 @@
-"""Actual short FastMCP controls over confirmed Core custody, without native task hosts."""
+"""Actual short FastMCP controls use confirmed owners without background submission rows."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import SubmissionContext
+from clio_agent.arc.task_types import SubmissionContext, argument_digest
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import (
     declare_structured_content,
@@ -21,6 +21,7 @@ from clio_agent.gact.agents.tool_instrumentation import (
     pop_declared_structured_content,
 )
 from clio_agent.gact.builtin_boundary import BuiltinBoundary
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.tool_observation import CollectedTaskResult, PresentedToolResult
 from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_arc.test_conversation_owner_contracts import create_environment
@@ -35,8 +36,8 @@ async def _control_context(arc: ARCMemory, tmp_path: Path) -> AsyncIterator[Buil
     )
 
     def authorize(saved: SubmissionContext) -> None:
-        assert saved == owner.history.submission_context(saved.reference)
         assert saved.owner.assignment_id == root.handle
+        assert saved.argument_digest == argument_digest(saved.arguments)
 
     app_token = context.set_app(app)
     session_token = context.set_session_id(root.owner.session_id)
@@ -91,6 +92,52 @@ async def test_native_sdk_preserves_values_and_declared_presentation(
         assert result == value and type(result) is type(value)
         assert presentation == declared
         assert not boundary.invocations
+
+
+@pytest.mark.asyncio
+async def test_short_queries_do_not_retain_native_submission_contexts(
+    arc: ARCMemory,
+    tmp_path: Path,
+) -> None:
+    """Read controls retire RPC context; background submissions retain their recovery rows."""
+    calls: list[int] = []
+
+    def read() -> int:
+        calls.append(len(calls))
+        return calls[-1]
+
+    tool = native_tool(
+        read,
+        name="read_control",
+        desc="Read current state.",
+        args={},
+        presentation="text",
+        domain="tasks",
+        read_only=True,
+    )
+    async with _control_context(arc, tmp_path) as boundary:
+        for index in range(20):
+            assert await boundary.call(tool, {}, contextvars.copy_context()) == index
+            assert not boundary.invocations
+
+        def retained_submissions() -> list[dict[str, Any]]:
+            restored = TaskHistory(arc)
+            restored.restore()
+            return [
+                event
+                for event in arc._live.iter_event_contents()
+                if event.get("event_type") == "task.submission"
+            ]
+
+        assert await boundary.app.state.task_history.io.run(retained_submissions) == []
+        assert calls == list(range(20))
+        boundary.app.state.task_history.requires_recovery = True
+        try:
+            with pytest.raises(ValueError, match="confirmed Core input"):
+                await boundary.call(tool, {}, contextvars.copy_context())
+            assert calls == list(range(20)) and not boundary.invocations
+        finally:
+            boundary.app.state.task_history.requires_recovery = False
 
 
 @pytest.mark.asyncio
@@ -192,9 +239,9 @@ async def test_builtin_sdk_roundtrip_preserves_trusted_context_and_native_errors
     verified: list[str] = []
 
     def authorize(saved: SubmissionContext) -> None:
-        assert saved == owner.history.submission_context(saved.reference)
         assert saved.owner.session_id == root.owner.session_id
         assert saved.owner.assignment_id == root.handle
+        assert saved.argument_digest == argument_digest(saved.arguments)
         verified.append(saved.reference)
 
     boundary = BuiltinBoundary(app, authorize)
@@ -284,7 +331,8 @@ async def test_native_short_rpc_preserves_noncollecting_disclosure_metadata(
     )
 
     def authorize(saved: SubmissionContext) -> None:
-        assert saved == owner.history.submission_context(saved.reference)
+        assert saved.owner.assignment_id == root.handle
+        assert saved.argument_digest == argument_digest(saved.arguments)
 
     def guarded() -> CollectedTaskResult:
         """Return trusted local disclosure metadata through the production SDK."""
