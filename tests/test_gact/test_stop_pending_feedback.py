@@ -202,7 +202,8 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         assert proof is not None and proof.turn_id == "msg_future"
         rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
         promoted = next(row for row in rows if row["id"] == "msg_future")
-        assert promoted["metadata"]["pending_steer"] is False
+        assert promoted["metadata"].get("pending_steer", False) is False
+        assert promoted["metadata"]["client_message_id"] == "msg_future"
         assert len(agent.questions) == 3
         assert not session_autostart_suspended(app, sid)
 

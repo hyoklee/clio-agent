@@ -128,13 +128,25 @@ async def restore(self: Conversations) -> None:
     from clio_agent.gact.session_store import restore_pending_mail_messages
 
     await self.history.io.run(restore_pending_mail_messages, self.app, self.history)
-    handles = await self.history.io.run(self.history.task_handles, active_only=True)
+
+    def assignments() -> set[str]:
+        return self.history.task_handles(kind="Session") | self.history.task_handles(
+            kind="Subagent"
+        )
+
+    handles = await self.history.io.run(assignments)
     for handle in handles:
         task = await self.history.io.run(self.history.task_snapshot, handle)
         if task is None or task.kind not in {"Session", "Subagent"}:
             continue
         if not self.supports_execution(task):
             continue  # Retained unavailable work is not converted into local execution.
+        if task.terminal_at is not None:
+            # Canonical outcomes can outlive a failed notice write. Historical
+            # delivery remains governed by migration; never guess its receipt.
+            if task.settlement in {"confirmed", "never_started"} and task.result is not None:
+                await self.history.io.run(publish_task_notice, self.history, task)
+            continue
         if await self.history.io.run(self.history.latest_assignment, task.owner.session_id) != task:
             continue
         session = self.sessions.get(task.owner.session_id)

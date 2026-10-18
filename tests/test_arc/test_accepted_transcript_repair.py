@@ -73,6 +73,95 @@ def accept(app: Any, sid: str, message: Message) -> MailItem:
 
 
 @pytest.mark.asyncio
+async def test_chronological_inputs_append_without_rewriting_retained_transcript(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ordinary accepted inputs retain the generation, earlier atoms and pending history."""
+    from clio_agent.gact import transcript_projection
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    wire_transcripts(app, arc, tmp_path / "messages", True)
+
+    def exercise() -> None:
+        def no_rewrite(*args: Any, **kwargs: Any) -> None:
+            raise AssertionError("Appending a new input rewrote the whole retained generation")
+
+        monkeypatch.setattr(transcript_projection, "replace_lane", no_rewrite)
+        generation = current_generation(arc._segments, sid, MESSAGE_PART_SCOPE)
+        expected = []
+        previous: list[dict[str, Any]] = []
+        for index in range(12):
+            message = retained(sid, "accepted-" + str(index), index)
+            item = accept(app, sid, message)
+            session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+            after = raw_atoms(arc, sid)
+            assert after[: len(previous)] == previous
+            expected.append(message)
+            assert assemble_session_messages(arc, sid) == expected
+            assert current_generation(arc._segments, sid, MESSAGE_PART_SCOPE) == generation
+            session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+            assert raw_atoms(arc, sid) == after
+            previous = after
+        assert len(owner.history.pending_mail(sid)) == 12
+        assert not owner.history.acknowledged_notifications(sid)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
+async def test_partial_tail_append_repairs_without_repeating_accepted_input(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed final envelope leaves the original input pending and recoverable."""
+    from clio_agent.gact import transcript_recording
+
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid = root.owner.session_id
+    wire_transcripts(app, arc, tmp_path / "messages", True)
+
+    def exercise() -> None:
+        earlier, target = retained(sid, "earlier", 10), retained(sid, "tail", 12)
+        session_store._append_session_message(app, sid, earlier)
+        previous = raw_atoms(arc, sid)
+        item = accept(app, sid, target)
+        append = transcript_recording.append_part_atom
+
+        def fail_envelope(store: Any, session: str, atom: dict[str, Any], **kwargs: Any) -> Any:
+            if atom.get("atom_role") == "envelope" and atom.get("message_id") == target.id:
+                raise OSError("Core failed before accepted message envelope")
+            return append(store, session, atom, **kwargs)
+
+        with monkeypatch.context() as faults:
+            faults.setattr(transcript_recording, "append_part_atom", fail_envelope)
+            with pytest.raises(OSError, match="before accepted message envelope"):
+                session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+        assert raw_atoms(arc, sid)[: len(previous)] == previous
+        assert owner.history.pending_mail(sid) == (item,)
+        assert not owner.history.acknowledged_notifications(sid)
+        session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+        assert assemble_session_messages(arc, sid) == [earlier, target]
+        recovered = raw_atoms(arc, sid)
+        session_store.project_accepted_mail_messages(app, owner.history, sid, (item,))
+        assert raw_atoms(arc, sid) == recovered
+        assert owner.history.pending_mail(sid) == (item,)
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("file_enabled", [False, True])
 async def test_repair_preserves_unfinished_atoms_and_a_concurrent_final_append(
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, file_enabled: bool

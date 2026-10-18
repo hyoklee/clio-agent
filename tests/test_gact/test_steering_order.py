@@ -274,7 +274,7 @@ def test_steer_arriving_during_judge_discards_the_stale_verdict(
     arm_goal(app, sid, condition="finish")
 
     async def judge(*args: Any) -> GoalJudgement:
-        _pending(app, sid, tmp_path)
+        await asyncio.to_thread(_pending, app, sid, tmp_path)
         await asyncio.sleep(0)
         return GoalJudgement(met=met, reason="old verdict")
 

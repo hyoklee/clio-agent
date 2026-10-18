@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,6 +12,8 @@ import pytest
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import AssignmentDetails, ContextBoundary, TaskOwner, TaskSnapshot
+from clio_agent.gact.core_recovery import CoreRecovery
+from clio_agent.gact.external_tasks import ExternalTasks
 from clio_agent.gact.semantic_events import SemanticEvent
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.gact.task_history import TaskHistory
@@ -18,6 +21,76 @@ from clio_agent.gact.task_migration import migrate_history
 from clio_agent.gact.task_migration_inputs import migrate_context_epochs
 
 STAMP = "2026-10-13T20:00:00Z"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("notify_pending", [False, True])
+async def test_external_restore_preserves_migrated_delivery_decisions_twice(
+    arc: ARCMemory,
+    tmp_path: Path,
+    notify_pending: bool,
+) -> None:
+    """Restart repair cannot upgrade unknown historical delivery to eligible work."""
+
+    def setup() -> Any:
+        sessions = SessionStore(path=tmp_path / "sessions.json")
+        session = sessions.create(workspace_id="workspace")
+        legacy_event(
+            arc,
+            session.id,
+            "task.mcp.observation",
+            {
+                "record": {
+                    "handle": "task_old_external",
+                    "key": {
+                        "server_id": "old-server",
+                        "backend_session_id": "old-session",
+                        "task_id": "old-task",
+                    },
+                    "tool": "work",
+                    "status": "completed",
+                    "created_at": STAMP,
+                    "updated_at": STAMP,
+                    "result": {"content": [], "structuredContent": {"value": "historical"}},
+                    "notify_pending": notify_pending,
+                }
+            },
+        )
+        return SimpleNamespace(
+            state=SimpleNamespace(
+                task_history=TaskHistory(arc),
+                sessions=sessions,
+                human_principal="human",
+                agent=None,
+            )
+        )
+
+    app = await asyncio.to_thread(setup)
+    history = app.state.task_history
+    app.state.task_recovery = CoreRecovery(history)
+    external = ExternalTasks(app)
+    try:
+        await history.io.run(migrate_history, app)
+        saved = history.task_snapshot("task_old_external")
+        assert saved is not None and saved.settlement == "historical_unknown"
+        assert saved.backend is not None and saved.backend.owner == "external_mcp"
+        assert saved.backend_observation is not None and saved.terminal_at is not None
+        notices = await history.io.run(history.pending_mail, saved.owner.session_id)
+        assert len(notices) == int(notify_pending)
+        before = await history.io.run(lambda: len(list(arc._live.iter_event_contents())))
+        for _ in range(2):
+            await history.io.run(migrate_history, app)
+            await external.restore()
+            await app.state.task_recovery.drain()
+            assert history.task_snapshot(saved.handle) == saved
+            assert await history.io.run(history.pending_mail, saved.owner.session_id) == notices
+            assert not history.acknowledged_notifications(saved.owner.session_id)
+        assert external.connections == {}
+        assert await history.io.run(lambda: len(list(arc._live.iter_event_contents()))) == before
+    finally:
+        await external.close()
+        await app.state.task_recovery.drain()
+        await history.io.close()
 
 
 @pytest.mark.parametrize("explicit_epoch", [False, True])

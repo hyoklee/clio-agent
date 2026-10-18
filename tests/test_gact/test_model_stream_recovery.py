@@ -276,7 +276,9 @@ def test_steer_arriving_during_backoff_is_in_the_new_request(
             slept = True
         original_sleep(seconds)
 
-    monkeypatch.setattr(recovery.time, "sleep", sleep)
+    monkeypatch.setattr(
+        recovery, "time", SimpleNamespace(sleep=sleep, monotonic=recovery.time.monotonic)
+    )
     script = [
         Attempt([{"reasoning_content": "Working"}], drop=True),
         Attempt([{"content": "Updated."}]),

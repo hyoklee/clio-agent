@@ -76,7 +76,7 @@ test('the docs group data, results and technical reference around reader tasks',
 	const sidebar = page.locator('#starlight__sidebar');
 	const groups = await sidebar.locator('summary').allTextContents();
 	expect(groups.map((label) => label.trim())).toEqual([
-		'Get started', 'Bring your data', 'Work with CLIO', 'Review and share results',
+		'Get started', 'Bring your data', 'Work with CLIO', 'Tasks and coordination', 'Review and share results',
 		'Find and revisit work', 'Worked examples', 'Customize CLIO', 'Help and privacy', 'Technical reference',
 	]);
 	const results = sidebar.locator('details').filter({ has: page.locator('summary', { hasText: 'Review and share results' }) });

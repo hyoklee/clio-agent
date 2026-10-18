@@ -254,19 +254,27 @@ def ensure_accepted_message(app: "FastAPI", session_id: str, message: Message) -
                         if group_position < len(groups)
                         else len(atoms)
                     )
-                removed = {id(atom) for atom in current}
-                replacement = build_message_part_atoms(message)
-                merged = [
-                    *atoms[:position],
-                    *replacement,
-                    *(atom for atom in atoms[position:] if id(atom) not in removed),
-                ]
+                if not current and position == len(atoms):
+                    # Ordinary chronological input uses the existing confirmed
+                    # append writer. A partial/earlier input still needs the
+                    # atomic splice below; neither path owns another history.
+                    from clio_agent.gact.transcript_recording import record_message
 
-                def write(lane: str) -> None:
-                    for atom in merged:
-                        append_part_atom(store, session_id, atom, lane=lane)
+                    record_message(arc, session_id, message)
+                else:
+                    removed = {id(atom) for atom in current}
+                    replacement = build_message_part_atoms(message)
+                    merged = [
+                        *atoms[:position],
+                        *replacement,
+                        *(atom for atom in atoms[position:] if id(atom) not in removed),
+                    ]
 
-                replace_lane(store, session_id, MESSAGE_PART_SCOPE, write)
+                    def write(lane: str) -> None:
+                        for atom in merged:
+                            append_part_atom(store, session_id, atom, lane=lane)
+
+                    replace_lane(store, session_id, MESSAGE_PART_SCOPE, write)
     from clio_agent.gact.transcript_recording import project_message
 
     project_message(app, session_id, message, newly_recorded=not complete, ordered=True)

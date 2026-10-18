@@ -4,30 +4,32 @@
 
 The integrated candidate merges develop 303edbce and GACT 86e87fb8. Replacement owners remain unchanged. Required impact coverage: Q1/Q2 native Shell/storage argument schemas; Q3/Q4 Core input commitment during model retry and human steering; Q3/Q9 Question bundle forms; Q8 configurable inference/depth limits; Q9 current UI. All affected rows remain pending fresh regression/live evidence. No predecessor evidence is promoted to final acceptance.
 
-## Current candidate — October 18, 15:30 UTC
+## Current candidate — October 18, 15:55 UTC
 
-Latest pushed core is f21cdb91 / GACT 76930e5d / marketplace c4325a77; this
-commit contains the next combined correction. Runtime dependencies remain
-iowarp-core 2.3.2, FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2,
-Claude Agent SDK 0.2.159 and the locked schema. The D: installed source remains
-4a8bfd6c / GACT 86e87fb8; it has not been refreshed during the resource hold.
+This correction records GACT e2e64e41 / marketplace c4325a77 over pushed core
+79673b4d; dependencies and develop merge remain unchanged. See current status
+for exact identities. Installed D: source remains 4a/86 during the resource hold.
 
-1f CI failed 59 distinct cases across eleven reports (one Python 3.12 report
-missing). GACT unit suites passed; browser evidence is 152 passed / 2 failed.
-The combined corrections and fresh regressions are described in current status.
-Astra cleared the cancellation change but found incomplete post-terminal
-publication recovery at f21. This commit repairs that existing owner path and
-adds eighteen fault/restart scenarios. Actual Fable's 1f cancellation-liveness
-finding was corrected at f21. Both must review this correction; neither source review passes live
-acceptance. Astra approved removal of unused duplicate physical indexes as a
-bounded simplification. F03/Q7 retention/replay performance remains unverified,
-with all 1,005 messages and existing deadlines retained.
+Complete f21 CI has six distinct failures/errors, with the 1,005-message case
+passing on all interpreters under its original deadline. 796 CI has eleven
+reports and five distinct failures; it is incomplete. The 260-action case still
+times out. The current correction reuses normal transcript append for ordinary
+inputs while retaining atomic partial/earlier repair; performance needs fresh CI.
 
-D: write failure prevents new model/service families until actual resource
-recovery. No final Q1–Q9 or thirty-race row is accepted. Existing R186/R191
-scoped evidence and prior source verdicts remain historical. See the single
-[current status](task-replacement-current-status.md) and
-[execution sheet](task-replacement-live-experiments.md) for exact gates and cleanup.
+Astra and actual Fable found historical-delivery and conversation-publication
+gaps. This batch repairs both and constructs fault/restart/migration regressions.
+Their final approval is pending. GACT's actual attention tray receives the
+composer colour correction and retained browser assertions; a new matching UI
+build is required. Pages builds but has six browser failures corrected here.
+
+New model/service launches remain held after D: OS112. No final Q1–Q9 or
+thirty-race row is accepted. SSE instrumentation now covers the real async route,
+but oversized live SSE remains unverified. The old workflow harness is obsolete
+and is not Q5 evidence. Existing predecessor model results are not promoted.
+
+See [current status](task-replacement-current-status.md) and the
+[execution sheet](task-replacement-live-experiments.md) for the full gate/evidence
+and manual-only cleanup boundaries.
 
 ## Construction and preceding evidence
 

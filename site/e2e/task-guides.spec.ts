@@ -28,8 +28,7 @@ for (const theme of ['light', 'dark']) {
 				await expect(page).toHaveURL(new RegExp(`/docs/tasks/${guide.slug}$`));
 				await expect(page.getByRole('heading', { level: 1, name: guide.title, exact: true })).toBeVisible();
 				await expect(nav.locator('[aria-current="page"]')).toHaveText(guide.nav);
-				const title = guide.slug === 'session-coordination/'
-					? 'Development build; qualification has limits' : 'Development preview';
+				const title = 'Development preview';
 				const note = page.locator('.sl-markdown-content .starlight-aside').filter({
 					has: page.locator('.starlight-aside__title', { hasText: title }),
 				});
@@ -106,7 +105,8 @@ test('task guides distinguish Stop, peer read permissions and qualification at e
 	await expect(page.locator('.sl-markdown-content')).toContainText('Task observation and waits default to the caller');
 	await expect(page.locator('.sl-markdown-content')).toContainText('Fresh native-replacement model and cross-workflow qualification is pending.');
 	await page.locator('.sl-markdown-content p').getByRole('link', { name: 'Session coordination', exact: true }).click();
-	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('Its fresh model, workflow and UI qualification is still pending.');
+	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('full provider and platform qualification is still incomplete');
+	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('They do not qualify the native-task replacement');
 	const subscription = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Find a run and subscribe to its result' }) });
 	await expect(subscription).not.toHaveAttribute('open');
 	await subscription.locator('summary').click();

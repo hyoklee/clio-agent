@@ -1,41 +1,39 @@
 # Tasks replacement: finite live experiments
 
-## Current execution hold — October 18, 15:30 UTC
+## Current execution hold — October 18, 15:55 UTC
 
-D: writes failed with OS error 112. No new product family launches until actual
-resource recovery. Protected/rejected roots are never absence prerequisites.
-No service/accepted task is active; R195 is prepared but unlaunched.
+D: OS112 still holds new product launches. No resource-state answer has arrived.
+No product service/accepted task is active. R196 Fable source review is settled;
+its reused six-file/47,404-byte profile remains manual-only. Cleanup was not retried.
 
-Latest pushed tuple is core f21cdb91 / GACT 76930e5d / marketplace c4325a77,
-retaining develop 303edbce. The combined correction in this commit needs fresh
-CI and independent review. Current source status: Astra found a terminal-publication
-recovery hole at f21; this commit repairs it. Fable's 1f cancellation-liveness
-finding was corrected at f21, pending its fresh review. Publication recovery,
-terminal cancellation and duplicate physical-index
-removal require affected live requalification. Current CI: 59 distinct core
-failures, GACT unit suites passed / browser 152 passed and 2 failed.
+The next combined correction records GACT e2e64e41 / marketplace c4325a77.
+Its source/CI/review state is in [current status](task-replacement-current-status.md).
+Complete f21 CI has six distinct failures; 796 CI remains incomplete with five
+in eleven reports. Both reviewers require the current publication/migration
+corrections. Current regression passes do not qualify Q1–Q9.
 
-Installed D: source remains 4a8bfd6c / GACT 86e87fb8, with Python 3.14.6,
-iowarp-core 2.3.2, FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0 and Docket 0.26.2.
-The completed matching UI receipt is r193-web-build.json. Later UI edits are
-test-only; record compatibility explicitly when refreshing the candidate.
-Never relabel a predecessor build as rebuilt on a later head.
+After resource recovery:
+1. Freeze/refresh the final source/dependency/schema/runtime tuple and preflight
+   actual Codex and Claude bridges. Keep all execution data inside the D: repo.
+2. Build matching UI: e2e changes the attention tray, so R193 assets cannot be reused.
+3. Update the prepared R195 family before launch, including exact source/UI
+   identities, async SSE metrics and current Download arguments. Protected R184
+   roots and manual residues are never absence prerequisites.
+4. Execute external recovery/UI, native/mixed work, assignment delivery/lifecycle,
+   two declared workflows with human Core grants, then capacity/recovery families.
+   The old session_workflow_tasks.py uses removed scope/intent/message arguments
+   and distinct blueprints rather than declared workflow executions; do not count
+   it as Q5 or launch it unchanged.
+5. Reconcile all Q1–Q9 evidence and execute thirty final R1–R6 repetitions on the
+   frozen production tuple. Retain honest uncertainty and physical settlement.
 
-R186 actual Luna/direct-SSE proved scoped acceptance, independent action, one
-attention, same-identity reconnect and final delivery, but its Runs filter failed.
-R191 supplied a predecessor retention pass. Neither qualifies this tuple.
-No final lifecycle race has been accepted. Q1–Q9 remain required, including the
-oversized-SSE route: the old diagnostic hooks only the synchronous parser while
-the actual direct provider uses the asynchronous parser. Ordinary SSE success
-does not pass that oversized-line gate.
+The oversized-SSE row still requires actual-model/provider evidence. Diagnostic
+wrappers now observe both pinned SDK routes without changing bytes/options/limits;
+their unit cases do not qualify the live route. No clio.lm15.sse_limit product
+setting is claimed exposed.
 
-After resource recovery: freeze/refresh the combined core/GACT/dependency tuple,
-record processes/ports/data, use the completed compatible UI, preflight Codex
-and Claude, then execute the scoped external recovery/UI family and remaining
-native/assignment/workflow/capacity families. Preserve family source while running;
-settle and clean up before corrections. Thirty final R1–R6 repetitions remain
-required. See [current status](task-replacement-current-status.md) and the
-[acceptance ledger](task-replacement-acceptance.md) for gate/evidence boundaries.
+Source reviews, regression tests, browser fixtures and actual-model/service
+qualification stay separate. R186/R191 remain their named predecessor evidence.
 
 ## Regression and live-verification loop
 

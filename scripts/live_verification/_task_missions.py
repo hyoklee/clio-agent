@@ -80,8 +80,8 @@ def mission(kind: str, workspace: Path, *, source: dict[str, Any] | None = None)
     elif kind == "Download" and source is not None:
         submit = (
             f"Call connected_data_download(source_id={source['source_id']!r}, "
-            f"selected_paths={source['selected_paths']!r}, "
-            "description='Download owned live payload and directory selections')."
+            f"paths={source['selected_paths']!r}, "
+            "_clio_task_description='Download owned live payload and directory selections')."
         )
     else:
         raise ValueError(f"No mission for {kind}")

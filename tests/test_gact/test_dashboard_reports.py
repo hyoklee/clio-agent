@@ -8,6 +8,7 @@ import json
 import re
 from html import unescape
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -165,15 +166,20 @@ def test_foreign_artifact_cannot_revise_report_family(dashboard: tuple[Any, str,
 
 @pytest.mark.parametrize("ready", [False, True])
 def test_inspection_capture_target_preserves_identity_and_loading_semantics(
-    dashboard: tuple[Any, str, Path], ready: bool
+    dashboard: tuple[Any, str, Path],
+    ready: bool,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Loading viewers must not recommend a pinned epoch that becomes stale."""
+    from clio_agent.gact import a2ui_visual
     from clio_agent.gact.a2ui_producer import build_inspect_a2ui_surface_tool
     from clio_agent.gact.a2ui_visual import ViewerReport
 
     app, sid, path = dashboard
     saved = publish_dashboard_report(app, sid, definition_path=str(path))
     surface = read_dashboard_report(app, sid, saved["artifact_id"])["surface"]
+    clock = [0.0]
+    monkeypatch.setattr(a2ui_visual, "time", SimpleNamespace(monotonic=lambda: clock[0]))
     app.state.a2ui_visual.report(
         sid,
         ViewerReport(
@@ -196,6 +202,8 @@ def test_inspection_capture_target_preserves_identity_and_loading_semantics(
         assert target["expected_view_revision"] == 4
     else:
         assert "expected_view_revision" not in target
+    clock[0] = a2ui_visual.VIEWER_TTL + 0.001
+    assert app.state.a2ui_visual.viewers(sid, surface["id"]) == []
 
 
 def test_saved_view_control_uses_declared_binding_and_leaves_artifact_intact(

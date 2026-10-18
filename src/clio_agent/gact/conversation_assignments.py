@@ -283,11 +283,10 @@ def _finish_segment(
 ) -> None:
     with self.history.serialized():
         current = self.history.task_snapshot(segment.assignment.handle)
-        if (
-            current is None
-            or current.terminal_at is not None
-            or current.cancellation_requested_at is not None
-        ):
+        if current is not None and current.terminal_at is not None:
+            publish_task_notice(self.history, current)
+            return
+        if current is None or current.cancellation_requested_at is not None:
             return
         pending = [
             self.history.task_snapshot(handle)
@@ -436,10 +435,15 @@ async def complete_deferred(
 
     def complete() -> None:
         with self.history.serialized():
-            current = self.history.latest_assignment(sid)
-            if current is None or current.handle != assignment_handle:
+            current = self.history.task_snapshot(assignment_handle)
+            if current is None or current.owner.session_id != sid:
                 raise ValueError("Deferred completion no longer addresses this assignment")
-            if current.terminal_at is not None or current.cancellation_requested_at is not None:
+            if current.terminal_at is not None:
+                publish_task_notice(self.history, current)
+                return
+            if self.history.latest_assignment(sid) != current:
+                raise ValueError("Deferred completion no longer addresses this assignment")
+            if current.cancellation_requested_at is not None:
                 return
             details = (
                 AssignmentDetails.model_validate(self.history.read_content(current.details))

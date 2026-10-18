@@ -90,6 +90,7 @@ class ExternalTasks:
                     current.backend is not None
                     and current.backend.owner == "external_mcp"
                     and current.backend_observation is not None
+                    and current.settlement == "external_acknowledged"
                 ):
                     await self._record_or_defer(
                         "external-publication:" + handle,

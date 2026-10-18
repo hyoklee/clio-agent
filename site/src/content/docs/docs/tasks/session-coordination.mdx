@@ -4,6 +4,7 @@ description: Durable session run handles, authorized peer observation and indepe
 ---
 
 import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
+import TasksPreview from '../../../../components/TasksPreview.astro';
 
 <TasksGuideNav active="coordination" />
 
@@ -11,6 +12,8 @@ Consider two sessions: one acquires data while another evaluates the current
 analysis. Shared task handles let authorized peers observe progress, wait for the
 required outcome, exchange feedback and continue without a human copying messages
 between them.
+
+<TasksPreview />
 
 ## One human owner, several cooperating sessions
 
