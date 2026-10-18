@@ -13,6 +13,7 @@ from uuid import uuid4
 
 from clio_agent.arc.lane_chunking import lane_has_segments, lane_segments
 from clio_agent.arc.lane_generations import current_base, replace_lane
+from clio_agent.arc.schema import Segment
 from clio_agent.errors import ClioError
 from clio_agent.gact.messages import retained_message_position
 from clio_agent.gact.part_atoms import (
@@ -199,10 +200,8 @@ def ensure_accepted_message(app: "FastAPI", session_id: str, message: Message) -
         store = arc._segments
         with store._lock_for(session_id, MESSAGE_PART_SCOPE):
             base = current_base(store, session_id, MESSAGE_PART_SCOPE)
-            atoms = [
-                segment.content
-                for segment in lane_segments(store, session_id, base, include_tombstoned=False)
-            ]
+            retained = list(lane_segments(store, session_id, base, include_tombstoned=False))
+            atoms = [segment.content for segment in retained]
             groups = group_atoms_in_order(atoms)
             retracted = retracted_part_ids(atoms)
             if any(part.id and part.id in retracted for part in message.parts):
@@ -264,10 +263,14 @@ def ensure_accepted_message(app: "FastAPI", session_id: str, message: Message) -
                 else:
                     removed = {id(atom) for atom in current}
                     replacement = build_message_part_atoms(message)
-                    merged = [
-                        *atoms[:position],
+                    merged: list[Segment | dict[str, Any]] = [
+                        *retained[:position],
                         *replacement,
-                        *(atom for atom in atoms[position:] if id(atom) not in removed),
+                        *(
+                            segment
+                            for segment in retained[position:]
+                            if id(segment.content) not in removed
+                        ),
                     ]
 
                     def write(lane: str) -> None:

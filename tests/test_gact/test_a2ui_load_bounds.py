@@ -322,6 +322,15 @@ def test_sustained_actions_keep_the_per_session_reason_ring_at_256(
 
         for name in ("get", "put"):
             monkeypatch.setattr(store, name, measure(name, getattr(store, name)))
+        from clio_agent.gact import part_atoms
+
+        monkeypatch.setattr(
+            part_atoms,
+            "_append_segment_raw",
+            measure("atom_append", part_atoms._append_segment_raw),
+        )
+        segments = app.state.task_history.arc._segments
+        monkeypatch.setattr(segments, "_persist", measure("persist", segments._persist))
         started = time.monotonic()
         attempts = A2UI_CATALOG_REASON_RING_MAXLEN + 4
         for i in range(attempts):

@@ -62,6 +62,8 @@ from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+import msgspec
+
 from clio_agent import conf
 from clio_agent.arc.lane_chunking import chunk_for_append, lane_segments
 from clio_agent.arc.lane_generations import current_base
@@ -545,7 +547,7 @@ def _append_segment_raw(
     session_id: str,
     scope: str,
     kind: SegmentKind,
-    content: dict[str, Any],
+    content: dict[str, Any] | Segment,
     *,
     persist: bool = True,
 ) -> Segment:
@@ -563,7 +565,7 @@ def _append_segment_raw(
         session_id: Owning session.
         scope: The physical content-lane scope (:data:`MESSAGE_PART_SCOPE`).
         kind: The atom kind (:data:`MESSAGE_PART_KIND`).
-        content: The atom payload (coerced to a msgpack-safe form on the way in).
+        content: A new payload, or a confirmed retained segment during staged replay.
 
     Returns:
         The appended segment (its store-assigned ``logical_time`` + ``order``).
@@ -574,12 +576,23 @@ def _append_segment_raw(
     from clio_agent.arc.segments import _coerce_content  # noqa: PLC0415 - avoid import cycle
 
     with store._lock_for(session_id, scope):
+        if isinstance(content, Segment):
+            if persist or content.session_id != session_id or content.kind != kind:
+                raise ValueError("Invalid retained atom identity or live replay")
+            # Retained payloads already crossed normalization and Core confirmation.
+            # The native codec detaches nested containers without reinterpreting data
+            # or repeating Python foreign-object conversion for the whole history.
+            payload = msgspec.msgpack.decode(
+                msgspec.msgpack.encode(content.content), type=dict[str, Any]
+            )
+        else:
+            payload = _coerce_content(content)
         segs = store._segs(session_id, scope)
         order = max((s.order for s in segs), default=0.0) + 1.0
         seg = Segment(
             scope=scope,
             kind=kind,
-            content=_coerce_content(content),
+            content=payload,
             session_id=session_id,
             step=-1,
             order=order,
@@ -613,7 +626,11 @@ def append_part_atom(
 
 
 def append_part_atoms(
-    store: Any, session_id: str, contents: Sequence[dict[str, Any]], *, lane: str | None = None
+    store: Any,
+    session_id: str,
+    contents: Sequence[dict[str, Any] | Segment],
+    *,
+    lane: str | None = None,
 ) -> list[Segment]:
     """Use the canonical atom writer, confirming each affected chunk once.
 
@@ -622,7 +639,7 @@ def append_part_atoms(
     Single streaming atoms still confirm immediately; a persistence error keeps
     the existing store failure and generation rollback behavior.
     """
-    if lane is None and len(contents) > 1:
+    if lane is None and (len(contents) > 1 or any(isinstance(c, Segment) for c in contents)):
         raise ValueError("A multi-atom batch requires an unpublished generation")
     with store._lock_for(session_id, MESSAGE_PART_SCOPE):
         base = lane if lane is not None else current_base(store, session_id, MESSAGE_PART_SCOPE)

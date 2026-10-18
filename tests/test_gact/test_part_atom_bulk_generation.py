@@ -178,3 +178,84 @@ def test_live_atom_is_hidden_until_its_core_write_settles(
         with pytest.raises(ArcPersistError):
             writer.result(timeout=3)
         assert reader.result(timeout=3) == previous
+
+
+def test_replayed_atoms_copy_confirmed_content_and_normalize_only_new_input(
+    arc: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A splice keeps detached raw payloads without recursively recoercing history."""
+    from clio_agent.arc import segments
+
+    store = arc._segments
+    sid = "bulk-generation"
+    contents = _atoms(3)
+    contents[0]["foreign"] = b"original bytes"
+    for content in contents:
+        part_atoms.append_part_atom(store, sid, content)
+    retained = list(
+        lane_segments(store, sid, part_atoms.MESSAGE_PART_SCOPE, include_tombstoned=False)
+    )
+    expected = [segment.content for segment in retained]
+    assert expected[0]["foreign"] == "b'original bytes'"
+    fresh = _atoms(4)[-1]
+    fresh["foreign"] = b"new bytes"
+    original = segments._coerce_content
+    normalized: list[dict[str, Any]] = []
+
+    def normalize(content: dict[str, Any]) -> dict[str, Any]:
+        normalized.append(content)
+        return original(content)
+
+    monkeypatch.setattr(segments, "_coerce_content", normalize)
+    replace_lane(
+        store,
+        sid,
+        part_atoms.MESSAGE_PART_SCOPE,
+        lambda lane: part_atoms.append_part_atoms(store, sid, [*retained, fresh], lane=lane),
+    )
+    recorded = list(
+        lane_segments(
+            store,
+            sid,
+            current_base(store, sid, part_atoms.MESSAGE_PART_SCOPE),
+            include_tombstoned=False,
+        )
+    )
+    assert normalized == [fresh]
+    assert [segment.content for segment in recorded] == [*expected, original(fresh)]
+    assert recorded[-1].content["foreign"] == "b'new bytes'"
+    retained[0].content["part"]["text"] = "old generation changed"
+    assert recorded[0].content["part"]["text"] == "Recorded content 0"
+    recorded[1].content["message"]["metadata"]["new"] = True
+    assert "new" not in retained[1].content["message"]["metadata"]
+
+
+def test_retained_atom_replay_rejects_another_session(arc: Any) -> None:
+    """A retained payload cannot be relabelled as another session's history."""
+    source = part_atoms.append_part_atom(arc._segments, "bulk-generation", _atoms(1)[0])
+    with pytest.raises(ValueError, match="retained atom identity"):
+        part_atoms.append_part_atoms(
+            arc._segments, "other-session", [source], lane=part_atoms.MESSAGE_PART_SCOPE + "/g/test"
+        )
+
+
+def test_retained_atom_replay_requires_an_unpublished_generation(arc: Any) -> None:
+    """Live append retains its original normalization and confirmation boundary."""
+    source = part_atoms.append_part_atom(arc._segments, "bulk-generation", _atoms(1)[0])
+    with pytest.raises(ValueError, match="unpublished generation"):
+        part_atoms.append_part_atoms(arc._segments, "bulk-generation", [source])
+
+
+def test_retained_atom_replay_rejects_another_kind(arc: Any) -> None:
+    """Another canonical lane cannot be reinterpreted as message-part history."""
+    import msgspec
+
+    source = part_atoms.append_part_atom(arc._segments, "bulk-generation", _atoms(1)[0])
+    incompatible = msgspec.structs.replace(source, kind="observation")
+    with pytest.raises(ValueError, match="retained atom identity"):
+        part_atoms.append_part_atoms(
+            arc._segments,
+            "bulk-generation",
+            [incompatible],
+            lane=part_atoms.MESSAGE_PART_SCOPE + "/g/test",
+        )
