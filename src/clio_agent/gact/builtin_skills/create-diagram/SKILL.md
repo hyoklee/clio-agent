@@ -1,64 +1,79 @@
 ---
 name: create-diagram
 title: Create Diagram
-description: Create or revise Mermaid-family diagrams with CLIO's bundled Pele renderer for workflows, protocols, branch histories, grammars or hierarchies. Includes source syntax, workspace folder links and rendered image review.
+description: Choose, compose and review diagrams from a person's material. Mermaid's component entry supplies the complete supported-family inventory, syntax and examples; this skill covers the authoring workflow.
 ---
 
-Use a diagram when its relationships are easier to understand visually. Prose,
-a list or a table can be a better answer; the availability of this skill is not
-a requirement to draw something.
+Start with the relationships the reader needs to understand. A protocol has
+participants and ordered messages; an ER model has entities and cardinalities;
+a lifecycle has states and transitions; commit history has ancestry; a grammar
+has accepted token sequences; a hierarchy has containment. Choose the notation
+that preserves that meaning. A diagram is optional: prose, a table or a list
+can answer better. Do not turn every subject into a flowchart or reproduce a
+fixed dashboard layout.
 
-CLIO renders Mermaid source with bundled Pele: Pele is the rendering engine,
-not a different component or a JavaScript API the agent needs to call. Keep the
-`mermaid` fence and `clio.mermaid.v1` component name. CLIO retains compatibility
-rendering for existing Mermaid documents. It handles flowcharts, sequences, git graphs,
-mindmaps, states, timelines, railroad grammars and other supported diagram types.
-The renderer adapts to the viewing width and active theme. Do not install a browser,
-fetch a CDN or embed renderer code merely to display an ordinary diagram.
+## One authority for the component
 
-Choose the form that expresses the relationship: a sequence for a protocol,
-a git graph for branches and merges, a mindmap for a hierarchy, a railroad for
-a grammar, or a flowchart for stages and decisions. Keep quantitative evidence
-in CLIO's chart/data views when their filtering, units and shared selection help.
-Authored HTML/SVG remains available for a custom illustration or interaction;
-use the declared file tools and normal artifact registration for that result.
+The active A2UI catalog's **`clio.mermaid.v1` entry** contains the complete
+supported-family inventory, syntax, runnable examples, notation variants and
+CLIO viewer behaviour. Load its exact schema in the same batch as any needed
+layout components:
 
-For engine differences, theme/size behavior, CLIO's input shape and recovery,
-load `references/pele-in-clio.md`. For concrete syntax, load
-`references/diagram-examples.md` when useful. It has
-small rendered examples of flowcharts, sequences, git graphs, mindmaps and
-Pele's `railroad-ebnf-beta` grammar; no need to load every example for each diagram.
-
-For a small explanation, use a `mermaid` code block. For an interactive report,
-load the active catalog's `clio.mermaid.v1` contract and use inline `source` or
-`dataUri` for a registered source file. Use `create-dashboard` for a saved report.
-Give wide workflows a full-width panel when needed. Equal and uneven columns
-are both options; neither is a default composition rule. Keep labels concise
-without hiding distinctions or inventing stages, paths or measurements.
-
-Folder navigation is explicit and uses the current workspace's existing access:
-
-```mermaid
-flowchart LR
-  inputs[Input data] --> analysis[Analysis] --> report[Report]
-  click inputs "workspace-folder:data/inputs" "Open input data"
-  click analysis "workspace-folder:analysis" "Open analysis folder"
-  click report "workspace-folder:reports" "Open reports folder"
+```text
+load_skill("a2ui-catalog-clio-workspace", files=[
+  "catalog.json#/components/clio.mermaid.v1",
+  "catalog.json#/components/Column"
+])
 ```
 
-Inspect the real workspace before authoring these targets. Each target is a
-relative directory path; percent-encode reserved characters. CLIO opens the
-folder in Files when the person clicks the corresponding node. This is guarded
-navigation, not an executable Mermaid callback. Arbitrary click handlers, HTML,
-init directives, external URLs and paths outside the workspace are not folder
-targets. Navigation does not grant permissions or run commands. A plain export
-retains the diagram; folder navigation needs an open workspace.
+Use the catalog skill actually declared for this session; the example names
+CLIO's workspace catalog. The returned `x-clio-authoring` is guidance, not a
+property to copy into a component payload. It covers all supported families,
+not only flowcharts/sequences. Choose the relevant family and use its syntax;
+there is no requirement to render every family. No additional syntax reference
+from this skill is needed. Mermaid remains the source language and component
+name; the bundled rendering library is an implementation detail.
 
-For substantial diagrams and dashboards, load `review-visual-presentation`.
-Inspect the actual captured image at the person's viewing width, identify
-cropping, unreadable text, unused space or misleading relationships, revise,
-and inspect a fresh capture. Keep graph structure and any folder targets intact.
-The raw source and a successful render are not evidence that the result is clear.
-A hand-authored gallery checks the renderer, not your ability to interpret the
-person's request. Review the artifact you actually authored from their material;
-distinguish a synthetic example, a real agent run and a production-data workflow.
+For a short explanation, a `mermaid` fenced block uses the same source language.
+For a composed saved report, `create-dashboard` covers publication and revision.
+The catalog is the authority for source/artifact inputs, controls, themes,
+navigation and limitations. Do not invent component properties from library APIs.
+
+## Author from evidence
+
+Identify the facts that must survive: entities and attributes, edge direction,
+branch conditions, message order, optionality, multiplicity, dates or ownership.
+Keep a small checklist against the supplied material. Mark uncertainty and
+synthetic examples; do not invent stages, measurements, filenames or chronology.
+Choose stable IDs separately from display labels. Preserve source text so a
+later revision can change the diagram rather than rebuilding from a screenshot.
+Source statements need actual newlines. The component entry includes a complete
+JSON payload showing one level of newline encoding; serialize that document
+once rather than leaving literal backslash-n separators in the source value.
+
+Give each diagram the space its relationships need. Full width, equal columns,
+uneven columns and a vertical report are all options. Separate independent
+subjects when useful, while keeping views needed for a comparison together.
+Keep quantitative evidence in data views when filtering, units or shared
+selection matter; diagrams and custom HTML/SVG are available for explanations
+that benefit from them.
+
+Folder links are intentional actions, not inferred from filenames or node
+names. Inspect the actual workspace before adding the catalog's explicit
+`workspace-folder:` targets. A conceptual tree does not imply real files exist.
+
+## Review the authored result
+
+Use `review-visual-presentation` for a substantial diagram/report. Inspect the
+actual captured image of the published artifact at the docked width, and an
+expanded view when needed. Check every relevant view, not just the first tab.
+Review headings, labels, legends and arrows as well as the diagram bounds.
+Source visibility or a successful render does not establish readability.
+
+Compare the rendered relationships with the evidence checklist. Fix missing
+conditions, reversed arrows, omitted siblings, undefined grammar productions,
+clipped text or unreadable scaling; then capture and inspect the correction.
+Do not simplify away a difficult relationship just to make syntax pass. State
+any remaining defect and distinguish an unavailable capture from a parser error.
+A renderer gallery tests the renderer; acceptance requires the model's own
+authored artifact and its actual captured pixels.

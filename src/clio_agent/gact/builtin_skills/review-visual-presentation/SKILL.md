@@ -72,6 +72,10 @@ instead of replacing the root data model with a guessed set of properties.
 Compare the actual captured camera, frame and filters with the requested
 values. If a declared control did not move, inspect its binding and correct
 the update, then capture again before claiming the change worked.
+For multiple tabs or camera positions, compare each returned capture's control
+values and view revision with the requested view. Keep the image hash with that
+state. Repeated tool arguments or an earlier screenshot are not evidence of a
+new view; confirm the returned pixels and state before counting it as reviewed.
 If a viewer is still loading, pass `expected_view_revision=null` (or omit it)
 to let capture wait for readiness within its deadline. Pin a view epoch
 when an already-ready human view must match exactly; a loading epoch

@@ -40,7 +40,9 @@ find out. If a plan file already exists, judge whether it still fits THIS task
 before editing; treat a genuinely new task as a fresh plan.
 
 A Mermaid diagram can clarify dependencies, a protocol or a proposed workflow
-in the plan. Use `create-diagram` for guidance when useful, within Plan Mode's
+in the plan. The active Mermaid component entry documents its supported
+notations and syntax; `create-diagram` covers selection and review. Use them
+when useful, within Plan Mode's
 existing tool boundaries. A list or prose can be clearer; diagrams are optional.
 
 ## Phase 4 — Show & exit (the turn-ending contract)

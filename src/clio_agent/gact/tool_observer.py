@@ -148,6 +148,9 @@ def _merge_tool_call_rows(
             existing = merged[index]
             existing_ok = existing.get("ok")
             if key[0] == "__call_id__":
+                existing_key = _tool_call_event_key(existing)
+                if existing_key[0] == "__call_id__" and existing_key != key:
+                    continue
                 candidate_index = index
                 break
             if supplemental_has_result and existing_ok is False and supplemental_ok is not False:
