@@ -12,8 +12,9 @@ skipped/unavailable live/platform gates are not converted into passes.
 R219 matching online/offline builds passed. Astra and actual Claude Code/Fable
 both returned current-tuple source GO. R227 and R234 passed actual Codex/Luna child/root two-workflow
 child-peer discovery/message/observe/expired wait/subscription/denied-control,
-revocation-before-injection and regrant delivery. Both workflows completed with
-one owner and one independent subscriber completion commit. Real read-only UI
+revocation-before-injection and regrant delivery. In R227 the child owner and
+subscriber each had one completion input commit. In R234 the human-owned root
+had zero self-completion input commits and its subscriber had one. Real read-only UI
 opened the paused child and its access view; this is not the complete Q9 gate.
 
 **Full Q1–Q9, migration/recovery and all 30 final-candidate race repetitions remain

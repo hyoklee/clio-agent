@@ -8,7 +8,7 @@ incomplete; publication and daily Desktop installation remain separate.
 
 | Milestone | Current evidence |
 | --- | --- |
-| Production candidate | clio-agent `a0645c216fad81fb36a063dbdb4b9f5bee1d87b0`; GACT `c813c1b7d3064c5b6125dc21c9aec70117c78ca4`. |
+| Runtime implementation | clio-agent `a0645c216fad81fb36a063dbdb4b9f5bee1d87b0`; GACT `c813c1b7d3064c5b6125dc21c9aec70117c78ca4`. Later documentation-only commits preserve this runtime code. |
 | Regression CI | Agent run 39166370524: all 24 jobs successful; twelve Python reports, zero failures/errors. Python 3.12/3.13/3.14 each have 12,993 passes and 50 exclusions. Exclusions are not passes or live acceptance. |
 | UI CI | GACT runs 39166228634 and 39166224687 succeeded at c813c1b7. The first has six applicable successes and three conditional release skips. The second has five successes, the conditional native-proof job skipped and three conditional release skips. |
 | Matching build | R219 online/offline builds passed at the exact tuple; 655 files / 60,368,527 bytes. Index SHA256 `0d8febb24e4855dbf402427e697355a142b83bed7a0f95ea68f2b26ce77ded0a`. |
@@ -107,8 +107,17 @@ checker incorrectly expected a flattened result in a legacy UI projection.
 The run remains failed and its data was removed. Both storage scenarios now read
 canonical task/result endpoints and retain independent complete manifest/path/
 byte/hash assertions. The large-result reader respects pagination/references and
-does not parse truncated JSON as a complete native result. Fresh full storage
-checks remain required.
+does not parse truncated JSON as a complete native result.
+
+R235 at documentation commit `38ce7d8a8` passed the complete current Indexing
+model/physical case. Handle `task_060516abb2864b18b5cf0a07cce70a84` completed
+with manifest `link_442056e231fc4eb880ec964edb9a7828`; all 48,098 paths exactly
+matched the independently enumerated filesystem. Runtime Python, dependencies,
+schema and GACT are unchanged from a0645c21, as recorded by r236-doc-impact.json.
+The source-approved-before-agent-warmup Download recheck R238 is active;
+R232's earlier source-approval request was rejected by the existing permission
+guard before any Download/model submission. It remains a failed prerequisite,
+not a passed Download. Full Download verification remains required.
 
 R234 observed 12,242 actual native SSE lines: 87 exceeded 65,536 bytes and the
 maximum was 82,331 bytes. All passed at configured 1,048,576 bytes; zero observer

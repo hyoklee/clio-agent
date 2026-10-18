@@ -34,6 +34,16 @@ use canonical public task/results and independent manifests/hashes; they retain
 all original effect checks. All seven fresh family services and fourteen roots
 are settled/absent. The remaining matrix and all 30 races still block completion.
 
+R235 subsequently passed current Indexing model behavior and exact comparison of
+all 48,098 manifest paths. Its service and two disposable roots are absent.
+R232 failed source approval during agent warmup before a model/Download launch;
+its service/data are also absent. R238 now approves that owned source before
+binding/activating an agent, preserving the existing policy guard. Download
+acceptance remains pending. Astra's documentation review requested separate
+child-owner versus human-root delivery claims and explicit predecessor labels
+on three retained captures; this correction batch addresses both. It changes no
+task-runtime source, dependency, schema or GACT code.
+
 ## Regression and live-verification loop
 
 1. Initial production implementation and the complete initial test set precede

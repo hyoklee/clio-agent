@@ -31,7 +31,7 @@ Pause holds the child's model execution and retains its context. The handle
 stays the same. Its accepted shell commands, downloads and other background
 tasks continue. Incoming messages and results remain queued while it is held.
 
-<GuideScreenshot name="tasks-phone-paused" format="png" portrait alt="Work shows a paused worker with a resume control while its Bash task remains running" caption="The worker is paused while Bash continues. Resume releases the model hold; it does not start the command again." />
+<GuideScreenshot name="tasks-phone-paused" format="png" portrait alt="Work shows a paused worker with a resume control while its Bash task remains running" caption="Earlier development capture: the worker is paused while Bash continues. Resume releases the model hold; it does not start the command again." />
 
 Resume lets the same run continue with its saved context and pending messages.
 Wait for a requested pause to settle before resuming. An ordinary peer message
@@ -44,7 +44,7 @@ descendant agents, downloads and shell processes will also be cancelled.
 **View assignment** reveals the full original request before you decide.
 **Keep running** dismisses the dialog without cancelling anything.
 
-<GuideScreenshot name="tasks-phone-cancel-confirmation" format="png" portrait alt="Cancel this task dialog identifies worker number one and warns about cancelling descendant agents, downloads and shell processes" caption="Cancellation is an explicit action. The dialog keeps its consequence and decision visible, with the full assignment available on demand." />
+<GuideScreenshot name="tasks-phone-cancel-confirmation" format="png" portrait alt="Cancel this task dialog identifies worker number one and warns about cancelling descendant agents, downloads and shell processes" caption="Earlier development capture: cancellation is an explicit action. The dialog keeps its consequence and decision visible, with the full assignment available on demand." />
 
 After confirmation, **Cancellation requested** means the owner is still settling.
 It is not proof that the process or transfer has stopped. The terminal outcome
