@@ -1,6 +1,12 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 19:01 UTC
+## Current candidate — October 18, 19:03 UTC
+
+Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
+source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,
+with no remaining blocking finding in the delta. This reporting update changes
+no production or test code. New exact-head CI remains required; source GO is
+not regression or live acceptance.
 
 Initial implementation and test construction are complete. Production is
 **8462da2b** / GACT **07cf095f**. This follow-up only corrects the added
@@ -9,8 +15,8 @@ in source-state-r204.json.
 
 Astra and actual Claude Code/Fable both rejected 8462's incorrect test
 expectation and found no blocking production defect in its allocator change.
-The two assertions now follow the unchanged lane reader. Corrected-source
-confirmation remains pending; no review is called live qualification.
+The two assertions now follow the unchanged lane reader. R204 confirms the
+correction; no review is called live qualification.
 
 [8462 CI](https://github.com/iowarp/clio-agent/actions/runs/39156226461)
 is running, with its known assertion defect explicitly retained as a failure.

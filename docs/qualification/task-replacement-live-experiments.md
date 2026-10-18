@@ -1,12 +1,18 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 19:01 UTC
+## Current execution gate — October 18, 19:03 UTC
+
+Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
+source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,
+with no remaining blocking finding in the delta. This reporting update changes
+no production or test code. New exact-head CI remains required; source GO is
+not regression or live acceptance.
 
 No product/model family is active. Production source is **8462da2b** /
 GACT **07cf095f**; the new follow-up changes only logical-time test assertions
 and reports. Its exact hash/equivalence is recorded in source-state-r204.json.
-Both independent reviewers identified the same test defect; confirmation of
-the correction and regression CI remain required.
+Both independent reviewers confirmed the corrected test contract; regression
+CI and real-service qualification remain required.
 
 [8462 CI](https://github.com/iowarp/clio-agent/actions/runs/39156226461)
 is running with the known assertion defect. The unresolved storage failure is

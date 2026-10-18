@@ -1,6 +1,12 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 19:01 UTC
+## Current state — October 18, 19:03 UTC
+
+Independent R204 reviews: **Astra and actual Claude Code/Fable both returned
+source GO for 157a52a9c45a95e6fb86fe9f0105182c6c2cef04 / GACT 07cf095f**,
+with no remaining blocking finding in the delta. This reporting update changes
+no production or test code. New exact-head CI remains required; source GO is
+not regression or live acceptance.
 
 Initial implementation and initial test construction are **complete**.
 Regression repair and live qualification remain **incomplete**. No release,
@@ -16,7 +22,7 @@ Astra and actual Claude Code/Fable independently reviewed frozen 8462/07.
 Both found the same blocking test expectation, now corrected: changing a
 segment's render order does not change its logical-time append position.
 Neither found a blocking production defect in the allocator delta.
-Their verdicts were NO-GO as committed; corrected-source confirmation is pending.
+Their 8462 verdicts were NO-GO as committed; R204 confirmed the correction.
 Fable exited normally, source stayed frozen and original authentication was
 unchanged. Review/controller PIDs 24216/43036 and descendants are verified absent.
 No prior source approval is represented as live qualification.
