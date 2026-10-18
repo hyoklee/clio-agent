@@ -240,9 +240,12 @@ def prepare_session(base: str, pack: Path, idx: int, workspace_id: str | None = 
             session_input["workspace_id"] = workspace_id
         response = session.post(f"{base}/v1/sessions", json=session_input, timeout=30)
         response.raise_for_status()
-        sid = response.json()["id"]
+        created = response.json()
+        sid = created["id"]
         if not isinstance(sid, str) or not sid:
             raise ValueError(f"session {idx} creation returned an invalid id")
+        if workspace_id and created.get("workspace_id") != workspace_id:
+            raise ValueError(f"session {idx} was not created in its measurement workspace")
         session.post(
             f"{base}/v1/sessions/{sid}/agent-blueprint",
             json={"path": str(pack.resolve())},
@@ -551,6 +554,25 @@ def main() -> int:
     return 0
 
 
+def _gate_environment(args: argparse.Namespace, xdg: Path) -> dict[str, str]:
+    """Keep every CLIO role private on Windows as well as XDG-based hosts."""
+    instance = xdg / "clio-home"
+    return {
+        **os.environ,
+        "CLIO_AGENT_HOME": str(instance),
+        **{
+            f"CLIO_AGENT_{role.upper()}_DIR": str(instance / role)
+            for role in ("config", "data", "cache")
+        },
+        "CLIO_LM_PROVIDER": args.provider,
+        "CLIO_LM_MODEL": args.model,
+        "CLIO_ARC_STORE": "cte",
+        "CLIO_ALLOWED_ROOTS": str(args.workspace),
+        "CLIO_SEMANTIC_TRACE_BACKEND": "none",
+        "XDG_CONFIG_HOME": str(xdg),
+    }
+
+
 def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
     """One complete gate run: boot, verify substrate, drive the load, settle, measure.
 
@@ -564,22 +586,12 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
     # Pack mcp_servers mount at AGENT CONSTRUCTION from INSTALLED blueprints
     # (path-activation alone mounts nothing), so the pack must be installed
     # into the gate XDG or the run measures a fleet-less server.
-    install_root = xdg / "clio-agent" / "agent-blueprints" / args.pack.name
+    env = _gate_environment(args, xdg)
+    install_root = Path(env["CLIO_AGENT_CONFIG_DIR"]) / "agent-blueprints" / args.pack.name
     if not install_root.exists():
         shutil.copytree(args.pack, install_root)
         print(f"installed pack into gate XDG: {install_root}")
     base = f"http://127.0.0.1:{args.port}"
-    env = {
-        **os.environ,
-        "CLIO_LM_PROVIDER": args.provider,
-        "CLIO_LM_MODEL": args.model,
-        # The accepted gate substrate — never 'local' (underperforming fallback).
-        "CLIO_ARC_STORE": "cte",
-        "CLIO_ALLOWED_ROOTS": str(args.workspace),
-        "CLIO_SEMANTIC_TRACE_BACKEND": "none",
-        "XDG_CONFIG_HOME": str(xdg),
-    }
-
     # A pre-existing clio-core daemon (connect-or-spawn) is OUTSIDE the server
     # tree — sample it explicitly or the substrate cost silently drops out.
     external_cte = _external_cte_pids(env)
@@ -646,6 +658,12 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
             )
             return 2
         print(f"substrate verified: arc ready, storage_mode={storage_mode!r}")
+        initial_sessions = requests.get(
+            f"{base}/v1/sessions", params={"include_all_workspaces": "true"}, timeout=30
+        )
+        initial_sessions.raise_for_status()
+        if initial_sessions.json().get("sessions"):
+            raise ValueError("Memory qualification requires a fresh private CLIO data directory")
         workspace_response = requests.post(
             f"{base}/v1/workspaces",
             json={"name": "Memory qualification", "root_path": str(args.workspace.resolve())},

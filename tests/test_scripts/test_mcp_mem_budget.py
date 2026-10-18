@@ -11,6 +11,7 @@ import importlib.util
 import json
 import sys
 import threading
+from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -366,7 +367,10 @@ def test_memory_session_is_created_in_the_explicit_measurement_workspace(
     """The source checkout must not become the live model's default workspace."""
     session = MagicMock()
     session.__enter__.return_value = session
-    session.post.return_value.json.return_value = {"id": "session-0"}
+    session.post.return_value.json.return_value = {
+        "id": "session-0",
+        "workspace_id": "workspace-gate",
+    }
     monkeypatch.setattr(_mod.requests, "Session", lambda: session)
     assert _mod.prepare_session("http://gate", tmp_path, 0, "workspace-gate") == "session-0"
     session.post.assert_any_call(
@@ -389,3 +393,31 @@ def test_concurrent_memory_load_preserves_its_workspace_owner(
     assert prepare.call_count == 3
     for call in prepare.call_args_list:
         assert call.kwargs == {"workspace_id": "workspace-gate"}
+
+
+def test_memory_gate_isolates_native_roles_even_with_ambient_overrides(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """XDG alone does not isolate Windows data or supersede explicit role overrides."""
+    for role in ("config", "data", "cache"):
+        monkeypatch.setenv(f"CLIO_AGENT_{role.upper()}_DIR", str(tmp_path / "user" / role))
+    monkeypatch.setenv("CLIO_CORE_PORT", "9413")
+    args = Namespace(provider="claude_code", model="haiku", workspace=tmp_path / "workspace")
+    env = _mod._gate_environment(args, tmp_path / "private")
+    for role in ("config", "data", "cache"):
+        assert env[f"CLIO_AGENT_{role.upper()}_DIR"] == str(tmp_path / "private/clio-home" / role)
+    assert env["CLIO_CORE_PORT"] == "9413"
+    assert env["CLIO_ALLOWED_ROOTS"] == str(args.workspace)
+
+
+def test_memory_session_rejects_an_unexpected_workspace_owner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An ignored or stale workspace binding cannot silently qualify the wrong folder."""
+    session = MagicMock()
+    session.__enter__.return_value = session
+    session.post.return_value.json.return_value = {"id": "session-0", "workspace_id": "ws_default"}
+    monkeypatch.setattr(_mod.requests, "Session", lambda: session)
+    with pytest.raises(ValueError, match="measurement workspace"):
+        _mod.prepare_session("http://gate", tmp_path, 0, "workspace-gate")
+    assert session.post.call_count == 1
