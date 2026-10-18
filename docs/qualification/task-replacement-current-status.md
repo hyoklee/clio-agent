@@ -1,81 +1,58 @@
-# Tasks replacement status â€” October 18 UTC
+# Tasks replacement status — October 18 UTC
 
-## Integration and live update — 2026-10-18 23:30 UTC
+## Current integration and qualification — October 18, 23:33 UTC
 
-Initial implementation and initial test construction remain complete. Current work
-is integration, regression assurance and live qualification. Full acceptance is
-still incomplete; no release or daily Desktop installation is authorized.
+Implementation and initial test construction are complete. The current feature
+integration is `f203b3bd7f1f0546e8f29d9133408b05ddcb791b` / GACT
+`aca98ce477bbee1d1f14b1f384d1cf283906de6d`, containing develop through `cee026de3`
+and marketplace `2c172233`. FastMCP/Tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and
+Core 2.3.2 remain unchanged; incoming schema 0.6.0b14 uses revision `3224a797`.
+The merged LM admission/storage/UI changes require exact-head CI, a matching
+build and independent delta review. Existing earlier proofs retain their actual
+tuples and do not qualify this integration automatically. Daily Desktop/auth/
+defaults/released primary pins remain preserved. Publication stays separate.
 
-The next candidate integrates `develop` through `cee026de3` into the existing
-feature history, GACT `aca98ce477bbee1d1f14b1f384d1cf283906de6d` and marketplace
-`2c172233a9f895e41f7de121a3871d282a5fc0a2`. FastMCP/fastmcp-tasks 4.1.0,
-MCP 2.0.0, Docket 0.26.2 and iowarp-core 2.3.2 remain pinned. The incoming
-canonical schema revision is `3224a7970d9271b2ff4ca9fe7bec2e227c4eea19`
-(0.6.0b14). This integrates the upstream LM request-admission and NDP changes;
-it does not add a new Tasks owner or scheduler. Its exact committed tuple, CI,
-matching build and independent delta reviews must be recorded before acceptance.
-The protected human design files remain outside the merge index.
+R242 at preceding agent `3582bb82` / GACT `c813c1b7` passed actual Claude Haiku
+via `claude_code` SDK: asynchronous Question handle, independent file read,
+idle and post-Stop answer wakes under the same assignment, explicit result
+collection, one answer-input commitment and no duplicate on later human input.
+Idle assignment `task_633d07b37cfb4f2d89af97affe427164`, Question
+`task_c199f1a064b5fe375168f419dfc4de8146d84acad2f94f88e6e9c072a9a66419`;
+post-Stop assignment `task_c03464834bbb4d9081ce35dbf61b8f96`, Question
+`task_91313719fc84e3f79f5824488f9b56637dcd98c422f622c3c1bffb4330136567`.
+Both cases passed; service exit 0, no active work, both fresh roots absent,
+source and both original authentication files unchanged. Receipts are
+`r242-live-native.json` and `r242-cleanup.json` under D `.pytest-runtime/static`.
+This is not complete Claude child/lifecycle or Q3/Q4 acceptance.
 
-Pre-integration source `3582bb82` / GACT `c813c1b7` freshly passed **R242** with
-actual Claude Haiku through the production `claude_code` SDK bridge. In both
-idle and post-Stop cases the model received an asynchronous Question handle,
-read the real sentinel while it remained pending, and later automatically received
-the answer under the same original assignment. It explicitly read that result.
-Each Question answer has exactly one confirmed recipient-input commitment;
-a later human turn created a linked assignment without repeating the Question or
-its answer. Both original assignments and both Questions completed. This covers
-these two Claude Question scenarios, not all child/lifecycle or Q3/Q4 behavior.
-The service exited 0, no active work remained and both disposable roots are absent.
-Both original authentication files and the frozen production source hash match.
+Download completion remains unqualified. R238 exceeded the unchanged 600-second
+model diagnostic with 48,000 small files. R239 missed startup before submitting
+work. R240's real transfer raised MemoryError while system commit reached 99%
+(83,796,340,736 / 84,128,354,304 bytes); raw backend completion did not prove
+physical settlement. Stop/cancel preceded an authorized owned-tree force-close.
+Its task outcomes remain uncertain although physical retirement/root removal
+are proven. R241 selected the wrong provider and supplies no Claude evidence.
+R238-R242 disposable roots are absent; no archive or rejected cleanup retry.
+R242 recorded 7,099,703,296 bytes commit headroom before launch. Future families
+check a 4-GiB commit reserve and verify the returned provider before submission.
 
-R242 idle assignment: `task_633d07b37cfb4f2d89af97affe427164`;
-Question: `task_c199f1a064b5fe375168f419dfc4de8146d84acad2f94f88e6e9c072a9a66419`.
-Post-Stop assignment: `task_c03464834bbb4d9081ce35dbf61b8f96`;
-Question: `task_91313719fc84e3f79f5824488f9b56637dcd98c422f622c3c1bffb4330136567`.
-Receipts: `r242-live-native.json`, `r242-cleanup.json` in the D checkout's
-`.pytest-runtime/static/` directory.
+Agent CI 39173458592 at `38ce7d8a` completed all 24 jobs, twelve Python reports,
+zero failures/errors. All 1,005 messages passed retention under its unchanged
+180-second guard: 88.861 / 115.743 / 95.790 seconds. A2UI passed at
+158.887 / 143.620 / 50.250 seconds. Fifty exclusions per interpreter remain
+exclusions. Website 39175400770 at `3582bb82` passed build/browser checks;
+deploy was skipped. Agent 39175391771 was still running at this report boundary.
+None of these executes the subsequent integration merge. Astra/Fable source GO
+at `a0645c21` and documentation GO at `3582bb82` remain predecessor-scoped;
+new integrated reviews are pending.
 
-Download remains **unqualified**. R238 exceeded the unchanged 600-second model
-experiment diagnostic with 48,000 selected small files; accepted work progressed,
-then the operator cancelled and removed its data. R239 missed the 120-second
-startup diagnostic before any model/work submission. R240 accepted a Download,
-but the real transfer raised `MemoryError` at `reader.read(1024 * 1024)` while
-Windows was observed at 99% of its 84,128,354,304-byte system commit limit.
-The backend reported completed while physical settlement remained unknown; this
-is not a completed Download proof. Stop and explicit cancellation were requested;
-its service tree needed an authorized force-close. Physical process retirement
-and fresh-root removal are proven; task outcomes remain uncertain. Do not turn
-those outcomes into successful cancellation or file/hash acceptance.
+Full Q1-Q9, migration/recovery and **0/30** final races remain unaccepted.
+The current cases used real product factories/owners under isolated Uvicorn;
+final startup/shutdown proof must use production `run_server`. Artifact-fold
+warnings from the different startup path remain open for that investigation.
+No Tasks-engine patch has been made to hide resource or harness failures.
 
-R241 was a harness provider-selection error: Codex was bound with a Claude model
-name. It supplies no Claude evidence. The corrected R242 checks the returned
-provider before submitting a model assignment. All R238–R242 services and fresh
-data roots are retired/absent; no archives were created. The exact rejected
-cleanup paths in the separate inventory remain manual-only and were not retried.
-R242 preflight recorded 7,099,703,296 bytes of system commit headroom before launch;
-future families check that resource prerequisite before creating a service.
-
-Agent CI `39173458592` at `38ce7d8a` completed all 24 jobs with twelve reports and
-zero failures/errors. Retention kept all 1,005 messages under its unchanged
-180-second guard (88.861 / 115.743 / 95.790 seconds). The A2UI guard passed at
-158.887 / 143.620 / 50.250 seconds. Website run `39175400770` at `3582bb82`
-passed its build/browser checks; deployment was skipped. Agent CI `39175391771`
-at that head was still running at this report boundary. These runs do not execute
-the subsequent integration merge. Fifty exclusions per interpreter remain
-exclusions, not passed tests or live acceptance.
-
-Astra and actual Claude Code/Fable returned source GO at `a0645c21` / `c813c1b7`
-and documentation GO at `3582bb82`. New integration reviews remain pending.
-Q1–Q9 as a whole, the complete migration/recovery gates and **0/30** final race
-repetitions remain unaccepted. The old gates below are retained in full.
-
-The current model/tool cases used the real application factory and production
-owners under isolated Uvicorn. Final startup/shutdown acceptance must also use
-the production `run_server` foreground entrypoint. Factory-service artifact-fold
-warnings are retained for investigation at that entrypoint; no Tasks-engine
-patch is justified solely by the different harness startup path.
-
-## Current state â€” October 18, 22:39 UTC
+## Pre-integration evidence — October 18, 22:39 UTC
 
 Initial implementation and initial test construction are complete. Regression
 checks pass for the current production tuple. Full live qualification remains
@@ -89,7 +66,7 @@ incomplete; publication and daily Desktop installation remain separate.
 | Matching build | R219 online/offline builds passed at the exact tuple; 655 files / 60,368,527 bytes. Index SHA256 `0d8febb24e4855dbf402427e697355a142b83bed7a0f95ea68f2b26ce77ded0a`. |
 | Independent source reviews | Astra and actual Claude Code/Fable both returned source GO for a0645c21 / c813c1b7. These do not qualify runtime behavior. |
 | Current live proof | R227 child peers and R234 root Session peers passed two-workflow coordination; R234 also passed observe-only privacy and real desktop/phone grant/revoke. R230 passed native Shell/model/physical-output checks. Current SSE size evidence passed. Scope and remaining gates below. |
-| Final acceptance | Q1â€“Q9 as a whole, migration/recovery obligations and all 30 final-candidate race repetitions remain unaccepted. No Tasks release or daily installation. |
+| Final acceptance | Q1–Q9 as a whole, migration/recovery obligations and all 30 final-candidate race repetitions remain unaccepted. No Tasks release or daily installation. |
 
 [Agent CI](https://github.com/iowarp/clio-agent/actions/runs/39166370524),
 [GACT workspace](https://github.com/iowarp/gact-tui/actions/runs/39166228634),
