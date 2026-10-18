@@ -1,39 +1,41 @@
 # Tasks replacement: finite live experiments
 
-## Current execution hold — October 18, 15:55 UTC
+## Current execution gate — October 18, 16:24 UTC
 
-D: OS112 still holds new product launches. No resource-state answer has arrived.
-No product service/accepted task is active. R196 Fable source review is settled;
-its reused six-file/47,404-byte profile remains manual-only. Cleanup was not retried.
+The direct resource preflight at 16:09:43 UTC found 737,710,080 bytes free on D:
+(about 704 MiB), below the existing 1 GiB Core file-tier reserve before fresh
+allocations. This establishes the launch blocker without claiming manual cleanup
+or recovered space. No new product family, service or accepted task is active.
 
-The next combined correction records GACT e2e64e41 / marketplace c4325a77.
-Its source/CI/review state is in [current status](task-replacement-current-status.md).
-Complete f21 CI has six distinct failures; 796 CI remains incomplete with five
-in eleven reports. Both reviewers require the current publication/migration
-corrections. Current regression passes do not qualify Q1–Q9.
+Latest production correction is core f5d88515 / GACT 053fca84 / marketplace
+c4325a77, with the retained develop merge and unchanged runtime dependencies.
+Complete parent 3f CI has twelve reports and three distinct failure/error cases;
+the current batch fixes the queue contract conflict and startup-read recovery,
+improves fast-RPC waiting and adds diagnostics for the remaining load/watchdog
+failures. No fresh passing regression or final source approval is claimed.
+
+Fable R197 is retired with a frozen-source verdict and unchanged authentication.
+Its source NO-GO is recorded in current status. All earlier prohibited/manual-only
+boundaries remain, including the newly rejected obsolete R193 UI-build removal.
 
 After resource recovery:
-1. Freeze/refresh the final source/dependency/schema/runtime tuple and preflight
-   actual Codex and Claude bridges. Keep all execution data inside the D: repo.
-2. Build matching UI: e2e changes the attention tray, so R193 assets cannot be reused.
-3. Update the prepared R195 family before launch, including exact source/UI
-   identities, async SSE metrics and current Download arguments. Protected R184
-   roots and manual residues are never absence prerequisites.
+1. Refresh/freeze the integrated source/dependency/schema/runtime tuple and
+   preflight actual Codex and Claude bridges. Keep generated state inside D:.
+2. Build matching UI; e2e changed the attention tray, so R193 cannot be reused.
+3. Update the prepared R195 family's source/UI identities before launch. Protected
+   R184 roots and manual residues are never absence prerequisites.
 4. Execute external recovery/UI, native/mixed work, assignment delivery/lifecycle,
    two declared workflows with human Core grants, then capacity/recovery families.
-   The old session_workflow_tasks.py uses removed scope/intent/message arguments
-   and distinct blueprints rather than declared workflow executions; do not count
-   it as Q5 or launch it unchanged.
-5. Reconcile all Q1–Q9 evidence and execute thirty final R1–R6 repetitions on the
-   frozen production tuple. Retain honest uncertainty and physical settlement.
+   The old session_workflow_tasks.py still uses removed arguments and distinct
+   blueprints instead of declared workflows; do not launch it unchanged or count
+   it as Q5 evidence.
+5. Reconcile Q1–Q9 and run thirty final R1–R6 repetitions. Required failures,
+   skips and unavailable routes remain blockers; document uncertainty/settlement.
 
-The oversized-SSE row still requires actual-model/provider evidence. Diagnostic
-wrappers now observe both pinned SDK routes without changing bytes/options/limits;
-their unit cases do not qualify the live route. No clio.lm15.sse_limit product
-setting is claimed exposed.
-
-Source reviews, regression tests, browser fixtures and actual-model/service
-qualification stay separate. R186/R191 remain their named predecessor evidence.
+The oversized-SSE route still needs actual provider/model evidence. Current
+instrumentation observes sync and async SDK parsers without changing bytes,
+options or limits. Unit cases do not qualify the live route. No product
+clio.lm15.sse_limit setting is claimed exposed.
 
 ## Regression and live-verification loop
 

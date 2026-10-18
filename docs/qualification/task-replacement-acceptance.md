@@ -1,35 +1,33 @@
 # Tasks replacement acceptance ledger
 
-## 2026-10-18 14:06 UTC integration impact
+## Current candidate — October 18, 16:24 UTC
 
-The integrated candidate merges develop 303edbce and GACT 86e87fb8. Replacement owners remain unchanged. Required impact coverage: Q1/Q2 native Shell/storage argument schemas; Q3/Q4 Core input commitment during model retry and human steering; Q3/Q9 Question bundle forms; Q8 configurable inference/depth limits; Q9 current UI. All affected rows remain pending fresh regression/live evidence. No predecessor evidence is promoted to final acceptance.
+Latest production correction is core f5d885154a97b1f60a5758e2a7efce4a6fa24613,
+GACT 053fca842f25739b4a6ad4c3a8f14badd4d6a3df, marketplace c4325a77.
+Dependencies and retained develop merge are unchanged. See current status for
+the exact runtime tuple and CI links.
 
-## Current candidate — October 18, 15:55 UTC
+Complete 3f CI has twelve reports and three distinct problems: the old queue
+pause expectation, the 260-action timeout, and one progressing-turn watchdog
+failure. All three 1,005-message retention runs passed under the unchanged
+deadline. Current repairs/diagnostics do not yet have a passing regression result.
+Skips remain exclusions.
 
-This correction records GACT e2e64e41 / marketplace c4325a77 over pushed core
-79673b4d; dependencies and develop merge remain unchanged. See current status
-for exact identities. Installed D: source remains 4a/86 during the resource hold.
+Astra approved 3f/e2e source; actual frozen Fable R197 blocked its startup-read
+recovery gap. That gap is corrected with six constructed real-Core fault cases.
+The native fast-reply path has three new constructed cases; actual performance
+needs CI/load evidence. No deadline, assertion, worker budget or guard is relaxed.
+Other Fable observations remain visible in current status.
 
-Complete f21 CI has six distinct failures/errors, with the 1,005-message case
-passing on all interpreters under its original deadline. 796 CI has eleven
-reports and five distinct failures; it is incomplete. The 260-action case still
-times out. The current correction reuses normal transcript append for ordinary
-inputs while retaining atomic partial/earlier repair; performance needs fresh CI.
+Live launches remain blocked by directly measured D: capacity: about 704 MiB,
+below the existing Core reserve before fresh allocation. No alternate storage
+adapter or resource-budget reduction is introduced. Current UI requires a matching
+build; R193 is obsolete and its removal was rejected before execution.
+No required Q1–Q9 or thirty-race row is accepted on this correction.
 
-Astra and actual Fable found historical-delivery and conversation-publication
-gaps. This batch repairs both and constructs fault/restart/migration regressions.
-Their final approval is pending. GACT's actual attention tray receives the
-composer colour correction and retained browser assertions; a new matching UI
-build is required. Pages builds but has six browser failures corrected here.
-
-New model/service launches remain held after D: OS112. No final Q1–Q9 or
-thirty-race row is accepted. SSE instrumentation now covers the real async route,
-but oversized live SSE remains unverified. The old workflow harness is obsolete
-and is not Q5 evidence. Existing predecessor model results are not promoted.
-
-See [current status](task-replacement-current-status.md) and the
-[execution sheet](task-replacement-live-experiments.md) for the full gate/evidence
-and manual-only cleanup boundaries.
+The shared reporting set is [current status](task-replacement-current-status.md)
+and [execution sheet](task-replacement-live-experiments.md). The earlier records
+below describe named predecessors and do not override this state.
 
 ## Construction and preceding evidence
 

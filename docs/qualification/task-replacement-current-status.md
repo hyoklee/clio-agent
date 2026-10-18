@@ -1,116 +1,94 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 15:55 UTC
+## Current state — October 18, 16:24 UTC
 
-Initial implementation and initial test construction remain complete. The 8 AM
-target was missed. Regression repair and live qualification are unfinished.
-This is **not a qualified candidate**; no release or daily installation is authorized.
+Initial implementation and initial test construction are complete. The 8 AM
+target was missed. Regression repair and actual-model/service/UI qualification
+are unfinished. This is **not a qualified candidate**; no release or daily
+Desktop installation is authorized.
 
-Latest pushed core is 79673b4db9c8838849dd6bc814596ac28a593e44. This commit
-contains the next combined correction and records GACT
-e2e64e418907732baa2825e64f2565777d2537c1, marketplace
+Latest production correction is clio-agent f5d885154a97b1f60a5758e2a7efce4a6fa24613,
+recording GACT 053fca842f25739b4a6ad4c3a8f14badd4d6a3df and marketplace
 c4325a770c9c0883668eb1e6a977ef11c96ed4bb. It preserves the develop
-303edbce53ca024e1fd80243c52d25b10382ff53 merge. The installed isolated D:
-source remains 4a8bfd6c / GACT 86e87fb8 during the resource hold. Runtime remains
-Python 3.14.6, iowarp-core 2.3.2, FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0,
-Docket 0.26.2 and locked Claude SDK 0.2.159. No storage adapter/library changes.
+303edbce53ca024e1fd80243c52d25b10382ff53 merge. This reporting update is
+documentation only. Runtime remains Python 3.14.6, iowarp-core 2.3.2,
+FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and Claude SDK 0.2.159.
+The shared ARC native-RPC wait helper changed; the Core library and canonical
+storage adapter did not.
 
-The complete [f21 CI](https://github.com/iowarp/clio-agent/actions/runs/39140283791)
-has twelve reports and six distinct failure/error cases, down from 59 at 1f:
+Complete [3f CI](https://github.com/iowarp/clio-agent/actions/runs/39142759152)
+has twelve reports and three distinct failure/error cases:
 
 | Python | Passed | Failed | Errors | Skipped |
 | --- | ---: | ---: | ---: | ---: |
-| 3.12 | 12,878 | 3 | 2 | 54 |
-| 3.13 | 12,877 | 4 | 2 | 54 |
-| 3.14 | 12,878 | 3 | 2 | 54 |
+| 3.12 | 12,929 | 2 | 1 | 54 |
+| 3.13 | 12,930 | 1 | 1 | 54 |
+| 3.14 | 12,930 | 1 | 1 | 54 |
 
-The 1,005-message retention case passed on all three interpreters in 101.433,
-116.693 and 154.075 seconds respectively, retaining its load and deadline.
-These are CI results, not final live/restart acceptance. Nine non-regression
-jobs passed. Skips remain exclusions. Complete bounded inventory:
-'.pytest-runtime/static/ci-f21cdb91-inventory.json' in the D: execution checkout.
+The 1,005-message retention case passed on all three interpreters in 172.782,
+178.636 and 104.195 seconds, preserving its load and deadline. Lint, coverage
+and other non-regression jobs passed. Skips remain exclusions. This is not
+large-history restart or final live acceptance. Bounded complete inventory:
+.pytest-runtime/static/ci-3f8cfbf9-inventory.json in the D: checkout.
 
-The [796 CI](https://github.com/iowarp/clio-agent/actions/runs/39140759546) is
-still incomplete: eleven available reports have five distinct failing cases.
-Its added terminal-publication regressions have no failure in those reports;
-the missing Python 3.12 shard is not acceptance. All three retention executions
-passed again (170.891, 167.264, 163.727 seconds). Fresh corrections in this commit
-still need their own CI result.
+The combined correction and remaining diagnostics are:
+- Manual Send now preserves the independent future-queue pause. The conflicting
+  older assertion is corrected; the scenario now proves one delivery, another
+  item remaining paused, and normal explicit sending resuming that item. Astra
+  independently confirmed this contract. No production queue-resume patch.
+- The 260-action case still exceeded its unchanged 180-second limit. Current
+  stacks show native PutBlob waits and daemon-process sampling. Fast replies
+  now receive one millisecond before expensive health discovery; still-pending
+  calls retain the existing health/progress policy. Three constructed cases
+  prohibit configuration/process discovery for fast replies. The load case now
+  reports bounded real-store operation counts/latencies; no load or budget change.
+- The intermittent progressing-turn watchdog case still failed on 3.12. Its
+  0.2-second window and all assertions remain. Added diagnostics identify whether
+  the stand-in model began and the actual phase gaps. The I/O correction needs
+  fresh CI; this failure is not claimed repaired.
+- Actual Fable found a transient startup Core read could leave restoration held
+  without arming recovery. The existing recovery boundary now covers these reads.
+  Six constructed real-Core cases cover both details reads and context reads,
+  OSError/ClioError, original handles, retained pending mail and no execution replay.
+- GACT 053f corrects one stale class assertion for the composer-coloured attention
+  tray; keyboard/scroll checks remain. GACT e2e CI had 3,783 web passes / one
+  failure, and all three native debug builds passed. Browser/build steps after
+  the failed unit step did not execute.
 
-The combined correction covers all six f21 failures:
-- The actual backoff test still patched Python's global time.sleep; it now patches
-  only the recovery module. The earlier correction had fixed another test.
-- Human feedback created by the asynchronous judge fixture now writes off-loop.
-- Promoted queue IDs retain their distinct mailbox/transcript identities. Absence
-  of the optional pending_steer field is not fabricated pending delivery.
-- The viewer-identity fixture uses an isolated monotonic clock and additionally
-  proves the unchanged viewer TTL expires it; Core contention cannot expire the
-  fixture before the operation being checked.
-- The 260-action stack shows ordinary accepted transcript inputs rewriting every
-  prior atom into a fresh generation. Chronological inputs now reuse the existing
-  confirmed append writer. Partial/earlier input repair keeps the atomic splice.
-  New coverage checks retained atoms/generation, replay without extra writes and
-  an interrupted final envelope. The 260-action load/deadline remain unchanged;
-  performance is not yet claimed fixed.
+Astra gave 3f/e2e a source GO. Actual Claude Code/Fable R197 gave that frozen
+tuple a source NO-GO for the startup-read defect above. Its CLI/controller retired,
+authentication is unchanged, and source stayed frozen. The new correction needs
+independent review. Non-blocking Fable notes on normal control-recording delay and
+peer visibility during Core holds remain open; source review is not live acceptance.
 
-Independent reviews remain source NO-GO pending these corrections. Astra's
-796 finding: startup must not republish migrated outcomes with unknown historical
-delivery. Repair now requires canonical external_acknowledged settlement;
-migration-twice coverage preserves both unknown and explicitly pending delivery.
-Actual Claude Code/Fable found terminal conversation results could similarly
-skip parent/subscriber publication on retry. Normal and deferred completion now
-repair saved notices; startup restores canonical outcomes without reopening
-assignments or replaying model work. Thirty-two constructed fault/restart cases
-cover root/child, both finish routes and completed/failed outcomes.
+[3f Pages](https://github.com/iowarp/clio-agent/actions/runs/39142760735) built
+successfully; feature deployment was correctly skipped. Fresh replacement-service
+website media remains pending. The old R193 build predates the production tray
+change; it cannot qualify the current UI.
 
-Fable's R196 verdict applies to inspected files, not a final frozen-tuple
-approval: the historical guard and qualification-only files changed after review
-launch. Its blocking finding is retained. The CLI/controller retired with exit 0;
-original authentication hash is unchanged. Its existing manual-only profile was
-reused rather than creating another one: six regular files / 47,404 bytes /
-zero links remain. No deletion was retried.
+Scoped Ruff/format, two-source Linux Mypy and all seven architecture guards pass.
+Scoped GACT Oxlint parsed one changed test file without diagnostics; Prettier
+matches. New regressions were constructed before execution. They have not run
+locally; the combined CI batch is the next regression result.
 
-GACT 769 workspace CI passed 312 core and 3,784 web unit cases, then browser
-152 passed / 2 failed in dark/light composer cases. CI's actual DOM trace shows
-the Question lives in the attention tray, not the old inline Other answer card.
-GACT e2e corrects that target and restores the tray's stated composer background,
-retaining exact CSS equality and adding visible radio/disabled response checks.
-This is a production UI change: the old R193 build is no longer matching. A fresh
-build and affected desktop/phone review are required; no asset-reuse claim.
+Current qualification capacity was checked directly at 16:09:43 UTC: D: had
+737,710,080 free bytes (about 704 MiB), below the existing 1 GiB Core file-tier
+reserve before fresh allocations. This is an availability observation, not a
+manual-cleanup result or reclaimed-space claim. No new Core-backed product
+family was launched. Token lifetimes are adequate; this alone does not establish
+provider availability. Preflight: .pytest-runtime/static/r198-runtime-preflight.json.
 
-The [796 Pages build](https://github.com/iowarp/clio-agent/actions/runs/39140761993)
-passed generation/build and failed six browser cases. The nested image loader
-correction works. This batch removes duplicate preview notices through the
-existing shared component, includes it on the coordination page, and corrects
-the sidebar contract. Feature dispatch is build-only; deploy was skipped.
-Existing media remains predecessor evidence, not fresh replacement screenshots.
+Automatic review rejected audited obsolete builds/r193-web removal before any
+command ran. Its 653 files / 31,895,892 logical bytes remain manual-only. Earlier
+five Mypy caches, r185-web, review profiles and every older rejected/manual root
+also remain protected. Read-only audit confirmed .r44/.r45/.r49 live temp roots
+have prior rejection receipts; no deletion was attempted. No retry, bypass,
+delegation or parent removal. No product service or accepted task is active.
 
-Scoped Ruff/format, four-source Mypy and all seven architecture guards pass
-after the transcript correction. The full 1,217-source Mypy pass at f21
-remains its own result. Scoped GACT Oxlint parsed both files with zero diagnostics;
-Prettier passes. New regressions were constructed before execution.
-
-The SSE harness now observes the real asynchronous parser as well as the
-synchronous one, preserving byte identity, SDK options and limits. It retains
-bounded hashes/sizes rather than provider content and samples writes. Eight
-constructed parser cases protect pass-through and default/explicit SDK limits.
-This is instrumentation, not oversized live-SSE acceptance or a new product
-configuration. The Download mission now uses the actual paths/description schema.
-The old session_workflow_tasks harness still uses retired scope/intent and
-message arguments and does not prove two declared workflow executions; it is not
-an accepted Q5 harness.
-
-D: returned OS error 112. New product families remain held pending actual resource
-recovery; the pending human resource-state question is unanswered. Small source/
-review/receipt writes do not establish room for service data or builds. No volume
-free-byte or recovered-space claim is made. Five rejected Mypy caches,
-builds/r185-web, review/r192-profile and review/r194-profile remain manual-only,
-along with all earlier boundaries. No retry, bypass, delegation or parent
-removal. No product service or accepted task is active.
-
-Q1–Q9, migration/recovery obligations, all thirty final races, fresh website
-media and both final source verdicts remain unaccepted. R186/R191 below are
-predecessor evidence. Daily Desktop/auth/defaults/released pins are preserved.
+Q1–Q9, migration/recovery obligations, all thirty final races, current-source
+reviews and fresh website media remain unaccepted. R186/R191 and other earlier
+runs below are predecessor evidence. Daily Desktop, auth, defaults, released pins
+and protected human edits remain preserved.
 
 ## Earlier dated execution records
 
