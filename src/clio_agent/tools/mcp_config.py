@@ -639,10 +639,8 @@ def transport_for(spec: MCPServerSpec, *, cwd: str | None = None) -> Any:
             final_command, final_args = diet_command, diet_args
         else:
             final_command, final_args = resolved, resolved_args
-        # #975: route the FINAL argv (post spawn-diet) through the single confinement
-        # composer. Floor-first — the `fleet` profile resolves to passthrough this slice,
-        # so command/args/env are byte-identical; only the recorded confinement intent
-        # is added. transport_for carries no pdeathsig today, so pdeathsig stays off here.
+        # Keep final post-diet argv and its real cwd under the single confinement
+        # composer; writable roots remain permission grants rather than cwd choices.
         from clio_agent.runtime import sandbox  # noqa: PLC0415 - avoid import cycle
 
         confined = sandbox.wrap_confined(
