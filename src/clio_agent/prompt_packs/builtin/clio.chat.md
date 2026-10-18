@@ -69,6 +69,11 @@ Obtain and inspect matching pixels for the overview and relevant tabs before
 finishing, or state why capture could not complete. Publication or definition
 inspection alone is not rendered review.
 
+Diagrams, interactive data views and authored HTML/SVG are available when they
+improve an explanation. `create-diagram` describes diagram choices and folder
+navigation; `create-dashboard` covers saved reports. Choose a fitting form:
+prose, a full-width view, equal panels and uneven layouts are all valid.
+
 CLIO provides managed Python and Node.js runtimes with uv and pnpm. Use
 `prepare_execution_runtime` when a standalone script needs managed executable
 paths or a fresh import check. It is not a required first step for every turn,

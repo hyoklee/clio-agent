@@ -82,7 +82,7 @@ def argv(spec: CommandSpec) -> str:
 
 def test_apptainer_only_host_offers_web_search_with_the_pinned_image() -> None:
     row = web_search(facts("apptainer"))
-    variant = row.variants[0]
+    variant = next(row for row in row.variants if row.id == "container")
     assert variant.compatible
     # The default install is the slim image (documents off), always digest-pinned on Apptainer.
     default = web_search_image({})
@@ -95,8 +95,9 @@ def test_apptainer_only_host_offers_web_search_with_the_pinned_image() -> None:
 
 def test_podman_only_host_offers_web_search() -> None:
     row = web_search(facts("podman"))
-    assert row.variants[0].compatible
-    assert row.variants[0].reason == "Runs with Podman."
+    variant = next(row for row in row.variants if row.id == "container")
+    assert variant.compatible
+    assert variant.reason == "Runs with Podman."
 
 
 def test_a_host_without_a_usable_runtime_says_why() -> None:
@@ -111,7 +112,7 @@ def test_a_host_without_a_usable_runtime_says_why() -> None:
             ContainerRuntimeFact(name="apptainer", reason="not_installed"),
         ],
     )
-    variant = web_search(bare).variants[0]
+    variant = next(row for row in web_search(bare).variants if row.id == "container")
     assert not variant.compatible
     assert "No container runtime can run services here" in variant.reason
     assert "Apptainer is not installed." in variant.reason

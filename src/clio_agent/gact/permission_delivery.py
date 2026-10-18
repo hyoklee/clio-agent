@@ -7,11 +7,17 @@ mirroring request and resolution boundaries onto the root session stream.
 
 from __future__ import annotations
 
+import uuid
 from collections.abc import Mapping
-from typing import Any, Literal
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Any, Literal
 
 from clio_agent.gact.events import Event
+from clio_agent.gact.runtime.retention import enforce_dict_bound
 from clio_agent.gact.session_kind import session_kind
+
+if TYPE_CHECKING:
+    from fastapi import FastAPI
 
 PermissionEventType = Literal["permission.requested", "permission.resolved"]
 
@@ -64,3 +70,49 @@ def publish_permission_event(
             delivered["forwarded_from_session_id"] = owner_session_id
             delivered["attended_session_id"] = attended
         bus.publish(Event(type=event_type, session_id=target, payload=delivered))
+
+
+def record_resolved_permission(
+    app: "FastAPI",
+    *,
+    session_id: str,
+    tool_name: str,
+    args: Mapping[str, Any],
+    status: str,
+    action: str,
+    summary: str,
+    reason: str,
+) -> str:
+    """Record and deliver an already resolved tool permission decision."""
+    pid = f"perm_{uuid.uuid4().hex[:12]}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+    row = {
+        "id": pid,
+        "session_id": session_id,
+        "tool_call": {
+            "tool_name": tool_name,
+            "input": dict(args),
+        },
+        "summary": summary,
+        "created_at": now_iso,
+        "status": status,
+        "action": action,
+        "resolved_at": now_iso,
+        "reason": reason,
+    }
+    if hasattr(app.state, "permissions"):
+        app.state.permissions[pid] = row
+        enforce_dict_bound(app, app.state.permissions, "permissions", session_id=session_id)
+    if hasattr(app.state, "bus"):
+        publish_permission_event(
+            app,
+            "permission.resolved",
+            owner_session_id=session_id,
+            payload={
+                "permission_id": pid,
+                "action": action,
+                "session_id": session_id,
+                "reason": reason,
+            },
+        )
+    return pid

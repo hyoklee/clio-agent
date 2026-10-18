@@ -10,7 +10,7 @@ from .test_a2ui_actions import _event, _stub_spawn
 from .test_a2ui_v3 import HEADERS, _create_message, _session_client
 
 
-@pytest.mark.parametrize("provider", ["github", "google_drive", "globus"])
+@pytest.mark.parametrize("provider", ["github", "google_drive", "globus", "ndp"])
 def test_private_login_is_audited_and_idempotent(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, provider: str
 ) -> None:

@@ -1,0 +1,120 @@
+---
+title: Work with National Data Platform
+description: Search NDP datasets, connect existing remote APIs, and keep data and stream captures with your analysis.
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+import NdpBrand from '../../../../components/NdpBrand.astro';
+import FilesGuideNav from '../../../../components/FilesGuideNav.astro';
+import Capture from '../../../../components/overview/Capture';
+import { captureImage } from '../../../../lib/captures';
+import catalog from '../../../../assets/tutorials/ndp/ndp-catalog.jpg';
+import endpoints from '../../../../assets/tutorials/ndp/ndp-endpoints.jpg';
+
+<FilesGuideNav active="ndp" />
+<NdpBrand />
+
+Find scientific data in [National Data Platform](https://nationaldataplatform.org/),
+choose the resources you need, and work with them in CLIO. You can also connect
+an existing remote API to query a service or capture a finite stream segment.
+
+<Aside type="note" title="Development build">
+  This guide covers the NDP development build, captured on 18 October 2026.
+  The NDP changes are under review and are not in a published installer.
+  See [Features and versions](/docs/versions/).
+</Aside>
+
+## Find and select data
+
+<Steps>
+
+1. Open **+ → Attach**, then **Connect** beside **National Data Platform**.
+   From **Settings → Data sources**, choose **Connect** and the target workspace.
+2. In **Datasets**, type part of a name, description or filename. Results filter
+   as you type, and CLIO searches the catalog after a short pause. Use the
+   searchable **Organization** filter to narrow results to a publisher.
+3. Expand a dataset and select its resources. A CSV, a preview image and an HTML
+   dashboard are separate resources. Your selection stays available while you
+   search for more data; use **Selected** to review it.
+4. Choose **Continue**, then review **Download** or **Link**, just as with other
+   connected sources. Download creates a local copy for analysis; a link reads
+   selected files when needed. Connecting the catalog entry saves metadata first.
+
+</Steps>
+
+<Capture client:visible image={await captureImage(catalog)}
+  alt="NDP dataset search for WWMT.CI.LY_.40 with the CSV selected and PNG and HTML resources unselected"
+  caption="Actual public EarthScope catalog result. Only the measurement CSV is selected; the image and dashboard remain separate. Development UI, 18 October 2026." />
+
+The source appears in **Files → Sources**. NDP originals are read-only. Make
+derived tables, scripts and reports in your workspace. CLIO retains source IDs
+and hashes for the files it actually reads or downloads. See
+[Copies and originals](/docs/files/download-or-link/).
+
+## Sign in when access needs it
+
+Choose **Sign in to NDP** and finish NDP's browser sign-in. Credentials and tokens
+stay in the private account flow. The account is reusable across workspaces on
+the same connected CLIO; signing in does not select or attach data.
+
+The development default uses NDP's **test** identity service with public client
+`clio`. A production deployment needs a client registered for its identity service.
+An Endpoint can require a different issuer or role. Check an actual access denial
+rather than assuming a successful sign-in grants every dataset.
+
+The Organization filter identifies a **publisher**. Selecting EarthScope there
+does not join a group or change your account permissions.
+
+## Connect an existing Endpoint
+
+Open **Endpoints & streams → Connect endpoint**. Give the connection a name,
+choose its route and review its authentication:
+
+| Route | What to enter |
+| --- | --- |
+| **Direct URL** | The existing API base URL, including any service prefix, without `/docs`. |
+| **SSH** | A saved SSH profile on the computer running CLIO and the API URL as seen from that host. For a service bound to remote loopback, enter its `http://127.0.0.1:PORT` address. |
+
+This connects to a running service. It does not install an Endpoint. Choose
+**My NDP account** only when that API is the intended recipient of your NDP
+credentials; direct authenticated connections require HTTPS.
+
+CLIO discovers the API's operations. Filter by a name such as “station” or
+“stream,” select an operation, and fill its parameters or JSON body. Review the
+destination and action before approving. Operations that start or change a remote
+service require a separate review.
+
+<Capture client:visible image={await captureImage(endpoints)}
+  alt="EarthScope on-demand endpoint in CLIO with saved finite SSE captures available to open"
+  caption="A real saved HTTPS connection and its response history. The sampled service replays archived CSV measurements over SSE. Development UI, 18 October 2026." />
+
+## Capture, inspect and resume
+
+**Run & capture** saves the actual response in workspace **Sources**. Open it
+immediately or return to **Captured responses**. The retained record includes
+the operation and inputs, timestamps, byte count, content hash and why capture
+stopped. The agent can inspect or analyze its local copy.
+
+Captures default to **10 seconds / 100 SSE events**, with limits of **30 seconds,
+1,000 events and 2 MiB**. Control messages such as `hello` and `done` count as
+events. For a finite API that returns a resume cursor, use that cursor in the next
+request and check for repeated measurements.
+
+Closing a capture closes CLIO's read. If you separately started a remote producer,
+retain its session ID and stop that specific producer when finished. Stream
+delivery can replay old measurements: inspect their timestamps before calling
+the data live.
+
+## Ask the agent
+
+```text
+Get EarthScope data from NDP. Find WWMT.CI.LY_.40 and select its CSV.
+Ask for any connection approval or sign-in needed, then download it,
+check timestamps and units, and make a chart with a short source report.
+Keep the original data intact.
+```
+
+The agent uses the same source approval, private sign-in and retained files as
+the interface. Its built-in NDP skill also covers Endpoint queries, finite stream
+segments and remote producer ownership. Try the
+[EarthScope walkthrough](/docs/examples/ndp-earthscope/) for a checked example.

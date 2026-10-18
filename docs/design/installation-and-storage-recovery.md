@@ -102,3 +102,27 @@ They do not establish the affected host's exact placement failure or repeated
 command execution. Isolated native tests reproduce capacity exhaustion with code
 12 despite free disk and prove automatic recovery plus byte-identical restart
 readback. Other placement/health failures remain explicit errors.
+
+## Delivering the fixes as one installation update
+
+Desktop exposes one **Update CLIO** action for the app and its owned runtime.
+The signed app feed selects their shared release target. Bundled installations
+replace both components from the same signed payload; lightweight installations
+update their owned runtime to that exact release before applying the app update.
+An older or unavailable bundled runtime can be repaired by reinstalling the
+running app's exact signed release. Known newer runtimes are never silently
+downgraded.
+
+Restart recovery compares the running app and authenticated local service
+versions with the retained target. A reconnect cannot turn an incomplete update
+into success. Externally administered services retain their installation ownership;
+a selected remote service cannot complete or fail a local Desktop update.
+In a browser, the interface and runtime ship in one backend release and the single
+update control links to that serving installation's release instructions.
+
+Release builds run `scripts/check_bundle_matches_lock.py --python <bundled-python>`.
+In addition to dependency agreement, the check now launches isolated Python and
+requires exactly one installed `clio-agent` distribution and its imported version
+to equal this checkout's release. This closes the previous exclusion of the local
+project itself from lock drift checks. A correct dependency set cannot hide an old
+or partially updated product package.

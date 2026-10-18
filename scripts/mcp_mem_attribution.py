@@ -55,6 +55,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -230,19 +231,25 @@ def check_budget(peak_gb: float, final_gb: float, budget: dict) -> tuple[bool, s
     return peak_gb <= peak_cap and final_gb <= final_cap, detail
 
 
-def prepare_session(base: str, pack: Path, idx: int) -> str:
+def prepare_session(base: str, pack: Path, idx: int, workspace_id: str | None = None) -> str:
     """Create and configure one session before any acceptance turn starts."""
 
     with requests.Session() as session:
-        response = session.post(
-            f"{base}/v1/sessions", json={"title": f"membudget {idx}"}, timeout=30
-        )
+        session_input = {"title": f"membudget {idx}"}
+        if workspace_id:
+            session_input["workspace_id"] = workspace_id
+        response = session.post(f"{base}/v1/sessions", json=session_input, timeout=30)
         response.raise_for_status()
-        sid = response.json()["id"]
+        created = response.json()
+        sid = created["id"]
         if not isinstance(sid, str) or not sid:
             raise ValueError(f"session {idx} creation returned an invalid id")
+        if workspace_id and created.get("workspace_id") != workspace_id:
+            raise ValueError(f"session {idx} was not created in its measurement workspace")
         session.post(
-            f"{base}/v1/sessions/{sid}/agent-blueprint", json={"path": str(pack)}, timeout=120
+            f"{base}/v1/sessions/{sid}/agent-blueprint",
+            json={"path": str(pack.resolve())},
+            timeout=120,
         ).raise_for_status()
     return sid
 
@@ -252,12 +259,17 @@ def drive_load(
     plan: list[tuple[Path, str]],
     out: dict[int, str],
     sids: dict[int, str],
+    workspace_id: str | None = None,
 ) -> bool:
     """Prepare every blueprint, then drive the complete concurrent acceptance load."""
 
     for idx, (pack, _prompt) in enumerate(plan):
         try:
-            sids[idx] = prepare_session(base, pack, idx)
+            sids[idx] = (
+                prepare_session(base, pack, idx, workspace_id=workspace_id)
+                if workspace_id
+                else prepare_session(base, pack, idx)
+            )
         except (requests.RequestException, KeyError, ValueError) as exc:
             out[idx] = f"setup error: {exc!r}"
             print(f"GATE: FAIL (session {idx} setup failed: {exc!r})")
@@ -348,6 +360,23 @@ def _port_listener_pid(port: int) -> int | None:
         if conn.laddr and conn.laddr.port == port and conn.status == psutil.CONN_LISTEN:
             return conn.pid
     return None
+
+
+def _external_cte_pids(environ: Mapping[str, str]) -> tuple[int, ...]:
+    """Count the configured private daemon without charging unrelated CLIO apps."""
+    if configured_port := environ.get("CLIO_CORE_PORT"):
+        port = int(configured_port)
+        pid = _port_listener_pid(port)
+        if pid is None:
+            raise RuntimeError(f"Configured private CTE has no listener on port {port}")
+        if not psutil.Process(pid).name().lower().startswith("clio_run"):
+            raise RuntimeError(f"Configured private CTE port {port} belongs to another process")
+        return (pid,)
+    return tuple(
+        proc.pid
+        for proc in psutil.process_iter(["name"])
+        if str(proc.info.get("name") or "").lower().startswith("clio_run")
+    )
 
 
 @dataclass(frozen=True)
@@ -525,6 +554,25 @@ def main() -> int:
     return 0
 
 
+def _gate_environment(args: argparse.Namespace, xdg: Path) -> dict[str, str]:
+    """Keep every CLIO role private on Windows as well as XDG-based hosts."""
+    instance = xdg / "clio-home"
+    return {
+        **os.environ,
+        "CLIO_AGENT_HOME": str(instance),
+        **{
+            f"CLIO_AGENT_{role.upper()}_DIR": str(instance / role)
+            for role in ("config", "data", "cache")
+        },
+        "CLIO_LM_PROVIDER": args.provider,
+        "CLIO_LM_MODEL": args.model,
+        "CLIO_ARC_STORE": "cte",
+        "CLIO_ALLOWED_ROOTS": str(args.workspace),
+        "CLIO_SEMANTIC_TRACE_BACKEND": "none",
+        "XDG_CONFIG_HOME": str(xdg),
+    }
+
+
 def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
     """One complete gate run: boot, verify substrate, drive the load, settle, measure.
 
@@ -538,29 +586,15 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
     # Pack mcp_servers mount at AGENT CONSTRUCTION from INSTALLED blueprints
     # (path-activation alone mounts nothing), so the pack must be installed
     # into the gate XDG or the run measures a fleet-less server.
-    install_root = xdg / "clio-agent" / "agent-blueprints" / args.pack.name
+    env = _gate_environment(args, xdg)
+    install_root = Path(env["CLIO_AGENT_CONFIG_DIR"]) / "agent-blueprints" / args.pack.name
     if not install_root.exists():
         shutil.copytree(args.pack, install_root)
         print(f"installed pack into gate XDG: {install_root}")
     base = f"http://127.0.0.1:{args.port}"
-    env = {
-        **os.environ,
-        "CLIO_LM_PROVIDER": args.provider,
-        "CLIO_LM_MODEL": args.model,
-        # The accepted gate substrate — never 'local' (underperforming fallback).
-        "CLIO_ARC_STORE": "cte",
-        "CLIO_ALLOWED_ROOTS": str(args.workspace),
-        "CLIO_SEMANTIC_TRACE_BACKEND": "none",
-        "XDG_CONFIG_HOME": str(xdg),
-    }
-
     # A pre-existing clio-core daemon (connect-or-spawn) is OUTSIDE the server
     # tree — sample it explicitly or the substrate cost silently drops out.
-    external_cte = tuple(
-        proc.pid
-        for proc in psutil.process_iter(["name"])
-        if str(proc.info.get("name") or "").lower().startswith("clio_run")
-    )
+    external_cte = _external_cte_pids(env)
     if external_cte:
         print(f"note: pre-existing clio-core daemon(s) {external_cte} sampled as external")
 
@@ -624,6 +658,21 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
             )
             return 2
         print(f"substrate verified: arc ready, storage_mode={storage_mode!r}")
+        initial_sessions = requests.get(
+            f"{base}/v1/sessions", params={"include_all_workspaces": "true"}, timeout=30
+        )
+        initial_sessions.raise_for_status()
+        if initial_sessions.json().get("sessions"):
+            raise ValueError("Memory qualification requires a fresh private CLIO data directory")
+        workspace_response = requests.post(
+            f"{base}/v1/workspaces",
+            json={"name": "Memory qualification", "root_path": str(args.workspace.resolve())},
+            timeout=30,
+        )
+        workspace_response.raise_for_status()
+        workspace_id = workspace_response.json()["id"]
+        if not isinstance(workspace_id, str) or not workspace_id:
+            raise ValueError("Memory qualification workspace has no usable id")
         requests.put(
             f"{base}/v1/policies",
             json={
@@ -667,7 +716,7 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
         started = time.time()
         # Sampling already covers setup. No blueprint may change workspace
         # access after another session starts its turn.
-        if not drive_load(base, plan, out, sids):
+        if not drive_load(base, plan, out, sids, workspace_id=workspace_id):
             return 2
         print(f"\nsessions: {json.dumps(out)}  wall: {time.time() - started:.0f}s")
         time.sleep(args.settle_s)  # let reclamation (once it exists, #933) act

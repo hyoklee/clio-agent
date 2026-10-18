@@ -80,6 +80,20 @@
       "payload": {
         "final_text": "Weighing the options...",
         "message_id": "<msg#4>",
+        "part": {
+          "agent_id": "main",
+          "id": "<part#5>",
+          "metadata": {
+            "default_collapsed": true,
+            "provider_source": "anthropic",
+            "signature_field_name": "provider_thinking:anthropic",
+            "stream_source": "live",
+            "thinking_source": "provider"
+          },
+          "sequence": 1,
+          "text": "Weighing the options...",
+          "type": "thinking"
+        },
         "part_id": "<part#5>",
         "stream_source": "live",
         "turn_id": "<msg#1>"
@@ -238,7 +252,7 @@
             ]
           },
           "prompt_resolution": {
-            "checksum": "20b12b095dccc3ad08ac5bdb0b53e622db8b5d1278ff8e22c3b17ecceb0c6a00",
+            "checksum": "a045d8dcae7f5cc7dbd926c09bf1dd1ed75c3b0f5988bef57b7ed59c9e790d13",
             "id": "clio.chat",
             "profile": "default",
             "scope": "builtin",

@@ -11,6 +11,7 @@ import importlib.util
 import json
 import sys
 import threading
+from argparse import Namespace
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -33,6 +34,46 @@ def test_under_budget_passes() -> None:
     ok, detail = check_budget(3.0, 2.8, {"peak_gb": 3.57, "final_gb": 3.57})
     assert ok
     assert "True" in detail
+
+
+def test_private_daemon_sampling_uses_only_its_configured_listener(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Other running CLIO apps must not be charged to an isolated release gate."""
+    listener = MagicMock(return_value=1234)
+    process = MagicMock()
+    process.name.return_value = "clio_run.exe"
+    monkeypatch.setattr(_mod, "_port_listener_pid", listener)
+    monkeypatch.setattr(_mod.psutil, "Process", MagicMock(return_value=process))
+    unrelated = MagicMock(side_effect=AssertionError("Unrelated process scan"))
+    monkeypatch.setattr(_mod.psutil, "process_iter", unrelated)
+    assert _mod._external_cte_pids({"CLIO_CORE_PORT": "9413"}) == (1234,)
+    listener.assert_called_once_with(9413)
+
+
+@pytest.mark.parametrize("listener_pid", [None, 1234])
+def test_private_daemon_sampling_rejects_missing_or_wrong_owner(
+    monkeypatch: pytest.MonkeyPatch, listener_pid: int | None
+) -> None:
+    """An absent daemon or another process cannot silently reduce the measurement."""
+    monkeypatch.setattr(_mod, "_port_listener_pid", lambda port: listener_pid)
+    process = MagicMock()
+    process.name.return_value = "another-app.exe"
+    monkeypatch.setattr(_mod.psutil, "Process", MagicMock(return_value=process))
+    with pytest.raises(RuntimeError, match="Configured private CTE"):
+        _mod._external_cte_pids({"CLIO_CORE_PORT": "9413"})
+
+
+def test_shared_daemon_sampling_retains_the_unconfigured_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ordinary shared-daemon gate keeps counting its external Core processes."""
+    processes = [
+        MagicMock(pid=10, info={"name": "clio_run.exe"}),
+        MagicMock(pid=20, info={"name": "other.exe"}),
+    ]
+    monkeypatch.setattr(_mod.psutil, "process_iter", lambda fields: processes)
+    assert _mod._external_cte_pids({}) == (10,)
 
 
 def test_within_tolerance_passes_but_over_fails() -> None:
@@ -318,3 +359,65 @@ def test_invalid_created_session_id_cannot_start_a_turn(
     assert not _mod.drive_load("http://gate", [(tmp_path, "prompt")] * 3, out, {})
     assert session.post.call_count == 1
     assert "invalid id" in out[0]
+
+
+def test_memory_session_is_created_in_the_explicit_measurement_workspace(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The source checkout must not become the live model's default workspace."""
+    session = MagicMock()
+    session.__enter__.return_value = session
+    session.post.return_value.json.return_value = {
+        "id": "session-0",
+        "workspace_id": "workspace-gate",
+    }
+    monkeypatch.setattr(_mod.requests, "Session", lambda: session)
+    assert _mod.prepare_session("http://gate", tmp_path, 0, "workspace-gate") == "session-0"
+    session.post.assert_any_call(
+        "http://gate/v1/sessions",
+        json={"title": "membudget 0", "workspace_id": "workspace-gate"},
+        timeout=30,
+    )
+
+
+def test_concurrent_memory_load_preserves_its_workspace_owner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Every concurrent session must receive the same explicitly prepared workspace."""
+    prepare = MagicMock(side_effect=["session-0", "session-1", "session-2"])
+    monkeypatch.setattr(_mod, "prepare_session", prepare)
+    monkeypatch.setattr(_mod, "drive_session", MagicMock())
+    assert _mod.drive_load(
+        "http://gate", [(tmp_path, "prompt")] * 3, {}, {}, workspace_id="workspace-gate"
+    )
+    assert prepare.call_count == 3
+    for call in prepare.call_args_list:
+        assert call.kwargs == {"workspace_id": "workspace-gate"}
+
+
+def test_memory_gate_isolates_native_roles_even_with_ambient_overrides(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """XDG alone does not isolate Windows data or supersede explicit role overrides."""
+    for role in ("config", "data", "cache"):
+        monkeypatch.setenv(f"CLIO_AGENT_{role.upper()}_DIR", str(tmp_path / "user" / role))
+    monkeypatch.setenv("CLIO_CORE_PORT", "9413")
+    args = Namespace(provider="claude_code", model="haiku", workspace=tmp_path / "workspace")
+    env = _mod._gate_environment(args, tmp_path / "private")
+    for role in ("config", "data", "cache"):
+        assert env[f"CLIO_AGENT_{role.upper()}_DIR"] == str(tmp_path / "private/clio-home" / role)
+    assert env["CLIO_CORE_PORT"] == "9413"
+    assert env["CLIO_ALLOWED_ROOTS"] == str(args.workspace)
+
+
+def test_memory_session_rejects_an_unexpected_workspace_owner(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An ignored or stale workspace binding cannot silently qualify the wrong folder."""
+    session = MagicMock()
+    session.__enter__.return_value = session
+    session.post.return_value.json.return_value = {"id": "session-0", "workspace_id": "ws_default"}
+    monkeypatch.setattr(_mod.requests, "Session", lambda: session)
+    with pytest.raises(ValueError, match="measurement workspace"):
+        _mod.prepare_session("http://gate", tmp_path, 0, "workspace-gate")
+    assert session.post.call_count == 1
