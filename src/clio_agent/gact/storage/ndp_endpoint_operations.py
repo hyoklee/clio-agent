@@ -7,6 +7,8 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 from jsonschema import Draft202012Validator
+from referencing import Registry
+from referencing.exceptions import Unresolvable
 
 from clio_agent.gact.storage.ndp_endpoint_models import EndpointConnection, EndpointRequest
 
@@ -96,8 +98,13 @@ def operations(document: dict[str, Any]) -> list[dict[str, Any]]:
 
 def validate_value(value: Any, schema: dict[str, Any], document: dict[str, Any]) -> None:
     """Validate locally; remote JSON Schema references are never fetched."""
-    validator = Draft202012Validator(local_schema(schema, document))
-    errors = list(validator.iter_errors(value))
+    # Local $ref expansion does not cover every vocabulary (e.g. $dynamicRef).
+    # An empty registry refuses any remaining reference without network retrieval.
+    validator = Draft202012Validator(local_schema(schema, document), registry=Registry())
+    try:
+        errors = list(validator.iter_errors(value))
+    except Unresolvable as exc:
+        raise ValueError("Endpoint schema contains an unresolved external reference") from exc
     if errors:
         raise ValueError(
             "Endpoint parameter/body does not match its API: " + errors[0].message[:500]

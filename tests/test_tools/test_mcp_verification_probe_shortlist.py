@@ -80,7 +80,7 @@ def test_a7_no_network_json_schema_dereferencing_in_clio_agent() -> None:
     docs/design/a2ui-compat-campaign-2026-09.md) clio_agent validates A2UI
     components against catalog FILES with `jsonschema`, so this is no longer
     vacuously satisfied by construction. It is satisfied by design instead: the
-    only entry point is `clio_schemas.a2ui.validation`, whose
+    A2UI entry point is `clio_schemas.a2ui.validation`, whose
     `referencing.Registry` is preloaded with every vendored `$id` and has NO
     `retrieve` callable, so an unknown `$ref` raises `Unresolvable` instead of
     being fetched. This test pins (a) the allowlist of files that may touch a
@@ -91,6 +91,7 @@ def test_a7_no_network_json_schema_dereferencing_in_clio_agent() -> None:
         Path("src/clio_agent/gact/a2ui_catalogs/registry.py"),
         Path("src/clio_agent/gact/a2ui_catalogs/validation.py"),
         Path("src/clio_agent/tools/task_receipt.py"),
+        Path("src/clio_agent/gact/storage/ndp_endpoint_operations.py"),
     }
     src_root = Path("src/clio_agent")
     offenders = []
@@ -154,6 +155,24 @@ def test_a7_no_network_json_schema_dereferencing_in_clio_agent() -> None:
         )
         with pytest.raises(TaskResultValidationError, match="unresolved external reference"):
             validate_terminal(record, current)
+
+        # Observed NDP OpenAPI is untrusted as well. Prove that ordinary remote
+        # references are refused before validation, and dynamic references that
+        # survive local expansion are refused by the no-retrieval registry.
+        from clio_agent.gact.storage.ndp_endpoint_operations import validate_value
+
+        for keyword, message in (
+            ("$ref", "must use local references"),
+            ("$dynamicRef", "unresolved external reference"),
+        ):
+            schema = {
+                "type": "object",
+                "properties": {
+                    "leak": {keyword: "https://example.invalid/never-fetched.json#/$defs/X"}
+                },
+            }
+            with pytest.raises(ValueError, match=message):
+                validate_value({"leak": {}}, schema, {})
     finally:
         socket.create_connection = original_create_connection
 
