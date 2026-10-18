@@ -5,6 +5,7 @@ from __future__ import annotations
 import http.client
 import io
 from collections.abc import Iterator
+from itertools import chain
 from typing import Any, cast
 
 import httpx
@@ -99,10 +100,21 @@ class EndpointSSHTransport(httpx.BaseTransport):
             connection.sock = cast(Any, _ChannelSocket(channel))
             if not isinstance(request.stream, httpx.SyncByteStream):
                 raise ValueError("Endpoint SSH requests require a synchronous byte stream")
+            chunks = iter(request.stream)
+            body: Iterator[bytes] | None = chunks
+            if (
+                "content-length" not in request.headers
+                and "transfer-encoding" not in request.headers
+            ):
+                # An empty iterator makes http.client frame even a body-free GET
+                # as chunked. A closing peer may reset with that terminator unread.
+                # Peek once without buffering streamed uploads or changing framing.
+                first_chunk = next((chunk for chunk in chunks if chunk), None)
+                body = chain((first_chunk,), chunks) if first_chunk is not None else None
             connection.request(
                 request.method,
                 request.url.raw_path.decode("ascii"),
-                body=iter(request.stream),
+                body=body,
                 headers=dict(request.headers),
                 encode_chunked="content-length" not in request.headers,
             )

@@ -122,6 +122,7 @@ class CatalogPeer(BaseHTTPRequestHandler):
     lose_response: bool
     corrupt: bool
     deny: bool
+    requests: list[tuple[str, dict[str, str]]]
 
     def log_message(self, format: str, *args: Any) -> None:
         """Keep the test receipt free of HTTP logging noise."""
@@ -137,6 +138,7 @@ class CatalogPeer(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Serve discovery, actual stored objects and authoring read-back."""
+        self.requests.append(("GET", dict(self.headers)))
         path = unquote(urlsplit(self.path).path)
         if path == "/openapi.json":
             self.respond(200, SCHEMA)
@@ -153,6 +155,7 @@ class CatalogPeer(BaseHTTPRequestHandler):
 
     def do_POST(self) -> None:
         """Retain a file or create the requested catalog record, without production fakes."""
+        self.requests.append(("POST", dict(self.headers)))
         cls = type(self)
         cls.writes += 1
         body = self.rfile.read(int(self.headers["Content-Length"]))
@@ -191,6 +194,7 @@ def peer() -> Iterator[str]:
     CatalogPeer.objects, CatalogPeer.datasets, CatalogPeer.organizations = {}, [], []
     CatalogPeer.writes = 0
     CatalogPeer.lose_response = CatalogPeer.corrupt = CatalogPeer.deny = False
+    CatalogPeer.requests = []
     server = ThreadingHTTPServer(("127.0.0.1", 0), CatalogPeer)
     worker = threading.Thread(target=server.serve_forever, daemon=True)
     worker.start()
@@ -454,6 +458,10 @@ def test_ssh_transport_streams_multipart_over_one_closed_channel(
         result = upload_artifact(store, connection, upload, None)
     assert result["state"] == "verified" and CatalogPeer.writes == 1
     assert clients and all(client.closed for client in clients)
+    reads = [headers for method, headers in CatalogPeer.requests if method == "GET"]
+    assert reads and all(
+        "transfer-encoding" not in {key.lower() for key in headers} for headers in reads
+    )
 
 
 def test_private_account_token_never_enters_publication_receipts(
