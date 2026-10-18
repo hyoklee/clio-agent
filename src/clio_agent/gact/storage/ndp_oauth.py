@@ -22,10 +22,10 @@ DEFAULT_ISSUER = "https://idp-test.nationaldataplatform.org/realms/NDP"
 
 
 def configuration() -> tuple[str, str]:
-    """Return distributor overrides; cilo is the registered public client's spelling."""
+    """Return distributor overrides for NDP's registered public client."""
     return (
         os.environ.get("CLIO_STORAGE_NDP_ISSUER", DEFAULT_ISSUER).rstrip("/"),
-        os.environ.get("CLIO_STORAGE_NDP_CLIENT_ID", "cilo"),
+        os.environ.get("CLIO_STORAGE_NDP_CLIENT_ID", "clio"),
     )
 
 

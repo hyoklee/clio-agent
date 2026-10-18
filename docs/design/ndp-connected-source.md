@@ -9,7 +9,7 @@ Attaching creates a metadata manifest; it does not download the dataset.
 
 ## Authentication
 
-The shipped defaults are the tested **public** Keycloak client `cilo` on
+The shipped defaults are the registered **public** Keycloak client `clio` on
 `https://idp-test.nationaldataplatform.org/realms/NDP`. There is no client secret.
 CLIO discovers the realm endpoints and uses device authorization with S256
 PKCE and `openid offline_access`. It opens the complete verification link,
@@ -28,12 +28,13 @@ Distributor overrides:
 
 ```dotenv
 CLIO_STORAGE_NDP_ISSUER=https://idp-test.nationaldataplatform.org/realms/NDP
-CLIO_STORAGE_NDP_CLIENT_ID=cilo
+CLIO_STORAGE_NDP_CLIENT_ID=clio
 ```
 
-A production realm needs its own registered public device-flow client. Do not
-change the default client spelling to `clio` or substitute the AAI device
-wrappers: the supplied working flow uses Keycloak directly.
+A production realm needs its own registered public device-flow client. The NDP
+team renamed the test client from `cilo` to `clio`; the earlier registration
+message is obsolete. The supplied working flow uses Keycloak directly rather
+than the AAI device wrappers.
 
 ## Catalogs and Endpoints
 
@@ -65,6 +66,13 @@ promise that every resource is readable.
 The reported test-AAI role-query failure does not require another client
 implementation. Its authenticated reads remain subject to the service's actual
 authorization response.
+
+The account-level role/group inspection endpoint on the test AAI is
+`POST https://idp-test.nationaldataplatform.org/api/information`, with the user's
+access token in the Authorization header. This differs from an Endpoint's
+`/user/info`, which evaluates access to that Endpoint. CLIO's public client does
+not have a client secret or send `X-Client-Assertion`. Account memberships alone
+do not establish that a particular resource is readable.
 
 ## Reading and custody
 
@@ -105,6 +113,18 @@ These fixtures do not claim a fresh human NDP sign-in or successful protected
 reads through an NDP Endpoint. The supplied user script established the device
 login path; live Endpoint role assignments and the test AAI remain external
 acceptance conditions.
+
+On October 18, 2026, a fresh human sign-in through the actual CLIO UI with the
+renamed `clio` client succeeded. The backend saved the offline grant and
+successfully refreshed and rotated it after the test forced the local expiry
+timestamp. The AAI `/api/information` returned HTTP 200 and no group memberships
+for the test account. The saved login survived restarting the backend. Signing
+out through the UI removed it, and NDP rejected the revoked refresh token with
+`invalid_grant`. The existing public catalog returned HTTP 400 because its
+Solr service could not connect; protected reads still need a working Endpoint
+that accepts the test realm and the account's intended access grant. A forced
+local expiry exercises refresh but does not claim an elapsed five-hour token
+lifetime.
 
 API contracts checked against
 [ep-api read authorization](https://github.com/national-data-platform/ep-api/blob/main/docs/roles-and-permissions.md),

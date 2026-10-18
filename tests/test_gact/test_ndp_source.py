@@ -33,7 +33,13 @@ def catalog_http(monkeypatch: pytest.MonkeyPatch) -> Iterator[tuple[str, list[st
 
         def do_POST(self) -> None:
             requests.append(self.path)
-            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            payload = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
+            if payload.get("search_term") == "service-down":
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"detail":"Solr connection failed: internal-backend-secret"}')
+                return
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.end_headers()
@@ -151,6 +157,16 @@ def test_selection_rejects_injected_resource_and_write_mode(
             "work",
             CreateSource(provider="ndp", label="Denied", root="dataset", mode="write_enabled"),
         )
+
+
+def test_catalog_service_failure_reports_status_without_internal_details(
+    catalog_http: tuple[str, list[str]],
+) -> None:
+    """Preserve a real catalog's status instead of misreporting an outage as unreachable."""
+    with pytest.raises(ValueError, match=r"could not complete this search \(HTTP 400\)") as error:
+        NDPCatalog().search("service-down")
+    assert "internal-backend-secret" not in str(error.value)
+    assert catalog_http[1] == ["/search"]
 
 
 def test_expired_account_does_not_block_public_catalog(

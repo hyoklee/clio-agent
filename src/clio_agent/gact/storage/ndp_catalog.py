@@ -181,8 +181,15 @@ class NDPCatalog:
                     )
                 )
             except Exception as exc:
+                cause = exc if isinstance(exc, httpx.HTTPStatusError) else exc.__cause__
+                status = (
+                    f" (HTTP {cause.response.status_code})"
+                    if isinstance(cause, httpx.HTTPStatusError)
+                    else ""
+                )
                 raise ValueError(
-                    f"NDP catalog {endpoint.name} could not be reached; try again"
+                    f"{endpoint.name} could not complete this search{status}. "
+                    "Try again later or choose another Endpoint."
                 ) from exc
             for item in rows[:500]:
                 resources = []

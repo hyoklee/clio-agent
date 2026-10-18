@@ -19,11 +19,20 @@ from clio_agent.gact.storage.auth import StorageAuth, application
 ISSUER = "https://ndp.test/realms/NDP"
 
 
+def test_public_client_defaults_and_distributor_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use NDP's renamed client while retaining per-deployment registrations."""
+    monkeypatch.delenv("CLIO_STORAGE_NDP_ISSUER", raising=False)
+    monkeypatch.delenv("CLIO_STORAGE_NDP_CLIENT_ID", raising=False)
+    assert ndp_oauth.configuration() == (ndp_oauth.DEFAULT_ISSUER, "clio")
+    monkeypatch.setenv("CLIO_STORAGE_NDP_CLIENT_ID", "another-registered-client")
+    assert ndp_oauth.configuration()[1] == "another-registered-client"
+
+
 @pytest.fixture
 def protocol(monkeypatch: pytest.MonkeyPatch) -> Iterator[dict[str, object]]:
     """Replace only the HTTP boundary; exercise real discovery, device and auth owners."""
     monkeypatch.setenv("CLIO_STORAGE_NDP_ISSUER", ISSUER)
-    monkeypatch.setenv("CLIO_STORAGE_NDP_CLIENT_ID", "cilo")
+    monkeypatch.setenv("CLIO_STORAGE_NDP_CLIENT_ID", "clio")
     state: dict[str, object] = {"requests": [], "error": "authorization_pending", "refreshes": 0}
     original = httpx.Client
 
@@ -113,7 +122,7 @@ def test_device_pkce_refresh_restart_and_signout(
     assert isinstance(requests, list)
     payload = parse_qs(requests[-1].content.decode())
     assert payload["scope"] == ["openid offline_access"]
-    assert payload["client_id"] == ["cilo"]
+    assert payload["client_id"] == ["clio"]
     assert payload["code_challenge"] == [
         base64.urlsafe_b64encode(hashlib.sha256(flow.verifier.encode()).digest())
         .rstrip(b"=")
