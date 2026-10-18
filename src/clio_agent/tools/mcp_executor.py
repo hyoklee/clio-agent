@@ -245,9 +245,7 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         self._clio_namespace_direct_factories: dict[str, Any] = dict(
             getattr(server, "_clio_namespace_direct_factories", None) or {}
         )
-        # #1281 F2: which route a cached namespace client actually used --
-        # the heal check (mcp_namespace_executor._namespace_client) reads
-        # this to bound eviction STRICTLY to unknown/False -> direct.
+        # Cached route evidence permits healing only from proxy to direct.
         self._namespace_direct_routes: dict[str, bool] = {}
         # #1281 F12 (adversarial review): namespaces whose heal has already
         # been ATTEMPTED -- bounds a namespace to at most one evict+reconnect
@@ -410,14 +408,19 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
                     auth_scope = hashlib.sha256(
                         json.dumps(spec, sort_keys=True, default=str).encode()
                     ).hexdigest()
-                    result = await app.state.external_tasks.call(
-                        server,
-                        configured,
-                        tool,
-                        dict(args),
-                        auth_scope=auth_scope,
-                        progress_handler=progress_handler,
-                    )
+                    try:
+                        result = await app.state.external_tasks.call(
+                            server,
+                            configured,
+                            tool,
+                            dict(args),
+                            auth_scope=auth_scope,
+                            progress_handler=progress_handler,
+                        )
+                    except Exception as error:
+                        self._namespace_call_failed(namespace if proxy is not None else None, error)
+                        raise
+                    self._namespace_succeeded(namespace if proxy is not None else None)
                     return _MCPCallOutcome(
                         _result_to_text(result), result, namespace if proxy is not None else None
                     )
@@ -450,6 +453,10 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
                             budget if budget is not None else self._timeout_for_tool(name),
                         ) from error
                     raise TimeoutError(f"MCP tool {name!r} timed out after {budget}s") from error
+                except Exception as error:
+                    self._namespace_call_failed(namespace, error)
+                    raise
+                self._namespace_succeeded(namespace)
             finally:
                 TASK_CALL.reset(token)
             return _MCPCallOutcome(_result_to_text(result), result, namespace)
@@ -523,20 +530,12 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
                 protocol_version=getattr(client, "protocol_version", None),
                 connect_mode=resolved_connect_mode(),
             )
-        spawn_diet.namespace_connected(namespace)
+        if direct_client is not None:
+            self._namespace_succeeded(namespace)
         return client
 
     async def _route(self, name: str) -> tuple[Any, str, str | None]:
-        """Resolve (client, on-server tool name, namespace|None) for a call.
-
-        Namespaced tools route straight at their mounted proxy (#932): the
-        composite gateway resolves names by listing EVERY mount, spawning the
-        whole fleet; direct routing spawns only the called namespace backend.
-        A failed proxy connect raises out of the CALL (the executor error
-        path types it), never a silent missing tool. The namespace element is
-        ``None`` for composite-routed names (the #934 first-call hooks only
-        apply to namespace-direct backends).
-        """
+        """Resolve one namespace; reject unknown names before composite discovery."""
 
         namespace, _, bare = name.partition("_")
         proxy = self._namespace_servers.get(namespace)

@@ -124,7 +124,11 @@ def session_autostart_suspended(app: Any, session_id: str) -> bool:
 def stop_session_composer_autostart(app: Any, session_id: str) -> dict[str, Any]:
     """Persist future-message suspension without withdrawing submitted feedback."""
     app.state.sessions.update(session_id, metadata_patch={"composer_queue_paused": True})
-    return {"suspended": True}
+    return {
+        "suspended": True,
+        "pending_steers_suspended": False,
+        "queued_messages_paused": True,
+    }
 
 
 def resume_session_composer_autostart(app: Any, session_id: str) -> None:

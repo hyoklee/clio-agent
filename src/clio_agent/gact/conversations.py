@@ -202,6 +202,9 @@ class Conversations:
         if assignment.cancellation_requested_at is not None:
             if assignment.terminal_at is None:
                 return False
+            if item.kind in {"hook", "control"} and item.handle == assignment.handle:
+                # Retain owner-local notices without turning cancellation into a successor.
+                return False
             if (
                 item.kind in {"task_result", "attention", "question_answer", "approval"}
                 and item.handle
@@ -211,9 +214,7 @@ class Conversations:
                     source.owner.assignment_id == assignment.handle
                     or source.owner.parent_handle == assignment.handle
                 ):
-                    return (
-                        False  # retain own cancelled subtree outcomes for a deliberate continuation
-                    )
+                    return False  # Retain cancelled subtree outcomes for deliberate continuation.
         if item.kind in {"human", "question_answer", "approval", "control", "peer"}:
             return True
         if assignment.details is not None:

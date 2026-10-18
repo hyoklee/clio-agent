@@ -1,18 +1,11 @@
-"""Persistent record backends for ARC.
+"""ARC record storage through its sole durable backend, clio-core.
 
-This module defines the storage seam ARC records go through and its one backend:
-clio-core. It is the durable tier beneath the in-memory hot layer (``LRUCache`` +
-``BTreeIndex`` in ``memory.py``).
-
-The seam -- :class:`ARCStore` (a ``Protocol``): ``put(kind, name, data, search_text=...)``
-/ ``get(kind, name)`` / ``scan(kind, prefix)`` over opaque ``bytes`` keyed by
-``(kind, name)``.
-
-:class:`ClioCoreStore` -- the clio-core CTE (Convergent Tiered Environment) binding,
-connecting to a per-user daemon (connect-or-spawn, stopped at interpreter exit via
-``atexit``). clio-core is THE context store: :func:`make_arc_store` raises a typed
-:class:`~clio_agent.arc.init_degradation.ArcStoreUnavailableError` when it cannot be
-brought up; there is no other store.
+:class:`ARCStore` maps opaque bytes to ``(kind, name)`` and provides metadata-only
+address discovery. It sits beneath ARC's in-memory cache and B-tree index.
+:class:`ClioCoreStore` connects to the per-user CTE daemon, starting it when needed
+and stopping owned state through ``atexit``. :func:`make_arc_store` raises typed
+:class:`~clio_agent.arc.init_degradation.ArcStoreUnavailableError` on failure;
+there is no alternate durable store.
 """
 
 import atexit
@@ -23,6 +16,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Iterator, Sequence
+from itertools import batched
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
@@ -38,7 +32,13 @@ from clio_agent.arc import clio_core_daemon_version as daemon_version
 # module (#892); blob writes ride the bounded rc=13-class retry module (#893).
 from clio_agent.arc.batch_put import BatchPutError, PutRecord
 from clio_agent.arc.blob_frame import BlobNameDecodeError, frame, read_framed_blob
-from clio_agent.arc.clio_core_async_ops import TagIds, store_delete, store_put, store_put_many
+from clio_agent.arc.clio_core_async_ops import (
+    TagIds,
+    store_delete,
+    store_delete_many,
+    store_put,
+    store_put_many,
+)
 
 # CTE config generation + capacity policy (the bounded ram hot-tier cap) live in their own
 # owner module (iowarp/clio-agent#774/#890); re-exported here so callers/tests reaching
@@ -160,6 +160,10 @@ class ARCStore(Protocol):
     def scan(self, kind: str, prefix: str = "") -> Iterator[tuple[str, bytes]]:
         """Yield ``(name, data)`` for every record in ``kind`` whose name
         starts with ``prefix`` (``""`` = all). Order is unspecified."""
+        ...
+
+    def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
+        """List matching record addresses without reading their bodies."""
         ...
 
     def delete(self, kind: str, name: str) -> None:
@@ -612,8 +616,7 @@ class ClioCoreStore:
         tier: str = "warm",
         search_text: Optional[str] = None,
     ) -> None:
-        # Multi-RPC: each native call is guarded individually so stall_after_s bounds ONE RPC,
-        # on the async API (clio_core_async_ops) so a stalled daemon cannot hold the GIL.
+        # Bound each async RPC individually, with the GIL released while awaiting it.
         # base64-wrap: CTE GetBlob UTF-8-decodes, so store ascii-safe bytes; framed with
         # its length because a shorter put can leave the old tail (``blob_frame``).
         payload = frame(data)
@@ -675,8 +678,14 @@ class ClioCoreStore:
         return self._cte.Tag(self.tag(kind)).GetBlobSize(name) > 0
 
     def scan(self, kind: str, prefix: str = "") -> Iterator[tuple[str, bytes]]:
-        # scan() is a generator: the decorator would guard only building it, not
-        # iterating. Guard the ONE listing RPC inline; per-blob reads use guarded get().
+        for blob_name in self.scan_names(kind, prefix):
+            value = self.get(kind, blob_name)
+            if value is not None:
+                yield blob_name, value
+
+    def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
+        """Read the namespace directory once; address discovery loads no blob bodies."""
+        # This generator guards its listing RPC when iterated, without loading bodies.
         self._live()
 
         def _list() -> list[str]:
@@ -696,9 +705,7 @@ class ClioCoreStore:
             if blob_name.endswith(_SEARCH_SUFFIX):
                 continue  # search companion, not a record
             if blob_name.startswith(prefix):
-                value = self.get(kind, blob_name)
-                if value is not None:
-                    yield blob_name, value
+                yield blob_name
 
     @guard_store_op("delete")
     def delete(self, kind: str, name: str) -> None:
@@ -708,15 +715,13 @@ class ClioCoreStore:
         store_delete(self, kind, name + _SEARCH_SUFFIX)  # companion (no-op if absent)
 
     def clear(self) -> None:
-        # Multi-RPC: each DelBlob (and the per-kind listing) is guarded INDIVIDUALLY so a
-        # long, PROGRESSING clear over many blobs (total > stall_after_s) is never
-        # misclassified as a stalled peer; only a single hanging RPC trips the ladder.
+        # Guard each listing/delete RPC; a progressing multi-blob clear is not a stall.
         for kind in ARC_KINDS:
             blob_names = guarded_store_rpc(
                 self, "clear", lambda k: list(self._cte.Tag(self.tag(k)).GetContainedBlobs()), kind
             )
-            for blob_name in blob_names:
-                guarded_store_rpc(self, "clear", store_delete, self, kind, blob_name)
+            for batch in batched(blob_names, 64):
+                guarded_store_rpc(self, "clear", store_delete_many, self, kind, batch)
 
     # ---- semantic discovery (Thread D) ----
 

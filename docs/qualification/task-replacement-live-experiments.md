@@ -1,22 +1,68 @@
 # Tasks replacement: finite live experiments
 
-Status: designed, not executed. This is the execution sheet for the existing R2
-Q1–Q9 and R1–R6 acceptance rows, not a new feature scope or replacement ledger.
+This is the execution sheet for the existing R2 Q1–Q9 and R1–R6 acceptance
+rows. Earlier candidates have scoped live evidence in the acceptance ledger;
+that evidence does not qualify the current tuple. No new feature scope is added.
 
-Regression candidate pushed to CI:
+Current candidate, checked October 18, 2026:
 
-- Core: `f9538f3fa40266f5b39291887ef40d4cb642336f`;
-  [CI run](https://github.com/iowarp/clio-agent/actions/runs/38846834707).
-- GACT: `0795157b5652efb8a497950cdc92344eec5bbca3`;
-  [workspace run](https://github.com/iowarp/gact-tui/actions/runs/38846793266).
-- Last production-changing core commit: `00b3092dc6a31fe1f76fe80a5c87ffe462a4ba33`.
+- clio-agent: `e700f15fb8784f06de8900ee30b66730d2e53508`;
+  [CI run](https://github.com/iowarp/clio-agent/actions/runs/39099942879).
+- GACT: `7a75edcf8a5b1a0827f7dedf2db151e8fc8929b9`;
+  [workspace run](https://github.com/iowarp/gact-tui/actions/runs/39099943301).
+- Isolated D: environment installed: iowarp-core 2.3.2, FastMCP/fastmcp-tasks
+  4.1.0, MCP 2.0.0, Docket 0.26.2 and locked Claude Agent SDK 0.2.159.
+- Initial implementation and regression construction are complete. Regression
+  repairs, current CI and final live qualification remain unfinished.
+- R186 ran actual Codex/Luna direct SSE and the matching production UI: external
+  acceptance/independent work, uncertainty notice, original-identity reconnect and
+  final delivery passed. Runs' Needs attention filter failed; the overall family
+  remains failed. API/private Core/browser/external processes retired normally,
+  and its disposable roots were removed. The old R184 protected roots were neither
+  required absent nor touched. R185's initial readiness-only attempt was also
+  retired and cleaned, without claiming orderly shutdown or model acceptance.
+- `.pytest-runtime/static/r185-web-build.json` identifies the build used by R186;
+  `.pytest-runtime/static/r186-live-external-recovery.json` and its cleanup receipt
+  contain the scoped evidence. Any changed GACT candidate needs a fresh UI build
+  and affected live requalification.
 
-CI is running, not passed. The known pending-work empty-wake bug remains a
-production correction, and Claude Fable's source NO-GO remains unresolved.
-Initial implementation and test construction are done; those milestones do not
-make the candidate qualified. No local regression sequence or live model/service
-experiment is running. The interrupted local collection finished successfully
-and removed its run root; collection executed no test bodies.
+See [current status](task-replacement-current-status.md) for dated CI snapshots,
+[acceptance ledger](task-replacement-acceptance.md) for scoped evidence and gaps,
+and [construction map](task-replacement-test-construction.md) for regression
+coverage. Prior implementation reviews and narrow correction reviews are not a
+fresh complete Astra/Claude review of this candidate.
+
+## Regression and live-verification loop
+
+1. Initial production implementation and the complete initial test set precede
+   execution. Those construction milestones stay complete when verification
+   finds a bug; report the bug and its repair separately.
+2. Push the combined regression batch to CI. Use actual models and production
+   services for live qualification while CI runs; live families are the priority.
+   An unrelated pending CI job is not an automatic hold on a live family.
+3. Between live families, inspect current-head CI and record failures together.
+   Batch corrections in the existing owners and add meaningful regression cases
+   for newly found bugs before executing their checks. Do not repair one failing
+   test per push or replace live work with repeated source-review cycles.
+4. Rerun affected checks and affected live scenarios after relevant changes.
+   Record impact and freeze one source/runtime/UI tuple within each family;
+   never modify its code mid-run. Preserve unaltered evidence from failed runs.
+5. Before final acceptance, freeze the integrated candidate, pass required CI,
+   complete Q1–Q9 and run R1–R6 five times each. Required failures, skips and
+   unavailable routes remain visible and block completion.
+
+Tests provide regression assurance. Actual-model execution and real-service UI
+interaction provide qualification. Neither source review nor executor-only
+probes substitute for that evidence. Do not weaken assertions, timeouts, worker
+budgets or guards. Local focused cases, when needed, run individually and
+sequentially with one worker; use CI for the complete regression run.
+
+Record processes, descendants, ports and generated data before each launch.
+After every family, retire owned processes and remove disposable state without
+another permission request; force-close verified stuck descendants when needed
+and report uncertainty honestly. Respect existing tool-rejected/manual-only
+boundaries. Provider capacity or authentication failures block that route and
+do not justify task-engine patches.
 
 ## Common setup and evidence
 

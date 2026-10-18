@@ -263,6 +263,16 @@ def test_unscoped_questions_route_spans_sessions_and_filters_by_status(
         every = client.get("/v1/questions")
         assert every.status_code == 200, every.text
         assert {row["id"] for row in every.json()["questions"]} == set(created)
+        first_page = client.get("/v1/questions?limit=1").json()
+        assert len(first_page["questions"]) == 1
+        assert first_page["metadata"]["total"] == 2
+        assert first_page["cursor"]
+        next_page = client.get(
+            "/v1/questions", params={"limit": 1, "cursor": first_page["cursor"]}
+        ).json()
+        assert len(next_page["questions"]) == 1
+        assert next_page["metadata"]["total"] == 2
+        assert next_page["questions"][0]["id"] != first_page["questions"][0]["id"]
 
         pending = client.get("/v1/questions?status=pending").json()
         assert [row["id"] for row in pending["questions"]] == [created[1]]

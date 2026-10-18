@@ -62,6 +62,11 @@ class _DelayedStore:
         with self._d_lock:
             return (kind, name) in self._data
 
+    def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
+        """List test-store record addresses."""
+        for name, _body in self.scan(kind, prefix):
+            yield name
+
     def scan(self, kind: str, prefix: str = "") -> Iterator[tuple[str, bytes]]:
         with self._d_lock:
             rows = [

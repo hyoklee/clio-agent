@@ -218,6 +218,12 @@ class _MemoryStore:
             if k == kind and name.startswith(prefix):
                 yield name, data
 
+    def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
+        """List the observer's addresses without materializing payloads."""
+        for k, name in list(self._data):
+            if k == kind and name.startswith(prefix):
+                yield name
+
     def delete(self, kind: str, name: str) -> None:
         self._data.pop((kind, name), None)
 

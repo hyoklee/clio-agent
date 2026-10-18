@@ -126,6 +126,11 @@ class CountingStore:
     def exists(self, kind: str, name: str) -> bool:
         return (kind, name) in self._data
 
+    def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
+        """List test-store record addresses."""
+        for name, _body in self.scan(kind, prefix):
+            yield name
+
     def scan(self, kind: str, prefix: str = "") -> Iterator[tuple[str, bytes]]:
         for (k, name), data in list(self._data.items()):
             if k == kind and name.startswith(prefix):

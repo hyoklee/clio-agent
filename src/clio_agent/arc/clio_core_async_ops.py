@@ -22,9 +22,10 @@ Still blocking, because the binding has no GIL-free alternative (drafted upstrea
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
@@ -66,10 +67,16 @@ def _polled(future: Any) -> Callable[[float], bool]:
 
     def done_within(timeout: float) -> bool:
         deadline = time.monotonic() + timeout
+        interval = min(0.001, _POLL_S)
         while not future.done():
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 return False
-            time.sleep(_POLL_S)
+            # Local writes often finish within a millisecond. Charging the full
+            # idle poll interval on every small RPC dominates large histories.
+            # Back off to the existing cadence while a call actually stays pending.
+            time.sleep(min(interval, remaining))
+            interval = min(interval * 2, _POLL_S)
         return True
 
     return done_within
@@ -244,6 +251,23 @@ def store_put_many(
 def store_delete(store: Any, kind: str, name: str) -> bool:
     """Delete one blob of ``store`` (a missing one is a no-op), GIL-free."""
     return delete_blob(store._client, store._tag_ids.get(kind), name)
+
+
+def store_delete_many(store: Any, kind: str, names: Sequence[str]) -> None:
+    """Issue independent deletes together and await every submitted operation."""
+    tag_id = store._tag_ids.get(kind)
+    futures = [store._client.AsyncDelBlob(tag_id, name) for name in names]
+    errors: list[Exception] = []
+    for future in futures:
+        try:
+            await_future(future, op_name="delete").wait(0)
+        except Exception as error:
+            logging.getLogger(__name__).exception(
+                "Core deletion failed reason=core_delete_observation_failed kind=%s", kind
+            )
+            errors.append(error)
+    if errors:
+        raise ExceptionGroup("Core deletion batch failed", errors)
 
 
 def rpc_answers(client: Any, cte: Any, sentinel: str) -> bool:

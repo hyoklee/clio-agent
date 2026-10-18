@@ -814,7 +814,7 @@ class SegmentStore(PlainContextRestore):
         agent-level, ``""`` for all). Backs cross-scope reads."""
         prefix = f"{session_id}{_SCOPE_SEP}"
         out: set[str] = set()
-        for name, _ in self._store.scan("segments", prefix=prefix):
+        for name in self._store.scan_names("segments", prefix=prefix):
             scope = name[len(prefix) :].replace(_SLASH_SUB, "/")
             if scope.startswith(scope_pattern):
                 out.add(scope)
@@ -826,7 +826,7 @@ class SegmentStore(PlainContextRestore):
         observer's ``_events`` log scope) without callers reaching into store internals."""
         suffix = f"{_SCOPE_SEP}{scope.replace('/', _SLASH_SUB)}"
         out: set[str] = set()
-        for name, _ in self._store.scan("segments"):
+        for name in self._store.scan_names("segments"):
             if name.endswith(suffix):
                 out.add(name[: -len(suffix)])
         return sorted(out)

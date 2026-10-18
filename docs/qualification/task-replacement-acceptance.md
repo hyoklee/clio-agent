@@ -1,5 +1,25 @@
 # Tasks replacement acceptance ledger
 
+## Current candidate — October 18, 2026
+
+Runtime candidate: clio-agent `e700f15fb8784f06de8900ee30b66730d2e53508`, GACT
+`7a75edcf8a5b1a0827f7dedf2db151e8fc8929b9`, iowarp-core 2.3.2,
+FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and locked Claude Agent
+SDK 0.2.159. It is installed in the isolated D: checkout; the matching UI build
+passed. Its complete CI run failed with sixteen distinct cases. R186 demonstrated
+actual Luna/SSE handle delivery, independent work, attention, reconnect and final
+delivery, but failed the real Runs attention filter; that scoped evidence and its
+cleanup receipts are recorded in the current-status document. The coordinated
+repair batch and its new coverage are in progress, with no qualification claim.
+Neither Q1–Q9 nor the thirty final race repetitions is accepted for this tuple.
+The dated evidence below belongs to its named earlier candidate unless stated
+otherwise; old dependency/version statements do not describe the current one.
+The [execution sheet](task-replacement-live-experiments.md) records the agreed
+CI/live-family loop. The complete candidate's final independent review remains
+outstanding; scoped predecessor review is not a substitute.
+
+## Construction and preceding evidence
+
 Initial production implementation and regression construction are complete.
 Regression execution, repairs and actual-model qualification are underway; see
 [current status](task-replacement-current-status.md) and the

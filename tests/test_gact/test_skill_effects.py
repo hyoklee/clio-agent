@@ -254,9 +254,14 @@ def test_spawn_subagent_with_skill_seeds_body_not_inlined(tmp_path: Path) -> Non
         # Delegated instructions are system injections, never fabricated human input.
         child_msgs = app.state.messages.get(data["session_id"], []) or []
         assert not [m for m in child_msgs if m.role == "user"]
-        seeded = [m for m in child_msgs if m.role == "system"]
+        seeded = [
+            part
+            for message in child_msgs
+            for part in message.parts
+            if part.type == "injection" and part.source == "delegation"
+        ]
         assert seeded, "child got no delegated assignment injection"
-        assert any("SUBAGENT_SKILL_BODY_MARKER." in _message_text(m) for m in seeded)
+        assert any("SUBAGENT_SKILL_BODY_MARKER." in (part.text or "") for part in seeded)
 
 
 def test_spawn_subagent_with_skill_uses_specific_task_assignment(tmp_path: Path) -> None:
@@ -287,9 +292,14 @@ def test_spawn_subagent_with_skill_uses_specific_task_assignment(tmp_path: Path)
         _wait_terminal(app, data["handle"])
         child_msgs = app.state.messages.get(data["session_id"], []) or []
         assert not [m for m in child_msgs if m.role == "user"]
-        seeded = [m for m in child_msgs if m.role == "system"]
-        assert any("RESOLVE_REGION_PROCEDURE." in _message_text(m) for m in seeded)
-        assert any("Resolve San Diego" in _message_text(m) for m in seeded)
+        seeded = [
+            part
+            for message in child_msgs
+            for part in message.parts
+            if part.type == "injection" and part.source == "delegation"
+        ]
+        assert any("RESOLVE_REGION_PROCEDURE." in (part.text or "") for part in seeded)
+        assert any("Resolve San Diego" in (part.text or "") for part in seeded)
 
 
 def test_spawn_subagent_with_skill_from_plan_mode_parent_inherits_plan_mode(

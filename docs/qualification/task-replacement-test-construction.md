@@ -1,5 +1,12 @@
 # Task replacement test construction
 
+This is the completed initial construction-phase coverage map. Statements such
+as "written; not executed in this phase" below describe that historical phase,
+not the current execution status. The complete clio-agent `e700f15f` CI baseline
+failed; its coordinated correction coverage is constructed. See the [current status](task-replacement-current-status.md)
+and [live execution sheet](task-replacement-live-experiments.md); later bugs and
+their added regression cases do not reopen the initial implementation milestone.
+
 Core production reference: 00b3092dc6a31fe1f76fe80a5c87ffe462a4ba33.
 GACT production reference: 0a4ca5d5915a0add61cd5048b742161092468481.
 GACT test-only commit: 0795157b5652efb8a497950cdc92344eec5bbca3.

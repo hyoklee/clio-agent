@@ -26,9 +26,13 @@ async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str,
     stopping = reservation is not None
     await app.state.task_history.io.run(stop_session_loop, app, sid)
     await app.state.task_history.io.run(stop_session_goal, app, sid)
-    await app.state.task_history.io.run(stop_session_composer_autostart, app, sid)
+    composer = await app.state.task_history.io.run(stop_session_composer_autostart, app, sid)
     if assignment is None:
-        effect = {"status": "stopping" if stopping else "idle", "accepted_tasks_continue": True}
+        effect = {
+            "status": "stopping" if stopping else "idle",
+            "accepted_tasks_continue": True,
+            "composer_autostart": composer,
+        }
         await app.state.task_history.io.run(app.state.sessions.update, sid, status=effect["status"])
 
         async def retire() -> None:
@@ -62,6 +66,7 @@ async def cancel_session_state_async(app: Any, deps: Any, sid: str) -> dict[str,
     effect = await intervene(
         app, assignment.handle, "stop", stop_reservation=reservation, stop_reservation_captured=True
     )
+    effect = {**effect, "composer_autostart": composer}
     await app.state.task_history.io.run(app.state.sessions.update, sid, status=effect["status"])
     app.state.bus.publish(
         Event(type="session.status_changed", session_id=sid, payload={"session_id": sid, **effect})

@@ -1,5 +1,100 @@
 # Tasks replacement status — October 18 UTC
 
+## October 18, overnight finish execution — target missed; work continues
+
+The execution goal is active. Initial implementation and initial test construction
+remain done. The 8 AM target was missed; regression repair and qualification are
+unfinished, and this candidate is not release-ready.
+
+The complete `e700f15f` CI run `39099942879` has sixteen distinct failure/error
+cases across its twelve shards. Per-interpreter totals are:
+
+| Python | Passed | Failed | Errors | Skipped |
+| --- | ---: | ---: | ---: | ---: |
+| 3.12 | 12,547 | 10 | 3 | 54 |
+| 3.13 | 12,545 | 12 | 3 | 54 |
+| 3.14 | 12,548 | 10 | 2 | 54 |
+
+All lint, coverage and native service-lifecycle jobs passed. Skips are exclusions,
+not executed passes. The bounded inventory is
+`.pytest-runtime/static/ci-e700f15f-complete-inventory.json` in the D checkout.
+Corrections are being combined into one subsequent push; no new execution owner,
+task registry, backend fallback or increased test/guard budget is introduced.
+
+R185 failed at a harness readiness assumption before any model/work submission.
+R186 used actual Codex/Luna direct SSE on frozen `e700f15f` / GACT `7a75edcf`:
+immediate external handle, independent model filesystem read while running, one
+lost-visibility attention injection, original-identity reconnection without
+resubmission, and a distinct final result injected once under the same assignment.
+The real workload's 77 bytes/SHA256 and one execution matched. Work passed desktop
+and 390-pixel disclosure/containment; the family failed because Runs' Needs
+attention filter hid the uncertain task. The final-result UI and browser output
+checks passed. This is scoped predecessor evidence, not final-tuple acceptance.
+
+R186 closed the API, private Core, external/proxy and browser normally, with no
+active work remaining; both disposable roots are absent. R185 readiness-only
+processes were force-closed with honest shutdown uncertainty, and its roots are
+absent. R187/R190 diagnostic test runtimes were retired and removed after the
+unchanged native cleanup guard fired. Earlier protected/manual-only residues
+remain untouched. Receipts are in `.pytest-runtime/static/`; no archives were made.
+
+The large-history diagnostics separately exposed serial cleanup overhead and
+ARC scope discovery reading unrelated blob bodies to find addresses. Shared ARC
+metadata listing, adaptive future polling and bounded concurrent cleanup are
+constructed with regression coverage. The unchanged 1,005-message case passes
+locally in R191: one executed, one passed, zero errors/skips, including teardown
+inside its existing native guard; XML suite time is 102.078 seconds. The UI
+classification regression file passes 21 cases individually within one worker.
+Scoped types and all six frontend guards pass. Native library source and dependency
+versions remain unchanged. The full regression baseline still needs fresh CI.
+
+## October 18, 00:26 America/Chicago — first current-head regression result
+
+Current clio-agent CI has nine successful jobs, one failed job and eleven jobs
+still running. Python 3.14 shard 3 completed with **3075 passed, 3 failed,
+11 skipped**. These are partial totals from one shard, not the complete suite.
+Its three failures are child-startup cancellation/admission, fired schedule
+registration/cancellation, and the Stop/pending-feedback scenario. Causes still
+need triage; a failing scenario is not proof of its underlying product cause.
+The bounded report is `.pytest-runtime/static/ci-e700f15f-test-results-3.14-3.json`.
+Wait for the rest of the inventory and batch repairs; do not patch/push one case
+at a time. Earlier native AIO and watchdog cases have no current result yet.
+
+GACT CI/schema workflows passed. The workspace's Linux and macOS native debug
+builds and release-matrix contract passed; Windows and the unit/browser/build
+job remain running. The matching local production UI asset build also passed
+at clio-agent `e700f15f` / GACT `7a75edcf`, with its receipt/hash in
+`.pytest-runtime/static/r185-web-build.json`. No actual-model/service/UI family
+is running on this tuple. Live execution and final acceptance remain unfinished.
+
+## October 18, 00:21 America/Chicago — current execution snapshot
+
+Initial implementation: done. Initial regression test construction: done.
+Regression execution: running, previous baseline failed. Bug repairs and live
+qualification: unfinished. Release readiness: no.
+
+clio-agent `e700f15f` CI `39099942879` has eight successful jobs and thirteen
+running jobs: all twelve interpreter/shard regression jobs plus flake-hunt.
+No current-head job failure is reported at this snapshot, and no complete
+current-head per-test totals exist yet. GACT `7a75edcf` CI and schema-generation
+workflows passed; both workspace runs, including unit/browser/build checks,
+remain running. These are CI-job statuses, not eight individual test passes.
+
+The same candidate is installed in the isolated D: checkout with iowarp-core
+2.3.2 and the locked Claude SDK 0.2.159. It needs a matching GACT build before
+the next actual-model/service/UI family; no such family has started on this
+tuple. R184 API/private runtime and their known controller/browser/external
+processes have exited. Automatic review rejected removing the exact R184
+profile/temp roots; that command did not run and those roots remain protected
+from retry or bypass. This does not create a new approval requirement for
+ordinary owned-process/data cleanup.
+
+The [live execution sheet](task-replacement-live-experiments.md) now records the
+agreed weave: live families are the priority while CI runs, inspect and batch
+CI/live corrections between families, rerun affected gates and complete final
+exact-candidate acceptance. The three earlier AIO stalls and separate watchdog
+failure remain unproved corrections until the affected current checks finish.
+
 ## October 18 UTC — upstream integration and dependency alignment
 
 The human confirmed that upgrading the isolated iowarp-core dependency is

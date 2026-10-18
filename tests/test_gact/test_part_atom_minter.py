@@ -281,10 +281,12 @@ def test_seal_never_touches_the_store_under_the_transcript_lock(tmp_path: Path) 
             assert release.wait(timeout=5.0), "test released the store worker too late"
         return real_lock_for(session_id, scope)
 
-    arc._segments._lock_for = _blocked_lock_for  # type: ignore[method-assign]
     app = _fake_app(arc)
     minter = open_turn_minter(app, "sess5", "turn5")
     transcript = _transcript("sess5", "turn5", app)
+    # Opening the minter reads the visibility checkpoint before transcript work.
+    # Instrument the seal operations, rather than counting that setup read.
+    arc._segments._lock_for = _blocked_lock_for  # type: ignore[method-assign]
 
     try:
         transcript.append_text_delta("main", "answer", "quick")

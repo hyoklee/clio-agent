@@ -83,6 +83,7 @@ def test_fired_schedule_is_registered_and_cancellable(
                 if (
                     app.state.turn_runner.busy(sid)
                     and app.state.sessions.get(sid).status == "running"
+                    and app.state.task_history.acknowledged_notifications(sid)
                     and any(
                         event.type == "session.status_changed"
                         and event.payload.get("status") == "running"
@@ -111,13 +112,26 @@ def test_fired_schedule_is_registered_and_cancellable(
             # The staged injection carries the schedule metadata, never human authorship.
             response = await asyncio.to_thread(client.get, f"/v1/sessions/{sid}/messages")
             msgs = response.json()["messages"]
-            wakes = [m for m in msgs if m["role"] == "system"]
-            assert wakes
-            assert wakes[0]["parts"][0]["type"] == "injection"
-            assert wakes[0]["parts"][0]["source"] == "scheduled_wake"
-            assert wakes[0]["parts"][0]["text"] == "scheduled q"
+            wakes = [
+                part
+                for message in msgs
+                for part in message["parts"]
+                if part["type"] == "injection" and part.get("source") == "schedule"
+            ]
+            assert len(wakes) == 1
+            assert "scheduled q" in wakes[0]["text"]
             assert not [m for m in msgs if m["role"] == "user"]
-            meta = wakes[0].get("metadata", {})
+            acknowledged = app.state.task_history.acknowledged_notifications(sid)
+            [mail] = [
+                app.state.task_history.mail_item(sid, identity)
+                for identity in acknowledged
+                if app.state.task_history.mail_item(sid, identity).kind == "schedule"
+            ]
+            payload = await app.state.task_history.io.run(
+                app.state.task_history.read_content, mail.content
+            )
+            assert payload["text"] == "scheduled q"
+            meta = payload["metadata"]
             assert meta.get("scheduled") is True
             assert meta.get("schedule_id", "").startswith("sched_")
 

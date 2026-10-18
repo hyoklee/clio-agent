@@ -430,13 +430,32 @@ def register_task_routes(app: FastAPI) -> None:
         )
 
         def project() -> dict[str, Any]:
+            history = app.state.task_history
+            access = TaskAccess(history, caller(sid))
+            scope = "tree" if sid else "authorized"
+            # This compatibility endpoint promises an exact filtered count.
+            # Count only its authorized Question index, never unrelated history.
+            handles = {
+                handle
+                for ordering in access.query_orders(
+                    scope, kind="Question", active_only=status == "pending"
+                )
+                for _created, handle in ordering
+            }
+            total = sum(
+                1
+                for handle in handles
+                if (task := history.task_snapshot(handle)) is not None
+                and access.in_scope(task, scope)
+                and "read" in access.rights(task)
+                and (effective is None or task.status == effective)
+            )
             values = [
-                question_view(app, app.state.task_history.task_snapshot(row["handle"]))
-                for row in page["tasks"]
+                question_view(app, access.require(row["handle"], "read")) for row in page["tasks"]
             ]
             return {
                 "questions": [row for row in values if status is None or row["status"] == status],
-                "metadata": {"status": status},
+                "metadata": {"status": status, "total": total},
                 **{key: value for key, value in page.items() if key != "tasks"},
             }
 

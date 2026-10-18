@@ -8,6 +8,7 @@ plus the redacted arc.op SSE-bus frame for the TUI.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -322,6 +323,11 @@ class _CteShapedStore:
 
     def exists(self, kind, name) -> bool:
         return (kind, name) in self._blobs
+
+    def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
+        """List test-store record addresses."""
+        for name, _body in self.scan(kind, prefix):
+            yield name
 
     def scan(self, kind, prefix=""):
         for (k, name), data in self._blobs.items():

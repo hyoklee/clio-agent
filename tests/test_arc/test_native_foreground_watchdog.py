@@ -9,6 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 from fastmcp.utilities.tasks import TaskConfig
+from fastmcp_tasks.client_models import ClientGetTaskResult
 
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import SubmissionContext
@@ -108,10 +109,14 @@ async def test_silent_foreground_wait_survives_watchdog_and_retires_cleanup(
                     await guarded
             else:
                 result = await guarded
-                assert result["status"] == "completed" and result["result"] == {"value": "finished"}
+                assert result["status"] == "completed"
+                reply = ClientGetTaskResult.model_validate(result["result"])
+                assert reply.status == "completed" and reply.result is not None
+                assert reply.result["structuredContent"] == {"value": "finished"}
             settled = await native.await_settlement(handles[0])
             assert settled.status == ("cancelled" if cancel else "completed")
             assert settled.settlement == "confirmed"
+            assert settled.result == settled.backend_observation
             assert not commitment_wait_in_flight(owner.session_id)
         finally:
             release.set()
