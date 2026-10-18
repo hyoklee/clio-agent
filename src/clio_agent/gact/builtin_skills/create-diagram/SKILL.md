@@ -21,6 +21,10 @@ in CLIO's chart/data views when their filtering, units and shared selection help
 Authored HTML/SVG remains available for a custom illustration or interaction;
 use the declared file tools and normal artifact registration for that result.
 
+For concrete syntax, load `references/diagram-examples.md` when useful. It has
+small rendered examples of flowcharts, sequences, git graphs, mindmaps and
+Pele's `railroad-ebnf-beta` grammar; no need to load every example for each diagram.
+
 For a small explanation, use a `mermaid` code block. For an interactive report,
 load the active catalog's `clio.mermaid.v1` contract and use inline `source` or
 `dataUri` for a registered source file. Use `create-dashboard` for a saved report.
