@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable, Mapping
 from typing import Any
 
@@ -84,18 +85,40 @@ def connected_data_ndp_endpoint_operations(endpoint_id: str, query: str = "") ->
 
     A live Kafka bridge and an SSE CSV replay are different services. Inspect
     descriptions and actual timestamps; never label historical replay as live.
-    This call does not start or consume a stream. Filter operation names/paths
-    with query. Operations use exact returned IDs, for example GET /bridge/config.
+    This call does not start or consume a stream. Query words search operation
+    IDs, summaries and descriptions; matches with more words rank first. Empty
+    query lists all operations. No search matches does not mean the API has no
+    operations: operation_count reports its full inventory. Operations use exact
+    returned IDs, for example GET /bridge/config.
     """
     _, session, service = _owner()
     result = service.ndp_endpoints.describe(
         service.ndp_endpoints.get(session.workspace_id, endpoint_id)
     )
+    if len(query) > 1000:
+        raise ValueError("Use an operation query of at most 1000 characters")
+    rows = result["operations"]
+    terms = set(re.findall(r"\w+", query.casefold()))
+    ranked = []
+    for index, row in enumerate(rows):
+        text = " ".join(
+            str(row.get(key, "")) for key in ("id", "summary", "description")
+        ).casefold()
+        ranked.append((sum(term in text for term in terms), index, row))
     result["operations"] = [
         row
-        for row in result["operations"]
-        if query.casefold() in (row["id"] + " " + row["summary"]).casefold()
+        for score, _, row in sorted(ranked, key=lambda item: (-item[0], item[1]))
+        if score or not terms
     ]
+    result["query"] = query
+    result["operation_count"] = len(rows)
+    result["matched_count"] = len(result["operations"])
+    if rows and not result["operations"]:
+        result["search_note"] = (
+            "No operation matches these words. The API still has operations; "
+            "use fewer words or an empty query to inspect them. This is an API "
+            "operation search, not a search of the service's scientific records."
+        )
     return result
 
 

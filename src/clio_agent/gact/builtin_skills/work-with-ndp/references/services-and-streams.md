@@ -27,6 +27,9 @@ JSON/multipart schemas. Name search finds operations, not stations, files or dat
 Choose a real data operation and supply its filters; don't present the operation
 list as if it were search results. Missing capabilities are meaningful: an Endpoint
 may provide queries without storage, or a local catalog without a live bridge.
+Operation search ranks matches to query words across IDs, summaries and descriptions.
+`operation_count` is the full inventory; `matched_count` describes this search only.
+An empty match list alone does not establish that a service or capability is absent.
 
 Use `connected_data_ndp_endpoint_request(endpoint_id, operation_id, parameters,
 body, max_seconds, max_events)` with observed IDs. It validates inputs, requests

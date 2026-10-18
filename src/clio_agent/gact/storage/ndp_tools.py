@@ -46,6 +46,9 @@ def connected_data_ndp_organizations(query: str = "", endpoint_id: str = "") -> 
     discovery only: catalog organizations and protected Endpoint role groups
     are different. Account sign-in is obtained through connected_data_status's
     private NDP login_action when a selected resource requires it.
+    endpoint_id is a catalog ID returned by this discovery surface, not a saved
+    workspace ndpep_ connection ID. For that connection's local organizations,
+    discover/invoke its organization operation with the Endpoint tools.
     """
     if len(query) > 1000:
         raise ValueError("Use a catalog organization query of at most 1000 characters")

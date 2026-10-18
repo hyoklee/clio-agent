@@ -79,3 +79,48 @@ def test_native_permission_names_the_operation_and_destination(
         assert not future.done()
         resolve_permission(app, pending["id"], "allow")
         assert future.result(timeout=5)["status_code"] == 200
+
+
+def test_operation_search_matches_words_and_retains_full_inventory(
+    bound: tuple[Any, Any, Path], peer: str
+) -> None:
+    """A natural multiword query must not hide a usable observed station route."""
+    service, _, _ = bound
+    connection = service.ndp_endpoints.connect(
+        "ws_default", ndp_endpoint_tools.EndpointConnectionInput(name="Lab", url=peer)
+    )
+    result = ndp_endpoint_tools.connected_data_ndp_endpoint_operations(
+        connection.id, "FDSN stations epochs"
+    )
+    assert [row["id"] for row in result["operations"]] == ["GET /stations"]
+    assert result["matched_count"] == 1
+    assert result["operation_count"] > 1
+    absent = ndp_endpoint_tools.connected_data_ndp_endpoint_operations(connection.id, "absentxyz")
+    assert absent["operations"] == []
+    assert absent["operation_count"] == result["operation_count"]
+    assert absent["matched_count"] == 0
+    assert absent["search_note"]
+    all_rows = ndp_endpoint_tools.connected_data_ndp_endpoint_operations(connection.id)
+    assert all_rows["matched_count"] == all_rows["operation_count"]
+
+
+def test_operation_search_reads_descriptions_and_ranks_specific_matches(
+    bound: tuple[Any, Any, Path], peer: str
+) -> None:
+    """The callable inventory preserves actual schemas and favors more relevant routes."""
+    service, _, _ = bound
+    connection = service.ndp_endpoints.connect(
+        "ws_default", ndp_endpoint_tools.EndpointConnectionInput(name="Lab", url=peer)
+    )
+    connection.schema_document["paths"]["/stations"]["get"]["description"] = (
+        "Station epochs and coordinates"
+    )
+    connection.schema_document["paths"]["/organization"]["get"]["description"] = (
+        "Station publishers"
+    )
+    service.ndp_endpoints.store.put("ndp_endpoint", connection.id, connection)
+    result = ndp_endpoint_tools.connected_data_ndp_endpoint_operations(
+        connection.id, "STATION epochs"
+    )
+    assert [row["id"] for row in result["operations"]][:2] == ["GET /stations", "GET /organization"]
+    assert result["operations"][0]["parameters"][0]["name"] == "limit"
