@@ -164,12 +164,7 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
     def inject_locked() -> None:
         current = TaskAccess(self.history, caller).require(handle, "control")
         latest = self.history.latest_assignment(sid)
-        if (
-            current is None
-            or latest is None
-            or latest.handle != handle
-            or current.cancellation_requested_at
-        ):
+        if latest is None or latest.handle != handle or current.cancellation_requested_at:
             raise ValueError("Resume no longer addresses the current uncancelled assignment")
         session = self.sessions.get(sid)
         if session is None:
@@ -186,7 +181,7 @@ async def resume(self: Conversations, caller: TaskCaller, handle: str) -> dict[s
             or session.metadata.get("agent_pause_token")
             or ("stop:" + reservation.turn_id if reservation is not None else current.updated_at)
         )
-        if current is not None and current.terminal_at is None:
+        if current.terminal_at is None:
             self.history.record_snapshot(
                 current.model_copy(
                     update={
@@ -352,11 +347,10 @@ async def restart(self: Conversations, caller: TaskCaller, handle: str) -> dict[
         def create() -> None:
             with self.history.serialized():
                 previous = TaskAccess(self.history, caller).require(handle, "control")
-                if (
-                    previous is None
-                    or previous.terminal_at is None
-                    or previous.settlement not in {"confirmed", "never_started"}
-                ):
+                if previous.terminal_at is None or previous.settlement not in {
+                    "confirmed",
+                    "never_started",
+                }:
                     raise ValueError("Restart settlement remains uncertain; no successor launched")
                 latest = self.history.latest_assignment(previous.owner.session_id)
                 if latest is None or latest.handle != previous.handle:
@@ -441,8 +435,8 @@ def _member_settled(task: TaskSnapshot | None) -> bool:
             task.settlement in {"confirmed", "never_started"}
             or task.kind == "MCP"
             and task.settlement == "external_acknowledged"
-            and task.raw_status in {"completed", "failed", "inline"}
-            and task.status in {"completed", "failed"}
+            and task.raw_status in {"completed", "failed", "cancelled", "inline"}
+            and task.status in {"completed", "failed", "cancelled"}
             and task.result is not None
         )
     )
@@ -754,6 +748,7 @@ async def _cancel_subtree(
                         "handle": current.handle,
                         "status": "cancelled",
                         "settlement": "confirmed",
+                        "settlement_scope": "clio_owned_execution",
                         "members": [
                             task.model_dump(
                                 include={"handle", "status", "raw_status", "settlement"}
@@ -768,6 +763,8 @@ async def _cancel_subtree(
                         "status": "cancelled",
                         "raw_status": "cancelled",
                         "activity": "",
+                        "attention_episode": None,
+                        "progress": TaskProgress(),
                         "settlement": "confirmed",
                         "terminal_at": stamp,
                         "updated_at": stamp,

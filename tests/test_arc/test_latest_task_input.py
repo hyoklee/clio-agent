@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Never
+from typing import Any, Never
 
 import pytest
 
@@ -103,11 +103,15 @@ def test_failed_projection_restore_keeps_previous_confirmed_lookup(
     history = TaskHistory(arc)
     latest = commit(history, "first", "2026-10-15T12:00:00Z")
 
-    def fail_indexes(_history: TaskHistory) -> None:
-        raise OSError("index repair unavailable")
+    original = task_history_projection._scope_inputs
 
-    monkeypatch.setattr(task_history_projection, "_repair_indexes", fail_indexes)
-    with pytest.raises(OSError, match="index repair"):
+    def fail_context(selected: TaskHistory, *args: Any, **kwargs: Any) -> Any:
+        if selected is not history:
+            raise OSError("canonical input read unavailable")
+        return original(selected, *args, **kwargs)
+
+    monkeypatch.setattr(task_history_projection, "_scope_inputs", fail_context)
+    with pytest.raises(OSError, match="canonical input read"):
         history.restore()
     assert history.requires_recovery
     assert history.latest_input("parent") == latest

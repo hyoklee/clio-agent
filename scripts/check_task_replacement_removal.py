@@ -198,6 +198,7 @@ REMOVED_STATE = frozenset(
         "automatic_input_hold",
         "pending_loop_inbox_drain",
         "transfer_settled",
+        "_repair_indexes",
     }
 )
 REMOVED_CONFIG = frozenset(

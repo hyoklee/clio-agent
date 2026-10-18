@@ -257,6 +257,9 @@ def test_native_download_settles_abandoned_attachment_cleanup(bound: Any, monkey
         release.set()
     outcome, reply = _collect(app, receipt, kind="Download")
     assert outcome["status"] == "cancelled" and _body(reply)["state"] == "cancelled"
+    settled = app.state.task_history.task_snapshot(receipt["handle"])
+    assert settled is not None and settled.settlement == "confirmed"
+    assert settled.cancellation_requested_at is None  # the draft owner requested cancellation
     assert (upstream / "measurements.csv").read_text() == "x,y\n1,2\n"
     restored = service.get("ws_default", source_id)
     assert restored.manifest_id == record.manifest_id

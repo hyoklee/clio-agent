@@ -181,11 +181,13 @@ def test_depth_updates_and_unlimited_preserve_deep_history_and_task_paths(
     _save(client, {"agent_tasks.max_depth": 2})
     assert descendant_session_ids(app, root) == [task["session_id"] for task in tasks]
     lineage, truncated = child_session_lineage(app, root)
+    root_task = app.state.task_history.latest_assignment(root)
+    assert root_task is not None and root_task.kind == "Session"
     handles = [task["handle"] for task in tasks]
     assert not truncated and lineage[-1]["depth"] == 12
     assert lineage[-1]["task_path"] == handles
     monkeypatch.setattr("clio_agent.gact.context.active_app", lambda: app)
-    assert _task_path({"task_id": handles[-1]}) == handles
+    assert _task_path({"task_id": handles[-1]}) == [root_task.handle, *handles]
 
 
 def test_runtime_limit_settings_validate_zero_and_reject_invalid_updates(

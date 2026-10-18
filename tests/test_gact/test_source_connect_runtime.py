@@ -324,7 +324,7 @@ def test_oauth_connection_waits_for_private_sign_in(
     accepted = _connect(app, "google_drive", "drive-folder", "Dataset")
     terminal, reply = _collect(app, accepted)
     result = _body(reply)
-    assert terminal["status"] == "failed" and result["state"] == "sign_in_required"
+    assert terminal["status"] == "failed" and result["connection"]["state"] == "sign_in_required"
     assert result["error"]["code"] == "source_sign_in_required"
     assert service.sources("ws_default")[0].linked_manifest_id is None
     status = setup_tool.connected_data_status()

@@ -65,6 +65,13 @@ Trusted request boundary writes submission context. Native SDK/CLIO-owned worker
 
 Store bodies/results once, then reference them. Use the existing ClioCoreStore/process ARC semantic-event and context lanes with confirmed writer ordering (content first, authoritative record after; put_many is not a transaction). Core-backed latest-task/pending-recipient indexes are rebuildable projections. Use them for hot query/resolve/wait/mailbox reads; no repeated full-history/owner scans. No new database, LSM or checkpoint framework; measure startup replay before adding any optimization.
 
+The passive indexes rebuild directly from canonical Core lanes. Do not persist a
+second copy of each task/mail/input locator or repair those copies at startup.
+Historical task_index rows remain inert and eligible for ordinary history
+cleanup. Projection failure after confirmed canonical persistence holds new
+durable admission until staged replay succeeds. Recovery health probes use the
+canonical segment namespace; probe success alone clears no owner hold.
+
 Fresh data-only startup migration reads old formats without invoking old owners. Preserve handles/aliases, stable session addresses, lineage, results, pending Questions/mail, subscriptions, proven recipient-input receipts and full provider/backend identities. Allocate deterministic persisted mappings only where a legacy record had no public handle; ambiguous aliases do not resolve. Preserve ambiguous legacy delivery as unknown rather than inventing an acknowledgement. Historical relay rows remain readable without execution support. Lost memory-backed local work is interrupted; unresolved persistent/external work stays uncertain/reconnectable. Migration never submits operations. Run twice and verify stable identities, no duplicate pending notices and no replay.
 
 ### Native MCP boundary
@@ -92,6 +99,15 @@ Distinguish confirmed rejection, accepted recording-unconfirmed and acceptance-u
 Shell foreground/background share one native workload. Stop cancels foreground Shell and waits for physical cleanup; explicitly backgrounded tasks and Questions continue. Wait cancellation leaves members running. Explicit task cancellation overrides background mode for the selected task/subtree.
 
 Cover validation, effect acquisition and cleanup with one boundary. Record effects-never-started separately from worker-never-started; distinguish cancellation withdrawal, cleanup still progressing and genuinely unknown settlement. Terminal/withdrawn records cannot be reopened by late entry; prior incarnation receipts cannot settle another attempt. External acknowledgement is not proof of cleanup.
+
+An external server's observed terminal `completed`, `failed` or `cancelled`
+outcome remains terminal with `settlement="external_acknowledged"`. It does not
+claim independent proof of remote cleanup. A cancellation RPC acknowledgement
+alone, without an observed terminal state, does not settle the task. Lost backend
+visibility remains uncertain. Parent cancellation confirms retirement of
+CLIO-owned execution and records each external member's actual settlement; it
+does not invent remote cleanup receipts or wait for a second protocol outcome
+after terminal cancellation. Historical terminal handles never reopen.
 
 Unknown acceptance/visibility/settlement produces one actionable attention episode, not success or an endless receipt spin. wait_tasks returns task_state_uncertain and pending handles, without a terminal timestamp or collection acknowledgement for that handle. Known cleanup still progressing continues waiting. Attention IDs include recipient/handle/episode; final-outcome IDs are distinct. Owner/subscriber receipts are separate; repeated uncertainty/progress cannot repeatedly wake an agent or consume eventual final delivery.
 

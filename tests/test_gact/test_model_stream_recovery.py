@@ -10,6 +10,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import dspy
@@ -217,7 +218,9 @@ def test_cancel_during_backoff_prevents_another_request(monkeypatch: pytest.Monk
         if cancelled:
             raise RuntimeError("cancelled")
 
-    monkeypatch.setattr(recovery.time, "sleep", sleep)
+    monkeypatch.setattr(
+        recovery, "time", SimpleNamespace(sleep=sleep, monotonic=recovery.time.monotonic)
+    )
     with pytest.raises(RuntimeError, match="cancelled"):
         recover_stream(None, lambda: None, call, check)
     assert len(requests) == 1

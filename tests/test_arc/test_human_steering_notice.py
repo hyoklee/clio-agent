@@ -122,20 +122,28 @@ def test_replay_keeps_original_assignment_after_a_successor_exists(arc: ARCMemor
     assert history.task_snapshot(successor.handle) == successor
 
 
-def test_parent_index_failure_replays_confirmed_notice_without_duplicate_mail(
+def test_parent_projection_failure_replays_confirmed_notice_without_duplicate_mail(
     arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     history, _ = history_with_child(arc)
     item = input_mail(history)
-    original_index = history._put_index
+    from clio_agent.gact import task_history_projection
 
-    def fail_parent_index(name: str, payload: dict[str, Any]) -> None:
-        if name.startswith("mail/parent/"):
-            raise OSError("Parent notice index unavailable")
-        original_index(name, payload)
+    original = task_history_projection._project
 
-    monkeypatch.setattr(history, "_put_index", fail_parent_index)
-    with pytest.raises(OSError, match="Parent notice index unavailable"):
+    def fail_parent_projection(
+        selected: TaskHistory, event: str, payload: dict[str, Any], **kwargs: Any
+    ) -> None:
+        if (
+            selected is history
+            and event == "session.mail.accepted"
+            and payload.get("recipient_session") == "parent"
+        ):
+            raise OSError("Parent notice projection unavailable")
+        original(selected, event, payload, **kwargs)
+
+    monkeypatch.setattr(task_history_projection, "_project", fail_parent_projection)
+    with pytest.raises(OSError, match="Parent notice projection unavailable"):
         relay_confirmed_human_input(history, item)
     recovered = TaskHistory(arc)
     recovered.restore()

@@ -8,7 +8,6 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any, Iterator
 from urllib.parse import parse_qs, urlsplit
 
@@ -190,20 +189,16 @@ def test_ndp_uses_shared_source_mapping_after_catalog_selection(
     choice: str,
 ) -> None:
     """The real source API offers explicit linking and downloading after metadata selection."""
-    from clio_agent.gact.routes.connected_storage import register_connected_storage_routes
-    from tests.test_gact.storage_operation_helpers import complete_indexing
+    from tests.test_gact.storage_operation_helpers import complete_indexing, storage_world
 
     monkeypatch.setenv("CLIO_AGENT_HOME", str(tmp_path / "agent"))
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    app = FastAPI()
-    app.state.workspaces = {"w": SimpleNamespace(root_path=str(workspace))}
-    register_connected_storage_routes(app)
-    with TestClient(app) as client:
+    with storage_world(tmp_path, workspace) as (app, client, wid, sid):
         search = client.post("/v1/storage/ndp/search", json={"query": "sea"})
         assert search.status_code == 200, search.text
         created = client.post(
-            "/v1/workspaces/w/sources/ndp",
+            f"/v1/workspaces/{wid}/sources/ndp",
             json={"endpoint_id": "weather", "dataset_id": "weather", "resource_ids": ["stations"]},
         )
         assert created.status_code == 201, created.text
@@ -212,7 +207,7 @@ def test_ndp_uses_shared_source_mapping_after_catalog_selection(
         assert source["local_path"] is None
         assert source["link_available"] and source["download_available"]
         assert catalog_http[1] == ["/search"]
-        prefix = f"/v1/workspaces/w/sources/{source['id']}"
+        prefix = f"/v1/workspaces/{wid}/sources/{source['id']}"
         assert client.get(prefix + "/mapping-options").json()["link_access"] == ["read_only"]
         listing = client.post(prefix + "/browse", json={})
         assert listing.status_code == 200, listing.text
@@ -220,17 +215,20 @@ def test_ndp_uses_shared_source_mapping_after_catalog_selection(
         assert catalog_http[1] == ["/search"]
         if choice == "link":
             denied = client.post(
-                prefix + "/link", json={"access": "write_through", "confirm_remote": True}
+                prefix + "/link",
+                json={"access": "write_through", "confirm_remote": True, "session_id": sid},
             )
             assert denied.status_code == 403, denied.text
             assert "NDP originals cannot be changed" in denied.text
-            linked = client.post(prefix + "/link", json={"access": "read_only"})
+            linked = client.post(prefix + "/link", json={"access": "read_only", "session_id": sid})
             complete_indexing(client, prefix, linked)
-            current = client.get("/v1/workspaces/w/sources").json()["sources"][0]
+            current = client.get(f"/v1/workspaces/{wid}/sources").json()["sources"][0]
             assert current["linked"] and current["local_path"] is None
             assert "/stations.csv" not in catalog_http[1]
         else:
-            transferred = client.post(prefix + "/transfer", json={"access": "editable"})
+            transferred = client.post(
+                prefix + "/transfer", json={"access": "editable", "session_id": sid}
+            )
             assert transferred.status_code == 202, transferred.text
             operations: list[dict[str, Any]] = []
             for _ in range(100):
@@ -239,7 +237,7 @@ def test_ndp_uses_shared_source_mapping_after_catalog_selection(
                     break
                 time.sleep(0.01)
             assert operations[-1]["state"] == "completed", operations
-            current = client.get("/v1/workspaces/w/sources").json()["sources"][0]
+            current = client.get(f"/v1/workspaces/{wid}/sources").json()["sources"][0]
             assert not current["linked"]
             assert current["download_access"] == "editable"
             assert (Path(current["local_path"]) / "1-stations.csv").read_bytes() == b"name,x\na,1"

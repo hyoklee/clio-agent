@@ -92,20 +92,12 @@ def _record_reply(
                 backend_observation=result,
                 supported_actions=("get_result",),
             )
-            # A backend cancellation never proves remote cleanup, including when
-            # its reply beats the deferred recording of our control intent.
+            # The server owns protocol settlement. This is not proof that every
+            # remote resource was cleaned up, even when its terminal reply arrives
+            # before our deferred control-intent record.
             if reply.status == "cancelled":
-                updates.update(
-                    status="task_state_uncertain",
-                    activity="cancelling",
-                    terminal_at=None,
-                    settlement="unknown",
-                    result=None,
-                    attention_episode=current.attention_episode or uuid4().hex,
-                    progress=TaskProgress(
-                        message="The server reported a terminal state; cancellation cleanup is unverified."
-                    ),
-                    supported_actions=("observe", "wait", "cancel", "get_result"),
+                updates["progress"] = TaskProgress(
+                    message="The server reported cancellation; remote cleanup remains unverified."
                 )
         observed = current.model_copy(update=updates)
         self.history.record_snapshot(observed, observation_id=uuid4().hex)

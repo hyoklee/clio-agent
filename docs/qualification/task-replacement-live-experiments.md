@@ -1,53 +1,39 @@
 # Tasks replacement: finite live experiments
 
-## Current execution hold — October 18, 14:44 UTC
+## Current execution hold — October 18, 15:20 UTC
 
-D: writes failed with OS error 112. No new product family launches until a real
-resource-state change is established. Rejected cleanup targets remain manual-only;
-they are not harness absence prerequisites. The source correction and remote CI
-work continue. The independent frozen reviews returned NO-GO; corrections are
-batched before the next candidate refresh.
+D: writes failed with OS error 112. No new product family launches until actual
+resource recovery. Protected/rejected roots are never absence prerequisites.
+No service/accepted task is active; R195 is prepared but unlaunched.
 
-The completed matching UI receipt is `.pytest-runtime/static/r193-web-build.json`.
-It is built from GACT 86e87fb8. GACT 49f4d09f changes tests only; explicitly record
-that production-asset compatibility when refreshing the corrected core candidate.
-No final-tuple model execution or race acceptance has occurred during this hold.
+Latest pushed tuple is core 1f17ee5b / GACT 49f4d09f / marketplace c4325a77,
+retaining develop 303edbce. The combined correction in this commit needs fresh
+CI and independent review. Current source status: Astra GO on 1f, Fable NO-GO
+on terminal external cancellation. That correction and duplicate physical-index
+removal require affected live requalification. Current CI: 59 distinct core
+failures, GACT unit suites passed / browser 152 passed and 2 failed.
 
-## 2026-10-18 14:06 UTC — integration snapshot
+Installed D: source remains 4a8bfd6c / GACT 86e87fb8, with Python 3.14.6,
+iowarp-core 2.3.2, FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0 and Docket 0.26.2.
+The completed matching UI receipt is r193-web-build.json. Later UI edits are
+test-only; record compatibility explicitly when refreshing the candidate.
+Never relabel a predecessor build as rebuilt on a later head.
 
-The selected integration snapshot is develop 303edbce / GACT 86e87fb8, with native dependency versions unchanged. Retire the earlier e700/7a75 build identity from new launch prerequisites. Build the matching UI once after the paired source commit; record Core/schema/dependency/model identities before launch. Reuse the R186 readiness/reconnect scenario with actual Runs filtering, then run the remaining campaign families. No source changes are permitted during a live family. Regression CI and independent reviews remain separate gates.
+R186 actual Luna/direct-SSE proved scoped acceptance, independent action, one
+attention, same-identity reconnect and final delivery, but its Runs filter failed.
+R191 supplied a predecessor retention pass. Neither qualifies this tuple.
+No final lifecycle race has been accepted. Q1–Q9 remain required, including the
+oversized-SSE route: the old diagnostic hooks only the synchronous parser while
+the actual direct provider uses the asynchronous parser. Ordinary SSE success
+does not pass that oversized-line gate.
 
-This is the execution sheet for the existing R2 Q1–Q9 and R1–R6 acceptance
-rows. Earlier candidates have scoped live evidence in the acceptance ledger;
-that evidence does not qualify the current tuple. No new feature scope is added.
-
-Current candidate, checked October 18, 2026:
-
-- reviewed clio-agent: `4a8bfd6c5068fd3b018dcaf040da48513ba761d4`;
-  [CI run](https://github.com/iowarp/clio-agent/actions/runs/39134640939), collection failed.
-- reviewed GACT: `86e87fb8418fe99b88c729de559c07fb70e1da02`; corrections
-  `49f4d09fbf623038e8214649d19e9b3c31ae665f` are test-only.
-- Isolated D: environment installed: iowarp-core 2.3.2, FastMCP/fastmcp-tasks
-  4.1.0, MCP 2.0.0, Docket 0.26.2 and locked Claude Agent SDK 0.2.159.
-- Initial implementation and regression construction are complete. Regression
-  repairs, current CI and final live qualification remain unfinished.
-- R186 ran actual Codex/Luna direct SSE and the matching production UI: external
-  acceptance/independent work, uncertainty notice, original-identity reconnect and
-  final delivery passed. Runs' Needs attention filter failed; the overall family
-  remains failed. API/private Core/browser/external processes retired normally,
-  and its disposable roots were removed. The old R184 protected roots were neither
-  required absent nor touched. R185's initial readiness-only attempt was also
-  retired and cleaned, without claiming orderly shutdown or model acceptance.
-- `.pytest-runtime/static/r185-web-build.json` identifies the build used by R186;
-  `.pytest-runtime/static/r186-live-external-recovery.json` and its cleanup receipt
-  contain the scoped evidence. Any changed GACT candidate needs a fresh UI build
-  and affected live requalification.
-
-See [current status](task-replacement-current-status.md) for dated CI snapshots,
-[acceptance ledger](task-replacement-acceptance.md) for scoped evidence and gaps,
-and [construction map](task-replacement-test-construction.md) for regression
-coverage. Prior implementation reviews and narrow correction reviews are not a
-fresh complete Astra/Claude review of this candidate.
+After resource recovery: freeze/refresh the combined core/GACT/dependency tuple,
+record processes/ports/data, use the completed compatible UI, preflight Codex
+and Claude, then execute the scoped external recovery/UI family and remaining
+native/assignment/workflow/capacity families. Preserve family source while running;
+settle and clean up before corrections. Thirty final R1–R6 repetitions remain
+required. See [current status](task-replacement-current-status.md) and the
+[acceptance ledger](task-replacement-acceptance.md) for gate/evidence boundaries.
 
 ## Regression and live-verification loop
 

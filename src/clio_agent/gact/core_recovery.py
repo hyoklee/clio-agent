@@ -11,7 +11,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-from clio_agent.gact.task_history import INDEX_KIND, TaskHistory
+from clio_agent.gact.task_history import TaskHistory
 
 logger = logging.getLogger(__name__)
 RecoveryAction = Callable[[], Awaitable[bool | None]]
@@ -91,7 +91,7 @@ class CoreRecovery:
             await asyncio.sleep(delay)
             try:
                 await self.history.io.run(
-                    self.history.arc._store.exists, INDEX_KIND, "__recovery_probe__"
+                    self.history.arc._store.exists, "segments", "__recovery_probe__"
                 )
                 restored = self.history.requires_recovery
                 if self.history.requires_recovery:

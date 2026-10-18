@@ -321,7 +321,12 @@ def test_message_receipt_projects_the_existing_confirmed_core_input(
             kind="human",
             created_at=now(),
             content=history.write_content(
-                sid, {"message": message.model_dump(mode="json"), "text": "Use dataset B"}
+                sid,
+                {
+                    "message_id": message.id,
+                    "message": message.model_dump(mode="json"),
+                    "text": "Use dataset B",
+                },
             ),
         )
     )

@@ -144,9 +144,10 @@ def test_protected_selection_requests_login_only_after_approval(
             configuration={"endpoint_id": "weather", "resource_ids": ["stations"]},
         )
         outcome, reply = _collect(app, result)
-        assert outcome["status"] == "completed"
+        assert outcome["status"] == "failed", reply
         result = _body(reply)
         assert result["connection"]["state"] == "sign_in_required"
+        assert result["error"]["code"] == "source_sign_in_required"
         account = next(row for row in result["accounts"] if row["provider"] == "ndp")
         assert account["login_action"]["name"] == "data_source/login/ndp"
         assert not service.sources("ws_default")[0].linked_manifest_id

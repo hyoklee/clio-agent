@@ -621,7 +621,7 @@ async def dispatch_goal_at_finalize(
         )
         from clio_agent.gact.goal_activity import begin_goal_check, cancel_goal_check
 
-        steer_pending = pending_steer(app, session_id)
+        steer_pending = await run_off_loop(pending_steer, app, session_id, executor=executor)
         if steer_pending and preflight.reason not in {"goal_budget", "goal_max_iters"}:
             return None
         limit_without_judge = preflight.reason == "goal_budget" or (

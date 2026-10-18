@@ -181,11 +181,7 @@ def _settle(self: NativeTools, current: TaskSnapshot, accepted: AcceptedNativeCa
         if reply.result is not None:
             result = reply.result
             structured = result.get("structuredContent") or {}
-            if (
-                isinstance(structured, dict)
-                and structured.get("state") == "cancelled"
-                and (current.cancellation_requested_at or current.handle in self._control_holds)
-            ):
+            if isinstance(structured, dict) and structured.get("state") == "cancelled":
                 status = "cancelled"
             elif result.get("isError") or (
                 isinstance(structured, dict)

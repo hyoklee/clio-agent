@@ -68,18 +68,23 @@ def input_record(item: MailItem, *, identity: str = "input") -> RecipientInput:
     )
 
 
-def test_failed_index_write_does_not_publish_an_in_memory_success(
+def test_failed_projection_does_not_publish_an_in_memory_success(
     arc: ARCMemory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Core history survives a failure before its passive latest index is confirmed."""
+    """A canonical observation survives failed derivation without a false local success."""
+    from clio_agent.gact import task_history_projection
+
     history = TaskHistory(arc)
+    original = task_history_projection._project
 
-    def fail_index(name: str, payload: dict[str, Any]) -> None:
-        raise OSError("injected index write failure")
+    def fail_projection(selected: TaskHistory, *args: Any, **kwargs: Any) -> None:
+        if selected is history:
+            raise RuntimeError("injected projection failure")
+        original(selected, *args, **kwargs)
 
-    monkeypatch.setattr(history, "_put_index", fail_index)
-    with pytest.raises(OSError, match="index write failure"):
+    monkeypatch.setattr(task_history_projection, "_project", fail_projection)
+    with pytest.raises(RuntimeError, match="projection failure"):
         history.record_snapshot(snapshot(), observation_id="observation")
     assert history.task_snapshot("task_test") is None
     with pytest.raises(RecordingUnconfirmed):
@@ -87,6 +92,39 @@ def test_failed_index_write_does_not_publish_an_in_memory_success(
     recovered = TaskHistory(arc)
     recovered.restore()
     assert recovered.task_snapshot("task_test") == snapshot()
+
+
+def test_canonical_mail_and_inputs_rebuild_without_duplicate_index_io(
+    arc: ARCMemory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Core history retains complete content and acknowledgements without duplicate row I/O."""
+    get, put = arc._store.get, arc._store.put
+
+    def read(kind: str, *args: Any, **kwargs: Any) -> Any:
+        assert kind != "task_index", "A hot/replay read touched the retired duplicate index"
+        return get(kind, *args, **kwargs)
+
+    def write(kind: str, *args: Any, **kwargs: Any) -> Any:
+        assert kind != "task_index", "A writer recreated a duplicate task/mail record"
+        return put(kind, *args, **kwargs)
+
+    monkeypatch.setattr(arc._store, "get", read)
+    monkeypatch.setattr(arc._store, "put", write)
+    history = TaskHistory(arc)
+    for index in range(12):
+        item = history.record_mail(mail(history, str(index)))
+        if index < 11:
+            record = input_record(item, identity="input:" + str(index)).model_copy(
+                update={"iteration_id": str(index)}
+            )
+            history.record_input(record)
+    restored = TaskHistory(arc)
+    restored.restore()
+    assert [item.id for item in restored.pending_mail("owner")] == ["11"]
+    assert restored.acknowledged_notifications("owner") == {str(index) for index in range(11)}
+    first = restored.mail_item("owner", "0")
+    assert first is not None and restored.read_content(first.content) == {"text": "0"}
 
 
 def test_staging_before_context_commit_remains_pending(
@@ -331,18 +369,17 @@ def test_input_ids_are_session_scoped_and_iterations_have_one_input(arc: ARCMemo
 
 
 def test_all_passive_indexes_can_be_rebuilt_without_losing_input_commit(arc: ARCMemory) -> None:
-    """Canonical preparation plus context commitment survive complete cache-index deletion."""
+    """Canonical preparation plus context commitment ignore historical duplicate rows."""
     history = TaskHistory(arc)
     item = history.record_mail(mail(history, "durable-result", kind="task_result"))
     committed = input_record(item)
     history.record_input(committed)
-    for key, _ in tuple(arc._store.scan("task_index")):
-        arc._store.delete("task_index", key)
+    arc._store.put("task_index", "input/owner/input", b'{"stale":true}')
     recovered = TaskHistory(arc)
     recovered.restore()
     assert recovered.pending_mail("owner") == ()
     assert recovered.record_input(committed) == committed
-    assert arc._store.get("task_index", "input/owner/input") is not None
+    assert arc._store.get("task_index", "input/owner/input") == b'{"stale":true}'
     recovered.restore()
     assert recovered.pending_mail("owner") == ()
 

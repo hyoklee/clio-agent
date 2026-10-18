@@ -20,10 +20,12 @@ STAMP = "2026-10-14T00:00:00Z"
 
 
 @pytest.mark.asyncio
-async def test_external_cancelled_reply_before_control_record_keeps_cleanup_uncertain(
+@pytest.mark.parametrize("lost_visibility", [False, True])
+async def test_external_cancelled_reply_records_terminal_without_claiming_cleanup(
     arc: ARCMemory,
+    lost_visibility: bool,
 ) -> None:
-    """Server cancellation cannot publish final delivery before a deferred intent lands."""
+    """A server's terminal outcome settles its task without inventing remote cleanup proof."""
     history = TaskHistory(arc)
     recovery = CoreRecovery(history)
     owner = ExternalTasks(
@@ -75,17 +77,27 @@ async def test_external_cancelled_reply_before_control_record_keeps_cleanup_unce
         )
         connection = ExternalConnection(backend.model_copy(update={"task_id": ""}))
         assert current.cancellation_requested_at is None
+        if lost_visibility:
+            owner._attention(current.handle, "Original server temporarily unavailable")
         owner._record_reply(connection, accepted, reply)
         observed = history.task_snapshot(current.handle)
-        assert observed is not None and observed.status == "task_state_uncertain"
-        assert observed.raw_status == "cancelled" and observed.settlement == "unknown"
-        assert observed.terminal_at is None and observed.result is None
+        assert observed is not None and observed.status == "cancelled"
+        assert observed.raw_status == "cancelled" and observed.settlement == "external_acknowledged"
+        assert observed.terminal_at is not None and observed.result is not None
+        assert "cleanup" in observed.progress.message and "unverified" in observed.progress.message
+        assert observed.attention_episode is None and observed.connection_freshness == "fresh"
         assert observed.backend_observation is not None
         assert history.read_content(observed.backend_observation)["status"] == "cancelled"
+        assert history.read_content(observed.result) == reply.model_dump(mode="json")
         notices = history.pending_mail("owner")
-        assert len(notices) == 1 and notices[0].kind == "attention"
+        assert [item.kind for item in notices] == (["attention"] if lost_visibility else []) + [
+            "task_result"
+        ]
         owner._record_reply(connection, accepted, reply)
         assert history.pending_mail("owner") == notices
+        # Protocol terminal results never reopen, even if a server later sends conflicting data.
+        owner._record_reply(connection, accepted, reply.model_copy(update={"status": "completed"}))
+        assert history.task_snapshot(current.handle) == observed
         assert not history.acknowledged_notifications("owner")
 
     try:

@@ -194,7 +194,15 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
             json={"revision": queue[0]["revision"], "delivery": "start"},
         )
         assert response.status_code == 200, response.text
-        _wait_for_feedback(app, sid, ["msg_future"])
+        assert response.json()["acceptance"]["message_id"] == "msg_future"
+        # Promotion preserves the accepted mailbox identity; the transcript's
+        # client message ID remains a separate public correlation identity.
+        _wait_for_feedback(app, sid, [queued.json()["id"]])
+        proof = app.state.task_history.committed_notification_input(sid, queued.json()["id"])
+        assert proof is not None and proof.turn_id == "msg_future"
+        rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        promoted = next(row for row in rows if row["id"] == "msg_future")
+        assert promoted["metadata"]["pending_steer"] is False
         assert len(agent.questions) == 3
         assert not session_autostart_suspended(app, sid)
 

@@ -19,12 +19,14 @@ import dspy
 import pytest
 from dspy.lm15 import Message, Request
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.config import LMProviderConfig
 from clio_agent.gact import context, goal
 from clio_agent.lm.engines.lm_loop import run_on_lm_loop
 from clio_agent.lm.factory import create_lm
 from clio_agent.lm.session_clients import close_session_model_clients, session_model
 from clio_agent.runtime import turn_lm_ledger
+from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_gact.test_goal import _app, _session
 from tests.test_lm.test_goal_client_lifecycle import _closed
 
@@ -62,9 +64,10 @@ def test_21_goal_cycles_reuse_work_pool_while_owned_checkers_close(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     for _ in range(6):
         _session(app)
@@ -161,9 +164,10 @@ def test_21_goal_cycles_reuse_work_pool_while_owned_checkers_close(
 def test_fresh_credentials_and_model_settings_replace_and_close_old_pools(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     cfg = config(base)
     views = []
@@ -194,9 +198,10 @@ def test_fresh_credentials_and_model_settings_replace_and_close_old_pools(
 def test_configuration_change_does_not_close_another_active_lease(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     cfg = config(base)
     changed = copy.copy(cfg)
@@ -225,9 +230,10 @@ def test_session_delete_and_shutdown_defer_active_clients_then_reject_new_leases
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
     whole_app: bool,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid, neighbor = _session(app), _session(app)
     cfg = config(base)
     try:
@@ -251,9 +257,10 @@ def test_session_delete_and_shutdown_defer_active_clients_then_reject_new_leases
 def test_failed_work_and_cancelled_request_leave_owner_reusable(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     cfg = config(base)
     try:
@@ -303,6 +310,7 @@ def test_rebuilt_registered_agents_reuse_clients_and_refresh_credentials(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     kind: str,
+    arc: ARCMemory,
 ) -> None:
     from clio_agent.gact.agents import builders, skill_runtime
     from clio_agent.gact.agents.clio_react import ClioReAct
@@ -312,7 +320,7 @@ def test_rebuilt_registered_agents_reuse_clients_and_refresh_credentials(
     from clio_agent.providers.resolver import ResolvedLMSpec
 
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     cfg = config(base)
     skeleton = copy.copy(cfg)
@@ -433,11 +441,12 @@ def test_final_shutdown_closes_work_pools_before_exit(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    arc: ARCMemory,
 ) -> None:
     from clio_agent.gact import desktop_lifecycle
 
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     with bound(app, sid), session_model(config(base), "agent", sid) as lm:
         call(lm)
@@ -466,9 +475,10 @@ def test_racing_first_forwards_share_one_owner_and_close_unused_construction(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     cfg = config(base)
     ready = threading.Barrier(2)
@@ -512,9 +522,10 @@ def test_cleanup_failure_does_not_replace_a_retired_lease_work_error(
     endpoint: tuple[str, dict[str, Any]],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     primary = ValueError("work error")
 
@@ -547,9 +558,10 @@ def test_shutdown_prevents_late_client_construction_from_dispatching(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     factory_started: bool,
+    arc: ARCMemory,
 ) -> None:
     base, state = endpoint
-    app = _app(tmp_path)
+    app = _app(tmp_path, arc)
     sid = _session(app)
     entered, resume = threading.Event(), threading.Event()
     created: list[Any] = []

@@ -296,11 +296,8 @@ async def test_deferred_peer_control_rechecks_revoked_rights_before_input(
             with pytest.raises(TaskAccessDenied):
                 await asyncio.wait_for(asyncio.shield(continuation), 10)
             assert history.latest_assignment(sid).handle == root.handle
-        assert not [
-            item
-            for item in history.pending_mail(sid)
-            if item.id.startswith(("resume:", "restart:"))
-        ]
+        pending_mail = await original(history.pending_mail, sid)
+        assert not [item for item in pending_mail if item.id.startswith(("resume:", "restart:"))]
     finally:
         release.set()
         await asyncio.gather(operation, return_exceptions=True)

@@ -110,7 +110,7 @@ def test_project_pins_intentional_prereleases_and_stable_litellm() -> None:
 
 
 def test_desktop_update_sdk_roots_match_the_core_package_contract() -> None:
-    """A Desktop update must not force SDK versions conflicting with its Core package."""
+    """The selected CLIO release owns SDK pins; Desktop cannot impose competing roots."""
     from packaging.requirements import Requirement
 
     project = tomllib.loads(_text("pyproject.toml"))["project"]
@@ -120,10 +120,12 @@ def test_desktop_update_sdk_roots_match_the_core_package_contract() -> None:
         if (requirement := Requirement(value)).name in {"dspy", "fastmcp", "fastmcp-tasks"}
     }
     desktop = _text("external/gact-tui/desktop/src-tauri/src/supervisor_installer.rs")
-    expected = [str(requirement) for requirement in dependencies.values()]
-    expected.append("fastmcp-slim" + str(dependencies["fastmcp"].specifier))
-    for requirement in expected:
-        assert f'"{requirement}".to_string()' in desktop, requirement
+    command = desktop.split("fn bundled_update_args(", 1)[1].split("\n}", 1)[0]
+    assert 'format!("clio-agent[argonne,flowcept]=={version}")' in command
+    assert '"--python".to_string()' in command
+    assert '"--reinstall-package".to_string()' in command
+    for package in {*dependencies, "fastmcp-slim"}:
+        assert f'"{package}==' not in command, package
 
 
 def test_release_workflow_smokes_the_built_wheel_before_publish() -> None:

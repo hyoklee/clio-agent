@@ -4,28 +4,28 @@
 
 The integrated candidate merges develop 303edbce and GACT 86e87fb8. Replacement owners remain unchanged. Required impact coverage: Q1/Q2 native Shell/storage argument schemas; Q3/Q4 Core input commitment during model retry and human steering; Q3/Q9 Question bundle forms; Q8 configurable inference/depth limits; Q9 current UI. All affected rows remain pending fresh regression/live evidence. No predecessor evidence is promoted to final acceptance.
 
-## Current candidate — October 18, 2026
+## Current candidate — October 18, 15:20 UTC
 
-Reviewed candidate: clio-agent `4a8bfd6c5068fd3b018dcaf040da48513ba761d4`, GACT
-`86e87fb8418fe99b88c729de559c07fb70e1da02`, iowarp-core 2.3.2,
-FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and locked Claude Agent
-SDK 0.2.159. It is installed in the isolated D: checkout; its matching UI build
-passed. CI failed collection before regression execution. Astra and actual
-Claude Code/Fable returned source NO-GO with the concrete findings recorded in
-current status. This commit combines their corrections and regression coverage;
-GACT `49f4d09f` corrects three failing test contracts. Fresh CI and correction
-review remain pending. D: write failure currently prevents new live launches.
-Earlier R186 demonstrated
-actual Luna/SSE handle delivery, independent work, attention, reconnect and final
-delivery, but failed the real Runs attention filter; that scoped evidence and its
-cleanup receipts are recorded in the current-status document. The coordinated
-repair batch and its new coverage are in progress, with no qualification claim.
-Neither Q1–Q9 nor the thirty final race repetitions is accepted for this tuple.
-The dated evidence below belongs to its named earlier candidate unless stated
-otherwise; old dependency/version statements do not describe the current one.
-The [execution sheet](task-replacement-live-experiments.md) records the agreed
-CI/live-family loop. Both independent reviewers must clear the corrected candidate;
-their prior verdicts and predecessor live evidence are not final acceptance.
+Latest pushed core is 1f17ee5b / GACT 49f4d09f / marketplace c4325a77; this
+commit contains the next combined correction. Runtime dependencies remain
+iowarp-core 2.3.2, FastMCP/fastmcp-tasks 4.1.0, MCP 2.0.0, Docket 0.26.2,
+Claude Agent SDK 0.2.159 and the locked schema. The D: installed source remains
+4a8bfd6c / GACT 86e87fb8; it has not been refreshed during the resource hold.
+
+1f CI failed 59 distinct cases across eleven reports (one Python 3.12 report
+missing). GACT unit suites passed; browser evidence is 152 passed / 2 failed.
+The combined corrections and fresh regressions are described in current status.
+Astra cleared 1f source, while actual Fable required a cancellation-liveness
+correction. Both must review this correction; neither source review passes live
+acceptance. Astra approved removal of unused duplicate physical indexes as a
+bounded simplification. F03/Q7 retention/replay performance remains unverified,
+with all 1,005 messages and existing deadlines retained.
+
+D: write failure prevents new model/service families until actual resource
+recovery. No final Q1–Q9 or thirty-race row is accepted. Existing R186/R191
+scoped evidence and prior source verdicts remain historical. See the single
+[current status](task-replacement-current-status.md) and
+[execution sheet](task-replacement-live-experiments.md) for exact gates and cleanup.
 
 ## Construction and preceding evidence
 

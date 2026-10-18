@@ -58,6 +58,7 @@ def test_bundle_is_one_native_interaction_and_survives_recovery(
     app, client, sid = world
     handle = post_bundle(app, sid)
     restored = TaskHistory(app.state.arc)
+    restored.restore()
     task = restored.task_snapshot(handle)
     assert task is not None and task.kind == "Question" and task.raw_status == "pending"
     assert len(restored.task_handles(kind="Question")) == 1

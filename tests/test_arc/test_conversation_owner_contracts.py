@@ -816,12 +816,14 @@ async def test_explicit_message_deletion_withdraws_only_uncommitted_human_inputs
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("final_status", ["completed", "failed"])
+@pytest.mark.parametrize("final_status", ["completed", "failed", "cancelled"])
+@pytest.mark.parametrize("server_first", [False, True])
 async def test_cancellation_keeps_work_settling_during_worker_retirement(
     arc: ARCMemory,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     final_status: str,
+    server_first: bool,
 ) -> None:
     app, owner, root = await create_environment(arc, tmp_path)
     history = app.state.task_history
@@ -873,7 +875,7 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
     )
     await asyncio.to_thread(history.record_snapshot, active, observation_id="active")
     await asyncio.to_thread(history.record_snapshot, old, observation_id="old")
-    retiring, release, uncertain = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    retiring, release, changed, retired = (asyncio.Event() for _ in range(4))
     cancellation_dispatched = asyncio.Event()
     dispatched: list[str] = []
 
@@ -886,12 +888,13 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
     async def stop(_sid: str) -> None:
         retiring.set()
         await release.wait()
+        retired.set()
 
     monkeypatch.setattr(owner.runner, "stop", stop)
     monkeypatch.setattr(owner, "cancel_work", request_cancellation)
     loop = asyncio.get_running_loop()
     remove = history.listen(
-        lambda _revision: loop.call_soon_threadsafe(uncertain.set), handles=(root.handle,)
+        lambda _revision: loop.call_soon_threadsafe(changed.set), handles=(root.handle,)
     )
     try:
         acknowledgement = await owner.cancel(
@@ -906,34 +909,10 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         stopping = await asyncio.to_thread(history.task_snapshot, root.handle)
         assert stopping is not None and stopping.terminal_at is None
         assert stopping.cancellation_requested_at is not None
-        cancelled = ClientGetTaskResult.model_validate(
-            {
-                "resultType": "complete",
-                "taskId": backend.task_id,
-                "status": "cancelled",
-                "createdAt": stamp,
-                "lastUpdatedAt": now(),
-            }
-        )
-        await history.io.run(external._record_reply, connection, accepted, cancelled)
-        uncertain.clear()
-        assert not release.is_set()
-        release.set()
-        while True:
-            await uncertain.wait()
-            uncertain.clear()
-            parent = await asyncio.to_thread(history.task_snapshot, root.handle)
-            if parent is not None and parent.status == "task_state_uncertain":
-                break
-        assert parent.terminal_at is None and root.handle in owner._controls
         details = AssignmentDetails.model_validate(
-            await asyncio.to_thread(history.read_content, parent.details)
+            await asyncio.to_thread(history.read_content, stopping.details)
         )
         assert details.cancellation_members == (active.handle,)
-        restored = TaskHistory(arc)
-        await asyncio.to_thread(restored.restore)
-        saved = await asyncio.to_thread(restored.task_snapshot, root.handle)
-        assert saved is not None and saved.details == parent.details
         final = ClientGetTaskResult.model_validate(
             {
                 "resultType": "complete",
@@ -941,20 +920,31 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
                 "status": final_status,
                 "createdAt": stamp,
                 "lastUpdatedAt": now(),
-                "result": {
+                "result": None
+                if final_status == "cancelled"
+                else {
                     "content": [],
                     "structuredContent": {"value": "actual result"},
                     "isError": final_status == "failed",
                 },
             }
         )
+        if not server_first:
+            release.set()
+            await retired.wait()
+            pending = await history.io.run(history.task_snapshot, root.handle)
+            assert pending is not None and pending.terminal_at is None
         await history.io.run(external._record_reply, connection, accepted, final)
+        if server_first:
+            pending = await history.io.run(history.task_snapshot, root.handle)
+            assert pending is not None and pending.terminal_at is None and not retired.is_set()
+            release.set()
         while True:
             settled = await history.io.run(history.task_snapshot, root.handle)
             if settled is not None and settled.terminal_at is not None:
                 break
-            await uncertain.wait()
-            uncertain.clear()
+            await changed.wait()
+            changed.clear()
         assert (
             settled is not None
             and settled.status == "cancelled"
@@ -965,6 +955,7 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
         assert member.settlement == "external_acknowledged" and member.result is not None
         assert (await history.io.run(history.read_content, member.result))["result"] == final.result
         outcome = await history.io.run(history.read_content, settled.result)
+        assert outcome["settlement_scope"] == "clio_owned_execution"
         assert outcome["members"] == [
             {
                 "handle": active.handle,
@@ -974,6 +965,10 @@ async def test_cancellation_keeps_work_settling_during_worker_retirement(
             }
         ]
         assert await asyncio.to_thread(history.task_snapshot, old.handle) == old
+        restored = TaskHistory(arc)
+        await history.io.run(restored.restore)
+        assert restored.task_snapshot(root.handle) == settled
+        assert restored.task_snapshot(active.handle) == member
     finally:
         release.set()
         remove()

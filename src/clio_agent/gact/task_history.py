@@ -34,7 +34,7 @@ from clio_agent.arc.task_types import (
 from clio_agent.errors import ClioError
 from clio_agent.gact import task_history_projection
 from clio_agent.gact.core_io import CoreIO
-from clio_agent.gact.task_history_projection import INDEX_KIND, _encoded
+from clio_agent.gact.task_history_projection import _encoded
 
 if TYPE_CHECKING:
     from clio_agent.arc.memory import ARCMemory
@@ -232,7 +232,6 @@ class TaskHistory:
                 observation_id,
                 stored,
             )
-            self._put_index("task/" + snapshot.handle, stored)
             self._project("task.observed", stored)
             if self.observation_committed is not None:
                 try:
@@ -260,7 +259,6 @@ class TaskHistory:
             self.read_content(item.content)
             payload = item.model_dump(mode="json")
             self._record("session.mail.accepted", item.recipient_session, item.id, payload)
-            self._put_index("mail/" + item.recipient_session + "/" + item.id, payload)
             self._project("session.mail.accepted", payload)
             return item
 
@@ -275,7 +273,6 @@ class TaskHistory:
             content = self.write_content(context.owner.session_id, context.model_dump(mode="json"))
             payload = {"reference": context.reference, "content": content.model_dump(mode="json")}
             self._record("task.submission", context.owner.session_id, context.reference, payload)
-            self._put_index("submission/" + context.reference, payload)
             self._project("task.submission", payload)
             return content
 
@@ -316,7 +313,6 @@ class TaskHistory:
                     raise ValueError("Cleanup receipt belongs to another native incarnation")
             payload = attempt.model_dump(mode="json")
             self._record("task.native_attempt", current.owner.session_id, uuid4().hex, payload)
-            self._put_index("attempt/" + attempt.handle + "/" + attempt.incarnation, payload)
             self._project("task.native_attempt", payload)
 
     def native_attempts(self, handle: str) -> tuple[NativeAttempt, ...]:
@@ -415,7 +411,6 @@ class TaskHistory:
                     raise ValueError("Rendered model input must be a message record")
                 input_tokens += _token_estimate(value)
             payload = record.model_dump(mode="json")
-            locator_name = "input/" + record.session_id + "/" + record.id
             locator = {
                 "session_id": record.session_id,
                 "scope": record.boundary.scope,
@@ -431,11 +426,12 @@ class TaskHistory:
                 if recovered is not None:
                     if recovered != record:
                         raise ValueError("Durable input identity was reused")
-                    task_history_projection._accept_input(self, recovered)
+                    self.confirm_write(
+                        lambda: task_history_projection._accept_input(self, recovered)
+                    )
                     return recovered
             else:
                 self._record("session.input.prepared", record.session_id, record.id, locator)
-                self._put_index(locator_name, locator)
                 self._project("session.input.prepared", locator)
             self.confirm_write(
                 lambda: self.arc.append_segment(
@@ -447,7 +443,7 @@ class TaskHistory:
                     token_count=input_tokens,
                 )
             )
-            task_history_projection._accept_input(self, record)
+            self.confirm_write(lambda: task_history_projection._accept_input(self, record))
             return record
 
     def record_grant(self, grant: CoordinationGrant, *, observation_id: str) -> None:
@@ -466,7 +462,6 @@ class TaskHistory:
             self._record(
                 "session.coordination.grant", grant.recipient_session, observation_id, payload
             )
-            self._put_index("grant/" + grant.id, payload)
             self._project("session.coordination.grant", payload)
 
     def task_snapshot(self, handle: str) -> TaskSnapshot | None:
@@ -563,7 +558,6 @@ class TaskHistory:
             self.read_content(item.content)
             payload = item.model_dump(mode="json")
             self._record("session.mail.updated", item.recipient_session, uuid4().hex, payload)
-            self._put_index("mail/" + item.recipient_session + "/" + item.id, payload)
             self._project("session.mail.updated", payload)
             return item
 
@@ -598,10 +592,6 @@ class TaskHistory:
         with self._writing():
             payload = subscription.model_dump(mode="json")
             self._record("task.subscription", subscription.recipient_session, uuid4().hex, payload)
-            self._put_index(
-                "subscription/" + subscription.handle + "/" + subscription.recipient_session,
-                payload,
-            )
             self._project("task.subscription", payload)
 
     def subscriptions(self, handle: str) -> tuple[TaskSubscription, ...]:
@@ -745,10 +735,6 @@ class TaskHistory:
             )
         )
 
-    def _put_index(self, name: str, payload: dict[str, Any]) -> None:
-        assert_store_write_off_loop("task.index")
-        self.confirm_write(lambda: self.arc._store.put(INDEX_KIND, name, _encoded(payload)))
-
     def confirm_write(self, operation: Callable[[], Any]) -> Any:
         """Confirm an ARC write, holding later durable admission if its outcome is uncertain."""
         try:
@@ -760,11 +746,14 @@ class TaskHistory:
             raise
 
     def _project(self, event_type: str, payload: dict[str, Any]) -> None:
-        snapshot = None
-        if event_type == "task.observed":
-            snapshot = task_history_projection._prepare_snapshot(self, payload)
-        with self._view_lock:
-            task_history_projection._project(self, event_type, payload, snapshot=snapshot)
+        def project() -> None:
+            snapshot = None
+            if event_type == "task.observed":
+                snapshot = task_history_projection._prepare_snapshot(self, payload)
+            with self._view_lock:
+                task_history_projection._project(self, event_type, payload, snapshot=snapshot)
+
+        self.confirm_write(project)
 
     def context_inputs(self, session_id: str, scope: str) -> dict[str, RecipientInput]:
         """Read proven model inputs for one fixed Core context scope."""

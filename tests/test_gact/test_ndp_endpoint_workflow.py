@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from pathlib import Path
 from typing import Any
 
@@ -69,7 +70,10 @@ def test_native_permission_names_the_operation_and_destination(
     app.state.pending_permission_gate = app.state.make_permission_gate()
     with ThreadPoolExecutor(max_workers=1) as pool:
         future = pool.submit(
-            ndp_endpoint_tools.connected_data_ndp_endpoint_request, connection.id, "GET /stations"
+            copy_context().run,
+            ndp_endpoint_tools.connected_data_ndp_endpoint_request,
+            connection.id,
+            "GET /stations",
         )
         deadline = time.monotonic() + 5
         while not app.state.permissions and time.monotonic() < deadline:

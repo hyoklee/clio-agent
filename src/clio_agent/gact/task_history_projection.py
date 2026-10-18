@@ -28,8 +28,6 @@ from clio_agent.errors import ClioError
 if TYPE_CHECKING:
     from clio_agent.gact.task_history import TaskHistory
 
-INDEX_KIND = "task_index"
-
 
 def _project_workflow(self: TaskHistory, record: WorkflowCheckpoint) -> None:
     """Index immutable invocation bindings; canonical checkpoints outrank legacy projections."""
@@ -90,13 +88,6 @@ def record_workflow(self: TaskHistory, record: WorkflowCheckpoint) -> None:
             "workflow.checkpoint",
             record.session_id,
             record.root_handle + ":" + record.invocation_id + ":" + record.content.sha256,
-            payload,
-        )
-        self._put_index(
-            "workflow/"
-            + record.root_handle
-            + "/"
-            + argument_digest({"invocation": record.invocation_id}),
             payload,
         )
         self._project("workflow.checkpoint", payload)
@@ -373,7 +364,6 @@ def restore(self: TaskHistory) -> None:
                 recovered = scopes[key].get(locator["id"])
                 if recovered is not None:
                     _accept_input(candidate, recovered)
-            _repair_indexes(candidate)
         except Exception:
             self.requires_recovery = True
             raise
@@ -384,48 +374,6 @@ def restore(self: TaskHistory) -> None:
             self.replay_seconds = time.monotonic() - started
             self.requires_recovery = False
     _notify(self, restored=True)
-
-
-def _repair_indexes(self: TaskHistory) -> None:
-    rows: list[
-        tuple[str, TaskSnapshot | MailItem | CoordinationGrant | NativeAttempt | TaskSubscription]
-    ] = [("task/" + key, row) for key, row in self._tasks.items()]
-    rows.extend(
-        ("mail/" + session_id + "/" + key, row)
-        for session_id, items in self._mail.items()
-        for key, row in items.items()
-    )
-    rows.extend(("grant/" + key, row) for key, row in self._grants.items())
-    rows.extend(
-        ("subscription/" + handle + "/" + recipient, row)
-        for handle, subscriptions in self._subscriptions.items()
-        for recipient, row in subscriptions.items()
-    )
-    rows.extend(
-        ("attempt/" + handle + "/" + key, row)
-        for handle, attempts in self._attempts.items()
-        for key, row in attempts.items()
-    )
-    for key, row in rows:
-        payload = row.model_dump(mode="json")
-        if isinstance(row, TaskSnapshot) and row.description_reference is not None:
-            payload["description"] = None
-        if self.arc._store.get(INDEX_KIND, key) != _encoded(payload):
-            self._put_index(key, payload)
-    for reference, content in self._submissions.items():
-        payload = {"reference": reference, "content": content.model_dump(mode="json")}
-        key = "submission/" + reference
-        if self.arc._store.get(INDEX_KIND, key) != _encoded(payload):
-            self._put_index(key, payload)
-    for (session_id, identity), locator in self._input_locations.items():
-        key = "input/" + session_id + "/" + identity
-        if self.arc._store.get(INDEX_KIND, key) != _encoded(locator):
-            self._put_index(key, locator)
-    for (root, invocation), record in self._workflow_bindings.items():
-        self._put_index(
-            "workflow/" + root + "/" + argument_digest({"invocation": invocation}),
-            record.model_dump(mode="json"),
-        )
 
 
 def _prepare_snapshot(self: TaskHistory, payload: dict[str, Any]) -> TaskSnapshot:

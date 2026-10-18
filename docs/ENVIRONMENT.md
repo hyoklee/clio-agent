@@ -174,8 +174,8 @@ These resolve through `clio_agent.conf`: a value under the dotted key in `config
 | `CLIO_LM_TRANSIENT_RETRIES` | `limits.lm_transient_retries` | float | `2.0` | `src/clio_agent/lm/policy.py` |
 | `CLIO_LOG_LM_RESPONSE` | `debug.lm_response` | bool | `false` | `src/clio_agent/runtime/trace.py` |
 | `CLIO_MAILBOX_MAX_PENDING_MESSAGES` | `gact.mailbox.max_pending_messages` | int | `0` | `src/clio_agent/gact/session_mail.py` |
-| `CLIO_MAX_CONCURRENT_AGENT_TASKS` | `agent_tasks.max_concurrent` | int | `3` | `src/clio_agent/gact/conversations.py` |
 | `CLIO_MAX_AGENT_TASK_DEPTH` | `agent_tasks.max_depth` | int | `8` | `src/clio_agent/gact/agent_task_limits.py` |
+| `CLIO_MAX_CONCURRENT_AGENT_TASKS` | `agent_tasks.max_concurrent` | int | `3` | `src/clio_agent/gact/agent_task_limits.py` |
 | `CLIO_MAX_FILE_SIZE_BYTES` | `tools.file_policy.max_file_size_bytes` | str | `1073741824` | `src/clio_agent/tools/file_policy.py` |
 | `CLIO_MAX_LM_CALL_S` | `limits.lm_call_s` | float | `1800.0` | `src/clio_agent/runtime/lm_activity.py` |
 | `CLIO_MCP_CACHE_MAX_AGE_DAYS` | `tools.mcp_cache.max_age_days` | float | `14.0` | `src/clio_agent/tools/mcp_cache.py` |

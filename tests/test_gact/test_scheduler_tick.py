@@ -137,8 +137,10 @@ def test_fired_schedule_is_registered_and_cancellable(
 
             # Cancellable: a cancel reaches the registered task, and the
             # done-callback drops the registration.
+            original = app.state.turn_runner.handle(sid)
+            assert original is not None and original.turn_id
             await asyncio.wait_for(app.state.turn_runner.stop(sid), timeout=5.0)
-            assert not app.state.turn_runner.busy(sid)
+            assert app.state.turn_runner.handle(sid) != original
         finally:
             tick.cancel()
             with contextlib.suppress(asyncio.CancelledError):

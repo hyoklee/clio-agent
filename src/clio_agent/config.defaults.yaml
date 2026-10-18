@@ -380,7 +380,7 @@ limits.view_pdf_source_max_bytes: 536870912
 # Child-agent concurrency, declared-workflow step liveness, goal judging and
 # the cron scheduler.
 
-# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)  <- src/clio_agent/gact/conversations.py
+# CLIO_MAX_CONCURRENT_AGENT_TASKS  (int)  <- src/clio_agent/gact/agent_task_limits.py
 # Reserved or in-flight child inference at one spawn depth; tools and waits
 # release their inference permit. This does not cap active sessions or
 # background tasks.
