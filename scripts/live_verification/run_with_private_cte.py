@@ -24,6 +24,8 @@ wrapper reuses that exact machinery for the standalone leg scripts:
 
 The owned isolation root is removed after its verified daemon settles. Keep
 bounded qualification receipts separately; runtime storage is disposable.
+``CLIO_LIVE_VERIFICATION_ROOT`` selects its parent; ``--runtime-root`` takes
+precedence. Neither option retains disposable runtime data after settlement.
 
 Usage::
 
@@ -55,6 +57,16 @@ from tests._cte_isolation import (  # noqa: E402
 from tests._process_hygiene import release_this_process_client  # noqa: E402
 
 
+def verification_root() -> Path:
+    """Choose the disposable runtime parent without changing private Core capacity."""
+    configured = os.environ.get("CLIO_LIVE_VERIFICATION_ROOT", "").strip()
+    return (
+        Path(configured).expanduser().resolve()
+        if configured
+        else REPO_ROOT / "out" / "live-verification"
+    )
+
+
 def main(argv: list[str]) -> int:
     """Isolate, attach, run ``argv`` as a child, release, reap."""
     parser = argparse.ArgumentParser(add_help=False)
@@ -71,7 +83,7 @@ def main(argv: list[str]) -> int:
         )
         return 2
 
-    parent = args.runtime_root or REPO_ROOT / "out" / "live-verification"
+    parent = args.runtime_root or verification_root()
     root = parent.resolve() / f"clio-agent-cte-{os.getpid()}-{uuid4().hex[:12]}"
     root.mkdir(parents=True, exist_ok=False)
     isolation = isolate_cte_env(root, os.environ)

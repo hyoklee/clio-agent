@@ -18,6 +18,8 @@ from clio_agent.tools.launcher_cache_lock import (
     aacquire_launcher_cache_lock,
     uses_shared_launcher_cache,
 )
+from clio_agent.tools.mcp_client_lifecycle import close_mcp_context
+from clio_agent.tools.mcp_client_lifecycle import log_close_failure as _log_close_failure
 from clio_agent.tools.mcp_connection_era import (
     MCPConnectionEra,
     classify_connection_era,
@@ -638,12 +640,16 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
 
         for namespace, ctx in list(self._namespace_ctxs.items()):
             try:
-                await asyncio.wait_for(ctx.__aexit__(None, None, None), timeout=5.0)
+                await asyncio.wait_for(
+                    close_mcp_context(
+                        ctx, owns_transport=self._namespace_direct_routes.get(namespace, False)
+                    ),
+                    timeout=5.0,
+                )
             except Exception as exc:  # noqa: BLE001 - teardown continues; typed reason logged
                 _log_close_failure(f"namespace client {namespace!r}", exc)
         self._namespace_ctxs.clear()
         self._namespace_clients.clear()
-        # #1281 F13: clear the route/heal bookkeeping with the clients/ctxs it describes.
         self._namespace_direct_routes.clear()
         self._namespace_heal_attempted.clear()
 
@@ -660,12 +666,6 @@ class AsyncMCPToolExecutor(AsyncNamespacePreparationMixin):
         self._client = None
         self._client_ctx = None
         self._namespace_locks.clear()
-
-
-def _log_close_failure(what: str, exc: BaseException) -> None:
-    """A close that timed out or failed may leave its server running: WARN, typed (#1577)."""
-    reason = "mcp_close_timeout" if isinstance(exc, TimeoutError) else "mcp_close_failed"
-    logger.warning("MCP %s close failed reason=%s error=%r", what, reason, exc)
 
 
 #: Typed reason for the logged repr fallback when no real JSON mapping exists.
