@@ -1,10 +1,13 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 20:12 UTC
+## Current state — October 18, 20:23 UTC
 
 Initial implementation and initial test construction remain complete. Regression
 repair, independent review of the new changes and live qualification are incomplete.
-The combined repair below is not yet pushed or accepted. GACT remains 07cf095f.
+The combined repair was pushed at 99e7c13e; GACT remains 07cf095f. Its unavailable
+SSE type import blocked provider configuration and caused CI collection failure.
+The follow-up corrects that dependency boundary and the new HTTP fixtures'
+explicit account identity. No previously accepted task is replayed.
 
 Exact 1ef00b1f CI completed: **23 successful jobs, one failed Python 3.13 shard**.
 All twelve reports were collected. Python 3.12/3.13/3.14 each report 12,984 passes
@@ -38,11 +41,22 @@ remain manual-only. There is no submission replay or replacement-session claim.
 The new Codex HTTP adapter uses lm15's native parser with configurable
 `lm15.sse_limit` / `CLIO_LM15_SSE_LIMIT`, default 1 MiB. It preserves native
 request/response mapping, error attribution, stream closure and byte limits.
-It changes neither WebSocket nor other providers' native transports. Five new
-regression cases are constructed; CI and fresh actual-model acceptance remain.
+It changes neither WebSocket nor other providers' native transports. All five
+new native-SDK regression cases now pass sequentially with one worker: a valid
+line over 64 KiB, an explicit smaller limit without retries, invalid configuration
+without submission, native authentication errors and early transport closure.
+The full Linux Mypy check passes all 1,219 production files after the correction;
+no type-check rule was relaxed. New exact-head CI and actual-model acceptance remain.
 
-R204 Astra/Claude source GO applies only to the preceding source. New repair
-review is required. Dependency versions, GACT and released pins are unchanged.
+R208 failed provider configuration before any model request or workload submission.
+The original bad StreamEvent import is the failure; it is not a capacity or Core
+error. All owned servers exited normally. Its retired 1 GiB metadata file's exact
+nonrecursive removal was also rejected before execution; preserve that boundary.
+
+R204 Astra/Claude source GO applies only to the preceding source. Astra's source
+review of 99e found no additional source blocker, but did not catch its import
+failure; Claude's frozen 99e review is still running. Neither approves the new
+follow-up. Dependency versions, GACT and released pins are unchanged.
 Remote develop remains 35fdd5fe and is included; primary local work is untouched.
 
 Owner cleanup recovered 4.72 GiB on C (UV cache), 5.35 GiB on D (old debug Cargo

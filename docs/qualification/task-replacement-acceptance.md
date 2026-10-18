@@ -1,9 +1,11 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 20:12 UTC
+## Current candidate — October 18, 20:23 UTC
 
 Implementation/test construction remain complete; regression repair and live
-acceptance remain incomplete. The combined repair is not yet pushed/reviewed.
+acceptance remain incomplete. The combined repair was pushed at 99e7c13e.
+Its unavailable SDK type import failed CI collection and prevented live model
+configuration; this follow-up fixes that boundary without changing execution owners.
 1ef00b1f CI completed with 23 successful jobs and one Python 3.13 retention
 timeout; fifty exclusions per interpreter remain excluded.
 
@@ -15,8 +17,12 @@ Legacy reads, bounded output and exact-task cursor authorization remain required
 
 R195 actual Codex/Luna hit an oversized SSE line after two tool actions.
 Its yield/recovery/final/UI assertions did not run. Accepted external work was
-cancelled and physically cleaned; owned processes/ports retired. New SSE policy
-and regression cases require CI, independent review and fresh model evidence.
+cancelled and physically cleaned; owned processes/ports retired. The new SSE
+policy requires fresh CI, independent review and actual-model evidence. Its five
+native-SDK cases pass with one worker and no skips. The full Linux type check
+passes all 1,219 production files. R208 submitted no model/workload, retired all
+owned servers and retains a new exact-file cleanup rejection. Source review does
+not establish qualification.
 
 **All Q1–Q9 and thirty final race repetitions remain unaccepted.** R204 source
 GO does not approve the new delta. Source/runtime identities and bounded receipts

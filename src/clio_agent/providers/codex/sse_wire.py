@@ -8,15 +8,26 @@ private lm15 hooks used here are covered by the pinned dependency contract tests
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from importlib import import_module
+from typing import TypeAlias
 
-from dspy._vendor.lm15.providers.async_base import _aiter_lines
-from dspy._vendor.lm15.providers.base import _attach_error_metadata, _stream_error_metadata
-from dspy._vendor.lm15.sse import aparse_sse
-from dspy._vendor.lm15.transports import TransportError as NetworkTransportError
-from dspy._vendor.lm15.transports import TransportRequest
-from dspy.lm15 import AsyncOpenAICodexLM, ProviderError, Request, StreamEvent, TransportError
+from dspy.lm15 import (
+    AsyncOpenAICodexLM,
+    ProviderError,
+    Request,
+    StreamDeltaEvent,
+    StreamEndEvent,
+    StreamErrorEvent,
+    StreamStartEvent,
+    TransportError,
+)
 
 from clio_agent import conf
+
+StreamEvent: TypeAlias = StreamStartEvent | StreamDeltaEvent | StreamEndEvent | StreamErrorEvent
+# Keep private SDK hooks in this one pinned boundary, rather than importing
+# private subpackages into DSPy's untyped public package graph during analysis.
+_sdk = import_module("dspy._vendor.lm15.providers.async_base")
 
 
 def sse_limit() -> int:
@@ -33,7 +44,7 @@ class CodexSSEWire(AsyncOpenAICodexLM):
     """Use lm15's native SSE parser with an operator-visible byte ceiling."""
 
     async def _stream_raw(
-        self, request: Request, req: TransportRequest | None = None
+        self, request: Request, req: object | None = None
     ) -> AsyncIterator[StreamEvent]:
         limit = sse_limit()  # Reject an invalid policy before transport submission.
         if req is None:
@@ -45,19 +56,19 @@ class CodexSSEWire(AsyncOpenAICodexLM):
                     error = self._inner.normalize_error(
                         response.status, body.decode("utf-8", errors="replace")
                     )
-                    _attach_error_metadata(error, response.headers)
+                    _sdk._attach_error_metadata(error, response.headers)
                     raise error
                 try:
-                    async for raw in aparse_sse(
-                        _aiter_lines(response),
+                    async for raw in _sdk.aparse_sse(
+                        _sdk._aiter_lines(response),
                         max_line_bytes=limit,
                         max_event_bytes=max(limit, 1024 * 1024),
                     ):
                         for event in self._inner.parse_stream_events(request, raw):
                             if event is not None:
-                                yield _stream_error_metadata(event, response.headers)
+                                yield _sdk._stream_error_metadata(event, response.headers)
                 except ProviderError as error:
-                    _attach_error_metadata(error, response.headers)
+                    _sdk._attach_error_metadata(error, response.headers)
                     raise
-        except NetworkTransportError as error:
+        except _sdk.NetworkTransportError as error:
             raise TransportError(str(error)) from error

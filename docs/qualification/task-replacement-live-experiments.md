@@ -1,10 +1,13 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 20:12 UTC
+## Current execution gate — October 18, 20:23 UTC
 
 The current exact-head CI inventory is complete: 23 successful jobs and one
 Python 3.13 retention timeout at 1ef00b1f. Combined storage/SSE repairs are
-constructed and scoped checks are underway; they are not live acceptance.
+were pushed at 99e7c13e. CI exposed an invalid public SDK type import; the
+follow-up uses the actual exported event classes and a narrow private-hook
+boundary. Full Linux types and five focused SDK cases pass; they are not live
+acceptance.
 R205/R206 actual Core tests retain all 1,005 messages and demonstrate removal
 of quadratic index write volume, with only a small local time improvement.
 R207 is an operator-setting experiment, not a production-default change.
@@ -24,8 +27,12 @@ Next family must freeze the new source and record its dependency/UI impact.
 Use the existing search auto-install setting to avoid provisioning unused
 SearXNG during a narrowly scoped external-task family. This changes only the
 isolated operator configuration and cannot qualify a search route.
-The new SSE policy requires actual-model evidence; WebSocket success is not a
-substitute. Q1–Q9, migration and thirty final races remain unaccepted.
+R208 failed provider configuration before any model request or workload was
+submitted. It is a failed prerequisite check, not a model cycle. Its owned servers
+exited normally; exact metadata-file deletion was rejected and cannot be retried
+or bypassed through its parent. The new SSE policy requires actual-model evidence;
+WebSocket success is not a substitute. Q1–Q9, migration and thirty final races
+remain unaccepted.
 
 ## Previous execution gate — October 18, 19:03 UTC
 

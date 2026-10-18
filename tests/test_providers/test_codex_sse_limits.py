@@ -60,7 +60,7 @@ def request() -> Request:
 async def test_native_sse_parses_a_valid_line_larger_than_64_kib() -> None:
     text = "Result ✓ " * 9_000
     transport = ScriptedHTTP(text)
-    wire = CodexSSEWire(api_key="test-token", transport=transport)
+    wire = CodexSSEWire(api_key="test-token", account_id="test-account", transport=transport)
     events = [event async for event in wire.stream(request())]
     response = materialize_response(iter(events), request())
     assert response.message.parts == (TextPart(text=text),)
@@ -74,7 +74,7 @@ async def test_operator_sse_limit_is_enforced_without_retry(
 ) -> None:
     monkeypatch.setenv("CLIO_LM15_SSE_LIMIT", "65536")
     transport = ScriptedHTTP("x" * 70_000)
-    wire = CodexSSEWire(api_key="test-token", transport=transport)
+    wire = CodexSSEWire(api_key="test-token", account_id="test-account", transport=transport)
     with pytest.raises(TransportError, match="SSE line exceeds limit"):
         _ = [event async for event in wire.stream(request())]
     assert len(transport.requests) == 1
@@ -85,7 +85,7 @@ async def test_operator_sse_limit_is_enforced_without_retry(
 async def test_invalid_sse_limit_does_not_submit(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CLIO_LM15_SSE_LIMIT", "0")
     transport = ScriptedHTTP("unused")
-    wire = CodexSSEWire(api_key="test-token", transport=transport)
+    wire = CodexSSEWire(api_key="test-token", account_id="test-account", transport=transport)
     with pytest.raises(ValueError, match="positive byte count"):
         _ = [event async for event in wire.stream(request())]
     assert transport.requests == []
@@ -94,7 +94,7 @@ async def test_invalid_sse_limit_does_not_submit(monkeypatch: pytest.MonkeyPatch
 @pytest.mark.asyncio
 async def test_sse_http_error_preserves_native_authentication_failure() -> None:
     transport = ScriptedHTTP("unused", status=401)
-    wire = CodexSSEWire(api_key="test-token", transport=transport)
+    wire = CodexSSEWire(api_key="test-token", account_id="test-account", transport=transport)
     with pytest.raises(AuthError):
         _ = [event async for event in wire.stream(request())]
     assert len(transport.requests) == 1
@@ -104,7 +104,7 @@ async def test_sse_http_error_preserves_native_authentication_failure() -> None:
 @pytest.mark.asyncio
 async def test_stopping_sse_iteration_closes_the_native_transport() -> None:
     transport = ScriptedHTTP("Never lose closure.")
-    wire = CodexSSEWire(api_key="test-token", transport=transport)
+    wire = CodexSSEWire(api_key="test-token", account_id="test-account", transport=transport)
     stream = wire.stream(request())
     await anext(stream)
     await stream.aclose()
