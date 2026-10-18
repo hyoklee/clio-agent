@@ -11,7 +11,6 @@ from fastapi import FastAPI, HTTPException
 from pydantic import Field
 
 from clio_agent.gact.routes.storage_inputs import CompleteSignIn
-from clio_agent.gact.storage.linked import link_folder
 from clio_agent.gact.storage.models import (
     CreateSource,
     SourceConfiguration,
@@ -94,7 +93,7 @@ def register_storage_ndp_routes(
                     prior = service.store.get(
                         "ndp-selection", existing.configuration.ndp_selection_id, NDPSelection
                     )
-                    if prior.dataset == dataset and existing.linked_manifest_id:
+                    if prior.dataset == dataset:
                         return visible(existing)
             selection = NDPSelection(id="ndp_" + uuid.uuid4().hex, dataset=dataset)
             service.store.put("ndp-selection", selection.id, selection)
@@ -109,8 +108,8 @@ def register_storage_ndp_routes(
                 ),
                 root,
             )
-            # Materialize only the metadata manifest. Resource contents remain remote.
-            link_folder(service, record)
+            # The ordinary source review owns the user's Download/Link choice.
+            # Connecting catalog metadata must not silently link selected resources.
             return visible(record)
 
         def serialized() -> dict[str, Any]:

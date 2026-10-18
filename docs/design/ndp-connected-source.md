@@ -2,10 +2,14 @@
 
 NDP is available in Settings → Data sources and the workspace Attach picker.
 The account is shared across workspaces on the connected CLIO. The picker
-searches datasets, expands their resources and attaches only the selected IDs.
+loads catalog results, filters names/descriptions/files as the user types, and
+searches the remote catalog after a short debounce. Resource selections survive
+searches and can be reviewed together. Continue connects only the selected IDs
+and opens the same Download/Link review used by the other sources.
 Sources appear in Files and use the existing connected-data tools, immutable
 resource custody, downloaded copies and content hashing when bytes are read.
-Attaching creates a metadata manifest; it does not download the dataset.
+Connecting saves catalog metadata. The user explicitly chooses Download or Link;
+linking indexes the selected names, while downloading copies their contents.
 
 ## Authentication
 

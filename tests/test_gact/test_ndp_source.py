@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any, Iterator
 
 import httpx
@@ -127,12 +129,17 @@ def test_search_attach_restart_then_read_real_bytes(
         assert not list((tmp_path / "sources").rglob("*.csv"))
         service = StorageService(tmp_path / "sources", tmp_path / "private" / "credentials.json")
         record = service.get("work", source["id"])
+        assert record.linked_manifest_id is None
+        from clio_agent.gact.storage.linked import link_folder
+
+        link_folder(service, record)
+        assert record.linked_manifest_id is not None
+        assert catalog_http[1] == ["/search"]
         path = linked_file(service, record, "1-stations.csv")
         assert path.read_bytes() == b"name,x\na,1"
         assert catalog_http[1] == ["/search", "/stations.csv"]
         assert linked_file(service, record, "1-stations.csv") == path
         assert catalog_http[1] == ["/search", "/stations.csv"]
-        from clio_agent.gact.storage.linked import link_folder
 
         previous = record.linked_manifest_id
         link_folder(service, record)
@@ -157,6 +164,69 @@ def test_selection_rejects_injected_resource_and_write_mode(
             "work",
             CreateSource(provider="ndp", label="Denied", root="dataset", mode="write_enabled"),
         )
+
+
+@pytest.mark.parametrize("choice", ["link", "download"])
+def test_ndp_uses_shared_source_mapping_after_catalog_selection(
+    tmp_path: Path,
+    catalog_http: tuple[str, list[str]],
+    monkeypatch: pytest.MonkeyPatch,
+    choice: str,
+) -> None:
+    """The real source API offers explicit linking and downloading after metadata selection."""
+    from clio_agent.gact.routes.connected_storage import register_connected_storage_routes
+    from tests.test_gact.storage_operation_helpers import complete_indexing
+
+    monkeypatch.setenv("CLIO_AGENT_HOME", str(tmp_path / "agent"))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    app = FastAPI()
+    app.state.workspaces = {"w": SimpleNamespace(root_path=str(workspace))}
+    register_connected_storage_routes(app)
+    with TestClient(app) as client:
+        search = client.post("/v1/storage/ndp/search", json={"query": "sea"})
+        assert search.status_code == 200, search.text
+        created = client.post(
+            "/v1/workspaces/w/sources/ndp",
+            json={"endpoint_id": "weather", "dataset_id": "weather", "resource_ids": ["stations"]},
+        )
+        assert created.status_code == 201, created.text
+        source = created.json()
+        assert not source["linked"]
+        assert source["local_path"] is None
+        assert source["link_available"] and source["download_available"]
+        assert catalog_http[1] == ["/search"]
+        prefix = f"/v1/workspaces/w/sources/{source['id']}"
+        assert client.get(prefix + "/mapping-options").json()["link_access"] == ["read_only"]
+        listing = client.post(prefix + "/browse", json={})
+        assert listing.status_code == 200, listing.text
+        assert listing.json()["entries"][0]["path"] == "1-stations.csv"
+        assert catalog_http[1] == ["/search"]
+        if choice == "link":
+            denied = client.post(
+                prefix + "/link", json={"access": "write_through", "confirm_remote": True}
+            )
+            assert denied.status_code == 403, denied.text
+            assert "NDP originals cannot be changed" in denied.text
+            linked = client.post(prefix + "/link", json={"access": "read_only"})
+            complete_indexing(client, prefix, linked)
+            current = client.get("/v1/workspaces/w/sources").json()["sources"][0]
+            assert current["linked"] and current["local_path"] is None
+            assert "/stations.csv" not in catalog_http[1]
+        else:
+            transferred = client.post(prefix + "/transfer", json={"access": "editable"})
+            assert transferred.status_code == 202, transferred.text
+            operations: list[dict[str, Any]] = []
+            for _ in range(100):
+                operations = client.get(prefix + "/operations").json()["operations"]
+                if operations[-1]["state"] in {"completed", "failed"}:
+                    break
+                time.sleep(0.01)
+            assert operations[-1]["state"] == "completed", operations
+            current = client.get("/v1/workspaces/w/sources").json()["sources"][0]
+            assert not current["linked"]
+            assert current["download_access"] == "editable"
+            assert (Path(current["local_path"]) / "1-stations.csv").read_bytes() == b"name,x\na,1"
 
 
 def test_catalog_service_failure_reports_status_without_internal_details(
