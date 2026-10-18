@@ -1,6 +1,6 @@
 # Tasks replacement status — October 18 UTC
 
-## Current state — October 18, 20:57 UTC
+## Current state — October 18, 21:08 UTC
 
 Initial implementation and initial test construction are complete. The remaining
 work is regression/live bug repair, final integrated qualification and independent
@@ -11,7 +11,7 @@ review. Publication and daily Desktop installation remain separate.
 | Initial implementation | Complete; subsequent defects remain repairs, not missing initial implementation. |
 | Initial regression construction | Complete; new defect-specific regressions precede their execution. |
 | Completed agent CI | `fcd8737cbfb43bdc2183e57bc355036b6fddd072`: 24 successful jobs, all twelve Python reports collected, zero failures/errors. Each interpreter has 12,992 passes and fifty exclusions. Exclusions are not passes. |
-| Current repair | This commit excludes reserved task-body/output scopes from semantic-event replay and records GACT `8eaea05f80df9b85fb0457ef9dbad12c779af1ed`. Fresh combined-head CI/review and UI build remain required. |
+| Current repair | This commit excludes reserved task-body/output scopes from semantic-event replay and records GACT `c813c1b7d3064c5b6125dc21c9aec70117c78ca4`. Fresh combined-head CI/review and UI build remain required. |
 | Live qualification | Scoped R210 actual-model/external recovery and desktop/phone interactions passed. The full Q1–Q9 matrix, migration/recovery obligations and all thirty final-candidate races remain unaccepted. |
 | Release readiness | No-go until those required gates and independent reviews pass. |
 
@@ -67,9 +67,8 @@ nonce, request tag and SHA256
 There was one backend execution and one long-job submission.
 
 Real desktop/390px-phone Work/disclosure, Runs and final-result interactions
-passed with no connected-UI errors or viewport overflow. Three selected images
-were visually inspected; remaining images and the corrected GACT UI still need
-review. These technical qualification images do not complete the website media.
+passed with no connected-UI errors or viewport overflow. All six selected images
+were visually inspected; the corrected GACT UI still needs real-service review. These technical qualification images do not complete the website media.
 This family does not prove approved-provider jobs, partial input answers, every
 task kind, the full UI matrix or the final race repetitions.
 
@@ -87,6 +86,16 @@ Astra returned source GO for fcd8737c. Actual Claude Code/Fable returned source 
 for 99e7c13e and identified the cold-read cost addressed here. Source review missed
 99e's invalid SDK import, subsequently repaired at fcd. Neither review qualifies
 the current combined delta or substitutes for tests/live acceptance.
+
+Astra returned source NO-GO for e0e011b4 / 8eaea05f: Runs compared raw progress
+with a shortened diagnostic and failed to disclose complete structured/long text.
+R218 reproduced the structured case, then passed both structured and long cases
+individually/sequentially after preserving the original diagnostic separately
+from its concise summary. Scoped lint/format, all six guards and workspace types
+pass. New independent review is required. The first R217 Fable preflight exited
+before launching its CLI because the copied access token was too near expiry;
+a subsequent read-only check found refreshed original credentials. No model
+review or authentication write is claimed for that failed preflight.
 Local SSE receipts preceded final formatting; exact fcd CI and R210 provide the
 later evidence. Request bounded independent review of this combined delta.
 

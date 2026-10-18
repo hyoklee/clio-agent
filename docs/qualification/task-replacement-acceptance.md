@@ -1,6 +1,6 @@
 # Tasks replacement acceptance ledger
 
-## Current candidate — October 18, 20:57 UTC
+## Current candidate — October 18, 21:08 UTC
 
 Initial implementation and initial test construction remain complete.
 Agent fcd8737cbfb43bdc2183e57bc355036b6fddd072 completed all 24 CI jobs.
@@ -9,10 +9,12 @@ exclusions per interpreter. The unchanged retention/load guards passed.
 Exclusions are not executed passes and do not establish live/platform acceptance.
 
 This commit adds the cold semantic-replay correction and records GACT
-8eaea05f80df9b85fb0457ef9dbad12c779af1ed. R212 reproduced the cold-read defect;
+c813c1b7d3064c5b6125dc21c9aec70117c78ca4. R212 reproduced the cold-read defect;
 R213 passed the actual-Core regression. Three focused UI behavior cases, six
-guards and the correct workspace type check passed. Combined-head CI,
-independent review, matching UI build and fresh rendered review remain required.
+guards and the correct workspace type check passed. R218 additionally reproduces and fixes Astra's structured/long diagnostic
+finding, with both focused cases, six guards and workspace types passing.
+Combined-head CI, independent review, matching UI build and fresh rendered
+review remain required.
 
 R210 on frozen fcd8737c / GACT 07cf095f passed actual Codex/Luna direct-SSE
 acceptance, independent work, one attention episode during observation loss,

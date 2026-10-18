@@ -1,6 +1,6 @@
 # Tasks replacement: finite live experiments
 
-## Current execution gate — October 18, 20:57 UTC
+## Current execution gate — October 18, 21:08 UTC
 
 The completed fcd8737c CI inventory has 24 successful jobs, twelve Python reports
 and zero failures/errors. Each interpreter has 12,992 passes and fifty exclusions.
@@ -17,8 +17,11 @@ It does not complete Q1–Q9, partial-input/provider-job coverage or thirty race
 R212 reproduced cold replay fetching unrequested task bodies; R213 passed the
 existing-chunk-grammar correction. GACT 8eaea05f moves duplicate uncertain-error
 text into existing details while retaining numeric progress. The three focused
-UI cases and correct workspace type check pass. Build and real-service review
-of that exact UI are pending, as are new independent Astra/Fable reviews.
+UI cases and correct workspace type check pass. R217 built online/offline e0e011b4 / 8eaea05f successfully; a newer R218
+review correction now preserves full diagnostics alongside concise summaries.
+The structured defect reproduced before correction, then structured/long cases
+passed individually. All six guards and workspace types pass. New build,
+real-service review and independent Astra/Fable reviews remain required.
 
 No product/model family is currently active. R210's owned processes exited and
 its worker confirmed cleanup. R215's removal of three retired proof/temp roots
