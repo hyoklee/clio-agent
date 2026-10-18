@@ -23,6 +23,7 @@ def _atoms(count: int) -> list[dict[str, Any]]:
                 session_id="bulk-generation",
                 role="user",
                 created_at=f"2026-10-18T12:{index:02d}:00+00:00",
+                updated_at=f"2026-10-18T12:{index:02d}:00+00:00",
                 parts=[Part(type="text", text=f"Recorded content {index}")],
             )
         )
@@ -123,3 +124,57 @@ def test_failed_staged_chunk_never_replaces_the_current_transcript(
         segment.content
         for segment in lane_segments(store, "bulk-generation", previous, include_tombstoned=False)
     ] == original_contents
+
+
+def test_live_atom_is_hidden_until_its_core_write_settles(
+    arc: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reconstruction cannot read a failed, unconfirmed live atom after a switch."""
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from clio_agent.arc.segments import ArcPersistError
+    from clio_agent.gact.transcript_projection import assemble_session_messages
+
+    store = arc._segments
+    sid = "bulk-generation"
+    replace_lane(
+        store,
+        sid,
+        part_atoms.MESSAGE_PART_SCOPE,
+        lambda lane: part_atoms.append_part_atoms(store, sid, _atoms(2), lane=lane),
+    )
+    previous = assemble_session_messages(arc, sid)
+    scope = current_base(store, sid, part_atoms.MESSAGE_PART_SCOPE)
+    record = store._record_name(sid, scope)
+    original_put = store._store.put
+    entered, release = threading.Event(), threading.Event()
+    reading, read_done = threading.Event(), threading.Event()
+
+    def failing_put(kind: str, name: str, payload: bytes, **kwargs: Any) -> None:
+        if kind == "segments" and name == record:
+            entered.set()
+            assert release.wait(3), "test did not release its native write"
+            raise OSError("live chunk write failed")
+        original_put(kind, name, payload, **kwargs)
+
+    def reconstruct() -> Any:
+        reading.set()
+        try:
+            return assemble_session_messages(arc, sid)
+        finally:
+            read_done.set()
+
+    monkeypatch.setattr(store._store, "put", failing_put)
+    with ThreadPoolExecutor(max_workers=2) as threads:
+        writer = threads.submit(part_atoms.append_part_atom, store, sid, _atoms(3)[-1])
+        try:
+            assert entered.wait(2)
+            reader = threads.submit(reconstruct)
+            assert reading.wait(2)
+            assert not read_done.wait(0.1), "reader observed a live atom before write confirmation"
+        finally:
+            release.set()
+        with pytest.raises(ArcPersistError):
+            writer.result(timeout=3)
+        assert reader.result(timeout=3) == previous

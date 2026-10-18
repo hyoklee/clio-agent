@@ -635,10 +635,10 @@ def append_part_atoms(
             scope = selected
             appended.append(
                 _append_segment_raw(
-                    store, session_id, scope, MESSAGE_PART_KIND, content, persist=False
+                    store, session_id, scope, MESSAGE_PART_KIND, content, persist=lane is None
                 )
             )
-        if scope is not None:
+        if scope is not None and lane is not None:
             store._persist(session_id, scope)
         return appended
 
