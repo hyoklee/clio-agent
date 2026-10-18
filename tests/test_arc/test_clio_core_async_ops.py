@@ -88,6 +88,30 @@ def test_await_future_polls_until_done() -> None:
     assert future.polls == 4
 
 
+@pytest.mark.parametrize("operation", ["put", "delete", "tag_query"])
+def test_fast_native_reply_needs_no_daemon_discovery_or_configuration_reads(
+    monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    """A sub-millisecond RPC must not pay a process census on every history atom."""
+    from clio_agent.arc import daemon_progress
+
+    clock = [0.0]
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    def unexpected() -> Any:
+        pytest.fail("A fast completed native RPC performed slow health discovery")
+
+    monkeypatch.setattr(ops, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep))
+    monkeypatch.setattr(ops, "resolve_liveness_policy", unexpected)
+    monkeypatch.setattr(daemon_progress, "max_wait_s", unexpected)
+    monkeypatch.setattr(daemon_progress, "daemon_work", unexpected)
+    future = SimpleNamespace(done=lambda: clock[0] >= 0.0005)
+    assert ops.await_future(future, op_name=operation) is future
+    assert 0 < clock[0] <= 0.001
+
+
 def test_clear_submits_independent_deletes_before_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
     """Large cleanup must not pay one round trip before submitting the next deletion."""
     client = _Client()

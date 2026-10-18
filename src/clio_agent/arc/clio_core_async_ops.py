@@ -101,13 +101,20 @@ def await_future(future: Any, *, op_name: str) -> Any:
     """
     if future.done():  # the common case: no bound to resolve (config reads are not free)
         return future
+    # A native submission can finish just after the first check. Give that
+    # normal reply one millisecond before resolving configuration and sampling
+    # daemon processes for every tiny write. Pending work still enters the same
+    # health/progress policy; this is no execution deadline or alternate backend.
+    polled = _polled(future)
+    if polled(0.001):
+        return future
     from clio_agent.arc.daemon_progress import (  # noqa: PLC0415 - cycle
         max_wait_s,
         wait_while_progressing,
     )
 
     outcome = wait_while_progressing(
-        _polled(future),
+        polled,
         slice_s=resolve_liveness_policy().stall_after_s + _WATCH_FIRST_MARGIN_S,
         op_name=op_name,
         ceiling_s=max_wait_s() + _WATCH_FIRST_MARGIN_S,

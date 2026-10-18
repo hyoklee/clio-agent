@@ -57,6 +57,11 @@ fix is recorded in the S8 report.
 
 from __future__ import annotations
 
+import json
+import sys
+import threading
+import time
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -283,7 +288,9 @@ def test_sustained_distinct_component_ids_hit_the_merged_cap_and_refuse(
     assert all(c["id"] != "node_overflow" for c in after_refusal_components)
 
 
-def test_sustained_actions_keep_the_per_session_reason_ring_at_256(tmp_path: Path) -> None:
+def test_sustained_actions_keep_the_per_session_reason_ring_at_256(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     app = _isolated_app(tmp_path)
     with TestClient(app) as client:
         _capture_inputs(app)
@@ -291,6 +298,30 @@ def test_sustained_actions_keep_the_per_session_reason_ring_at_256(tmp_path: Pat
         sid = session.id
         app.state.a2ui_store.apply_batch(sid, _create_batch("ring_surface"))
 
+        # Observe the real owning I/O; neither the load nor its deadline changes.
+        # Uncaptured bounded samples survive a watchdog exit on a CI worker.
+        store = app.state.task_history.arc._store
+        io: dict[str, dict[str, float]] = {}
+        lock = threading.Lock()
+
+        def measure(name: str, operation: Callable[..., Any]) -> Callable[..., Any]:
+            def observed(*args: Any, **kwargs: Any) -> Any:
+                started = time.monotonic()
+                with lock:
+                    io.setdefault(name, {"calls": 0, "seconds": 0, "max_seconds": 0})["calls"] += 1
+                try:
+                    return operation(*args, **kwargs)
+                finally:
+                    elapsed = time.monotonic() - started
+                    with lock:
+                        io[name]["seconds"] += elapsed
+                        io[name]["max_seconds"] = max(io[name]["max_seconds"], elapsed)
+
+            return observed
+
+        for name in ("get", "put"):
+            monkeypatch.setattr(store, name, measure(name, getattr(store, name)))
+        started = time.monotonic()
         attempts = A2UI_CATALOG_REASON_RING_MAXLEN + 4
         for i in range(attempts):
             response = client.post(
@@ -310,6 +341,16 @@ def test_sustained_actions_keep_the_per_session_reason_ring_at_256(tmp_path: Pat
                 },
             )
             assert response.status_code == 200, response.text
+            if i == 0 or (i + 1) % 32 == 0 or i + 1 == attempts:
+                with lock:
+                    print(
+                        "A2UI_LOAD_IO "
+                        + json.dumps(
+                            {"actions": i + 1, "seconds": time.monotonic() - started, "io": io}
+                        ),
+                        file=sys.__stderr__,
+                        flush=True,
+                    )
 
         reasons = app.state.a2ui_catalogs.session_reasons(sid)
         undeclared = [r for r in reasons if r["reason"] == "a2ui_event_destination_undeclared"]

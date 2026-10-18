@@ -112,6 +112,11 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
             json={"text": "future task", "client_message_id": "msg_future"},
         )
         assert queued.status_code == 201, queued.text
+        remaining = client.post(
+            f"/v1/sessions/{sid}/queued-messages",
+            json={"text": "remaining future task", "client_message_id": "msg_remaining"},
+        )
+        assert remaining.status_code == 201, remaining.text
 
         assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
         _wait_for_feedback(app, sid, ids)
@@ -151,7 +156,7 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         assert old_assistant["error_info"]["error"] == "cancelled"
         assert client.get(f"/v1/sessions/{sid}/pending-steers").json()["pending_steers"] == []
         queue = client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"]
-        assert [row["id"] for row in queue] == [queued.json()["id"]]
+        assert [row["id"] for row in queue] == [queued.json()["id"], remaining.json()["id"]]
         assert session_autostart_suspended(app, sid)
         session = client.get(f"/v1/sessions/{sid}").json()
         assert session["status"] == "idle"
@@ -205,7 +210,28 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         assert promoted["metadata"].get("pending_steer", False) is False
         assert promoted["metadata"]["client_message_id"] == "msg_future"
         assert len(agent.questions) == 3
+        # Send now is a one-item override, preserving the independently paused
+        # future queue. An ordinary new idle send explicitly resumes that queue.
+        assert session_autostart_suspended(app, sid)
+        assert [
+            row["id"]
+            for row in client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"]
+        ] == [remaining.json()["id"]]
+        assert (
+            app.state.task_history.committed_notification_input(sid, remaining.json()["id"]) is None
+        )
+        resumed = client.post(
+            f"/v1/sessions/{sid}/messages",
+            json={"text": "Resume normal sending", "client_message_id": "msg_explicit_resume"},
+        )
+        assert resumed.status_code == 202, resumed.text
+        _wait_for_feedback(app, sid, [resumed.json()["message_id"], remaining.json()["id"]])
         assert not session_autostart_suspended(app, sid)
+        assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == []
+        assert len(agent.questions) == 5
+        final_rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        for identity in ("msg_future", "msg_remaining", "msg_explicit_resume"):
+            assert len([row for row in final_rows if row["id"] == identity]) == 1
 
 
 def test_queue_pause_survives_completed_feedback_and_store_reload(tmp_path: Path) -> None:

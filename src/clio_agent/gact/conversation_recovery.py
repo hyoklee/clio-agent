@@ -122,6 +122,17 @@ def _restore_input_projections(self: Conversations) -> None:
 
 async def restore(self: Conversations) -> None:
     """Recover interrupted model segments; dormant assignments do not wake at boot."""
+    try:
+        await _restore_assignments(self)
+    except (OSError, ClioError, RecordingUnconfirmed):
+        # Reads can fail before any confirmed writer has armed recovery. Keep
+        # admission held and enlist the existing readiness callback for both.
+        self.history.requires_recovery = True
+        logger.exception("Assignment restoration awaits Core recovery")
+
+
+async def _restore_assignments(self: Conversations) -> None:
+    """Replay the conversation owner's retained observations, never operations."""
     await self.history.io.run(self._restore_input_projections)
     if self.history.requires_recovery:
         return  # The existing readiness callback resumes this same restoration.
@@ -188,11 +199,7 @@ async def restore(self: Conversations) -> None:
                         self.history, observed, episode=observed.attention_episode or ""
                     )
 
-            try:
-                await self.history.io.run(unavailable)
-            except (OSError, ClioError, RecordingUnconfirmed):
-                logger.exception("Assignment recovery recording pending handle=%s", task.handle)
-                return
+            await self.history.io.run(unavailable)
             continue
         self.arm_deadline(handle, details.execution_deadline)
         if task.cancellation_requested_at is not None:
@@ -270,11 +277,7 @@ async def restore(self: Conversations) -> None:
                     observation_id=uuid4().hex,
                 )
 
-        try:
-            await self.history.io.run(recover)
-        except (OSError, ClioError, RecordingUnconfirmed):
-            logger.exception("Assignment recovery recording pending handle=%s", task.handle)
-            return
+        await self.history.io.run(recover)
     self._restoring = False
 
 

@@ -177,10 +177,13 @@ class ProgressingSlowClioAgent(FakeClioAgent):
         self.steps = steps
         self.step_s = step_s
         self.bus: Any | None = None
+        self.started_at: float | None = None
+        self.progress_times: list[float] = []
 
     def forward(self, question: str, session_id: str) -> Any:
         from clio_agent.gact.events import Event
 
+        self.started_at = time.monotonic()
         self.calls.append((question, session_id))
         for i in range(self.steps):
             time.sleep(self.step_s)
@@ -192,6 +195,7 @@ class ProgressingSlowClioAgent(FakeClioAgent):
                         payload={"summary": f"phase {i}"},
                     )
                 )
+                self.progress_times.append(time.monotonic())
         return FakePrediction(answer=self.answer)
 
 
@@ -1905,7 +1909,19 @@ def test_post_message_progressing_turn_outlives_no_progress_window(
         assistant = complete_turn(c, sid, "hi", timeout=5.0)
         sess = c.get(f"/v1/sessions/{sid}").json()
 
-    assert assistant.get("error_info") is None
+    assert assistant.get("error_info") is None, {
+        "error": assistant.get("error_info"),
+        "forward_started": agent.started_at is not None,
+        "phase_count": len(agent.progress_times),
+        "phase_gaps_s": [
+            end - start
+            for start, end in zip(
+                [agent.started_at or 0.0, *agent.progress_times],
+                agent.progress_times,
+                strict=False,
+            )
+        ],
+    }
     assert assistant["stop_reason"] != "error"
     assert assistant["parts"][-1]["text"] == "progressing done"
     assert sess["status"] != "error"
