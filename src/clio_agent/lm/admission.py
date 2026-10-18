@@ -233,7 +233,7 @@ def wait_notice(text: str, snapshot: dict[str, int]) -> None:
     """Show a harness notice in the existing transcript, never fabricated LM text."""
     try:
         _wait_notice(text, snapshot)
-    except Exception as exc:  # noqa: BLE001 - a UI notice must not fail the model call
+    except (RuntimeError, OSError, ValueError) as exc:
         logger.warning("model capacity notice unavailable error_type=%s", type(exc).__name__)
 
 
