@@ -35,6 +35,46 @@ def test_under_budget_passes() -> None:
     assert "True" in detail
 
 
+def test_private_daemon_sampling_uses_only_its_configured_listener(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Other running CLIO apps must not be charged to an isolated release gate."""
+    listener = MagicMock(return_value=1234)
+    process = MagicMock()
+    process.name.return_value = "clio_run.exe"
+    monkeypatch.setattr(_mod, "_port_listener_pid", listener)
+    monkeypatch.setattr(_mod.psutil, "Process", MagicMock(return_value=process))
+    unrelated = MagicMock(side_effect=AssertionError("Unrelated process scan"))
+    monkeypatch.setattr(_mod.psutil, "process_iter", unrelated)
+    assert _mod._external_cte_pids({"CLIO_CORE_PORT": "9413"}) == (1234,)
+    listener.assert_called_once_with(9413)
+
+
+@pytest.mark.parametrize("listener_pid", [None, 1234])
+def test_private_daemon_sampling_rejects_missing_or_wrong_owner(
+    monkeypatch: pytest.MonkeyPatch, listener_pid: int | None
+) -> None:
+    """An absent daemon or another process cannot silently reduce the measurement."""
+    monkeypatch.setattr(_mod, "_port_listener_pid", lambda port: listener_pid)
+    process = MagicMock()
+    process.name.return_value = "another-app.exe"
+    monkeypatch.setattr(_mod.psutil, "Process", MagicMock(return_value=process))
+    with pytest.raises(RuntimeError, match="Configured private CTE"):
+        _mod._external_cte_pids({"CLIO_CORE_PORT": "9413"})
+
+
+def test_shared_daemon_sampling_retains_the_unconfigured_inventory(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The ordinary shared-daemon gate keeps counting its external Core processes."""
+    processes = [
+        MagicMock(pid=10, info={"name": "clio_run.exe"}),
+        MagicMock(pid=20, info={"name": "other.exe"}),
+    ]
+    monkeypatch.setattr(_mod.psutil, "process_iter", lambda fields: processes)
+    assert _mod._external_cte_pids({}) == (10,)
+
+
 def test_within_tolerance_passes_but_over_fails() -> None:
     budget = {"peak_gb": 3.0, "final_gb": 3.0}
     ok, _ = check_budget(3.0 * BUDGET_TOLERANCE - 0.01, 2.9, budget)

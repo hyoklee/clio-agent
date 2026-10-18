@@ -55,6 +55,7 @@ import sys
 import tempfile
 import threading
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -350,6 +351,23 @@ def _port_listener_pid(port: int) -> int | None:
     return None
 
 
+def _external_cte_pids(environ: Mapping[str, str]) -> tuple[int, ...]:
+    """Count the configured private daemon without charging unrelated CLIO apps."""
+    if configured_port := environ.get("CLIO_CORE_PORT"):
+        port = int(configured_port)
+        pid = _port_listener_pid(port)
+        if pid is None:
+            raise RuntimeError(f"Configured private CTE has no listener on port {port}")
+        if not psutil.Process(pid).name().lower().startswith("clio_run"):
+            raise RuntimeError(f"Configured private CTE port {port} belongs to another process")
+        return (pid,)
+    return tuple(
+        proc.pid
+        for proc in psutil.process_iter(["name"])
+        if str(proc.info.get("name") or "").lower().startswith("clio_run")
+    )
+
+
 @dataclass(frozen=True)
 class RunMeasurement:
     """One complete gate run: boot -> load -> settle -> teardown."""
@@ -556,11 +574,7 @@ def _run_once(args: argparse.Namespace) -> RunMeasurement | int:
 
     # A pre-existing clio-core daemon (connect-or-spawn) is OUTSIDE the server
     # tree — sample it explicitly or the substrate cost silently drops out.
-    external_cte = tuple(
-        proc.pid
-        for proc in psutil.process_iter(["name"])
-        if str(proc.info.get("name") or "").lower().startswith("clio_run")
-    )
+    external_cte = _external_cte_pids(env)
     if external_cte:
         print(f"note: pre-existing clio-core daemon(s) {external_cte} sampled as external")
 
