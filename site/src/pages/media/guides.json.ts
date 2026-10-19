@@ -9,7 +9,7 @@ const pages = import.meta.glob<string>("/src/content/docs/docs/**/*.mdx", {
   import: "default",
 });
 const images = import.meta.glob<ImageMetadata>(
-  "/src/assets/captures/*.{png,jpg,jpeg,webp}",
+  ["/src/assets/captures/*.{png,jpg,jpeg,webp}", "/src/assets/tutorials/**/*.{png,jpg,jpeg,webp}"],
   { eager: true, import: "default" },
 );
 
@@ -30,7 +30,8 @@ export const GET: APIRoute = async () => {
         media.push({ ...item, src: item.source, source: undefined });
         continue;
       }
-      const image = images[`/src/assets/captures/${item.source}`];
+      const asset = item.source.startsWith("tutorials/") ? item.source : `captures/${item.source}`;
+      const image = images[`/src/assets/${asset}`];
       if (!image)
         throw new Error(`Guide ${id} references missing image ${item.source}`);
       let capture = resolved.get(item.source);
@@ -55,7 +56,7 @@ export const GET: APIRoute = async () => {
             ?.trim()
             .replace(/^["']|["']$/g, "") || id,
         url: `/${id}/`,
-        availability: source.includes("<PreviewGuide")
+        availability: source.includes("<PreviewGuide") || source.includes('title="Development build"')
           ? "development"
           : undefined,
         media,
