@@ -12,9 +12,9 @@ export interface GuideMediaSource {
 export function guideMediaSources(source: string): GuideMediaSource[] {
   const imports = new Map<string, string>();
   for (const match of source.matchAll(
-    /import\s+(\w+)\s+from\s+['"][^'"]*\/assets\/captures\/([^'"]+)['"]/g,
+    /import\s+(\w+)\s+from\s+['"][^'"]*\/assets\/(captures|tutorials)\/([^'"]+)['"]/g,
   )) {
-    imports.set(match[1]!, match[2]!);
+    imports.set(match[1]!, match[2] === "captures" ? match[3]! : `tutorials/${match[3]}`);
   }
   const media: GuideMediaSource[] = [];
   for (const match of source.matchAll(
