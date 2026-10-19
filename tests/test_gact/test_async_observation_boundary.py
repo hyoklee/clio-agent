@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from clio_agent.gact import context, tool_observer
 from clio_agent.gact.agents.tool_instrumentation import (
+    _DECLARED_STRUCTURED_CONTENT,
     declare_structured_content,
     instrument_tools,
     native_tool,
@@ -207,21 +208,32 @@ def test_cancelled_async_observation_retires_its_core_worker_before_returning(
         ]
     )
 
-    async def exercise() -> None:
-        pending = asyncio.create_task(tool.acall())
+    async def invoke() -> None:
         try:
-            await _entered(entered)
-            assert pending.cancel()
-            for _ in range(10):
-                await asyncio.sleep(0)
-            assert not pending.done(), "A cancelled waiter concealed a live recording worker"
-            assert not retired.is_set()
+            await tool.acall()
         finally:
-            release.set()
-        with pytest.raises(asyncio.CancelledError):
-            await pending
-        assert retired.is_set()
-        assert pop_declared_structured_content() is None
+            assert pop_declared_structured_content() is None
+
+    async def exercise() -> None:
+        parent_content = {"parent_only": True}
+        parent_token = _DECLARED_STRUCTURED_CONTENT.set(parent_content)
+        try:
+            pending = asyncio.create_task(invoke())
+            try:
+                await _entered(entered)
+                assert pending.cancel()
+                for _ in range(10):
+                    await asyncio.sleep(0)
+                assert not pending.done(), "A cancelled waiter concealed a live recording worker"
+                assert not retired.is_set()
+            finally:
+                release.set()
+            with pytest.raises(asyncio.CancelledError):
+                await pending
+            assert retired.is_set()
+            assert pop_declared_structured_content() == parent_content
+        finally:
+            _DECLARED_STRUCTURED_CONTENT.reset(parent_token)
 
     with active_turn_fixture(app, sid):
         asyncio.run_coroutine_threadsafe(exercise(), app.state.mcp_app_loop).result(timeout=10)
@@ -232,6 +244,7 @@ def test_cancelled_async_observation_retires_its_core_worker_before_returning(
     assert len(starts) == len(ends) == 1
     assert starts[0].call_id == ends[0].call_id
     assert ends[0].is_error is (phase == "started")
+    assert ends[0].structured_content == ({"body_ran": True} if phase == "completed" else None)
 
 
 def test_interleaved_async_calls_keep_distinct_started_and_completed_identities(

@@ -62,6 +62,8 @@ from clio_agent.gact.semantic_events import (
 from clio_agent.gact.sessions import SessionStore
 from tests.test_gact.task_records import record_assignment_fixture
 
+pytestmark = pytest.mark.usefixtures("tool_declaration_scope")
+
 # --------------------------------------------------------------------------- #
 # Fakes (parity with the S1-S4 harness).
 # --------------------------------------------------------------------------- #

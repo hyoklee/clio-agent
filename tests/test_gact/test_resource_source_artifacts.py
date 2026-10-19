@@ -33,7 +33,7 @@ from clio_agent.gact.sessions import SessionStore
 from tests.test_gact.test_post_messages import FakeClioAgent
 from tests.test_gact.test_resources import _upload, _workspace
 
-pytestmark = pytest.mark.usefixtures("host_agent_executor")
+pytestmark = pytest.mark.usefixtures("host_agent_executor", "tool_declaration_scope")
 
 
 # --------------------------------------------------------------------------- #

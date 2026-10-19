@@ -23,6 +23,18 @@ from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_gact.spotter_records import watcher_world as watcher_world
 
 
+@pytest.fixture
+def tool_declaration_scope() -> Iterator[None]:
+    """Restore the caller context when testing declaration producers directly."""
+    from clio_agent.gact.agents.tool_instrumentation import _DECLARED_STRUCTURED_CONTENT
+
+    token = _DECLARED_STRUCTURED_CONTENT.set(None)
+    try:
+        yield
+    finally:
+        _DECLARED_STRUCTURED_CONTENT.reset(token)
+
+
 @pytest.fixture(name="world")
 def question_world(tmp_path: Path) -> Iterator[tuple[Any, TestClient, str]]:
     """Share the actual Question application fixture with its answer regressions."""

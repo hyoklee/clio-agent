@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import sys
+import threading
 import time
+import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -39,7 +42,7 @@ from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.turn import _start_background_user_turn
 from clio_agent.gact.types import Message, Part
 from tests.test_gact.task_records import hold_model_segment, record_assignment_fixture
-from tests.test_gact.test_post_messages import SlowClioAgent
+from tests.test_gact.test_post_messages import BlockingClioAgent, SlowClioAgent
 from tests.turn_signals import wait_for_terminal_status
 
 
@@ -1043,15 +1046,51 @@ def test_queue_context_refs_authorize_edit_reorder_and_retain_stale_promotion(
 
 
 def test_context_only_busy_steer_idle_redrive_preserves_parts_and_model_text(
-    tmp_path: Path, host_agent_executor: object
+    tmp_path: Path, host_agent_executor: object, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     del host_agent_executor
     target = tmp_path / "workspace" / "redrive.txt"
     target.parent.mkdir(parents=True)
     target.write_text("idle redrive context", encoding="utf-8")
-    agent = SlowClioAgent(delay_s=0.35)
+    agent = BlockingClioAgent()
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=agent)
     app.state.workspaces.update("ws_default", root_path=str(target.parent))
+    input_progress: list[tuple[str, str]] = []
+    real_record_input = app.state.task_history.record_input
+
+    def record_input(record: Any) -> Any:
+        input_progress.append((record.id, "entered"))
+        result = real_record_input(record)
+        input_progress.append((record.id, "confirmed"))
+        return result
+
+    monkeypatch.setattr(app.state.task_history, "record_input", record_input)
+
+    def diagnostic(session_id: str) -> str:
+        readiness = app.state.task_runtime_start
+        resources = app.state.turn_runner._turns.get(session_id)
+        pump = app.state.turn_runner._pumps.get(session_id)
+        phase = {
+            "native_readiness_done": readiness.done(),
+            "native_readiness_cancelled": readiness.cancelled(),
+            "native_readiness_error": (
+                repr(readiness.exception())
+                if readiness.done() and not readiness.cancelled()
+                else None
+            ),
+            "turn_handle": repr(resources.handle) if resources else None,
+            "turn_task": repr(resources.task) if resources else None,
+            "admission_pump": repr(pump),
+            "recipient_input": input_progress,
+            "model_calls": len(agent.calls),
+        }
+        frames = sys._current_frames()
+        stacks = "\n".join(
+            f"{thread.name}:\n{''.join(traceback.format_stack(frame))}"
+            for thread in threading.enumerate()
+            if (frame := frames.get(thread.ident or -1)) is not None
+        )
+        return f"{phase!r}\n{stacks}"
 
     with TestClient(app) as client:
         session_id = client.post("/v1/sessions", json={"title": "Idle redrive"}).json()["id"]
@@ -1061,30 +1100,31 @@ def test_context_only_busy_steer_idle_redrive_preserves_parts_and_model_text(
         )
         assert started.status_code == 202, started.text
         assert started.json()["task_handle"]
-        deadline = time.monotonic() + 3
-        while not agent.calls and time.monotonic() < deadline:
-            time.sleep(0.02)
-        assert len(agent.calls) == 1, "Steering must arrive after the first model input"
-        assert app.state.turn_runner.busy(session_id)
-        steer = client.post(
-            f"/v1/sessions/{session_id}/messages",
-            json={
-                "delivery": "steer",
-                "parts": [
-                    {
-                        "type": "context_ref",
-                        "ref_kind": "workspace_file",
-                        "ref_id": "redrive.txt",
-                    }
-                ],
-            },
-        )
-        assert steer.status_code == 202, steer.text
+        try:
+            assert agent.entered.wait(timeout=3), diagnostic(session_id)
+            assert len(agent.calls) == 1, "Steering must arrive after the first model input"
+            assert app.state.turn_runner.busy(session_id)
+            steer = client.post(
+                f"/v1/sessions/{session_id}/messages",
+                json={
+                    "delivery": "steer",
+                    "parts": [
+                        {
+                            "type": "context_ref",
+                            "ref_kind": "workspace_file",
+                            "ref_id": "redrive.txt",
+                        }
+                    ],
+                },
+            )
+            assert steer.status_code == 202, steer.text
+        finally:
+            agent.release.set()
 
         deadline = time.monotonic() + 5
         while len(agent.calls) < 2 and time.monotonic() < deadline:
             time.sleep(0.02)
-        assert len(agent.calls) >= 2
+        assert len(agent.calls) >= 2, diagnostic(session_id)
         assert "idle redrive context" in agent.calls[1][0]
         messages = client.get(f"/v1/sessions/{session_id}/messages").json()["messages"]
         redriven = next(row for row in messages if row["id"] == steer.json()["message_id"])
