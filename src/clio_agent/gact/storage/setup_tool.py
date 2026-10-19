@@ -163,11 +163,10 @@ def session_data_status(app: Any, sid: str) -> dict[str, Any]:
 def setup_presentation(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
     """Distinguish an accepted connection task from the source/account inventory."""
     row = structured if isinstance(structured, Mapping) else result
-    if isinstance(row, Mapping):
-        from clio_agent.gact.agents.native_presenters_tasks import task_submission_presentation
+    if isinstance(row, Mapping) and row.get("accepted") is True:
+        from clio_agent.gact.agents.native_presenters import native_presentation
 
-        if (submission := task_submission_presentation(row)) is not None:
-            return submission
+        return native_presentation("tasks", args, result, structured)
     if not isinstance(row, Mapping) or row.get("status") != "available":
         return {"summary": "Connected data is unavailable", "blocks": []}
     lines = ["### Workspace folders"]

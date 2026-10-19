@@ -16,7 +16,9 @@ def task_submission_presentation(result: Mapping[str, Any]) -> dict[str, Any] | 
     if result.get("accepted") is not True or not isinstance(handle, str) or not handle.strip():
         return None
     kind = result.get("kind")
-    label = kind if isinstance(kind, str) and kind in {"Indexing", "Download"} else "Task"
+    if kind not in ("Indexing", "Download") or result.get("acceptance") or result.get("error"):
+        return None
+    label = kind
     status = result.get("status")
     completed = status == "completed"
     failed = isinstance(status, str) and status in {
