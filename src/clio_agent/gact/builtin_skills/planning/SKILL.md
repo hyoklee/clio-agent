@@ -7,14 +7,19 @@ effect: {kind: "enter_mode", mode: "plan"}
 # Planning
 
 Invoking this skill puts the session in **Plan Mode**: every write, edit, and
-file-mutating tool is blocked (reads and read-only shell stay open), and the ONLY
+file-mutating tool is blocked (declared read-only tools stay open), and the ONLY
 writable path is your plan file. You are here to produce a plan the user approves —
 not to execute it. Work the four phases below in order, then end your turn.
+Shell tools are blocked even for inspection commands. Use the session's declared
+file-reading and inspection tools. If those cannot inspect a needed part of the
+repository, state that specific capability gap; do not treat it as a missing
+repository or claim that uninspected code has been verified.
 
 ## Phase 1 — Ground (explore before you ask)
 Do not ask the user what the repository can answer. Investigate first: read the
-relevant files, run read-only commands, and — for anything non-trivial — launch
-read-only explore subagents in parallel to map the code, tests, and data paths.
+relevant files and use the available read-only inspection tools. For independent
+investigations, read-only explore subagents can help when this agent has a
+delegation capability; a small task does not need them.
 Turn unknowns into evidence before you propose anything. "Do not ask what the repo
 can answer" is the rule; a question to the user is for genuine intent/tradeoff
 decisions, not for facts you can look up.
