@@ -37,13 +37,21 @@ for (const theme of ['light', 'dark']) {
       const ndp = media.guides.find((guide: { id: string }) => guide.id === 'docs/files/ndp');
       expect(ndp.availability).toBe('development');
       expect(ndp.media).toEqual([
+        expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Actual NDP catalog/) }),
+        expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Actual Alta-Collins search/) }),
         expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^NDP dataset search/) }),
+        expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Actual Endpoint setup/) }),
+      ]);
+      const streams = media.guides.find((guide: { id: string }) => guide.id === 'docs/files/ndp-streams');
+      expect(streams.media).toEqual([
+        expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Actual historical replay form/) }),
+        expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Actual completed stream sample/) }),
       ]);
       const example = media.guides.find((guide: { id: string }) => guide.id === 'docs/examples/ndp-earthscope');
       expect(example.media).toEqual([
         expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Three panels charting/) }),
       ]);
-      for (const item of [...ndp.media, ...example.media]) {
+      for (const item of [...ndp.media, ...streams.media, ...example.media]) {
         expect((await page.request.get(item.src)).ok()).toBe(true);
       }
     });
