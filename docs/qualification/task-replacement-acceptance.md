@@ -1,55 +1,57 @@
 # Tasks replacement acceptance ledger
 
-## Active live execution — 2026-10-19 19:43 UTC
+## Active live execution — 2026-10-19 20:15 UTC
 
-Initial implementation and test construction are complete. Current work is live
-qualification and bug repair. No local pytest or Vitest suite ran in this period.
+Initial implementation and initial test construction are complete. Current work is
+live qualification and bug repair. No local pytest or Vitest suite ran in this period.
 
-- Production is frozen at agent `45f4c7a7533988add7c943546e412f8610338b59`
-  and GACT `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb`. Runtime: Python 3.14.6,
-  Core 2.3.2, FastMCP/tasks 4.1.0, MCP 2.0.0 and Docket 0.26.2. Astra and actual
-  Claude Code/Fable independently cleared the storage-finalization correction.
-- CI `39309828551` has a complete twelve-report inventory: each of Python 3.12,
-  3.13 and 3.14 executed 13,088 passing cases, one failed case and 50 exclusions.
-  All three failures are the same new test request missing its required source
-  label; this revision supplies that label. No production or assertion change is
-  required. The five new cleanup cases reached CI; four passed per interpreter.
-- All 30 fresh R1–R6 repetitions passed on predecessor `24902aef77e26aeee99078c7bd8463f5be71db04`:
-  R1/R376, R2+R4/R373, R3/R369, R5/R370 and R6/R365. All six disposable families
-  are physically retired. The production change since then is limited to storage
-  finalization/indexing-worker error handling; affected storage races remain required.
-- R363's independently reviewed scope proves original child/root yield and wake,
-  one Download invocation and exact hashes for 8,001 files / 34,868,063 bytes. Its
-  raw driver remains failed on an additional checker expectation. R374 independently
-  proves retained-context restart without operation replay, pause/resume, queued
-  steering, inherited process cancellation and attributed parent notices.
-- R378 passed the complete 1,005-message retention and restart family under its
-  unchanged 900-second budget: normal completion at 837.8 seconds, restart verified
-  at 880.3 seconds, physical cleanup finished by 885.0 seconds. All 1,005 inputs
-  committed once, pending mail stayed empty after restart, and ten hot reads made
-  zero Core storage calls. R364's earlier 912.5-second restart is still a timed failure.
-- R380's actual Claude/Haiku model posted a Question but did not spawn the requested
-  child. It expired without that proof; authentication worked. R382 failed a harness
-  source-registration ordering guard before model work. Both services exited zero,
-  tasks/processes/ports settled, and both disposable roots were removed. R386 fixes
-  source setup before session activation and is running against frozen production.
-- R387 preserved the original Claude CLI response: three separate complete tool-call
-  blocks (spawn/read/ask), SHA256 `862590065086343e0c0570d1fe3e2738a5e2da1477738bf437f1ea8d2245d510`.
-  The textual bridge selected only the last block, silently dropping spawn/read.
-  This revision rejects multiple blocks before any execution and returns one bounded
-  protocol-error observation; valid parallel calls in one block remain supported.
-  Three regression cases are constructed. Scoped Ruff/format/Mypy pass; replacement
-  CI, independent delta review and affected Claude model repeats are still required.
-- Ares allocation 24927 is retired. Allocation 24932 reuses the same sole owned
-  environment and node-local worktree on ares-comp-07. Ownership receipts identify
-  every family process, port and path; final environment/worktree retirement remains.
-- Outstanding: affected storage live gates, Claude control paths, positive peer
-  backpressure, remaining provider/recovery combinations, an approved surviving
-  provider job, final UI/source-impact adjudication and replacement CI. R362's
-  isolated five-second status-read expiry remains unresolved; later passes do not
-  establish its cause. Candidate qualification and release GO remain incomplete.
-- Installed Desktop, authentication, defaults, released pins and unrelated work are
-  preserved. All existing rejected-cleanup/manual-only boundaries remain in force.
+- Agent `ee87a1adc9d97e83e2cbfa259ff639cdf4efdb60` / GACT
+  `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb` passed all 24 CI jobs in
+  [39314058198](https://github.com/iowarp/clio-agent/actions/runs/39314058198).
+  All twelve reports are retained: Python 3.12, 3.13 and 3.14 each ran 13,092
+  passing cases, zero failures and 50 exclusions. Exclusions are not passes.
+- Runtime remains Python 3.14.6, Core 2.3.2, FastMCP/tasks 4.1.0, MCP 2.0.0 and
+  Docket 0.26.2. Astra and actual Claude Code/Fable cleared both the storage and
+  multiple-tool-block corrections. R392B demonstrates actual Claude error feedback
+  and corrected calls; its later lifecycle assertion failed and remains failed.
+- All 30 fresh R1–R6 repetitions passed on predecessor `24902aef77e26aeee99078c7bd8463f5be71db04`.
+  Storage-only changes were additionally exercised by R388: actual Luna Indexing
+  (48,098 entries), Download (8,001 files / 34,868,063 bytes, all hashes), five mixed
+  finalization/cancellation pairs, and a real publication-boundary exception after
+  enumeration, queued once as failed/confirmed while retaining the previous manifest.
+  Its raw driver remains failed on a missing REST-projection field; separate read-only
+  SQLite validation and independent Astra review support the narrower outcomes.
+- R393 passed actual-model positive peer capacity of one: first accepted, second
+  refused with retryable backpressure, human feedback/Question answer/native result
+  exempt, paused inputs delivered once after resume, and later peer mail admitted
+  despite retained history. R378 separately passed all 1,005-message and restart
+  assertions under 900 seconds (restart at 880.3 seconds). R374 proves restart
+  without replay and inherited physical cancellation; R363 has independently
+  adjudicated child Download/yield/wake and bytes/hash evidence. Raw failures stay failed.
+- R398 proves fast trusted controls during a real Core pause and physical process
+  retirement before recovery. Its message-rejection expectation lacked the detected-
+  outage prerequisite: an in-flight request was uncertain and committed only after
+  Core resumed. That is not an undurable acceptance claim. A fresh known-outage and
+  idle-recovery gate remains required. This revision corrects the independently found
+  HTTP classification of the existing RecordingUnconfirmed hold from generic500 to
+  recoverable503, with two constructed public-boundary/CORS regressions. It adds no
+  health mechanism, deadline, state owner or new admission policy.
+- Claude lifecycle repeats continue on frozen ee87. R392A/C setup assumptions about
+  host PID namespaces, relative command spelling and unrelated inline Shell probes
+  were corrected together in the unlaunched harness; original failures are retained.
+  R392B's fresh-result-read assertion was not satisfied and is not accepted as a
+  complete lifecycle pass. The original Shell was not replayed in that run.
+- Q1/Q2/Q5/Q8 scopes and unchanged GACT desktop/phone evidence remain applicable
+  through explicit source impact. Outstanding: remaining Claude combinations and
+  repeats, detected Core-outage/idle recovery, approved surviving-provider work and
+  provider-continuation finalization, applicable legacy/effect-loss mapping, final
+  candidate CI/review, and final resource retirement. No candidate qualification or
+  release GO is declared.
+- Ares allocation 24932 reuses one environment; every family registers processes,
+  ports and paths. R380/382/386/387/388/390/392A–C/393 and the stopped redundant R397
+  are physically retired with cleanup receipts. Remaining live/runtime ownership is
+  recorded in current-ares-execution.json. Installed Desktop/auth/defaults/released
+  pins and all prohibited/manual-only boundaries remain preserved.
 
 ## Current execution — 2026-10-19 17:18 UTC
 

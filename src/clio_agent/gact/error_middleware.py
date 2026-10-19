@@ -191,6 +191,21 @@ def install_error_envelope(app: FastAPI) -> None:
 def install_typed_error_handlers(app: FastAPI) -> None:
     """Register HTTP, request-validation, and skill errors in the GACT envelope."""
     from clio_agent.gact.skills import SkillNotDelegatableError
+    from clio_agent.gact.task_history import RecordingUnconfirmed
+
+    @app.exception_handler(RecordingUnconfirmed)
+    async def _recording_unconfirmed(_request: object, exc: RecordingUnconfirmed) -> JSONResponse:
+        """Classify the existing durable-admission hold as a retryable service refusal."""
+        return JSONResponse(
+            status_code=503,
+            content=ErrorEnvelope(
+                error=ErrorInfo(
+                    error="core_recording_unconfirmed",
+                    message="Conversation history is recovering. Try again when the service is ready.",
+                    recoverable=True,
+                )
+            ).model_dump(exclude_none=True),
+        )
 
     @app.exception_handler(HTTPException)
     @app.exception_handler(StarletteHTTPException)
