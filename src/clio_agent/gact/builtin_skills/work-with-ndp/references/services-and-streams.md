@@ -13,13 +13,28 @@ excluded; don't recreate them to bypass that choice. For a user-selected service
 its route through the normal approval boundary.
 
 - A direct URL is the service API base, without `/docs`.
+- If the user supplies an SSH host but no API URL, omit `url` when connecting.
+  The connector inspects existing loopback listeners through the shared SSH
+  route and validates public NDP OpenAPI contracts. It does not use shell SSH,
+  start containers or send NDP tokens while discovering. Multiple matches are
+  returned for selection. An explicit URL is needed for reverse-proxy subpaths
+  or a host that does not support listener inspection.
 - An SSH connection uses a saved profile and the service address as seen from that
   host, for example `url="http://127.0.0.1:8002", ssh_profile="ares"`. CLIO opens
   its verified SSH channel; no manual tunnel or local listener is needed.
+- A custom destination or hop chain uses the shared `ssh_route` instead of
+  `ssh_profile`: for example `ssh_route={"host":"compute.example.edu",
+  "jump_hosts":["login"],"user":"scientist"}`. Its `port` and `identity_file`
+  refer to the destination and a key path on the connected CLIO. The API's
+  loopback URL is evaluated on the final destination, not the login host.
+  Reuse the exact saved route from connection status; don't invent an allocated
+  compute node or assume that an SSH connection proves an API is running there.
 - `authentication="none"` supports public services. `authentication="ndp"` binds
   the private saved account to the approved destination. A catalog URL is a lead,
   not authorization to send it a token. Direct authenticated routes require HTTPS;
   SSH can protect remote loopback HTTP.
+  SSH login is separate from API sign-in: `authentication="none"` still uses
+  the authenticated SSH route, but sends no NDP account token to the API.
 
 Discover operations with `connected_data_ndp_endpoint_operations(endpoint_id,
 query=...)`. Inspect the **returned** IDs, parameter locations, required fields and
@@ -27,6 +42,9 @@ JSON/multipart schemas. Name search finds operations, not stations, files or dat
 Choose a real data operation and supply its filters; don't present the operation
 list as if it were search results. Missing capabilities are meaningful: an Endpoint
 may provide queries without storage, or a local catalog without a live bridge.
+Operation search ranks matches to query words across IDs, summaries and descriptions.
+`operation_count` is the full inventory; `matched_count` describes this search only.
+An empty match list alone does not establish that a service or capability is absent.
 
 Use `connected_data_ndp_endpoint_request(endpoint_id, operation_id, parameters,
 body, max_seconds, max_events)` with observed IDs. It validates inputs, requests
@@ -72,6 +90,15 @@ separately through approval. Do not work around a denied role with shell HTTP.
 
 ## Archived-file sampling and finite replay
 
+In the user interface, saved services are under Attach → NDP → Endpoints & streams.
+An advertised URL replay offers Files → Sample CSV from URL independently of the
+file listing. Save sample captures a finite segment; Options → Resume cursor
+continues from the service's exact completion cursor using the same CSV URL.
+There is no persistent subscription to pause between finite requests. Do not
+describe this as pausing a separate producer, or imply an offline HTML can acquire
+new remote samples. The stream-event limit includes control messages; leave room
+for a completion event and cursor beyond the requested measurement count.
+
 Some services advertise `/data/csv-files` and `/stream/segment/url`; others do not.
 List/select actual files or use a user-supplied approved CSV URL. The segment route
 may accept `url`, `max_msgs`, `max_seconds`, `interval` and a prior `cursor`.
@@ -114,6 +141,21 @@ a production bridge. Do not claim a remote producer was started or stopped based
 on local connection success.
 
 ## Capture limits and evidence
+
+Treat each layer independently. A failed file listing does not establish that an
+advertised URL-based replay operation is broken. Find a real CSV resource through
+the catalog, then request a finite segment from that observed URL. Do not invent
+filenames or substitute an unrelated example. Inspect the completion payload:
+some services return `resume` in the SSE `done` event but accept it as `cursor`
+on the next request. Preserve the exact value and verify adjacent measurement
+identities and timestamps.
+
+A bridge can accept the user's token while a downstream catalog rejects creation
+of its backing dataset. Preserve the actual nested error, accepted issuer and
+operation stage. Repeated station changes, login or POST retries will not repair
+a downstream identity-service failure. Check existing sessions after uncertain
+starts, and do not bypass roles or use a server's development token. Missing
+organization/write grants and disabled storage remain distinct prerequisites.
 
 Defaults are 10 seconds / 100 SSE events; maxima are 30 seconds / 1,000 events /
 2 MiB. Use a bounded query or segment, not repeated polling to simulate an

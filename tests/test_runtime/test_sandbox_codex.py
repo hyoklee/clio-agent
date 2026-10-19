@@ -88,7 +88,7 @@ def test_detect_codex_absent_is_typed_not_installed() -> None:
 
 
 def test_detect_codex_win32_prefers_codex_cmd() -> None:
-    """win32 resolution order prefers the launchable codex.cmd over codex.exe/codex (#1025)."""
+    """Without a bundled runtime, PATH prefers launchable codex.cmd (#1025)."""
     which = _fake_which(
         {
             "codex.cmd": "C:\\tools\\codex.cmd",
@@ -96,7 +96,13 @@ def test_detect_codex_win32_prefers_codex_cmd() -> None:
             "codex": "C:\\tools\\codex",
         }
     )
-    det = sc.detect_codex(which=which, version_reader=lambda _b: "0.145.0", platform="win32")
+    det = sc.detect_codex(
+        which=which,
+        version_reader=lambda _b: "0.145.0",
+        platform="win32",
+        bundled_root=lambda: None,
+        wheel_binary=lambda: None,
+    )
     assert det.installed is True
     assert det.binary_path == "C:\\tools\\codex.cmd"  # .cmd wins the order
     assert det.version == "0.145.0"
@@ -109,12 +115,16 @@ def test_detect_codex_win32_falls_to_exe_then_plain() -> None:
         which=_fake_which({"codex.exe": "C:\\t\\codex.exe", "codex": "C:\\t\\codex"}),
         version_reader=lambda _b: "0.145.0",
         platform="win32",
+        bundled_root=lambda: None,
+        wheel_binary=lambda: None,
     )
     assert det_exe.binary_path == "C:\\t\\codex.exe"
     det_plain = sc.detect_codex(
         which=_fake_which({"codex": "C:\\t\\codex"}),
         version_reader=lambda _b: "0.145.0",
         platform="win32",
+        bundled_root=lambda: None,
+        wheel_binary=lambda: None,
     )
     assert det_plain.binary_path == "C:\\t\\codex"
 

@@ -816,6 +816,57 @@ def test_create_a2ui_surface_mints_a_definition_artifact(tmp_path: Path, monkeyp
     ]
 
 
+def test_definition_uses_its_managed_state_boundary_not_source_grants(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Saving harness-owned UI state must not consult unrelated source grants."""
+    from clio_agent import paths
+    from clio_agent.runtime import sandbox_roots, storage_access
+
+    app, sid = _session(tmp_path, monkeypatch)
+    _advertise_workspace_catalog(app, sid)
+    state_root = paths.workspace_state_dir(tmp_path)
+    sandbox_roots.register_write_root_grant(str(state_root), str(state_root))
+
+    def unavailable_source_ledger(path: Path, *, write: bool = False) -> None:
+        raise PermissionError("Connected-source access decisions could not be read")
+
+    monkeypatch.setattr(storage_access, "check_storage_access", unavailable_source_ledger)
+    try:
+        result = build_create_a2ui_surface_tool()(
+            surface_id="managed-state",
+            components=[{"id": "root", "component": "Text", "text": "ok"}],
+        )
+    finally:
+        sandbox_roots.revoke_write_root_grant(str(state_root), str(state_root))
+    assert result.get("ok") is not False, result
+    _, version = app.state.artifact_registry.get_by_artifact_id(result["definition_artifact_id"])
+    assert Path(version.path).parent == state_root / "a2ui"
+
+
+def test_definition_resolved_path_cannot_escape_managed_state(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A resolved directory/file redirection still refuses the harness write."""
+    app, sid = _session(tmp_path, monkeypatch)
+    _advertise_workspace_catalog(app, sid)
+    outside = tmp_path.parent / "outside-definition.json"
+    original_resolve = Path.resolve
+
+    def redirected_resolve(self: Path, strict: bool = False) -> Path:
+        if self.name == "redirected.json" and self.parent.name == "a2ui":
+            return outside
+        return original_resolve(self, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", redirected_resolve)
+    result = build_create_a2ui_surface_tool()(
+        surface_id="redirected", components=[{"id": "root", "component": "Text", "text": "x"}]
+    )
+    assert result.get("ok") is False
+    assert result["reason"] == "a2ui_definition_artifact_failed"
+    assert not outside.exists()
+
+
 @pytest.mark.parametrize(
     "malicious_surface_id",
     [

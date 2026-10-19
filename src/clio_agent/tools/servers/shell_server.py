@@ -222,7 +222,21 @@ def _resolve_cwd(cwd: str | None) -> Path:
     # (:func:`clio_agent.runtime.sandbox.wrap_confined`, #976): on a fenced platform an
     # out-of-root write is DENIED (EROFS/EACCES) and minted as a ``policy_violation``; on the
     # floor it succeeds and is recorded as a ``gap``. This check remains the advisory twin.
-    FileAccessPolicy.from_env()._ensure_allowed(resolved, field="cwd")
+    policy = FileAccessPolicy.from_env()
+    policy._check_connected_storage(resolved, field="cwd")
+    if not policy.allow_symlinks:
+        from clio_agent.tools.file_policy import _has_symlink
+
+        if _has_symlink(raw):
+            raise FilePolicyError(
+                code="symlink_denied",
+                message=f"Symlinks are not allowed by file policy: {raw}",
+                field="cwd",
+                path=str(raw),
+                next_action="Use a real directory path.",
+            )
+    if not policy.allows_source_read(resolved):
+        policy._ensure_allowed(resolved, field="cwd")
     return resolved
 
 
@@ -370,8 +384,13 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
     """
     limits_text = _limits_text(limits or _SHELL_LIMITS)
     task_text = (
+        "For remote commands, use ssh_execute when available with the shared SSH profile "
+        "or jump route. Direct ssh in this local shell may be blocked by its network fence; "
+        "approval/bypass does not disable that fence. "
         "For files outside permitted folders, declare access_paths and access_reason so CLIO "
         "asks the user before execution. Include source and destination for moves. "
+        "Already approved downloaded source inputs can be read at their returned paths "
+        "without access_paths. Those paths stay read-only; save derivatives in the workspace. "
         "By default background=false waits for command completion. Set background=true to "
         "return a durable Shell task handle as soon as the command starts, before completion. "
         "Continue independent work; use query_tasks, observe_tasks, wait_tasks, get_task_result "
@@ -408,7 +427,8 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
             "backend is active. For tabular, "
             "CSV, or columnar work (column selection, filtering, joins) use the pandas "
             "MCP tool when available instead of shell text pipelines — it is portable and "
-            "spawns no VM. The working directory must be inside CLIO_ALLOWED_ROOTS. "
+            "spawns no VM. The working directory must be inside CLIO_ALLOWED_ROOTS "
+            "or an approved downloaded source directory. "
             "A command can retrieve public HTTPS data when network policy permits; "
             "inspect its returned status and output before concluding access failed. "
             f"{task_text}{limits_text}"
@@ -420,7 +440,7 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
         "Paths use POSIX conventions (forward slashes). For large tabular, CSV, or "
         "columnar work (column selection, filtering, joins) prefer the pandas MCP tool "
         "when available over ad-hoc text pipelines. The working directory must be inside "
-        "CLIO_ALLOWED_ROOTS. "
+        "CLIO_ALLOWED_ROOTS or an approved downloaded source directory. "
         "A command can retrieve public HTTPS data when network policy permits; "
         "inspect its returned status and output before concluding access failed. "
         f"{task_text}{limits_text}"
@@ -482,7 +502,7 @@ async def bash(
     access_paths: Annotated[
         list[str] | None,
         Field(
-            description="Files or folders outside the workspace needed by this command. CLIO asks the user for folder access before running. Include both source and destination for a move."
+            description="Files or folders needing additional permission. Already approved downloaded source paths do not need this for reads and remain read-only. CLIO asks for folder access before running. Include both source and destination for a move."
         ),
     ] = None,
     access_reason: Annotated[
@@ -495,7 +515,8 @@ async def bash(
     the effective limits (:data:`_SHELL_TOOL_DESCRIPTION`, #898/#1487); this
     docstring is the developer reference. The command runs until it exits unless
     ``timeout_s`` is positive (or an operator ceiling applies) and the working
-    directory must be inside ``CLIO_ALLOWED_ROOTS``. Output that does not fit the
+    directory must be inside ``CLIO_ALLOWED_ROOTS`` or an approved source copy.
+    Output that does not fit the
     result budget is spilled in full under Agent-managed ``tool-output/`` state and excerpted
     (:mod:`clio_agent.tools.servers.shell_output`). Foreground turn cancellation
     kills its process tree. Accepted background tasks require explicit cancellation.

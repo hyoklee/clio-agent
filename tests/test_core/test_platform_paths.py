@@ -9,11 +9,35 @@ only the activation is platform-gated.
 from __future__ import annotations
 
 import sys
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 
 from clio_agent import platform_paths
+
+
+@pytest.mark.parametrize(
+    "candidate,root,expected",
+    [
+        (r"\\?\D:\work\result.csv", r"D:\work", True),
+        (r"D:\work\result.csv", r"\\?\D:\work", True),
+        (r"\\?\d:\WORK\result.csv", r"D:\work", True),
+        (r"\\?\UNC\server\share\work\result.csv", r"\\server\share\work", True),
+        (r"\\server\share\work\result.csv", r"\\?\UNC\server\share\work", True),
+        (r"\\?\D:\outside\result.csv", r"D:\work", False),
+        (r"\\?\E:\work\result.csv", r"D:\work", False),
+        (r"\\?\UNC\server\other\work\result.csv", r"\\server\share\work", False),
+        (r"\\?\GLOBALROOT\Device\work\result.csv", r"D:\work", False),
+        (r"\\.\D:\work\result.csv", r"D:\work", False),
+    ],
+)
+def test_resolved_windows_path_aliases_preserve_containment(
+    candidate: str, root: str, expected: bool
+) -> None:
+    """Namespace aliases compare equally; other volumes, shares and devices do not."""
+    assert (
+        platform_paths.path_is_within(PureWindowsPath(candidate), PureWindowsPath(root)) is expected
+    )
 
 
 def test_win_extended_path_is_a_no_op_off_win32(monkeypatch: pytest.MonkeyPatch) -> None:

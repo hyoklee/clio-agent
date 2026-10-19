@@ -150,10 +150,21 @@ def _sync_storage(app: Any, key: TaskKey) -> bool:
             "entries_done": operation.entries_done,
         },
     }
+    linked = operation.kind == "indexing"
+    # Never present a previous retained snapshot as the result of a failed job.
+    # Older jobs without their own manifest can still be inspected via status.
+    manifest_id = operation.manifest_id
     result = {
         "operation": wire,
         "source": source.source.model_dump(mode="json"),
-        "manifest_id": operation.manifest_id or source.linked_manifest_id or source.manifest_id,
+        "manifest_id": manifest_id,
+        "open_reference": {
+            "source_id": source.source.id,
+            "revision": manifest_id,
+            "linked": linked,
+        }
+        if manifest_id and operation.state == "completed"
+        else None,
     }
     updated = replace(
         row,

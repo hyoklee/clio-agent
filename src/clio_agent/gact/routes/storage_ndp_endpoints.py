@@ -48,9 +48,10 @@ def register_ndp_endpoint_routes(app: FastAPI, service: StorageService, run: Act
         def change() -> dict[str, Any]:
             record = owner.get(wid, identifier)
             destination_changed = any(
-                value is not None and value != getattr(record, name)
-                for name, value in body.model_dump().items()
-                if name in {"url", "ssh_profile", "authentication"}
+                getattr(body, name) != getattr(record, name)
+                for name in body.model_fields_set
+                & {"url", "ssh_profile", "ssh_route", "authentication"}
+                if getattr(body, name) is not None or name == "ssh_route"
             )
             authentication = body.authentication or record.authentication
             token = account_token() if destination_changed and authentication == "ndp" else None

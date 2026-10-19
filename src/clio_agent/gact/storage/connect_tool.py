@@ -35,7 +35,9 @@ def connected_data_connect(
     A GitHub URL or a request to inspect, clone or work on a repository does not
     request source attachment: use gh through the normal shell for that work.
 
-    For NDP, first discover with connected_data_search_ndp. Set root to the
+    NDP tools require an active NDP source in this workspace; if absent, use
+    Attach > NDP to select a dataset or connect an Endpoint, then continue on
+    the next turn. When enabled, discover with connected_data_search_ndp. Set root to the
     returned dataset id, mode=read_only, and configuration to
     {"endpoint_id": its endpoint_id, "resource_ids": [selected resource ids]}.
     Only those server-observed resources are connected. Public HTTP resources
@@ -118,7 +120,12 @@ def _ndp_connection(
         "endpoint": dataset.endpoint.name,
         "resources": [item.name for item in dataset.resources],
     }
-    if _invoke_permission_gate(gate, "connected_data_connect", args, {"kind": "native"}) != "allow":
+    if (
+        _invoke_permission_gate(
+            gate, "connected_data_connect", args, {"kind": "native", "summary": f"Connect {label}"}
+        )
+        != "allow"
+    ):
         raise PermissionError("Source connection was not approved")
     return select_source(service, workspace_id, dataset, workspace_root)
 
@@ -164,7 +171,12 @@ def _ordinary_connection(
         )
         args = body.model_dump(mode="json")
         if (
-            _invoke_permission_gate(gate, "connected_data_connect", args, {"kind": "native"})
+            _invoke_permission_gate(
+                gate,
+                "connected_data_connect",
+                args,
+                {"kind": "native", "summary": f"Connect {label}"},
+            )
             != "allow"
         ):
             raise PermissionError("Source connection was not approved")

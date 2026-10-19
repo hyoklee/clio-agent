@@ -112,6 +112,57 @@ def _export_data_uri(app: Any, sid: str, root: Path, name: str, content: str) ->
     return str(exported["uri"])
 
 
+def test_descriptive_table_name_preserves_csv_query_export_and_media_type(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """A human title must not turn registered CSV bytes into an unsupported file."""
+    import csv
+    import io
+
+    from clio_agent.gact.artifacts.proposals import Proposal, promote_proposal
+    from clio_agent.gact.artifacts.wire import mime_for
+
+    app, sid, root = _producer_session(tmp_path, monkeypatch)
+    source = root / "observations.csv"
+    source.write_text(CSV_ROWS, encoding="utf-8")
+    outcome = promote_proposal(
+        app,
+        sid,
+        Proposal(name="Scientific observations", path=str(source), kind="dataset"),
+        workspace_id=app.state.sessions.get(sid).workspace_id,
+    )
+    assert outcome.accepted and outcome.version is not None
+    assert mime_for(outcome.version, "Scientific observations") == "text/csv"
+    artifact_id = outcome.version.artifact_id
+    result = _create(
+        [
+            {
+                "id": "root",
+                "component": "clio.chart.v1",
+                "dataUri": f"artifact://{artifact_id}",
+                "preset": "scatter",
+                "xField": "time",
+                "yField": "lat",
+                "entityField": "entity",
+            }
+        ]
+    )
+    assert result.get("ok") is not False, result
+    client = TestClient(app)
+    query = client.post(
+        f"/v1/artifacts/{artifact_id}/table-query", json={"columns": ["time", "lat"]}
+    )
+    assert query.status_code == 200, query.text
+    assert query.json()["columns"]["time"] == [0, 1]
+    exported = client.post(
+        f"/v1/artifacts/{artifact_id}/table-export", json={"format": "csv", "scope": "full"}
+    )
+    assert exported.status_code == 200, exported.text
+    rows = list(csv.DictReader(io.StringIO(exported.text)))
+    assert [row["label"] for row in rows] == ["Site A", "Site B"]
+    assert [int(row["time"]) for row in rows] == [0, 1]
+
+
 # --------------------------------------------------------------------------- #
 # dataUri must resolve to a REGISTERED, readable artifact
 # --------------------------------------------------------------------------- #

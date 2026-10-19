@@ -27,6 +27,26 @@ class NDPConnectionSelection(StorageModel):
     resource_ids: list[str] = Field(min_length=1, max_length=1000)
 
 
+def selection_summary(service: StorageService, record: SourceRecord) -> dict[str, object] | None:
+    """Describe the approved subset without revealing resource URLs or credentials."""
+    if record.source.provider != "ndp" or not record.configuration.ndp_selection_id:
+        return None
+    try:
+        selection = service.store.get(
+            "ndp-selection", record.configuration.ndp_selection_id, NDPSelection
+        )
+    except KeyError:
+        return None
+    return {
+        "dataset_id": selection.dataset.id,
+        "catalog_id": selection.dataset.endpoint.id,
+        "resources": [
+            {"id": item.id, "name": item.name, "path": item.path, "format": item.format}
+            for item in selection.dataset.resources
+        ],
+    }
+
+
 def existing_selection(
     service: StorageService, workspace_id: str, dataset: NDPDataset
 ) -> SourceRecord | None:
@@ -35,6 +55,7 @@ def existing_selection(
         if (
             record.connected
             and record.source.provider == "ndp"
+            and record.configuration.ndp_selection_id
             and record.principal == service.principal
             and record.source.owner.clio_id == service.store.clio_id
         ):

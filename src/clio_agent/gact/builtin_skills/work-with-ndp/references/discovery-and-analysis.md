@@ -6,7 +6,8 @@ Start from the user's research question: phenomenon/variable, place or station,
 time interval, resolution and desired output. Use known references and infer what
 the context establishes; ask only for ambiguity that changes the selection.
 
-1. Inspect `connected_data_status` for already approved sources and saved Endpoints.
+1. Inspect `connected_data_status` for approved resource selections and
+   `open_references`, catalogs in `ndp_catalogs`, and services in `ndp_endpoints`.
 2. Resolve a requested publisher with
    `connected_data_ndp_organizations(query="earthscope")`. Use its returned `id`
    and `endpoint_id`, not a guessed organization slug.
@@ -35,6 +36,12 @@ download a whole collection just to populate choices.
 
 Use actual returned IDs:
 
+A source contains exactly its selected resources, not every resource in the
+dataset. If another measurement or README is needed, connect that returned
+resource set and use the new connection's source ID. An existing source for the
+same dataset may contain a different selection; a missing selected path is not
+an upstream availability failure.
+
 ```text
 connected_data_connect(
   provider="ndp", root=DATASET_ID, label=DATASET_TITLE, mode="read_only",
@@ -55,8 +62,12 @@ approved relative paths (200 per page). Retain attachment `revision`, `linked` a
 `folder` when supplied; pass them back on listing/reads so a changed selection
 cannot silently substitute a different revision.
 
-Open the selected path with `connected_data_open(source_id=SOURCE_ID,
-path=RELATIVE_PATH, ...)`. Use its immutable `resource_id` with
+The completed index supplies the linked manifest; it has not fetched file bodies.
+Keep `linked=true` for this index. Do not switch to `linked=false` until a Download
+has completed, and do not pass the linked revision to a downloaded read. To read
+through the link, open the selected path
+with `connected_data_open(source_id=SOURCE_ID, path=RELATIVE_PATH, ...)`.
+Use its immutable `resource_id` with
 `workspace_resource_read` or `workspace_resource_inspect`. Linked paths are virtual
 references, not shell mounts.
 
@@ -69,14 +80,37 @@ folder path or resubmit an accepted download. NDP originals stay intact; create
 separate derivatives in the workspace. A downloaded historical copy is not a
 current upstream read after disconnection.
 
+Downloads stream in bounded chunks with an 8 GiB ceiling per resource. Capacity,
+cancellation and complete-snapshot publication belong to the transfer task; its
+success does not mean the file was loaded into the model or into RAM. Linked-file
+reads retain their separate 512 MiB ceiling. Use a download for a larger approved
+resource, then inspect its format and process it incrementally. Preserve only the
+needed columns, intervals and aggregates rather than constructing an unbounded
+dataframe. A transfer-limit error is a CLIO size limit, not an NDP access denial.
+
+Use the returned downloaded input path directly for reads, even when CLIO stores
+it outside the workspace root. Shell `access_paths` requests broader folder
+permissions; it is not needed to read these approved inputs and cannot authorize
+writes to protected source snapshots. Keep scripts, outputs and temporary work
+under the workspace. If selected measurements lack the necessary coverage, inspect
+alternative resources in the collection before treating that as a collection-wide
+gap. Record exactly which instruments and intervals were examined.
+
 Choose analysis from actual data, not format assumptions:
 
 | Data | Checks before computing |
 | --- | --- |
 | Time series | Measurement time vs capture time, timezone/epoch encoding, cadence, gaps, duplicates, component names and units. GNSS components may differ in scaling and reference frame. |
+| Instrument log / packet archive | A stored record may contain zero, one or several measurement frames. Inspect framing and device timestamps; retain complete frames and diagnose duplicates/truncation. Envelope/readout time and record count are not automatically measurement time and sample count. |
 | HDF5 / NetCDF / array output | Group/variable names, dimensions, coordinate conventions, units, fill values, chunking and requested subset. Inspect metadata before reading an entire large array. |
 | Spatial/station records | Coordinate reference, channel/network/station identifiers, geometry and station epochs. Metadata rows are not waveform or displacement samples. |
 | Service or stream response | Actual payload schema, status/control events, measurement timestamps and whether data is replay or current acquisition. See `services-and-streams.md`. |
+
+Repeated measurement fields can represent successive frames, not duplicate
+metadata keys. Do not silently reduce them to the first or last value in a
+dictionary. State which clock and observation unit an aggregate uses, and verify
+the logical sample counts before aligning instruments or interpreting missing
+observations.
 
 Use existing installed readers and the relevant analysis/visualization skills;
 don't execute downloaded notebooks or deserialize executable objects merely to

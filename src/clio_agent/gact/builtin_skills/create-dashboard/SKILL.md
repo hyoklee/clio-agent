@@ -115,7 +115,10 @@ Review the published artifact's own viewer, including each tab. Inspect with
 `artifact_id`, then navigate declared local bindings using
 `update_a2ui_data_model` with that artifact id, the inspected surface revision,
 viewer id and `expected_view_revision`. Capture the changed view and inspect
-its pixels. Local navigation preserves the saved artifact version; changing
+its pixels. Each update targets one exact path listed in the inspection's
+`controls`; replacing their parent object is not a supported control update.
+Reinspect after a change to obtain the new viewer epoch before changing another
+control. Local navigation preserves the saved artifact version; changing
 its authored contents requires editing the source and publishing a new version.
 
 The viewer supplies standard Reference this and labelled image capture actions

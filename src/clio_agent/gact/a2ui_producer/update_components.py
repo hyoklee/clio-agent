@@ -30,9 +30,10 @@ def build_update_a2ui_components_tool() -> Any:
 
         Inspect first and pass expected_revision to reject concurrent changes.
         Pass exactly one of components or components_path.
+        Each entry replaces the complete component: include unchanged required
+        properties such as data or dataUri. Omitted properties are removed.
         Load a2ui-catalog-<slug>; read the exact component schema as needed.
-        Preserve other properties and source measurements while changing
-        layout, encodings, labels or supported annotation marks.
+        Preserve source measurements when changing layout, encodings or labels.
         Use capture_a2ui_surface to inspect actual rendered pixels afterward.
         """
 
@@ -82,6 +83,16 @@ def build_update_a2ui_components_tool() -> Any:
             # A refused batch is never minted/overwritten (#1533 adversarial
             # review): nothing was applied, so the surface's definition
             # artifact keeps whatever it already recorded.
+            if outcome.get("reason") == "a2ui_validation_failed":
+                outcome = {
+                    **outcome,
+                    "hint": (
+                        "Each updated entry replaces the complete component. Inspect the current "
+                        "component and retain all required properties, including its unchanged "
+                        "data or dataUri. Omitted properties are removed. "
+                        + str(outcome.get("hint") or "")
+                    ),
+                }
             return outcome
         surface = outcome.surfaces[-1]
 

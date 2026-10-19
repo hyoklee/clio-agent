@@ -11,8 +11,9 @@ from typing import Any, cast
 import httpx
 import paramiko
 
+from clio_agent.gact.infrastructure.models import SshRoute
 from clio_agent.gact.storage.ndp_endpoint_models import EndpointConnectionInput
-from clio_agent.gact.storage.sftp import connect_profile
+from clio_agent.gact.storage.sftp import connect_profile, connect_route
 
 
 class _ChannelReader(io.RawIOBase):
@@ -76,14 +77,18 @@ class _SSHBody(httpx.SyncByteStream):
 
 
 class EndpointSSHTransport(httpx.BaseTransport):
-    """Reuse CLIO's strict SSH profile validation without a listening local tunnel."""
+    """Reuse CLIO's shared SSH routes without a listening local tunnel."""
 
-    def __init__(self, profile: str, timeout: float) -> None:
+    def __init__(self, profile: str | SshRoute, timeout: float) -> None:
         self.profile, self.timeout = profile, timeout
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         """Open exactly one channel and close its SSH owner with the response."""
-        client = connect_profile(self.profile)
+        client = (
+            connect_route(self.profile)
+            if isinstance(self.profile, SshRoute)
+            else connect_profile(self.profile)
+        )
         connection = http.client.HTTPConnection(request.url.host, request.url.port or 80)
         channel = None
         try:
@@ -138,9 +143,8 @@ class EndpointSSHTransport(httpx.BaseTransport):
 
 def endpoint_client(connection: EndpointConnectionInput, seconds: float = 15) -> httpx.Client:
     """Create a request owner; do not inherit proxy credentials or follow redirects."""
-    transport = (
-        EndpointSSHTransport(connection.ssh_profile, seconds) if connection.ssh_profile else None
-    )
+    route = connection.ssh_route or connection.ssh_profile
+    transport = EndpointSSHTransport(route, seconds) if route else None
     return httpx.Client(
         transport=transport,
         timeout=httpx.Timeout(seconds, connect=10),

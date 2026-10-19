@@ -129,6 +129,8 @@ def test_download_shared_result_has_actual_selected_bytes_and_hash(tmp_path: Pat
     payload = b"actual selected download\n" * 50_000
     (upstream / "payload.bin").write_bytes(payload)
     service = app.state.connected_storage
+    record = link_folder(service, record)
+    linked_manifest = record.linked_manifest_id
 
     async def exercise() -> None:
         app.state.mcp_app_loop = asyncio.get_running_loop()
@@ -146,6 +148,12 @@ def test_download_shared_result_has_actual_selected_bytes_and_hash(tmp_path: Pat
         row = next(r for r in app.state.mcp_task_store.list() if r.handle == receipt["handle"])
         assert row.result["operation"]["bytes_done"] == len(payload)
         assert row.result["operation"]["state"] == "completed" and row.notify_pending
+        assert row.result["manifest_id"] == source.manifest_id != linked_manifest
+        assert row.result["open_reference"] == {
+            "source_id": source.source.id,
+            "revision": source.manifest_id,
+            "linked": False,
+        }
         assert row.invocation_id == "call-download"
         await service.shutdown()
         await task_supervisor(app).shutdown()
@@ -180,5 +188,32 @@ def test_failed_handle_persistence_never_acknowledges_or_starts_storage_work(
         assert service.store.list("manifest", Manifest) == []
         assert store.list() == []
         await service.shutdown()
+
+    asyncio.run(exercise())
+
+
+def test_failed_download_never_labels_a_retained_baseline_as_its_result(tmp_path: Path) -> None:
+    """A real missing-file transfer retains old bytes without advertising fresh evidence."""
+    app, sid, record, _, workspace = setup(tmp_path)
+    service = app.state.connected_storage
+
+    async def exercise() -> None:
+        app.state.mcp_app_loop = asyncio.get_running_loop()
+        first = service.start_transfer(record, workspace)
+        await service.tasks[first.id]
+        retained = service.get("workspace", record.source.id)
+        old_manifest = retained.manifest_id
+        operation = service.start_transfer(retained, workspace, ["missing.txt"])
+        receipt = storage_handle(app, sid, operation, "Missing resource")
+        await asyncio.gather(service.tasks[operation.id], return_exceptions=True)
+        await task_supervisor(app).drivers[receipt["handle"]]
+        row = next(r for r in app.state.mcp_task_store.list() if r.handle == receipt["handle"])
+        assert row.result["operation"]["state"] == "failed"
+        assert row.result["open_reference"] is None and row.result["manifest_id"] is None
+        current = service.get("workspace", record.source.id)
+        assert current.manifest_id == old_manifest
+        assert Path(current.source.local_path, "original.txt").read_text() == "original"
+        await service.shutdown()
+        await task_supervisor(app).shutdown()
 
     asyncio.run(exercise())

@@ -5,9 +5,50 @@ description: "Use for National Data Platform (NDP) work: find and analyze scient
 
 # Work with NDP
 
-Start from the scientific outcome and supplied references, not an API menu. Reuse
-the workspace's sources, saved NDP account and Endpoint connections with
+Start from the scientific outcome and supplied references, not an API menu. Use
+short distinctive search terms: catalog words are combined with AND, so pasting a
+whole research question or a list of synonyms can hide an available collection.
+Before concluding data is absent, retry a zero-match query with fewer terms or a
+publisher and inspect candidate coverage. A failed file-list route does not prove
+that URL-based replay is unavailable; use a CSV resource actually found in the
+catalog when that operation is advertised.
+
+Reuse the workspace's sources, saved NDP account and Endpoint connections with
 `connected_data_status`. Choose only the workflow needed for the request.
+Status's `ndp_catalogs` identifies catalogs for discovery; `ndp_endpoints`
+identifies saved services for operation queries. Dataset search returns the
+catalog ID to use for resource selection. Each source's `selection` identifies
+the exact approved dataset/resources, including documentation-only subsets.
+For a request to connect an NDP Endpoint on a named SSH host without a URL,
+`connected_data_ndp_endpoint_connect(name=..., ssh_profile=...)` discovers the
+existing API through the approved connector. Do not guess its port or attempt
+shell SSH to perform that setup. Read `references/services-and-streams.md` for
+custom routes, explicit URLs and discovery limits.
+NDP-specific tools are available only when this workspace has a connected NDP
+dataset or a visible saved Endpoint. If absent, direct the user to **Attach >
+NDP** to select a dataset or connect an Endpoint, then continue on the next
+turn. A saved account alone does not activate these tools. Do not work around
+their absence with raw HTTP or credential access.
+Connecting starts a metadata index. After its task completes, list and read the
+selected resources with `connected_data_open` using its default `linked=true`.
+For shell/Python analysis, use the approved `connected_data_download` task, then
+use the materialized paths or open with `linked=false` and the returned revision.
+Downloads stream to disk with an 8 GiB ceiling per selected resource; linked-file
+reads have a separate 512 MiB limit. For large analysis, download first and process
+incrementally rather than loading the entire file into memory.
+Linked and downloaded manifests have different revisions; do not interchange them.
+Returned downloaded paths are approved read inputs even outside the workspace.
+Do not request shell `access_paths` for those reads: it requests broader folder
+permissions and cannot grant write access to protected originals. Write analysis
+scripts and derivatives in the workspace instead.
+
+A selected source may still need indexing or download; that is a local access
+stage, not evidence that NDP lacks the data. If only documentation is selected,
+use catalog discovery to find the measurement resources and select them. Do not
+ask the user to upload publicly available measurements before searching NDP.
+Use a successful task's `open_reference` for subsequent opens. On later turns,
+status provides `open_references.linked` and `.downloaded`; use the matching
+reference rather than combining a revision with a different access mode.
 
 ## Domain map
 
@@ -73,7 +114,8 @@ Accepted indexing/download tasks have durable handles: wait for their results,
 don't resubmit while they run. A successful query, upload or producer start is
 only that stage's result. Inspect actual bytes, record identities/revisions and
 hashes, and report what was observed. For scientific results, verify units,
-measurement time coverage and missing values; visually inspect derived figures.
+measurement framing, time coverage and missing values; visually inspect derived
+figures.
 
 ## Bundled helpers
 

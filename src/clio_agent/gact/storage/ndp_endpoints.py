@@ -11,6 +11,7 @@ from typing import Any
 from clio_agent.gact.resource_custody import ResourceStore
 from clio_agent.gact.storage.models import now
 from clio_agent.gact.storage.ndp_endpoint_capture import MAX_RESPONSE, capture_response
+from clio_agent.gact.storage.ndp_endpoint_errors import raise_endpoint_error
 from clio_agent.gact.storage.ndp_endpoint_models import (
     EndpointCapture,
     EndpointConnection,
@@ -84,6 +85,7 @@ class NDPEndpointService:
                 for row in self.connections(workspace_id, include_hidden=True)
                 if row.url == choice.url
                 and row.ssh_profile == choice.ssh_profile
+                and row.ssh_route == choice.ssh_route
                 and row.authentication == choice.authentication
             ),
             None,
@@ -109,6 +111,8 @@ class NDPEndpointService:
         """Persist edits; rediscover changed destinations before replacing the saved record."""
         record = self.get(workspace_id, identifier)
         changes = update.model_dump(exclude_none=True)
+        if "ssh_route" in update.model_fields_set:
+            changes["ssh_route"] = update.ssh_route.model_dump() if update.ssh_route else None
         choice = EndpointConnectionInput.model_validate(
             {
                 **record.model_dump(include=set(EndpointConnectionInput.model_fields)),
@@ -117,11 +121,12 @@ class NDPEndpointService:
         )
         changed_destination = any(
             getattr(choice, key) != getattr(record, key)
-            for key in ("url", "ssh_profile", "authentication")
+            for key in ("url", "ssh_profile", "ssh_route", "authentication")
         )
         document = self._discover(choice, token) if changed_destination else record.schema_document
-        edited = record.model_copy(
-            update={
+        edited = EndpointConnection.model_validate(
+            {
+                **record.model_dump(),
                 **choice.model_dump(),
                 "hidden": changes.get("hidden", record.hidden),
                 "schema_document": document,
@@ -185,9 +190,7 @@ class NDPEndpointService:
         deadline = time.monotonic() + 30
         with endpoint_client(record, 30) as client:
             with client.stream("GET", url, params=query, headers=headers) as response:
-                if response.status_code in {401, 403}:
-                    raise PermissionError("Endpoint access denied; check its account and role")
-                response.raise_for_status()
+                raise_endpoint_error(response, request, deadline, token)
                 data, reason, _ = capture_response(response, request, deadline)
                 if reason != "completed":
                     raise ValueError("Listing exceeded its size or time limit; narrow the search")
@@ -221,11 +224,7 @@ class NDPEndpointService:
             with client.stream(
                 operation["method"], url, params=query, json=request.body, headers=headers
             ) as response:
-                if response.status_code in {401, 403}:
-                    raise PermissionError(
-                        f"Endpoint denied this operation (HTTP {response.status_code}); NDP sign-in and an Endpoint role may be required"
-                    )
-                response.raise_for_status()
+                raise_endpoint_error(response, request, deadline, token)
                 content_type = response.headers.get("content-type", "application/octet-stream")
                 sse = "text/event-stream" in content_type
                 raw, reason, count = capture_response(response, request, deadline)
@@ -254,6 +253,7 @@ class NDPEndpointService:
             endpoint_name=record.name,
             endpoint_url=record.url,
             ssh_profile=record.ssh_profile,
+            ssh_route=record.ssh_route,
             workspace_id=workspace_id,
             operation_id=request.operation_id,
             method=operation["method"],

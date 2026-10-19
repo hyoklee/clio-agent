@@ -20,6 +20,7 @@ import httpx
 
 from clio_agent.gact.artifacts.registry import get_registry
 from clio_agent.gact.artifacts.storage import resolve_owned_artifact_path
+from clio_agent.gact.infrastructure.models import SshRoute
 from clio_agent.gact.storage.models import StorageModel, now
 from clio_agent.gact.storage.ndp_endpoint_models import EndpointConnection, EndpointRequest
 from clio_agent.gact.storage.ndp_endpoint_operations import resolve_request
@@ -39,6 +40,7 @@ class EndpointUploadReceipt(StorageModel):
     endpoint_id: str
     endpoint_url: str
     ssh_profile: str
+    ssh_route: SshRoute | None = None
     artifact_id: str
     sha256: str
     size: int
@@ -210,6 +212,7 @@ def upload_artifact(
         "endpoint_id": connection.id,
         "endpoint_url": connection.url,
         "ssh_profile": connection.ssh_profile,
+        "ssh_route": connection.ssh_route.model_dump() if connection.ssh_route else None,
         "artifact_id": upload.artifact_id,
         "sha256": upload.sha256,
         "size": upload.size,

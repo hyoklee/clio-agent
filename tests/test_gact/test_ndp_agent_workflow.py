@@ -60,6 +60,7 @@ def test_agent_discovers_publisher_links_reads_and_downloads(
     assert wait_tasks(connected["handle"])["results"][0]["status"] == "completed"
     source_id = connected["connection"]["source_id"]
     assert decisions[0][1]["resources"] == ["stations.csv"]
+    assert decisions[0][2]["summary"] == "Connect Sea observations"
     assert "/stations.csv" not in catalog_http[1]
     listing = setup_tool.connected_data_open(source_id)
     assert listing["entries"][0]["path"] == "1-stations.csv"
@@ -88,6 +89,7 @@ def test_agent_discovers_publisher_links_reads_and_downloads(
     )
     assert same["connection"]["source_id"] == source_id and len(decisions) == 1
     downloaded = download_tool.connected_data_download(source_id, ["1-stations.csv"])
+    assert decisions[-1][2]["summary"] == "Download Sea observations"
     assert wait_tasks(downloaded["handle"])["results"][0]["status"] == "completed"
     record = service.get("ws_default", source_id)
     assert (Path(record.source.local_path or "") / "1-stations.csv").read_bytes() == b"name,x\na,1"
