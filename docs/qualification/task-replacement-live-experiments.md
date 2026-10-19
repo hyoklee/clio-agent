@@ -1,45 +1,64 @@
 # Tasks replacement: finite live experiments
 
-## Live execution checkpoint — 2026-10-19 07:20 UTC
+## Live execution checkpoint — 2026-10-19 15:53 UTC
 
-Production repair is complete at `efe47301bd4ce51f2517cc74f6e832ea991edf81`
-(GACT `7260f2dd0b63852333f581ce28216fa6b7d0e124`); Python source digest is
-`3d297de0ec9afc791d77cfc5416ade9efaa912a00a6068975859d10b19ba4024`.
-Only the two existing external-input/control owners changed since the preceding
-accepted runtime evidence. The UI compilation inputs and dependency/schema tuple
-are unchanged; the matching build retains its actual source receipt.
+Candidate: **agent a61577ba6 / GACT 7260f2dd**. The D service ran source
+`efe47301bd4ce51f2517cc74f6e832ea991edf81`; a615 changes only tests/reporting.
+Production digest: `3d297de0ec9afc791d77cfc5416ade9efaa912a00a6068975859d10b19ba4024`.
+Initial implementation and test construction are done. Qualification is incomplete.
 
-Astra and actual Claude Code/Fable independently found no further production
-blocker in this follow-up. Astra found one regression teardown attempting to
-unrevoke an immutable grant; that teardown is removed and cleanup remains
-unconditional. This checkpoint changes tests/reporting only. Reviews are source
-assessments, not live acceptance or release clearance.
+- **CI:** all seven workflows succeeded, including all 24 CI jobs. Twelve XML
+  reports show 13,079 passes / 50 exclusions per Python 3.12, 3.13 and 3.14, with
+  zero failures/errors. Exclusions remain exclusions. Receipt: `ci-a61577ba6.json`.
+- **Accepted live gates:** Q1, Q2 and Q8, with explicit source impact recorded in
+  `candidate-impact-a61577ba6.json`. All thirty R1–R6 repetitions remain recorded
+  on their original frozen native/conversation runtime. Only the external MCP
+  input/control owners changed afterward; affected input paths were requalified.
+- **Fresh Claude native input:** R325 passed immediate handle, independent work,
+  two sequential answers, partial persistence, one lost accepted update response,
+  original identity, one backend effect and one final model delivery.
+- **Fresh recovery:** R326 passed five intentional crashes after a confirmed
+  Question answer and before its callback copy, followed by original-identity
+  reconnect and cancellation. The original answer survived all five. Input-key
+  iteration order is unspecified; the scripted operator answered an already-ready
+  second key in two cases. No task was replayed. Five intentional exits86 and a
+  final normal exit0 are evidence of the controlled faults, not native crashes.
+- **Capacity:** R329 completed all five actual models with child inference one,
+  finite executor one, independent peer progress, no worker for the yielded leaf,
+  original assignment handles and one answer/result input at each parent. Its raw
+  later action-order assertion remains failed; `r329-qualified-scope.json` accepts
+  only capacity. Q8 also uses R297 pool isolation and R305 physical settlement.
+- **Cleanup:** R325/R326/R327/R329 services and descendants are physically retired;
+  fresh runtime/temp roots are absent, including R330/R333. Raw receipts remain
+  bounded; no archives.
+- **Workflow evidence:** R333 ran two distinct declared workflows, captured a
+  peer message while its recipient waited on real Shell work, received its
+  unassisted reply, reported a timed-out peer wait and denied agent cancellation,
+  then withheld pending peer/final notices after revocation. Its raw run failed
+  because the harness incorrectly expected the authenticated human API to lose
+  access to the human's result. `r333-qualified-scope.json` preserves only the
+  passed scopes. R336 tests the denied read through the actual agent instead;
+  regrant/final history remain pending. R330's earlier workflow-request fixture
+  failure remains recorded and its accepted work was explicitly cancelled.
+- **Independent review:** Astra found no concrete source blocker in the full
+  a615/7260 implementation. Actual Fable found none in core (R331), then inspected
+  the correct GACT checkout (R334) and withdrew its wrong-checkout caveat; no UI
+  source blocker remained. These source assessments do not waive live gates.
+- **Next:** R336 workflow permissions and R332 retained-work/UI lifecycle are
+  prepared, not executed. The launch guard stopped them before creating state;
+  latest observed headroom was 2.69 GiB commit / 0.89 GiB physical. No local
+  pytest/Vitest loop was executed. Preparation/review is not live acceptance.
 
-CI `39214328439` is running the constructed regressions remotely; no local
-pytest/Vitest test loop was executed. The preceding 305a33e33 CI remains green
-evidence for that earlier source, not this repair head. Both R320/R321 families
-have physical process/listener retirement proof and their fresh roots are absent.
-Their bounded raw receipts remain; no archive was made.
-
-R325 (normal Claude native input/partial answers/lost-update reconnect) and R326
-(five answer-commit/callback-crash/cancel recovery cases) are prepared with syntax
-and undefined-name checks. **Neither has executed live**: the R325 launch stopped
-before creating service state because machine commit headroom was below the
-existing 4 GiB reserve (2.01 GiB observed, later 1.76 GiB). Other active services
-remain outside this campaign's ownership. This is a resource prerequisite, not a
-Tasks pass or a task-engine defect. Required live gates remain incomplete.
-
-The preceding Q1/Q2 and thirty race passes retain their exact source/runtime
-identities. The new external-input changes require affected live requalification;
-they do not invalidate unrelated algorithm proof or grant blanket final acceptance.
-The working priority remains live families while CI runs, then one coordinated
-repair batch. Relay remains excluded. No release, installation or installed-state
-change is authorized here.
-
+Remaining: Q3/Q4 delivery/lifecycle combinations; Q5 complete workflow permissions;
+Q6 approved-provider surviving jobs; Q7 remaining outage, history and effect-loss
+recovery; Q9 full current UI controls. Current task inspection media is complete,
+but does not qualify the whole UI. Relay remains excluded. No release/install or
+installed Desktop/auth/default/pin change occurred. Earlier rejected/manual-only
+cleanup boundaries remain intact.
 
 ## Current execution — 2026-10-19 06:43 UTC
 
-Current runtime candidate: agent **305a33e33** / production **6c79df316** / GACT
+Earlier runtime evidence: agent **305a33e33** / production **6c79df316** / GACT
 **7260f2dd**. Python source digest is
 `5954bc76035275f28ce666ffb031b1e4a13f49eeb3c8df31efbccb3f7816cde7`.
 Initial implementation and initial test construction are complete. Qualification
