@@ -63,7 +63,6 @@ def mint_surface_definition_artifact(
 
     from clio_agent.gact.artifacts.designation import kind_for_path  # noqa: PLC0415
     from clio_agent.gact.artifacts.minting import (  # noqa: PLC0415
-        _contained,
         _session_workspace_id,
         _workspace_root,
         artifact_name_for_path,
@@ -83,13 +82,13 @@ def mint_surface_definition_artifact(
                 "definition cannot be stored as an artifact"
             ),
         )
-    resolved_root = root.resolve(strict=False)
     resolved_root = paths.workspace_state_dir(root).resolve(strict=False)
     target = (resolved_root / "a2ui" / _definition_file_name(surface_id)).resolve(strict=False)
     # Defense in depth: _definition_file_name's charset already makes escaping
-    # impossible, but a definition artifact is NEVER written outside the
-    # workspace root regardless -- a typed refusal, never a silent path fix.
-    if not _contained(target, resolved_root):
+    # impossible, but resolving a symlink must not escape the managed state root.
+    # This harness-owned destination is not a model-selected file/grant: do not
+    # query connected-source access policy or derive another state root from it.
+    if not target.is_relative_to(resolved_root):
         return refusal(
             "a2ui_definition_artifact_failed",
             detail=(
