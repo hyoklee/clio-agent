@@ -38,6 +38,12 @@ synthetic. No answer diagrams were supplied, no model responses were replaced,
 and no gallery route or intercepted catalog response qualified a model run.
 Scoped test-file approvals are operator interventions, not authored solutions.
 
+The original prompts explicitly require Mermaid, component guidance, publication
+and image review. They are directed capability exercises, not evidence that an
+ordinary request discovers and completes that workflow. Exact prompts remain in
+`mission.txt` and `holdout.txt`; no answer diagrams were supplied, but the workflow
+was supplied. The ordinary-request follow-up below tests that separate question.
+
 `mission.txt` describes six independent subjects: lifecycle, ER model, branch
 ancestry, grammar, request protocol and project hierarchy. `holdout.txt`
 describes eight different subjects: classes/composition, responsibility lanes,
@@ -71,6 +77,52 @@ of model reliability or a claim that live agents exercised all 33 families.
 The prepared trials named `qualified` in their filenames ran before their
 viewers were mounted. They are retained as setup failures and do not qualify
 visual acceptance. The corrected harness separates prepare, mount and submit.
+
+## Ordinary requests through the connected UI
+
+Evidence: `D:/CLIO-Develop/planning-outcomes-20261018/QUALIFICATION.json` and the
+four complete `*-receipt.json` files alongside it. Fresh sessions used the real
+web composer and the same two models. The architecture request was exactly:
+
+> Clone https://github.com/pallets/click and explain its architecture with diagrams.
+
+Both agents independently loaded diagram guidance and cloned the real repository
+at `2247b35ea1c47c727d7a06e51fa280e12a863ff6`.
+
+| Trial | Finding |
+| --- | --- |
+| Architecture, Sol | Inspected implementation files and authored three A2UI diagrams. Two real captures and model revisions are retained. Operator review of the final 591 px image finds a small sequence view; expanded readability is unqualified. |
+| Architecture, Luna | Returned two raw Mermaid fences. No A2UI creation or rendered capture. This fails the requested visual outcome despite successful skill discovery. |
+| Small plan, Sol | Entered Plan, inspected files and left source unchanged. Initial exit failed before the assigned plan existed. Later saved a grounded partial plan but did not retry the approval handoff. |
+| Small plan, Luna | Entered Plan and left source unchanged. Attempted exit before writing, hit the shell restriction, then a missing plan directory; asked for a repository location already present in its workspace. No normal approval handoff. |
+
+The planning request was exactly:
+
+> Plan typo suggestions for misspelled subcommand names in Click.
+
+Each planning workspace contained an unchanged checkout of that same source,
+with tracked-file hashes retained before and after. Neither plan is a complete
+workflow pass. No implementation instructions, diagram types, skills or tool
+names appeared in these user requests.
+
+The raw-diagram failure exposed incorrect advice in both `create-diagram` and
+the component annotation: they suggested fences for short explanations. Both now
+request rendered A2UI for visual requests and reserve fences for source/Markdown
+export. The planning runs exposed missing mid-turn plan-path initialization;
+skill entry now uses the shared reminder/lifecycle after recording variant and
+playbook metadata. The skill no longer promises read-only shell calls: the
+structural Plan ACL deliberately blocks all shell execution. No shell exemption
+or weakening of the mode boundary was added.
+
+The fixes have 34 component-authoring checks, canonical export verification, 51
+planning/skill-effect regression checks, Ruff and targeted Pyright. These are
+regression results, not fresh model acceptance. Two async-planning UI submissions
+have unconfirmed model outcomes after the private service became unavailable.
+Automatic approval review rejected restarting backend 8221 and UI 5226, stating
+only “blocked by policy”; the action was not retried through another mechanism.
+Fresh post-fix model runs, ambiguous-task consultation, scope revision, approved
+implementation and execute-mode controls remain unqualified. The extensive
+planning benchmark is incomplete.
 
 ## Failures that changed the implementation
 
