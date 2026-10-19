@@ -5,6 +5,61 @@ EarthScope, actual measurement analysis, remote Endpoint diagnostics and real
 organization-creation attempts. Skill discovery, an accurate prerequisite
 diagnosis and completed scientific analysis are scored separately.
 
+## Acceptance correction after full-session review
+
+**Tahoe Luna is a failed scientific task. Tahoe Sol is a partial external-provider
+fallback, with failed NDP resource acquisition. Neither is an unqualified NDP
+success.** A finished session, generated screenshot, truthful caveat or green
+indexing badge does not establish the requested scientific result.
+
+The 2026-10-19 UTC audit reread all eight baseline/development session histories,
+their requests and final answers, acquisition arguments and operation failures,
+and the retained model-call/permission evidence. The original criteria remain
+those frozen in `trial-manifest.json`. Later chart repairs and model follow-ups
+do not retroactively repair an earlier failed attempt.
+
+- **Tahoe Luna (`sess_010b3490e31e`): failed.** The account was authenticated.
+  Fifteen displayed calls included unavailable web search and a failed data open.
+  Indexing accepted one catalog entry, completed with zero transferred data bytes,
+  and left the source `not_materialized`. It then called
+  `connected_data_open(linked=false, path="", revision="")` without a download.
+  CLIO replied “Ask the user to link or download this folder in Attach first.”
+  There was no download attempt, geometry/raster evidence, map or area analysis.
+  The final answer correctly admitted that failure, but delegated recovery to the
+  user. Honest failure reporting is not task completion.
+- **Tahoe Sol (`sess_06dfcfd53df8`): partial fallback.** Four resource-open calls
+  failed (three HTTP 400, one HTTP 404); web search failed three times. The run
+  eventually queried the publisher's ArcGIS service and produced a real proxy
+  figure and reproducible layer-sum ledger. Those outputs do not qualify the NDP
+  linked-resource/download path, an overlap-corrected unique habitat footprint,
+  or a verified wetland inventory with a common observation date. An attractive
+  map must not hide those missing pieces.
+- **Other baselines:** Alta Sol has independently verified measurement-derived
+  calculations, despite an unrelated web-search failure. Alta Luna failed
+  discovery. Konza Sol established selected-record coverage and concentration
+  summaries, not wind dependence; a large-resource read and its final rendered
+  capture also failed. Konza Luna failed resource selection locally and wrongly
+  attributed that rejection to NDP access.
+- **Development follow-ups:** the first fresh Alta Luna follow-up acquired data
+  but failed to finish analysis, including a refused shell grant. That permission
+  failure is present in retained model-call receipts although it is absent from
+  the current durable UI call list. The later Alta Luna run recovered a stale
+  reference and completed independently checked calculations; its original prose
+  and chart defects, and the later six-call chart revision, remain distinct phases.
+
+The misleading historic “Connected data is unavailable” presentation accompanied
+an accepted indexing task; it was not the connection result. The current preview
+renders that recorded receipt as “Indexing requested.” This presentation repair
+does not acquire the missing scientific evidence or change the failed verdict.
+
+The compact audit is retained at
+`D:/CLIO-Develop/ndp-science-20261018/session-outcome-audit-20261019.json`.
+It includes all current turn text, acquisition arguments, explicit UI operation
+failures and a separate retained-model failure plane. Model-call ids and live UI
+call ids differ; their error counts must not be summed as unique failures.
+The extractor deliberately assigns no automatic pass verdict. No new model
+trial or upstream download was used to conceal or replace these original runs.
+
 ## Method and exact requests
 
 Six fresh CLIO sessions received three ordinary requests across Codex Sol and
@@ -49,8 +104,8 @@ before its final capture attempt, which limits that visual-review result.
 | Case | Sol | Luna |
 | --- | --- | --- |
 | Alta comparison | Found both collections, read real CSVs and documentation, calculated 25 seasonal ratios, registered a derived table and produced an actual A2UI chart. Independent recomputation agrees with every output row. | Two long AND queries returned zero matches; it did not broaden sufficiently and stopped without observations. Discovery failure, despite available data. |
-| Konza burn | Obtained six resources and analyzed primitive instrument records plus NDJSON. Produced a report and an inline sensor chart. Found no burn-day overlap in its selected wind/CO₂ files. Useful coverage audit, **not** a completed wind-dependence analysis or an exhaustive search of alternative instruments. | Found the collection but supplied invalid resource IDs twice, then attributed the rejected selection to access failure. No measurement analysis. |
-| Tahoe habitat | Recovered from stale catalog download links through the provider's actual ArcGIS service; inspected layers, queried class areas and created a real map. Inspected its image, shortened clipped source text and recaptured. Useful proxy map/area ledger; **not** a dissolved unique wetland/riparian inventory. | Found a wetlands collection and connected/indexed it, then attempted to open an unlinked source. Stopped instead of using the approved download path. No map or area analysis. |
+| Konza burn | **Partial selected-input audit.** Obtained six resources and analyzed primitive instrument records plus NDJSON. Produced a report and an inline sensor chart. Found no burn-day overlap in its selected wind/CO₂ files. A large-resource read and final capture failed. **Not** a completed wind-dependence analysis or an exhaustive search of alternative instruments. | **Failed.** Found the collection but supplied invalid resource IDs twice, then attributed the local rejected selection to NDP access failure. No measurement analysis. |
+| Tahoe habitat | **Partial external-provider fallback; NDP resource acquisition failed.** Four opens returned HTTP 400/404 and three searches failed. Provider ArcGIS queries produced a real proxy map/area ledger. **Not** a dissolved unique wetland/riparian inventory or a successful NDP resource read/download. | **Failed.** Indexed metadata, then opened with `linked=false` before Download. No geometry/raster evidence, no download attempt, no map or area calculation. Stopped and asked the user to acquire the inputs. |
 
 Live sessions remain inspectable in the test client:
 
