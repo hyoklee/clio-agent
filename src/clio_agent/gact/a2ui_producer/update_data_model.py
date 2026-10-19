@@ -26,17 +26,14 @@ def build_update_a2ui_data_model_tool() -> Any:
     ) -> dict[str, Any]:
         """Set or delete a value in an existing A2UI surface's data model.
 
-        For a live definition (empty artifact_id), ``path`` is an absolute
-        JSON Pointer ("/" means the whole model).
-        ``delete=True`` removes the key at ``path``; otherwise the value
-        is replaced (``value=None`` sets it to null).
-        Use the surface's declared bindings for filters, selections and view
-        controls. Changing an unbound path does not control a viewer, and an
-        accepted update does not establish that its rendered image was checked.
-        artifact_id instead changes a declared local binding in an open saved
-        dashboard. Use ONE EXACT path from inspect_a2ui_surface.controls, not
-        a parent object containing several controls. Inspect and pass its viewer
-        id and exact view epoch; inspect again before changing another control.
+        Live definition (empty artifact_id): absolute JSON Pointer; "/" replaces
+        the model. delete=True removes the key; value=None sets it to null.
+        Use declared filter, selection or view bindings: unbound paths do not
+        control a viewer. Acceptance does not establish rendered image review.
+        Saved dashboard (artifact_id): change ONE EXACT declared control path
+        from inspect_a2ui_surface.controls, not a parent of several controls.
+        Pass its inspected viewer id and exact view epoch; inspect again before
+        changing another control.
         """
 
         resolved = _common.active_app_and_session()
