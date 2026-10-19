@@ -1,12 +1,30 @@
 # Tasks replacement: finite live experiments
 
-## Current execution — 2026-10-19 02:54 UTC
+## Current execution — 2026-10-19 03:56 UTC
 
-Current production is 4f34bb9b / GACT aca98ce4. Initial implementation/test
+Current production is 6c79df316 / GACT aca98ce4. Initial implementation/test
 construction are complete; regression repair and live qualification continue.
-The coordinated repair now has five passing observer cases, six passing initial
-permission cases, seven passing final cases, scoped checks and both source-review
-GOs. The complete b1bdb185 inventory is retained; fresh combined CI remains due.
+The complete twelve-report 1a0881055 inventory has three failed cases; all three
+plus three direct-artifact cases passed after the 69d1a8696 test correction.
+Its CI 39195215077 passed all 24 jobs; twelve reports show 13,072 passes, zero
+failures/errors and 50 exclusions per interpreter. Every repaired case explicitly
+passed across all three interpreters. R276 exposed a real canonical prompt contradiction;
+its constructed regression failed before correction and all three affected
+briefing/stability cases passed afterward. Both independent reviewers returned
+source GO for these deltas; exact-head CI remains required for 6c79df316.
+
+R275 passed scoped child-peer/two-workflow checks with one logged completion
+instruction. R276 failed its root reply prerequisite and remains failed; its
+actual toolset/refusal evidence led to the prompt correction. R281 freshly passed
+the root-session/two-workflow checks, real desktop/phone grant/revoke, denied
+read/control, pause/revocation-before-injection, automatic regrant delivery and
+independent owner/subscriber completion. One reply follow-up is recorded, making
+this assisted evidence. All 24 observed calls had Core transforms,
+and 47 actual recipient inputs are retained in the bounded receipt. The native
+parser accepted 99 real lines above 64 KiB (maximum 80,998 bytes) at its configured
+1 MiB limit. The service/browser settled and both roots are absent; three actual
+inspected captures update the website walkthrough. Full Q5/Q9, unassisted reply,
+other live families and the final race matrix remain required.
 
 R266 passed actual Claude Stop/Question answer wake on production run_server,
 including physical turn retirement, an open Question after Stop, original-handle

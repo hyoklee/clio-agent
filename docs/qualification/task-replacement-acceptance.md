@@ -1,21 +1,38 @@
 # Tasks replacement acceptance ledger
 
-## Current evidence — 2026-10-19 02:54 UTC
+## Current evidence — 2026-10-19 03:56 UTC
 
-Current production is 4f34bb9b / GACT aca98ce4. The complete b1bdb185 CI inventory
-contains seven distinct failures. The five observer-fixture cases now pass. Both
-immediate-answer cases first reproduced the missed wake; all three approval
-publishers are now corrected. All six initial and seven final permission cases
-passed sequentially, including store-failure cleanup. Scoped Ruff/format, Linux
-Mypy and existing guards passed. Astra and actual Claude Code/Fable returned
-source GO for the combined correction. Fresh combined candidate CI remains due.
+Current production is 6c79df316 / GACT aca98ce4. All twelve reports from 1a0881055
+identified three distinct failed cases. The combined test correction 69d1a8696
+has six focused passes; its CI 39195215077 passed all 24 jobs. Twelve reports show
+13,072 passes, zero failures/errors and 50 exclusions per interpreter. All three
+repaired cases explicitly passed on each interpreter. The corrected tests check
+child-context cleanup, parent isolation and real busy-steer/redrive without
+relaxing deadlines. R276 then exposed a canonical prompt contradiction between
+the blueprint tool list and the actual supplied task controls. Its regression
+failed before the 6c79df316 correction; all three affected briefing/stability
+cases now pass. Scoped Ruff/format, Linux Mypy and guards passed. Astra and actual
+Claude Code/Fable returned source GO for both deltas. Fresh exact-head CI for
+the prompt correction remains required.
 
 R266 supplies actual Claude Stop/Question wake evidence: the original assignment
 resumed, one answer input was committed, and no duplicate arrived on a later turn.
 The model used the queued answer; no explicit result-tool read is claimed. Original
 R263 failures remain retained. Both services/tasks are settled and fresh data roots
 absent. R268/R269/R272 test roots are also absent. See the current-status document
-for exact identities, scope/impact boundaries and receipts. All full rows below
+for exact identities, scope/impact boundaries and receipts.
+
+R275 passed scoped child-peer/two-workflow checks with one logged completion
+clarification. R281 passed the current-source root-peer/two-workflow checks with
+one logged reply follow-up, including real desktop/phone grant/revoke, observed
+privacy/denied-control boundaries, revocation-before-injection, automatic regrant
+delivery and independent owner/subscriber receipts. It retained 47 recipient
+inputs and all 24 observed call transforms. It also measured 99 actual native
+SSE lines over 64 KiB, maximum 80,998 bytes at the configured 1 MiB limit. Failed
+R276 remains failed. These are scoped/assisted proofs, not a complete Q5/Q9 or
+unassisted peer-reply claim. Both fresh runtime roots are absent; selected actual
+captures are hash-matched to the website media. The approved external-provider
+profile/receiving-collection prerequisite has been requested. All full rows below
 and **0/30** final races remain unaccepted until their complete evidence is established.
 
 ## Pre-integration evidence — October 18, 22:39 UTC

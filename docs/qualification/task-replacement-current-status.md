@@ -1,12 +1,12 @@
 # Tasks replacement status
 
-## Current candidate — 2026-10-19 02:54 UTC
+## Current candidate — 2026-10-19 03:56 UTC
 
 Initial implementation and initial test construction are complete. Current work is
 regression repair, independent review and live qualification. The candidate is
 **not qualified or release-ready**.
 
-- Agent production commit: **4f34bb9b9a7179b77c06e0389f1ba3427bc6045a**.
+- Agent production commit: **6c79df316273aeed0fb95230c846706f574cb834**.
 - GACT: **aca98ce477bbee1d1f14b1f384d1cf283906de6d**.
 - Both repositories retain `codex/agent-facing-async-tasks`; no merge, release or
   daily Desktop installation has been performed.
@@ -20,14 +20,19 @@ regression repair, independent review and live qualification. The candidate is
 | Gate | Current result |
 | --- | --- |
 | Completed historical baseline | 0593f40a CI 39179068184 passed all 24 jobs. Twelve XML reports: each Python 3.12/3.13/3.14 had 13,062 passes, zero failures/errors, 50 exclusions. All nine earlier repair cases passed per interpreter. This is a baseline, not acceptance of later changes. |
-| Latest completed CI | b1bdb185 CI 39188351574 finished with 16 successful and eight failed jobs. All twelve XML reports were inspected. Seven distinct failures: five new observer cases failed in fixture setup; two permission cases exceeded their existing worker joins. The combined correction requires fresh CI. |
+| Previous failed CI | 1a0881055 CI 39192188767 finished with 20 successful and four failed jobs. All twelve XML reports were inspected. Three distinct failures: two cancellation tests asserted a child task's ContextVar cleanup in the parent task; one context-steering case failed before entering its first model call. The completed Docker, Document runtime, Pages, schema and Linux/Windows/macOS packaged-startup workflows all succeeded. |
+| Latest completed CI | 69d1a8696 CI 39195215077 passed all 24 jobs. All twelve XML reports were inspected: each Python 3.12/3.13/3.14 had 13,072 passes, zero failures/errors and 50 exclusions. Each of the three repaired cases explicitly passed on every interpreter. The retained 1,005-message and A2UI load cases also passed with unchanged deadlines and counts. This precedes the small 6c79df316 prompt correction; fresh exact-head CI is required. |
+| CI repair scope | 69d1a8696 checks cancellation cleanup inside the cancelled child, explicitly seeds/verifies the parent's independent value, and verifies the exact structured result. Token-balanced fixtures isolate direct artifact producers. The steering case uses the existing fake-model barrier, keeps its three/five-second budgets and records actual input-commit/readiness/worker diagnostics on failure. All three previously failed cases and three artifact cases also passed locally, individually/sequentially. Receipt: r278-regressions.json; its fresh root is absent. |
 | Observer regression repair | 1af8c193 corrects the fixture to the actual session-creation 200 response. All five real-Core cases passed individually/sequentially on Windows with one worker: cold/output-free and file-output provenance, loop responsiveness/context return, start/completion cancellation retirement, interleaved identities. Receipt: r265-regressions.json. |
 | Permission defect reproduction | Both immediate Allow and Deny cases failed before correction on 201087574: a pending row was visible before its wake event existed. Receipt: r268-regressions.json. |
 | Permission correction | eac7759b registers the existing event before publishing the row. The original permission scenarios now wait for actual permission.requested publication, keep their existing 2/5-second joins and ten-second collection limit, capture worker stacks on failure, and retire the MCP worker before closing its executor. All six affected cases passed individually. Fable found equivalent folder/network publishers, also corrected without adding owners. All seven final cases then passed, including immediate tool/folder/network answers, fail-closed publication rollback, and unconditional executor teardown. Receipts: r269-regressions.json / r272-regressions.json. |
+| Live prompt defect and correction | R276's actual runtime toolsets included messaging, but its root model twice refused the reply as undeclared. The canonical orchestration briefing presented the shorter blueprint list as the declared tool surface. A constructed regression failed before correction on db8c009aa. 6c79df316 distinguishes blueprint tools from the actual runtime catalog while preserving role, permissions, evidence and tool-less-parent boundaries. All three affected briefing/stability cases passed; Ruff/format, scoped Linux Mypy and removal/size/class guards passed. Receipts: r280-regressions.json, r282-regressions.json, r284-scoped-checks.json. No task engine, grant, dependency or GACT change was made. |
 | Scoped static checks | Ruff/format, Linux Mypy on the changed production file, removal guard (zero violations), size guard and class guard passed. No assertion, worker count, timeout or guard budget was weakened. Receipts: r271-scoped-checks.json / r273-scoped-checks.json. |
 | GACT | aca98ce4 workspace runs 39176860551 / 39176857453 succeeded, with conditional release jobs excluded. Native WebView CI is fixture-backed. Matching R245 UI build is retained in place; the current changes do not alter GACT/compiler/dependencies. |
 
-Full CI inventory: ci-b1bdb185-complete.json. Original failures remain recorded.
+Full CI inventories: ci-b1bdb185-complete.json / ci-1a0881055-complete.json /
+ci-69d1a8696-complete.json.
+Original failures remain recorded.
 Fifty historical exclusions per interpreter are not passed tests or live evidence.
 
 ## Independent review
@@ -37,9 +42,49 @@ Astra identified the permission registration race while reviewing the complete C
 inventory; the CI traces alone do not prove either original join failure hit it.
 Astra found a test-teardown blocker and Fable found the two equivalent publishers. Those findings are corrected in 4f34bb9b. Both reviewers returned source GO for that correction (Astra turn 01a1520f-c34a-7f63-a00c-9a5ae2852fcc; actual Fable receipt r274-claude-review.json). Fable records non-blocking gaps in immediate folder-approval/defer coverage and pre-existing expiry-event retention; these are not represented as new passes.
 Reviews are read-only and do not substitute for executed tests or live acceptance.
+Both reviewers also returned source GO for 69d1a8696's test correction (Astra turn
+01a15235-4972-7c80-8e39-986fd8dcced3; actual Fable receipt r279-claude-review.json)
+and 6c79df316's canonical prompt correction (Astra turn
+01a15241-ad71-76d3-8238-e2507e8ee3f1; actual Fable receipt r283-claude-review.json).
 
 ## Live evidence and remaining qualification
 
+- R275 passed the scoped actual Codex/Luna child-peer scenario across two declared
+  workflows: exact addressing, messages/replies, observation/subscription/expired
+  wait, denied control, revocation-before-injection, regrant wake, and independent
+  owner/subscriber completion inputs. One root explicitly yielded after reporting
+  completed workflow work and needed one logged human completion instruction;
+  this is assisted evidence. It kept its original assignment and did not replay
+  the workflow. All 23 observed calls had canonical Core transforms. Service
+  exit was zero, tasks were settled and both roots are absent. Receipts:
+  r275-live-workflows.json / r275-qualified-scope.json / r275-cleanup.json.
+- R276 failed the root-peer reply prerequisite, including after one logged
+  clarification. Its actual runtime catalog and model refusals established the
+  prompt contradiction; it is not a full Q5/Q9 pass. Before failure, real desktop
+  grant controls and observe-only redaction worked. The unchanged native SSE
+  parser accepted 66 actual lines above 65,536 bytes, maximum 77,577, at the
+  configured 1,048,576-byte limit; no observation callback errors occurred.
+  The observe-only notify=false subscription error matches the existing
+  read-plus-observe contract and requires no engine change. The service exited
+  zero with no active tasks; 316,446,107 logical bytes of fresh data were removed.
+  Receipts: r276-live-workflows.json / r276-actual-toolsets.json /
+  r276-qualified-scope.json / r276-cleanup.json.
+- R281 passed its programmed root-workflow/UI checks on 6c79df316. Its model ended
+  one reply instruction with an intention instead of a tool call; one follow-up
+  is logged, so this is assisted evidence. The same original root handles then
+  completed, a reply stayed pending through revocation and was automatically
+  admitted after regrant, the root owner had zero self-completion inputs and
+  its peer subscriber had one. All 24 observed calls had canonical transforms;
+  47 actual recipient-input commits are retained. The real desktop/phone UI
+  exercised grant/revoke, keyboard control preview and viewport containment,
+  with zero page or connected-console errors. The native parser accepted 99
+  actual lines above 64 KiB, maximum 80,998 bytes, at its configured 1 MiB limit.
+  The service/browser exited zero, tasks were settled and both fresh roots are
+  absent (323,574,118 logical bytes removed). Receipts: r281-live-workflows.json /
+  r281-qualified-scope.json / r281-cleanup.json. Three inspected, hash-matched
+  captures replace the website's root-session access walkthrough images;
+  r281-media.json records their identity. Full Q5/Q9 and unassisted peer reply
+  remain separate obligations.
 - R261 used actual Codex/Luna SSE and production run_server. Its outcome-led
   Download mission completed 8,001 files / 36,124,063 bytes with every selection,
   file hash and published manifest checked. It supplied all five durable semantic
@@ -73,6 +118,10 @@ Reviews are read-only and do not substitute for executed tests or live acceptanc
 - R252 supplied six inspected website views at desktop/phone widths, keyboard
   disclosures and clean browser output. This is documentation evidence, not Q9
   production-service acceptance.
+- The approved external-provider surviving-job prerequisite is unavailable in
+  the checked standard Windows and legacy CLIO profiles: neither contains a
+  storage credential file. The existing profile/receiving collection has been
+  requested; no login, refresh or original credential modification was attempted.
 
 ## Custody and cleanup
 
@@ -80,6 +129,9 @@ R263's service exited zero, both sessions had no remaining active task, source a
 original authentication hashes were unchanged, and both fresh roots are absent.
 Its physical cleanup measured 311,712,911 logical bytes. Receipt: r263-cleanup.json.
 R257/R258/R261/R266 also have confirmed service retirement and absent fresh roots. R266 cleanup measured 310,022,310 logical bytes. The R268/R269/R272 test roots, including their zero-byte Unix sockets, are absent; receipts record each exact root.
+R275/R276 and R278/R280/R282 fresh roots are absent. R279/R283's fresh review-diff
+files were removed; their earlier manual-only review profile was preserved.
+R281's service/browser are retired and both fresh roots are absent.
 
 The five R265 tests exited zero and their run data was removed by the test owner.
 Five zero-byte Core socket/reparse entries remained. Automatic approval rejected
