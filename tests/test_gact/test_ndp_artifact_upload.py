@@ -9,6 +9,7 @@ import subprocess
 import sys
 import threading
 from collections.abc import Iterator
+from contextlib import nullcontext
 from email import policy
 from email.parser import BytesParser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -374,7 +375,12 @@ def test_native_approval_pins_content_and_denial_sends_no_request(
     session = SimpleNamespace(id="session", workspace_id="ws")
     service = SimpleNamespace(store=store, ndp_endpoints=owner)
     monkeypatch.setattr(ndp_endpoint_tools, "_owner", lambda: (app, session, service))
-    monkeypatch.setattr(ndp_endpoint_tools, "require_admission", lambda *_: None)
+    assignment = SimpleNamespace(handle="assignment")
+    admission_checks: list[Any] = []
+    app.state.task_history = SimpleNamespace(
+        serialized=nullcontext, latest_assignment=lambda _: assignment
+    )
+    app.state.conversations = SimpleNamespace(require_admission=admission_checks.append)
     app.state.pending_permission_gate = lambda *_: "deny"
     with pytest.raises(PermissionError, match="not approved"):
         ndp_endpoint_tools.connected_data_ndp_upload_artifact(connection.id, identifier, "gnosis")
@@ -393,6 +399,9 @@ def test_native_approval_pins_content_and_denial_sends_no_request(
     assert decisions[0]["sha256"] == hashlib.sha256(b"original").hexdigest()
     assert decisions[0]["artifact_id"] == identifier
     assert CatalogPeer.objects[f"/s3/objects/gnosis/{result['key']}"] == b"original"
+    # Denial checks admission once; approval rechecks the same assignment after
+    # the permission response, through the current conversation owner.
+    assert admission_checks == [assignment, assignment, assignment]
 
 
 @pytest.mark.parametrize("problem", ["other-workspace", "changed", "unsupported", "traversal"])

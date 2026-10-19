@@ -34,6 +34,14 @@ for (const theme of ['light', 'dark']) {
 				});
 				await expect(note).toHaveCount(1);
 				await expect(note).toContainText(title);
+				const captureDetails = note.locator('details');
+				await expect(captureDetails).not.toHaveAttribute('open');
+				await captureDetails.locator('summary').focus();
+				await page.keyboard.press('Enter');
+				await expect(captureDetails).toHaveAttribute('open', '');
+				await expect(captureDetails).toContainText('Full provider and platform qualification is still incomplete');
+				await page.keyboard.press('Enter');
+				await expect(captureDetails).not.toHaveAttribute('open');
 				await page.evaluate(async () => {
 					await document.fonts.ready;
 					for (const image of document.querySelectorAll<HTMLImageElement>('.guide-screenshot img')) {
@@ -106,7 +114,7 @@ test('task guides distinguish Stop, peer read permissions and qualification at e
 	await expect(page.locator('.sl-markdown-content')).toContainText('Task observation and waits default to the caller');
 	await expect(page.locator('.sl-markdown-content')).toContainText('Full native-replacement qualification remains incomplete.');
 	await page.locator('.sl-markdown-content p').getByRole('link', { name: 'Session coordination', exact: true }).click();
-	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('full provider and platform qualification is still incomplete');
+	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('Full provider and platform qualification is still incomplete');
 	await expect(page.locator('.sl-markdown-content .starlight-aside')).toContainText('not the full task, provider or platform qualification matrix');
 	const subscription = page.locator('details').filter({ has: page.locator('summary', { hasText: 'Find a run and subscribe to its result' }) });
 	await expect(subscription).not.toHaveAttribute('open');

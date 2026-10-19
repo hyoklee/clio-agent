@@ -1,5 +1,56 @@
 # Tasks replacement status — October 18 UTC
 
+## Coordinated repair batch — 2026-10-19 00:02 UTC
+
+Implementation and initial test construction remain complete. The integrated
+`7d5281c9` / GACT `aca98ce4` CI run 39176926679 is now complete: twelve reports,
+two distinct failing cases. Python 3.12/3.13 each have 13,054 passes, one failure,
+zero errors and 50 exclusions; Python 3.14 has 13,053 passes, two failures,
+zero errors and 50 exclusions. These are failed regression gates, not acceptance.
+The complete inventory is `ci-7d5281c9-complete.json` under D static receipts.
+
+Astra identified a blocking NDP approval race in the incoming endpoint editing:
+a request approved against A could reload the same ID after an edit and execute
+against B. The repair passes the approved connection snapshot into the existing
+invocation owner, preserving its URL, SSH profile, authentication and observed
+schema; owner/workspace/ID mismatches are rejected. It adds no task owner or store.
+Six new deterministic regressions cover the three edit dimensions and three
+ownership mismatches. They are constructed, not yet claimed passed.
+The complete CI repair batch also moves the imported artifact-upload fixture to
+the current conversation admission seam and samples watcher retirement on its
+owning loop, with a new held-late-probe regression proving no model can start.
+No assertion, per-test guard, timeout, worker or production budget is relaxed.
+Scoped Ruff and Linux Mypy pass for the changed production modules.
+
+Astra's blocking review is turn `01a1515b-f0d5-7031-a3db-4cab601de609`;
+its exact sequence/invariant is `01a1515f-42d4-7f10-9e23-d45fe9c6ee99`.
+Actual Fable R244 returned source GO at `7d5281c9` / `aca98ce4`, with two
+advisories: Q8 must include the incoming LM cap of 8 and its configurable
+120-second admission wait; only D/CI count as runtime evidence, not the stale
+manual-only C environment. Both original auth and review source freeze matched.
+The approval repair still needs independent re-review and fresh CI/live evidence.
+
+R245 passed matching online/offline GACT builds and both TypeScript stages at
+`7d5281c9` / `aca98ce4` (655 files, 60,416,353 bytes; index SHA256
+`980c069ac26e729bff39f6d51d3bccedf1ee670a10d9bd756ebe7cae0d8420a1`).
+Website CI 39176951680 passed build/browser checks, with deploy skipped.
+R249 separately passed six real documentation views at 1440px/390px, loaded
+fonts, containment, progressive subscription controls and zero console/page/HTTP
+errors; all six images were inspected. Its current preview notice was too tall
+on phone, so the evidence details now use a keyboard-tested disclosure and the
+Question guide uses the same preview instead of stale beta-5.2 wording.
+The affected post-change website review remains required. R249 is documentation
+layout evidence, not Q9 production-service/model acceptance.
+
+The first browser attempt used a C temp profile before the parent environment
+was corrected. Profile absence and PID retirement were verified in
+`r246-browser-failure-custody.json`; later captures used parent and browser data
+on D. The local static build lacked the separate generated gallery prerequisite;
+that failed attempt is retained and is not a source-runtime qualification.
+Original rejected/manual-only paths were not retried. Final cleanup of the fresh
+website/tool caches remains due after affected review. Full Q1-Q9 and **0/30**
+final races remain unaccepted; no merge, tag, release or daily installation.
+
 ## Current integration and qualification — October 18, 23:33 UTC
 
 Implementation and initial test construction are complete. The current feature

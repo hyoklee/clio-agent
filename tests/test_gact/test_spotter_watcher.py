@@ -97,17 +97,70 @@ def test_explicit_disarm_uses_conversation_cancellation(
                     await asyncio.shield(pump)
                     continue
                 if not app.state.turn_runner.busy(child):
-                    return
+                    break
                 released = asyncio.Event()
                 app.state.turn_runner.run_when_released(child, released.set)
                 await released.wait()
+            # Keep this observation on its owner loop: a later signal can
+            # reserve an admission-only probe after this coroutine returns.
+            assert not app.state.turn_runner.busy(child)
 
     asyncio.run_coroutine_threadsafe(await_release(), app.state.mcp_app_loop).result(timeout=10)
     current = app.state.task_history.task_snapshot(task.handle)
     assert current.status == "cancelled" and current.terminal_at is not None
     assert current.settlement == "confirmed"
     assert _live_watcher_tasks(app, parent) == []
-    assert not app.state.turn_runner.busy(child)
+    assert app.state.task_history.latest_assignment(child).handle == task.handle
+    assert not [
+        event
+        for event in app.state.bus.session_events_since(child, cursor=1)
+        if event.type == "turn.started"
+    ]
+
+
+def test_cancelled_watcher_late_probe_cannot_start_a_model(
+    watcher_world: tuple[Any, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A reserved late admission probe is busy bookkeeping, never another segment."""
+    import asyncio
+
+    app, parent, child = watcher_world
+    task = app.state.task_history.latest_assignment(child)
+    disarm_spotter_watcher(app, app.state.sessions.get(parent))
+
+    async def probe() -> None:
+        async with asyncio.timeout(5):
+            control = app.state.conversations._controls.get(task.handle)
+            if control is not None:
+                await asyncio.shield(control)
+            pump = app.state.turn_runner._pumps.get(child)
+            if pump is not None:
+                await asyncio.shield(pump)
+            entered, release = asyncio.Event(), asyncio.Event()
+            original = app.state.turn_runner.admit
+
+            async def held_admission(sid: str) -> Any:
+                if sid == child:
+                    entered.set()
+                    await release.wait()
+                return await original(sid)
+
+            monkeypatch.setattr(app.state.turn_runner, "admit", held_admission)
+            app.state.turn_runner.signal(child)
+            await entered.wait()
+            pump = app.state.turn_runner._pumps[child]
+            try:
+                assert app.state.turn_runner.busy(child)
+                reservation = app.state.turn_runner._turns[child]
+                assert reservation.thread is None and reservation.task is None
+            finally:
+                release.set()
+                await asyncio.shield(pump)
+            assert not app.state.turn_runner.busy(child)
+
+    asyncio.run_coroutine_threadsafe(probe(), app.state.mcp_app_loop).result(timeout=10)
+    current = app.state.task_history.task_snapshot(task.handle)
+    assert current.status == "cancelled" and current.settlement == "confirmed"
     assert app.state.task_history.latest_assignment(child).handle == task.handle
     assert not [
         event

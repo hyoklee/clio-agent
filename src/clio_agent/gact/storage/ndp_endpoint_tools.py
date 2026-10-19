@@ -164,7 +164,12 @@ def connected_data_ndp_endpoint_request(
     return materialize_capture(
         app,
         service.ndp_endpoints.invoke(
-            session.workspace_id, endpoint_id, request, app.state.resource_store, token
+            session.workspace_id,
+            endpoint_id,
+            request,
+            app.state.resource_store,
+            token,
+            approved_connection=record,
         ),
     )
 

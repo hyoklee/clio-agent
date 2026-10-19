@@ -1,5 +1,16 @@
 # Tasks replacement: finite live experiments
 
+## Repair gate update — 2026-10-19 00:02 UTC
+
+CI 39176926679 has twelve reports and two distinct failing cases. The batch
+addresses both plus Astra's mutable-endpoint approval blocker; six new ownership/
+edit regressions and a held-late-admission regression are constructed. Scoped
+static checks pass; fresh regression execution, independent review and affected
+live proof remain pending. R245 UI builds and R249's six documentation views
+passed on the preceding tuple, with honest scope retained. See
+[current status](task-replacement-current-status.md) for exact sources/reviews,
+counts and receipts. All requirements below and **0/30** final races remain.
+
 ## Integration and execution update — October 18, 23:33 UTC
 
 Implementation/test construction are complete. Next candidate `f203b3bd7` /

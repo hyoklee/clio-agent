@@ -200,9 +200,27 @@ class NDPEndpointService:
         request: EndpointRequest,
         resources: ResourceStore,
         token: str | None = None,
+        *,
+        approved_connection: EndpointConnection | None = None,
     ) -> dict[str, Any]:
-        """Run a discovered operation; close streams at finite time/event/byte limits."""
-        record = self.get(workspace_id, identifier)
+        """Run against the approved snapshot, retaining finite stream limits.
+
+        Agent approval may wait while a saved connection is edited. An accepted
+        snapshot binds the destination, transport, authentication and schema;
+        resolving its mutable ID again would silently retarget that approval.
+        Human requests without a pending approval resolve the connection once.
+        """
+        record = (
+            approved_connection.model_copy(deep=True)
+            if approved_connection is not None
+            else self.get(workspace_id, identifier)
+        )
+        if (
+            record.id != identifier
+            or record.workspace_id != workspace_id
+            or record.principal != self.principal
+        ):
+            raise PermissionError("Approved Endpoint does not belong to this operation")
         operation, url, query = resolve_request(record, request)
         headers = {"Accept": "application/json, text/event-stream, */*"}
         if record.authentication == "ndp":
