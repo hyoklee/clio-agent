@@ -543,7 +543,9 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
         auto_tools = {
             t.name: t
             for t in instrument_tools(
-                build_auto_react_tools(agent_def, a2ui_producers=True, supports_vision=True)
+                build_auto_react_tools(
+                    agent_def, a2ui_producers=True, supports_vision=True, ndp_tools=True
+                )
             )
         }
         # The A2UI producer triad (S4) needs a real client-capabilities

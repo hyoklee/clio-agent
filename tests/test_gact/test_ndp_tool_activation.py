@@ -1,0 +1,185 @@
+"""NDP schemas follow owned workspace connections, not global sign-in state."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import dspy
+import pytest
+
+from clio_agent.gact.agents.auto_tools import build_auto_react_tools
+from clio_agent.gact.agents.clio_react import ClioReAct, _function_tool
+from clio_agent.gact.catalog import _builtin_tool_declarations
+from clio_agent.gact.storage.models import CreateSource
+from clio_agent.gact.storage.ndp_catalog import NDPDataset, NDPResource
+from clio_agent.gact.storage.ndp_endpoint_models import (
+    EndpointConnectionInput,
+    EndpointConnectionUpdate,
+)
+from clio_agent.gact.storage.ndp_selection import select_source
+from clio_agent.gact.storage.ndp_tool_activation import session_ndp_tools_enabled
+from clio_agent.gact.storage.service import StorageService
+from clio_agent.gact.types import AgentDef
+from tests.test_gact.test_ndp_endpoints import peer as peer_fixture
+from tests.test_gact.test_source_connect_runtime import bound as bound_fixture
+
+peer = peer_fixture
+bound = bound_fixture
+NDP_TOOLS = {
+    "connected_data_search_ndp",
+    "connected_data_ndp_organizations",
+    "connected_data_ndp_endpoint_connect",
+    "connected_data_ndp_endpoint_operations",
+    "connected_data_ndp_endpoint_request",
+    "connected_data_ndp_upload_artifact",
+}
+
+
+def _tool_names(*, child: bool = False) -> set[str]:
+    """Inspect the actual ReAct function declarations sent to the model."""
+    agent = AgentDef(id="main", title="Main", parent_id="parent" if child else "")
+    program = ClioReAct(
+        dspy.Signature("question -> answer"),
+        tools=build_auto_react_tools(agent, a2ui_producers=False),
+    )
+    return {_function_tool(tool).name for tool in program.tools.values()}
+
+
+def _source(service: StorageService, root: Path, workspace_id: str = "ws_default") -> Any:
+    """Create a genuine approved NDP selection without fetching its bytes."""
+    return select_source(
+        service,
+        workspace_id,
+        NDPDataset(
+            id="observations",
+            name="observations",
+            title="Observations",
+            endpoint=service.ndp.endpoints()[0],
+            resources=[
+                NDPResource(
+                    id="data", path="data.csv", name="Data", url="https://ndp.example/data.csv"
+                )
+            ],
+        ),
+        root,
+    )
+
+
+def test_unrelated_workspace_has_no_ndp_model_schemas_or_credential_reads(
+    bound: tuple[StorageService, Any, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    service, _, upstream = bound
+    service.create("ws_default", CreateSource(provider="local", root=str(upstream), label="Files"))
+
+    def forbidden(*args: Any, **kwargs: Any) -> Any:
+        pytest.fail("Tool activation must not access accounts or the upstream catalog")
+
+    monkeypatch.setattr(service.auth, "account_connected", forbidden)
+    monkeypatch.setattr(service.auth, "token", forbidden)
+    monkeypatch.setattr(service.ndp, "endpoints", forbidden)
+    assert not session_ndp_tools_enabled()
+    names = _tool_names()
+    assert not names & NDP_TOOLS
+    assert {"connected_data_status", "connected_data_connect", "connected_data_open"} <= names
+
+
+def test_dataset_activation_is_recomputed_for_each_turn_of_the_same_session(
+    bound: tuple[StorageService, Any, Path],
+) -> None:
+    service, app, _ = bound
+    assert not _tool_names() & NDP_TOOLS
+    record = _source(service, Path(app.state.workspaces.get("ws_default").root_path))
+    assert session_ndp_tools_enabled()
+    assert _tool_names() & NDP_TOOLS == NDP_TOOLS
+    assert not _tool_names(child=True) & NDP_TOOLS
+    service.disconnect(record)
+    assert not _tool_names() & NDP_TOOLS
+    # A retained snapshot or saved selection must not keep NDP enabled.
+    assert service.sources("ws_default")
+    record.connected = True
+    service.store.put("source", record.source.id, record)
+    assert _tool_names() & NDP_TOOLS == NDP_TOOLS
+    record.removed = True
+    service.store.put("source", record.source.id, record)
+    assert not _tool_names() & NDP_TOOLS
+
+
+@pytest.mark.parametrize("foreign_owner", ["workspace", "principal", "clio"])
+def test_another_owner_cannot_activate_ndp(
+    bound: tuple[StorageService, Any, Path], foreign_owner: str
+) -> None:
+    service, app, _ = bound
+    record = _source(
+        service,
+        Path(app.state.workspaces.get("ws_default").root_path),
+        "other" if foreign_owner == "workspace" else "ws_default",
+    )
+    if foreign_owner == "principal":
+        record.principal = "someone-else"
+    elif foreign_owner == "clio":
+        record.source = record.source.model_copy(
+            update={"owner": record.source.owner.model_copy(update={"clio_id": "other-clio"})}
+        )
+    service.store.put("source", record.source.id, record)
+    assert not _tool_names() & NDP_TOOLS
+
+
+def test_endpoint_connect_hide_restore_and_remove_change_the_model_schemas(
+    bound: tuple[StorageService, Any, Path], peer: str
+) -> None:
+    service, _, _ = bound
+    record = service.ndp_endpoints.connect(
+        "ws_default", EndpointConnectionInput(name="Lab", url=peer)
+    )
+    assert _tool_names() & NDP_TOOLS == NDP_TOOLS
+    service.ndp_endpoints.update("ws_default", record.id, EndpointConnectionUpdate(hidden=True))
+    assert not _tool_names() & NDP_TOOLS
+    service.ndp_endpoints.update("ws_default", record.id, EndpointConnectionUpdate(hidden=False))
+    assert _tool_names() & NDP_TOOLS == NDP_TOOLS
+    service.ndp_endpoints.disconnect("ws_default", record.id)
+    assert not _tool_names() & NDP_TOOLS
+
+
+@pytest.mark.parametrize("foreign_owner", ["workspace", "principal"])
+def test_foreign_endpoint_does_not_activate_ndp(
+    bound: tuple[StorageService, Any, Path], peer: str, foreign_owner: str
+) -> None:
+    service, _, _ = bound
+    record = service.ndp_endpoints.connect(
+        "other" if foreign_owner == "workspace" else "ws_default",
+        EndpointConnectionInput(name="Other", url=peer),
+    )
+    if foreign_owner == "principal":
+        record.principal = "someone-else"
+        service.store.put("ndp_endpoint", record.id, record)
+    assert not _tool_names() & NDP_TOOLS
+
+
+def test_removing_one_of_several_sources_keeps_ndp_available(
+    bound: tuple[StorageService, Any, Path], peer: str
+) -> None:
+    service, app, _ = bound
+    source = _source(service, Path(app.state.workspaces.get("ws_default").root_path))
+    endpoint = service.ndp_endpoints.connect(
+        "ws_default", EndpointConnectionInput(name="Lab", url=peer)
+    )
+    service.disconnect(source)
+    assert _tool_names() & NDP_TOOLS == NDP_TOOLS
+    service.ndp_endpoints.disconnect("ws_default", endpoint.id)
+    assert not _tool_names() & NDP_TOOLS
+
+
+@pytest.mark.parametrize("app", [None, SimpleNamespace(state=SimpleNamespace(sessions={}))])
+def test_missing_context_does_not_enable_ndp(app: Any, monkeypatch: pytest.MonkeyPatch) -> None:
+    from clio_agent.gact.storage import ndp_tool_activation
+
+    monkeypatch.setattr(ndp_tool_activation.context, "active_app", lambda: app)
+    monkeypatch.setattr(ndp_tool_activation.context, "active_session_id", lambda: "missing")
+    assert not _tool_names() & NDP_TOOLS
+
+
+def test_product_catalog_still_documents_optional_ndp_tools() -> None:
+    """The global tool browser describes capabilities, not a model's active schemas."""
+    assert NDP_TOOLS <= {row[0] for row in _builtin_tool_declarations()}

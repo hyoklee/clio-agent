@@ -15,6 +15,11 @@ catalog when that operation is advertised.
 
 Reuse the workspace's sources, saved NDP account and Endpoint connections with
 `connected_data_status`. Choose only the workflow needed for the request.
+NDP-specific tools are available only when this workspace has a connected NDP
+dataset or a visible saved Endpoint. If absent, direct the user to **Attach >
+NDP** to select a dataset or connect an Endpoint, then continue on the next
+turn. A saved account alone does not activate these tools. Do not work around
+their absence with raw HTTP or credential access.
 Connecting/indexing a new source does not attach its bytes. Use the approved
 `connected_data_download` task for analysis, then open with `linked=false` and the
 returned revision/path. Use `linked=true` only for an existing Link attachment.

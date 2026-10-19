@@ -17,6 +17,10 @@ def connected_data_status() -> dict[str, Any]:
     If needed, present an account's login_action in an ordinary A2UI Button in
     the answer; only the user click opens private sign-in. No credentials are
     returned. Check again after the user completes setup; do not poll.
+    NDP-specific tools are enabled on the next turn only when this workspace
+    has a connected NDP dataset or a visible saved NDP Endpoint. Otherwise use
+    Attach > NDP to select a dataset or connect an Endpoint first. Signing in
+    alone does not activate those tools.
     """
     app = context.active_app()
     sid = context.active_session_id()
