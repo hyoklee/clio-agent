@@ -1,107 +1,78 @@
-# Tasks replacement status — October 18 UTC
+# Tasks replacement status
 
-## Coordinated repair batch — 2026-10-19 00:02 UTC
+## Current candidate — 2026-10-19 01:55 UTC
 
-Implementation and initial test construction remain complete. The integrated
-`7d5281c9` / GACT `aca98ce4` CI run 39176926679 is now complete: twelve reports,
-two distinct failing cases. Python 3.12/3.13 each have 13,054 passes, one failure,
-zero errors and 50 exclusions; Python 3.14 has 13,053 passes, two failures,
-zero errors and 50 exclusions. These are failed regression gates, not acceptance.
-The complete inventory is `ci-7d5281c9-complete.json` under D static receipts.
+Initial implementation and initial test construction are complete. The current
+production repair is agent **a40af08be2cc9822cd9c0ef240dc0b922713bd39** / GACT
+**aca98ce477bbee1d1f14b1f384d1cf283906de6d**, pushed on the existing feature branch.
+This is regression repair and live qualification; it is not release-ready.
+Develop through cee026de3, marketplace 2c172233, schema 0.6.0b14 / 3224a797,
+FastMCP/Tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and Core 2.3.2 remain integrated.
 
-Astra identified a blocking NDP approval race in the incoming endpoint editing:
-a request approved against A could reload the same ID after an edit and execute
-against B. The repair passes the approved connection snapshot into the existing
-invocation owner, preserving its URL, SSH profile, authentication and observed
-schema; owner/workspace/ID mismatches are rejected. It adds no task owner or store.
-Six new deterministic regressions cover the three edit dimensions and three
-ownership mismatches. They are constructed, not yet claimed passed.
-The complete CI repair batch also moves the imported artifact-upload fixture to
-the current conversation admission seam and samples watcher retirement on its
-owning loop, with a new held-late-probe regression proving no model can start.
-No assertion, per-test guard, timeout, worker or production budget is relaxed.
-Scoped Ruff and Linux Mypy pass for the changed production modules.
+| Milestone | Authoritative evidence |
+| --- | --- |
+| Completed regression baseline | Agent 0593f40a CI 39179068184: all 24 jobs successful; twelve XML reports. Each Python 3.12/3.13/3.14 has 13,062 passes, zero failures/errors and 50 exclusions. All nine repair cases explicitly passed per interpreter (27 XML cases). Exclusions are not passes or live acceptance. |
+| Current regression run | [a40af08b CI 39187370616](https://github.com/iowarp/clio-agent/actions/runs/39187370616) has failed jobs and is not accepted. Its five new cases had two construction errors: missing mandatory tool metadata and barriers on different loops. Both are corrected together in the test-only follow-up, retaining all behavior assertions. Fresh CI is required. |
+| UI regression/build | GACT aca98ce4 workspace runs 39176860551 / 39176857453 succeeded. The first has six applicable successes and three conditional release skips; the second has five successes and four conditional skips. Native WebView CI is fixture-backed. R245 online/offline builds and both TypeScript stages passed; current backend-only repairs do not change GACT/compiler/dependency inputs. |
+| Independent review | Astra and actual Claude Code/Fable returned source GO for 0593f40a / aca98ce4. Actual Fable returned source GO for a40af08b. Astra found two test-construction blockers, now corrected together: mandatory presentation/domain and same-loop barriers. Astra returned source GO for that correction; final test-only follow-up review is pending. Source review does not replace live acceptance. |
+| Current live experiment | R261 uses actual Codex/Luna SSE, production run_server and an outcome-led Download mission. It additionally requires a confirmed Core transform for every model tool result. Its model and physical checks passed. Its first-scope Core capture missed the last transform after the log rolled into _events/2; all five durable trace events are retained. The original failed capture is not erased, and direct multi-chunk Core acceptance remains pending. |
+| Final qualification | Full Q1–Q9, final migration/recovery obligations and all **0/30** final race repetitions remain unaccepted. No merge, tag, release or daily Desktop installation. |
 
-Astra's blocking review is turn `01a1515b-f0d5-7031-a3db-4cab601de609`;
-its exact sequence/invariant is `01a1515f-42d4-7f10-9e23-d45fe9c6ee99`.
-Actual Fable R244 returned source GO at `7d5281c9` / `aca98ce4`, with two
-advisories: Q8 must include the incoming LM cap of 8 and its configurable
-120-second admission wait; only D/CI count as runtime evidence, not the stale
-manual-only C environment. Both original auth and review source freeze matched.
-The approval repair still needs independent re-review and fresh CI/live evidence.
+The baseline retained all 1,005 messages under the unchanged 180-second guard:
+110.825 / 71.891 / 99.678 seconds; A2UI load passed in
+156.238 / 143.453 / 84.839 seconds (Python 3.12 / 3.13 / 3.14).
+Bounded receipts are ci-0593f40a-complete.json and r256-ci-targeted.json in D static
+receipts; artifact ZIPs were read in memory, never retained as archives.
 
-R245 passed matching online/offline GACT builds and both TypeScript stages at
-`7d5281c9` / `aca98ce4` (655 files, 60,416,353 bytes; index SHA256
-`980c069ac26e729bff39f6d51d3bccedf1ee670a10d9bd756ebe7cae0d8420a1`).
-Website CI 39176951680 passed build/browser checks, with deploy skipped.
-R249 separately passed six real documentation views at 1440px/390px, loaded
-fonts, containment, progressive subscription controls and zero console/page/HTTP
-errors; all six images were inspected. Its current preview notice was too tall
-on phone, so the evidence details now use a keyboard-tested disclosure and the
-Question guide uses the same preview instead of stale beta-5.2 wording.
-The affected post-change website review remains required. R249 is documentation
-layout evidence, not Q9 production-service/model acceptance.
+## Confirmed live findings and repair
 
-The first browser attempt used a C temp profile before the parent environment
-was corrected. Profile absence and PID retirement were verified in
-`r246-browser-failure-custody.json`; later captures used parent and browser data
-on D. The local static build lacked the separate generated gallery prerequisite;
-that failed attempt is retained and is not a source-runtime qualification.
-Original rejected/manual-only paths were not retried. Final cleanup of the fresh
-website/tool caches remains due after affected review. Full Q1-Q9 and **0/30**
-final races remain unaccepted; no merge, tag, release or daily installation.
+R258 at 0593f40a / aca98ce4 used actual Codex/Luna and production run_server.
+The model received Download **task_75c6cd664e384cd48a233d140d264203** while running,
+read an independent file, observed progress, expired a short wait, waited again
+and collected the stored result. Session assignment
+task_95c172ce8a004895b2d2654908df3984 completed. Independent physical adjudication
+verified **8,001 files / 36,124,063 bytes / 8,017 entries**, every selected path,
+every file hash and manifest snapshot_d804925e2f9f48baa8044747e3111389.
+The selected payload SHA256 is c207d50a837c605b2786af4f931629a8b5b31c570790c297c5c9e605c0c5e58c.
 
-## Current integration and qualification — October 18, 23:33 UTC
+The original checker failed because it looked only at TransferOperation.manifest_id.
+Download's published manifest is on SourceRecord; native_storage.result explicitly
+uses operation, then source, then linked manifest identity. The original failure
+is preserved. r258-physical-adjudication.json verifies the original retained data
+without replaying work or fabricating an API. This directed proof does not pass
+the entire Q1/Q2 matrix.
 
-Implementation and initial test construction are complete. The current feature
-integration is `f203b3bd7f1f0546e8f29d9133408b05ddcb791b` / GACT
-`aca98ce477bbee1d1f14b1f384d1cf283906de6d`, containing develop through `cee026de3`
-and marketplace `2c172233`. FastMCP/Tasks 4.1.0, MCP 2.0.0, Docket 0.26.2 and
-Core 2.3.2 remain unchanged; incoming schema 0.6.0b14 uses revision `3224a797`.
-The merged LM admission/storage/UI changes require exact-head CI, a matching
-build and independent delta review. Existing earlier proofs retain their actual
-tuples and do not qualify this integration automatically. Daily Desktop/auth/
-defaults/released primary pins remain preserved. Publication stays separate.
+The same real run confirmed RegistryFoldOnLoopError from async tool observation.
+Astra independently found that both synchronous recording phases ran on the
+coroutine loop and their thread-local call IDs could collide across interleaved
+calls. a40af08b awaits finite recording through the existing off-loop helper,
+uses invocation ContextVars, and explicitly returns the observer's four context
+outputs. It retains lazy registry initialization, physical recording retirement
+and the existing execution owners. Five new real-Core cases cover cold/output-free
+and file-output recording, loop responsiveness, interleaved identities, and
+cancellation during both recording phases. Scoped Ruff/format, six-file Linux
+Mypy, removal and size guards pass. No timeout, worker, assertion or guard is weakened.
+The new source still requires green fresh CI, independent final verdicts and complete affected live proof. Five test cases required a follow-up setup correction; production source and dependencies are unchanged by that correction.
 
-R242 at preceding agent `3582bb82` / GACT `c813c1b7` passed actual Claude Haiku
-via `claude_code` SDK: asynchronous Question handle, independent file read,
-idle and post-Stop answer wakes under the same assignment, explicit result
-collection, one answer-input commitment and no duplicate on later human input.
-Idle assignment `task_633d07b37cfb4f2d89af97affe427164`, Question
-`task_c199f1a064b5fe375168f419dfc4de8146d84acad2f94f88e6e9c072a9a66419`;
-post-Stop assignment `task_c03464834bbb4d9081ce35dbf61b8f96`, Question
-`task_91313719fc84e3f79f5824488f9b56637dcd98c422f622c3c1bffb4330136567`.
-Both cases passed; service exit 0, no active work, both fresh roots absent,
-source and both original authentication files unchanged. Receipts are
-`r242-live-native.json` and `r242-cleanup.json` under D `.pytest-runtime/static`.
-This is not complete Claude child/lifecycle or Q3/Q4 acceptance.
+R257's first production-launcher attempt reached HTTP health before durable task
+readiness. Its workspace request was rejected 503; no model work was submitted.
+The corrected harness waits for durable readiness within the same 120-second
+budget. R257, R258 and R261 services exited 0, had no active tasks at cleanup,
+and their fresh data roots are absent. Original auth and source were unchanged.
 
-Download completion remains unqualified. R238 exceeded the unchanged 600-second
-model diagnostic with 48,000 small files. R239 missed startup before submitting
-work. R240's real transfer raised MemoryError while system commit reached 99%
-(83,796,340,736 / 84,128,354,304 bytes); raw backend completion did not prove
-physical settlement. Stop/cancel preceded an authorized owned-tree force-close.
-Its task outcomes remain uncertain although physical retirement/root removal
-are proven. R241 selected the wrong provider and supplies no Claude evidence.
-R238-R242 disposable roots are absent; no archive or rejected cleanup retry.
-R242 recorded 7,099,703,296 bytes commit headroom before launch. Future families
-check a 4-GiB commit reserve and verify the returned provider before submission.
+R252 separately passed six real website layouts at 1440px and 390px, including
+keyboard preview disclosures, fonts, containment and zero page/console/HTTP errors.
+All six images were visually inspected and hashed. This is documentation layout,
+not production-service Q9 acceptance. The five completed website/type-check cache
+roots are absent. The wider cleanup removed 96 paths / 1.53 GiB logical data;
+81 prior-rejected paths remain manual-only. No rejection was retried or delegated,
+and no archives or installed-state changes were made.
 
-Agent CI 39173458592 at `38ce7d8a` completed all 24 jobs, twelve Python reports,
-zero failures/errors. All 1,005 messages passed retention under its unchanged
-180-second guard: 88.861 / 115.743 / 95.790 seconds. A2UI passed at
-158.887 / 143.620 / 50.250 seconds. Fifty exclusions per interpreter remain
-exclusions. Website 39175400770 at `3582bb82` passed build/browser checks;
-deploy was skipped. Agent 39175391771 was still running at this report boundary.
-None of these executes the subsequent integration merge. Astra/Fable source GO
-at `a0645c21` and documentation GO at `3582bb82` remain predecessor-scoped;
-new integrated reviews are pending.
-
-Full Q1-Q9, migration/recovery and **0/30** final races remain unaccepted.
-The current cases used real product factories/owners under isolated Uvicorn;
-final startup/shutdown proof must use production `run_server`. Artifact-fold
-warnings from the different startup path remain open for that investigation.
-No Tasks-engine patch has been made to hide resource or harness failures.
+The optional web launcher's relative clio-kit path warning remains recorded for
+investigation; it is not presented as a failed download or a Claude-auth diagnosis.
+Q8 still needs the integrated LM admission cap of 8 and configurable 120-second
+request-admission wait. Earlier source-scoped proofs below retain their identities;
+they are not silently promoted to final acceptance.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 

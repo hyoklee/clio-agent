@@ -1,32 +1,31 @@
 # Tasks replacement: finite live experiments
 
-## Repair gate update — 2026-10-19 00:02 UTC
+## Current execution — 2026-10-19 01:55 UTC
 
-CI 39176926679 has twelve reports and two distinct failing cases. The batch
-addresses both plus Astra's mutable-endpoint approval blocker; six new ownership/
-edit regressions and a held-late-admission regression are constructed. Scoped
-static checks pass; fresh regression execution, independent review and affected
-live proof remain pending. R245 UI builds and R249's six documentation views
-passed on the preceding tuple, with honest scope retained. See
-[current status](task-replacement-current-status.md) for exact sources/reviews,
-counts and receipts. All requirements below and **0/30** final races remain.
+Initial implementation/test construction are complete. Current a40af08b / GACT
+aca98ce4 repairs the actual async-observation failure found in R258; all existing
+execution owners remain. CI 39187370616 exposed the new test-construction errors;
+both are corrected in a test-only follow-up. Actual Fable returned source GO;
+Astra approved the corrected setup. Fresh test execution/final review remain due.
+The preceding 0593f40a baseline has 13,062 passes / 50 exclusions per
+interpreter and all nine repair cases explicitly passed on each interpreter.
 
-## Integration and execution update — October 18, 23:33 UTC
+R258's original checker failure remains retained alongside independent verification
+of the actual completed transfer: 8,001 files, 36,124,063 bytes, exact selections
+and all hashes. R261 now exercises an outcome-led mission on production run_server,
+with confirmed Core provenance required for every tool observation. Its source,
+processes, ports and fresh D data were registered before launch. Its model/physical
+checks passed; the first-scope Core read missed the last event in _events/2.
+All five durable semantic events and the original raw failure remain retained;
+direct multi-chunk Core acceptance is still required. R257/R258/R261 data roots
+are absent, and each service exited 0 with no active task at cleanup.
 
-Implementation/test construction are complete. Next candidate `f203b3bd7` /
-GACT `aca98ce4` integrates develop `cee026de3` and schema 0.6.0b14. Previous
-proofs retain their actual tuples; fresh CI/build and delta reviews are pending.
-R242 passed actual Claude SDK idle/post-Stop Question delivery. R238-R241
-remain failed, with no completed Download claim. Causes and absence receipts
-are in [current status](task-replacement-current-status.md).
-
-Record at least 4 GiB system commit headroom, returned provider identity,
-paths/ports and custody before launch. Use production `run_server` for final
-startup/shutdown proof and read-only Core observation. MemoryError at 99%
-commit is a failed prerequisite/gate, not grounds for task-engine patches or
-weakened assertions. Retire owned work and keep uncertain settlement honest.
-Never retry a protected/rejected cleanup path. All original campaigns below
-and **0/30** final race repetitions remain required.
+Keep the existing 120/600/900-second harness diagnostics, four-GiB commit reserve,
+actual returned provider check, and production launcher. Do not equate HTTP health
+with durable task readiness. Source remains frozen within each family. Respect
+all prior/manual-only rejections; no retry, delegation, parent deletion or archives.
+The complete Q1–Q9 matrix and **0/30** final races remain required. Details and
+bounded receipts are in [current status](task-replacement-current-status.md).
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 

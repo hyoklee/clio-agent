@@ -1,26 +1,18 @@
 # Tasks replacement acceptance ledger
 
-## Repair gate update — 2026-10-19 00:02 UTC
+## Current evidence — 2026-10-19 01:55 UTC
 
-CI 39176926679 has twelve reports and two distinct failing cases. The batch
-addresses both plus Astra's mutable-endpoint approval blocker; six new ownership/
-edit regressions and a held-late-admission regression are constructed. Scoped
-static checks pass; fresh regression execution, independent review and affected
-live proof remain pending. R245 UI builds and R249's six documentation views
-passed on the preceding tuple, with honest scope retained. See
-[current status](task-replacement-current-status.md) for exact sources/reviews,
-counts and receipts. All requirements below and **0/30** final races remain.
-
-## Integration and acceptance update — October 18, 23:33 UTC
-
-Implementation/test construction are complete. Source `f203b3bd7` / GACT
-`aca98ce4` integrates develop `cee026de3` and schema 0.6.0b14; fresh exact-head
-CI/build/delta reviews remain required. R242 at `3582bb82` / `c813c1b7` passed
-actual Claude SDK Question idle/post-Stop wakes, one answer-input commitment
-per handle and no duplicate on a later turn. R238-R241 remain failed; Download
-is unqualified. All fresh roots are absent. See [current status](task-replacement-current-status.md)
-for exact handles, uncertainty, resource/CI/review scope and receipts. All rows
-below and **0/30** final race repetitions remain unaccepted.
+Current repair is a40af08b / GACT aca98ce4. The 0593f40a regression baseline
+passed all 24 jobs and 27 explicitly checked repair cases across three interpreters;
+50 exclusions per interpreter remain exclusions. Fresh a40af08b CI and both
+independent repair reviews are underway. R258 has actual-model Download overlap
+and complete byte/hash/manifest adjudication; its original checker failure is
+retained. It also demonstrated the artifact-observer defect repaired in a40af08b.
+R261 passed its model/physical checks and retained all five durable transform traces; the first-scope Core capture failed after chunk rollover. Direct multi-chunk Core acceptance remains pending. Astra-approved test setup corrections await fresh CI.
+R252 website layout passed six inspected desktop/phone views, not Q9 service acceptance.
+See [current status](task-replacement-current-status.md) for exact identities,
+counts, findings and cleanup receipts. Every required row below and **0/30**
+final race repetitions remains unaccepted until its full evidence is established.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 

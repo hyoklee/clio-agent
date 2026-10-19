@@ -100,6 +100,8 @@ def test_cold_async_observer_is_durable_responsive_and_returns_call_context(
                 name="async_observed",
                 args={"output_path": {"type": "string"}},
                 desc="Inspect real output",
+                presentation="text",
+                domain="resources",
             )
         ]
     )
@@ -129,7 +131,9 @@ def test_cold_async_observer_is_durable_responsive_and_returns_call_context(
     with active_turn_fixture(app, sid):
         scope = context.set_react_scope("observed-agent")
         try:
-            result, artifacts = asyncio.run(exercise())
+            result, artifacts = asyncio.run_coroutine_threadsafe(
+                exercise(), app.state.mcp_app_loop
+            ).result(timeout=10)
         finally:
             context.reset(scope)
     call_id = result["call_id"]
@@ -142,7 +146,7 @@ def test_cold_async_observer_is_durable_responsive_and_returns_call_context(
         assert any(item["path"] == str(destination) for item in artifacts)
     else:
         assert artifacts == []
-    segments = app.state.arc.list_segments(sid, "_events", include_tombstoned=True)
+    segments = list(app.state.arc._live.iter_session_event_segments(sid))
     transforms = [
         item
         for item in segments
@@ -191,7 +195,16 @@ def test_cancelled_async_observation_retires_its_core_worker_before_returning(
         return "done"
 
     (tool,) = instrument_tools(
-        [native_tool(probe, name="cancelled_observation", args={}, desc="Observe cancellation")]
+        [
+            native_tool(
+                probe,
+                name="cancelled_observation",
+                args={},
+                desc="Observe cancellation",
+                presentation="text",
+                domain="resources",
+            )
+        ]
     )
 
     async def exercise() -> None:
@@ -211,7 +224,7 @@ def test_cancelled_async_observation_retires_its_core_worker_before_returning(
         assert pop_declared_structured_content() is None
 
     with active_turn_fixture(app, sid):
-        asyncio.run(exercise())
+        asyncio.run_coroutine_threadsafe(exercise(), app.state.mcp_app_loop).result(timeout=10)
     assert body_ran is (phase == "completed")
     parts = app.state.live_assistant_parts[sid]
     starts = [item for item in parts if item.type == "tool_call"]
@@ -248,6 +261,8 @@ def test_interleaved_async_calls_keep_distinct_started_and_completed_identities(
                 name="interleaved_observation",
                 args={"label": {"type": "string"}},
                 desc="Interleave observations",
+                presentation="text",
+                domain="resources",
             )
         ]
     )
@@ -265,7 +280,7 @@ def test_interleaved_async_calls_keep_distinct_started_and_completed_identities(
         assert await second == "B"
 
     with active_turn_fixture(app, sid):
-        asyncio.run(exercise())
+        asyncio.run_coroutine_threadsafe(exercise(), app.state.mcp_app_loop).result(timeout=10)
     assert identities["A"] != identities["B"]
     registry = get_registry(app)
     parts = app.state.live_assistant_parts[sid]
@@ -277,7 +292,7 @@ def test_interleaved_async_calls_keep_distinct_started_and_completed_identities(
         assert starts[0].input["label"] == label
         assert ends[0].structured_content == {"label": label}
         assert ends[0].duration_ms >= 0
-    segments = app.state.arc.list_segments(sid, "_events", include_tombstoned=True)
+    segments = list(app.state.arc._live.iter_session_event_segments(sid))
     retained = [
         item.content["subject"]["call_id"]
         for item in segments
