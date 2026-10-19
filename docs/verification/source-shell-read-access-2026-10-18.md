@@ -101,4 +101,5 @@ An initial failed test run left the private runtime directory
 The new SQLite fixture now closes its connection explicitly, and the final run
 does not report a cleanup failure. Automatic approval review rejected a scoped
 PowerShell removal of that earlier directory with `blocked by policy` and no
-further reason; the earlier directory has therefore been left in place.
+further reason. A subsequent read-only existence check confirms that directory
+is already absent; no further manual removal is needed.
