@@ -720,8 +720,9 @@ def _make_permission_gate(app: "FastAPI"):
         # the ledger attributes the ask to the ai-review mode (never a silent default).
         if approval_mode == "ai-review" and policy_action != "ask":
             row["reason"] = REASON_AI_REVIEW_REVIEWER_PENDING
-        app.state.permissions[pid] = row
+        # A responder may act as soon as the pending row is visible.
         app.state.permission_events[pid] = evt
+        app.state.permissions[pid] = row
         enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
         publish_permission_event(
             app,

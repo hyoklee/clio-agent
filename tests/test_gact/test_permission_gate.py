@@ -11,8 +11,11 @@ Drives the bridge directly (no FastMCP server needed) and asserts:
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading
 import time
+import traceback
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -288,11 +291,13 @@ def test_child_permission_lifecycle_is_visible_on_attended_root(tmp_path: Path) 
 
 def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Blueprint/workspace MCP tools must not bypass GACT annotation semantics."""
 
     from fastmcp import FastMCP
 
+    from clio_agent.tools import execution
     from clio_agent.tools.mcp_runtime import make_mcp_client
 
     server = FastMCP("declared-permission")
@@ -335,38 +340,82 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
             namespace_servers={"relay": server},
         )
         result: dict[str, str] = {}
+        failures: list[Exception] = []
+        stopping = threading.Event()
+        original_hooks = execution.current_tool_runtime
+
+        def cancellable_hooks() -> execution.ToolRuntimeHooks:
+            hooks = original_hooks()
+            return replace(
+                hooks,
+                cancellation_checker=lambda: stopping.is_set()
+                or bool(hooks.cancellation_checker and hooks.cancellation_checker()),
+            )
+
+        monkeypatch.setattr(execution, "current_tool_runtime", cancellable_hooks)
 
         def call_tool() -> None:
-            with active_turn_fixture(app, session_id), _tool_session_context(session_id):
-                result["value"] = executor.call_tool(
-                    "relay_jarvis_run",
-                    {"pipeline_id": "pipeline-1"},
-                )
+            try:
+                with active_turn_fixture(app, session_id), _tool_session_context(session_id):
+                    result["value"] = executor.call_tool(
+                        "relay_jarvis_run",
+                        {"pipeline_id": "pipeline-1"},
+                    )
+            except Exception as error:
+                failures.append(error)
 
         thread = threading.Thread(target=call_tool)
         thread.start()
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline and not app.state.permissions:
-            time.sleep(0.01)
+        try:
+            deadline = time.monotonic() + 2.0
+            published = None
+            while time.monotonic() < deadline:
+                published = next(
+                    (
+                        event
+                        for event in app.state.bus.session_events_since(session_id)
+                        if event.type == "permission.requested"
+                        and event.payload["tool_call"]["tool_name"] == "relay_jarvis_run"
+                    ),
+                    None,
+                )
+                if published is not None:
+                    break
+                time.sleep(0.01)
 
-        assert calls == []
-        assert transports == []
-        pending = next(iter(app.state.permissions.values()))
-        assert pending["status"] == "pending"
-        assert pending["tool_call"] == {
-            "tool_name": "relay_jarvis_run",
-            "input": {"pipeline_id": "pipeline-1"},
-        }
+            assert calls == []
+            assert transports == []
+            assert published is not None
+            pending = app.state.permissions[published.payload["id"]]
+            assert pending["status"] == "pending"
+            assert pending["tool_call"] == {
+                "tool_name": "relay_jarvis_run",
+                "input": {"pipeline_id": "pipeline-1"},
+            }
 
-        response = client.post(f"/v1/permissions/{pending['id']}", json={"action": "allow"})
-        assert response.status_code == 204
-        thread.join(timeout=2.0)
-        executor.close()
-
-        assert not thread.is_alive()
-        assert calls == ["pipeline-1"], result
-        assert len(transports) == 1
-        assert '"name": "jarvis_run"' in result["value"]
+            response = client.post(f"/v1/permissions/{pending['id']}", json={"action": "allow"})
+            assert response.status_code == 204
+            thread.join(timeout=2.0)
+            assert not thread.is_alive(), "".join(
+                traceback.format_stack(sys._current_frames().get(thread.ident or -1))
+            )
+            assert not failures, failures
+            assert calls == ["pipeline-1"], result
+            assert len(transports) == 1
+            assert '"name": "jarvis_run"' in result["value"]
+        finally:
+            stopping.set()
+            for row in tuple(app.state.permissions.values()):
+                if (
+                    row["status"] == "pending"
+                    and row["tool_call"]["tool_name"] == "relay_jarvis_run"
+                ):
+                    client.post(f"/v1/permissions/{row['id']}", json={"action": "deny"})
+            thread.join(timeout=2.0)
+            assert not thread.is_alive(), "".join(
+                traceback.format_stack(sys._current_frames().get(thread.ident or -1))
+            )
+            executor.close()
 
 
 @pytest.mark.parametrize(

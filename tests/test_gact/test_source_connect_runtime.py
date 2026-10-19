@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import traceback
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -122,6 +124,7 @@ def test_connection_uses_live_permission_gate(
     import time
 
     from clio_agent.gact.app import _gact_app_context, _tool_session_context
+    from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
     from tests.test_gact.test_a2ui_v3 import HEADERS, _session_client
 
     client, sid, _ = _session_client(tmp_path)
@@ -134,12 +137,10 @@ def test_connection_uses_live_permission_gate(
     (upstream / "readme.txt").write_text("input", encoding="utf-8")
     response = client.patch(f"/v1/sessions/{sid}", headers=HEADERS, json={"approval_mode": mode})
     assert response.status_code == 200
+    record_assignment_fixture(app, sid)
     outcomes: list[object] = []
 
     def connect() -> None:
-        from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
-
-        record_assignment_fixture(app, sid)
         with _gact_app_context(app), _tool_session_context(sid), active_turn_fixture(app, sid):
             token = connect_tool.context.set_session_id(sid)
             try:
@@ -154,10 +155,22 @@ def test_connection_uses_live_permission_gate(
     try:
         if mode == "ask":
             deadline = time.monotonic() + 5
-            while time.monotonic() < deadline and not app.state.permissions:
+            published = None
+            while time.monotonic() < deadline:
+                published = next(
+                    (
+                        event
+                        for event in app.state.bus.session_events_since(sid)
+                        if event.type == "permission.requested"
+                        and event.payload["tool_call"]["tool_name"] == "connected_data_connect"
+                    ),
+                    None,
+                )
+                if published is not None:
+                    break
                 time.sleep(0.01)
-            assert app.state.permissions
-            pending = next(iter(app.state.permissions.values()))
+            assert published is not None
+            pending = app.state.permissions[published.payload["id"]]
             assert pending["status"] == "pending"
             assert pending["tool_call"]["tool_name"] == "connected_data_connect"
             replied = client.post(
@@ -165,7 +178,9 @@ def test_connection_uses_live_permission_gate(
             )
             assert replied.status_code == 204
         worker.join(timeout=5)
-        assert not worker.is_alive()
+        assert not worker.is_alive(), "".join(
+            traceback.format_stack(sys._current_frames().get(worker.ident or -1))
+        )
         session = app.state.sessions.get(sid)
         assert session is not None
         assert len(outcomes) == 1, outcomes
@@ -195,7 +210,9 @@ def test_connection_uses_live_permission_gate(
                         json={"action": "deny"},
                     )
             worker.join(timeout=5)
-            assert not worker.is_alive()
+            assert not worker.is_alive(), "".join(
+                traceback.format_stack(sys._current_frames().get(worker.ident or -1))
+            )
 
 
 def test_connection_is_real_and_reused_without_a_second_approval(
