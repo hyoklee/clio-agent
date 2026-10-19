@@ -20,6 +20,8 @@ from clio_agent.gact.artifacts.records import (
     Mechanism,
 )
 from clio_agent.gact.artifacts.registry import ArtifactRegistry
+from clio_agent.gact.artifacts.storage import ingest_artifact_identity
+from clio_agent.gact.artifacts.transforms import record_transform
 from clio_agent.gact.semantic_trace_file import FileSemanticTraceBackend
 from clio_agent.gact.session_export import build_transcript
 from clio_agent.gact.session_export_archive import build_archive
@@ -165,5 +167,74 @@ def test_archive_preserves_legacy_input_read_after_edit_or_delete(
                 json.loads(archive.read("transcript.json"))["tool_records"]
                 == receipt["tool_records"]
             )
+    finally:
+        archive_path.unlink()
+
+
+@pytest.mark.parametrize("matching_path", [False, True])
+def test_anonymous_consumed_versions_use_their_exact_retained_objects(
+    tmp_path: Path, matching_path: bool
+) -> None:
+    """A path consumed before designation can identify multiple historical hashes."""
+    app = FastAPI()
+    app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
+    app.state.workspaces = WorkspaceStore(path=tmp_path / "workspaces.json")
+    root = tmp_path / "source"
+    root.mkdir()
+    workspace = app.state.workspaces.create(name="test", root_path=str(root))
+    session = app.state.sessions.create(workspace_id=workspace.id, title="test")
+    spill_directory(root, session_id=session.id).mkdir(parents=True)
+    app.state.messages, app.state.context_files = {}, {}
+    app.state.semantic_trace_backend = FileSemanticTraceBackend(tmp_path / "traces")
+    app.state.artifact_registry = ArtifactRegistry()
+    source = root / "observation.bin"
+    bodies = (b"first observation", b"second observation")
+    # Both reads precede registration, so neither used edge has an artifact ID.
+    for i, body in enumerate(bodies):
+        source.write_bytes(body)
+        record = record_transform(
+            app,
+            session.id,
+            tool_name="fs_read_file",
+            args={"filepath": str(source)},
+            call_id=f"read-{i}",
+            ok=True,
+            result=None,
+            minted=[],
+            workspace_id=workspace.id,
+        )
+        assert record is not None and record.used and not record.used[0].artifact_id
+    stored = source if matching_path else root / "other.bin"
+    for body in bodies:
+        stored.write_bytes(body)
+        ingested = ingest_artifact_identity(app, stored, workspace_root=root)
+        assert mint_artifact(
+            app,
+            session.id,
+            name=stored.name,
+            workspace_id=workspace.id,
+            kind=ArtifactKind.OTHER,
+            mechanism=Mechanism.MODEL,
+            custody=ingested.custody,
+            evidence=ingested.evidence,
+            ingested=ingested,
+            producer={"session_id": session.id},
+            path=str(stored),
+        )
+    source.write_bytes(b"unrelated current content")
+    if not matching_path:
+        with pytest.raises(ValueError, match="recorded artifact bytes changed"):
+            build_archive(app, build_transcript(app, session.id), "effects")
+        return
+    archive_path = build_archive(app, build_transcript(app, session.id), "effects")
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            consumed = [f for f in manifest["files"] if f.get("source_path") == str(source)]
+            assert len(consumed) == 2
+            assert {archive.read(f["archive_path"]) for f in consumed} == set(bodies)
+            assert len({f["archive_path"] for f in consumed}) == 2
+            assert all(f["snapshot"] == "recorded_hash" for f in consumed)
+            assert manifest["omissions"] == []
     finally:
         archive_path.unlink()
