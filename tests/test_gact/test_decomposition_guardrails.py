@@ -194,7 +194,7 @@ from clio_agent.gact.app import build_app
 # Shared Tasks and compatibility routes contributed two pairs above the common
 # 403-route base. Develop independently adds Endpoint edit PATCH and uncaptured
 # metadata browse POST in routes/storage_ndp_endpoints.py; retain both additions.
-EXPECTED_ROUTE_METHOD_PAIRS = 407
+EXPECTED_ROUTE_METHOD_PAIRS = 408  # Plus develop's shared SSH profile inventory route.
 
 # app.py is build_app + lifecycle + re-export shims only. The ceiling is
 # the current size (~2892 lines) plus ~300 lines of headroom so ordinary
@@ -252,6 +252,7 @@ def test_build_app_registers_expected_route_count() -> None:
     assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}/request", "POST") in route_pairs
     assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}", "PATCH") in route_pairs
     assert ("/v1/workspaces/{wid}/ndp-endpoints/{identifier}/browse", "POST") in route_pairs
+    assert ("/v1/storage/ssh/profiles", "GET") in route_pairs
     pairs = len(route_pairs)
 
     assert pairs == EXPECTED_ROUTE_METHOD_PAIRS, (

@@ -126,7 +126,12 @@ def prepare_connect(
                 "resources": [item.name for item in dataset.resources],
             }
             if not human_action and (
-                _invoke_permission_gate(gate, "connected_data_connect", args, {"kind": "native"})
+                _invoke_permission_gate(
+                    gate,
+                    "connected_data_connect",
+                    args,
+                    {"kind": "native", "summary": f"Connect {label}"},
+                )
                 != "allow"
             ):
                 raise PermissionError("Source connection was not approved")
@@ -198,7 +203,12 @@ def _ordinary_source(
         )
         args = body.model_dump(mode="json")
         if not human_action and (
-            _invoke_permission_gate(gate, "connected_data_connect", args, {"kind": "native"})
+            _invoke_permission_gate(
+                gate,
+                "connected_data_connect",
+                args,
+                {"kind": "native", "summary": f"Connect {label}"},
+            )
             != "allow"
         ):
             raise PermissionError("Source connection was not approved")

@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from clio_agent.gact.infrastructure.models import SshRoute
 from clio_agent.gact.storage.models import SftpCredentials
 from clio_agent.gact.storage.sftp import SftpSource
+from clio_agent.gact.storage.ssh_profiles import ssh_profile_names
 
 
 class InspectSftp(BaseModel):
@@ -62,6 +63,13 @@ def inspect_sftp(
 
 def register_storage_sftp_routes(app: FastAPI) -> None:
     """Reuse the authenticated API and durable infrastructure host definitions."""
+
+    @app.get("/v1/storage/ssh/profiles")
+    async def profiles() -> dict[str, list[str]]:
+        try:
+            return {"profiles": await asyncio.to_thread(ssh_profile_names)}
+        except (OSError, UnicodeError) as exc:
+            raise HTTPException(409, "Could not read SSH profiles on this CLIO") from exc
 
     @app.post("/v1/storage/ssh/inspect")
     async def inspect(body: InspectSftp) -> dict[str, Any]:

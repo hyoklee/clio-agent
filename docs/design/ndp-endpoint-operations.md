@@ -12,8 +12,14 @@ The settings are durable in the existing connected-source ledger. Both the UI
 and native agent tools use the same owner and saved operation contract.
 
 - Direct URL: an HTTP(S) API base such as `https://host/gnss`.
-- SSH: an existing OpenSSH profile on the connected CLIO and its remote
-  loopback URL, for example `ares` and `http://127.0.0.1:8002`. The existing
+- SSH: the shared SSH route selector offers saved CLIO hosts and explicit
+  OpenSSH aliases on the connected CLIO. Use **Add hop** for a destination
+  behind a login host, or type/configure a custom computer, username, port
+  and key-file path. The final computer hosts the remote loopback URL:
+  `ares → ares-comp-11` with `http://127.0.0.1:8002` addresses the API on the
+  compute node. The Endpoint saves a reviewed snapshot of the shared `SshRoute`,
+  so later edits to a saved host do not silently change an approved destination.
+  Existing single-alias Endpoint connections remain supported. The existing
   SFTP SSH resolver supplies profile routing, keys/agent and strict host-key
   verification. Requests use short-lived direct-tcpip channels. They expose
   no listening local port and close the response, channel and SSH owner.
@@ -23,6 +29,11 @@ and native agent tools use the same owner and saved operation contract.
   with no redirects. CLIO refuses token forwarding through NDP's service proxy,
   whose implementation passes request headers to upstream services. Connect
   the service directly when its authentication is intended.
+
+The editor calls this **API sign-in**. **No NDP sign-in** omits the NDP account
+token; **Use my NDP sign-in** sends the saved account token to that API. This
+does not grant an Endpoint role or organization membership. SSH login is a
+separate authentication layer and still applies to either API sign-in choice.
 
 CLIO observes `/openapi.json`; it does not accept arbitrary model-authored
 method/path combinations. Returned operation IDs combine the method and path,
@@ -36,7 +47,7 @@ forwarding behavior.
 
 `connected_data_status.ndp_endpoints` inventories saved connections.
 
-1. `connected_data_ndp_endpoint_connect(name, url, ssh_profile, authentication)`
+1. `connected_data_ndp_endpoint_connect(name, url, ssh_profile, authentication, ssh_route)`
    requests normal approval of a new destination and discovers its operations.
 2. `connected_data_ndp_endpoint_operations(endpoint_id, query)` filters the
    observed operation descriptions and input schemas.

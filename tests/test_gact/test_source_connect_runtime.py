@@ -173,6 +173,7 @@ def test_connection_uses_live_permission_gate(
             pending = app.state.permissions[published.payload["id"]]
             assert pending["status"] == "pending"
             assert pending["tool_call"]["tool_name"] == "connected_data_connect"
+            assert pending["summary"] == "Connect Input"
             replied = client.post(
                 f"/v1/permissions/{pending['id']}", headers=HEADERS, json={"action": decision}
             )
@@ -227,20 +228,50 @@ def test_connection_is_real_and_reused_without_a_second_approval(
 
     app.state.pending_permission_gate = allow
     first = _connect(app, "local", str(upstream), "Measurements", configuration={})
+    presentation = setup_tool.setup_presentation({}, first, None)
+    assert presentation["summary"] == "Indexing requested"
+    assert presentation["blocks"][0]["result_kind"] == "snapshot"
     terminal, reply = _collect(app, first)
     indexed = _body(reply)
     assert terminal["status"] == "completed" and indexed["state"] == "completed"
     assert indexed["manifest_id"] and indexed["entries"] == 1
+    assert indexed["open_reference"] == {
+        "source_id": indexed["source_id"],
+        "revision": indexed["manifest_id"],
+        "linked": True,
+    }
     second = _connect(app, "local", str(upstream), "Measurements", configuration={})
     terminal, reply = _collect(app, second)
     linked = _body(reply)
     assert terminal["status"] == "completed"
     assert linked["connection"]["source_id"] == indexed["source_id"]
     assert linked["connection"]["state"] == "linked"
+    assert setup_tool.setup_presentation({}, linked, None)["summary"] == "Source linked"
     assert len(requests) == 1 and requests[0][0] == "connected_data_connect"
     opened = setup_tool.connected_data_open(indexed["source_id"])
     assert [row["path"] for row in opened["entries"]] == ["measurements.csv"]
     assert len(service.sources("ws_default")) == 1
+
+
+def test_failed_refresh_does_not_present_previous_manifest_as_its_result(
+    bound: tuple[StorageService, Any, Path],
+) -> None:
+    """An unavailable real source keeps the old index without claiming a new output."""
+    service, app, upstream = bound
+    accepted = _connect(app, "local", str(upstream), "Retained measurements")
+    terminal, reply = _collect(app, accepted)
+    assert terminal["status"] == "completed"
+    original = _body(reply)
+    source_id, previous = original["source_id"], original["manifest_id"]
+    upstream.rename(upstream.with_name(upstream.name + "-unavailable"))
+    refresh = app.state.builtin_boundary.bind(connect_tool.build_connected_data_index_tool())
+    receipt = asyncio.run(refresh.acall(source_id=source_id))
+    terminal, reply = _collect(app, receipt)
+    failed = _body(reply)
+    assert terminal["status"] == "failed" and failed["state"] == "failed"
+    assert failed["manifest_id"] is None and failed["open_reference"] is None
+    assert failed["entries"] == 0 and failed["hashes"] == {}
+    assert service.get("ws_default", source_id).linked_manifest_id == previous
 
 
 @pytest.mark.parametrize("change", ["mode", "configuration", "principal", "disconnected", "clio"])
@@ -343,6 +374,7 @@ def test_oauth_connection_waits_for_private_sign_in(
     result = _body(reply)
     assert terminal["status"] == "failed" and result["connection"]["state"] == "sign_in_required"
     assert result["error"]["code"] == "source_sign_in_required"
+    assert setup_tool.setup_presentation({}, result, None)["summary"] == "Sign-in required"
     assert service.sources("ws_default")[0].linked_manifest_id is None
     status = setup_tool.connected_data_status()
     assert (

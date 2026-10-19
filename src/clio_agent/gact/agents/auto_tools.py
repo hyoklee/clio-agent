@@ -65,12 +65,14 @@ from clio_agent.gact.memory_tools import build_memory_tools
 from clio_agent.gact.plan_mode import build_plan_exit_tool
 from clio_agent.gact.recall_context_tool import build_recall_context_tool
 from clio_agent.gact.resource_tools import build_resource_tools
+from clio_agent.gact.ssh_tools import build_ssh_execute_tool
 from clio_agent.gact.storage.connect_tool import (
     build_connected_data_connect_tool,
     build_connected_data_index_tool,
 )
 from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
 from clio_agent.gact.storage.ndp_endpoint_tools import build_ndp_endpoint_tools
+from clio_agent.gact.storage.ndp_tool_activation import session_ndp_tools_enabled
 from clio_agent.gact.storage.ndp_tools import build_ndp_discovery_tools
 from clio_agent.gact.storage.setup_tool import (
     build_connected_data_open_tool,
@@ -95,7 +97,11 @@ def build_configured_auto_tools(agent_def: Any, config: Any) -> list[Any]:
 
 
 def build_auto_react_tools(
-    agent_def: Any, *, a2ui_producers: bool | None = None, supports_vision: bool = False
+    agent_def: Any,
+    *,
+    a2ui_producers: bool | None = None,
+    supports_vision: bool = False,
+    ndp_tools: bool | None = None,
 ) -> list[Any]:
     """Return the auto-attached tool list for one react expert (order-stable).
 
@@ -114,6 +120,10 @@ def build_auto_react_tools(
             which records the typed reason when it withholds them). ``True`` is
             for a caller DESCRIBING the declarable surface with no session in
             scope (``catalog._builtin_tool_declarations``).
+        ndp_tools: ``None`` derives activation from this session's owned NDP
+            sources and visible Endpoint connections at each turn build.
+            ``True`` describes the complete product catalog without a session;
+            it is not used to construct an executing agent.
     """
 
     tools = [
@@ -151,6 +161,8 @@ def build_auto_react_tools(
         build_recall_context_tool(),
     ]
     declared = {str(name).strip() for name in (getattr(agent_def, "tools", None) or [])}
+    if "shell_bash" in declared and "ssh_execute" not in declared:
+        tools.append(build_ssh_execute_tool())
     if not (getattr(agent_def, "parent_id", "") or ""):
         # Root compatibility: automatic unless explicitly declared (the
         # declared-native resolver already attached the same tool) -- but ONLY
@@ -182,8 +194,10 @@ def build_auto_react_tools(
             tools.append(build_weather_forecast_tool())
         tools.append(build_refresh_provider_models_tool())
         tools.append(build_connected_data_status_tool())
-        tools.extend(build_ndp_discovery_tools())
-        tools.extend(build_ndp_endpoint_tools())
+        ndp_enabled = session_ndp_tools_enabled() if ndp_tools is None else ndp_tools
+        if ndp_enabled:
+            tools.extend(build_ndp_discovery_tools())
+            tools.extend(build_ndp_endpoint_tools())
         tools.append(build_connected_data_connect_tool())
         tools.append(build_connected_data_index_tool())
         tools.append(build_connected_data_open_tool())

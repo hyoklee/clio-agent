@@ -12,7 +12,7 @@ import re
 import zipfile
 from typing import Any
 
-from clio_agent.gact.session_export_document import document_body
+from clio_agent.gact.session_export_document import CSS, document_body
 from clio_agent.gact.session_export_viewer import _page, write_archive_review
 
 
@@ -75,6 +75,16 @@ def test_script_free_conversation_keeps_order_and_complete_results() -> None:
     assert "<h2>Findings</h2>" in rendered
     assert "<details>" not in rendered
     assert "412 checked\n413 checked" in rendered
+
+
+def test_native_review_scopes_fallback_prose_away_from_viewers_and_portalled_dialogs() -> None:
+    """Keep fallback image/table rules from overriding native layered utilities."""
+    native = _page("Review", '<div id="archive-document"></div>', scripts=("void 0;",))
+    assert f"<style>@scope (#archive-document, #archive-status) {{{CSS}}}</style>" in native
+    # Without an enhancement renderer, the document itself still needs its styles.
+    standalone = _page("Review", "<main>Conversation</main>")
+    assert f"<style>{CSS}</style>" in standalone
+    assert "@scope" not in standalone
 
 
 def test_self_contained_viewer_has_readable_fallback_and_valid_script_hashes() -> None:

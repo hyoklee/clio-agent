@@ -65,6 +65,7 @@ def test_agent_discovers_publisher_links_reads_and_downloads(
     assert indexed["state"] == "completed" and indexed["entries"] == 1 and indexed["manifest_id"]
     source_id = indexed["source_id"]
     assert decisions[0][1]["resources"] == ["stations.csv"]
+    assert decisions[0][2]["summary"] == "Connect Sea observations"
     assert "/stations.csv" not in catalog_http[1]
     listing = setup_tool.connected_data_open(source_id)
     assert listing["entries"][0]["path"] == "1-stations.csv"
@@ -99,6 +100,7 @@ def test_agent_discovers_publisher_links_reads_and_downloads(
     assert len(decisions) == 1
     tool = app.state.builtin_boundary.bind(download_tool.build_connected_data_download_tool())
     downloaded = asyncio.run(tool.acall(source_id=source_id, paths=["1-stations.csv"]))
+    assert decisions[-1][2]["summary"] == "Download Sea observations"
     outcome, reply = _collect(app, downloaded, kind="Download")
     assert outcome["status"] == "completed" and _body(reply)["state"] == "completed"
     record = service.get("ws_default", source_id)

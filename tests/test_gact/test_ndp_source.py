@@ -169,8 +169,10 @@ def test_selection_rejects_injected_resource_and_write_mode(
 ) -> None:
     catalog = NDPCatalog()
     catalog.search("sea")
-    with pytest.raises(ValueError, match="Choose resources"):
+    with pytest.raises(ValueError, match="Unknown resource IDs") as error:
         catalog.selected("weather", "weather", ["http://unapproved.test/private"])
+    assert "before contacting NDP" in str(error.value)
+    assert "connected_data_search_ndp" in str(error.value)
     with pytest.raises(ValueError, match="again"):
         catalog.selected("other", "weather", ["stations"])
     service = StorageService(tmp_path / "sources", tmp_path / "private" / "credentials.json")
@@ -179,6 +181,22 @@ def test_selection_rejects_injected_resource_and_write_mode(
             "work",
             CreateSource(provider="ndp", label="Denied", root="dataset", mode="write_enabled"),
         )
+
+
+@pytest.mark.parametrize(
+    ("resources", "message"),
+    [([], "at least one resource ID"), (["stations", "stations"], "Repeated NDP resource IDs")],
+)
+def test_selection_errors_do_not_change_the_approved_resource_set(
+    catalog_http: tuple[str, list[str]], resources: list[str], message: str
+) -> None:
+    catalog = NDPCatalog()
+    catalog.search("sea")
+    with pytest.raises(ValueError, match=message):
+        catalog.selected("weather", "weather", resources)
+    assert [item.id for item in catalog.selected("weather", "weather", ["stations"]).resources] == [
+        "stations"
+    ]
 
 
 @pytest.mark.parametrize("choice", ["link", "download"])
@@ -322,8 +340,11 @@ def test_authenticated_redirect_does_not_leak_bearer(monkeypatch: pytest.MonkeyP
         seen.append(request)
         if request.url.host == "endpoint.test":
             assert request.headers["Authorization"] == "Bearer private-access"
-            return httpx.Response(302, headers={"Location": "https://data.test/bytes"})
+            return httpx.Response(
+                302, headers={"Location": "https://data.test/bytes?signature=abc%2B123&part=2"}
+            )
         assert "Authorization" not in request.headers
+        assert request.url.query == b"signature=abc%2B123&part=2"
         return httpx.Response(200, content=b"science")
 
     monkeypatch.setattr(
@@ -337,6 +358,47 @@ def test_authenticated_redirect_does_not_leak_bearer(monkeypatch: pytest.MonkeyP
     assert not credential_target(source.dataset.endpoint, "https://endpoint.test.evil/api/private")
     with pytest.raises(PermissionError, match="read-only"):
         source.apply("data.csv", None, None)
+
+
+@pytest.mark.parametrize("redirect", [False, True])
+def test_resource_and_redirect_queries_survive_real_http(redirect: bool) -> None:
+    """Read actual bytes only when the complete catalog/signed URL reaches the server."""
+    seen: list[str] = []
+    query = "where=type%3D%27wetland%27&outSR=26910&signature=abc%2B123&part=1&part=2"
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+        def do_GET(self) -> None:
+            seen.append(self.path)
+            assert "Authorization" not in self.headers
+            if self.path == "/redirect?dataset=42":
+                self.send_response(302)
+                self.send_header("Location", "/data?" + query)
+                self.end_headers()
+                return
+            if self.path != "/data?" + query:
+                self.send_error(400, "Complete query required")
+                return
+            self.send_response(200)
+            self.send_header("Content-Length", "7")
+            self.end_headers()
+            self.wfile.write(b"science")
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    path = "/redirect?dataset=42" if redirect else "/data?" + query
+    source = NDPSource(dataset(f"http://127.0.0.1:{server.server_port}" + path))
+    try:
+        with source.open_read(source.entries()[0]) as reader:
+            assert reader.read() == b"science"
+        assert seen == (["/redirect?dataset=42"] if redirect else []) + ["/data?" + query]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=3)
 
 
 @pytest.mark.parametrize("status", [401, 403, 500])

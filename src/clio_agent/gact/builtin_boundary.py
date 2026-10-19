@@ -315,13 +315,21 @@ class BuiltinBoundary:
                 connection_approval, self.app.state.connected_storage, session.workspace_id, public
             )
         if approved is None:
+            metadata = {"kind": "native"}
+            if name == "connected_data_connect":
+                metadata["summary"] = f"Connect {public['label']}"
+            elif name == "connected_data_download":
+                source = await self.app.state.task_history.io.run(
+                    self.app.state.connected_storage.get, session.workspace_id, public["source_id"]
+                )
+                metadata["summary"] = f"Download {source.source.label}"
             gate = (
                 getattr(self.app.state, "pending_permission_gate", None)
                 or self.app.state.make_permission_gate()
             )
             decision = await run_owned_callable(
                 functools.partial(
-                    _invoke_permission_gate, gate, name, permission_arguments, {"kind": "native"}
+                    _invoke_permission_gate, gate, name, permission_arguments, metadata
                 ),
                 captured=captured.copy(),
                 name="clio-permission-" + name,

@@ -13,8 +13,13 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from clio_agent.gact.artifacts.export import register_export_gc_roots
 from clio_agent.gact.artifacts.registry import get_registry
-from clio_agent.gact.artifacts.storage import resolve_owned_artifact_path
+from clio_agent.gact.artifacts.storage import (
+    resolve_owned_artifact_path,
+    resolve_workspace_state_artifact_path,
+)
+from clio_agent.gact.session_export_recorded_read import recorded_read_bytes
 from clio_agent.gact.session_export_viewer import write_archive_review
+from clio_agent.platform_paths import path_is_within, win_extended_path
 from clio_agent.tools.servers.shell_spill_store import spill_directory
 
 if TYPE_CHECKING:
@@ -124,6 +129,7 @@ def _effects(app: FastAPI, transcript: dict[str, Any]) -> tuple[set[str], list[d
 def _write_file(
     archive: zipfile.ZipFile, source: Path, name: str, *, expected_sha: str | None = None
 ) -> dict[str, Any]:
+    source = Path(win_extended_path(source))
     before = source.stat()
     digest = hashlib.sha256()
     size = 0
@@ -233,6 +239,7 @@ def build_archive(
     os.close(fd)
     path = Path(raw_path)
     shas: dict[str, set[str]] = {}
+    retained_sources: dict[str, list[tuple[Path, Path]]] = {}
     try:
         with zipfile.ZipFile(
             path, "w", compression=zipfile.ZIP_DEFLATED, allowZip64=True
@@ -251,17 +258,40 @@ def build_archive(
                     app, version, workspace_root=roots[0] if roots else None
                 )
                 candidate = Path(version.path).resolve() if version.path else None
-                source = owned or (
-                    candidate
-                    if candidate and any(candidate.is_relative_to(root) for root in roots)
-                    else None
+                if owned is not None and candidate is not None and version.sha256:
+                    retained_sources.setdefault(version.sha256, []).append((candidate, owned))
+                managed = resolve_workspace_state_artifact_path(
+                    version, workspace_root=roots[0] if roots else None
                 )
+                source = (
+                    owned
+                    or managed
+                    or (
+                        candidate
+                        if candidate and any(path_is_within(candidate, root) for root in roots)
+                        else None
+                    )
+                )
+                if source is not None:
+                    source = Path(win_extended_path(source))
                 item = {
                     "name": record.name,
                     "workspace_id": record.workspace_id,
                     **version.model_dump(mode="json"),
                 }
-                if source is None or not source.is_file():
+                retained = recorded_read_bytes(transcript, version) if source is not None else None
+                if retained is not None:
+                    name = f"effects/{_segment(aid)}/{_segment(Path(record.name).name)}"
+                    archive.writestr(name, retained)
+                    manifest["files"].append(
+                        {"archive_path": name, "bytes": len(retained), "sha256": version.sha256}
+                    )
+                    item.update(
+                        archive_path=name,
+                        byte_source="recorded_tool_read",
+                        source_call_id=version.producer["call_id"],
+                    )
+                elif source is None or not source.is_file():
                     item["archive_path"] = None
                     manifest["omissions"].append(
                         {"artifact_id": aid, "reason": "recorded_bytes_unavailable"}
@@ -277,34 +307,46 @@ def build_archive(
             # Unregistered source files can still be precise consumed inputs:
             # the transform/context ledgers name them explicitly. Capture only
             # those contained paths, never strings guessed out of shell commands.
-            inputs: dict[str, str | None] = {}
+            inputs: set[tuple[str, str | None]] = set()
             for transform in transforms:
                 for edge in transform.get("used", []):
                     if edge.get("path") and not edge.get("artifact_id"):
-                        inputs[edge["path"]] = edge.get("sha256")
+                        inputs.add((edge["path"], edge.get("sha256")))
             if mode != "transcript":
                 for row in [transcript, *transcript["children"]]:
                     for context in row["context_files"]:
                         if context.get("path"):
-                            inputs.setdefault(context["path"], None)
+                            if not any(p == context["path"] for p, _ in inputs):
+                                inputs.add((context["path"], None))
             allowed = [
                 root
                 for row in [transcript, *transcript["children"]]
                 for root in _roots(app, row["session"]["workspace_id"])
             ]
-            for original, sha in sorted(inputs.items()):
+            for original, sha in sorted(inputs, key=lambda item: (item[0], item[1] or "")):
                 source = Path(original).resolve()
-                if not any(source.is_relative_to(root) for root in allowed):
+                if not any(path_is_within(source, root) for root in allowed):
                     manifest["omissions"].append(
                         {"path": original, "reason": "input_outside_workspace"}
                     )
                     continue
+                original_name = source.name
+                if sha:
+                    source = next(
+                        (
+                            held
+                            for recorded, held in retained_sources.get(sha, [])
+                            if path_is_within(source, recorded) and path_is_within(recorded, source)
+                        ),
+                        source,
+                    )
                 if not source.is_file():
                     manifest["omissions"].append(
                         {"path": original, "reason": "consumed_input_unavailable"}
                     )
                     continue
-                name = f"effects/inputs/{hashlib.sha256(original.encode()).hexdigest()[:16]}/{_segment(source.name)}"
+                identity = f"{original}\0{sha or 'export_time'}".encode()
+                name = f"effects/inputs/{hashlib.sha256(identity).hexdigest()[:16]}/{_segment(original_name)}"
                 entry = _write_file(archive, source, name, expected_sha=sha)
                 entry["source_path"] = original
                 entry["snapshot"] = "recorded_hash" if sha else "export_time"

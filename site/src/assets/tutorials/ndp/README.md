@@ -45,3 +45,23 @@ dialog after the result settles, without committing a duplicate connection.
 For Endpoints & streams, select the saved on-demand connection and expand
 Captured responses. Use the saved real results; do not substitute fixtures for
 live data. Review the finished pages at desktop/mobile sizes in both themes.
+
+## Scientific conversation figures, 19 October 2026
+
+- `konza-association.png` is an unmodified copy of the actual agent-produced
+  `D:/CLIO-Develop/ndp-showcases-20261019/konza/collaborator-handoff/figure-2-association.png`.
+  It uses checked reductions of NDP-acquired Konza measurements. This is a
+  scientific figure, not a screenshot of a fabricated interface. The three-turn
+  collaborator conversation starts with previously acquired data and retains a
+  recovered error.
+- `ares-station-comparison.png` is an unmodified copy of the actual
+  `ares-endpoint/collaborator_guide/figures/california_metadata_comparison.png`
+  under the same evidence root. Station metadata came through the actual NDP
+  Endpoint on Ares. Static outlines preserve offline context; waveform
+  availability and uninterrupted station operation were not established.
+
+Both figures were inspected in their real native CLIO viewer. Original browser
+captures are `konza-final-figure-in-clio.png` and
+`ares-final-figure-in-clio.png` in that evidence root. The website identifies
+the figures as saved scientific outputs, rather than UI captures. No image
+generation, chart recreation or manual alteration was used for these copies.

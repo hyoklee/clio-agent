@@ -41,6 +41,7 @@ def test_prepared_shell_uses_uv_python_and_pnpm_without_host_tools(tmp_path: Pat
     assert scratch.is_dir()
     for key in ("TEMP", "TMP", "TMPDIR", "CLIO_DOCUMENT_SCRATCH"):
         assert Path(environment[key]) == scratch
+    assert Path(environment["UV_CACHE_DIR"]) == scratch / "uv-cache"
     suffix = ".cmd" if os.name == "nt" else ""
     assert "--no-project" in (cache / "shell-bin" / f"python{suffix}").read_text()
     assert "pinned pnpm" in (cache / "shell-bin" / f"pnpm{suffix}").read_text()

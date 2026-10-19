@@ -39,7 +39,11 @@ export default defineConfig({
 				Hero: './src/components/overview/Hero.astro',
 				Footer: './src/components/starlight/Footer.astro',
 			},
-			plugins: [starlightLinksValidator({ errorOnLocalLinks: false })],
+			plugins: [starlightLinksValidator({
+				errorOnLocalLinks: false,
+				// Static native HTML endpoints are checked by the archive browser tests.
+				exclude: ['/conversations/ndp/alta/', '/conversations/ndp/tahoe/', '/conversations/ndp/konza/'],
+			})],
 			sidebar: [
 				{
 					label: 'Get started',
@@ -62,6 +66,7 @@ export default defineConfig({
 						{ label: 'Refer to a file with @', slug: 'docs/files/references' },
 						{ label: 'Connect a data source', slug: 'docs/files/connect' },
 						{ label: 'National Data Platform', slug: 'docs/files/ndp' },
+						{ label: 'NDP streams', slug: 'docs/files/ndp-streams' },
 						{ label: 'Copies and original files', slug: 'docs/files/download-or-link' },
 						{ label: 'Explore research notes', slug: 'docs/files/knowledge' },
 						{ label: 'Manage your sources', slug: 'docs/files/manage' },
@@ -117,6 +122,7 @@ export default defineConfig({
 						{ label: 'Choose an example', slug: 'docs/examples' },
 						{ label: 'Explore ground motion', slug: 'docs/examples/ground-motion' },
 						{ label: 'EarthScope data from NDP', slug: 'docs/examples/ndp-earthscope' },
+						{ label: 'Scientific questions for NDP', slug: 'docs/examples/ndp-science' },
 						{ label: 'Find a decision in research notes', slug: 'docs/examples/research-notes' },
 						{ label: 'Create a report and slides', slug: 'docs/examples/reports-and-slides' },
 					],

@@ -230,6 +230,66 @@ def test_effects_excludes_other_sessions_and_untouched_versions(
         path.unlink()
 
 
+@pytest.mark.parametrize("location", ["own_state", "other_state", "outside"])
+def test_effects_only_includes_recorded_inputs_from_its_own_managed_state(
+    export_app: tuple[FastAPI, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    location: str,
+) -> None:
+    """Keep materialized evidence without treating arbitrary recorded paths as grants."""
+    from clio_agent import paths
+
+    monkeypatch.setenv("CLIO_AGENT_HOME", str(tmp_path / "clio-home"))
+    monkeypatch.delenv("CLIO_USER_DIR", raising=False)
+    app, sid, wid = export_app
+    root = Path(app.state.workspaces.get(wid).root_path)
+    spill_directory(root, session_id=sid).mkdir(parents=True, exist_ok=True)
+    if location == "own_state":
+        folder = paths.workspace_state_dir(root) / "inputs" / "res_metadata"
+    elif location == "other_state":
+        other = tmp_path / "another-workspace"
+        other.mkdir()
+        folder = paths.workspace_state_dir(other) / "inputs" / "res_metadata"
+    else:
+        folder = tmp_path / "unapproved"
+    folder.mkdir(parents=True)
+    source = folder / "service-metadata.json"
+    content = b'{"description":"retained service metadata"}'
+    source.write_bytes(content)
+    version = mint_artifact(
+        app,
+        sid,
+        name="inputs/res_metadata/service-metadata.json",
+        kind=ArtifactKind.OTHER,
+        path=str(source),
+        workspace_id=wid,
+        mechanism=Mechanism.HARNESS,
+        custody=Custody.WORKSPACE_REFERENCED,
+        evidence=IdentityEvidence.hashed_at_use(
+            sha256=hashlib.sha256(content).hexdigest(), size_bytes=len(content)
+        ),
+        producer={"designation": "resource-upload", "resource_id": "res_metadata"},
+    )
+    assert version is not None
+    emit(app, sid, "artifact.used", {"artifact_id": version.artifact_id})
+    archive_path = build_archive(app, build_transcript(app, sid), "effects")
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            [item] = manifest["artifacts"]
+            if location == "own_state":
+                assert manifest["omissions"] == []
+                assert archive.read(item["archive_path"]) == content
+            else:
+                assert item["archive_path"] is None
+                assert manifest["omissions"] == [
+                    {"artifact_id": version.artifact_id, "reason": "recorded_bytes_unavailable"}
+                ]
+    finally:
+        archive_path.unlink()
+
+
 @pytest.mark.parametrize("mode", ["transcript", "effects", "full"])
 def test_complete_tool_outputs_are_portable_and_session_scoped(
     export_app: tuple[FastAPI, str, str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path, mode: Any

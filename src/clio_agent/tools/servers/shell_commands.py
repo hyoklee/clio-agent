@@ -3,9 +3,27 @@
 from __future__ import annotations
 
 import errno
+import re
 import subprocess
 from pathlib import PureWindowsPath
 from typing import Any
+
+_WINDOWS_BASH_PATH = re.compile(
+    r"(?P<drive>[A-Za-z]):[\\/](?P<rest>[^\"'`\s|&;<>()]+(?:[\\/][^\"'`\s|&;<>()]+)*)"
+)
+
+
+def _windows_bash_path(path_match: re.Match[str]) -> str:
+    """Translate a Windows drive path to the WSL mount path bash expects."""
+    drive = path_match.group("drive").lower()
+    rest = path_match.group("rest").replace("\\", "/")
+    return f"/mnt/{drive}/{rest}"
+
+
+def translate_windows_paths_for_bash(command: str) -> str:
+    """Translate embedded Windows absolute paths before sending to WSL bash."""
+    return _WINDOWS_BASH_PATH.sub(_windows_bash_path, command)
+
 
 SCRIPT_FILE_GUIDANCE = (
     "Write the program to a workspace .py, .mjs or .ps1 file with an available file-writing "

@@ -20,7 +20,10 @@ attached sources, and signed-in provider accounts. This read returns status,
 not a setup control. If this tool is absent in a child session, return to the
 main session for setup.
 
-For National Data Platform requests, load `work-with-ndp`. Its catalog discovery
+For National Data Platform requests, load `work-with-ndp`. Its tools are enabled
+only when this workspace has a connected NDP dataset or visible saved Endpoint.
+If absent, direct the user to **Attach > NDP** to select a dataset or connect an
+Endpoint, then continue on the next turn. When enabled, its catalog discovery
 tools resolve organizations, datasets and selected resource IDs before connecting;
 do not invent the private NDP selection configuration or ask for a URL first.
 

@@ -122,7 +122,7 @@ def register_native_storage(
             )
 
     def result(record: SourceRecord, operation: TransferOperation) -> dict[str, Any]:
-        manifest_id = operation.manifest_id or record.manifest_id or record.linked_manifest_id
+        manifest_id = operation.manifest_id
         manifest = service.store.get("manifest", manifest_id, Manifest) if manifest_id else None
         return {
             "source_id": record.source.id,
@@ -132,6 +132,13 @@ def register_native_storage(
             "bytes_done": operation.bytes_done,
             "bytes_total": operation.bytes_total,
             "manifest_id": manifest_id,
+            "open_reference": {
+                "source_id": record.source.id,
+                "revision": manifest_id,
+                "linked": operation.kind == "indexing",
+            }
+            if manifest_id and operation.state == "completed"
+            else None,
             "revision": manifest.revision if manifest is not None else None,
             "entries": len(manifest.entries) if manifest is not None else 0,
             "hashes": manifest.hashes if manifest is not None else {},

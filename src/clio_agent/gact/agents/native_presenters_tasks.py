@@ -10,6 +10,41 @@ from clio_agent.gact.agents.native_presenters import _record
 from clio_agent.gact.task_wait_presentation import wait_presentation
 
 
+def task_submission_presentation(result: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Present accepted native work without claiming it has completed."""
+    handle = result.get("handle")
+    if result.get("accepted") is not True or not isinstance(handle, str) or not handle.strip():
+        return None
+    kind = result.get("kind")
+    label = kind if isinstance(kind, str) and kind in {"Indexing", "Download"} else "Task"
+    status = result.get("status")
+    completed = status == "completed"
+    failed = isinstance(status, str) and status in {
+        "failed",
+        "cancelled",
+        "interrupted",
+        "denied",
+        "error",
+    }
+    block = {
+        "id": "task-submission",
+        "type": "text",
+        "label": str(result.get("description") or label),
+        "text": f"Task: {handle}",
+        "status": str(status or "pending") if completed or failed else "pending",
+        "result_kind": "completion" if completed or failed else "snapshot",
+    }
+    if failed:
+        block["severity"] = "error"
+    presentation: dict[str, Any] = {
+        "summary": f"{label} {'completed' if completed else 'unsuccessful' if failed else 'requested'}",
+        "blocks": [block],
+    }
+    if failed:
+        presentation["status"] = "degraded"
+    return presentation
+
+
 def _label(row: Mapping[str, Any]) -> str:
     """Use only the authorized response, never another session lookup."""
     return str(
@@ -138,6 +173,14 @@ def present_task_family(
 ) -> tuple[str, list[dict[str, Any]], str, str, str]:
     """Present shared task controls, preserving independent outcomes and pending work."""
     payload = _record(result) or dict(row)
+    if (submission := task_submission_presentation(payload)) is not None:
+        return (
+            submission["summary"],
+            submission["blocks"],
+            "Inspect",
+            submission.get("status", ""),
+            "",
+        )
     if declaration == "wait":
         presentation = wait_presentation(args, payload)
         return (

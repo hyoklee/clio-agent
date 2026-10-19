@@ -241,7 +241,13 @@ def test_saved_view_control_uses_declared_binding_and_leaves_artifact_intact(
             "value": "Temporary local view",
         }
         update = build_update_a2ui_data_model_tool()
-        assert update(**{**args, "path": "/undeclared"})["reason"] == "a2ui_view_control_unbound"
+        unbound = update(**{**args, "path": "/undeclared"})
+        assert unbound["reason"] == "a2ui_view_control_unbound"
+        assert "/detail" in unbound["hint"]
+        parent = update(**{**args, "path": "/", "value": {"detail": "Temporary local view"}})
+        assert parent["reason"] == "a2ui_view_control_unbound"
+        assert "Parent-object replacement is not supported" in parent["hint"]
+        assert read_dashboard_report(app, sid, saved["artifact_id"]) == original
         assert update(**{**args, "delete": True})["reason"] == "a2ui_view_control_invalid"
         missing_epoch = {
             key: value for key, value in args.items() if key != "expected_view_revision"

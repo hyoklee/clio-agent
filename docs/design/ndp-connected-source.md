@@ -11,6 +11,25 @@ resource custody, downloaded copies and content hashing when bytes are read.
 Connecting saves catalog metadata. The user explicitly chooses Download or Link;
 linking indexes the selected names, while downloading copies their contents.
 
+Catalog browsing requests 30 datasets per page rather than loading the entire
+catalog. Unfiltered entries start as collapsed titles. Opening one shows up to
+three description lines, with **Show more** for the full text. Its **Resources**
+section starts open, can be collapsed independently and reveals ten more entries
+at a time. Search results and the selected-resource view start expanded. Expanding
+metadata does not download data; resource selections survive collapsing and paging.
+Catalog HTTP work runs through `asyncio.to_thread`; it does not run synchronously
+on the API event loop. Browser rendering is bounded separately so catalogs with
+thousands of resource links do not mount all their controls during initial browsing.
+
+The UI also saves validated organization lists and loaded catalog/search pages in
+browser IndexedDB. Reopening the picker or reloading the tab restores saved
+metadata, then refreshes it in the background. Failed refreshes retain the last
+successful results. Cache keys separate the CLIO connection, identified NDP
+account, organization, access filter and search. Credentials and dataset contents
+are not cached here. Usable snapshots expire after seven days; storage is bounded
+to twenty query snapshots, 8 MiB per snapshot and 32 MiB in total. Attachment and
+data access still require validation by the connected backend.
+
 ## Authentication
 
 The shipped defaults are the registered **public** Keycloak client `clio` on

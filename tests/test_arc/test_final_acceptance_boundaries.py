@@ -228,11 +228,13 @@ async def test_native_shutdown_closes_admission_and_joins_active_cleanup(
         )
 
     await native.__aenter__()
-    closing: asyncio.Task[None] | None = None
+    closing: asyncio.Task[tuple[BaseException, ...]] | None = None
     try:
         receipt = await submit("first")
         await entered.wait()
-        closing = asyncio.create_task(native.__aexit__(None, None, None))
+        # SDK lifespans must enter and exit in their owning context. Request and
+        # await production settlement concurrently, then retire that lifespan here.
+        closing = asyncio.create_task(native.settle_shutdown())
         await cleaning.wait()
         assert not closing.done() and not marker.exists()
         row = await history.io.run(history.task_snapshot, receipt["handle"])
@@ -240,7 +242,7 @@ async def test_native_shutdown_closes_admission_and_joins_active_cleanup(
         with pytest.raises(ValueError, match="admission is closed"):
             await submit("late")
         release.set()
-        await closing
+        assert not await closing
         assert marker.read_text(encoding="utf-8") == receipt["handle"]
         row = await history.io.run(history.task_snapshot, receipt["handle"])
         assert row is not None and row.terminal_at is not None
@@ -249,5 +251,4 @@ async def test_native_shutdown_closes_admission_and_joins_active_cleanup(
         release.set()
         if closing is not None:
             await closing
-        else:
-            await native.__aexit__(None, None, None)
+        await native.__aexit__(None, None, None)

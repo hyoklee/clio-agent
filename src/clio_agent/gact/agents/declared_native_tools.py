@@ -26,6 +26,7 @@ from clio_agent.gact.memory_tools import (
     build_memory_summary_tool,
 )
 from clio_agent.gact.search_assistant import build_clio_search_read_tool, build_clio_search_tool
+from clio_agent.gact.ssh_tools import build_ssh_execute_tool
 from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
 from clio_agent.gact.task_declarations import (
     TASK_COMPATIBILITY_ALIASES,
@@ -62,6 +63,7 @@ DECLARABLE_NATIVE_TOOLS: frozenset[str] = frozenset(
         "prepare_document_runtime",
         "prepare_execution_runtime",
         "prepare_document",
+        "ssh_execute",
     }
     | TASK_TOOL_NAMES
     | TASK_COMPATIBILITY_ALIASES
@@ -162,6 +164,7 @@ def resolve_declared_native_tools(
         "prepare_document_runtime": build_prepare_document_runtime_tool,
         "prepare_execution_runtime": build_prepare_execution_runtime_tool,
         "prepare_document": build_prepare_document_tool,
+        "ssh_execute": build_ssh_execute_tool,
         "create_a2ui_surface": build_create_a2ui_surface_tool,
         "update_a2ui_components": build_update_a2ui_components_tool,
         "update_a2ui_data_model": build_update_a2ui_data_model_tool,

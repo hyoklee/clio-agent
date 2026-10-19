@@ -106,9 +106,34 @@ def project_accepted_mail_messages(
             if history.mail_withdrawn(sid, item.id):
                 continue
             content = history.read_content(item.content)
-            if not isinstance(content, dict) or "message" not in content:
+            if not isinstance(content, dict):
                 continue
-            message = Message.model_validate(content["message"])
+            legacy = content.get("legacy")
+            if (
+                item.kind == "human"
+                and isinstance(legacy, dict)
+                and content.get("message") is None
+                and isinstance(content.get("text"), str)
+            ):
+                # Older mail retained text rather than a typed transcript envelope.
+                # Project that confirmed body; this does not acknowledge its input.
+                message = Message.model_validate(
+                    {
+                        "id": content.get("message_id") or item.id,
+                        "session_id": sid,
+                        "role": "user",
+                        "created_at": item.created_at,
+                        "updated_at": item.created_at,
+                        "metadata": legacy.get("metadata") or {},
+                        "parts": [
+                            {"id": item.id + ":text", "type": "text", "text": content["text"]}
+                        ],
+                    }
+                )
+            elif "message" in content:
+                message = Message.model_validate(content["message"])
+            else:
+                continue
             if (
                 not message.id
                 or message.session_id != sid

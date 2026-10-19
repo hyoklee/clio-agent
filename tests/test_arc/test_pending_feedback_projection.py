@@ -46,6 +46,57 @@ def wire_transcripts(app: Any, arc: ARCMemory, path: Path, file_enabled: bool) -
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("null_envelope", [False, True])
+async def test_text_only_legacy_mail_restores_without_acknowledging_input(
+    arc: ARCMemory, tmp_path: Path, null_envelope: bool
+) -> None:
+    """Migrated metadata mail remains visible and pending after full owner startup repair."""
+    app, owner, root = await create_environment(arc, tmp_path)
+    sid, history = root.owner.session_id, owner.history
+    wire_transcripts(app, arc, tmp_path / "messages", True)
+
+    def exercise() -> None:
+        content: dict[str, Any] = {
+            "message_id": "legacy-human-input",
+            "text": "Keep the original retained feedback",
+            "legacy": {"source_kind": "human", "metadata": {"original": True}},
+        }
+        if null_envelope:
+            content["message"] = None
+        item = history.record_mail(
+            MailItem(
+                id="legacy-human-input",
+                recipient_session=sid,
+                sender_human=root.owner.human_id,
+                kind="human",
+                handle=root.handle,
+                delivery="held",
+                held_reason="historical_delivery_unknown",
+                content=history.write_content(sid, content),
+                created_at="2026-10-19T22:00:00Z",
+            )
+        )
+        for _ in range(2):
+            session_store.restore_pending_mail_messages(app, history)
+            app.state.messages.discard(sid)
+            rows = assemble_session_messages(arc, sid)
+            selected = [row for row in rows if row.id == item.id]
+            assert len(selected) == 1
+            assert selected[0].parts[0].text == content["text"]
+            assert selected[0].metadata == {"original": True}
+            assert selected[0].created_at == item.created_at
+            assert history.pending_mail(sid) == (item,)
+            assert not history.acknowledged_notifications(sid)
+            assert history.read_content(item.content) == content
+
+    try:
+        await asyncio.to_thread(exercise)
+    finally:
+        await owner.shutdown()
+        await owner.recovery.drain()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("file_enabled", [False, True])
 async def test_paused_startup_restores_migrated_and_promoted_feedback_once(
     arc: ARCMemory, tmp_path: Path, file_enabled: bool
