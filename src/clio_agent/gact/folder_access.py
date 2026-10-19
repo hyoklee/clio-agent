@@ -75,13 +75,21 @@ def requested_folders(name: str, args: Mapping[str, Any]) -> list[str]:
             from clio_agent.tools.execution import get_active_tool_workspace_root
 
             path = Path(get_active_tool_workspace_root() or Path.cwd()) / path
-        # A root grant cannot override connected-source credential/read-only boundaries.
-        policy._check_connected_storage(path, field="path", write=name != "fs_read_file")
+        # Shell path declarations describe access, not write intent. The child
+        # fence enforces writes; never turn an approved source read into a root
+        # grant (which would incorrectly request read/write access).
+        reads_source = name in {"fs_read_file", "shell_bash"}
+        policy._check_connected_storage(path, field="path", write=not reads_source)
         from clio_agent.tools.file_policy import _has_symlink
 
         if not policy.allow_symlinks and _has_symlink(path):
             raise PermissionError("Use a real path; folder approval cannot override symlink policy")
         path = path.resolve(strict=False)
+        if reads_source and policy.allows_source_read(path):
+            continue
+        # Unapproved protected paths still cannot acquire a writable root grant.
+        if name == "shell_bash":
+            policy._check_connected_storage(path, field="path", write=True)
         folder = path if directory else path.parent
         try:
             policy._ensure_allowed(folder, field="path")

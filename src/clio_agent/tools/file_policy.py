@@ -269,12 +269,7 @@ class FileAccessPolicy:
                 next_action="Provide an existing file inside an allowed root.",
             ) from exc
 
-        from clio_agent.runtime.storage_access import materialized_read_roots  # noqa: PLC0415
-
-        source_roots = tuple(
-            approved for root in self.allowed_roots for approved in materialized_read_roots(root)
-        )
-        if not any(resolved.is_relative_to(root) for root in source_roots):
+        if not self.allows_source_read(resolved):
             self._ensure_allowed(resolved, field=field)
         if not resolved.is_file():
             raise self._error(
@@ -298,6 +293,21 @@ class FileAccessPolicy:
                 details={"size_bytes": size, "max_file_size_bytes": self.max_file_size_bytes},
             )
         return resolved
+
+    def allows_source_read(self, path: Path) -> bool:
+        """Recognize approved workspace copies without adding writable territory.
+
+        Callers must still check credential exclusions and symlink policy. Shell
+        children also require the OS fence before any command can execute.
+        """
+        from clio_agent.runtime.storage_access import materialized_read_roots  # noqa: PLC0415
+
+        resolved = path.resolve(strict=False)
+        return any(
+            resolved.is_relative_to(approved)
+            for root in self.allowed_roots
+            for approved in materialized_read_roots(root)
+        )
 
     def validate_write(
         self,

@@ -200,6 +200,14 @@ restart is required; an HTTP timeout does not imply the setup worker stopped.
 cannot protect source credentials or read-only source roots. The advisory floor
 is therefore not an unconditional permission to spawn arbitrary processes.
 
+Approved downloaded source copies are readable by file tools and fenced shell
+commands, including Python analysis. Declaring a source in `access_paths` does
+not request write access or add a writable folder grant. The OS fence keeps the
+source read-only; save derived tables, plots and reports in the workspace.
+File edit tools still reject writes to protected source copies before dispatch.
+Private credentials remain excluded from both reads and writes. If the host
+cannot enforce these exclusions, shell execution fails before starting a child.
+
 ### Network chokepoint + deny mode (#978/#979)
 
 Child egress defaults to **ALLOW + RECORD**: every spawned child routes through one

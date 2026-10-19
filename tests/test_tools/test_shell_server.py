@@ -62,6 +62,7 @@ def test_shell_description_windows_warns_off_wsl_and_steers_pandas():
     assert "wsl" in text.lower()
     assert "pandas" in text
     assert "NOT available" in text  # POSIX text tools absent
+    assert "or an approved downloaded source directory" in text
 
 
 def test_shell_description_posix_has_no_wsl_and_steers_pandas():
@@ -78,6 +79,7 @@ def test_shell_description_posix_has_no_wsl_and_steers_pandas():
     assert "POSIX conventions" in text
     assert "pandas" in text
     assert "ARE available" in text  # POSIX text tools present
+    assert "or an approved downloaded source directory" in text
 
 
 def test_detect_shell_env_platform_is_monkeypatchable(monkeypatch):
