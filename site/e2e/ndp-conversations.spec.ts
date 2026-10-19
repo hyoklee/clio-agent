@@ -7,6 +7,8 @@ for (const [slug, title, messages] of [
   ['ares', /Ares/i, 14],
 ] as const) {
   test(`${slug}: public native archive renders saved results without contacting services`, async ({ page, baseURL }) => {
+    // Self-contained exports carry 40-81 MB of real snapshots and need time to hydrate.
+    test.setTimeout(60_000);
     const errors: string[] = [];
     const externalRequests: string[] = [];
     page.on('pageerror', (error) => errors.push(error.message));
@@ -17,7 +19,7 @@ for (const [slug, title, messages] of [
     const response = await page.goto(`/conversations/ndp/${slug}/`);
     expect(response?.status()).toBe(200);
     expect(response?.headers()['content-type']).toContain('text/html');
-    await expect(page.getByRole('tab', { name: 'Results', exact: true })).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Results', exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('heading', { level: 1, name: title }).filter({ visible: true })).toBeVisible();
     await expect(page.getByText(new RegExp(`Transcript.*${messages} messages`)).filter({ visible: true })).toBeVisible();
     await page.getByRole('tab', { name: 'Results', exact: true }).click();
