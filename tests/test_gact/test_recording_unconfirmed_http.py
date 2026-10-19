@@ -64,4 +64,5 @@ def test_recording_hold_response_is_readable_through_production_cors_order() -> 
         "error": "core_recording_unconfirmed",
         "message": "Conversation history is recovering. Try again when the service is ready.",
         "recoverable": True,
+        "details": {},
     }

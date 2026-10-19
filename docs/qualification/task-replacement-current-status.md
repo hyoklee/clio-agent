@@ -1,59 +1,56 @@
 # Tasks replacement status
 
-## Active live execution — 2026-10-19 20:15 UTC
+## Current execution — 2026-10-19 20:40 UTC
 
 Initial implementation and initial test construction are complete. Current work is
-live qualification and bug repair. No local pytest or Vitest suite ran in this period.
+live qualification and bug repair. Regression cases go to CI; no local pytest or
+Vitest loop ran in this campaign. GACT remains `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb`.
 
-- Agent `ee87a1adc9d97e83e2cbfa259ff639cdf4efdb60` / GACT
-  `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb` passed all 24 CI jobs in
-  [39314058198](https://github.com/iowarp/clio-agent/actions/runs/39314058198).
-  All twelve reports are retained: Python 3.12, 3.13 and 3.14 each ran 13,092
-  passing cases, zero failures and 50 exclusions. Exclusions are not passes.
-- Runtime remains Python 3.14.6, Core 2.3.2, FastMCP/tasks 4.1.0, MCP 2.0.0 and
-  Docket 0.26.2. Astra and actual Claude Code/Fable cleared both the storage and
-  multiple-tool-block corrections. R392B demonstrates actual Claude error feedback
-  and corrected calls; its later lifecycle assertion failed and remains failed.
-- All 30 fresh R1–R6 repetitions passed on predecessor `24902aef77e26aeee99078c7bd8463f5be71db04`.
-  Storage-only changes were additionally exercised by R388: actual Luna Indexing
-  (48,098 entries), Download (8,001 files / 34,868,063 bytes, all hashes), five mixed
-  finalization/cancellation pairs, and a real publication-boundary exception after
-  enumeration, queued once as failed/confirmed while retaining the previous manifest.
-  Its raw driver remains failed on a missing REST-projection field; separate read-only
-  SQLite validation and independent Astra review support the narrower outcomes.
-- R393 passed actual-model positive peer capacity of one: first accepted, second
-  refused with retryable backpressure, human feedback/Question answer/native result
-  exempt, paused inputs delivered once after resume, and later peer mail admitted
-  despite retained history. R378 separately passed all 1,005-message and restart
-  assertions under 900 seconds (restart at 880.3 seconds). R374 proves restart
-  without replay and inherited physical cancellation; R363 has independently
-  adjudicated child Download/yield/wake and bytes/hash evidence. Raw failures stay failed.
-- R398 proves fast trusted controls during a real Core pause and physical process
-  retirement before recovery. Its message-rejection expectation lacked the detected-
-  outage prerequisite: an in-flight request was uncertain and committed only after
-  Core resumed. That is not an undurable acceptance claim. A fresh known-outage and
-  idle-recovery gate remains required. This revision corrects the independently found
-  HTTP classification of the existing RecordingUnconfirmed hold from generic500 to
-  recoverable503, with two constructed public-boundary/CORS regressions. It adds no
-  health mechanism, deadline, state owner or new admission policy.
-- Claude lifecycle repeats continue on frozen ee87. R392A/C setup assumptions about
-  host PID namespaces, relative command spelling and unrelated inline Shell probes
-  were corrected together in the unlaunched harness; original failures are retained.
-  R392B's fresh-result-read assertion was not satisfied and is not accepted as a
-  complete lifecycle pass. The original Shell was not replayed in that run.
-- Q1/Q2/Q5/Q8 scopes and unchanged GACT desktop/phone evidence remain applicable
-  through explicit source impact. Outstanding: remaining Claude combinations and
-  repeats, detected Core-outage/idle recovery, approved surviving-provider work and
-  provider-continuation finalization, applicable legacy/effect-loss mapping, final
-  candidate CI/review, and final resource retirement. No candidate qualification or
-  release GO is declared.
-- Ares allocation 24932 reuses one environment; every family registers processes,
-  ports and paths. R380/382/386/387/388/390/392A–C/393 and the stopped redundant R397
-  are physically retired with cleanup receipts. Remaining live/runtime ownership is
-  recorded in current-ares-execution.json. Installed Desktop/auth/defaults/released
-  pins and all prohibited/manual-only boundaries remain preserved.
+- **Five actual Claude/Sonnet lifecycle cycles passed:** R392D–H on frozen
+  `ee87a1adc9d97e83e2cbfa259ff639cdf4efdb60`. Each proves immediate child/Shell
+  handles, parent Stop independence and post-Stop steering, retained-context restart
+  with one original Shell submission, pause/resume, fresh result inspection,
+  inherited physical subtree cancellation and five attributed parent interventions.
+  Every family has a process/port/root-absence receipt. Earlier raw failures remain failed.
+- **Fresh effect-loss recovery passed:** R405 on `bef68870334dcd9ee6484116c222b09e90174c6a`,
+  Python 3.14.6 / Core 2.3.2. The real native worker crashed after the side effect and
+  physical cleanup, before result persistence. Actual Luna inspected the interrupted
+  original handle and effect file, then deliberately submitted revised work with a
+  new handle. Original effects: one; deliberate reconciliation: one; final notices:
+  one per handle. Both service instances and disposable roots are retired.
+- **Core outage exposed a real remaining bug:** R403 proved trusted pause/cancel
+  during actual Core suspension, physical Shell/descendant retirement, and refusal
+  of new durable input with503 after the recording hold was detected. Idle recovery
+  failed because the existing client required restart even when its original daemon
+  resumed. The frozen failed run was force-closed through verified owned identities
+  and removed. The correction permits only a bounded GIL-free probe of the verified
+  original process/client; dead, replaced, recycled or unidentified processes remain
+  restart-required. Fresh outage acceptance is still required.
+- **Complete bef CI inventory:** all twelve reports retained. Two distinct failures:
+  the new HTTP expectation omitted the existing `details: {}` field; a stalled native
+  future occasionally beat the outer watcher and bypassed typed quarantine. The batch
+  corrects both without changing timeouts, retry counts, guards or assertions. New
+  regressions cover the ordering and original-process identity boundaries.
+- Prior all-30 R1–R6, five affected storage cancellation pairs, real Indexing/Download
+  bytes/hashes, 1,005-message restart, peer backpressure, two-workflow coordination,
+  capacity and desktop/phone UI scopes retain their exact executed identities.
+  Q9's unchanged UI/schema/control inputs and selected screenshot hashes were reviewed
+  independently. R307 migrated twice against Core 2.3.2; its migration implementation
+  remains unchanged. These are explicit impact assessments, not fresh-run claims.
+- **Still required:** successful corrected Core-outage recovery, exact final-head CI
+  and reviews, an approved surviving-provider job and provider-continuation cleanup,
+  final acceptance reconciliation and retirement of the remaining Ares environment,
+  worktrees, credential copies and allocation. The provider prerequisite remains
+  unanswered; local transfers do not stand in for that acceptance. No qualification
+  GO, merge, release or installation is claimed.
 
-## Current execution — 2026-10-19 17:18 UTC
+Bounded receipts: `current-ares-execution.json`, `r392d`–`r392h` live/cleanup records,
+`r403-qualified-scope.json`, `r405-live-effect-recovery.json`, `r405-cleanup.json`,
+`ci-bef-inventory.json` and `Q9-current-impact-assessment.json` in the D execution
+repository. Installed Desktop, authentication, defaults, released pins, unrelated
+work and every prohibited/manual-only cleanup boundary remain preserved.
+
+## Current execution â€” 2026-10-19 17:18 UTC
 
 Initial implementation and test construction are done. Current production source
 is agent `52cc8e7bcff0a4d28347aa9beac0ac1654e00172` with GACT
@@ -93,7 +90,7 @@ Receipts: `Q5-current-adjudication.json`, `SSE-current-adjudication.json`,
 repository. Installed Desktop/auth/defaults/released pins and manual-only
 boundaries remain preserved; no merge, release, install or archive was performed.
 
-## Live execution checkpoint — 2026-10-19 16:55 UTC
+## Live execution checkpoint â€” 2026-10-19 16:55 UTC
 
 Initial implementation and test construction are complete. Live qualification and
 bug repair continue. No local pytest/Vitest loop ran during this checkpoint.
@@ -138,7 +135,7 @@ bug repair continue. No local pytest/Vitest loop ran during this checkpoint.
   because available machine commit headroom fell below 4 GiB. No qualification
   services, browsers or review workers remain active. Do not count this prepared
   race family as executed. No unrelated application was stopped.
-- **Race impact:** all thirty earlier R1–R6 repetitions remain recorded. The new
+- **Race impact:** all thirty earlier R1â€“R6 repetitions remain recorded. The new
   post-cancellation admission correction requires affected R3/R6 repetitions and
   lifecycle verification; do not claim all thirty accepted on the new tuple yet.
 - **Cleanup:** R332 and R338 services exited normally; exact process/listener
@@ -151,7 +148,7 @@ outage/history/effect-loss obligations; Q9 current UI controls, plus affected
 requalification after this repair. Relay stays excluded. No release, installation,
 Desktop/auth/default/pin change or retry of rejected cleanup occurred.
 
-## Current candidate — 2026-10-19 06:43 UTC
+## Current candidate â€” 2026-10-19 06:43 UTC
 
 Initial implementation and initial test construction are complete. Current work is
 regression repair, independent review and live qualification. The candidate is
@@ -232,7 +229,7 @@ Question, including a Session recorded before its first model input, immediate
 handles followed by independent work, and valid inline MCP output. R289's original
 checker failure remains preserved with its same-run ownership adjudication.
 
-**All 30 final runtime races passed:** R1–R6 each have five actual-model
+**All 30 final runtime races passed:** R1â€“R6 each have five actual-model
 repetitions. R298 covers queued cancellation and collection/delivery; R301 covers
 three before-commit and two after-commit crashes; R303 covers closing-turn arrivals;
 R304 covers Stop/acceptance; R305 covers physical child/process-subtree cancellation
@@ -400,7 +397,7 @@ work remain preserved. No archive, merge, release or installation was performed.
   rollback, outside this scenario's Question/Stop/input path. This carries the
   scoped proof, not the whole Q3 matrix. The original resource rejection remains
   recorded; the later launch had more than twelve GiB commit headroom.
-- Q1–Q9, final migration/recovery obligations remain incomplete; **25/30 final race repetitions** pass, and R6 also passed five repetitions in R305. The finite obligations remain in the acceptance ledger and
+- Q1â€“Q9, final migration/recovery obligations remain incomplete; **25/30 final race repetitions** pass, and R6 also passed five repetitions in R305. The finite obligations remain in the acceptance ledger and
   live experiment sheet; narrow proofs do not pass whole rows.
 - R252 supplied six inspected website views at desktop/phone widths, keyboard
   disclosures and clean browser output. This is documentation evidence, not Q9
@@ -420,7 +417,7 @@ R275/R276 and R278/R280/R282 fresh roots are absent. R279/R283's fresh review-di
 files were removed; their earlier manual-only review profile was preserved.
 R281's service/browser are retired and both fresh roots are absent.
 R285/R288/R289/R290 fresh roots are absent; R291's fresh review diff is removed.
-R292–R304 completed runtime families and failed harness preflights have absent fresh
+R292â€“R304 completed runtime families and failed harness preflights have absent fresh
 roots. R305 is settled and both fresh roots are absent. R295 retains honest unconfirmed
 Core settlement; independent process/port proof establishes physical retirement.
 The earlier manual-only review profile remains preserved.

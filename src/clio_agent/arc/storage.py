@@ -439,20 +439,16 @@ class ClioCoreStore:
     Maps ``(kind, name)`` -> ``(CTE tag, CTE blob)``. msgpack payloads are base64-wrapped
     because CTE's ``GetBlob`` UTF-8-decodes in the C++ binding and raises on non-UTF-8 bytes.
 
-    RUNTIME MODEL: the chimaera runtime is a host-global singleton — one runtime binds the RPC
-    port (default 9413) and serves many clients. This store runs it as a **standalone daemon**
-    that outlives any single client: on first use it spawns the daemon iff none is listening,
-    then every process attaches as a pure client, so multiple clio-agent processes share ONE
-    instance. See ``_ensure_runtime``.
-
-    DURABILITY: the default CTE config is a DRAM hot tier spilling to a file cold tier
-    (:func:`default_cte_config_path`).
+    A standalone host-global daemon serves process clients on the configured RPC
+    port. Default durability is a DRAM hot tier spilling to a file cold tier;
+    see :func:`default_cte_config_path` and :meth:`_ensure_runtime`.
     """
 
     _namespace = ""  # the default (bare-tag) namespace; set per instance in __init__
     _attach_verified = False  # the post-attach probe ran (once per process attach)
 
     _initialized = False  # process-global init guard (the runtime inits exactly once)
+    _attached_runtime_identity: tuple[int, float] | None = None
     _init_lock = threading.Lock()
 
     def __init__(
@@ -481,13 +477,18 @@ class ClioCoreStore:
         # host process (clio-core#722). See clio_agent.arc.clio_core_liveness.
         # Native CTE tag/read calls hold the GIL. After this client sees daemon
         # loss, rebuilding its binding in-process can freeze unrelated HTTP work.
-        # Keep the store quarantined until the agent process is restarted.
+        # Daemon loss/replacement still requires process restart. A stalled but
+        # verified identical daemon may recover through a GIL-free RPC on this
+        # existing client; that path must not rebuild its native binding.
         self._gate = LivenessGate(
-            config_path=config_path, log_level=log_level, ttl_s=0.0, auto_recover=False
+            config_path=config_path,
+            log_level=log_level,
+            ttl_s=0.0,
+            auto_recover=False,
+            attached_identity=type(self)._attached_runtime_identity,
         )
-        # The probe proves the process's FRESH attach answers one real RPC; it runs once
-        # per attach. A later store must not re-probe: a failing re-probe would release
-        # the shared attach for every store. A daemon lost later is the liveness gate's job.
+        # Verify each fresh process attach once. Re-probing a later namespace
+        # could release the shared client; subsequent loss belongs to the gate.
         with type(self)._init_lock:
             if not type(self)._attach_verified:
                 clio_core_attach.verify_post_attach(
@@ -503,14 +504,8 @@ class ClioCoreStore:
             "CTE config via CLIO_ARC_STORE_CONFIG."
         )
 
-    # NOTE: there is deliberately NO instance ``release()`` method. The shared clio-core
-    # runtime is released via the module-level, idempotent (last-one-out, deregister-guarded)
-    # :func:`release_runtime_client`. A desktop-managed boot calls it deterministically, once,
-    # from the gact lifespan right after the turn drain settles
-    # (``desktop_lifecycle.release_runtime_after_drain`` in ``gact/app.py``); ``atexit``,
-    # registered below in :meth:`_ensure_runtime`, is the general backstop for every OTHER exit
-    # path (bare CLI, a crash, a non-desktop server) -- a second call from atexit after the
-    # lifespan already ran is a safe no-op.
+    # Process-owned, idempotent release_runtime_client runs after application
+    # drain, with atexit as its backstop. Namespace instances never release it.
 
     @classmethod
     def _ensure_runtime(cls, config_path: str, log_level: str, settle_s: float) -> str:
@@ -547,6 +542,9 @@ class ClioCoreStore:
             # Do NOT redirect fd 2 (no os.dup2 on stderr): under pytest's fd capture that can SILENTLY
             # ABORT the interpreter; CTP_LOG_LEVEL quiets the C++ logging instead. CLIENT ONLY attach,
             # CHECKED: a failed attach/CTE init raises typed and releases this client (#1401).
+            from clio_agent.arc.clio_core_liveness import _daemon_identity  # noqa: PLC0415
+
+            original_identity = _daemon_identity(config_path)
             clio_core_attach.attach_and_initialize(
                 cte,
                 config_path=config_path,
@@ -554,15 +552,12 @@ class ClioCoreStore:
                 settle_s=settle_s,
                 on_failure=lambda: runtime_stop.release_failed_attach(config_path, log_level),
             )
+            cls._attached_runtime_identity = (
+                original_identity if original_identity == _daemon_identity(config_path) else None
+            )
             cls._initialized = True
 
-            # Stash the params and register the last-one-out release with atexit, the general
-            # backstop for every exit path (plain CLI, a crash, a non-desktop server). A
-            # desktop-managed boot ALSO releases earlier and deterministically, from the gact
-            # lifespan right after the turn drain settles
-            # (desktop_lifecycle.release_runtime_after_drain in gact/app.py); release_runtime_client
-            # is deregister-guarded, so whichever of the two paths runs first does the real work and
-            # the other is a no-op.
+            # Application drain and atexit share the same idempotent release.
             _active_config_path = config_path
             _active_log_level = log_level
             atexit.register(release_runtime_client, config_path, log_level)
@@ -571,39 +566,39 @@ class ClioCoreStore:
 
     # ---- liveness gate (#892) ----
 
-    # Sentinel for the RPC-level health probe: a key that never exists in a record kind.
-    # ``GetBlobSize`` on a missing blob returns 0 on a healthy daemon (no write, no raise)
-    # and HANGS on a zombie — a cheap, side-effect-free liveness RPC.
+    # GIL-free AsyncTagQuery on a sentinel proves an RPC reply without a data write.
     _HEALTH_PROBE_KIND = ARC_KINDS[0]
     _HEALTH_PROBE_NAME = "__clio_liveness_probe__"
 
     def _live(self) -> None:
-        """Gate an op: raise ``ClioCoreRuntimeLostError`` before the native binding if dead.
-
-        Recovery from an ``rpc_stalled`` (zombie) quarantine needs a REAL RPC to answer,
-        not just a socket reconnect a zombie passes — hence the ``rpc_probe`` seam.
-        """
+        """Reject lost runtimes; probe the verified original client after RPC stalls."""
         self._gate.ensure_live(
             self._reconnect,
             rpc_probe=lambda: store_rpc_health_probe(
-                self, kind=self._HEALTH_PROBE_KIND, name=self._HEALTH_PROBE_NAME
+                self,
+                kind=self._HEALTH_PROBE_KIND,
+                name=self._HEALTH_PROBE_NAME,
+                reconnect_client=False,
             ),
         )
 
     def _reconnect(self) -> None:
-        """Rebuild the clio-core client binding via the connect-or-spawn seam (one attempt).
+        """Retry only through the verified original client; never spawn a replacement."""
+        from clio_agent.arc.clio_core_liveness import _daemon_identity  # noqa: PLC0415
 
-        Reuses :func:`_ensure_runtime_daemon` (spawns + rebinds under the host-global
-        lock, FAILS LOUD if a fresh daemon never binds the port) then re-fetches the
-        native client handle. NOTE: a ZOMBIE whose socket still ACCEPTS is seen as
-        "alive" there, so this refreshes the handle without respawning — a persistent
-        zombie then exhausts the stall ladder into the typed degrade (never a hang).
-        """
-        import iowarp_core  # noqa: PLC0415
-
-        _ensure_runtime_daemon(iowarp_core, self._config_path, self._log_level)
-        self._client = self._cte.get_cte_client()
-        self._tag_ids.clear()  # tag ids are daemon state; re-resolve after a reconnect
+        identity = type(self)._attached_runtime_identity
+        if (
+            identity is None
+            or _daemon_identity(self._config_path) != identity
+            or not _runtime_alive(self._gate.port)
+        ):
+            reason = "clio_core_client_restart_required"
+            self._gate.note_rpc_stalled(reason)
+            raise ClioCoreRuntimeLostError(
+                "The attached Core runtime changed or disappeared; restart the agent client.",
+                reason=reason,
+                port=self._gate.port,
+            )
 
     # ---- ARCStore Protocol ----
 

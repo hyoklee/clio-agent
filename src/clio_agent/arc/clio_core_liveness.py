@@ -30,9 +30,10 @@ A cheap **liveness gate** wrapped around every clio-core op (:class:`LivenessGat
   itself fails loud if a fresh daemon never binds the port (clio-core#725: a stale
   pidfile is overwritten by that spawn, so we do not hand-delete runtime artifacts).
   Success leaves quarantine (a typed INFO audit record); failure stays quarantined
-  and re-raises the typed error. ``ClioCoreStore`` disables in-process recovery:
-  the native binding can hold the GIL while a replacement daemon is starting, so
-  this server reports a required agent restart instead of freezing unrelated routes.
+  and re-raises the typed error. ``ClioCoreStore`` disables native rebinding after
+  daemon loss: it can freeze unrelated routes. RPC-stall recovery may instead
+  probe the original client while the original daemon identity is still verified.
+  Dead, replaced or unidentified daemons require an agent restart.
 
 This is a **fail-loud** surface, not a silent LocalFS fallback: backend selection
 stays the deliberate choice documented in :func:`clio_agent.arc.storage.make_arc_store`.
@@ -241,6 +242,24 @@ class ClioCoreRuntimeLostError(ClioError):
         super().__init__(message, error_type="arc_runtime_lost", details=merged)
 
 
+def _daemon_identity(config_path: str) -> tuple[int, float] | None:
+    """Identify the attached daemon without accepting a recycled PID."""
+    import psutil  # noqa: PLC0415
+
+    from clio_agent.arc.clio_core_daemon import _resolve_daemon_pid  # noqa: PLC0415
+
+    pid, _ = _resolve_daemon_pid(config_path, os.environ)
+    if pid is None:
+        return None
+    try:
+        process = psutil.Process(pid)
+        if process.status() == psutil.STATUS_ZOMBIE:
+            return None
+        return pid, process.create_time()
+    except psutil.Error:
+        return None
+
+
 class LivenessGate:
     """TTL-cached daemon-liveness gate with quarantine and optional reconnect.
 
@@ -257,7 +276,9 @@ class LivenessGate:
         probe: Injectable liveness probe ``(port) -> bool`` (defaults to a real TCP
             connect); the seam the tests drive to simulate daemon loss without an AV.
         ttl_s: Probe-cache TTL in seconds; ``None`` resolves the configured default.
-        auto_recover: Reconnect a quarantined native client in-process when true.
+        auto_recover: Permit native rebinding when true. When false, only an RPC
+            probe of the verified original daemon/client can recover a stall.
+        attached_identity: Daemon identity captured by the native client attach.
     """
 
     def __init__(
@@ -268,6 +289,7 @@ class LivenessGate:
         probe: Callable[[int], bool] | None = None,
         ttl_s: float | None = None,
         auto_recover: bool = True,
+        attached_identity: tuple[int, float] | None = None,
     ) -> None:
         self._config_path = config_path
         self._log_level = log_level
@@ -275,6 +297,7 @@ class LivenessGate:
         self._port = _resolve_runtime_port(config_path)
         self._ttl_s = _resolve_liveness_ttl_s() if ttl_s is None else float(ttl_s)
         self._auto_recover = auto_recover
+        self._attached_identity = attached_identity
         self._lock = threading.RLock()
         self._last_ok_at: float | None = None  # monotonic of last confirmed-live probe
         self._last_recovery_at: float | None = None  # monotonic of last reconnect try
@@ -298,8 +321,20 @@ class LivenessGate:
                 "reason": self._reason,
                 "port": self._port,
                 "ttl_s": self._ttl_s,
-                "restart_required": self._quarantined and not self._auto_recover,
+                "restart_required": (
+                    self._quarantined
+                    and not self._auto_recover
+                    and not self._can_probe_existing_client()
+                ),
             }
+
+    def _can_probe_existing_client(self) -> bool:
+        """A stalled but identical daemon may answer through its existing client."""
+        return (
+            self._reason in _RPC_PROBE_RECOVERY_REASONS
+            and self._attached_identity is not None
+            and _daemon_identity(self._config_path) == self._attached_identity
+        )
 
     def ensure_live(
         self,
@@ -336,7 +371,9 @@ class LivenessGate:
         """
         with self._lock:
             if self._quarantined:
-                if not self._auto_recover:
+                if not self._auto_recover and not (
+                    rpc_probe is not None and self._can_probe_existing_client()
+                ):
                     raise ClioCoreRuntimeLostError(
                         "clio-core was lost after this process attached. Restart the CLIO "
                         "agent to establish a fresh native client; the store remains quarantined.",
@@ -344,7 +381,20 @@ class LivenessGate:
                         port=self._port,
                         details={"recovery_actions": ["restart_clio_agent", "run_clio_doctor"]},
                     )
-                self._attempt_recovery(reconnect, rpc_probe)
+                if not self._auto_recover:
+                    assert rpc_probe is not None
+                    original_probe = rpc_probe
+
+                    def same_runtime_probe() -> bool:
+                        return (
+                            self._can_probe_existing_client()
+                            and original_probe()
+                            and self._can_probe_existing_client()
+                        )
+
+                    self._attempt_recovery(reconnect, same_runtime_probe)
+                else:
+                    self._attempt_recovery(reconnect, rpc_probe)
                 return
             now = time.monotonic()
             if self._last_ok_at is not None and now - self._last_ok_at < self._ttl_s:

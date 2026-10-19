@@ -1,59 +1,56 @@
 # Tasks replacement: finite live experiments
 
-## Active live execution — 2026-10-19 20:15 UTC
+## Current execution — 2026-10-19 20:40 UTC
 
 Initial implementation and initial test construction are complete. Current work is
-live qualification and bug repair. No local pytest or Vitest suite ran in this period.
+live qualification and bug repair. Regression cases go to CI; no local pytest or
+Vitest loop ran in this campaign. GACT remains `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb`.
 
-- Agent `ee87a1adc9d97e83e2cbfa259ff639cdf4efdb60` / GACT
-  `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb` passed all 24 CI jobs in
-  [39314058198](https://github.com/iowarp/clio-agent/actions/runs/39314058198).
-  All twelve reports are retained: Python 3.12, 3.13 and 3.14 each ran 13,092
-  passing cases, zero failures and 50 exclusions. Exclusions are not passes.
-- Runtime remains Python 3.14.6, Core 2.3.2, FastMCP/tasks 4.1.0, MCP 2.0.0 and
-  Docket 0.26.2. Astra and actual Claude Code/Fable cleared both the storage and
-  multiple-tool-block corrections. R392B demonstrates actual Claude error feedback
-  and corrected calls; its later lifecycle assertion failed and remains failed.
-- All 30 fresh R1–R6 repetitions passed on predecessor `24902aef77e26aeee99078c7bd8463f5be71db04`.
-  Storage-only changes were additionally exercised by R388: actual Luna Indexing
-  (48,098 entries), Download (8,001 files / 34,868,063 bytes, all hashes), five mixed
-  finalization/cancellation pairs, and a real publication-boundary exception after
-  enumeration, queued once as failed/confirmed while retaining the previous manifest.
-  Its raw driver remains failed on a missing REST-projection field; separate read-only
-  SQLite validation and independent Astra review support the narrower outcomes.
-- R393 passed actual-model positive peer capacity of one: first accepted, second
-  refused with retryable backpressure, human feedback/Question answer/native result
-  exempt, paused inputs delivered once after resume, and later peer mail admitted
-  despite retained history. R378 separately passed all 1,005-message and restart
-  assertions under 900 seconds (restart at 880.3 seconds). R374 proves restart
-  without replay and inherited physical cancellation; R363 has independently
-  adjudicated child Download/yield/wake and bytes/hash evidence. Raw failures stay failed.
-- R398 proves fast trusted controls during a real Core pause and physical process
-  retirement before recovery. Its message-rejection expectation lacked the detected-
-  outage prerequisite: an in-flight request was uncertain and committed only after
-  Core resumed. That is not an undurable acceptance claim. A fresh known-outage and
-  idle-recovery gate remains required. This revision corrects the independently found
-  HTTP classification of the existing RecordingUnconfirmed hold from generic500 to
-  recoverable503, with two constructed public-boundary/CORS regressions. It adds no
-  health mechanism, deadline, state owner or new admission policy.
-- Claude lifecycle repeats continue on frozen ee87. R392A/C setup assumptions about
-  host PID namespaces, relative command spelling and unrelated inline Shell probes
-  were corrected together in the unlaunched harness; original failures are retained.
-  R392B's fresh-result-read assertion was not satisfied and is not accepted as a
-  complete lifecycle pass. The original Shell was not replayed in that run.
-- Q1/Q2/Q5/Q8 scopes and unchanged GACT desktop/phone evidence remain applicable
-  through explicit source impact. Outstanding: remaining Claude combinations and
-  repeats, detected Core-outage/idle recovery, approved surviving-provider work and
-  provider-continuation finalization, applicable legacy/effect-loss mapping, final
-  candidate CI/review, and final resource retirement. No candidate qualification or
-  release GO is declared.
-- Ares allocation 24932 reuses one environment; every family registers processes,
-  ports and paths. R380/382/386/387/388/390/392A–C/393 and the stopped redundant R397
-  are physically retired with cleanup receipts. Remaining live/runtime ownership is
-  recorded in current-ares-execution.json. Installed Desktop/auth/defaults/released
-  pins and all prohibited/manual-only boundaries remain preserved.
+- **Five actual Claude/Sonnet lifecycle cycles passed:** R392D–H on frozen
+  `ee87a1adc9d97e83e2cbfa259ff639cdf4efdb60`. Each proves immediate child/Shell
+  handles, parent Stop independence and post-Stop steering, retained-context restart
+  with one original Shell submission, pause/resume, fresh result inspection,
+  inherited physical subtree cancellation and five attributed parent interventions.
+  Every family has a process/port/root-absence receipt. Earlier raw failures remain failed.
+- **Fresh effect-loss recovery passed:** R405 on `bef68870334dcd9ee6484116c222b09e90174c6a`,
+  Python 3.14.6 / Core 2.3.2. The real native worker crashed after the side effect and
+  physical cleanup, before result persistence. Actual Luna inspected the interrupted
+  original handle and effect file, then deliberately submitted revised work with a
+  new handle. Original effects: one; deliberate reconciliation: one; final notices:
+  one per handle. Both service instances and disposable roots are retired.
+- **Core outage exposed a real remaining bug:** R403 proved trusted pause/cancel
+  during actual Core suspension, physical Shell/descendant retirement, and refusal
+  of new durable input with503 after the recording hold was detected. Idle recovery
+  failed because the existing client required restart even when its original daemon
+  resumed. The frozen failed run was force-closed through verified owned identities
+  and removed. The correction permits only a bounded GIL-free probe of the verified
+  original process/client; dead, replaced, recycled or unidentified processes remain
+  restart-required. Fresh outage acceptance is still required.
+- **Complete bef CI inventory:** all twelve reports retained. Two distinct failures:
+  the new HTTP expectation omitted the existing `details: {}` field; a stalled native
+  future occasionally beat the outer watcher and bypassed typed quarantine. The batch
+  corrects both without changing timeouts, retry counts, guards or assertions. New
+  regressions cover the ordering and original-process identity boundaries.
+- Prior all-30 R1–R6, five affected storage cancellation pairs, real Indexing/Download
+  bytes/hashes, 1,005-message restart, peer backpressure, two-workflow coordination,
+  capacity and desktop/phone UI scopes retain their exact executed identities.
+  Q9's unchanged UI/schema/control inputs and selected screenshot hashes were reviewed
+  independently. R307 migrated twice against Core 2.3.2; its migration implementation
+  remains unchanged. These are explicit impact assessments, not fresh-run claims.
+- **Still required:** successful corrected Core-outage recovery, exact final-head CI
+  and reviews, an approved surviving-provider job and provider-continuation cleanup,
+  final acceptance reconciliation and retirement of the remaining Ares environment,
+  worktrees, credential copies and allocation. The provider prerequisite remains
+  unanswered; local transfers do not stand in for that acceptance. No qualification
+  GO, merge, release or installation is claimed.
 
-## Current execution — 2026-10-19 17:18 UTC
+Bounded receipts: `current-ares-execution.json`, `r392d`–`r392h` live/cleanup records,
+`r403-qualified-scope.json`, `r405-live-effect-recovery.json`, `r405-cleanup.json`,
+`ci-bef-inventory.json` and `Q9-current-impact-assessment.json` in the D execution
+repository. Installed Desktop, authentication, defaults, released pins, unrelated
+work and every prohibited/manual-only cleanup boundary remain preserved.
+
+## Current execution â€” 2026-10-19 17:18 UTC
 
 Initial implementation and test construction are done. Current production source
 is agent `52cc8e7bcff0a4d28347aa9beac0ac1654e00172` with GACT
@@ -93,7 +90,7 @@ Receipts: `Q5-current-adjudication.json`, `SSE-current-adjudication.json`,
 repository. Installed Desktop/auth/defaults/released pins and manual-only
 boundaries remain preserved; no merge, release, install or archive was performed.
 
-## Live execution checkpoint — 2026-10-19 16:55 UTC
+## Live execution checkpoint â€” 2026-10-19 16:55 UTC
 
 Initial implementation and test construction are complete. Live qualification and
 bug repair continue. No local pytest/Vitest loop ran during this checkpoint.
@@ -138,7 +135,7 @@ bug repair continue. No local pytest/Vitest loop ran during this checkpoint.
   because available machine commit headroom fell below 4 GiB. No qualification
   services, browsers or review workers remain active. Do not count this prepared
   race family as executed. No unrelated application was stopped.
-- **Race impact:** all thirty earlier R1–R6 repetitions remain recorded. The new
+- **Race impact:** all thirty earlier R1â€“R6 repetitions remain recorded. The new
   post-cancellation admission correction requires affected R3/R6 repetitions and
   lifecycle verification; do not claim all thirty accepted on the new tuple yet.
 - **Cleanup:** R332 and R338 services exited normally; exact process/listener
@@ -151,7 +148,7 @@ outage/history/effect-loss obligations; Q9 current UI controls, plus affected
 requalification after this repair. Relay stays excluded. No release, installation,
 Desktop/auth/default/pin change or retry of rejected cleanup occurred.
 
-## Current execution — 2026-10-19 06:43 UTC
+## Current execution â€” 2026-10-19 06:43 UTC
 
 Earlier runtime evidence: agent **305a33e33** / production **6c79df316** / GACT
 **7260f2dd**. Python source digest is
@@ -174,7 +171,7 @@ Question, including a Session recorded before its first model input, immediate
 handles followed by independent work, and valid inline MCP output. R289's original
 checker failure remains preserved with its same-run ownership adjudication.
 
-**All 30 final runtime races passed:** R1–R6 each have five actual-model
+**All 30 final runtime races passed:** R1â€“R6 each have five actual-model
 repetitions. R298 covers queued cancellation and collection/delivery; R301 covers
 three before-commit and two after-commit crashes; R303 covers closing-turn arrivals;
 R304 covers Stop/acceptance; R305 covers physical child/process-subtree cancellation
@@ -262,7 +259,7 @@ All retired fresh roots are being removed after physical process/listener proof.
 Earlier rejected/manual-only targets, installed Desktop/auth/defaults/pins and human
 work remain preserved. No archive, merge, release or installation was performed.
 
-## Pre-integration evidence — October 18, 22:39 UTC
+## Pre-integration evidence â€” October 18, 22:39 UTC
 
 Frozen product source: agent a0645c21 / GACT c813c1b7. Agent exact-head CI passed
 all 24 jobs with 12,993 passes and 50 exclusions per interpreter; zero failures.
@@ -322,7 +319,7 @@ task-runtime source, dependency, schema or GACT code.
    Record impact and freeze one source/runtime/UI tuple within each family;
    never modify its code mid-run. Preserve unaltered evidence from failed runs.
 5. Before final acceptance, freeze the integrated candidate, pass required CI,
-   complete Q1–Q9 and run R1–R6 five times each. Required failures, skips and
+   complete Q1â€“Q9 and run R1â€“R6 five times each. Required failures, skips and
    unavailable routes remain visible and block completion.
 
 Tests provide regression assurance. Actual-model execution and real-service UI
@@ -390,11 +387,11 @@ peer collection must not consume owner delivery.
 | E6 / Q6 | Use an actual external task-capable MCP server and approved provider operation. Exercise progress-only updates, input required, partial answers, a lost input-update reply and reconnect. Collect a surviving provider job through its verified original identity. | Present input required even when the agent is idle; answer through the existing permission/question surface. Show lost visibility distinctly from failure and restore it after reconnect. | Immutable server/auth/session/task/input identity, persisted answers and original provider job ID. No repeated question for a confirmed answer, no acceptance/submission replay, no changed-content key reuse. An unavailable real backend leaves this family blocked. |
 | E7 / Q7 | In disposable isolated services, interrupt before and after recipient-input commit; interrupt after a visible side effect but before result recording; temporarily lose Core and recover. Agent inspects prior effects and deliberately retries/revises with a linked new handle. Import retained-format records twice. | Display uncertainty/recording-unconfirmed honestly. Trusted pause/cancel still acts on verified work during a Core outage; new undurable submissions are refused. After recovery show one attention episode followed independently by the final outcome. | Reconstruct committed model input, retain precommit pending input, no automatic replay of uncertain commands, matching owner-local recovery flush. Migration identities/mail/results stay stable and migration submits nothing. More than 1,000 messages remain retained; positive capacity counts only undelivered peer mail. |
 | E8 / Q8 | Saturate Shell's configured native capacity (default 10) and submit storage work; storage starts independently. With child inference capacity one, execute nested children/peer work while waits release inference capacity. Exercise foreground versus background Stop and worker retirement under constrained executor capacity. | Show queued versus started work and Stopping during actual worker retirement. New input remains pending; no second turn starts before the old worker exits. | Independent native roots/pools; no shared-executor starvation. Foreground Stop cancels and physically settles its process tree; background Stop preserves the task. No leaked children/listeners or unbounded worker growth after settlement. |
-| E9 / Q9 | Complete an end-to-end user assignment through the real UI: start tasks, ask/answer, steer, observe, pause/resume, cancel and collect. Use production service outcomes from E1–E8 rather than fabricated fixtures. | Review desktop and 390-pixel phone widths: Work, Observability and Runs; progressive disclosure, clickable rows, Questions, grants, cancel confirmations, output and history. Use keyboard interaction and check viewport containment and browser errors. | Screenshots/interaction timestamps link to actual handles and server state. Cancellation has actual physical outcomes; dismissal does not cancel. Accepted user controls reach the parent. No falsely Finished waiting state, duplicate card or hidden pending input. |
+| E9 / Q9 | Complete an end-to-end user assignment through the real UI: start tasks, ask/answer, steer, observe, pause/resume, cancel and collect. Use production service outcomes from E1â€“E8 rather than fabricated fixtures. | Review desktop and 390-pixel phone widths: Work, Observability and Runs; progressive disclosure, clickable rows, Questions, grants, cancel confirmations, output and history. Use keyboard interaction and check viewport containment and browser errors. | Screenshots/interaction timestamps link to actual handles and server state. Cancellation has actual physical outcomes; dismissal does not cancel. Accepted user controls reach the parent. No falsely Finished waiting state, duplicate card or hidden pending input. |
 
 E1 groups ordinary native workloads rather than treating them as three task
 engines. Shell/transfer/manifest algorithms still need their own real effect
-checks. E2–E5 reuse those tasks to exercise shared behavior; they do not add a
+checks. E2â€“E5 reuse those tasks to exercise shared behavior; they do not add a
 separate protocol matrix per workload. E6 and E7 require their own external/fault
 routes because a successful local shell cannot establish those contracts.
 
