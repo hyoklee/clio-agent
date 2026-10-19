@@ -397,30 +397,7 @@ class Conversations:
         )
         return TaskCaller(sid, human)
 
-    def _new_assignment(
-        self,
-        sid: str,
-        description: str | None,
-        human_id: str,
-        *,
-        predecessor: TaskSnapshot | None = None,
-        parent: TaskSnapshot | None = None,
-        invocation_id: str,
-        handle: str | None = None,
-        initial_details: AssignmentDetails | None = None,
-    ) -> TaskSnapshot:
-        """Delegate to the same conversation owner\'s assignments implementation."""
-        return conversation_assignments._new_assignment(
-            self,
-            sid,
-            description,
-            human_id,
-            predecessor=predecessor,
-            parent=parent,
-            invocation_id=invocation_id,
-            handle=handle,
-            initial_details=initial_details,
-        )
+    _new_assignment = conversation_assignments._new_assignment
 
     def set_dependencies(
         self, sid: str, tasks: str | list[str], return_when: str
