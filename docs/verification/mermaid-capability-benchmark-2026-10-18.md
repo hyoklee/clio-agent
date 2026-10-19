@@ -1,5 +1,7 @@
 # Mermaid component guidance and model benchmark
 
+The October 18 ordinary-request follow-up below is a historical snapshot. The resumed October 19 trials, exact short prompts and current limitations are recorded in [Planning and natural diagram outcomes](planning-agent-outcomes-2026-10-19.md). The earlier incomplete or directed runs remain retained.
+
 The component entry is now the syntax/capability authority. The benchmark
 demonstrates model authoring across substantially more than sequences, but it
 does **not** establish universally reliable autonomous visual review.
