@@ -1,7 +1,12 @@
 ---
 title: Sample and analyze NDP streams
-description: Understand archived replay, live producers, finite captures, resume cursors and access failures.
+description: Choose observations, save a stream sample and continue from the next record.
 ---
+
+import Capture from '../../../../components/overview/Capture';
+import { captureImage } from '../../../../lib/captures';
+import sampleForm from '../../../../assets/tutorials/ndp/stream-sample-form.png';
+import savedSample from '../../../../assets/tutorials/ndp/stream-saved-result.png';
 
 A stream is a way to deliver measurements. It does not establish when those
 measurements were acquired. Start with the scientific question and inspect the
@@ -27,9 +32,21 @@ streams** using its URL or a saved SSH profile. Use the service's Files, Station
 or Streams view as available. Review the selected resource/station and limits,
 then save a sample. Opening a saved connection does not start a producer.
 
+For an archived CSV, choose **Files → Sample CSV from URL**, paste the published
+file address and choose **Rows to sample**. Open **Options** to set the delivery
+interval or continue from a previous sample. Choose **Save sample**.
+
+<Capture client:visible image={await captureImage(sampleForm)}
+  alt="Actual historical replay form with a published CSV URL, three rows, delivery interval and the previous sample's resume cursor"
+  caption="Request a small segment and use the previous completion cursor to continue. This is a real historical GNSS replay request in CLIO, 19 October 2026." />
+
 The capture becomes an ordinary file in **Sources**. Its receipt records the
 Endpoint, operation, filters, capture times, status, byte count, SHA-256 and stop
 reason. The agent can read these same bytes and create a chart or report.
+
+<Capture client:visible image={await captureImage(savedSample)}
+  alt="Actual completed stream sample showing Saved 917 bytes, received observation records and Open saved data"
+  caption="The request completed and saved its received bytes. Open saved data to inspect the observations. This actual sample continued at record 46 and returned records 46–48, then cursor 49." />
 
 Default limits are **10 seconds and 100 SSE events**. Maximum limits are
 **30 seconds, 1,000 events and 2 MiB**. These are capture bounds, not a promise of
@@ -52,15 +69,9 @@ An observed replay on October 18, 2026 returned three records followed by two
 more, with measurement times **December 3, 2024, 00:00:00–00:00:04 UTC**. That is
 archived replay, despite being delivered through a stream today.
 
-The [seven-question Ares conversation](/docs/examples/ndp-science/#download-the-four-conversations)
-also records this distinction. Its local Endpoint supplied station metadata,
-while a separate replay service supplied archived station observations. After
-the agent's first 40 records, two actual native-interface captures read records
-40–42 and 43–45 using the returned cursors. All six measurement timestamps were
-unique and consecutive. This demonstrates continuation of finite archived reads;
-protected live-stream access was not established. The downloadable HTML retains
-the failed listing and protected-operation attempts alongside the successful
-replay, and includes the real operator capture of the stream interface.
+The [seven-question Endpoint conversation](/conversations/ndp/ares/) includes
+an example using archived GNSS observations. It distinguishes station metadata
+from measurements and continues finite reads using their returned cursors.
 
 ## Own the producer you start
 
@@ -74,25 +85,16 @@ producer. Stop the specific producer started for your investigation and check
 its terminal state. Do not stop unrelated sessions. If a start request times out,
 inspect session state before retrying; a lost response does not prove no work began.
 
-## Diagnose the failing layer
+## Check what the sample contains
 
-| Observation | Meaning and next check |
-| --- | --- |
-| Catalog search fails | Record the actual error and scope; it does not prove the underlying file is unavailable. |
-| File listing returns HTTP 500 | Listing is broken. A discovered CSV URL can still work through a separately advertised URL replay operation. Do not guess filenames. |
-| Anonymous sampler returns 401 | Reuse the saved NDP account only for the reviewed destination, then check access again. |
-| Signed-in operation still returns 401/403 | Check the service's accepted identity issuer, roles and groups. Browser login alone does not grant Endpoint access. |
-| Bridge start reports a downstream identity/catalog error | The bridge may authenticate successfully while its backing NDP API rejects dataset creation. Fix that downstream service; changing station filters will not repair it. |
-| Producer is running but no measurements arrive | Check the source topic, upstream credentials, selected station, broker route, consumer position and actual measurement freshness. |
+Open the saved capture and check its measurement timestamps, units and coverage
+before interpreting it. A successful connection or a station listing is not a
+measurement result. Historical observations remain historical even when the
+service delivers them incrementally.
 
-In the October 18 investigation, authenticated bridge station sampling worked,
-but starting a bridge failed during backing-dataset creation with an upstream
-identity-service error. The replay file list returned HTTP 500 while URL replay
-and resume worked. These are distinct findings; live acquisition was not verified.
-
-Endpoint operators should repair issuer/API compatibility while preserving access
-checks. CLIO does not create roles, switch off authorization or substitute a
-development token to make a test pass.
+If a sample contains only status messages, it does not yet support a scientific
+comparison. Keep the capture and its receipt with the investigation so that you
+can distinguish the requested observations from the bytes actually received.
 
 See [scientific questions to investigate](/docs/examples/ndp-science/) and the
 [NDP source guide](/docs/files/ndp/) for discovery, linking and publication.
