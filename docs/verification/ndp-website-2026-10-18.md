@@ -1,5 +1,21 @@
 # NDP website coverage
 
+## Scientific-provenance correction, 19 October 2026
+
+The earlier station CSV/chart and replay checks below establish acquired bytes,
+file processing and continuation, not observational authenticity. The export's
+instrument provenance, physical units, processing and reference frame were not
+established. Its plot and the procedural sample prompts have been removed from
+the public scientific walkthrough. The stream guide now starts with an ordinary
+agent analysis request, distinguishes documented observations from derived,
+synthetic and unverified values, and requires explicit historical-availability
+findings. Manual replay controls are optional interface documentation, labelled
+as transport evidence. Original images and recorded sessions remain retained.
+
+See `ndp-stream-science-2026-10-19.md` for the correction and fresh model trials.
+The rest of this file records the earlier website work and its then-current
+validation; it must not be read as a scientific qualification of the CSV values.
+
 The NDP campaign includes its public website documentation in the same backend
 PR. Publication still follows the normal `develop` → `main` release/deployment
 path; these edits do not deploy the website or release an installer themselves.

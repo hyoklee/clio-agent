@@ -26,11 +26,10 @@ for (const theme of ['light', 'dark']) {
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
       await page.screenshot({ path: test.info().outputPath(`ndp-guide-${width}-${theme}.png`), fullPage: true });
 
-      await page.locator('.sl-markdown-content').getByRole('link', { name: 'EarthScope walkthrough', exact: true }).click();
+      await page.locator('.sl-markdown-content').getByRole('link', { name: 'EarthScope investigation guide', exact: true }).click();
       await expect(page.getByRole('heading', { level: 1, name: 'Analyze EarthScope data from NDP' })).toBeVisible();
-      const chart = page.getByRole('img', { name: /^Three panels charting/ });
-      await chart.scrollIntoViewIfNeeded();
-      await expect.poll(() => chart.evaluate((element: HTMLImageElement) => element.complete && element.naturalWidth > 0)).toBe(true);
+      await expect(page.getByRole('heading', { name: 'Establish the historical coverage', exact: true })).toBeVisible();
+      await expect(page.getByRole('img', { name: /^Three panels charting/ })).toHaveCount(0);
       expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(1);
       await page.screenshot({ path: test.info().outputPath(`ndp-example-${width}-${theme}.png`) });
       const media = await (await page.request.get('/media/guides.json')).json();
@@ -48,10 +47,8 @@ for (const theme of ['light', 'dark']) {
         expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Actual completed stream sample/) }),
       ]);
       const example = media.guides.find((guide: { id: string }) => guide.id === 'docs/examples/ndp-earthscope');
-      expect(example.media).toEqual([
-        expect.objectContaining({ kind: 'image', alt: expect.stringMatching(/^Three panels charting/) }),
-      ]);
-      for (const item of [...ndp.media, ...streams.media, ...example.media]) {
+      expect(example).toBeUndefined();
+      for (const item of [...ndp.media, ...streams.media]) {
         expect((await page.request.get(item.src)).ok()).toBe(true);
       }
     });
