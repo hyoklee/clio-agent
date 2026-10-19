@@ -33,6 +33,13 @@ qualification and bug repair. No local pytest or Vitest suite ran in this period
   source-registration ordering guard before model work. Both services exited zero,
   tasks/processes/ports settled, and both disposable roots were removed. R386 fixes
   source setup before session activation and is running against frozen production.
+- R387 preserved the original Claude CLI response: three separate complete tool-call
+  blocks (spawn/read/ask), SHA256 `862590065086343e0c0570d1fe3e2738a5e2da1477738bf437f1ea8d2245d510`.
+  The textual bridge selected only the last block, silently dropping spawn/read.
+  This revision rejects multiple blocks before any execution and returns one bounded
+  protocol-error observation; valid parallel calls in one block remain supported.
+  Three regression cases are constructed. Scoped Ruff/format/Mypy pass; replacement
+  CI, independent delta review and affected Claude model repeats are still required.
 - Ares allocation 24927 is retired. Allocation 24932 reuses the same sole owned
   environment and node-local worktree on ares-comp-07. Ownership receipts identify
   every family process, port and path; final environment/worktree retirement remains.

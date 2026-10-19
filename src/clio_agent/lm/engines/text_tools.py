@@ -184,7 +184,16 @@ def split_reply(
     reply: str, *, call_prefix: str, available_tools: Collection[str] = ()
 ) -> ReplySplit:
     """Split a reply into visible text and tool calls (never repaired; see module doc)."""
-    start = reply.rfind(FENCE)
+    fences = list(re.finditer(r"(?m)^[ \t]*(?P<fence>```tool_calls)[ \t]*(?=\r?$)", reply))
+    if len(fences) > 1:
+        return _invalid_reply(
+            reply[: fences[0].start()].rstrip(),
+            reply[fences[0].start() :].strip(),
+            "multiple tool-call blocks require one complete fenced JSON list containing "
+            "every intended call; no operation was submitted",
+            call_prefix,
+        )
+    start = fences[0].start("fence") if fences else reply.rfind(FENCE)
     if start < 0:
         if available_tools and re.fullmatch(
             r"\s*_tool_calls\r?\n.+\r?\n_tool_calls\s*", reply, re.DOTALL

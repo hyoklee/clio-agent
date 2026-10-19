@@ -37,6 +37,40 @@ def _block(calls: list[dict[str, object]]) -> str:
     return f"{FENCE}\n{json.dumps(calls)}\n```"
 
 
+@pytest.mark.parametrize("newline,indent", [("\n", ""), ("\r\n", "  ")])
+def test_multiple_tool_blocks_never_silently_drop_earlier_calls(newline: str, indent: str) -> None:
+    """The observed Claude spawn/read/ask response must execute none of its blocks."""
+    names = ["spawn_agent_task", "fs_read_file", "ask_user"]
+    blocks = [
+        indent + _block([{"name": name, "arguments": {}}]).replace("\n", newline) for name in names
+    ]
+    reply = newline.join(["I will start the work.", *blocks, "All work was accepted."])
+    parsed = split_reply(reply, call_prefix="observed", available_tools=names)
+    assert parsed.text == "I will start the work."
+    assert len(parsed.calls) == 1
+    assert parsed.calls[0].name == INVALID_TOOL_CALL
+    assert "multiple tool-call blocks" in parsed.calls[0].input["error"]
+    assert "no operation was submitted" in parsed.calls[0].input["error"]
+    assert len(parsed.calls[0].input["block"]) <= 4000
+    assert all(name in parsed.calls[0].input["block"] for name in names)
+
+
+def test_one_block_retains_every_parallel_call_in_its_original_order() -> None:
+    """Rejecting multiple blocks must preserve the supported parallel-call contract."""
+    names = ["spawn_agent_task", "fs_read_file", "ask_user"]
+    parsed = split_reply(
+        "Starting.\n"
+        + _block(
+            [{"name": name, "arguments": {"value": index}} for index, name in enumerate(names)]
+        ),
+        call_prefix="parallel",
+        available_tools=names,
+    )
+    assert parsed.text == "Starting."
+    assert [call.name for call in parsed.calls] == names
+    assert [call.input for call in parsed.calls] == [{"value": index} for index in range(3)]
+
+
 def test_system_carries_the_rules_and_every_tool_schema() -> None:
     system = render_system("You are clio.", [SEARCH])
     assert system.startswith("You are clio.\n\n# How you act")
