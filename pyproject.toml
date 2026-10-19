@@ -360,4 +360,4 @@ override-dependencies = ["mcp>=2.0.0"]
 
 [tool.uv.sources]
 # Develop consumes the merged canonical guidance until the next schema publication.
-clio-schemas = { git = "https://github.com/iowarp/clio-schemas.git", rev = "9c051f04ca49f20034aff2e8ecb7b5a89f96eea7" }
+clio-schemas = { git = "https://github.com/iowarp/clio-schemas.git", rev = "9cb6a91c27c5befe5b4f05f7b72882ef5ed82abd" }

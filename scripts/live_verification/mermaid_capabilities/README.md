@@ -6,6 +6,11 @@ hand-authored diagram source, intercepted API responses or gallery screenshots.
 different subjects, including three grammar notations. Neither supplies an
 answer document. Keep prompts and semantic rubrics fixed before comparing runs.
 
+These are directed capability exercises: the prompts explicitly request Mermaid,
+component guidance, a saved report and image review. They do **not** establish
+that an ordinary user request discovers those capabilities or completes the
+workflow without coaching. Preserve those exact prompts when reporting results.
+
 Use an isolated real service/Core namespace and a matching production UI.
 Keep existing user services and workspaces intact. Configure the real provider
 normally; never put tokens in evidence or these scripts. Use fresh workspaces
@@ -60,3 +65,39 @@ state, actual image inspected, readable text/arrows at the stated width, defect
 identified, correction captured, all relevant views covered. An unavailable
 viewer is a setup gap; a blank view from a bad tab ID is an authored defect.
 Honest reporting of an incomplete review is valuable but is not a visual pass.
+
+## Ordinary-request follow-up
+
+On October 18, 2026, fresh Sol and Luna sessions received this exact request
+through the connected web UI:
+
+> Clone https://github.com/pallets/click and explain its architecture with diagrams.
+
+Both cloned the real repository and independently loaded the diagram guidance.
+Sol inspected implementation files, authored three A2UI diagrams, revised them
+and obtained two real captures. The final narrow sequence view is still small;
+capture success alone is not a readability pass. Luna returned two raw Mermaid
+fences without creating an A2UI surface or capturing a rendered result. That is
+a failed rendered-diagram outcome. The skill and component annotation previously
+suggested fences for short explanations; both now distinguish a requested visual
+from a request for source code. A fresh behavioral retest is still required.
+
+Two more fresh sessions received:
+
+> Plan typo suggestions for misspelled subcommand names in Click.
+
+Each had an unchanged real Click checkout. Both independently entered Plan mode
+and left tracked source unchanged. Both failed the normal saved-plan approval
+handoff. Entering via a skill during a turn did not run plan-path initialization;
+Luna's first proposal hit a missing directory, and Sol's first exit hit a missing
+plan file. Sol later saved a plan but did not retry the handoff. Luna asked for a
+repository location already supplied by the workspace. Shell inspection was also
+blocked by the deliberate structural Plan ACL, contradicting the skill's old
+read-only-shell promise. Do not label these as planning passes.
+
+Two async-planning UI submissions were attempted before the private test service
+became unavailable; their model outcomes are unconfirmed. Ambiguity, revision,
+implementation approval and execute-mode controls remain unqualified. Automatic
+approval review rejected restarting the private test backend/UI with only
+“blocked by policy” as the stated reason. The extensive benchmark is incomplete;
+the completed failures are retained rather than replaced by coached reruns.
