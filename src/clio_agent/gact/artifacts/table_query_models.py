@@ -327,7 +327,13 @@ def _is_scalar(value: Any) -> bool:
 # --------------------------------------------------------------------------- #
 
 
-def table_format_for(name: str) -> TableFormat | None:
-    """The tabular format implied by an artifact name, or ``None`` if not tabular."""
+def table_format_for(name: str, source_path: str = "") -> TableFormat | None:
+    """Resolve the version's source format, with its artifact label as fallback.
 
-    return _SUFFIX_FORMATS.get(Path(name).suffix.lower())
+    A descriptive artifact name need not carry an extension. The immutable
+    version retains its original path even when served from a hash-named CAS blob.
+    """
+
+    return _SUFFIX_FORMATS.get(Path(source_path).suffix.lower()) or _SUFFIX_FORMATS.get(
+        Path(name).suffix.lower()
+    )

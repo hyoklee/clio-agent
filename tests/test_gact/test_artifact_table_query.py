@@ -19,6 +19,7 @@ from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts import table_query as engine
 from clio_agent.gact.routes import artifact_table_query as route
 from clio_agent.gact.routes import table_route_shared as shared_route
+from clio_agent.platform_paths import win_extended_path
 from tests._config_layer import set_config
 
 
@@ -1231,7 +1232,12 @@ def test_tampered_bytes_are_an_integrity_violation(env: _Env) -> None:
     original = (env.root / "sensors.csv").read_bytes()
     tampered = original.replace(b"100.0", b"999.0")
     # Rewrite every copy of the bytes (workspace file and any CAS blob).
-    copies = [p for p in env.root.rglob("*") if p.is_file() and p.read_bytes() == original]
+    # Include long managed-state/CAS paths on Windows, not just the short source.
+    copies = [
+        p
+        for p in Path(win_extended_path(env.root)).rglob("*")
+        if p.is_file() and p.read_bytes() == original
+    ]
     assert copies
     for path in copies:
         path.write_bytes(tampered)
@@ -1254,7 +1260,11 @@ def test_table_source_verify_false_skips_the_integrity_rehash(env: _Env) -> None
     artifact_id = env.pin_csv("sensors.csv", _SENSORS_CSV)
     original = (env.root / "sensors.csv").read_bytes()
     tampered = original.replace(b"100.0", b"999.0")
-    copies = [p for p in env.root.rglob("*") if p.is_file() and p.read_bytes() == original]
+    copies = [
+        p
+        for p in Path(win_extended_path(env.root)).rglob("*")
+        if p.is_file() and p.read_bytes() == original
+    ]
     assert copies
     for path in copies:
         path.write_bytes(tampered)
@@ -1267,8 +1277,8 @@ def test_table_source_verify_false_skips_the_integrity_rehash(env: _Env) -> None
     assert excinfo.value.status_code == 409
 
     resolved = shared_route.table_source(app, record, version, verify=False)
-    assert resolved.is_file()
-    assert resolved.read_bytes() == tampered
+    assert Path(win_extended_path(resolved)).is_file()
+    assert Path(win_extended_path(resolved)).read_bytes() == tampered
 
 
 def test_data_reference_validation_does_not_rehash_the_artifact(

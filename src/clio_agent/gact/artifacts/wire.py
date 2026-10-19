@@ -153,19 +153,17 @@ def workspace_file_fetch_url(workspace_id: str, source: Path, root: Path) -> str
 
 
 def mime_for(version: ArtifactVersion, name: str) -> str:
-    """Best-effort content-type hint for a version (suffix first, then kind)."""
+    """Resolve the version's file type independently of a descriptive label."""
     if version.kind == ArtifactKind.UI_PAYLOAD:
         return UI_PAYLOAD_MIME
-    lowered = name.lower()
-    dot = lowered.rfind(".")
-    if dot != -1:
-        suffix = lowered[dot:]
-        if suffix in _MIME_BY_SUFFIX:
-            return _MIME_BY_SUFFIX[suffix]
     from clio_agent.gact.documents.profiles import document_format, supported_extensions
 
-    if dot != -1 and lowered[dot:] in supported_extensions():
-        return document_format(name).mime_type
+    for candidate in (version.path, name):
+        suffix = Path(candidate).suffix.lower()
+        if suffix in _MIME_BY_SUFFIX:
+            return _MIME_BY_SUFFIX[suffix]
+        if suffix in supported_extensions():
+            return document_format(candidate).mime_type
     return _MIME_BY_KIND.get(version.kind, "application/octet-stream")
 
 

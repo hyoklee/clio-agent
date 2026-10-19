@@ -54,7 +54,7 @@ from clio_agent.platform_paths import win_extended_path
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from clio_agent.gact.artifacts.records import ArtifactRecord
+    from clio_agent.gact.artifacts.records import ArtifactRecord, ArtifactVersion
 
 #: ``*Field`` properties naming a dataset column, per component. Every
 #: tabular component that binds ``selection`` also carries ``selectionField``
@@ -200,8 +200,8 @@ def _validate_mesh_source(
 
 def _resolve_artifact_path(
     app: "FastAPI", artifact_id: str
-) -> "tuple[ArtifactRecord, Path] | dict[str, Any]":
-    """Resolve ``artifact_id`` to its record plus verified byte path, or a refusal."""
+) -> "tuple[ArtifactRecord, ArtifactVersion, Path] | dict[str, Any]":
+    """Resolve the exact version and verified byte path, or a refusal."""
 
     from fastapi import HTTPException  # noqa: PLC0415
 
@@ -233,7 +233,7 @@ def _resolve_artifact_path(
             "a2ui_data_reference_unreadable",
             detail=f"artifact {artifact_id} is not retrievable: {message}",
         )
-    return record, path
+    return record, version, path
 
 
 def _aggregate_output_columns(aggregate_payload: Any) -> list[str] | None:
@@ -306,6 +306,7 @@ def _missing_column_labels(checks: list[tuple[str, str]], available: list[str]) 
 
 def _validate_tabular_fields(
     record: "ArtifactRecord",
+    version: "ArtifactVersion",
     path: Path,
     *,
     component_id: str,
@@ -317,7 +318,7 @@ def _validate_tabular_fields(
         table_format_for,
     )
 
-    fmt = table_format_for(record.name)
+    fmt = table_format_for(record.name, version.path)
     if fmt is None:
         return refusal(
             "a2ui_data_reference_unsupported_format",
@@ -573,7 +574,7 @@ def validate_component_data_references(
         resolved = _resolve_artifact_path(app, artifact_id)
         if isinstance(resolved, dict):
             return resolved
-        record, path = resolved
+        record, version, path = resolved
 
         if name == _RASTER_COMPONENT:
             from clio_agent.gact.artifacts.raster_query import (  # noqa: PLC0415
@@ -615,7 +616,7 @@ def validate_component_data_references(
                 material = _resolve_artifact_path(app, material_id)
                 if isinstance(material, dict):
                     return material
-                _, material_path = material
+                _, _, material_path = material
                 try:
                     with open(win_extended_path(material_path), "rb") as stream:
                         material_text = stream.read(65536).decode("utf-8")
@@ -657,6 +658,7 @@ def validate_component_data_references(
             if wanted_fields or isinstance(data_query, dict):
                 outcome = _validate_tabular_fields(
                     record,
+                    version,
                     path,
                     component_id=component_id,
                     wanted_fields=wanted_fields,

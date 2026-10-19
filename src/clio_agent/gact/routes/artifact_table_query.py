@@ -324,7 +324,7 @@ def _table_query(
 ) -> dict[str, Any]:
     """Resolve, bound-check and run one query (worker thread)."""
 
-    fmt = table_format_for(record.name)
+    fmt = table_format_for(record.name, version.path)
     if fmt is None:
         raise _error(
             415,
