@@ -1019,5 +1019,25 @@
       "tracked_source_changes": [],
       "native_error_messages": []
     }
-  ]
+  ],
+  "post_assessment_validation": {
+    "backend_compatibility_commit": "6556d0e7a",
+    "marketplace_floor_commit": "b3ae569",
+    "paired_marketplace_tests": {
+      "policy_a2ui_factorio": 164,
+      "appl_core": 50
+    },
+    "mypy_linux": {
+      "source_files": 1254,
+      "errors": 0
+    },
+    "mypy_windows": {
+      "errors": 9,
+      "files": 4,
+      "scope": "unchanged POSIX infrastructure stubs; no all-platform pass claimed"
+    },
+    "fs_inspection_tests_after_compatibility_fix": 17,
+    "hosted_marketplace_dependency": "Awaiting backend #1800 in develop; no workflow/test bypass",
+    "live_model_trials_rerun_after_typing_only_fix": false
+  }
 }

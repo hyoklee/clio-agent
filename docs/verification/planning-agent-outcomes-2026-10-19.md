@@ -191,10 +191,38 @@ Current focused validation:
 
 - **69 backend tests passed** across real FS policy/bounds/MCP, plan lifecycle and
   read-only mode guards. No skipped tests in these focused checks.
-- **127 marketplace tests passed**, including capable-root tool declarations and
-  specialist/superset contracts.
+- **127 top-level marketplace policy tests passed**, including capable-root tool
+  declarations and specialist/superset contracts. After the CI review below,
+  the paired nested pack checks also passed: **214 total** (164 policy/A2UI/Factorio
+  checks plus 50 APPL Core checks).
 - Targeted Pyright, Ruff lint/format and source file-size ratchet passed.
 - These checks support the changes. They do not replace the live outcomes above.
+
+### Post-assessment CI review
+
+Hosted checks caught four mypy errors in the new search helper that targeted
+Pyright had not caught. The helper now uses portable stat-mode checks instead of
+Path predicates unsupported by the minimum Python typeshed, and explicitly types
+its JSON context entries. Python 3.12-targeted mypy and all 17 real FS inspection
+tests pass. Full **Linux-targeted mypy passes all 1,254 source files**. Full mypy
+on Windows still reports nine POSIX-stub errors in four untouched infrastructure
+modules; this is not an all-platform type-check pass.
+
+The first 127-test marketplace command covered the top-level policy directory,
+not the nested pack checks. Those hosted jobs validate against `develop`, which
+has version beta 8 but not these unmerged FS tools. Their unknown-tool failures
+correctly expose the dependency. The four updated roots now require beta 8 rather
+than beta 3. Their real paired validation passes: 164 policy/A2UI/Factorio tests
+and 50 APPL Core tests (the latter with its declared trimesh test dependency).
+The workflow was not weakened or redirected to manufacture a green check;
+marketplace hosted validation still requires backend #1800 in `develop`.
+
+The local editable package metadata was refreshed from stale beta 7.post2 to the
+source's beta 8. The visible test service was refreshed with the compatibility
+fix and the versioned agent metadata through the normal update API; Base Agent
+is enabled with no validation errors. The 19 model runs remain attributed to
+their original commits, not retroactively relabeled as fresh model validation of
+these typing/dependency corrections. Their original audit archive is unchanged.
 
 Implementation remains in draft backend [#1800](https://github.com/iowarp/clio-agent/pull/1800)
 and marketplace [#106](https://github.com/iowarp/clio-agent-marketplace/pull/106),
