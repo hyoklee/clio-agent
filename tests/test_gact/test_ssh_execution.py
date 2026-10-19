@@ -200,6 +200,25 @@ def test_exec_acknowledgement_has_a_real_deadline(ssh_peer: list[str], tmp_path:
     assert time.monotonic() - start < 3
 
 
+def test_cancellation_checker_error_propagates_after_closing_channel(
+    ssh_peer: list[str],
+    tmp_path: Path,
+) -> None:
+    def broken_checker() -> bool:
+        raise ValueError("cancellation state unavailable")
+
+    with pytest.raises(ValueError, match="cancellation state unavailable"):
+        ssh_execution.execute_ssh_command(
+            SshRoute(profile="science"),
+            "no-ack",
+            root=tmp_path,
+            session_id="sess_science",
+            timeout_s=5,
+            max_output_bytes=1024,
+            cancelled=broken_checker,
+        )
+
+
 @pytest.mark.parametrize("mode,decision", [("ask", "deny"), ("ask", "allow"), ("bypass", "allow")])
 def test_actual_approval_gate_precedes_connection(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str, decision: str

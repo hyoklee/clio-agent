@@ -6,6 +6,7 @@ import contextvars
 import threading
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -31,11 +32,10 @@ def _request_exec(
     """Bound the exec acknowledgement, which Paramiko's read timeout does not bound."""
     finished = threading.Event()
     aborted: list[str] = []
-    checker_errors: list[Exception] = []
 
     def guard() -> None:
-        while not finished.wait(0.02):
-            try:
+        try:
+            while not finished.wait(0.02):
                 reason = (
                     "cancelled"
                     if cancelled is not None and cancelled()
@@ -43,29 +43,29 @@ def _request_exec(
                     if time.monotonic() >= deadline
                     else ""
                 )
-            except Exception as exc:  # noqa: BLE001 - propagate checker failures after closing SSH
-                checker_errors.append(exc)
-                reason = "cancellation_check_failed"
-            if reason:
-                aborted.append(reason)
+                if reason:
+                    aborted.append(reason)
+                    channel.close()
+                    return
+        finally:
+            # A failed cancellation checker must unblock exec acknowledgement.
+            # Future.result below propagates its original exception to the caller.
+            if not finished.is_set():
                 channel.close()
-                return
 
     # The cancellation checker is session-context dependent. Do not consult it
     # from an empty thread context or borrow another session's cancellation.
     copied = contextvars.copy_context()
-    worker = threading.Thread(target=copied.run, args=(guard,), daemon=True)
-    worker.start()
-    try:
-        channel.exec_command(command)
-    except paramiko.SSHException:
-        if not aborted:
-            raise
-    finally:
-        finished.set()
-        worker.join()
-    if checker_errors:
-        raise checker_errors[0]
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="clio-ssh-deadline") as executor:
+        watcher = executor.submit(copied.run, guard)
+        try:
+            channel.exec_command(command)
+        except paramiko.SSHException:
+            if not aborted:
+                raise
+        finally:
+            finished.set()
+            watcher.result()
     return aborted[0] if aborted else None
 
 

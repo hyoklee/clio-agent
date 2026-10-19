@@ -27,7 +27,7 @@ def published_ndp_ports(client: paramiko.SSHClient) -> list[int]:
         raw = stdout.read(65537)
         if len(raw) > 65536 or stdout.channel.recv_exit_status() != 0:
             return []
-        ports = set()
+        ports: set[int] = set()
         for line in raw.decode("utf-8-sig").splitlines():
             if re.search(r"ndp|ep-api", line, re.IGNORECASE):
                 ports.update(int(value) for value in re.findall(r":(\d+)->\d+/tcp", line))
