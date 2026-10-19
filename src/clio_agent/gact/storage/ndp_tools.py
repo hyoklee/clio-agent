@@ -26,7 +26,9 @@ def connected_data_search_ndp(
     Use connected_data_ndp_organizations to discover organization IDs such as
     earthscope_consortium. organization filters that catalog publisher; it does
     not join an organization or grant its protected Endpoint access. query
-    matches catalog metadata. Returns 50 rows per page, resource IDs and paths,
+    matches catalog metadata with AND between words. Use a few distinctive words,
+    not a whole question or synonym list; retry zero matches with fewer words
+    before concluding a collection is absent. Returns 50 rows per page, resource IDs and paths,
     never credentials or download URLs. To attach selected resources, call
     connected_data_connect(provider="ndp", root=dataset.id, label=dataset.title,
     configuration={"endpoint_id": dataset.endpoint_id, "resource_ids": [ids]}).

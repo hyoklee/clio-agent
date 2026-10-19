@@ -1,0 +1,88 @@
+---
+title: Sample and analyze NDP streams
+description: Understand archived replay, live producers, finite captures, resume cursors and access failures.
+---
+
+A stream is a way to deliver measurements. It does not establish when those
+measurements were acquired. Start with the scientific question and inspect the
+measurement timestamps before calling a result live.
+
+## Choose the data you need
+
+| Source | Useful for | What CLIO retains |
+| --- | --- | --- |
+| A published dataset file | Historical analysis over its documented coverage | The selected original and separate analysis outputs |
+| Archived CSV replay | Processing historical observations incrementally | Finite SSE captures, measurement timestamps and a resume cursor when supplied |
+| An Endpoint service query | A filtered scientific response, such as station metadata | The response bytes and query provenance |
+| A live bridge or producer | Forwarding current upstream observations to a destination topic | Producer identity/status and separately captured observations |
+
+Station metadata describes an instrument and its location or operating epochs.
+It is not a displacement, waveform or water-level time series. A successfully
+started producer is also not evidence that CLIO has received measurements.
+
+## Capture a finite segment
+
+Connect the existing service from **Attach → National Data Platform → Endpoints &
+streams** using its URL or a saved SSH profile. Use the service's Files, Stations
+or Streams view as available. Review the selected resource/station and limits,
+then save a sample. Opening a saved connection does not start a producer.
+
+The capture becomes an ordinary file in **Sources**. Its receipt records the
+Endpoint, operation, filters, capture times, status, byte count, SHA-256 and stop
+reason. The agent can read these same bytes and create a chart or report.
+
+Default limits are **10 seconds and 100 SSE events**. Maximum limits are
+**30 seconds, 1,000 events and 2 MiB**. These are capture bounds, not a promise of
+that many observations. For example, `hello`, heartbeat and `done` messages count
+as events but are not scientific samples. A byte or time limit may leave a final
+event incomplete; preserve that fact rather than counting it as a complete row.
+
+## Resume without duplicating observations
+
+When an API returns a resume value, pass the exact value to its advertised cursor
+parameter. Inspect its response schema: the EarthScope replay service returns a
+`done` event containing **`resume`** and **`next_index`**, while the next request's
+parameter is named **`cursor`**. An SSE event ID is not necessarily a cursor.
+
+Check sample identities or measurement timestamps across adjacent segments for
+duplicates and gaps. Record the selected resource revision/hash as well as the
+cursor. A missing completion event does not establish a safe resume point.
+
+An observed replay on October 18, 2026 returned three records followed by two
+more, with measurement times **December 3, 2024, 00:00:00–00:00:04 UTC**. That is
+archived replay, despite being delivered through a stream today.
+
+## Own the producer you start
+
+A live bridge can register a derived dataset and forward an upstream topic.
+Inspect its actual station/topic catalog and existing sessions first. Keep the
+returned session ID, destination and any registration IDs. Inspect status and
+obtain actual observations before claiming live data access.
+
+Closing CLIO's capture closes its HTTP/SSH reader. It does **not** stop a remote
+producer. Stop the specific producer started for your investigation and check
+its terminal state. Do not stop unrelated sessions. If a start request times out,
+inspect session state before retrying; a lost response does not prove no work began.
+
+## Diagnose the failing layer
+
+| Observation | Meaning and next check |
+| --- | --- |
+| Catalog search fails | Record the actual error and scope; it does not prove the underlying file is unavailable. |
+| File listing returns HTTP 500 | Listing is broken. A discovered CSV URL can still work through a separately advertised URL replay operation. Do not guess filenames. |
+| Anonymous sampler returns 401 | Reuse the saved NDP account only for the reviewed destination, then check access again. |
+| Signed-in operation still returns 401/403 | Check the service's accepted identity issuer, roles and groups. Browser login alone does not grant Endpoint access. |
+| Bridge start reports a downstream identity/catalog error | The bridge may authenticate successfully while its backing NDP API rejects dataset creation. Fix that downstream service; changing station filters will not repair it. |
+| Producer is running but no measurements arrive | Check the source topic, upstream credentials, selected station, broker route, consumer position and actual measurement freshness. |
+
+In the October 18 investigation, authenticated bridge station sampling worked,
+but starting a bridge failed during backing-dataset creation with an upstream
+identity-service error. The replay file list returned HTTP 500 while URL replay
+and resume worked. These are distinct findings; live acquisition was not verified.
+
+Endpoint operators should repair issuer/API compatibility while preserving access
+checks. CLIO does not create roles, switch off authorization or substitute a
+development token to make a test pass.
+
+See [scientific questions to investigate](/docs/examples/ndp-science/) and the
+[NDP source guide](/docs/files/ndp/) for discovery, linking and publication.

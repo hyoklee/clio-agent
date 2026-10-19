@@ -67,6 +67,9 @@ SCHEMA: dict[str, Any] = {
         "/large": {"get": {}},
         "/silent": {"get": {}},
         "/paused": {"get": {}},
+        "/failure": {"get": {}},
+        "/failure-large": {"get": {}},
+        "/failure-silent": {"get": {}},
     },
     "components": {
         "schemas": {
@@ -92,6 +95,28 @@ class EndpointHandler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         """Serve a real contract, data, redirects and SSE with CRLF framing."""
         self.calls.append(("GET", self.path, self.headers.get("Authorization", "")))
+        if self.path.startswith("/failure"):
+            self.send_response(500 if self.path == "/failure-silent" else 400)
+            self.send_header(
+                "Content-Type",
+                "text/plain" if self.path == "/failure-large" else "application/json",
+            )
+            self.end_headers()
+            if self.path == "/failure-silent":
+                time.sleep(2)
+            elif self.path == "/failure-large":
+                self.wfile.write(b"x" * (MAX_RESPONSE + 100))
+            else:
+                self.wfile.write(
+                    json.dumps(
+                        {
+                            "detail": "Dataset creation failed: identity service HTTP 502; Bearer private-value "
+                            + "eyJ"
+                            + "x" * 60
+                        }
+                    ).encode()
+                )
+            return
         if self.path in {"/silent", "/paused"}:
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream")
@@ -387,6 +412,36 @@ def test_denials_and_redirect_do_not_create_capture(tmp_path: Path, peer: str) -
         owner.invoke("ws", row.id, EndpointRequest(operation_id="GET /redirect"), resources)
     assert len(EndpointHandler.calls) == before + 1
     assert owner.captures("ws", row.id) == []
+
+
+def test_upstream_failure_preserves_cause_and_redacts_credentials(
+    tmp_path: Path, peer: str
+) -> None:
+    owner, resources = owners(tmp_path)
+    row = owner.connect("ws", EndpointConnectionInput(name="Lab", url=peer))
+    with pytest.raises(ValueError, match="HTTP 400.*identity service HTTP 502") as error:
+        owner.invoke("ws", row.id, EndpointRequest(operation_id="GET /failure"), resources)
+    assert "private-value" not in str(error.value)
+    assert "eyJ" not in str(error.value)
+    assert "[redacted]" in str(error.value)
+    assert owner.captures("ws", row.id) == []
+
+
+def test_failure_body_is_size_and_time_bounded(tmp_path: Path, peer: str) -> None:
+    owner, resources = owners(tmp_path)
+    row = owner.connect("ws", EndpointConnectionInput(name="Lab", url=peer))
+    with pytest.raises(ValueError, match="HTTP 400") as error:
+        owner.invoke("ws", row.id, EndpointRequest(operation_id="GET /failure-large"), resources)
+    assert len(str(error.value)) < 1100
+    started = time.monotonic()
+    with pytest.raises(ValueError, match="HTTP 500"):
+        owner.invoke(
+            "ws",
+            row.id,
+            EndpointRequest(operation_id="GET /failure-silent", max_seconds=1),
+            resources,
+        )
+    assert time.monotonic() - started < 1.8
 
 
 @pytest.mark.parametrize(

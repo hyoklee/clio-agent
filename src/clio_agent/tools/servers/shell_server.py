@@ -372,6 +372,8 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
     task_text = (
         "For files outside permitted folders, declare access_paths and access_reason so CLIO "
         "asks the user before execution. Include source and destination for moves. "
+        "Already approved downloaded source inputs can be read at their returned paths "
+        "without access_paths. Those paths stay read-only; save derivatives in the workspace. "
         "By default background=false waits for command completion. Set background=true to "
         "return a durable Shell task handle as soon as the command starts, before completion. "
         "Continue independent work; use query_tasks, observe_tasks, wait_tasks, get_task_result "
@@ -482,7 +484,7 @@ async def bash(
     access_paths: Annotated[
         list[str] | None,
         Field(
-            description="Files or folders outside the workspace needed by this command. CLIO asks the user for folder access before running. Include both source and destination for a move."
+            description="Files or folders needing additional permission. Already approved downloaded source paths do not need this for reads and remain read-only. CLIO asks for folder access before running. Include both source and destination for a move."
         ),
     ] = None,
     access_reason: Annotated[

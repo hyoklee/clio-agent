@@ -196,7 +196,11 @@ def connected_data_open(
     record = service.get(session.workspace_id, source_id, connected=linked)
     manifest_id = record.linked_manifest_id if linked else record.manifest_id
     if not manifest_id or (not linked and not record.source.local_path):
-        raise ValueError("Ask the user to link or download this folder in Attach first")
+        raise ValueError(
+            "This source has not been linked or downloaded. Use connected_data_download, "
+            "wait for its task, then open with linked=false; or use an existing Link "
+            "attachment from Attach with its returned revision and linked flag."
+        )
     if revision and revision != manifest_id:
         raise ValueError("This folder changed since it was attached; ask for an updated reference")
     manifest = service.store.get("manifest", manifest_id, Manifest)

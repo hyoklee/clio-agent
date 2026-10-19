@@ -118,6 +118,21 @@ on local connection success.
 
 ## Capture limits and evidence
 
+Treat each layer independently. A failed file listing does not establish that an
+advertised URL-based replay operation is broken. Find a real CSV resource through
+the catalog, then request a finite segment from that observed URL. Do not invent
+filenames or substitute an unrelated example. Inspect the completion payload:
+some services return `resume` in the SSE `done` event but accept it as `cursor`
+on the next request. Preserve the exact value and verify adjacent measurement
+identities and timestamps.
+
+A bridge can accept the user's token while a downstream catalog rejects creation
+of its backing dataset. Preserve the actual nested error, accepted issuer and
+operation stage. Repeated station changes, login or POST retries will not repair
+a downstream identity-service failure. Check existing sessions after uncertain
+starts, and do not bypass roles or use a server's development token. Missing
+organization/write grants and disabled storage remain distinct prerequisites.
+
 Defaults are 10 seconds / 100 SSE events; maxima are 30 seconds / 1,000 events /
 2 MiB. Use a bounded query or segment, not repeated polling to simulate an
 unbounded subscription. CLIO closes the read channel at completion or a limit;

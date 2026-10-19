@@ -1,0 +1,120 @@
+---
+title: Scientific questions for NDP
+description: Questions spanning snow, fire, habitat and hydrology, with explicit data and validation requirements.
+---
+
+Ask for the scientific result. You do not need to name a skill, supply operation
+IDs, or prescribe the intermediate tool calls. CLIO should discover appropriate
+collections, obtain measurements, check their meaning and produce inspectable
+analysis. Finding a catalog entry is only the first step.
+
+## Snow and water
+
+> Has the snow-to-liquid ratio at Alta-Collins changed in the 2023–24 winter
+> compared with its historical record? I think NDP has the observations. Show the
+> evidence, with a chart and the limitations of the comparison.
+
+NDP lists [historical Alta-Collins observations](https://nationaldataplatform.org/catalog/dataset/dataset-for-alta-collins-snow-and-liquid-precipitation-equivalent-observations-2000-2023)
+and a [2023–24 collection](https://nationaldataplatform.org/catalog/dataset/alta-collins-snow-and-liquid-precipitation-equivalent-observations-2023-2024),
+each with observations and a readme. Compare compatible observation intervals and
+units; handle missing values, trace precipitation and seasonal coverage. A ratio
+of seasonal totals differs from an average of individual snowfall-event ratios.
+One unusual winter does not establish a climate trend.
+
+Other meaningful questions include:
+
+- How sensitive is Alta's historical snow-to-liquid ratio to excluding very small
+  precipitation events, and does the interpretation of 2023–24 change?
+- Do the Alta and Highland disdrometer collections cover the same storms, and
+  what differences in precipitation properties can the overlapping measurements
+  support? Establish sensor variables, overlap and accessible file sizes first.
+
+## Fire and atmosphere
+
+> Can the NDP observations from the 2022 Konza Prairie burn tell us whether the
+> smoke or CO2 signal changed with the wind? Show what the measurements support.
+
+The [Konza burn experiment](https://nationaldataplatform.org/catalog/dataset/neon-mdp-sage-wifire-bp3d-konza-prairie-burn-experiment)
+lists wind, gas and particle instrumentation alongside other resources. Sensor
+time alignment, units, location and data quality determine which comparisons are
+valid. A smoke-classification package is not automatically a concentration time
+series, and an association does not establish causation. Some resources are large
+or use executable serialization formats; inspect metadata and use suitable
+readers rather than blindly executing notebooks or deserializing objects.
+
+Further investigations:
+
+- How does the timing of detected smoke agree across the Konza camera nodes,
+  and does wind direction explain any lag? This needs actual timestamped signals
+  from multiple nodes, not catalog descriptions alone.
+- How closely do recent VIIRS thermal detections coincide with reported wildfire
+  locations in a chosen California region? Match acquisition/report dates and
+  distinguish satellite pixels from incident boundaries and false detections.
+- Which LANDFIRE fuel or vegetation classes surround a selected fire perimeter?
+  Establish compatible dates, classification and spatial resolution before
+  interpreting exposed area as risk or fire behavior.
+
+## Habitats and lake basins
+
+> What can NDP tell us about how much of the Lake Tahoe basin is wetland or
+> riparian habitat, and how that relates spatially to the lake? Make a small map
+> and quantify what the available scientific data support.
+
+The catalog contains [Lake Tahoe](https://nationaldataplatform.org/catalog/dataset/lake-tahoe)
+and TRPA geospatial collections. A useful result needs actual habitat and boundary
+features, compatible coordinate systems, a defined basin and overlap handling.
+Do not add overlapping polygon areas or treat different wetland/riparian
+definitions as interchangeable. A service landing page is not a geometry file.
+
+Related questions:
+
+- Which mapped habitat patches lie near the shoreline, and how does their area
+  change with the chosen shoreline buffer? State the buffer definition and units.
+- How much of a mapped flood zone overlaps particular land-cover classes? Check
+  whether the flood layer is a probability scenario or an observed event.
+
+## A harder hydrology question
+
+> Can NDP help compare winter ground displacement around Lake Tahoe over the
+> last five winters, and assess whether it is consistent with changing regional
+> water storage?
+
+This is a research-feasibility task until the required coverage is established.
+It needs appropriately located GNSS stations with multiple winters of compatible
+displacement observations, alongside independent hydrological measurements such
+as snowpack, precipitation, lake level or a water-storage product. A short replay
+from one station in December 2024 cannot answer it.
+
+GNSS displacement can reflect regional hydrological loading, tectonics, snow,
+reference-frame choices and instrument effects. Establish component units, station
+epochs, offsets, trend removal and uncertainties. It is not a direct measurement
+of lake volume. A defensible first result may be a map of suitable stations and a
+coverage/gap table, followed by an analysis only where the data support it.
+
+For scientific context, [Borsa, Agnew and Cayan's regional GPS study](https://www.usgs.gov/publications/ongoing-drought-induced-uplift-western-united-states)
+used seasonally adjusted station series and a deformation-to-mass inversion.
+It supports investigating hydrological loading; it does not establish a direct
+conversion from one lake-adjacent station's motion to that lake's stored volume.
+
+## Streams and sharing results
+
+> Can we obtain current observations for a station near our study area, measure
+> their freshness and gaps, and compare them with an archived interval?
+
+This requires successful acquisition and consumption, measured timestamps and
+cadence. Station metadata, a running producer or archived SSE delivery alone
+cannot establish that result. See [stream capture and diagnosis](/docs/files/ndp-streams/).
+
+> Put this investigation's report, chart and derived table into one private NDP
+> dataset for our research group, and verify that the files can be read back.
+
+The agent must resolve or, when authorized, create the organization, store the
+selected artifact versions, register their real locations and read back both the
+dataset record and stored bytes. A catalog record does not itself upload files.
+Missing write authorization or object storage is a blocked publication, not a
+successful publication test. New local datasets are distinct from federation
+publication.
+
+These are a question bank, not a claim that every workflow has completed live
+acceptance. The checked-in verification report records exact prompts, model
+behavior, actual measurements, scientific outputs and failures separately.

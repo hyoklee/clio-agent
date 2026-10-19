@@ -55,8 +55,12 @@ approved relative paths (200 per page). Retain attachment `revision`, `linked` a
 `folder` when supplied; pass them back on listing/reads so a changed selection
 cannot silently substitute a different revision.
 
-Open the selected path with `connected_data_open(source_id=SOURCE_ID,
-path=RELATIVE_PATH, ...)`. Use its immutable `resource_id` with
+Indexing alone does not create a Link attachment. If this connection has no linked
+manifest, use the download workflow below instead of repeatedly opening it with
+the default `linked=true`. After Download completes, use `linked=false` and the
+returned revision/path. For an existing Link attachment, open the selected path
+with `connected_data_open(source_id=SOURCE_ID, path=RELATIVE_PATH, ...)`.
+Use its immutable `resource_id` with
 `workspace_resource_read` or `workspace_resource_inspect`. Linked paths are virtual
 references, not shell mounts.
 
@@ -68,6 +72,14 @@ Wait for completion and use the returned materialized path. Do not guess a sourc
 folder path or resubmit an accepted download. NDP originals stay intact; create
 separate derivatives in the workspace. A downloaded historical copy is not a
 current upstream read after disconnection.
+
+Use the returned downloaded input path directly for reads, even when CLIO stores
+it outside the workspace root. Shell `access_paths` requests broader folder
+permissions; it is not needed to read these approved inputs and cannot authorize
+writes to protected source snapshots. Keep scripts, outputs and temporary work
+under the workspace. If selected measurements lack the necessary coverage, inspect
+alternative resources in the collection before treating that as a collection-wide
+gap. Record exactly which instruments and intervals were examined.
 
 Choose analysis from actual data, not format assumptions:
 

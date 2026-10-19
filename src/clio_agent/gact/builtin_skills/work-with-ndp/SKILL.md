@@ -5,9 +5,23 @@ description: "Use for National Data Platform (NDP) work: find and analyze scient
 
 # Work with NDP
 
-Start from the scientific outcome and supplied references, not an API menu. Reuse
-the workspace's sources, saved NDP account and Endpoint connections with
+Start from the scientific outcome and supplied references, not an API menu. Use
+short distinctive search terms: catalog words are combined with AND, so pasting a
+whole research question or a list of synonyms can hide an available collection.
+Before concluding data is absent, retry a zero-match query with fewer terms or a
+publisher and inspect candidate coverage. A failed file-list route does not prove
+that URL-based replay is unavailable; use a CSV resource actually found in the
+catalog when that operation is advertised.
+
+Reuse the workspace's sources, saved NDP account and Endpoint connections with
 `connected_data_status`. Choose only the workflow needed for the request.
+Connecting/indexing a new source does not attach its bytes. Use the approved
+`connected_data_download` task for analysis, then open with `linked=false` and the
+returned revision/path. Use `linked=true` only for an existing Link attachment.
+Returned downloaded paths are approved read inputs even outside the workspace.
+Do not request shell `access_paths` for those reads: it requests broader folder
+permissions and cannot grant write access to protected originals. Write analysis
+scripts and derivatives in the workspace instead.
 
 ## Domain map
 
