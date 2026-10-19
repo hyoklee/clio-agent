@@ -14,6 +14,7 @@ from clio_agent.arc.task_types import (
     BackendReference,
     ContextBoundary,
     CoordinationGrant,
+    CoreReference,
     MailItem,
     QuestionDefinition,
     QuestionReply,
@@ -32,6 +33,12 @@ from clio_agent.gact.task_migration_inputs import (
     _migrate_intents,
     _unresolved,
     migrate_context_epochs,
+)
+from clio_agent.gact.task_migration_storage import (
+    RECEIPT_EVENT,
+    finish_legacy_operations,
+    legacy_operation_task,
+    read_legacy_operations,
 )
 from clio_agent.gact.task_publication import publish_task_notice, task_owner_recipient
 
@@ -82,8 +89,17 @@ def migrate_history(app: Any) -> None:
     withdrawals: set[tuple[str, str]] = set()
     subscriptions: dict[tuple[str, str], dict[str, Any]] = {}
     grants: dict[tuple[str, str], dict[str, Any]] = {}
+    storage_rows = read_legacy_operations(app)
+    storage_receipts: set[str] = set()
     for sid, event in _session_events(history):
         payload = event.get("payload") or {}
+        if event.get("event_type") == RECEIPT_EVENT and payload.get("observation_id"):
+            storage_receipts.add(payload["observation_id"])
+            receipt = payload.get("record", {})
+            if not receipt.get("association_confirmed") and receipt.get("content"):
+                app.state.task_migration_issues.append(
+                    CoreReference.model_validate(receipt["content"])
+                )
         if "schema_version" in payload:
             continue
         event_type = event.get("event_type")
@@ -146,6 +162,24 @@ def migrate_history(app: Any) -> None:
             if isinstance(raw, dict):
                 identity = str(raw.get("message_id") or raw.get("identity") or "")
                 mail.setdefault((str(raw.get("target_session_id") or sid), identity), raw)
+    # Existing Core and ordinary legacy task records take precedence over storage.
+    known = {
+        str(row[name])
+        for _, _, row, _ in latest.values()
+        for name in ("task_id", "handle_id", "handle", "task_handle", "id")
+        if row.get(name)
+    }
+    for operation in storage_rows:
+        row = legacy_operation_task(operation, sessions)
+        if (
+            row is not None
+            and row["handle"] not in known
+            and not history.aliases(row["handle"])
+            and history.task_snapshot(row["handle"]) is None
+        ):
+            sid = operation.original["owner_session_id"]
+            latest[_identity("native", sid, row)] = ("native", sid, row, row)
+            known.add(row["handle"])
     preferred: dict[str, list[str]] = defaultdict(list)
     for identity, (_family, _sid, row, _payload) in latest.items():
         candidate = str(row.get("handle") or row.get("handle_id") or row.get("task_handle") or "")
@@ -312,7 +346,7 @@ def migrate_history(app: Any) -> None:
                 backend = row.get("backend") or {}
                 backend_key = row.get("key") or {}
                 placement = str(row.get("placement") or "local")
-                reference = BackendReference(
+                reference: BackendReference | None = BackendReference(
                     owner="conversation"
                     if family == "assignment"
                     else "question"
@@ -337,6 +371,10 @@ def migrate_history(app: Any) -> None:
                     else str(row.get("transport") or "unknown"),
                     placement=placement,
                 )
+                if "legacy_storage_operation" in row:
+                    # Provider job and public task IDs are not native MCP identities.
+                    reference = None
+                    resource = row.get("source_id") or None
                 terminal = raw in _TERMINAL
                 status = (
                     str(row.get("effective_status") or raw) if terminal else "task_state_uncertain"
@@ -600,6 +638,7 @@ def migrate_history(app: Any) -> None:
                 ),
                 expected_revision=item.revision,
             )
+    finish_legacy_operations(app, storage_rows, storage_receipts)
     _migrate_intents(app, sessions, anchor)
     _migrate_inputs(app, anchor)
     migrate_context_epochs(app)

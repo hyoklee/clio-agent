@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -9,9 +10,18 @@ from typing import Any
 import pytest
 
 from clio_agent.arc.memory import ARCMemory
-from clio_agent.arc.task_types import QuestionDefinition, QuestionReply
+from clio_agent.arc.task_types import (
+    CoreReference,
+    QuestionDefinition,
+    QuestionReply,
+    TaskOwner,
+    TaskSnapshot,
+)
 from clio_agent.gact.semantic_events import SemanticEvent
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.storage.models import TransferOperation
+from clio_agent.gact.storage.store import SourceStore
+from clio_agent.gact.storage.task_controls import source_operation_views
 from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.task_migration import migrate_history
 
@@ -255,3 +265,294 @@ def test_legacy_provider_receipt_is_retained_for_inspection_without_resubmission
     assert history.read_content(converted.backend_observation)["record"] == original
     assert history.native_attempts(converted.handle) == ()
     assert history.resolve_handle(original["handle"]) == converted.handle
+
+
+@pytest.mark.parametrize("fail_recording", [False, True])
+def test_branch_transfer_identity_migrates_before_strict_operation_decode(
+    arc: ARCMemory,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_recording: bool,
+) -> None:
+    """Retain old provider custody in Core before removing obsolete storage fields."""
+
+    app, session = fixture_app(arc, tmp_path)
+    history = app.state.task_history
+    store = SourceStore(tmp_path / "old-connected-storage")
+    app.state.connected_storage = SimpleNamespace(store=store)
+    original = {
+        "id": "old-transfer",
+        "source_id": "old-source",
+        "kind": "native_transfer",
+        "state": "running",
+        "native_job_id": "original-provider-job",
+        "native_request": {"submission_id": "original-provider-submission"},
+        "selected_paths": ["approved/data.csv"],
+        "created_at": STAMP,
+        "updated_at": STAMP,
+        "task_handle": "task_original_transfer",
+        "owner_session_id": session.id,
+        "invocation_id": "original-model-call",
+    }
+    with store.transaction() as db:
+        db.execute(
+            "INSERT INTO records VALUES ('operation', ?, ?)", (original["id"], json.dumps(original))
+        )
+    if fail_recording:
+        original_write = history.confirm_write
+
+        def refuse_write(_operation: Any) -> Any:
+            raise OSError("Injected Core persistence outage")
+
+        monkeypatch.setattr(history, "confirm_write", refuse_write)
+        with pytest.raises(OSError, match="persistence outage"):
+            migrate_history(app)
+        with store.transaction() as db:
+            raw = db.execute(
+                "SELECT body FROM records WHERE kind='operation' AND id=?", (original["id"],)
+            ).fetchone()
+        assert raw is not None and json.loads(raw[0]) == original
+        monkeypatch.setattr(history, "confirm_write", original_write)
+        history = TaskHistory(arc)
+        history.restore()
+        app.state.task_history = history
+    twice(app)
+    operation = store.get("operation", original["id"], TransferOperation)
+    assert operation.native_job_id == original["native_job_id"]
+    assert operation.native_request == original["native_request"]
+    assert operation.selected_paths == original["selected_paths"]
+    assert operation.state == "running"
+    task = history.task_snapshot(original["task_handle"])
+    assert task is not None and task.kind == "Download"
+    assert task.owner.session_id == session.id and task.invocation_id == original["invocation_id"]
+    assert task.submission is None and task.terminal_at is None
+    assert operation.native_job_id in json.dumps(history.read_content(task.backend_observation))
+    assert history.native_attempts(task.handle) == ()
+    with store.transaction() as db:
+        raw = db.execute(
+            "SELECT body FROM records WHERE kind='operation' AND id=?", (original["id"],)
+        ).fetchone()
+    assert raw is not None
+    assert not ({"task_handle", "owner_session_id", "invocation_id"} & json.loads(raw[0]).keys())
+    views = source_operation_views(app, original["source_id"])
+    assert len(views) == 1 and views[0]["id"] == original["id"]
+    assert views[0]["task_handle"] == original["task_handle"]
+    assert views[0]["native_job_id"] == original["native_job_id"]
+
+
+def seed_old_operation(
+    app: Any, session: Any, tmp_path: Path
+) -> tuple[SourceStore, dict[str, Any]]:
+    """Seed the real earlier storage wire form, with distinct operation and task IDs."""
+
+    store = SourceStore(tmp_path / "legacy-operation")
+    app.state.connected_storage = SimpleNamespace(store=store)
+    original = {
+        "id": "transfer_original",
+        "source_id": "source_original",
+        "kind": "native_transfer",
+        "state": "running",
+        "bytes_done": 33,
+        "bytes_total": 64,
+        "native_job_id": "provider_original_job",
+        "native_request": {"submission_id": "provider_original_submission"},
+        "selected_paths": ["approved/data.csv"],
+        "created_at": STAMP,
+        "updated_at": STAMP,
+        "task_handle": "task_original",
+        "owner_session_id": session.id,
+        "invocation_id": "original_invocation",
+    }
+    with store.transaction() as db:
+        db.execute(
+            "INSERT INTO records VALUES ('operation', ?, ?)", (original["id"], json.dumps(original))
+        )
+    return store, original
+
+
+def assert_retained_operation(history: TaskHistory, original: dict[str, Any]) -> None:
+    """Require a confirmed Core association to a body containing the complete old row."""
+    records = [
+        event["payload"]["record"]
+        for event in history.arc._live.iter_event_contents()
+        if event.get("payload", {}).get("record", {}).get("operation_id") == original["id"]
+        and event["payload"]["record"].get("content")
+    ]
+
+    def contains(value: Any) -> bool:
+        if value == original:
+            return True
+        if isinstance(value, dict):
+            return any(contains(child) for child in value.values())
+        if isinstance(value, list):
+            return any(contains(child) for child in value)
+        return False
+
+    assert (
+        sum(
+            contains(history.read_content(CoreReference.model_validate(record["content"])))
+            for record in records
+        )
+        == 1
+    )
+
+
+def test_existing_core_outcome_wins_while_old_storage_counters_keep_their_task(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """Association must not overwrite the current outcome or fabricate a second source row."""
+    app, session = fixture_app(arc, tmp_path)
+    _, original = seed_old_operation(app, session, tmp_path)
+    history = app.state.task_history
+    current = TaskSnapshot(
+        handle=original["task_handle"],
+        kind="Download",
+        owner=TaskOwner(human_id="human", session_id=session.id, assignment_id="assignment"),
+        label="Current canonical outcome",
+        tool="connected_data_download",
+        invocation_id=original["invocation_id"],
+        created_at=STAMP,
+        updated_at=STAMP,
+        status="completed",
+        raw_status="completed",
+        terminal_at=STAMP,
+        settlement="confirmed",
+        result=history.write_content(session.id, {"output": "Current committed result"}),
+    )
+    history.record_snapshot(current, observation_id="current")
+    twice(app)
+    assert history.task_snapshot(current.handle) == current
+    assert_retained_operation(history, original)
+    views = source_operation_views(app, original["source_id"])
+    assert len(views) == 1
+    assert views[0]["id"] == original["id"] and views[0]["task_handle"] == current.handle
+    assert views[0]["bytes_done"] == 33 and views[0]["bytes_total"] == 64
+    assert views[0]["native_job_id"] == original["native_job_id"]
+    assert views[0]["state"] == "completed"
+
+
+@pytest.mark.parametrize("conflict", ["missing_owner", "other_owner", "other_source"])
+def test_unknown_or_conflicting_storage_ownership_is_retained_without_invention(
+    arc: ARCMemory, tmp_path: Path, conflict: str
+) -> None:
+    """An orphan or conflict stays inspectable and cannot acquire a task association."""
+
+    app, session = fixture_app(arc, tmp_path)
+    store, original = seed_old_operation(app, session, tmp_path)
+    history = app.state.task_history
+    current = None
+    if conflict != "missing_owner":
+        other = app.state.sessions.create(workspace_id="workspace")
+        current = TaskSnapshot(
+            handle=original["task_handle"],
+            kind="Download",
+            owner=TaskOwner(
+                human_id="human",
+                session_id=other.id if conflict == "other_owner" else session.id,
+                assignment_id="other",
+            ),
+            label="Other immutable owner",
+            tool="connected_data_download",
+            invocation_id="other-invocation"
+            if conflict == "other_owner"
+            else original["invocation_id"],
+            resource_id="explicitly-different-source" if conflict == "other_source" else None,
+            created_at=STAMP,
+            updated_at=STAMP,
+        )
+        history.record_snapshot(current, observation_id="other-owner")
+    else:
+        original["owner_session_id"] = ""
+        with store.transaction() as db:
+            db.execute(
+                "UPDATE records SET body=? WHERE kind='operation' AND id=?",
+                (json.dumps(original), original["id"]),
+            )
+    twice(app)
+    assert history.task_snapshot(original["task_handle"]) == current
+    assert history.resolve_handle(original["id"]) is None
+    assert len(app.state.task_migration_issues) == 1
+    assert_retained_operation(history, original)
+    assert (
+        store.get("operation", original["id"], TransferOperation).native_job_id
+        == original["native_job_id"]
+    )
+    assert all(
+        not row.get("task_handle") for row in source_operation_views(app, original["source_id"])
+    )
+
+
+@pytest.mark.parametrize("failure", ["write_error", "concurrent_change"])
+def test_core_confirmation_survives_sqlite_prune_failure_and_retry(
+    arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    """A failed prune retains the old row; retry reuses the confirmed Core proof."""
+    from collections.abc import Iterator
+    from contextlib import contextmanager
+
+    app, session = fixture_app(arc, tmp_path)
+    store, original = seed_old_operation(app, session, tmp_path)
+    transaction = store.transaction
+
+    class BeforePrune:
+        def __init__(self, database: Any) -> None:
+            self.database = database
+
+        def execute(self, statement: str, parameters: Any = ()) -> Any:
+            if statement.startswith("UPDATE records SET body"):
+                if failure == "write_error":
+                    raise OSError("Injected failure before SQLite prune")
+                changed = {**original, "bytes_done": 45}
+                self.database.execute(
+                    "UPDATE records SET body=? WHERE kind='operation' AND id=?",
+                    (json.dumps(changed), original["id"]),
+                )
+            return self.database.execute(statement, parameters)
+
+    @contextmanager
+    def reject_prune() -> Iterator[Any]:
+        with transaction() as db:
+            yield BeforePrune(db)
+
+    monkeypatch.setattr(store, "transaction", reject_prune)
+    expected_error = OSError if failure == "write_error" else RuntimeError
+    match = "before SQLite prune" if failure == "write_error" else "changed during migration"
+    with pytest.raises(expected_error, match=match):
+        migrate_history(app)
+    assert_retained_operation(app.state.task_history, original)
+    with transaction() as db:
+        row = db.execute(
+            "SELECT body FROM records WHERE kind='operation' AND id=?", (original["id"],)
+        ).fetchone()
+    remaining = original if failure == "write_error" else {**original, "bytes_done": 45}
+    assert row is not None and json.loads(row[0]) == remaining
+    monkeypatch.setattr(store, "transaction", transaction)
+    twice(app)
+    assert_retained_operation(app.state.task_history, original)
+    operation = store.get("operation", original["id"], TransferOperation)
+    assert operation.updated_at == STAMP and operation.native_request == original["native_request"]
+    assert operation.bytes_done == remaining["bytes_done"]
+
+
+def test_storage_migration_does_not_hide_other_invalid_fields(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """Only the three obsolete fields may be pruned; strict validation stays intact."""
+    from pydantic import ValidationError
+
+    app, session = fixture_app(arc, tmp_path)
+    store, original = seed_old_operation(app, session, tmp_path)
+    original["unknown_workload_field"] = "must remain an explicit error"
+    with store.transaction() as db:
+        db.execute(
+            "UPDATE records SET body=? WHERE kind='operation' AND id=?",
+            (json.dumps(original), original["id"]),
+        )
+    with pytest.raises(ValidationError):
+        migrate_history(app)
+    with store.transaction() as db:
+        row = db.execute(
+            "SELECT body FROM records WHERE kind='operation' AND id=?", (original["id"],)
+        ).fetchone()
+    assert row is not None and json.loads(row[0]) == original
+    assert app.state.task_history.task_snapshot(original["task_handle"]) is None

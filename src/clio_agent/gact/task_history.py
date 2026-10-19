@@ -505,6 +505,18 @@ class TaskHistory:
             self._record("task.alias", task.owner.session_id, uuid4().hex, payload)
             self._project("task.alias", payload)
 
+    def aliases(self, value: str) -> tuple[TaskAlias, ...]:
+        """Read confirmed historical mappings without exposing the mutable index."""
+        with self._view_lock:
+            return tuple(self._aliases.get(value, {}).values())
+
+    def record_source_operation_migration(
+        self, session_id: str, identity: str, payload: dict[str, Any]
+    ) -> None:
+        """Confirm retained storage evidence before obsolete SQLite fields are pruned."""
+        with self._writing():
+            self._record("task.migration.source_operation", session_id, identity, payload)
+
     def listen(
         self,
         callback: Callable[[int], None],

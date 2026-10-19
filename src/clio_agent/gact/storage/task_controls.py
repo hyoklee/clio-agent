@@ -9,6 +9,7 @@ from fastapi import HTTPException
 
 from clio_agent.arc.task_types import TaskOwner, TaskSnapshot
 from clio_agent.gact.storage.models import TransferOperation
+from clio_agent.gact.task_migration_storage import source_operation_identity
 from clio_agent.tools.task_call_context import permission_snapshot
 
 
@@ -98,9 +99,15 @@ async def cancel_source_action(app: Any, source_id: str, handle: str) -> dict[st
 
     def resolve() -> str:
         history = app.state.task_history
-        if handle not in history.resource_handles(source_id):
+        selected = history.resolve_handle(handle)
+        operations = app.state.connected_storage.store.operations_for_source(source_id)
+        associated = _operation_bindings(app, source_id, operations)
+        if (
+            selected is None
+            or selected not in history.resource_handles(source_id) | associated.keys()
+        ):
             raise HTTPException(404, "Source operation unavailable")
-        task = history.task_snapshot(handle)
+        task = history.task_snapshot(selected)
         if task is None or task.owner.human_id != app.state.human_principal:
             raise HTTPException(404, "Source operation unavailable")
         return task.handle
@@ -155,17 +162,55 @@ def operation_view(
     }
 
 
+def _operation_bindings(
+    app: Any, source_id: str, operations: list[TransferOperation]
+) -> dict[str, TransferOperation]:
+    """Resolve verified historical associations without assuming operation ID equals handle."""
+    history = app.state.task_history
+    bindings: dict[str, TransferOperation] = {}
+    ambiguous: set[str] = set()
+    for operation in operations:
+        handle = history.resolve_handle(operation.id)
+        task = history.task_snapshot(handle) if handle is not None else None
+        if (
+            handle is None
+            or task is None
+            or task.kind not in {"Download", "Indexing", "MCP"}
+            or task.owner.human_id != app.state.human_principal
+        ):
+            continue
+        aliases = history.aliases(operation.id)
+        verified_alias = any(
+            alias.handle == handle
+            and alias.source_identity == source_operation_identity(source_id, operation.id)
+            for alias in aliases
+        )
+        if not verified_alias and not (handle == operation.id and task.resource_id == source_id):
+            continue
+        if handle in bindings:
+            ambiguous.add(handle)
+            bindings.pop(handle)
+        elif handle not in ambiguous:
+            bindings[handle] = operation
+    return bindings
+
+
 def source_operation_views(app: Any, source_id: str) -> list[dict[str, Any]]:
     """Read one source's indexed tasks and retained provider operations."""
     history = app.state.task_history
-    workloads = {
-        row.id: row for row in app.state.connected_storage.store.operations_for_source(source_id)
-    }
+    operations = app.state.connected_storage.store.operations_for_source(source_id)
+    workloads = {row.id: row for row in operations}
+    associated = _operation_bindings(app, source_id, operations)
     rows = []
-    for handle in history.resource_handles(source_id):
+    for handle in history.resource_handles(source_id) | associated.keys():
         task = history.task_snapshot(handle)
         if task is not None and task.owner.human_id == app.state.human_principal:
-            rows.append(operation_view(app, task, source_id, workloads.pop(handle, None)))
+            operation = associated.get(handle)
+            if operation is not None:
+                workloads.pop(operation.id, None)
+            rows.append(
+                operation_view(app, task, source_id, operation or workloads.pop(handle, None))
+            )
     rows.extend(
         row.model_dump(mode="json", exclude={"native_request"}) for row in workloads.values()
     )

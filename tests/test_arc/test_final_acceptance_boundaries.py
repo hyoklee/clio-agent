@@ -20,6 +20,7 @@ from clio_agent.arc.task_types import (
 from clio_agent.gact.core_recovery import CoreRecovery
 from clio_agent.gact.native_tools import NativeTools
 from clio_agent.gact.native_work import WorkEvidence
+from clio_agent.gact.off_loop import join_cleanup
 from clio_agent.gact.session_mail import SessionMail
 from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import MailboxFull, TaskHistory
@@ -73,10 +74,8 @@ def test_staged_peer_occupies_capacity_until_input_commit(
     assert mailbox.stage(recipient).items == (second,)
 
 
-def native_boundary(
-    arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
-) -> tuple[TaskHistory, TaskOwner, NativeTools]:
-    """Construct production owners with isolated native roots and a real parent."""
+def native_owner(arc: ARCMemory, monkeypatch: pytest.MonkeyPatch) -> tuple[TaskHistory, TaskOwner]:
+    """Confirm the parent off-loop before constructing native roots on the app loop."""
     for root in ("SHELL", "STORAGE"):
         monkeypatch.setenv(f"CLIO_TASKS_{root}_URL", "memory://")
         monkeypatch.setenv(f"CLIO_TASKS_{root}_QUEUE", "")
@@ -98,12 +97,19 @@ def native_boundary(
         observation_id="parent",
     )
 
+    return history, owner.model_copy(update={"parent_handle": owner.assignment_id})
+
+
+def native_boundary(history: TaskHistory) -> NativeTools:
+    """Create SDK resources on the caller's running application loop."""
+    asyncio.get_running_loop()
+
     def admission(task: TaskSnapshot) -> None:
         if task.cancellation_requested_at or native.admission_closed(task.handle):
             raise ValueError("Admission closed")
 
     native = NativeTools(history, lambda _context: None, CoreRecovery(history), admission=admission)
-    return history, owner.model_copy(update={"parent_handle": owner.assignment_id}), native
+    return native
 
 
 @pytest.mark.asyncio
@@ -112,7 +118,8 @@ async def test_concurrent_index_reservation_reuses_only_equivalent_security_and_
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Concurrent callers share one admission; changed scope/options do not share it."""
-    history, owner, native = await asyncio.to_thread(native_boundary, arc, monkeypatch)
+    history, owner = await asyncio.to_thread(native_owner, arc, monkeypatch)
+    native = native_boundary(history)
     entered, release = asyncio.Event(), asyncio.Event()
     executions: list[str] = []
 
@@ -179,7 +186,8 @@ async def test_native_shutdown_closes_admission_and_joins_active_cleanup(
     arc: ARCMemory, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Shutdown starts while a body runs and cannot retire its owner before cleanup."""
-    history, owner, native = await asyncio.to_thread(native_boundary, arc, monkeypatch)
+    history, owner = await asyncio.to_thread(native_owner, arc, monkeypatch)
+    native = native_boundary(history)
     entered, cleaning, release = (asyncio.Event() for _ in range(3))
     marker = tmp_path / "cleanup-confirmed.txt"
 
@@ -188,14 +196,18 @@ async def test_native_shutdown_closes_admission_and_joins_active_cleanup(
         async def body(context: SubmissionContext, evidence: WorkEvidence) -> dict[str, str]:
             evidence.acquiring_effects()
             entered.set()
-            try:
-                await asyncio.Event().wait()
-                raise AssertionError("Only explicit shutdown should end this body")
-            finally:
+
+            async def cleanup() -> None:
                 cleaning.set()
                 await release.wait()
                 marker.write_text(context.handle, encoding="utf-8")
                 evidence.confirm_cleanup()
+
+            try:
+                await asyncio.Event().wait()
+                raise AssertionError("Only explicit shutdown should end this body")
+            finally:
+                await join_cleanup(cleanup())
 
         return await native.work["shell"].run(_clio_submission, "shutdown_work", {}, body)
 

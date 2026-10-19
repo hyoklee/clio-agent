@@ -53,7 +53,7 @@ def migrate_context_epochs(app: Any) -> None:
             )
 
 
-def _unresolved(app: Any, identity: str, reason: str, record: Any) -> None:
+def _unresolved(app: Any, identity: str, reason: str, record: Any) -> CoreReference:
     """Retain unmappable data in Core without inventing an owner or execution."""
     reference = app.state.task_history.write_content(
         "_task_migration", {"source_identity": identity, "reason": reason, "record": record}
@@ -64,6 +64,7 @@ def _unresolved(app: Any, identity: str, reason: str, record: Any) -> None:
     logger.warning(
         "Historical task data needs inspection reason=%s reference=%s", reason, reference.content_id
     )
+    return reference
 
 
 def _legacy_mail_kind(row: dict[str, Any]) -> MailKind:
