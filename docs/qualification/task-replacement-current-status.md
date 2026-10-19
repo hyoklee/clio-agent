@@ -1,11 +1,12 @@
 # Tasks replacement status
 
-## Current candidate — 2026-10-19 03:56 UTC
+## Current candidate — 2026-10-19 04:37 UTC
 
 Initial implementation and initial test construction are complete. Current work is
 regression repair, independent review and live qualification. The candidate is
 **not qualified or release-ready**.
 
+- Agent test correction: **cc2a8086faa05672caebd7d4f19027568b8215f0**.
 - Agent production commit: **6c79df316273aeed0fb95230c846706f574cb834**.
 - GACT: **aca98ce477bbee1d1f14b1f384d1cf283906de6d**.
 - Both repositories retain `codex/agent-facing-async-tasks`; no merge, release or
@@ -21,7 +22,9 @@ regression repair, independent review and live qualification. The candidate is
 | --- | --- |
 | Completed historical baseline | 0593f40a CI 39179068184 passed all 24 jobs. Twelve XML reports: each Python 3.12/3.13/3.14 had 13,062 passes, zero failures/errors, 50 exclusions. All nine earlier repair cases passed per interpreter. This is a baseline, not acceptance of later changes. |
 | Previous failed CI | 1a0881055 CI 39192188767 finished with 20 successful and four failed jobs. All twelve XML reports were inspected. Three distinct failures: two cancellation tests asserted a child task's ContextVar cleanup in the parent task; one context-steering case failed before entering its first model call. The completed Docker, Document runtime, Pages, schema and Linux/Windows/macOS packaged-startup workflows all succeeded. |
-| Latest completed CI | 69d1a8696 CI 39195215077 passed all 24 jobs. All twelve XML reports were inspected: each Python 3.12/3.13/3.14 had 13,072 passes, zero failures/errors and 50 exclusions. Each of the three repaired cases explicitly passed on every interpreter. The retained 1,005-message and A2UI load cases also passed with unchanged deadlines and counts. This precedes the small 6c79df316 prompt correction; fresh exact-head CI is required. |
+| Previous green CI | 69d1a8696 CI 39195215077 passed all 24 jobs. Twelve reports: each Python 3.12/3.13/3.14 had 13,072 passes, zero failures/errors and 50 exclusions. This precedes the prompt correction. |
+| Latest completed CI | e4940b3be CI 39197197958 finished 23 successful jobs / one failed job. All twelve reports were inspected: the only distinct failure was Python 3.12's real launcher-lock timeout case, which raised the expected typed exception but took 3.5396 seconds against its unchanged <3-second assertion. The prior three failed cases, 1,005-message retention and A2UI load cases passed. This is not a green current-candidate baseline. |
+| Current test-only correction | cc2a8086f replaces assumed lock readiness with a real held event and guarantees release/join on assertion failures. It retains the 0.5/3-second bounds, real polling/audit and exact typed assertions. Three focused cases passed individually/sequentially: unidentified holder, real holder handoff and killed-process acquisition. Astra and actual Fable returned source GO. The old 3.54-second cause remains unproven; explicit cache isolation does not establish prior interference, and the correction does not clear CI until a fresh run passes. Receipts: r290-regressions.json / r291-claude-review.json. Its fresh test root and review diff are absent. |
 | CI repair scope | 69d1a8696 checks cancellation cleanup inside the cancelled child, explicitly seeds/verifies the parent's independent value, and verifies the exact structured result. Token-balanced fixtures isolate direct artifact producers. The steering case uses the existing fake-model barrier, keeps its three/five-second budgets and records actual input-commit/readiness/worker diagnostics on failure. All three previously failed cases and three artifact cases also passed locally, individually/sequentially. Receipt: r278-regressions.json; its fresh root is absent. |
 | Observer regression repair | 1af8c193 corrects the fixture to the actual session-creation 200 response. All five real-Core cases passed individually/sequentially on Windows with one worker: cold/output-free and file-output provenance, loop responsiveness/context return, start/completion cancellation retirement, interleaved identities. Receipt: r265-regressions.json. |
 | Permission defect reproduction | Both immediate Allow and Deny cases failed before correction on 201087574: a pending row was visible before its wake event existed. Receipt: r268-regressions.json. |
@@ -31,9 +34,12 @@ regression repair, independent review and live qualification. The candidate is
 | GACT | aca98ce4 workspace runs 39176860551 / 39176857453 succeeded, with conditional release jobs excluded. Native WebView CI is fixture-backed. Matching R245 UI build is retained in place; the current changes do not alter GACT/compiler/dependencies. |
 
 Full CI inventories: ci-b1bdb185-complete.json / ci-1a0881055-complete.json /
-ci-69d1a8696-complete.json.
+ci-69d1a8696-complete.json / ci-e4940b3be-complete.json.
 Original failures remain recorded.
-Fifty historical exclusions per interpreter are not passed tests or live evidence.
+Fifty CI exclusions per interpreter are not passed tests or live evidence.
+R285 separately executed all ten Windows-only cases individually: ten passes, zero
+skips, including actual process-tree reaping and native long paths. This resolves
+those platform regressions, not model acceptance or the remaining exclusions.
 
 ## Independent review
 
@@ -85,6 +91,23 @@ and 6c79df316's canonical prompt correction (Astra turn
   captures replace the website's root-session access walkthrough images;
   r281-media.json records their identity. Full Q5/Q9 and unassisted peer reply
   remain separate obligations.
+- R288 freshly demonstrated actual Codex/Luna background Shell acceptance, a
+  running handle followed by independent work, progress, an expired wait, terminal
+  collection, exact 45-step output and one owner completion input on e4940b3be.
+  The original checker failed after execution with a NameError; the same captured
+  evidence was adjudicated without replay. Its warning about a missing sandbox
+  startup temp directory is retained. Service exit was zero and both roots are
+  absent. Receipts: r288-live-native.json / r288-adjudication.json / r288-cleanup.json.
+- R289 freshly demonstrated actual Codex/Luna parent/long-child execution: an
+  immediate Subagent handle, independent parent work while the child ran, exact
+  native Shell output, terminal child-owned Core record, public parent query,
+  one parent completion input and verified PID/birth retirement. Parent/child
+  observed-call transforms matched 8/8 and 1/1. Its original checker searched
+  only parent-owned records; the correct captured child scope was adjudicated
+  without replay. Raw failure and the sandbox startup warning remain visible.
+  Service exit was zero and both roots are absent (312,389,060 logical bytes
+  removed). Receipts: r289-live-native.json / r289-adjudication.json /
+  r289-cleanup.json. This is not pause/restart/cancellation acceptance.
 - R261 used actual Codex/Luna SSE and production run_server. Its outcome-led
   Download mission completed 8,001 files / 36,124,063 bytes with every selection,
   file hash and published manifest checked. It supplied all five durable semantic
@@ -132,6 +155,8 @@ R257/R258/R261/R266 also have confirmed service retirement and absent fresh root
 R275/R276 and R278/R280/R282 fresh roots are absent. R279/R283's fresh review-diff
 files were removed; their earlier manual-only review profile was preserved.
 R281's service/browser are retired and both fresh roots are absent.
+R285/R288/R289/R290 fresh roots are absent; R291's fresh review diff is removed.
+The earlier manual-only review profile remains preserved.
 
 The five R265 tests exited zero and their run data was removed by the test owner.
 Five zero-byte Core socket/reparse entries remained. Automatic approval rejected

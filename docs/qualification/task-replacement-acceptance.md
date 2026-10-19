@@ -1,19 +1,25 @@
 # Tasks replacement acceptance ledger
 
-## Current evidence — 2026-10-19 03:56 UTC
+## Current evidence — 2026-10-19 04:37 UTC
 
-Current production is 6c79df316 / GACT aca98ce4. All twelve reports from 1a0881055
-identified three distinct failed cases. The combined test correction 69d1a8696
-has six focused passes; its CI 39195215077 passed all 24 jobs. Twelve reports show
-13,072 passes, zero failures/errors and 50 exclusions per interpreter. All three
-repaired cases explicitly passed on each interpreter. The corrected tests check
-child-context cleanup, parent isolation and real busy-steer/redrive without
-relaxing deadlines. R276 then exposed a canonical prompt contradiction between
-the blueprint tool list and the actual supplied task controls. Its regression
-failed before the 6c79df316 correction; all three affected briefing/stability
-cases now pass. Scoped Ruff/format, Linux Mypy and guards passed. Astra and actual
-Claude Code/Fable returned source GO for both deltas. Fresh exact-head CI for
-the prompt correction remains required.
+Current production remains 6c79df316 / GACT aca98ce4; cc2a8086f is test-only.
+The e4940b3be CI inventory is complete: 23 successful jobs and one failed job,
+with one distinct Python 3.12 launcher-lock timing failure (3.5396 seconds against
+<3 seconds; expected typed exception raised). cc2a8086f adds actual holder
+readiness, unconditional cleanup and timing diagnostics without changing the
+0.5/3-second bounds or production behavior. All three affected lock cases passed
+individually/sequentially. Astra and actual Fable returned source GO, with the
+original timing cause explicitly unproven. A fresh exact-head CI pass remains
+required. R285 separately ran the ten Windows-only exclusions: ten passes and
+zero skips, including actual process-tree reaping. Other CI exclusions remain.
+
+R288/R289 freshly demonstrated actual Codex/Luna running Shell/Subagent handles,
+independent parent work, exact real output, stored outcomes and one completion
+input. The original post-run checker errors remain recorded; same-run captured
+Core evidence was adjudicated without replay. The native sandbox startup warning
+is preserved. Both services exited zero and all fresh runtime roots are absent.
+These scoped proofs do not establish the remaining lifecycle/recovery/capacity
+obligations or any of the thirty final race repetitions.
 
 R266 supplies actual Claude Stop/Question wake evidence: the original assignment
 resumed, one answer input was committed, and no duplicate arrived on a later turn.

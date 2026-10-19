@@ -1,17 +1,25 @@
 # Tasks replacement: finite live experiments
 
-## Current execution — 2026-10-19 03:56 UTC
+## Current execution — 2026-10-19 04:37 UTC
 
-Current production is 6c79df316 / GACT aca98ce4. Initial implementation/test
-construction are complete; regression repair and live qualification continue.
-The complete twelve-report 1a0881055 inventory has three failed cases; all three
-plus three direct-artifact cases passed after the 69d1a8696 test correction.
-Its CI 39195215077 passed all 24 jobs; twelve reports show 13,072 passes, zero
-failures/errors and 50 exclusions per interpreter. Every repaired case explicitly
-passed across all three interpreters. R276 exposed a real canonical prompt contradiction;
-its constructed regression failed before correction and all three affected
-briefing/stability cases passed afterward. Both independent reviewers returned
-source GO for these deltas; exact-head CI remains required for 6c79df316.
+Current production remains 6c79df316 / GACT aca98ce4; cc2a8086f is test-only.
+The e4940b3be CI inventory is complete: 23 successful jobs and one failed job,
+with one distinct Python 3.12 launcher-lock timing failure (3.5396 seconds against
+<3 seconds; expected typed exception raised). cc2a8086f adds actual holder
+readiness, unconditional cleanup and timing diagnostics without changing the
+0.5/3-second bounds or production behavior. All three affected lock cases passed
+individually/sequentially. Astra and actual Fable returned source GO, with the
+original timing cause explicitly unproven. A fresh exact-head CI pass remains
+required. R285 separately ran the ten Windows-only exclusions: ten passes and
+zero skips, including actual process-tree reaping. Other CI exclusions remain.
+
+R288/R289 freshly demonstrated actual Codex/Luna running Shell/Subagent handles,
+independent parent work, exact real output, stored outcomes and one completion
+input. The original post-run checker errors remain recorded; same-run captured
+Core evidence was adjudicated without replay. The native sandbox startup warning
+is preserved. Both services exited zero and all fresh runtime roots are absent.
+These scoped proofs do not establish the remaining lifecycle/recovery/capacity
+obligations or any of the thirty final race repetitions.
 
 R275 passed scoped child-peer/two-workflow checks with one logged completion
 instruction. R276 failed its root reply prerequisite and remains failed; its
