@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -92,6 +93,15 @@ def test_dataset_activation_is_recomputed_for_each_turn_of_the_same_session(
     assert not _tool_names() & NDP_TOOLS
     record = _source(service, Path(app.state.workspaces.get("ws_default").root_path))
     assert session_ndp_tools_enabled()
+    from clio_agent.gact.storage.setup_tool import connected_data_status
+
+    selected = connected_data_status()["sources"][0]["selection"]
+    assert selected == {
+        "dataset_id": "observations",
+        "catalog_id": service.ndp.endpoints()[0].id,
+        "resources": [{"id": "data", "name": "Data", "path": "data.csv", "format": ""}],
+    }
+    assert "url" not in json.dumps(selected)
     assert _tool_names() & NDP_TOOLS == NDP_TOOLS
     assert not _tool_names(child=True) & NDP_TOOLS
     service.disconnect(record)
@@ -140,6 +150,40 @@ def test_endpoint_connect_hide_restore_and_remove_change_the_model_schemas(
     assert _tool_names() & NDP_TOOLS == NDP_TOOLS
     service.ndp_endpoints.disconnect("ws_default", record.id)
     assert not _tool_names() & NDP_TOOLS
+
+
+def test_saved_catalog_connection_resolves_without_confusing_service_and_catalog_ids(
+    bound: tuple[StorageService, Any, Path], peer: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Use a real Endpoint contract and catalog response over TCP, preserving owner scope."""
+    from clio_agent.gact.storage.ndp_tools import connected_data_ndp_organizations
+    from clio_agent.gact.storage.setup_tool import connected_data_status
+
+    service, _, _ = bound
+    monkeypatch.setenv(
+        "CLIO_STORAGE_NDP_ENDPOINTS",
+        json.dumps([{"id": "catalog", "name": "Scientific catalog", "url": peer}]),
+    )
+    record = service.ndp_endpoints.connect(
+        "ws_default", EndpointConnectionInput(name="Saved catalog", url=peer)
+    )
+    assert connected_data_status()["ndp_catalogs"] == [
+        {"id": "catalog", "name": "Scientific catalog", "scope": "local"}
+    ]
+    result = connected_data_ndp_organizations("earth", record.id)
+    assert result["organizations"] == [
+        {"id": "earthscope", "endpoint_name": "Scientific catalog", "endpoint_id": "catalog"}
+    ]
+    other = service.ndp_endpoints.connect(
+        "other", EndpointConnectionInput(name="Another workspace", url=peer)
+    )
+    with pytest.raises(KeyError):
+        connected_data_ndp_organizations("earth", other.id)
+    local = service.ndp_endpoints.connect(
+        "ws_default", EndpointConnectionInput(name="Different service", url=peer + "/v2")
+    )
+    with pytest.raises(ValueError, match="ndp_catalogs"):
+        connected_data_ndp_organizations("earth", local.id)
 
 
 @pytest.mark.parametrize("foreign_owner", ["workspace", "principal"])

@@ -172,7 +172,10 @@ class NDPSource:
                     if self.token is None:
                         raise PermissionError("Sign in to NDP to read this Endpoint's resources")
                     headers["Authorization"] = "Bearer " + self.token()
-                request = client.build_request("GET", url, params=params, headers=headers)
+                # An empty params mapping replaces an existing URL query in httpx.
+                # Keep catalog and redirect queries (including signed downloads)
+                # intact; only translated Pelican routes supply separate params.
+                request = client.build_request("GET", url, params=params or None, headers=headers)
                 response = client.send(request, stream=True)
                 if response.is_redirect:
                     location = response.headers.get("location", "")

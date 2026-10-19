@@ -15,18 +15,32 @@ catalog when that operation is advertised.
 
 Reuse the workspace's sources, saved NDP account and Endpoint connections with
 `connected_data_status`. Choose only the workflow needed for the request.
+Status's `ndp_catalogs` identifies catalogs for discovery; `ndp_endpoints`
+identifies saved services for operation queries. Dataset search returns the
+catalog ID to use for resource selection. Each source's `selection` identifies
+the exact approved dataset/resources, including documentation-only subsets.
 NDP-specific tools are available only when this workspace has a connected NDP
 dataset or a visible saved Endpoint. If absent, direct the user to **Attach >
 NDP** to select a dataset or connect an Endpoint, then continue on the next
 turn. A saved account alone does not activate these tools. Do not work around
 their absence with raw HTTP or credential access.
-Connecting/indexing a new source does not attach its bytes. Use the approved
-`connected_data_download` task for analysis, then open with `linked=false` and the
-returned revision/path. Use `linked=true` only for an existing Link attachment.
+Connecting starts a metadata index. After its task completes, list and read the
+selected resources with `connected_data_open` using its default `linked=true`.
+For shell/Python analysis, use the approved `connected_data_download` task, then
+use the materialized paths or open with `linked=false` and the returned revision.
+Linked and downloaded manifests have different revisions; do not interchange them.
 Returned downloaded paths are approved read inputs even outside the workspace.
 Do not request shell `access_paths` for those reads: it requests broader folder
 permissions and cannot grant write access to protected originals. Write analysis
 scripts and derivatives in the workspace instead.
+
+A selected source may still need indexing or download; that is a local access
+stage, not evidence that NDP lacks the data. If only documentation is selected,
+use catalog discovery to find the measurement resources and select them. Do not
+ask the user to upload publicly available measurements before searching NDP.
+Use a successful task's `open_reference` for subsequent opens. On later turns,
+status provides `open_references.linked` and `.downloaded`; use the matching
+reference rather than combining a revision with a different access mode.
 
 ## Domain map
 

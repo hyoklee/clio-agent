@@ -218,7 +218,9 @@ def materialize(
         # Terminal state acknowledges settled ownership, including staging cleanup.
         # If cleanup raises, leave the operation live for the service's error owner.
         if settled_state == "completed":
-            store.update_operation(operation.id, state=settled_state, bytes_done=done)
+            store.update_operation(
+                operation.id, state=settled_state, bytes_done=done, manifest_id=baseline_id
+            )
         elif settled_state is not None:
             store.update_operation(operation.id, state=settled_state, error=settled_error)
 

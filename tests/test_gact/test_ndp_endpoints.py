@@ -128,7 +128,7 @@ class EndpointHandler(BaseHTTPRequestHandler):
             return
         if self.path in {"/openapi.json", "/v2/openapi.json"}:
             body, mime = json.dumps(SCHEMA).encode(), "application/json"
-        elif self.path == "/organization":
+        elif self.path.split("?", 1)[0] == "/organization":
             body, mime = b'["earthscope", "services"]', "application/json"
         elif self.path.startswith("/stream/"):
             body, mime = (

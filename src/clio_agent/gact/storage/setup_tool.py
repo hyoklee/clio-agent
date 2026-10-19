@@ -35,6 +35,7 @@ def connected_data_status() -> dict[str, Any]:
         raise ValueError("The session workspace is unavailable on this CLIO")
     from clio_agent.gact.storage.auth import application
     from clio_agent.gact.storage.ndp_oauth import configuration as ndp_configuration
+    from clio_agent.gact.storage.ndp_selection import selection_summary
     from clio_agent.gact.storage.ndp_source import public_selection
 
     accounts = []
@@ -81,6 +82,7 @@ def connected_data_status() -> dict[str, Any]:
                     and source.source_kind == "knowledge",
                 },
                 "label": source.label,
+                "selection": selection_summary(service, record),
                 "mode": source.mode,
                 "link_access": record.linked_access,
                 "download_access": "read_only" if record.download_read_only else "editable",
@@ -93,9 +95,34 @@ def connected_data_status() -> dict[str, Any]:
                 "local_path": source.local_path,
                 "linked": bool(record.linked_manifest_id),
                 "linked_revision": record.linked_manifest_id,
+                "open_references": {
+                    "linked": {
+                        "source_id": source.id,
+                        "revision": record.linked_manifest_id,
+                        "linked": True,
+                    }
+                    if record.linked_manifest_id
+                    else None,
+                    "downloaded": {
+                        "source_id": source.id,
+                        "revision": record.manifest_id,
+                        "linked": False,
+                    }
+                    if record.manifest_id and source.local_path
+                    else None,
+                },
+                "open_reference": {
+                    "source_id": source.id,
+                    "revision": record.linked_manifest_id or record.manifest_id,
+                    "linked": bool(record.linked_manifest_id),
+                }
+                if record.linked_manifest_id or record.manifest_id
+                else None,
                 "owner": source.owner.model_dump(mode="json"),
             }
         )
+    from clio_agent.gact.storage.ndp_tool_activation import session_ndp_tools_enabled
+
     return {
         "status": "available",
         "clio_id": service.store.clio_id,
@@ -115,6 +142,12 @@ def connected_data_status() -> dict[str, Any]:
         ],
         "accounts": accounts,
         "sources": sources,
+        "ndp_catalogs": [
+            {"id": item.id, "name": item.name, "scope": item.server}
+            for item in service.ndp.endpoints()
+        ]
+        if session_ndp_tools_enabled()
+        else [],
         "ndp_endpoints": [
             row.model_dump(exclude={"schema_document", "principal"})
             for row in service.ndp_endpoints.connections(session.workspace_id)
@@ -218,8 +251,29 @@ def connected_data_open(
             "wait for its task, then open with linked=false; or use an existing Link "
             "attachment from Attach with its returned revision and linked flag."
         )
-    if revision and revision != manifest_id:
-        raise ValueError("This folder changed since it was attached; ask for an updated reference")
+    # Download results expose both a snapshot id and its content revision. Both
+    # identify this exact current baseline; a linked revision is a separate index.
+    valid_revisions = {manifest_id}
+    if not linked and record.source.revision:
+        valid_revisions.add(record.source.revision)
+    if revision and revision not in valid_revisions:
+        other_revisions = (
+            {record.manifest_id, record.source.revision} if linked else {record.linked_manifest_id}
+        )
+        if revision in other_revisions:
+            raise ValueError(
+                "This revision belongs to the "
+                + (
+                    "downloaded snapshot; use linked=false"
+                    if linked
+                    else "linked index; use linked=true"
+                )
+                + ", or use connected_data_status's matching open_references entry."
+            )
+        raise ValueError(
+            "This folder changed since it was attached; use connected_data_status "
+            "to obtain the current approved open_references entry."
+        )
     manifest = service.store.get("manifest", manifest_id, Manifest)
     entries = folder_entries(manifest, folder)
     if path and folder and not path.startswith(folder + "/"):
@@ -230,6 +284,7 @@ def connected_data_open(
         return {
             "source_id": source_id,
             "revision": manifest.id,
+            "linked": linked,
             "folder": folder,
             "access": record.linked_access
             if linked

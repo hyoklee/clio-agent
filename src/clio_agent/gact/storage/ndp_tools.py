@@ -18,6 +18,31 @@ def _service() -> StorageService:
     return app.state.connected_storage
 
 
+def _catalog_id(service: StorageService, identifier: str) -> str:
+    """Resolve an owned saved connection only to an already configured catalog."""
+    if not identifier.startswith("ndpep_"):
+        return identifier
+    app, sid = context.active_app(), context.active_session_id()
+    session = app.state.sessions.get(sid) if app is not None and sid else None
+    if session is None:
+        raise ValueError("NDP discovery requires an active workspace conversation")
+    connection = service.ndp_endpoints.get(session.workspace_id, identifier)
+    if connection.hidden:
+        raise ValueError("This saved Endpoint is hidden; choose a visible NDP catalog")
+    for endpoint in service.ndp.endpoints():
+        if (
+            not connection.ssh_profile
+            and connection.url == endpoint.url
+            and (connection.authentication == "ndp") == endpoint.authenticated
+        ):
+            return endpoint.id
+    raise ValueError(
+        "This saved service is not a configured catalog. Use an ndp_catalogs id from "
+        "connected_data_status (or omit endpoint_id for central discovery); use "
+        "Endpoint operations for this service's local catalog."
+    )
+
+
 def connected_data_search_ndp(
     query: str = "", organization: str = "", endpoint_id: str = "", offset: int = 0
 ) -> dict[str, Any]:
@@ -32,12 +57,15 @@ def connected_data_search_ndp(
     never credentials or download URLs. To attach selected resources, call
     connected_data_connect(provider="ndp", root=dataset.id, label=dataset.title,
     configuration={"endpoint_id": dataset.endpoint_id, "resource_ids": [ids]}).
+    endpoint_id selects a catalog from connected_data_status.ndp_catalogs; omit
+    it for central discovery. A saved ndpep_ connection is accepted only when
+    it matches an already configured catalog destination and authentication.
     """
     if offset < 0 or len(query) > 1000 or len(organization) > 512:
         raise ValueError("Use a nonnegative offset and a bounded catalog query")
     service = _service()
     return service.ndp.search(
-        query, endpoint_id, organization=organization, offset=offset, limit=50
+        query, _catalog_id(service, endpoint_id), organization=organization, offset=offset, limit=50
     )
 
 
@@ -48,13 +76,15 @@ def connected_data_ndp_organizations(query: str = "", endpoint_id: str = "") -> 
     discovery only: catalog organizations and protected Endpoint role groups
     are different. Account sign-in is obtained through connected_data_status's
     private NDP login_action when a selected resource requires it.
-    endpoint_id is a catalog ID returned by this discovery surface, not a saved
-    workspace ndpep_ connection ID. For that connection's local organizations,
-    discover/invoke its organization operation with the Endpoint tools.
+    endpoint_id selects a catalog from connected_data_status.ndp_catalogs; omit
+    it for central discovery. A saved ndpep_ connection works only when it matches
+    a configured catalog. For another service's local organizations, discover
+    and invoke its organization operation with the Endpoint tools.
     """
     if len(query) > 1000:
         raise ValueError("Use a catalog organization query of at most 1000 characters")
-    return _service().ndp.organizations(query, endpoint_id)
+    service = _service()
+    return service.ndp.organizations(query, _catalog_id(service, endpoint_id))
 
 
 def build_ndp_discovery_tools() -> list[Any]:
