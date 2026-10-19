@@ -1,17 +1,25 @@
 ---
 name: work-with-ndp
-description: "Use for National Data Platform (NDP) work: find and analyze scientific data, connect local catalogs or remote services, query stations and sample streams, manage organizations and dataset metadata, and store or publish research outputs through approved connections."
+description: "Use for National Data Platform (NDP) work: find and analyze scientific data, establish provenance and historical coverage, investigate streams, connect catalogs or services, and store or publish research outputs through approved connections."
 ---
 
 # Work with NDP
 
 Start from the scientific outcome and supplied references, not an API menu. Use
-short distinctive search terms: catalog words are combined with AND, so pasting a
+the approved tools to acquire and analyze the data yourself. A scientific request
+is not a request for Attach-menu instructions, copied URLs or continuation tokens.
+Ask the user only for a necessary decision, approval or private sign-in. Inspect
+whether values are observations, derived products, simulations or examples before
+interpreting them. A catalog label, a filename containing `raw`, or successful
+delivery does not establish scientific provenance.
+If that provenance cannot be established, explain the scientific limit and seek
+documented observations. Do not replace the requested physical analysis with
+trends or plots of unverified values and describe that as task completion.
+
+Use short distinctive search terms: catalog words are combined with AND, so pasting a
 whole research question or a list of synonyms can hide an available collection.
 Before concluding data is absent, retry a zero-match query with fewer terms or a
-publisher and inspect candidate coverage. A failed file-list route does not prove
-that URL-based replay is unavailable; use a CSV resource actually found in the
-catalog when that operation is advertised.
+publisher and inspect candidate coverage.
 
 Reuse the workspace's sources, saved NDP account and Endpoint connections with
 `connected_data_status`. Choose only the workflow needed for the request.
@@ -71,6 +79,7 @@ matching reference rather than all supporting material for every task.
 | --- | --- |
 | Find datasets, resolve publishers, link/download, analyze and cite results | `references/discovery-and-analysis.md` |
 | Resolve/create organizations; create, update or publish datasets and resources; store artifacts | `references/catalog-authoring.md` |
+| Analyze a stream, compare with history, or establish missing coverage/provenance | `references/scientific-stream-analysis.md`, then the needed service procedure |
 | Connect direct/SSH services; query stations; capture, resume and stop streams | `references/services-and-streams.md` |
 | Adapt an end-to-end example or run the bundled offline helpers | `references/worked-examples.md` |
 
