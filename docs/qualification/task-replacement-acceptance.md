@@ -1,73 +1,105 @@
 # Tasks replacement acceptance ledger
 
-## Current evidence — 2026-10-19 05:36 UTC
+## Current evidence — 2026-10-19 06:43 UTC
 
-Completed runtime/race tuple: agent 4b33f858d / production 6c79df316 / GACT aca98ce4.
-The current presentation correction is GACT 7260f2dd0; it changes no agent runtime,
-execution owner, dependencies or schema. The completed runtime race evidence carries
-forward with that limited impact; fresh matching-UI and CI acceptance remain required.
-Initial implementation and initial test construction are complete. Actual-model
-production-service qualification is running; this candidate is not release-ready.
+Current runtime candidate: agent **305a33e33** / production **6c79df316** / GACT
+**7260f2dd**. Python source digest is
+`5954bc76035275f28ce666ffb031b1e4a13f49eeb3c8df31efbccb3f7816cde7`.
+Initial implementation and initial test construction are complete. Qualification
+and bug diagnosis continue; this is **not a release go decision**.
 
-Exact-head CI 39200422623 passed all 24 jobs. All twelve XML reports were inspected:
-13,072 passed, zero failures/errors and 50 exclusions per Python 3.12/3.13/3.14.
-The exclusions remain exclusions. R285 separately executed ten Windows-only cases
-with ten passes and zero skips. The earlier 3.54-second lock-test cause remains
-unproven; the test-only correction preserved its original bounds and real polling.
+Current agent CI [39206788536](https://github.com/iowarp/clio-agent/actions/runs/39206788536)
+passed all 24 jobs. All twelve XML reports were inspected: each Python
+3.12/3.13/3.14 has 13,072 passes, zero failures/errors and 50 exclusions. Exclusions
+remain exclusions. Current GACT workspace CI
+[39206586099](https://github.com/iowarp/gact-tui/actions/runs/39206586099) passed
+all six applicable jobs, including browser/accessibility/visual regressions,
+all three native debug builds and fixture-backed native WebView proof. Three
+release/event jobs were conditional skips; they are not executed tests.
 
-Live work on the unchanged production tuple now includes:
+**Q1 is accepted for all seven kinds.** `Q1-current-adjudication.json` links hashed
+actual-model receipts for Shell, Download, Indexing, MCP, Subagent, Session and
+Question, including a Session recorded before its first model input, immediate
+handles followed by independent work, and valid inline MCP output. R289's original
+checker failure remains preserved with its same-run ownership adjudication.
 
-- R293: actual Codex/Luna Download, 8,001 real files / 36,124,063 bytes, every
-  selected path and hash checked; complete invocation transforms across rolled
-  Core event chunks.
-- R294: actual Codex/Luna Indexing, all 48,098 manifest paths checked exactly,
-  with complete invocation transforms across four Core event chunks.
-- R296: actual external native MCP acceptance, independent model work, visibility
-  loss, one attention input, reconnect to the original identity without replay,
-  verified final bytes/hash, and one independent final-outcome input. Actual
-  desktop/phone Work/Runs were exercised. This owned protocol workload does not
-  establish the unavailable approved-provider surviving-job gate.
-- R297: ten actual native Shell workers simultaneously occupied, storage indexing
-  completed independently, an eleventh queued operation was withdrawn before
-  body entry, and Stop preserved a running background process. All ten original
-  models automatically completed, with one result input each and physical
-  PID/birth retirement proof.
-- R300: actual Claude child busy Question wait, human pause, answer retained while
-  paused, parent Stop independence, resume under original handles and attributed
-  parent notices. The old observer wrongly required a yield before pause; its raw
-  failure remains. The intended controls and exact Core proof were captured from
-  the same frozen run without task/model replay. Exact service exit status was
-  not retained by that observer; all owned processes/listeners are independently
-  absent. No clean-lifespan claim is made for this run.
+**All 30 final runtime races passed:** R1–R6 each have five actual-model
+repetitions. R298 covers queued cancellation and collection/delivery; R301 covers
+three before-commit and two after-commit crashes; R303 covers closing-turn arrivals;
+R304 covers Stop/acceptance; R305 covers physical child/process-subtree cancellation
+and closed queued admission. R305's first setup used one recorded human steering;
+its other four setups were unassisted. Runtime evidence carries from 4b33f858d /
+aca98ce4 through the verified presentation/documentation-only impact to the current
+candidate. No agent execution owner, dependency or schema changed.
 
-**30/30 final-candidate race repetitions passed:** R1/R2/R3/R4/R5/R6 each have five
-actual-model repetitions. R298 records queue withdrawal and collection/delivery;
-R301 records three pre-commit and two post-commit API crashes with original
-assignment recovery; R303 records closing-turn arrivals; R304 records Stop during
-native acceptance with original identity and continuing background work. R305 records physical child/process-subtree cancellation and queued admission closure.
-Its first setup used one human steering message to supply the second originally
-requested operation omitted by the parent; the other four setups were unassisted.
-The race receipts preserve this distinction. All completed fresh runtime roots are absent, including failed harness
-preflights R299/R302; earlier rejected/manual-only targets remain untouched.
+Fresh actual production-service work now includes:
 
-The real UI exposed a P2: a task with lost visibility correctly says Needs
-inspection in Work but the footer says No active work. Astra confirmed a frontend
-projection defect. GACT 7260f2dd0 corrects both footer and dock through the existing task projection,
-with constructed terminal-transition/click/attention regression coverage. Fresh CI,
-matching UI build and actual-service UI requalification are pending. The first
-973ddf17 correction received two source NO-GOs: Astra found its inspection button
-opened goals/schedules rather than task evidence; Fable found the new fixture
-widened its status literals. R306's real TypeScript build independently reported
-three fixture diagnostics before any Vite output was replaced. 2f367f6d fixes both
-in one batch, including a browser regression through the actual workspace route.
-Astra returned source GO for 2f367f6d; Fable found its browser test omitted the running-session label prefix. CI also found workspace-page.tsx exceeded the unchanged 800-line guard by two lines. 7260f2dd corrects the fixture expectation and moves shared count derivation into the existing live status component; all six guards and scoped lint/format pass. No task owner, agent runtime or guard budget changed. R308's real UI reached the correct Evidence destination, then its checker wrongly demanded exactly one task despite two legitimate recorded rows. The failed raw family is preserved, its accepted operation was settled, all service/browser/proxy processes and ports retired, and fresh roots are absent. Phone/final UI acceptance remains pending; this is not a new task-engine defect. Further native qualification is waiting on the existing four-GiB memory reserve; a second migration service was not launched and submitted no operations. Unrelated active NDP/diagram services are preserved pending human direction. No task-engine
-production change was made during the frozen families.
+- R293/R294: all 8,001 Download files / 36,124,063 bytes and hashes, and all
+  48,098 Indexing manifest paths, checked exactly with invocation provenance.
+- R297: ten real Shell workers occupied concurrently; storage indexed independently;
+  the eleventh queued body never started; Stop left background work running.
+- R307: two real Core startup migrations over nine historical fixture tasks, stable
+  handles/aliases/lineage/results/pending mail/Question/disabled subscription and
+  proven acknowledgements; ambiguous native alias refused; zero native replays.
+  Actual Codex/Luna read retained results and collected the original Question once.
+- R309: real external task visibility loss, one attention input, original-identity
+  reconnect without replay, one separate final input and one backend execution.
+  Current matching online/offline UI builds passed. Keyboard navigation opened
+  actual task evidence at desktop and phone widths; Work/Runs and final-state
+  checks passed without connected-browser errors. Two inspected/hash-matched
+  captures are selected for the website. This owned protocol job is not an
+  approved-provider surviving job.
+- R312: actual mixed Shell/Question query, cursor/pattern progress, expired wait
+  with continuing work, any-wait failure, surviving siblings and all-wait collection.
+  One recorded human steering continued the omitted wait phase; no work replay.
+- R316: actual native external input, two sequential human answers, persisted partial
+  response, one lost accepted update reply, original identity, one backend effect
+  and one final model delivery. The old observer wrongly expected simultaneous
+  Questions; a separate operator completed the same frozen accepted run. Raw
+  observer state is preserved. API/proxy/server retired normally with exit zero.
+- R317: while the actual owned Core daemon was suspended, Pause returned in about
+  four milliseconds, Cancel in about seven, and both native processes retired
+  before Core resumed. The message client timed out with an uncertain reply;
+  this does not establish the new-admission rejection gate. Raw failure is retained.
 
-Full Q1–Q9, approved-provider/input/recovery/migration, remaining lifecycle/UI
-obligations and final review are not converted into passes by these scoped proofs.
-Receipts are the matching r293/r294/r296/r297/r298/r300/r301/r303/r304 live,
-qualified-scope and cleanup files in the D execution repository's
-.pytest-runtime/static directory. CI: ci-4b33f858d.json and its summary.
+Remaining live obligations are still explicit. R315 reached both nested parent
+waits, a yielded leaf without a worker and successful independent same-depth child
+execution under a one-worker finite-I/O executor and one child inference slot per
+depth. The peer root and later leaf model calls returned actual provider-overloaded
+errors; deliberate peer continuation succeeded without replay. The clean successful
+leaf-answer family remains blocked, not passed. R314's default agent-audience input
+route also left cancellation/shutdown unresolved after an unrelated harness error;
+owned processes were force-retired and uncertainty retained. Astra and actual
+Claude Code/Fable are diagnosing that route. Provider errors are not task-engine fixes.
+
+**Live-discovered cancellation repair under construction:** actual Claude Code/Fable
+R319 independently confirmed R314's four-way input/cancellation wait cycle. A late
+input Question escaped the cancellation member snapshot, blocked the SDK input
+phase and prevented subsequent terminal polling. The patch reuses the existing
+Question command and cancellation admission barrier: late inputs persist a cancel
+response without posting a Question; external cancellation closes already-posted
+inputs through its recoverable intent. Confirmed answers remain unchanged. No new
+scheduler, driver or shutdown deadline is added. Four constructed regression cases
+(two cancellation scopes, pending input closure and confirmed-answer retention)
+will run in CI; no local pytest/Vitest loop was executed. Scoped Ruff/format,
+Mypy and removal/size/class guards passed. Fresh live cancellation and affected
+input qualification remain required after this patch.
+
+Both reviewers found no blockers in the specific GACT 7260f2dd correction; that
+source assessment is not candidate or release clearance. Remaining recovery,
+agent lifecycle/workflow, capacity and full UI obligations, approved-provider
+access and required unavailable cases still prevent qualification. R318 passed
+an actual-model uncertain-wait check: the original handle remained pending, no
+final result was consumed, and a later final outcome arrived once. Q2 is now
+accepted by Q2-current-adjudication.json, alongside Q1 and all thirty races. Relay remains excluded.
+
+Receipts live in the D execution repository's `.pytest-runtime/static` directory:
+`ci-305a33e33.json`, its summary, `Q1-current-adjudication.json`,
+`final-races-4b33f858d.json`, matching qualified-scope/cleanup receipts, and
+`r315-final-assessment.json` / `r316-input-adoption.json` / `r317-live-native.json`.
+All retired fresh roots are being removed after physical process/listener proof.
+Earlier rejected/manual-only targets, installed Desktop/auth/defaults/pins and human
+work remain preserved. No archive, merge, release or installation was performed.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 
@@ -157,13 +189,13 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | F01 | One typed snapshot for all seven kinds; immutable ownership and missing legacy descriptions | gact/task_projection.py; agent_tasks.py; mcp_task_records.py; question_tasks.py | Core writer and typed schema | Fresh public query/resolve tests and actual model Q1 | blocked — fresh replacement evidence pending |
 | F02 | Confirmed content-first submission and input writes; no put_many transaction assumption | gact/core_task_journal.py; tests/test_gact/test_task_context_commit.py | Real Core; fault injection in tests | Before/after commit crash receipts, persisted content and replayed fixed input | blocked — R145 on 0755ba0a supplies actual-model before/after input-commit crash recovery; submission persistence fault gates remain pending |
 | F03 | One passive Core task and recipient index; bounded hot reads | gact/core_task_journal.py; task_projection.py | Indexed replacement | Read-work measurements with retained history over 1000 messages; startup replay measurement | blocked — fcd CI retained all 1,005 messages on three interpreters; R205/R206 reduced index writes from 105,815,856 to 44,701 bytes. R213 cold replay fetched no unrequested task-body/output bytes and retained twenty pending messages. Final-candidate actual-model large-history restart and bounded-read acceptance remain pending. |
-| F04 | Data-only migration twice; stable handles/aliases/lineage/results/mail/Questions/subscriptions; no replay | gact/mcp_task_store.py; assignment_history.py; user_question_ledger.py | Committed legacy fixture formats | Two migration passes, same identities and pending notices, zero backend submissions | blocked — R171 on 2c7469c2 passed two production startup migration passes for nine event/context/JSON historical fixture tasks, stable identities/results/acknowledgements/pending mail/Question/subscription and zero native submissions. Actual Codex inspected retained results and completed the original new assignment after the migrated Question answer. Future queue stayed paused; all processes and disposable roots are absent. Other legacy provider/metadata/active-job variants and final-candidate acceptance remain pending; R170's unpaused-queue harness failure remains historical. |
+| F04 | Data-only migration twice; stable handles/aliases/lineage/results/mail/Questions/subscriptions; no replay | gact/mcp_task_store.py; assignment_history.py; user_question_ledger.py | Committed legacy fixture formats | Two migration passes, same identities and pending notices, zero backend submissions | blocked — fresh R307 passed two actual Core startup migrations over nine fixture tasks, stable identities/results/mail/Question/subscription and acknowledgements, ambiguous alias refusal, no native replay, and actual-model historical result/Question collection. Other legacy provider/metadata/active-job variants remain distinct pending obligations. |
 | F05 | Ambiguous aliases/delivery stay unknown; historical relay stays readable without runtime | tools/mcp_task_records.py; gact/relay_timeline.py | Data-only migration | Collision and missing-description fixtures; no invented receipts or special relay owner | blocked — fresh replacement evidence pending |
 | N01 | SDK inline/pre-task re-entry preserved; accepted handle distinctly typed | tools/task_receipt.py; mcp_task_extension.py | Pinned SDK transport adapter | Native and inline MCP contract tests; actual model handle before settlement | blocked — fresh replacement evidence pending |
 | N02 | Exactly one ToolTask.result driver, no copied poll/lease/deadline loop | tools/mcp_tasks.py; mcp_wait_ladder.py; task_driver_lease.py | Application-owned SDK observer | Static removal guard, SDK contract tests and wait expiration with work continuing | blocked — fresh replacement evidence pending |
 | N03 | Observed session delegates transport; request-local Mcp-Name; auth/options preserved | tools/mcp_task_extension.py; mcp_runtime.py | TransportOptions.session_class | Supported transports, incompatible subclass rejection before effects and pinned-private contract tests | blocked — fresh replacement evidence pending |
 | N04 | Strict raw terminal result validation against captured schema; malformed/errors retained | tools/task_receipt.py; tests/test_tools/test_task_receipt.py | Identity-bound observer | Backend malformed/changed/coerced schema tests and raw result evidence | blocked — fresh replacement evidence pending |
-| N05 | Immutable task input binding, partial/persisted answers, lost update/reconnect without repeat prompt | gact/task_input_questions.py; tools/mcp_tasks.py | Actual external input-required server | Distinct hyphenated identities, reused-key content rejection and partial/lost-update answer receipts | blocked — fresh replacement evidence pending |
+| N05 | Immutable task input binding, partial/persisted answers, lost update/reconnect without repeat prompt | gact/task_input_questions.py; tools/mcp_tasks.py | Actual external input-required server | Distinct hyphenated identities, reused-key content rejection and partial/lost-update answer receipts | blocked — fresh R316 actual-model/native SDK human-input path passed distinct native keys, sequential partial persisted answers, one lost accepted update reply, original backend identity, no repeated question/submission and one actual effect/final delivery. The default agent-audience cancellation path from R314 remains under independent diagnosis; do not claim full input-route acceptance. |
 | N06 | Trusted hidden submission reference and unique incarnation; revocation and admission rechecked | tools/native_task_tool.py; task_call_context.py | Registered Docket worker | No forged reference/schema exposure; crossed task/digest denied; late entry cannot reopen withdrawal | blocked — fresh replacement evidence pending |
 | N07 | Independent Shell/storage native pools, default 10 and configurable memory/persistent backend | tools/native_task_host.py | Two application-owned native lifespans | Saturated Shell while storage starts; no mounted-gateway execution bottleneck | pass — R297 saturated the default ten Shell workers and completed real storage indexing concurrently on its independent native root/queue; R298/R303/R304 also exercised configured capacity one. Production FastMCP roots; no CLIO scheduler or extra execution queue. |
 | N08 | Acceptance custody distinguishes rejection/recording-unconfirmed/uncertain; no auto tools/call replay | tools/task_submission.py; gact/task_submission_custody.py | Faultable real submission boundary | Stop and lost-RPC reply evidence, single original submission identity | blocked — fresh replacement evidence pending |
@@ -172,7 +204,7 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | N11 | One attention episode then separate final; uncertain wait returns pending without terminal/ack | gact/task_controls.py; task_delivery.py | Core publication and observer | Uncertainty repeated without wake spam; eventual final still delivered | blocked — fresh replacement evidence pending |
 | N12 | Original provider jobs reattach without transfer scheduler or submission replay; preserve provider submission receipt across lost replies | gact/storage/globus_download.py; storage/store.py; task_recovery.py | Available approved external provider | Original job ID and surviving job outcome; unavailable provider blocks row Provider receipt/native-job rows stay reconnectable; do not classify them using blanket local-transfer interruption. | blocked — fresh replacement evidence pending |
 | N13 | Pending-only recovery probes at 1,2,4...30; health success alone clears nothing | gact/core_task_journal.py; task_recovery.py | Core/native outage controls | Idle outage and owner-local recovery receipts; no probing when empty | blocked — fresh replacement evidence pending |
-| N14 | Core outage rejects durable admission; trusted pause/cancel acts recording-unconfirmed | gact/human_task_intervention.py; core_task_journal.py | Verified active owner; fault injection | Physical control plus provisional recording and later matching-hold reconciliation | blocked — R154 passed the scoped native Shell/child one-worker case. R155/R156 exposed external control ordering and premature cancellation publication. R157 on fe705077 passed corrected actual-model external control before Core recovery, preserved cleanup uncertainty/no final acknowledgement, original child hold/resume, three attributed owner notices once, same root/child completion and reconnect with one external execution. One parent completion follow-up is explicitly recorded. All failed runs remain historical and disposable roots are absent. Full durable-admission rejection, other owners and final repeats remain unqualified. Core 2.3.1 is unchanged. |
+| N14 | Core outage rejects durable admission; trusted pause/cancel acts recording-unconfirmed | gact/human_task_intervention.py; core_task_journal.py | Verified active owner; fault injection | Physical control plus provisional recording and later matching-hold reconciliation | blocked — fresh R317 actual Core suspension: trusted Pause/Cancel returned in ~4/~7 ms recording-unconfirmed; both real native processes retired before Core resume. New-message client reply became uncertain after ten seconds, so admission rejection is unverified. Same-run raw failure and physical cleanup retained; no deadline or assertion was weakened. |
 | N15 | Shutdown closes admission and awaits owned cleanup/worker retirement without hidden cutoff | gact/server_boot.py; turn_runner.py; tools/native_task_host.py | Isolated runtime with owned work | Shutdown process/worker observations and unresolved visibility; agent retires its own stuck qualification processes without another approval, verifies identities/exits and records uncertainty honestly | blocked — R184 API/private runtime force-closed under standing ownership authorization; both exits verified. Graceful shutdown acceptance remains unverified. |
 | W01 | Download retains approved paths/revisions/provider identity and real bytes/hash cleanup | gact/storage/transfers.py; downloads.py; github_revisions.py | Owned source test data | Actual source/destination byte counts and SHA256, cancellation cleanup before terminal; Globus payload/submission-ID persistence and lost-response regression On restart, lost local native work becomes interrupted and stale materialization remains marked; no permanently queued source hold. Rebuild source-operation cancellation REST through shared task control. | blocked — fresh replacement evidence pending |
 | W02 | Indexing enumerates folder metadata off-loop and atomically publishes complete manifest | gact/storage/indexing.py; source_filesystem.py | Owned folder and previous manifest | Actual entries/counts; failed/cancelled/interrupted preserve previous manifest | blocked — fresh replacement evidence pending |
@@ -198,8 +230,8 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | U02 | Authenticated session grant/revoke UI; no model intent or assignment grant expansion | gact/routes/agent_tasks.py; task_permissions.py | Existing authenticated controls | Read/observe/message/control independently allowed/denied and revoked before injection | blocked — fresh replacement evidence pending |
 | D01 | Capable root/child/marketplace prompts and tool descriptions explain async/wait/yield/wake/uncertainty | prompt_packs/builtin/runtime/clio.runtime.tasks.md; gact/agents/task_guidance.py | Replacement contracts and capable marketplace roots | Catalog/prompt guard plus actual model actions | blocked — fresh replacement evidence pending |
 | D02 | Website walkthroughs use real replacement-service desktop/phone screenshots | site and GACT actual UI | Q9 accepted replacement | Readable walkthroughs with bounded selected media; no old-engine screenshot acceptance | blocked — fresh replacement evidence pending |
-| Q1 | Codex/Luna all seven kinds: handle running then independent model action; valid inline MCP | R2 finite live matrix Q1 | All relevant owners available | Source/runtime/model/invocation/handle/timestamp/transcript/backend outcome | blocked — scoped Shell/Question/Subagent/Indexing/Download evidence in R104–R118; R121 proves external task acceptance, independent work and valid inline MCP. R182 on e837c3bf / GACT 0f9c00a4 passes actual Codex/Luna direct-SSE after correcting provider construction: handle while running, independent filesystem read, caller restart while the external job finishes, original-identity retrieval/no replay, automatic same-assignment wake, verified bytes/hash and one final delivery. All processes and disposable data are retired/removed. Oversized SSE lines, required CI and final tuple/all-route acceptance remain pending. |
-| Q2 | Codex/Luna mixed progress, cursor/pattern, any/all/expired wait, failure and uncertainty | R2 finite live matrix Q2 | Q1 and shared controls | Real pending work continues; honest per-member outcomes | blocked — R113 canonical proof records mixed Shell/Subagent/Question, progress, any/all/expired waits and partial failure. Pattern/cursor recovery, uncertainty and final repeats remain pending |
+| Q1 | Codex/Luna all seven kinds: handle running then independent model action; valid inline MCP | R2 finite live matrix Q1 | All relevant owners available | Source/runtime/model/invocation/handle/timestamp/transcript/backend outcome | passed — Q1-current-adjudication.json: all seven kinds, actual models/production implementations, immediate running handles and independent work, Session before inference and inline MCP. Hashed receipts and current production-impact proof retained; no whole-matrix claim. |
+| Q2 | Codex/Luna mixed progress, cursor/pattern, any/all/expired wait, failure and uncertainty | R2 finite live matrix Q2 | Q1 and shared controls | Real pending work continues; honest per-member outcomes | passed — Q2-current-adjudication.json combines R312 mixed Shell/Question query/cursors/patterns/expired/any/all waits and partial failure with R318 actual uncertain wait retaining pending original handle and independent later final delivery. R312 used one recorded steering. Later cancellation repair has separate affected requalification gates. |
 | Q3 | Codex/Luna and Claude distinct delivery routes, goal/Question/child combinations | R2 finite live matrix Q3 | Usable actual provider profiles | Busy/idle/postStop/pause input evidence with no ordinary duplicate | blocked — R104/R112 prove idle/post-Stop Question wakes; R147 on 30a769f2 freshly proves actual Claude child Question yield, answer retention while paused, resume under the same handle, busy-parent Stop independence and automatic parent result wake with one delivery each. Full goal combinations and final repeats remain pending |
 | Q4 | Codex/Luna and Claude child/control routes and inherited subtree settlement | R2 finite live matrix Q4 | Q3 and child lifecycle | Same child handle; human notices and physical descendant outcomes | blocked — R118 proves pause/steer/resume/restart/inherited reads; R119 proves UI cancellation and subtree retirement. R147 freshly proves Claude child pause/answer/resume and attributed human pause/resume notices committed once to the original parent's model input, followed by original parent/child completion. Wider Claude cancellation/restart differences and final repeats remain pending |
 | Q5 | Independent sessions and two actual declared workflows | gact/workflows.py; R2 Q5 | Authenticated grants and existing runner | Discovery/replies/observe/wait/subscription/denied control; provenance root/step/session links | blocked — R227 child peers and R234 root Session peers at a0645c21 / c813c1b7 passed two distinct declared workflows, discovery/messages/observe/expired wait/subscription, denied control, pause, revoke-before-injection and automatic regrant delivery. R234 additionally passed observe-only redaction/denied reads and real desktop/390px grant/revoke/keyboard/containment with clean connected console/page output. One model required recorded feedback to attempt messaging; no runtime patch was made. One stable Session handle per root, one subscriber input commit and no root self-wake. Busy-peer/historical-handle cases and final race repeats remain required. |

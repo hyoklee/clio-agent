@@ -1,73 +1,105 @@
 # Tasks replacement: finite live experiments
 
-## Current execution — 2026-10-19 05:36 UTC
+## Current execution — 2026-10-19 06:43 UTC
 
-Completed runtime/race tuple: agent 4b33f858d / production 6c79df316 / GACT aca98ce4.
-The current presentation correction is GACT 7260f2dd0; it changes no agent runtime,
-execution owner, dependencies or schema. The completed runtime race evidence carries
-forward with that limited impact; fresh matching-UI and CI acceptance remain required.
-Initial implementation and initial test construction are complete. Actual-model
-production-service qualification is running; this candidate is not release-ready.
+Current runtime candidate: agent **305a33e33** / production **6c79df316** / GACT
+**7260f2dd**. Python source digest is
+`5954bc76035275f28ce666ffb031b1e4a13f49eeb3c8df31efbccb3f7816cde7`.
+Initial implementation and initial test construction are complete. Qualification
+and bug diagnosis continue; this is **not a release go decision**.
 
-Exact-head CI 39200422623 passed all 24 jobs. All twelve XML reports were inspected:
-13,072 passed, zero failures/errors and 50 exclusions per Python 3.12/3.13/3.14.
-The exclusions remain exclusions. R285 separately executed ten Windows-only cases
-with ten passes and zero skips. The earlier 3.54-second lock-test cause remains
-unproven; the test-only correction preserved its original bounds and real polling.
+Current agent CI [39206788536](https://github.com/iowarp/clio-agent/actions/runs/39206788536)
+passed all 24 jobs. All twelve XML reports were inspected: each Python
+3.12/3.13/3.14 has 13,072 passes, zero failures/errors and 50 exclusions. Exclusions
+remain exclusions. Current GACT workspace CI
+[39206586099](https://github.com/iowarp/gact-tui/actions/runs/39206586099) passed
+all six applicable jobs, including browser/accessibility/visual regressions,
+all three native debug builds and fixture-backed native WebView proof. Three
+release/event jobs were conditional skips; they are not executed tests.
 
-Live work on the unchanged production tuple now includes:
+**Q1 is accepted for all seven kinds.** `Q1-current-adjudication.json` links hashed
+actual-model receipts for Shell, Download, Indexing, MCP, Subagent, Session and
+Question, including a Session recorded before its first model input, immediate
+handles followed by independent work, and valid inline MCP output. R289's original
+checker failure remains preserved with its same-run ownership adjudication.
 
-- R293: actual Codex/Luna Download, 8,001 real files / 36,124,063 bytes, every
-  selected path and hash checked; complete invocation transforms across rolled
-  Core event chunks.
-- R294: actual Codex/Luna Indexing, all 48,098 manifest paths checked exactly,
-  with complete invocation transforms across four Core event chunks.
-- R296: actual external native MCP acceptance, independent model work, visibility
-  loss, one attention input, reconnect to the original identity without replay,
-  verified final bytes/hash, and one independent final-outcome input. Actual
-  desktop/phone Work/Runs were exercised. This owned protocol workload does not
-  establish the unavailable approved-provider surviving-job gate.
-- R297: ten actual native Shell workers simultaneously occupied, storage indexing
-  completed independently, an eleventh queued operation was withdrawn before
-  body entry, and Stop preserved a running background process. All ten original
-  models automatically completed, with one result input each and physical
-  PID/birth retirement proof.
-- R300: actual Claude child busy Question wait, human pause, answer retained while
-  paused, parent Stop independence, resume under original handles and attributed
-  parent notices. The old observer wrongly required a yield before pause; its raw
-  failure remains. The intended controls and exact Core proof were captured from
-  the same frozen run without task/model replay. Exact service exit status was
-  not retained by that observer; all owned processes/listeners are independently
-  absent. No clean-lifespan claim is made for this run.
+**All 30 final runtime races passed:** R1–R6 each have five actual-model
+repetitions. R298 covers queued cancellation and collection/delivery; R301 covers
+three before-commit and two after-commit crashes; R303 covers closing-turn arrivals;
+R304 covers Stop/acceptance; R305 covers physical child/process-subtree cancellation
+and closed queued admission. R305's first setup used one recorded human steering;
+its other four setups were unassisted. Runtime evidence carries from 4b33f858d /
+aca98ce4 through the verified presentation/documentation-only impact to the current
+candidate. No agent execution owner, dependency or schema changed.
 
-**30/30 final-candidate race repetitions passed:** R1/R2/R3/R4/R5/R6 each have five
-actual-model repetitions. R298 records queue withdrawal and collection/delivery;
-R301 records three pre-commit and two post-commit API crashes with original
-assignment recovery; R303 records closing-turn arrivals; R304 records Stop during
-native acceptance with original identity and continuing background work. R305 records physical child/process-subtree cancellation and queued admission closure.
-Its first setup used one human steering message to supply the second originally
-requested operation omitted by the parent; the other four setups were unassisted.
-The race receipts preserve this distinction. All completed fresh runtime roots are absent, including failed harness
-preflights R299/R302; earlier rejected/manual-only targets remain untouched.
+Fresh actual production-service work now includes:
 
-The real UI exposed a P2: a task with lost visibility correctly says Needs
-inspection in Work but the footer says No active work. Astra confirmed a frontend
-projection defect. GACT 7260f2dd0 corrects both footer and dock through the existing task projection,
-with constructed terminal-transition/click/attention regression coverage. Fresh CI,
-matching UI build and actual-service UI requalification are pending. The first
-973ddf17 correction received two source NO-GOs: Astra found its inspection button
-opened goals/schedules rather than task evidence; Fable found the new fixture
-widened its status literals. R306's real TypeScript build independently reported
-three fixture diagnostics before any Vite output was replaced. 2f367f6d fixes both
-in one batch, including a browser regression through the actual workspace route.
-Astra returned source GO for 2f367f6d; Fable found its browser test omitted the running-session label prefix. CI also found workspace-page.tsx exceeded the unchanged 800-line guard by two lines. 7260f2dd corrects the fixture expectation and moves shared count derivation into the existing live status component; all six guards and scoped lint/format pass. No task owner, agent runtime or guard budget changed. R308's real UI reached the correct Evidence destination, then its checker wrongly demanded exactly one task despite two legitimate recorded rows. The failed raw family is preserved, its accepted operation was settled, all service/browser/proxy processes and ports retired, and fresh roots are absent. Phone/final UI acceptance remains pending; this is not a new task-engine defect. Further native qualification is waiting on the existing four-GiB memory reserve; a second migration service was not launched and submitted no operations. Unrelated active NDP/diagram services are preserved pending human direction. No task-engine
-production change was made during the frozen families.
+- R293/R294: all 8,001 Download files / 36,124,063 bytes and hashes, and all
+  48,098 Indexing manifest paths, checked exactly with invocation provenance.
+- R297: ten real Shell workers occupied concurrently; storage indexed independently;
+  the eleventh queued body never started; Stop left background work running.
+- R307: two real Core startup migrations over nine historical fixture tasks, stable
+  handles/aliases/lineage/results/pending mail/Question/disabled subscription and
+  proven acknowledgements; ambiguous native alias refused; zero native replays.
+  Actual Codex/Luna read retained results and collected the original Question once.
+- R309: real external task visibility loss, one attention input, original-identity
+  reconnect without replay, one separate final input and one backend execution.
+  Current matching online/offline UI builds passed. Keyboard navigation opened
+  actual task evidence at desktop and phone widths; Work/Runs and final-state
+  checks passed without connected-browser errors. Two inspected/hash-matched
+  captures are selected for the website. This owned protocol job is not an
+  approved-provider surviving job.
+- R312: actual mixed Shell/Question query, cursor/pattern progress, expired wait
+  with continuing work, any-wait failure, surviving siblings and all-wait collection.
+  One recorded human steering continued the omitted wait phase; no work replay.
+- R316: actual native external input, two sequential human answers, persisted partial
+  response, one lost accepted update reply, original identity, one backend effect
+  and one final model delivery. The old observer wrongly expected simultaneous
+  Questions; a separate operator completed the same frozen accepted run. Raw
+  observer state is preserved. API/proxy/server retired normally with exit zero.
+- R317: while the actual owned Core daemon was suspended, Pause returned in about
+  four milliseconds, Cancel in about seven, and both native processes retired
+  before Core resumed. The message client timed out with an uncertain reply;
+  this does not establish the new-admission rejection gate. Raw failure is retained.
 
-Full Q1–Q9, approved-provider/input/recovery/migration, remaining lifecycle/UI
-obligations and final review are not converted into passes by these scoped proofs.
-Receipts are the matching r293/r294/r296/r297/r298/r300/r301/r303/r304 live,
-qualified-scope and cleanup files in the D execution repository's
-.pytest-runtime/static directory. CI: ci-4b33f858d.json and its summary.
+Remaining live obligations are still explicit. R315 reached both nested parent
+waits, a yielded leaf without a worker and successful independent same-depth child
+execution under a one-worker finite-I/O executor and one child inference slot per
+depth. The peer root and later leaf model calls returned actual provider-overloaded
+errors; deliberate peer continuation succeeded without replay. The clean successful
+leaf-answer family remains blocked, not passed. R314's default agent-audience input
+route also left cancellation/shutdown unresolved after an unrelated harness error;
+owned processes were force-retired and uncertainty retained. Astra and actual
+Claude Code/Fable are diagnosing that route. Provider errors are not task-engine fixes.
+
+**Live-discovered cancellation repair under construction:** actual Claude Code/Fable
+R319 independently confirmed R314's four-way input/cancellation wait cycle. A late
+input Question escaped the cancellation member snapshot, blocked the SDK input
+phase and prevented subsequent terminal polling. The patch reuses the existing
+Question command and cancellation admission barrier: late inputs persist a cancel
+response without posting a Question; external cancellation closes already-posted
+inputs through its recoverable intent. Confirmed answers remain unchanged. No new
+scheduler, driver or shutdown deadline is added. Four constructed regression cases
+(two cancellation scopes, pending input closure and confirmed-answer retention)
+will run in CI; no local pytest/Vitest loop was executed. Scoped Ruff/format,
+Mypy and removal/size/class guards passed. Fresh live cancellation and affected
+input qualification remain required after this patch.
+
+Both reviewers found no blockers in the specific GACT 7260f2dd correction; that
+source assessment is not candidate or release clearance. Remaining recovery,
+agent lifecycle/workflow, capacity and full UI obligations, approved-provider
+access and required unavailable cases still prevent qualification. R318 passed
+an actual-model uncertain-wait check: the original handle remained pending, no
+final result was consumed, and a later final outcome arrived once. Q2 is now
+accepted by Q2-current-adjudication.json, alongside Q1 and all thirty races. Relay remains excluded.
+
+Receipts live in the D execution repository's `.pytest-runtime/static` directory:
+`ci-305a33e33.json`, its summary, `Q1-current-adjudication.json`,
+`final-races-4b33f858d.json`, matching qualified-scope/cleanup receipts, and
+`r315-final-assessment.json` / `r316-input-adoption.json` / `r317-live-native.json`.
+All retired fresh roots are being removed after physical process/listener proof.
+Earlier rejected/manual-only targets, installed Desktop/auth/defaults/pins and human
+work remain preserved. No archive, merge, release or installation was performed.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 

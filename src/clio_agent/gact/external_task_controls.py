@@ -7,6 +7,7 @@ from functools import partial
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from clio_agent.gact.external_task_inputs import close_input_questions
 from clio_agent.gact.native_work import now
 from clio_agent.gact.task_access import TaskAccess, TaskCaller
 
@@ -35,7 +36,11 @@ async def cancel(
 
     def intent() -> None:
         with owner.history.serialized():
-            selected = owner.history.task_snapshot(handle)
+            selected = (
+                TaskAccess(owner.history, caller).require(handle, "control")
+                if caller is not None
+                else owner.history.task_snapshot(handle)
+            )
             if selected is None:
                 raise ValueError("External task is unavailable")
             if selected.cancellation_requested_at is None:
@@ -51,6 +56,11 @@ async def cancel(
                     ),
                     observation_id=uuid4().hex,
                 )
+            # A native cancellation ACK cannot advance the SDK's result poll
+            # while its elicitation callback still waits for one of our Questions.
+            # Close inputs in the same recoverable intent write, never before
+            # authorization or as a prerequisite for the cancellation RPC.
+            close_input_questions(owner, selected)
 
     owner.recovery.defer_recording("external-cancel:" + handle, intent)
     for host in owner.connections.values():

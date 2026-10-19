@@ -5,6 +5,7 @@ description: Understand background MCP calls, downloads, folder indexing, shell 
 
 import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
 import TasksPreview from '../../../../components/TasksPreview.astro';
+import GuideScreenshot from '../../../../components/GuideScreenshot.astro';
 
 <TasksGuideNav active="tools" />
 
@@ -90,6 +91,21 @@ the returned handle, inspect its status and check actual output or filesystem
 effects before deciding whether to retry. Native worker redelivery after failure
 can repeat or overlap effects. CLIO records observed attempts and reports uncertainty.
 An explicit retry creates a new linked handle; it does not rewrite the old outcome.
+
+### Inspect work whose connection was lost
+
+The footer shows **task needs inspection** while CLIO cannot confirm an outcome.
+Select it to open **Observability → Evidence**, then expand the task for its
+assignment and available output. **Technical details** keeps the handle and backend
+status out of the compact row until you need them.
+
+<GuideScreenshot name="tasks-current-inspect-desktop" format="png" alt="The current service opens task evidence from the inspection notice; the task says Needs inspection" caption="Current replacement service: the footer opens the task evidence directly. A lost connection keeps the outcome uncertain." />
+
+<GuideScreenshot name="tasks-current-inspect-phone" format="png" portrait alt="On a phone, the Work panel expands one uncertain task while Technical details remains collapsed" caption="The same task on a phone: read its assignment first, then open technical details when needed. Reconnection keeps the original handle." />
+
+When the original service can confirm a final result, CLIO delivers that result and
+clears the inspection notice. Losing visibility alone does not justify replaying
+an operation.
 
 <details>
 <summary>Large responses on the Codex subscription API</summary>

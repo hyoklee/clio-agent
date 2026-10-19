@@ -26,6 +26,16 @@ if TYPE_CHECKING:
     from clio_agent.gact.external_tasks import ExternalConnection, ExternalTasks
 
 
+def close_input_questions(self: ExternalTasks, task: TaskSnapshot) -> None:
+    """Dismiss this owner's inputs so its SDK driver can leave the answer phase."""
+    for key in self._details(task).get("requests", {}):
+        question = "task_" + hashlib.sha256((task.handle + "\0" + key).encode()).hexdigest()
+        if self.history.task_snapshot(question) is not None:
+            # The Question command preserves confirmed answers and republishes
+            # missing notices if a prior closure persisted before publication.
+            self.app.state.questions.cancel(question)
+
+
 def finish_terminal(self: ExternalTasks, handle: str) -> None:
     """Finish publication from the saved outcome; retries never reopen execution."""
     with self.history.serialized():
@@ -33,13 +43,7 @@ def finish_terminal(self: ExternalTasks, handle: str) -> None:
         if current is None or current.terminal_at is None:
             return
         publish_task_notice(self.history, current)
-        for key in self._details(current).get("requests", {}):
-            question = "task_" + hashlib.sha256((handle + "\0" + key).encode()).hexdigest()
-            if self.history.task_snapshot(question) is not None:
-                # A previous closure may have persisted before its notice failed.
-                # Question cancellation preserves existing answers and republishes
-                # missing notices through that owner's idempotent command.
-                self.app.state.questions.cancel(question)
+        close_input_questions(self, current)
 
 
 def _record_reply(
@@ -178,6 +182,26 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
             details = self._details(current)
             if key in details.get("answers", {}):
                 return "", details["answers"][key]
+            cancelled = current.cancellation_requested_at is not None or self.recovery.is_pending(
+                "external-cancel:" + task.handle
+            )
+            try:
+                self.app.state.conversations.require_admission(current)
+            except ValueError:
+                # This includes the ancestor's pre-persistence cancellation hold.
+                # Never create a late Question outside its captured member set.
+                cancelled = True
+            if cancelled:
+                value = mcp_types.ElicitResult(action="cancel").model_dump(
+                    mode="json", by_alias=True, exclude_none=True
+                )
+                details.setdefault("answers", {})[key] = value
+                reference = self.history.write_content(task.owner.session_id, details)
+                self.history.record_snapshot(
+                    current.model_copy(update={"details": reference, "updated_at": now()}),
+                    observation_id=uuid4().hex,
+                )
+                return "", value
             qid = "task_" + hashlib.sha256((task.handle + "\0" + key).encode()).hexdigest()
             pending = self.history.task_snapshot(qid)
             if pending is None or not pending.raw_status:
