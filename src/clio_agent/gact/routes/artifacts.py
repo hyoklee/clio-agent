@@ -32,6 +32,7 @@ from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 
 from clio_agent.gact.artifacts import dedup_enrichment
+from clio_agent.gact.artifacts.cas import sha256_file as _sha256_file
 from clio_agent.gact.artifacts.minting import (
     artifact_name_for_path,
     mint_artifact,
@@ -260,18 +261,6 @@ def _paginate_records(
         tail = page[-1].head
         next_cursor = tail.artifact_id if tail is not None else None
     return page, next_cursor
-
-
-def _sha256_file(path: Path) -> str:
-    """Stream a file's sha256 (bounded memory). Raises ``OSError`` on read failure."""
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        while True:
-            chunk = handle.read(_HASH_CHUNK_BYTES)
-            if not chunk:
-                break
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _sha256_handle(handle: Any) -> str:

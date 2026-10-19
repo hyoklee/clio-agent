@@ -547,7 +547,7 @@ RATCHET_BASELINE: dict[str, int] = {
     # merge DECISION itself is a one-line call into the owner module
     # ``artifacts/dedup_enrichment.py`` (``merged_annotation``) — only the
     # threading landed here. Ratchets back with the #714 decomposition.
-    "src/clio_agent/gact/routes/artifacts.py": 921,  # URI projection moved to artifacts/wire.py
+    "src/clio_agent/gact/routes/artifacts.py": 918,  # Shared artifact hashing helper reused
     # #948 S4: +10 for round-tripping the module: declaration in the overlay
     # export (an exported react parent re-loaded as predict and failed the new
     # hierarchy validation).
