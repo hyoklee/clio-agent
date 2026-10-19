@@ -109,9 +109,9 @@ def _make_app(tmp_path: Path):
 def _reset_observer_call_stamp():
     from clio_agent.gact import tool_observer
 
-    tool_observer._OBSERVER_CALL_T0.value = None
+    tool_observer._OBSERVER_CALL_T0.set(None)
     yield
-    tool_observer._OBSERVER_CALL_T0.value = None
+    tool_observer._OBSERVER_CALL_T0.set(None)
 
 
 def _sha(data: bytes) -> str:
@@ -892,7 +892,7 @@ def test_used_edge_note_auto_revision_when_lease_clean(
     path.write_bytes(b"v2-changed")
     # Inside an active tool call (stamp set) with a single writer -> a provably-clean
     # lease -> an auto-revision, NOT a custody gap (finding [3]).
-    tool_observer._OBSERVER_CALL_T0.value = time.time()
+    tool_observer._OBSERVER_CALL_T0.set(time.time())
     try:
         scan = _detect_used_edges(
             app,
@@ -903,7 +903,7 @@ def test_used_edge_note_auto_revision_when_lease_clean(
             trace_id="",
         )
     finally:
-        tool_observer._OBSERVER_CALL_T0.value = None
+        tool_observer._OBSERVER_CALL_T0.set(None)
     e = scan.edges[0]
     # Sabotage: stamp note="gap_first" unconditionally -> a clean auto-revision is
     # mislabelled as a gap -> red.
@@ -1152,7 +1152,7 @@ def test_observe_tool_transform_drives_real_observer_seam(tmp_path, monkeypatch)
         # Drive the REAL observer seam POSITIONALLY, exactly as production does.
         observe("plot", {"data_path": str(in_path)}, "started", None)
         out_path.write_bytes(b"\x89PNG chart")
-        call_id = _OBSERVER_CALL_IDS.value
+        call_id = _OBSERVER_CALL_IDS.get()
         observe(
             "plot",
             {"data_path": str(in_path), "output_path": str(out_path)},

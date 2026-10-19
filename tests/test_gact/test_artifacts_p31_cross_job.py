@@ -181,8 +181,8 @@ def test_cross_job_edited_input_binds_as_revision_not_new_artifact(
     # The file is EDITED after registration; a clean single-writer lease (an active
     # observer call, no other writer) makes the reconcile an auto-revision.
     path.write_bytes(b"v2-edited")
-    prev_t0 = getattr(tool_observer._OBSERVER_CALL_T0, "value", None)
-    tool_observer._OBSERVER_CALL_T0.value = time.time() - 1000.0
+    prev_t0 = tool_observer._OBSERVER_CALL_T0.get()
+    tool_observer._OBSERVER_CALL_T0.set(time.time() - 1000.0)
     try:
         scan = detect_used_edges(
             app,
@@ -194,7 +194,7 @@ def test_cross_job_edited_input_binds_as_revision_not_new_artifact(
             allowed_workspace_ids={ws1.id, ws2.id},
         )
     finally:
-        tool_observer._OBSERVER_CALL_T0.value = prev_t0
+        tool_observer._OBSERVER_CALL_T0.set(prev_t0)
     assert len(scan.edges) == 1
     e = scan.edges[0]
     # An edited cross-job input REVISES the foreign chain (auto_revision), reusing its

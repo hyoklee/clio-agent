@@ -34,8 +34,8 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 from collections.abc import Mapping
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Optional
 
 from clio_agent.gact.artifacts.designation import (
@@ -81,13 +81,11 @@ WORKFLOW_STATE_PATH_FIELDS: tuple[str, ...] = (
     "path",
 )
 
-#: Per-thread publish slot for the CURRENT tool call's identities. A tool call runs
-#: synchronously on one thread — the boundary notifies the observer (which mints and
-#: publishes here) and then assembles the model observation on that SAME thread, the
-#: identical reason ``tool_observer._OBSERVER_CALL_IDS`` / ``_OBSERVER_CALL_T0`` are
-#: thread-locals. Entries are stamped with the producing ``call_id`` so a consumer
-#: can never inherit an earlier, unrelated call's publication.
-_CALL_ARTIFACTS = threading.local()
+#: The producing call's identities follow asynchronous invocations across workers.
+#: The call-ID check still prevents an unrelated invocation consuming them.
+_CALL_ARTIFACTS: ContextVar[tuple[str, list[dict[str, str]]] | None] = ContextVar(
+    "observer_call_artifacts", default=None
+)
 
 
 def artifact_id_uri(artifact_id: str) -> str:
@@ -230,7 +228,7 @@ def record_call_artifacts(
             call_id,
         )
         entries = []
-    _CALL_ARTIFACTS.value = (str(call_id or ""), entries)
+    _CALL_ARTIFACTS.set((str(call_id or ""), entries))
     return entries
 
 
@@ -243,8 +241,8 @@ def take_call_artifacts(call_id: str) -> list[dict[str, str]]:
     an identity is never attributed to a call that did not produce it.
     """
 
-    published = getattr(_CALL_ARTIFACTS, "value", None)
-    _CALL_ARTIFACTS.value = None
+    published = _CALL_ARTIFACTS.get()
+    _CALL_ARTIFACTS.set(None)
     if not published or not call_id:
         return []
     published_call_id, entries = published

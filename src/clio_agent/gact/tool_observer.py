@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import json
 import logging
-import threading
 import time
 import uuid
 from collections.abc import Mapping
+from contextvars import ContextVar
 from typing import TYPE_CHECKING, Any, Optional, cast
 
 from clio_agent.gact import context as _ctx
@@ -50,11 +50,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# Per-thread stash (worker-thread scope -> threading-locals): ``completed`` reuses the
-# call_id + computes duration; ``_OBSERVER_ELICIT_REC`` holds the #1113 correlation
-# record opened at ``started`` and closed at ``completed``.
-_OBSERVER_CALL_IDS = threading.local()
-_OBSERVER_CALL_T0 = threading.local()
+# Per-invocation state follows async calls and their finite recording workers.
+_OBSERVER_CALL_IDS: ContextVar[str | None] = ContextVar("observer_call_id", default=None)
+_OBSERVER_CALL_T0: ContextVar[float | None] = ContextVar("observer_call_started", default=None)
 
 
 from clio_agent.gact.tool_event_identity import (
@@ -651,9 +649,10 @@ def _make_tool_observer(app: "FastAPI"):
         invoking_expert = _ctx.active_react_scope() or tool_owner
         if phase == "started":
             call_id = f"call_{uuid.uuid4().hex[:12]}"
-            # Per-thread call_id/t0 so completion reuses the id + computes duration.
-            _OBSERVER_CALL_IDS.value = call_id
-            _OBSERVER_CALL_T0.value = time.time()
+            # Concurrent coroutines must retain their own call identity and clock.
+            _OBSERVER_CALL_IDS.set(call_id)
+            started_at = time.time()
+            _OBSERVER_CALL_T0.set(started_at)
             observer_handle = progress_registry.started(call_id, sid)
             from clio_agent.gact.presentation_observer import starting_presentation
 
@@ -666,7 +665,7 @@ def _make_tool_observer(app: "FastAPI"):
             # _build_semantic_event copies rather than mutating it).
             started_payload = {
                 "call_id": call_id,
-                "started_at": _iso_from_epoch(_OBSERVER_CALL_T0.value),
+                "started_at": _iso_from_epoch(started_at),
                 "tool": name,
                 "args": dict(args),
                 "presentation": initial_presentation,
@@ -715,7 +714,7 @@ def _make_tool_observer(app: "FastAPI"):
                     head=raw_step_thought[:120],
                 )
             call_metadata = {
-                "started_at": _iso_from_epoch(_OBSERVER_CALL_T0.value),
+                "started_at": _iso_from_epoch(started_at),
                 "stream_source": "live",
                 "telemetry_source": "live_observer",
                 **({"thought_step_id": thought_step_id} if thought_step_id else {}),
@@ -745,12 +744,12 @@ def _make_tool_observer(app: "FastAPI"):
             )
             return observer_handle
         elif phase == "completed":
-            call_id = getattr(_OBSERVER_CALL_IDS, "value", "") or ""
+            call_id = _OBSERVER_CALL_IDS.get() or ""
             terminal_output = progress_registry.completed(call_id)
-            t0 = getattr(_OBSERVER_CALL_T0, "value", None)
+            t0 = _OBSERVER_CALL_T0.get()
             completed_epoch = time.time()
             duration_ms = (completed_epoch - t0) * 1000 if t0 else 0.0
-            _OBSERVER_CALL_T0.value = None  # The tool has returned, even if recording fails.
+            _OBSERVER_CALL_T0.set(None)  # The tool returned, even if recording fails.
             cancel_event = app.state.cancel_events.get(sid)
             completed_after_cancel = sid in app.state.cancel_flags or (
                 cancel_event is not None and cancel_event.is_set()

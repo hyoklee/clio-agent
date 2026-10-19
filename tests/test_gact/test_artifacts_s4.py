@@ -106,9 +106,9 @@ def _reset_observer_call_stamp():
     """
     from clio_agent.gact import tool_observer
 
-    tool_observer._OBSERVER_CALL_T0.value = None
+    tool_observer._OBSERVER_CALL_T0.set(None)
     yield
-    tool_observer._OBSERVER_CALL_T0.value = None
+    tool_observer._OBSERVER_CALL_T0.set(None)
 
 
 def _events(arc: _CapturingArc, event_type: str) -> list[Any]:
@@ -972,11 +972,11 @@ def _active_observer_call():
     """Stamp the observer thread-local as if a tool call is running on this thread."""
     from clio_agent.gact import tool_observer
 
-    tool_observer._OBSERVER_CALL_T0.value = time.time()
+    tool_observer._OBSERVER_CALL_T0.set(time.time())
     try:
         yield
     finally:
-        tool_observer._OBSERVER_CALL_T0.value = None
+        tool_observer._OBSERVER_CALL_T0.set(None)
 
 
 def test_lease_clean_single_quiet_session(tmp_path: Path, arc: ARCMemory) -> None:
@@ -1032,7 +1032,7 @@ def test_lease_dirty_outside_active_call_is_not_latched(tmp_path: Path, arc: ARC
 
     app, sess, _arc = _lease_app(tmp_path, arc)
     app.state.in_flight_turns = {sess.id: object()}
-    tool_observer._OBSERVER_CALL_T0.value = None  # the call completed -> stamp cleared
+    tool_observer._OBSERVER_CALL_T0.set(None)  # the call completed -> stamp cleared
     assert workspace_lease_clean(app, "ws1", session_id=sess.id) is False
 
 
@@ -1049,11 +1049,11 @@ def test_observer_completed_clears_the_call_stamp(tmp_path):
     wid, sid = _workspace_session(c, tmp_path)
     app = c.app  # the FastAPI app behind the TestClient
     observe = _make_tool_observer(app)
-    _OBSERVER_CALL_T0.value = None
+    _OBSERVER_CALL_T0.set(None)
     observe("mytool", {}, "started", None)
-    assert _OBSERVER_CALL_T0.value is not None  # stamped at started
+    assert _OBSERVER_CALL_T0.get() is not None  # stamped at started
     observe("mytool", {}, "completed", None, {"content": [{"type": "text", "text": "ok"}]})
-    assert _OBSERVER_CALL_T0.value is None  # cleared at completed (no latch)
+    assert _OBSERVER_CALL_T0.get() is None  # cleared at completed (no latch)
 
 
 # --------------------------------------------------------------------------- #

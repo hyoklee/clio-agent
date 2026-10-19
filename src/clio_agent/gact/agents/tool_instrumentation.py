@@ -502,25 +502,27 @@ def observed_tool_callable(func: Callable[..., Any], tool_name: str) -> Callable
 
         @functools.wraps(func)
         async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
-            from clio_agent.tools import execution as _execution  # noqa: PLC0415
+            from clio_agent.gact.agents.async_tool_observation import (  # noqa: PLC0415
+                observe_native_call,
+            )
 
             bound = inspect.signature(func).bind(*call_args, **call_kwargs)
             bound.apply_defaults()
             args = dict(bound.arguments)
-            _execution.notify_global_tool_observer(tool_name, args, "started")
-            pop_declared_structured_content()
             try:
+                await observe_native_call(tool_name, args, "started")
+                pop_declared_structured_content()
                 result = await func(*call_args, **call_kwargs)
             except (Exception, asyncio.CancelledError) as exc:
                 try:
-                    _execution.notify_global_tool_observer(
+                    await observe_native_call(
                         tool_name, args, "completed", error=str(exc) or type(exc).__name__
                     )
                 finally:
                     pop_declared_structured_content()
                 raise
             try:
-                _execution.notify_global_tool_observer(tool_name, args, "completed", result=result)
+                await observe_native_call(tool_name, args, "completed", result=result)
             finally:
                 pop_declared_structured_content()
             return result
