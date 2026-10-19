@@ -9,6 +9,9 @@ import FilesGuideNav from '../../../../components/FilesGuideNav.astro';
 import Capture from '../../../../components/overview/Capture';
 import { captureImage } from '../../../../lib/captures';
 import catalog from '../../../../assets/tutorials/ndp/ndp-catalog.jpg';
+import catalogList from '../../../../assets/tutorials/ndp/catalog-collapsed.png';
+import expandedDataset from '../../../../assets/tutorials/ndp/catalog-expanded.png';
+import endpointSsh from '../../../../assets/tutorials/ndp/endpoint-ssh.png';
 
 <FilesGuideNav active="ndp" />
 <NdpBrand />
@@ -46,7 +49,7 @@ explains that distinction.
 
 <Aside type="note" title="Development build">
   This guide covers the NDP development build, captured on 18 October 2026.
-  The NDP changes are under review and are not in a published installer.
+  The NDP changes are merged into develop and are not in a published installer.
   See [Features and versions](/docs/versions/).
 </Aside>
 
@@ -69,6 +72,14 @@ explains that distinction.
    selected files when needed. Connecting the catalog entry saves metadata first.
 
 </Steps>
+
+<Capture client:visible image={await captureImage(catalogList)}
+  alt="Actual NDP catalog showing compact collapsed dataset entries, organization and access filters, and Show more datasets"
+  caption="Browse a compact list, then open the dataset you want to inspect. Actual development UI and public catalog, 19 October 2026." />
+
+<Capture client:visible image={await captureImage(expandedDataset)}
+  alt="Actual Alta-Collins search with an expanded three-line description, Show more, a collapsible Resources list and selected measurement CSV"
+  caption="Searching expands matching datasets. Inspect their descriptions and select individual resources before continuing. Actual development UI, 19 October 2026." />
 
 **Link selected files** saves the selected resource identities and their source
 locations in your workspace. It does not copy every file in the dataset. When
@@ -124,9 +135,14 @@ choose its route and review its authentication:
 | **Direct URL** | The existing API base URL, including any service prefix, without `/docs`. |
 | **SSH** | A saved SSH profile on the computer running CLIO and the API URL as seen from that host. For a service bound to remote loopback, enter its `http://127.0.0.1:PORT` address. |
 
-This connects to a running service. It does not install an Endpoint. Choose
-**My NDP account** only when that API is the intended recipient of your NDP
-credentials; direct authenticated connections require HTTPS.
+This connects to a running service. It does not install an Endpoint. Under
+**API sign-in**, choose **No NDP sign-in** for public operations or **Use my NDP
+sign-in** for requests using your saved NDP account. SSH authentication is
+separate from API sign-in.
+
+<Capture client:visible image={await captureImage(endpointSsh)}
+  alt="Actual Endpoint setup using the shared SSH route selector with ares, remote loopback API URL and separate API sign-in choice"
+  caption="The saved SSH route identifies the computer hosting the API. API sign-in determines whether requests also use your NDP account. Actual Ares setup form, 19 October 2026." />
 
 Connecting saves the service's route for this workspace. It does not start a
 stream or download measurements by itself. Its supported data views load actual
@@ -150,7 +166,7 @@ Creation and stream changes show forms, then review the target Endpoint and ente
 values before submission. A successful NDP sign-in does not guarantee the Endpoint
 grants your account permission to create organizations or control streams. A failed
 listing is shown as an error, rather than as an empty catalog. Public connections
-can be edited to use **My NDP account** when that service requires the saved login.
+can be edited to use **Use my NDP sign-in** when that service requires the saved login.
 
 **Advanced API tools** contains the discovered HTTP operations for diagnostics and
 requests beyond the supported data views. It is optional; ordinary browsing does

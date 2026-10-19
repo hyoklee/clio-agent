@@ -39,7 +39,11 @@ export default defineConfig({
 				Hero: './src/components/overview/Hero.astro',
 				Footer: './src/components/starlight/Footer.astro',
 			},
-			plugins: [starlightLinksValidator({ errorOnLocalLinks: false })],
+			plugins: [starlightLinksValidator({
+				errorOnLocalLinks: false,
+				// Static native HTML endpoints are checked by the archive browser tests.
+				exclude: ['/conversations/ndp/alta/', '/conversations/ndp/tahoe/', '/conversations/ndp/konza/', '/conversations/ndp/ares/'],
+			})],
 			sidebar: [
 				{
 					label: 'Get started',
