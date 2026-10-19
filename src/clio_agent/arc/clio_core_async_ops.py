@@ -82,7 +82,7 @@ def _polled(future: Any) -> Callable[[float], bool]:
     return done_within
 
 
-def await_future(future: Any, *, op_name: str) -> Any:
+def await_future(future: Any, *, op_name: str, ceiling_s: float | None = None) -> Any:
     """Wait for ``future`` while the daemon keeps working; return it (done).
 
     No fixed deadline: a slow but working daemon is waited for (its CPU/I/O advancing;
@@ -113,11 +113,12 @@ def await_future(future: Any, *, op_name: str) -> Any:
         wait_while_progressing,
     )
 
+    ceiling = max_wait_s() + _WATCH_FIRST_MARGIN_S if ceiling_s is None else ceiling_s
     outcome = wait_while_progressing(
         polled,
-        slice_s=resolve_liveness_policy().stall_after_s + _WATCH_FIRST_MARGIN_S,
+        slice_s=min(resolve_liveness_policy().stall_after_s + _WATCH_FIRST_MARGIN_S, ceiling),
         op_name=op_name,
-        ceiling_s=max_wait_s() + _WATCH_FIRST_MARGIN_S,
+        ceiling_s=ceiling,
     )
     if not outcome.done:
         raise ClioCoreFutureTimeout(op_name, outcome.reason, outcome.waited_s)
@@ -279,7 +280,11 @@ def store_delete_many(store: Any, kind: str, names: Sequence[str]) -> None:
 
 def rpc_answers(client: Any, cte: Any, sentinel: str) -> bool:
     """One GIL-free round trip (``AsyncTagQuery``): ``True`` when the runtime answered."""
+    from clio_agent.arc.rpc_liveness import health_probe_window_s  # noqa: PLC0415 - cycle
+
     future = await_future(
-        client.AsyncTagQuery(sentinel, 1, cte.PoolQuery.Dynamic()), op_name="health_probe"
+        client.AsyncTagQuery(sentinel, 1, cte.PoolQuery.Dynamic()),
+        op_name="health_probe",
+        ceiling_s=health_probe_window_s(),
     )
     return bool(future.wait(0) == 0)

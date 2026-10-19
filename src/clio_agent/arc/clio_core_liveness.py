@@ -303,6 +303,8 @@ class LivenessGate:
         self._last_recovery_at: float | None = None  # monotonic of last reconnect try
         self._quarantined = False
         self._reason = ""
+        self._quarantine_revision = 0
+        self._recovery_in_progress = False
         _register_gate(self)
 
     @property
@@ -316,17 +318,18 @@ class LivenessGate:
     def status(self) -> dict:
         """A JSON-safe snapshot for the doctor/health report."""
         with self._lock:
-            return {
+            snapshot = {
                 "quarantined": self._quarantined,
                 "reason": self._reason,
                 "port": self._port,
                 "ttl_s": self._ttl_s,
-                "restart_required": (
-                    self._quarantined
-                    and not self._auto_recover
-                    and not self._can_probe_existing_client()
-                ),
             }
+        snapshot["restart_required"] = (
+            snapshot["quarantined"]
+            and not self._auto_recover
+            and not self._can_probe_existing_client()
+        )
+        return snapshot
 
     def _can_probe_existing_client(self) -> bool:
         """A stalled but identical daemon may answer through its existing client."""
@@ -371,51 +374,32 @@ class LivenessGate:
         """
         with self._lock:
             if self._quarantined:
-                if not self._auto_recover and not (
-                    rpc_probe is not None and self._can_probe_existing_client()
-                ):
-                    raise ClioCoreRuntimeLostError(
-                        "clio-core was lost after this process attached. Restart the CLIO "
-                        "agent to establish a fresh native client; the store remains quarantined.",
-                        reason="clio_core_client_restart_required",
-                        port=self._port,
-                        details={"recovery_actions": ["restart_clio_agent", "run_clio_doctor"]},
-                    )
-                if not self._auto_recover:
-                    assert rpc_probe is not None
-                    original_probe = rpc_probe
-
-                    def same_runtime_probe() -> bool:
-                        return (
-                            self._can_probe_existing_client()
-                            and original_probe()
-                            and self._can_probe_existing_client()
-                        )
-
-                    self._attempt_recovery(reconnect, same_runtime_probe)
-                else:
-                    self._attempt_recovery(reconnect, rpc_probe)
-                return
-            now = time.monotonic()
-            if self._last_ok_at is not None and now - self._last_ok_at < self._ttl_s:
-                return  # cached-live within TTL: negligible per-op overhead
-            if self._probe(self._port):
-                self._last_ok_at = now
-                return
-            self._enter_quarantine("clio_core_daemon_not_listening")
-            raise ClioCoreRuntimeLostError(
-                "clio-core runtime is not listening on "
-                f"127.0.0.1:{self._port}; the shared daemon appears to have died. "
-                "The store is quarantined to avoid a native access violation "
-                "(clio-core#722).",
-                reason="clio_core_daemon_not_listening",
-                port=self._port,
-                details=(
-                    {"recovery_actions": ["restart_clio_agent", "run_clio_doctor"]}
-                    if not self._auto_recover
-                    else None
-                ),
-            )
+                recover = True
+            else:
+                recover = False
+                now = time.monotonic()
+                if self._last_ok_at is not None and now - self._last_ok_at < self._ttl_s:
+                    return
+                if self._probe(self._port):
+                    self._last_ok_at = now
+                    return
+                self._enter_quarantine("clio_core_daemon_not_listening")
+        if recover:
+            self._attempt_recovery(reconnect, rpc_probe)
+            return
+        raise ClioCoreRuntimeLostError(
+            "clio-core runtime is not listening on "
+            f"127.0.0.1:{self._port}; the shared daemon appears to have died. "
+            "The store is quarantined to avoid a native access violation "
+            "(clio-core#722).",
+            reason="clio_core_daemon_not_listening",
+            port=self._port,
+            details=(
+                {"recovery_actions": ["restart_clio_agent", "run_clio_doctor"]}
+                if not self._auto_recover
+                else None
+            ),
+        )
 
     def _recovery_ttl_s(self) -> float:
         """Rate-limit window for the current quarantine reason.
@@ -440,75 +424,83 @@ class LivenessGate:
         real RPC), a socket-loss quarantine via ``reconnect`` (the socket-gated
         connect-or-spawn seam).
         """
-        now = time.monotonic()
-        if (
-            self._last_recovery_at is not None
-            and now - self._last_recovery_at < self._recovery_ttl_s()
-        ):
-            # Rate-limit: within the recovery TTL an op fails fast (typed, microseconds)
-            # instead of re-probing/spawn-storming a still-down daemon.
-            raise ClioCoreRuntimeLostError(
-                f"clio-core runtime still unavailable on 127.0.0.1:{self._port} "
-                "(recovery back-off); store remains quarantined.",
-                reason="clio_core_reconnect_backoff",
-                port=self._port,
+        with self._lock:
+            if not self._quarantined:
+                return
+            now = time.monotonic()
+            if self._recovery_in_progress or (
+                self._last_recovery_at is not None
+                and now - self._last_recovery_at < self._recovery_ttl_s()
+            ):
+                raise ClioCoreRuntimeLostError(
+                    f"clio-core runtime still unavailable on 127.0.0.1:{self._port} "
+                    "(recovery back-off); store remains quarantined.",
+                    reason="clio_core_reconnect_backoff",
+                    port=self._port,
+                )
+            if not self._auto_recover and not (
+                rpc_probe is not None
+                and self._attached_identity is not None
+                and self._reason in _RPC_PROBE_RECOVERY_REASONS
+            ):
+                raise ClioCoreRuntimeLostError(
+                    "The original Core client cannot be recovered; restart the agent.",
+                    reason="clio_core_client_restart_required",
+                    port=self._port,
+                    details={"recovery_actions": ["restart_clio_agent", "run_clio_doctor"]},
+                )
+            revision, reason, identity = (
+                self._quarantine_revision,
+                self._reason,
+                self._attached_identity,
             )
-        self._last_recovery_at = now
-        if self._reason in _RPC_PROBE_RECOVERY_REASONS:
-            self._recover_from_rpc_stall(rpc_probe)
-            return
-        self._recover_via_reconnect(reconnect)
-
-    def _recover_via_reconnect(self, reconnect: Callable[[], None]) -> None:
-        """Socket-loss recovery: one guarded reconnect; leave quarantine on success."""
+            self._last_recovery_at = now
+            self._recovery_in_progress = True
         try:
-            reconnect()
-        except Exception as exc:  # noqa: BLE001 - any reconnect failure -> stay quarantined
-            logger.warning(
-                "clio-core liveness: reconnect attempt failed "
-                "(reason=clio_core_reconnect_failed port=%s error=%s: %s); store stays quarantined",
-                self._port,
-                type(exc).__name__,
-                exc,
+            if reason in _RPC_PROBE_RECOVERY_REASONS:
+                if not self._auto_recover and _daemon_identity(self._config_path) != identity:
+                    raise ClioCoreRuntimeLostError(
+                        "The original Core process changed before its recovery probe.",
+                        reason="clio_core_client_restart_required",
+                        port=self._port,
+                    )
+                if rpc_probe is None or not rpc_probe():
+                    raise ClioCoreRuntimeLostError(
+                        "Core has not answered its recovery probe; store remains quarantined.",
+                        reason=reason,
+                        port=self._port,
+                    )
+            else:
+                try:
+                    reconnect()
+                except Exception as error:
+                    raise ClioCoreRuntimeLostError(
+                        "Core reconnect failed; store remains quarantined.",
+                        reason="clio_core_reconnect_failed",
+                        port=self._port,
+                    ) from error
+            current_identity = (
+                _daemon_identity(self._config_path) if not self._auto_recover else None
             )
-            raise ClioCoreRuntimeLostError(
-                f"clio-core reconnect to 127.0.0.1:{self._port} failed ({exc}); "
-                "store remains quarantined.",
-                reason="clio_core_reconnect_failed",
-                port=self._port,
-            ) from exc
-        self._leave_quarantine()
-        self._last_ok_at = time.monotonic()
-        logger.info(
-            "clio-core liveness: shared clio-core runtime recovered "
-            "(reason=clio_core_runtime_recovered port=%s); store left quarantine",
-            self._port,
-        )
-
-    def _recover_from_rpc_stall(self, rpc_probe: Callable[[], bool] | None) -> None:
-        """Zombie recovery: leave quarantine ONLY if a real RPC-level probe answers.
-
-        The socket probe/reconnect a zombie passes proves nothing, so recovery here
-        requires ``rpc_probe`` (a cheap real RPC through a single short stall watch) to
-        return True. A stalled/failed probe — or no probe supplied — stays quarantined
-        and fails fast typed; the next attempt is spaced by the recovery TTL.
-        """
-        if rpc_probe is not None and rpc_probe():
-            self._leave_quarantine()
-            self._last_ok_at = time.monotonic()
+            with self._lock:
+                if self._quarantine_revision != revision or (
+                    not self._auto_recover and current_identity != identity
+                ):
+                    raise ClioCoreRuntimeLostError(
+                        "Core state changed during its recovery probe; retry after reconciliation.",
+                        reason="clio_core_reconnect_backoff",
+                        port=self._port,
+                    )
+                self._leave_quarantine()
+                self._last_ok_at = time.monotonic()
             logger.info(
-                "clio-core liveness: shared clio-core runtime recovered via RPC probe "
+                "clio-core liveness: shared clio-core runtime recovered "
                 "(reason=clio_core_runtime_recovered port=%s); store left quarantine",
                 self._port,
             )
-            return
-        raise ClioCoreRuntimeLostError(
-            f"clio-core runtime on 127.0.0.1:{self._port} still fails an RPC-level health "
-            "probe (peer appears to be a zombie: socket accepts, runtime dead); store "
-            "remains quarantined.",
-            reason=RPC_STALLED_REASON,
-            port=self._port,
-        )
+        finally:
+            with self._lock:
+                self._recovery_in_progress = False
 
     def note_rpc_stalled(self, reason: str = RPC_STALLED_REASON) -> None:
         """Quarantine after a per-RPC stall ladder exhausts (arc/rpc_liveness, #948 S4).
@@ -525,6 +517,7 @@ class LivenessGate:
             self._last_recovery_at = time.monotonic()
 
     def _enter_quarantine(self, reason: str) -> None:
+        self._quarantine_revision += 1
         self._quarantined = True
         self._reason = reason
         self._last_ok_at = None

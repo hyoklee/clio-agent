@@ -263,7 +263,7 @@ def _submit_stall_watch(make_call: Callable[[], Any], fut: Future) -> None:
 
 
 def _run_with_stall_watch(
-    make_call: Callable[[], Any], stall_after_s: float
+    make_call: Callable[[], Any], stall_after_s: float, *, ceiling_s: float | None = None
 ) -> tuple[str, Any, Optional[BaseException]]:
     """Run ``make_call`` on a pooled daemon worker; watch for failure to progress.
 
@@ -291,6 +291,7 @@ def _run_with_stall_watch(
         slice_s=stall_after_s,
         op_name="rpc",
         start=lambda: _submit_stall_watch(make_call, fut),
+        ceiling_s=ceiling_s,
     )
     if not outcome.done:
         return outcome.reason, None, None  # worker abandoned, still holds its pool slot
@@ -482,7 +483,7 @@ def probe_rpc_health(
             exc,
         )
         return False
-    outcome, _value, error = _run_with_stall_watch(make_probe_call, window)
+    outcome, _value, error = _run_with_stall_watch(make_probe_call, window, ceiling_s=window)
     if outcome != "done":
         logger.warning(
             "clio-core RPC health probe: no response within %gs (reason=%s wait=%s port=%s); "
