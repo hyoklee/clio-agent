@@ -37,6 +37,7 @@ from fastapi import FastAPI
 
 from clio_agent.arc.task_types import SubmissionContext
 from clio_agent.gact import context as ctx
+from clio_agent.gact.agents.auto_tools import build_auto_react_tools
 from clio_agent.gact.agents.builders import (
     _blueprint_runtime_signature,
     _build_blueprint_dspy_module,
@@ -233,19 +234,25 @@ def test_orchestrator_briefing_byte_stable(monkeypatch: pytest.MonkeyPatch) -> N
 def test_orchestrator_briefing_respects_declared_parent_tools(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A live Haiku parent refused its declared reader after being told it had no tools."""
+    """Blueprint tools must not exclude the task controls supplied by the real runtime."""
     _patch_runtime(monkeypatch)
     app = FastAPI()
     app.state.arc = None
     parent = PARENT.model_copy(update={"tools": ["fs_read_file"]})
 
     briefing = _runtime_dynamic_agent_children_context(app, parent, session_id="sess-multiturn")
+    provided = {tool.name for tool in build_auto_react_tools(parent, a2ui_producers=False)}
 
-    assert "Your declared tools: `fs_read_file`" in briefing
+    assert "send_agent_message" not in parent.tools
+    assert "send_agent_message" in provided
+    assert "Your blueprint declares these tools: `fs_read_file`" in briefing
     assert "You have NO tools of your own" not in briefing
     assert "Your ONLY job is to delegate" not in briefing
-    assert "evidence returned by your declared tools or a child" in briefing
-    assert "Do not use undeclared tools" in briefing
+    assert "evidence returned by a tool in that catalog or a child" in briefing
+    assert "The runtime may also provide shared task controls" in briefing
+    assert "Use only tools exposed in your current runtime tool catalog" in briefing
+    assert "this briefing grants no additional capability or access" in briefing
+    assert "Do not use undeclared tools" not in briefing
     assert "wait_tasks(" in briefing and "observe_tasks(" in briefing
     assert "Continue independent work while children run" in briefing
     assert _runtime_dynamic_agent_children_context(app, parent) == briefing
