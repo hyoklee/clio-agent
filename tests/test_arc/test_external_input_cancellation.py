@@ -123,10 +123,6 @@ async def test_revocation_after_owner_acceptance_does_not_strand_input_recording
         assert not conversations.recovery.is_pending("external-cancel:" + handle)
         assert not conversations.recovery.is_pending("external-cancel-inputs:" + handle)
     finally:
-        if grant is not None:
-            await app.state.task_history.io.run(
-                app.state.task_history.record_grant, grant, observation_id="input-control-teardown"
-            )
         release.set()
         if worker is not None and not worker.done():
             worker.cancel()

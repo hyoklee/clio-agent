@@ -1,5 +1,42 @@
 # Tasks replacement status
 
+## Live execution checkpoint — 2026-10-19 07:20 UTC
+
+Production repair is complete at `efe47301bd4ce51f2517cc74f6e832ea991edf81`
+(GACT `7260f2dd0b63852333f581ce28216fa6b7d0e124`); Python source digest is
+`3d297de0ec9afc791d77cfc5416ade9efaa912a00a6068975859d10b19ba4024`.
+Only the two existing external-input/control owners changed since the preceding
+accepted runtime evidence. The UI compilation inputs and dependency/schema tuple
+are unchanged; the matching build retains its actual source receipt.
+
+Astra and actual Claude Code/Fable independently found no further production
+blocker in this follow-up. Astra found one regression teardown attempting to
+unrevoke an immutable grant; that teardown is removed and cleanup remains
+unconditional. This checkpoint changes tests/reporting only. Reviews are source
+assessments, not live acceptance or release clearance.
+
+CI `39214328439` is running the constructed regressions remotely; no local
+pytest/Vitest test loop was executed. The preceding 305a33e33 CI remains green
+evidence for that earlier source, not this repair head. Both R320/R321 families
+have physical process/listener retirement proof and their fresh roots are absent.
+Their bounded raw receipts remain; no archive was made.
+
+R325 (normal Claude native input/partial answers/lost-update reconnect) and R326
+(five answer-commit/callback-crash/cancel recovery cases) are prepared with syntax
+and undefined-name checks. **Neither has executed live**: the R325 launch stopped
+before creating service state because machine commit headroom was below the
+existing 4 GiB reserve (2.01 GiB observed, later 1.76 GiB). Other active services
+remain outside this campaign's ownership. This is a resource prerequisite, not a
+Tasks pass or a task-engine defect. Required live gates remain incomplete.
+
+The preceding Q1/Q2 and thirty race passes retain their exact source/runtime
+identities. The new external-input changes require affected live requalification;
+they do not invalidate unrelated algorithm proof or grant blanket final acceptance.
+The working priority remains live families while CI runs, then one coordinated
+repair batch. Relay remains excluded. No release, installation or installed-state
+change is authorized here.
+
+
 ## Current candidate — 2026-10-19 06:43 UTC
 
 Initial implementation and initial test construction are complete. Current work is
