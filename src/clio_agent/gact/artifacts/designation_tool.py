@@ -164,7 +164,10 @@ def build_create_artifact_tool(agent_def: "AgentDef") -> Any:
             "response; do not make Markdown links using local paths or artifact:// URIs. "
             "Returns each accepted record or a typed rejection reason "
             "(path_missing, escapes_root, over_cap, invalid_kind, missing_input) you "
-            "can correct and retry. Nothing is auto-registered; the artifact exists "
+            "can correct and retry. Inspect every batch item's accepted flag; a partial "
+            "batch may contain rejections. The per-turn cap counts distinct outputs; "
+            "revisions of outputs already promoted in this turn reuse their slot. "
+            "Nothing is auto-registered; the artifact exists "
             "only because you called this."
         ),
         args={

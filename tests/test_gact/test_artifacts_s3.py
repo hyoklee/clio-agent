@@ -336,6 +336,52 @@ def test_duplicate_does_not_consume_cap(tmp_path, monkeypatch):
     assert P.proposal_count(app, sess.id, "t1") == 1
 
 
+def test_revised_output_reuses_its_turn_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A full output budget must still permit the capture/revise/publish cycle."""
+    monkeypatch.setattr(P, "proposals_per_turn", lambda: 1)
+    app, sess, _ = _make_app(tmp_path)
+    file = tmp_path / "evidence.zip"
+    file.write_bytes(b"initial evidence")
+    first = promote_proposal(
+        app, sess.id, Proposal(path=str(file), kind="dataset"), workspace_id="ws1", turn_id="t1"
+    )
+    file.write_bytes(b"reviewed evidence with revised figure")
+    revised = promote_proposal(
+        app, sess.id, Proposal(path=str(file), kind="dataset"), workspace_id="ws1", turn_id="t1"
+    )
+    other = tmp_path / "unrelated.csv"
+    other.write_text("x\n1\n", encoding="utf-8")
+    rejected = promote_proposal(
+        app, sess.id, Proposal(path=str(other), kind="dataset"), workspace_id="ws1", turn_id="t1"
+    )
+    assert first.accepted and revised.accepted and revised.created
+    assert revised.version is not None and revised.version.version == 2
+    assert P.proposal_count(app, sess.id, "t1") == 1
+    assert not rejected.accepted and rejected.reason == RejectionReason.OVER_CAP.value
+
+
+def test_prior_turn_identity_still_uses_a_new_turn_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The exemption applies to this turn's revisions, not every existing file."""
+    monkeypatch.setattr(P, "proposals_per_turn", lambda: 1)
+    app, sess, _ = _make_app(tmp_path)
+    file = tmp_path / "evidence.csv"
+    file.write_text("v1", encoding="utf-8")
+    promote_proposal(
+        app, sess.id, Proposal(path=str(file), kind="dataset"), workspace_id="ws1", turn_id="t0"
+    )
+    file.write_text("v2", encoding="utf-8")
+    outcome = promote_proposal(
+        app, sess.id, Proposal(path=str(file), kind="dataset"), workspace_id="ws1", turn_id="t1"
+    )
+    assert outcome.accepted and outcome.created
+    assert P.proposal_count(app, sess.id, "t0") == 1
+    assert P.proposal_count(app, sess.id, "t1") == 1
+
+
 # --------------------------------------------------------------------------- #
 # Inline content → workspace file + record
 # --------------------------------------------------------------------------- #

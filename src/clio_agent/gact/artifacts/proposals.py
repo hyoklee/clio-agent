@@ -26,7 +26,6 @@ same selected artifact store as an existing-path proposal.
 from __future__ import annotations
 
 import logging
-import threading
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -42,6 +41,11 @@ from clio_agent.gact.artifacts.minting import (
     mint_artifact_outcome,
 )
 from clio_agent.gact.artifacts.presentation import PURPOSES
+from clio_agent.gact.artifacts.proposal_budget import (
+    _already_counted,
+    _increment_proposal_count,
+    proposal_count,
+)
 from clio_agent.gact.artifacts.proposal_effects import (
     PROPOSED_ARTIFACT_EVENT,
     _dedup_enrich,
@@ -74,9 +78,9 @@ logger = logging.getLogger(__name__)
 #: Default ceiling on artifact promotions ONE turn may make through the tool
 #: (owner risk: agent over-designation). Config-first (#985 conventions):
 #: ``artifacts.proposals_per_turn`` / ``CLIO_ARTIFACTS_PROPOSALS_PER_TURN``. Only
-#: genuinely NEW versions count; a duplicate (already-registered) proposal is a
-#: no-op that never consumes budget, so the cap never blocks bounded repair on a
-#: re-designation of the same bytes.
+#: distinct artifact identities promoted this turn count. Refining an output
+#: already promoted in this turn does not consume another slot; review and repair
+#: must remain possible after the set of deliverables reaches the ceiling.
 _DEFAULT_PROPOSALS_PER_TURN = 8
 
 #: Default ceiling on the number of proposals ONE ``create_artifact`` call may carry
@@ -87,11 +91,6 @@ _DEFAULT_PROPOSALS_PER_TURN = 8
 #: instead of fanning out N durable records. Config-first (#985 conventions):
 #: ``artifacts.proposals_batch_max`` / ``CLIO_ARTIFACTS_PROPOSALS_BATCH_MAX``.
 _DEFAULT_PROPOSALS_BATCH_MAX = 32
-
-#: Bound on the per-turn counter map so a pathological long-lived process cannot
-#: grow it unboundedly (turn ids accrete). Evicts oldest insertion first.
-_COUNTER_MAP_CAP = 4096
-_COUNTER_LOCK = threading.Lock()
 
 #: ``PROPOSED_ARTIFACT_EVENT`` and the ``_emit_proposal_event`` / ``_gate_content_write``
 #: / ``_write_inline_content`` helpers now live in the ``proposal_effects`` owner
@@ -263,42 +262,6 @@ def validate_kind(raw: str) -> ArtifactKind:
 
 
 # --------------------------------------------------------------------------- #
-# Per-turn promotion cap (counts genuinely-new promotions only).
-# --------------------------------------------------------------------------- #
-
-
-def _counter_key(sid: str, turn_id: str) -> str:
-    return f"{sid}:{turn_id}"
-
-
-def _counter_map(app: "FastAPI") -> dict[str, int]:
-    counts = getattr(app.state, "artifact_proposal_counts", None)
-    if counts is None:
-        counts = {}
-        app.state.artifact_proposal_counts = counts
-    return counts
-
-
-def proposal_count(app: "FastAPI", sid: str, turn_id: str) -> int:
-    """Return how many NEW promotions this ``(session, turn)`` has already made."""
-    with _COUNTER_LOCK:
-        return _counter_map(app).get(_counter_key(sid, turn_id), 0)
-
-
-def _increment_proposal_count(app: "FastAPI", sid: str, turn_id: str) -> None:
-    """Record one accepted NEW promotion, evicting the oldest key past the bound."""
-    key = _counter_key(sid, turn_id)
-    with _COUNTER_LOCK:
-        counts = _counter_map(app)
-        if key not in counts and len(counts) >= _COUNTER_MAP_CAP:
-            # Bound the map: drop the oldest-inserted key (dict preserves order).
-            oldest = next(iter(counts), None)
-            if oldest is not None:
-                counts.pop(oldest, None)
-        counts[key] = counts.get(key, 0) + 1
-
-
-# --------------------------------------------------------------------------- #
 # Promotion — the validation + mint core (testable without a tool loop).
 # --------------------------------------------------------------------------- #
 
@@ -319,10 +282,11 @@ def promote_proposal(
     kind (reserved/invalid → typed reject), resolve the byte source (existing path
     OR inline content written to the workspace), enforce containment BEFORE hashing
     (owner decision 10), harness-hash identity, then — for a genuinely new version —
-    check the per-turn cap and mint through :func:`mint_artifact` with mechanism
-    ``model`` + ``designation=agent-proposed``. A byte-identical re-designation
+    check the per-turn distinct-output cap and mint through :func:`mint_artifact`
+    with mechanism ``model`` + ``designation=agent-proposed``. A byte-identical re-designation
     returns the existing record with ``created=False`` (``already_registered``) and
-    consumes no cap budget. Every outcome emits an ``artifact.proposed`` trace event.
+    consumes no cap budget. Revisions of an identity already promoted this turn
+    also consume no additional slot. Every outcome emits an ``artifact.proposed`` trace event.
     """
     if proposal.purpose not in PURPOSES:
         outcome = _rejected(
@@ -552,8 +516,11 @@ def promote_proposal(
         )
         return outcome
 
-    # New promotion — enforce the per-turn cap BEFORE minting.
-    if proposal_count(app, sid, turn_id) >= proposals_per_turn():
+    # Budget distinct outputs, not revisions made while visually reviewing them.
+    if (
+        not _already_counted(app, sid, turn_id, workspace_id, name)
+        and proposal_count(app, sid, turn_id) >= proposals_per_turn()
+    ):
         outcome = _rejected(
             name,
             RejectionReason.OVER_CAP,
@@ -647,7 +614,7 @@ def promote_proposal(
             purpose=proposal.purpose,
         )
         return outcome
-    _increment_proposal_count(app, sid, turn_id)
+    _increment_proposal_count(app, sid, turn_id, workspace_id, name)
     outcome = ProposalOutcome(
         accepted=True,
         name=name,
