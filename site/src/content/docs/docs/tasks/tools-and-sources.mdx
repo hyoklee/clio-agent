@@ -79,8 +79,8 @@ confinement, confirmation and output limits. `timeout_s` is the command's explic
 execution limit; it is separate from the timeout on `wait_tasks`.
 
 On service shutdown, CLIO stops admission, cancels or withdraws owned local work,
-and waits for physical settlement. Pending settlement remains visible; a human
-force-close records uncertainty.
+and waits for physical settlement. Pending settlement remains visible. If a process is force-closed before settlement,
+its outcome remains uncertain.
 It does not reattach to a process using only a PID or automatically replay the command.
 
 ## Recovering uncertain work

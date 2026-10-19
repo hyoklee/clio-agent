@@ -1,14 +1,16 @@
 # Tasks replacement status
 
-## Current candidate — 2026-10-19 04:37 UTC
+## Current candidate — 2026-10-19 05:36 UTC
 
 Initial implementation and initial test construction are complete. Current work is
 regression repair, independent review and live qualification. The candidate is
 **not qualified or release-ready**.
 
-- Agent test correction: **cc2a8086faa05672caebd7d4f19027568b8215f0**.
+- Agent pushed candidate: **4b33f858d674c22937b1a51b415522733ab189b7**.
+- Agent test correction: cc2a8086faa05672caebd7d4f19027568b8215f0.
 - Agent production commit: **6c79df316273aeed0fb95230c846706f574cb834**.
-- GACT: **aca98ce477bbee1d1f14b1f384d1cf283906de6d**.
+- GACT UI correction: **973ddf172149bb5a27b08e35bc69bbdd1864a242**;
+  completed runtime/race evidence used aca98ce477bbee1d1f14b1f384d1cf283906de6d.
 - Both repositories retain `codex/agent-facing-async-tasks`; no merge, release or
   daily Desktop installation has been performed.
 - Integrated agent develop: cee026de3; GACT main: f2b96308.
@@ -23,8 +25,9 @@ regression repair, independent review and live qualification. The candidate is
 | Completed historical baseline | 0593f40a CI 39179068184 passed all 24 jobs. Twelve XML reports: each Python 3.12/3.13/3.14 had 13,062 passes, zero failures/errors, 50 exclusions. All nine earlier repair cases passed per interpreter. This is a baseline, not acceptance of later changes. |
 | Previous failed CI | 1a0881055 CI 39192188767 finished with 20 successful and four failed jobs. All twelve XML reports were inspected. Three distinct failures: two cancellation tests asserted a child task's ContextVar cleanup in the parent task; one context-steering case failed before entering its first model call. The completed Docker, Document runtime, Pages, schema and Linux/Windows/macOS packaged-startup workflows all succeeded. |
 | Previous green CI | 69d1a8696 CI 39195215077 passed all 24 jobs. Twelve reports: each Python 3.12/3.13/3.14 had 13,072 passes, zero failures/errors and 50 exclusions. This precedes the prompt correction. |
-| Latest completed CI | e4940b3be CI 39197197958 finished 23 successful jobs / one failed job. All twelve reports were inspected: the only distinct failure was Python 3.12's real launcher-lock timeout case, which raised the expected typed exception but took 3.5396 seconds against its unchanged <3-second assertion. The prior three failed cases, 1,005-message retention and A2UI load cases passed. This is not a green current-candidate baseline. |
-| Current test-only correction | cc2a8086f replaces assumed lock readiness with a real held event and guarantees release/join on assertion failures. It retains the 0.5/3-second bounds, real polling/audit and exact typed assertions. Three focused cases passed individually/sequentially: unidentified holder, real holder handoff and killed-process acquisition. Astra and actual Fable returned source GO. The old 3.54-second cause remains unproven; explicit cache isolation does not establish prior interference, and the correction does not clear CI until a fresh run passes. Receipts: r290-regressions.json / r291-claude-review.json. Its fresh test root and review diff are absent. |
+| Previous failed CI | e4940b3be CI 39197197958 finished 23 successful jobs / one failed job. All twelve reports were inspected: the only distinct failure was Python 3.12's real launcher-lock timeout case, which raised the expected typed exception but took 3.5396 seconds against its unchanged <3-second assertion. The prior three failed cases, 1,005-message retention and A2UI load cases passed. This is not a green current-candidate baseline. |
+| Latest completed CI | 4b33f858d CI 39200422623 passed all 24 jobs. All twelve XML reports inspected: 13,072 passes, zero failures/errors and 50 exclusions per interpreter. Prior lock failure and all inventoried repair cases passed. Exclusions remain exclusions. Receipts: ci-4b33f858d.json / ci-4b33f858d-summary.json. |
+| Current test-only correction | cc2a8086f replaces assumed lock readiness with a real held event and guarantees release/join on assertion failures. It retains the 0.5/3-second bounds, real polling/audit and exact typed assertions. Three focused cases passed individually/sequentially: unidentified holder, real holder handoff and killed-process acquisition. Astra and actual Fable returned source GO. The old 3.54-second cause remains unproven; explicit cache isolation does not establish prior interference, and fresh exact-head 4b33f858d CI now passes, without establishing the old timing cause. Receipts: r290-regressions.json / r291-claude-review.json. Its fresh test root and review diff are absent. |
 | CI repair scope | 69d1a8696 checks cancellation cleanup inside the cancelled child, explicitly seeds/verifies the parent's independent value, and verifies the exact structured result. Token-balanced fixtures isolate direct artifact producers. The steering case uses the existing fake-model barrier, keeps its three/five-second budgets and records actual input-commit/readiness/worker diagnostics on failure. All three previously failed cases and three artifact cases also passed locally, individually/sequentially. Receipt: r278-regressions.json; its fresh root is absent. |
 | Observer regression repair | 1af8c193 corrects the fixture to the actual session-creation 200 response. All five real-Core cases passed individually/sequentially on Windows with one worker: cold/output-free and file-output provenance, loop responsiveness/context return, start/completion cancellation retirement, interleaved identities. Receipt: r265-regressions.json. |
 | Permission defect reproduction | Both immediate Allow and Deny cases failed before correction on 201087574: a pending row was visible before its wake event existed. Receipt: r268-regressions.json. |
@@ -54,6 +57,67 @@ and 6c79df316's canonical prompt correction (Astra turn
 01a15241-ad71-76d3-8238-e2507e8ee3f1; actual Fable receipt r283-claude-review.json).
 
 ## Live evidence and remaining qualification
+
+Completed runtime/race tuple: agent 4b33f858d / production 6c79df316 / GACT aca98ce4.
+The current presentation correction is GACT 973ddf172; it changes no agent runtime,
+execution owner, dependencies or schema. The completed runtime race evidence carries
+forward with that limited impact; fresh matching-UI and CI acceptance remain required.
+Initial implementation and initial test construction are complete. Actual-model
+production-service qualification is running; this candidate is not release-ready.
+
+Exact-head CI 39200422623 passed all 24 jobs. All twelve XML reports were inspected:
+13,072 passed, zero failures/errors and 50 exclusions per Python 3.12/3.13/3.14.
+The exclusions remain exclusions. R285 separately executed ten Windows-only cases
+with ten passes and zero skips. The earlier 3.54-second lock-test cause remains
+unproven; the test-only correction preserved its original bounds and real polling.
+
+Live work on the unchanged production tuple now includes:
+
+- R293: actual Codex/Luna Download, 8,001 real files / 36,124,063 bytes, every
+  selected path and hash checked; complete invocation transforms across rolled
+  Core event chunks.
+- R294: actual Codex/Luna Indexing, all 48,098 manifest paths checked exactly,
+  with complete invocation transforms across four Core event chunks.
+- R296: actual external native MCP acceptance, independent model work, visibility
+  loss, one attention input, reconnect to the original identity without replay,
+  verified final bytes/hash, and one independent final-outcome input. Actual
+  desktop/phone Work/Runs were exercised. This owned protocol workload does not
+  establish the unavailable approved-provider surviving-job gate.
+- R297: ten actual native Shell workers simultaneously occupied, storage indexing
+  completed independently, an eleventh queued operation was withdrawn before
+  body entry, and Stop preserved a running background process. All ten original
+  models automatically completed, with one result input each and physical
+  PID/birth retirement proof.
+- R300: actual Claude child busy Question wait, human pause, answer retained while
+  paused, parent Stop independence, resume under original handles and attributed
+  parent notices. The old observer wrongly required a yield before pause; its raw
+  failure remains. The intended controls and exact Core proof were captured from
+  the same frozen run without task/model replay. Exact service exit status was
+  not retained by that observer; all owned processes/listeners are independently
+  absent. No clean-lifespan claim is made for this run.
+
+**30/30 final-candidate race repetitions passed:** R1/R2/R3/R4/R5/R6 each have five
+actual-model repetitions. R298 records queue withdrawal and collection/delivery;
+R301 records three pre-commit and two post-commit API crashes with original
+assignment recovery; R303 records closing-turn arrivals; R304 records Stop during
+native acceptance with original identity and continuing background work. R305 records physical child/process-subtree cancellation and queued admission closure.
+Its first setup used one human steering message to supply the second originally
+requested operation omitted by the parent; the other four setups were unassisted.
+The race receipts preserve this distinction. All completed fresh runtime roots are absent, including failed harness
+preflights R299/R302; earlier rejected/manual-only targets remain untouched.
+
+The real UI exposed a P2: a task with lost visibility correctly says Needs
+inspection in Work but the footer says No active work. Astra confirmed a frontend
+projection defect. GACT 973ddf172 corrects both footer and dock through the existing task projection,
+with constructed terminal-transition/click/attention regression coverage. Fresh CI,
+matching UI build and actual-service UI requalification are pending. No task-engine
+production change was made during the frozen families.
+
+Full Q1–Q9, approved-provider/input/recovery/migration, remaining lifecycle/UI
+obligations and final review are not converted into passes by these scoped proofs.
+Receipts are the matching r293/r294/r296/r297/r298/r300/r301/r303/r304 live,
+qualified-scope and cleanup files in the D execution repository's
+.pytest-runtime/static directory. CI: ci-4b33f858d.json and its summary.
 
 - R275 passed the scoped actual Codex/Luna child-peer scenario across two declared
   workflows: exact addressing, messages/replies, observation/subscription/expired
@@ -135,8 +199,7 @@ and 6c79df316's canonical prompt correction (Astra turn
   rollback, outside this scenario's Question/Stop/input path. This carries the
   scoped proof, not the whole Q3 matrix. The original resource rejection remains
   recorded; the later launch had more than twelve GiB commit headroom.
-- Q1–Q9, final migration/recovery obligations and all **0/30 final race repetitions**
-  remain unaccepted. The finite obligations remain in the acceptance ledger and
+- Q1–Q9, final migration/recovery obligations remain incomplete; **25/30 final race repetitions** pass, and R6 also passed five repetitions in R305. The finite obligations remain in the acceptance ledger and
   live experiment sheet; narrow proofs do not pass whole rows.
 - R252 supplied six inspected website views at desktop/phone widths, keyboard
   disclosures and clean browser output. This is documentation evidence, not Q9
@@ -156,6 +219,9 @@ R275/R276 and R278/R280/R282 fresh roots are absent. R279/R283's fresh review-di
 files were removed; their earlier manual-only review profile was preserved.
 R281's service/browser are retired and both fresh roots are absent.
 R285/R288/R289/R290 fresh roots are absent; R291's fresh review diff is removed.
+R292–R304 completed runtime families and failed harness preflights have absent fresh
+roots. R305 is settled and both fresh roots are absent. R295 retains honest unconfirmed
+Core settlement; independent process/port proof establishes physical retirement.
 The earlier manual-only review profile remains preserved.
 
 The five R265 tests exited zero and their run data was removed by the test owner.

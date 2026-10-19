@@ -1,53 +1,67 @@
 # Tasks replacement: finite live experiments
 
-## Current execution — 2026-10-19 04:37 UTC
+## Current execution — 2026-10-19 05:36 UTC
 
-Current production remains 6c79df316 / GACT aca98ce4; cc2a8086f is test-only.
-The e4940b3be CI inventory is complete: 23 successful jobs and one failed job,
-with one distinct Python 3.12 launcher-lock timing failure (3.5396 seconds against
-<3 seconds; expected typed exception raised). cc2a8086f adds actual holder
-readiness, unconditional cleanup and timing diagnostics without changing the
-0.5/3-second bounds or production behavior. All three affected lock cases passed
-individually/sequentially. Astra and actual Fable returned source GO, with the
-original timing cause explicitly unproven. A fresh exact-head CI pass remains
-required. R285 separately ran the ten Windows-only exclusions: ten passes and
-zero skips, including actual process-tree reaping. Other CI exclusions remain.
+Completed runtime/race tuple: agent 4b33f858d / production 6c79df316 / GACT aca98ce4.
+The current presentation correction is GACT 973ddf172; it changes no agent runtime,
+execution owner, dependencies or schema. The completed runtime race evidence carries
+forward with that limited impact; fresh matching-UI and CI acceptance remain required.
+Initial implementation and initial test construction are complete. Actual-model
+production-service qualification is running; this candidate is not release-ready.
 
-R288/R289 freshly demonstrated actual Codex/Luna running Shell/Subagent handles,
-independent parent work, exact real output, stored outcomes and one completion
-input. The original post-run checker errors remain recorded; same-run captured
-Core evidence was adjudicated without replay. The native sandbox startup warning
-is preserved. Both services exited zero and all fresh runtime roots are absent.
-These scoped proofs do not establish the remaining lifecycle/recovery/capacity
-obligations or any of the thirty final race repetitions.
+Exact-head CI 39200422623 passed all 24 jobs. All twelve XML reports were inspected:
+13,072 passed, zero failures/errors and 50 exclusions per Python 3.12/3.13/3.14.
+The exclusions remain exclusions. R285 separately executed ten Windows-only cases
+with ten passes and zero skips. The earlier 3.54-second lock-test cause remains
+unproven; the test-only correction preserved its original bounds and real polling.
 
-R275 passed scoped child-peer/two-workflow checks with one logged completion
-instruction. R276 failed its root reply prerequisite and remains failed; its
-actual toolset/refusal evidence led to the prompt correction. R281 freshly passed
-the root-session/two-workflow checks, real desktop/phone grant/revoke, denied
-read/control, pause/revocation-before-injection, automatic regrant delivery and
-independent owner/subscriber completion. One reply follow-up is recorded, making
-this assisted evidence. All 24 observed calls had Core transforms,
-and 47 actual recipient inputs are retained in the bounded receipt. The native
-parser accepted 99 real lines above 64 KiB (maximum 80,998 bytes) at its configured
-1 MiB limit. The service/browser settled and both roots are absent; three actual
-inspected captures update the website walkthrough. Full Q5/Q9, unassisted reply,
-other live families and the final race matrix remain required.
+Live work on the unchanged production tuple now includes:
 
-R266 passed actual Claude Stop/Question answer wake on production run_server,
-including physical turn retirement, an open Question after Stop, original-handle
-continuation, one confirmed answer input and no duplicate later. The queued answer
-was sufficient for the model; explicit get_task_result collection is not claimed.
-The canonical Core event reader captured all successful observed transforms.
-Original R263 failed prerequisites remain historical evidence. Both services exited
-zero, active tasks were empty and fresh roots are absent. R266's source impact to
-4f34bb9b is limited to unused folder/network approval paths and test cleanup.
+- R293: actual Codex/Luna Download, 8,001 real files / 36,124,063 bytes, every
+  selected path and hash checked; complete invocation transforms across rolled
+  Core event chunks.
+- R294: actual Codex/Luna Indexing, all 48,098 manifest paths checked exactly,
+  with complete invocation transforms across four Core event chunks.
+- R296: actual external native MCP acceptance, independent model work, visibility
+  loss, one attention input, reconnect to the original identity without replay,
+  verified final bytes/hash, and one independent final-outcome input. Actual
+  desktop/phone Work/Runs were exercised. This owned protocol workload does not
+  establish the unavailable approved-provider surviving-job gate.
+- R297: ten actual native Shell workers simultaneously occupied, storage indexing
+  completed independently, an eleventh queued operation was withdrawn before
+  body entry, and Stop preserved a running background process. All ten original
+  models automatically completed, with one result input each and physical
+  PID/birth retirement proof.
+- R300: actual Claude child busy Question wait, human pause, answer retained while
+  paused, parent Stop independence, resume under original handles and attributed
+  parent notices. The old observer wrongly required a yield before pause; its raw
+  failure remains. The intended controls and exact Core proof were captured from
+  the same frozen run without task/model replay. Exact service exit status was
+  not retained by that observer; all owned processes/listeners are independently
+  absent. No clean-lifespan claim is made for this run.
 
-Continue native/mixed, child/workflow, external/recovery, capacity and real UI
-families on frozen production tuples. Keep the production launcher, canonical Core
-reader, 120/600/900-second diagnostics, four-GiB commit reserve, actual provider
-checks, process manifests and post-family cleanup. Q1–Q9 and **0/30** final races
-remain unaccepted. No engine, fallback, budget or relay scope is added.
+**30/30 final-candidate race repetitions passed:** R1/R2/R3/R4/R5/R6 each have five
+actual-model repetitions. R298 records queue withdrawal and collection/delivery;
+R301 records three pre-commit and two post-commit API crashes with original
+assignment recovery; R303 records closing-turn arrivals; R304 records Stop during
+native acceptance with original identity and continuing background work. R305 records physical child/process-subtree cancellation and queued admission closure.
+Its first setup used one human steering message to supply the second originally
+requested operation omitted by the parent; the other four setups were unassisted.
+The race receipts preserve this distinction. All completed fresh runtime roots are absent, including failed harness
+preflights R299/R302; earlier rejected/manual-only targets remain untouched.
+
+The real UI exposed a P2: a task with lost visibility correctly says Needs
+inspection in Work but the footer says No active work. Astra confirmed a frontend
+projection defect. GACT 973ddf172 corrects both footer and dock through the existing task projection,
+with constructed terminal-transition/click/attention regression coverage. Fresh CI,
+matching UI build and actual-service UI requalification are pending. No task-engine
+production change was made during the frozen families.
+
+Full Q1–Q9, approved-provider/input/recovery/migration, remaining lifecycle/UI
+obligations and final review are not converted into passes by these scoped proofs.
+Receipts are the matching r293/r294/r296/r297/r298/r300/r301/r303/r304 live,
+qualified-scope and cleanup files in the D execution repository's
+.pytest-runtime/static directory. CI: ci-4b33f858d.json and its summary.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 

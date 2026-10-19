@@ -1,45 +1,67 @@
 # Tasks replacement acceptance ledger
 
-## Current evidence — 2026-10-19 04:37 UTC
+## Current evidence — 2026-10-19 05:36 UTC
 
-Current production remains 6c79df316 / GACT aca98ce4; cc2a8086f is test-only.
-The e4940b3be CI inventory is complete: 23 successful jobs and one failed job,
-with one distinct Python 3.12 launcher-lock timing failure (3.5396 seconds against
-<3 seconds; expected typed exception raised). cc2a8086f adds actual holder
-readiness, unconditional cleanup and timing diagnostics without changing the
-0.5/3-second bounds or production behavior. All three affected lock cases passed
-individually/sequentially. Astra and actual Fable returned source GO, with the
-original timing cause explicitly unproven. A fresh exact-head CI pass remains
-required. R285 separately ran the ten Windows-only exclusions: ten passes and
-zero skips, including actual process-tree reaping. Other CI exclusions remain.
+Completed runtime/race tuple: agent 4b33f858d / production 6c79df316 / GACT aca98ce4.
+The current presentation correction is GACT 973ddf172; it changes no agent runtime,
+execution owner, dependencies or schema. The completed runtime race evidence carries
+forward with that limited impact; fresh matching-UI and CI acceptance remain required.
+Initial implementation and initial test construction are complete. Actual-model
+production-service qualification is running; this candidate is not release-ready.
 
-R288/R289 freshly demonstrated actual Codex/Luna running Shell/Subagent handles,
-independent parent work, exact real output, stored outcomes and one completion
-input. The original post-run checker errors remain recorded; same-run captured
-Core evidence was adjudicated without replay. The native sandbox startup warning
-is preserved. Both services exited zero and all fresh runtime roots are absent.
-These scoped proofs do not establish the remaining lifecycle/recovery/capacity
-obligations or any of the thirty final race repetitions.
+Exact-head CI 39200422623 passed all 24 jobs. All twelve XML reports were inspected:
+13,072 passed, zero failures/errors and 50 exclusions per Python 3.12/3.13/3.14.
+The exclusions remain exclusions. R285 separately executed ten Windows-only cases
+with ten passes and zero skips. The earlier 3.54-second lock-test cause remains
+unproven; the test-only correction preserved its original bounds and real polling.
 
-R266 supplies actual Claude Stop/Question wake evidence: the original assignment
-resumed, one answer input was committed, and no duplicate arrived on a later turn.
-The model used the queued answer; no explicit result-tool read is claimed. Original
-R263 failures remain retained. Both services/tasks are settled and fresh data roots
-absent. R268/R269/R272 test roots are also absent. See the current-status document
-for exact identities, scope/impact boundaries and receipts.
+Live work on the unchanged production tuple now includes:
 
-R275 passed scoped child-peer/two-workflow checks with one logged completion
-clarification. R281 passed the current-source root-peer/two-workflow checks with
-one logged reply follow-up, including real desktop/phone grant/revoke, observed
-privacy/denied-control boundaries, revocation-before-injection, automatic regrant
-delivery and independent owner/subscriber receipts. It retained 47 recipient
-inputs and all 24 observed call transforms. It also measured 99 actual native
-SSE lines over 64 KiB, maximum 80,998 bytes at the configured 1 MiB limit. Failed
-R276 remains failed. These are scoped/assisted proofs, not a complete Q5/Q9 or
-unassisted peer-reply claim. Both fresh runtime roots are absent; selected actual
-captures are hash-matched to the website media. The approved external-provider
-profile/receiving-collection prerequisite has been requested. All full rows below
-and **0/30** final races remain unaccepted until their complete evidence is established.
+- R293: actual Codex/Luna Download, 8,001 real files / 36,124,063 bytes, every
+  selected path and hash checked; complete invocation transforms across rolled
+  Core event chunks.
+- R294: actual Codex/Luna Indexing, all 48,098 manifest paths checked exactly,
+  with complete invocation transforms across four Core event chunks.
+- R296: actual external native MCP acceptance, independent model work, visibility
+  loss, one attention input, reconnect to the original identity without replay,
+  verified final bytes/hash, and one independent final-outcome input. Actual
+  desktop/phone Work/Runs were exercised. This owned protocol workload does not
+  establish the unavailable approved-provider surviving-job gate.
+- R297: ten actual native Shell workers simultaneously occupied, storage indexing
+  completed independently, an eleventh queued operation was withdrawn before
+  body entry, and Stop preserved a running background process. All ten original
+  models automatically completed, with one result input each and physical
+  PID/birth retirement proof.
+- R300: actual Claude child busy Question wait, human pause, answer retained while
+  paused, parent Stop independence, resume under original handles and attributed
+  parent notices. The old observer wrongly required a yield before pause; its raw
+  failure remains. The intended controls and exact Core proof were captured from
+  the same frozen run without task/model replay. Exact service exit status was
+  not retained by that observer; all owned processes/listeners are independently
+  absent. No clean-lifespan claim is made for this run.
+
+**30/30 final-candidate race repetitions passed:** R1/R2/R3/R4/R5/R6 each have five
+actual-model repetitions. R298 records queue withdrawal and collection/delivery;
+R301 records three pre-commit and two post-commit API crashes with original
+assignment recovery; R303 records closing-turn arrivals; R304 records Stop during
+native acceptance with original identity and continuing background work. R305 records physical child/process-subtree cancellation and queued admission closure.
+Its first setup used one human steering message to supply the second originally
+requested operation omitted by the parent; the other four setups were unassisted.
+The race receipts preserve this distinction. All completed fresh runtime roots are absent, including failed harness
+preflights R299/R302; earlier rejected/manual-only targets remain untouched.
+
+The real UI exposed a P2: a task with lost visibility correctly says Needs
+inspection in Work but the footer says No active work. Astra confirmed a frontend
+projection defect. GACT 973ddf172 corrects both footer and dock through the existing task projection,
+with constructed terminal-transition/click/attention regression coverage. Fresh CI,
+matching UI build and actual-service UI requalification are pending. No task-engine
+production change was made during the frozen families.
+
+Full Q1–Q9, approved-provider/input/recovery/migration, remaining lifecycle/UI
+obligations and final review are not converted into passes by these scoped proofs.
+Receipts are the matching r293/r294/r296/r297/r298/r300/r301/r303/r304 live,
+qualified-scope and cleanup files in the D execution repository's
+.pytest-runtime/static directory. CI: ci-4b33f858d.json and its summary.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 
@@ -137,7 +159,7 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | N04 | Strict raw terminal result validation against captured schema; malformed/errors retained | tools/task_receipt.py; tests/test_tools/test_task_receipt.py | Identity-bound observer | Backend malformed/changed/coerced schema tests and raw result evidence | blocked — fresh replacement evidence pending |
 | N05 | Immutable task input binding, partial/persisted answers, lost update/reconnect without repeat prompt | gact/task_input_questions.py; tools/mcp_tasks.py | Actual external input-required server | Distinct hyphenated identities, reused-key content rejection and partial/lost-update answer receipts | blocked — fresh replacement evidence pending |
 | N06 | Trusted hidden submission reference and unique incarnation; revocation and admission rechecked | tools/native_task_tool.py; task_call_context.py | Registered Docket worker | No forged reference/schema exposure; crossed task/digest denied; late entry cannot reopen withdrawal | blocked — fresh replacement evidence pending |
-| N07 | Independent Shell/storage native pools, default 10 and configurable memory/persistent backend | tools/native_task_host.py | Two application-owned native lifespans | Saturated Shell while storage starts; no mounted-gateway execution bottleneck | blocked — fresh replacement evidence pending |
+| N07 | Independent Shell/storage native pools, default 10 and configurable memory/persistent backend | tools/native_task_host.py | Two application-owned native lifespans | Saturated Shell while storage starts; no mounted-gateway execution bottleneck | pass — R297 saturated the default ten Shell workers and completed real storage indexing concurrently on its independent native root/queue; R298/R303/R304 also exercised configured capacity one. Production FastMCP roots; no CLIO scheduler or extra execution queue. |
 | N08 | Acceptance custody distinguishes rejection/recording-unconfirmed/uncertain; no auto tools/call replay | tools/task_submission.py; gact/task_submission_custody.py | Faultable real submission boundary | Stop and lost-RPC reply evidence, single original submission identity | blocked — fresh replacement evidence pending |
 | N09 | Foreground Stop physically cancels Shell; background and Question continue | tools/servers/shell_server.py; gact/turn.py | Native Shell integration | Process-tree markers and final cleanup; immediate handle for background | blocked — fresh replacement evidence pending |
 | N10 | Attempt-specific cleanup/withdrawal; external ACK alone not physical settlement | tools/native_task_host.py; native_task_tool.py | Worker incarnation and native cancellation | Queued/started/stale-receipt/unknown cases with actual physical evidence | blocked — fresh replacement evidence pending |
@@ -179,12 +201,12 @@ Each evidence entry must record candidate identity, invocation/handle, timestamp
 | Q7 | Isolated Core/native outage, migration twice, input crash and lost result after effects | R2 Q7 | Owned isolated runtime; restart permissions | Honest uncertainty, agent inspection and deliberate linked retry; attention then final | blocked — R145 passed actual-model input-commit crash cases; R154/R157 supplied scoped provisional native/external controls. R167 on 38a8794b passed actual native result loss after one visible effect and physical cleanup: honest original-handle interruption/no replay, model inspection before deliberate revised work, original assignment completion and one delivery per outcome. Revised command/effect metadata reference the original handle; no first-class retry-lineage claim. R171 supplied scoped data-only migration twice over nine retained historical rows, stable identities/results/acknowledgements/pending mail/Question/subscription, no native replay and an actual-model answer wake. R177 passed external attention-then-final; R180 passed new-caller recovery of an external job completed offline without replay. All owned processes and disposable roots retired/removed. Broader historical/provider formats, UI recovery and final repeated races remain unqualified. |
 | Q8 | Native pool isolation, capacity-one children/peers, constrained executor and resource cleanup | R2 Q8 | Independent native roots; actual models | No starvation; worker exit before next turn and bounded owned residue | blocked — R132/R133 supply native pool separation, exact 514-entry indexing during a held Shell, never-started queued withdrawal and peer progress while a parent waits. R135 on bf2df179/6669ac3a supplies actual nested-parent waits with released inference permits and an independent same-depth child completing while the leaf Question remains pending, under a one-worker finite-I/O executor. Parent A required feedback; the original controller failed a Session-only result lookup before UI acceptance. The scoped audit preserves the canonical Subagent result. All owned sessions/processes and disposable data, including the reused build, are settled/removed. Full integrated acceptance and final repeats remain pending. |
 | Q9 | Production service/GACT desktop and phone Questions/grants/cancel | R2 Q9 | Integrated frozen clio-agent/GACT pair | Rendered interactions with correct physical outcomes and no UI errors | blocked — R119 supplies cancellation/disclosure and physical subtree outcomes; R126 supplies grant/revoke, keyboard and containment evidence. R137/R138 passed five actual desktop/phone draft-resize cycles per run without retyping, correct phone answering, fresh model collection, original child/parent completion and one delivery per recipient. R138 on 4a92f32c/401efcfe qualified native root/child provenance, retaining correct identity and 227/425 before/after spans, with no connected-UI console/page errors. Pre-connection failures remain separately recorded. Source/runtime/handles/input records and selected inspected screenshots are retained; disposable profiles/temp/builds are removed. Wider integrated acceptance, required CI and final races remain pending. |
-| R1 | Stop/acceptance repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
-| R2 | Late-start/cancel repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
-| R3 | Busy-to-idle arrival repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
-| R4 | Collection/automatic delivery repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
-| R5 | Recipient-input commit recovery repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
-| R6 | Subtree cancellation/admission repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | blocked — fresh replacement evidence pending |
+| R1 | Stop/acceptance repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | pass — R304: five actual native SDK acceptances crossed human Stop; identity adoption completed, background effects continued, original assignments woke and received one completion input. Exact tuple 4b33f858d / 6c79df316 / aca98ce4; service exit zero and fresh roots absent. |
+| R2 | Late-start/cancel repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | pass — R298: five native queue withdrawals while capacity one was occupied; never_started receipts, no body entry after the holder retired, and original-model cancellation reports. Exact tuple 4b33f858d / 6c79df316 / aca98ce4; clean retirement and absent fresh roots. |
+| R3 | Busy-to-idle arrival repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | pass — R303: five real workers retired while their session slot remained reserved; each new human arrival stayed Core-pending, then automatically admitted and committed once after release. Exact tuple 4b33f858d / 6c79df316 / aca98ce4; clean retirement and absent fresh roots. |
+| R4 | Collection/automatic delivery repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | pass — R298: five actual model waits were in flight before physical work settled; terminal publication/collection committed one result, and a later explicit read preserved the historical handle without another Shell submission. Exact tuple 4b33f858d / 6c79df316 / aca98ce4; clean retirement and absent fresh roots. |
+| R5 | Recipient-input commit recovery repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | pass — R301: five actual API crashes at the real recipient-input writer, three before and two after commit; same assignments recovered, one original Question and answer input each, after-commit context records unchanged. Exact tuple 4b33f858d / 6c79df316 / aca98ce4; final service exit zero and fresh roots absent. |
+| R6 | Subtree cancellation/admission repeated five times on final candidate | R2 race matrix; related owner lessons above | Frozen tuple and corresponding Q gate | Five fresh passes; any skip/failure blocks | pass — R305: five actual Codex/Luna child cancellations physically retired running Shell process trees and withdrew queued descendants with never_started receipts; original parents received attributed controls and reported cancellation. First setup used one human steering message to supply an omitted operation; the other four were unassisted. Tuple 4b33f858d / 6c79df316 / aca98ce4; clean service exit and absent fresh roots. |
 | Z01 | Removal complete; denylist production guard; Astra and Claude approve before rebuild | R2 removal manifest and caller inventory | Local deliberate-break commit | Both independent read-only removal reviews; broken head not pushed | pass — independent Astra and actual Claude Code removal approvals at4804dd6f; reports retained; no runtime acceptance implied |
 | Z02 | Focused tests sequential/one worker; scoped lint/format/types/guards and exact-head CI | R2 completion gate | Coherent draft replacement candidate | No weakened assertions/resource budgets; required skips fail | blocked — fresh replacement evidence pending |
 | Z03 | Freeze actual core/GACT/dependency/schema/runtime tuple before final acceptance | Core gitlink; R2 freeze requirement | Final integrated UI and pointer | Recorded freeze, applicable requalification after any change, exact tuple go/no-go | blocked — fresh replacement evidence pending |
