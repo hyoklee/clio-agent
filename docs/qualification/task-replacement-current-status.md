@@ -1,60 +1,48 @@
 # Tasks replacement status
 
-## Active live execution — 2026-10-19 19:17 UTC
+## Active live execution — 2026-10-19 19:43 UTC
 
-Initial implementation and initial test construction are complete. This phase is
-live qualification and bug repair. No local pytest/Vitest loop ran in this period.
+Initial implementation and test construction are complete. Current work is live
+qualification and bug repair. No local pytest or Vitest suite ran in this period.
 
-- The frozen live pair is agent24902aef77e26aeee99078c7bd8463f5be71db04 and
-  GACT0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb, on Ares/Core2.3.2 with
-  FastMCP/tasks4.1.0, MCP2.0.0 and Docket0.26.2. Astra and actual Claude Code/Fable
-  cleared that source delta. Their reviews do not replace runtime acceptance.
-- All30 fresh race repetitions passed on that pair: R1/r376, R2+R4/r373,
-  R3/r369, R5/r370 and R6/r365, five each. These are actual models and production
-  owners, including original native identities, real process retirement, queued
-  withdrawal, recipient-input commitment and before/after input-commit crashes.
-  All six disposable families have physical cleanup receipts and absent roots.
-- R363 supplies independently audited child Download/yield/wake evidence: one
-  original invocation, both original assignments yielded while it ran, automatic
-  wake/collection, one final notice per recipient, and8,001files/34,868,063bytes
-  with exact hashes. Its raw driver remains failed because a generic checker
-  additionally demanded a child query call. The scope and raw outcome stay separate.
-- R374 passed the stronger retained-context restart proof before unrelated UI
-  checks: immutable original Shell submission count remained one across restart;
-  pause held the model while its process continued; steering waited until resume;
-  successor cancellation retired inherited processes; original terminal history
-  stayed fixed and the parent committed attributed human controls once.
-- R364 retained/delivered all1,005messages under the original assignment and
-  measured ten hot reads with zero Core storage calls before900seconds. Restart
-  replay was observed at912.5seconds, so the full timed family is not accepted.
-  R378 repeats every original count/assertion under the unchanged900second budget
-  using shorter arbitrary receipt-note bodies. It remains frozen on24902.
-- Complete current CI inventory: all12XMLreports retained; Python3.12/3.14 each
-  executed13,084passing cases. Python3.13 has13,083passes and one storage-cleanup
-  hang; each interpreter has50excluded cases, never counted as passes. The three
-  prior query/declaration regressions passed. No other distinct failure appears.
-- This revision repairs that existing storage boundary. Final state reads, draft
-  cleanup and physical-evidence confirmation finish before cancellation propagates,
-  including provider continuation. The joined indexing-worker result handler also
-  records ordinary unexpected failures. Native execution, Core authority, budgets
-  and original regression assertions remain unchanged. Five new regression cases
-  are constructed; scoped Ruff/format/Mypy pass. Fresh CI, both independent source
-  reviews and affected actual-model storage qualification are still required.
-- Failed setup runs remain failed: R367/R368 used the wrong blueprint and were
-  stopped/cleaned. R372 held an unrelated inline Shell inspection rather than the
-  requested background command; R376 binds the exact persisted owner/arguments.
-  R362's same-head five-second status-read expiry remains a separate unresolved
-  observation; subsequent five R6 passes do not erase it or establish its cause.
-- Aresjob24927 owns the common runtime and node-local worktree. Each family records
-  processes, ports and paths before launch and removes disposable state afterward.
-  The remaining allocation/runtime/worktree also require final retirement.
-- Remaining gates include the timed large-history repeat, affected storage cleanup,
-  positive pending-only peer pressure, remaining provider/bridge and recovery
-  combinations, actual approved surviving-provider work and final integrated
-  adjudication. This candidate is not qualified and has no release GO.
-- Installed Desktop/auth/defaults/released pins and unrelated work are preserved.
-  The tiny R345 D credential-staging removal was automatically rejected and remains
-  manual-only, alongside all earlier blocked/private/native cleanup boundaries.
+- Production is frozen at agent `45f4c7a7533988add7c943546e412f8610338b59`
+  and GACT `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb`. Runtime: Python 3.14.6,
+  Core 2.3.2, FastMCP/tasks 4.1.0, MCP 2.0.0 and Docket 0.26.2. Astra and actual
+  Claude Code/Fable independently cleared the storage-finalization correction.
+- CI `39309828551` has a complete twelve-report inventory: each of Python 3.12,
+  3.13 and 3.14 executed 13,088 passing cases, one failed case and 50 exclusions.
+  All three failures are the same new test request missing its required source
+  label; this revision supplies that label. No production or assertion change is
+  required. The five new cleanup cases reached CI; four passed per interpreter.
+- All 30 fresh R1–R6 repetitions passed on predecessor `24902aef77e26aeee99078c7bd8463f5be71db04`:
+  R1/R376, R2+R4/R373, R3/R369, R5/R370 and R6/R365. All six disposable families
+  are physically retired. The production change since then is limited to storage
+  finalization/indexing-worker error handling; affected storage races remain required.
+- R363's independently reviewed scope proves original child/root yield and wake,
+  one Download invocation and exact hashes for 8,001 files / 34,868,063 bytes. Its
+  raw driver remains failed on an additional checker expectation. R374 independently
+  proves retained-context restart without operation replay, pause/resume, queued
+  steering, inherited process cancellation and attributed parent notices.
+- R378 passed the complete 1,005-message retention and restart family under its
+  unchanged 900-second budget: normal completion at 837.8 seconds, restart verified
+  at 880.3 seconds, physical cleanup finished by 885.0 seconds. All 1,005 inputs
+  committed once, pending mail stayed empty after restart, and ten hot reads made
+  zero Core storage calls. R364's earlier 912.5-second restart is still a timed failure.
+- R380's actual Claude/Haiku model posted a Question but did not spawn the requested
+  child. It expired without that proof; authentication worked. R382 failed a harness
+  source-registration ordering guard before model work. Both services exited zero,
+  tasks/processes/ports settled, and both disposable roots were removed. R386 fixes
+  source setup before session activation and is running against frozen production.
+- Ares allocation 24927 is retired. Allocation 24932 reuses the same sole owned
+  environment and node-local worktree on ares-comp-07. Ownership receipts identify
+  every family process, port and path; final environment/worktree retirement remains.
+- Outstanding: affected storage live gates, Claude control paths, positive peer
+  backpressure, remaining provider/recovery combinations, an approved surviving
+  provider job, final UI/source-impact adjudication and replacement CI. R362's
+  isolated five-second status-read expiry remains unresolved; later passes do not
+  establish its cause. Candidate qualification and release GO remain incomplete.
+- Installed Desktop, authentication, defaults, released pins and unrelated work are
+  preserved. All existing rejected-cleanup/manual-only boundaries remain in force.
 
 ## Current execution — 2026-10-19 17:18 UTC
 

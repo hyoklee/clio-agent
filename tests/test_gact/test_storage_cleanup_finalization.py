@@ -149,7 +149,8 @@ def test_unexpected_index_worker_error_records_failure_and_settles(
         ).json()["id"]
         sid = client.post("/v1/sessions", json={"workspace_id": wid}).json()["id"]
         source = client.post(
-            f"/v1/workspaces/{wid}/sources", json={"provider": "local", "root": str(upstream)}
+            f"/v1/workspaces/{wid}/sources",
+            json={"provider": "local", "root": str(upstream), "label": "Failing owned source"},
         )
         assert source.status_code == 201, source.text
         response = client.post(
