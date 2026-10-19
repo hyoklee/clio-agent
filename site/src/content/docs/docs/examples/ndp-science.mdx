@@ -3,10 +3,92 @@ title: Scientific questions for NDP
 description: Questions spanning snow, fire, habitat and hydrology, with explicit data and validation requirements.
 ---
 
+import Capture from '../../../../components/overview/Capture';
+import { captureImage } from '../../../../lib/captures';
+import altaResults from '../../../../assets/tutorials/ndp/alta-native-results.png';
+import tahoeArea from '../../../../assets/tutorials/ndp/tahoe-native-area.png';
+
 Ask for the scientific result. You do not need to name a skill, supply operation
 IDs, or prescribe the intermediate tool calls. CLIO should discover appropriate
 collections, obtain measurements, check their meaning and produce inspectable
 analysis. Finding a catalog entry is only the first step.
+
+NDP can discover and provide access to a collection whose original publisher
+hosts the files. Alta's citations therefore still point to the University of
+Utah's Hive, and Tahoe's to TRPA. Keep both the NDP dataset/resource identities
+and the publisher's attribution: a publisher citation alone does not establish
+which acquisition path succeeded. A useful session records the selected
+resources, successful read/download, source hashes, methods and actual results.
+
+## Two recorded investigations
+
+These development-build conversations used Sol 6.1 with high reasoning on
+19 October 2026. Each started with an empty scientific workspace and a saved
+public NDP catalog connection. The prompts below supplied no skills, tools,
+resource IDs or analysis procedures. Both conversations contain three questions;
+their complete tool histories and scientific calculations were reviewed.
+They are selected examples, not a reliability estimate for every model or dataset.
+
+### Alta: from a seasonal total to monthly explanations
+
+1. “How unusual was the 2023–24 snowfall total at Alta-Collins compared with the historical winters available through NDP? Show the comparison and explain any coverage limits.”
+2. “Was that driven by especially snowy months, or was snowfall elevated throughout the winter? Let me explore the monthly comparison.”
+3. “Can a colleague reproduce the seasonal and monthly comparisons outside CLIO? Package the source data, results and methods, and check that a clean extracted copy reruns.”
+
+The measured October–April total was **635.5 inches**, sixth among 18 winters
+with complete coverage, including 2023–24. Seven earlier winters lack October
+observations. The follow-up found elevated January–March snowfall alongside
+below-baseline totals in the other months. The explorer switches between a
+matched set of complete winters and all available complete months; those
+baselines answer different questions.
+
+<Capture client:visible image={await captureImage(altaResults)}
+  alt="Actual exported Alta conversation results with all 25 seasonal bars, baseline and month controls, monthly comparison charts and a coverage table"
+  caption="Actual native HTML export from the three-question Sol 6.1 session. NDP acquired the original Hive measurements and READMEs. This is a product screenshot, not an interface fixture. Development UI, 19 October 2026." />
+
+The analysis package includes the original measurements and READMEs, a portable
+standard-library Python script, derived tables, methods and checksums. An
+independent clean extraction reproduced all three result CSVs byte-for-byte.
+One station and one winter do not establish a climate trend.
+
+### Tahoe: from mapped area to shoreline sensitivity
+
+1. “Can NDP’s Lake Tahoe boundary tell us the lake’s surface area? Make a map and show how you measured it.”
+2. “How much does the estimated shoreline length depend on map detail? Show a comparison at several resolutions.”
+3. “Can a colleague reproduce both the area and shoreline comparisons outside CLIO? Package the source boundary, results and methods, and check that the files open and the analysis reruns.”
+
+The TRPA polygon acquired through NDP encloses **497.7 km²**. Its original mapped
+perimeter is **123.05 km**; simplifying the geometry with a 100-metre tolerance
+reduces that to **112.67 km**. The follow-up compares ten settings and matched
+shoreline views. That tolerance describes geometric simplification, not survey
+accuracy or image resolution.
+
+<Capture client:visible image={await captureImage(tahoeArea)}
+  alt="Actual native-export image viewer displaying the complete Tahoe equal-area measurement figure, its grid method and original scientific caveats"
+  caption="Actual native-export fullscreen viewer. The model produced this scientific figure from the NDP-acquired TRPA polygon; the screenshot records the real viewer. The complete figure and its caveats remain visible. Development UI, 19 October 2026." />
+
+The portable package includes the original GeoJSON, provenance, pinned Python
+dependencies, both analyses, an offline report and automated checks. An
+independent extracted rerun reproduced the numerical results and both images on
+the tested Windows host. The source does not establish its survey date, reference
+water level or island exclusions. This measures the mapped footprint, not
+today's water extent or the basin's wetland/riparian acreage.
+
+### Share the conversation and the reproducible work
+
+Use **Export session → Download HTML** for the full conversation, tool activity,
+loaded skills and captured interactive results. Share the scientific analysis ZIP
+alongside that HTML: a transcript export does not include every artifact file.
+The two analysis ZIPs above were tested from clean extracted copies outside CLIO.
+First-time installation of Tahoe's pinned dependencies needs internet access or
+a prepared package cache; its calculations then run offline.
+
+Artifact-inclusive exports require every retained dependency to be available.
+The Alta review exposed an additional gap in earlier temporary UI-definition
+inputs, so its artifact-inclusive export is not qualified. Its native transcript
+HTML and separately verified scientific package remain distinct deliverables.
+Direct opening of the exported HTML from disk was not tested in the in-app
+browser; the actual HTML was reviewed through a local HTTP server.
 
 ## Snow and water
 
@@ -68,6 +150,12 @@ definitions as interchangeable. A service landing page is not a geometry file.
 
 Related questions:
 
+- Can NDP's Lake Tahoe boundary tell us the lake's surface area? Make a map and
+  show how it was measured. Then investigate how much the mapped shoreline length
+  changes with geometric detail. This is a boundary-measurement question; it does
+  not measure wetland acreage or today's water-covered surface. Inspect the
+  downloaded coordinate system and distinguish numerical agreement from survey
+  accuracy.
 - Which mapped habitat patches lie near the shoreline, and how does their area
   change with the chosen shoreline buffer? State the buffer definition and units.
 - How much of a mapped flood zone overlaps particular land-cover classes? Check
@@ -118,3 +206,10 @@ publication.
 These are a question bank, not a claim that every workflow has completed live
 acceptance. The checked-in verification report records exact prompts, model
 behavior, actual measurements, scientific outputs and failures separately.
+
+For a shareable investigation, use follow-up questions to test the result's
+coverage, sensitivity and provenance. Review the full conversation and its
+export, including failed reads, calculations and files that were not saved. A
+green tool row, truthful failure explanation or attractive map does not establish
+successful data acquisition. Keep failed trials in the benchmark; do not remove
+their failed operations to make a showcase look successful.
