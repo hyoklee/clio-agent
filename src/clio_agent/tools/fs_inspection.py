@@ -113,13 +113,12 @@ def search_text(
                     skipped += 1
                     continue
                 candidate = Path(entry.path) if isinstance(entry, os.DirEntry) else entry
-                if entry.is_dir(follow_symlinks=False):
+                mode = entry.stat(follow_symlinks=False).st_mode
+                if stat.S_ISDIR(mode):
                     if entry.name not in _SKIP_DIRS:
                         pending.append(policy.validate_read_directory(str(candidate)))
                     continue
-                if not entry.is_file(follow_symlinks=False) or not candidate.relative_to(
-                    root
-                ).match(file_glob):
+                if not stat.S_ISREG(mode) or not candidate.relative_to(root).match(file_glob):
                     continue
                 try:
                     approved = policy.validate_read(str(candidate))
@@ -145,7 +144,7 @@ def search_text(
                 for index, line in enumerate(lines):
                     if needle not in (line if case_sensitive else line.casefold()):
                         continue
-                    context = [
+                    context: list[dict[str, Any]] = [
                         {"line": number + 1, "text": lines[number][:500]}
                         for number in range(
                             max(0, index - context_lines),
