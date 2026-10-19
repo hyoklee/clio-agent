@@ -1,9 +1,10 @@
 """Filesystem MCP server for CLIO.
 
-Three curated tools that map onto the file_diff workflow GACT
-clients already render:
+Read-only repository inspection and the file_diff workflow GACT clients render:
 
     - read_file: pull a file's contents (capped at 256 KB).
+    - list_directory: discover immediate approved directory entries.
+    - search_text: inspect bounded literal matches and line-numbered context.
     - propose_edit: produce a unified diff against a candidate
       replacement WITHOUT touching disk. Returns the diff text;
       the GACT layer materialises it as a file_diff Part the user
@@ -13,7 +14,7 @@ clients already render:
       directly by the agent (the agent should call propose_edit).
       Path validation goes through file_policy.
 
-All three honor file_policy + workspace boundaries; reads are
+All tools honor file_policy + workspace boundaries; reads are
 always allowed inside the policy, writes go through the
 permission gate (apply_edit's name matches "edit"/"write" so the
 gate fires).
@@ -42,6 +43,8 @@ from clio_agent.tools.file_policy import (
     validate_read_path,
     validate_write_path,
 )
+from clio_agent.tools.fs_inspection import list_directory as _list_directory
+from clio_agent.tools.fs_inspection import search_text as _search_text
 from clio_agent.tools.fs_write import write_text_with_policy
 
 fs_server = FastMCP("fs")
@@ -63,6 +66,34 @@ _MAX_READ_BYTES = conf.resolve(
 #   - apply_edit_write: NOT read-only; a bounded, closed-world destructive write
 #     (a single known path), so it projects to the catalog ``write`` tag the
 #     auto-edits approval mode keys on.
+
+
+@fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)
+def list_directory(path: str, limit: int = 200) -> dict[str, Any]:
+    """List immediate entries in an absolute approved directory; does not follow links.
+
+    Use this to discover repository paths without guessing filenames or running shell.
+    Results explicitly report truncation at the requested entry limit (maximum 1,000).
+    """
+    return _list_directory(path, limit)
+
+
+@fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)
+def search_text(
+    path: str,
+    query: str,
+    file_glob: str = "*",
+    limit: int = 100,
+    context_lines: int = 2,
+    case_sensitive: bool = True,
+) -> dict[str, Any]:
+    """Search literal text below an absolute approved directory, with line-numbered context.
+
+    Use file_glob to narrow source files. Does not follow links, execute code or write.
+    Scan/result limits and incomplete files are explicit; no matches is not proof of absence
+    when truncated. Binary files and common dependency/Git directories are skipped.
+    """
+    return _search_text(path, query, file_glob, limit, context_lines, case_sensitive)
 
 
 @fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)

@@ -81,3 +81,13 @@ Do not simplify away a difficult relationship just to make syntax pass. State
 any remaining defect and distinguish an unavailable capture from a parser error.
 A renderer gallery tests the renderer; acceptance requires the model's own
 authored artifact and its actual captured pixels.
+
+Walk through each normal and exceptional path from its start to its outcome.
+Check that alternatives occur at the decision they represent: a failed or
+cancelled path must not first perform actions reserved for success. Confirm
+each arrow against the source; a module dependency, a call and a data transfer
+are different relationships. Label the chosen meaning rather than implying a
+call or ownership relationship from proximity or module names.
+Read the smallest labels in the captured viewing size. When they are too small,
+reduce label density, split the subject or adjust the view and inspect fresh
+pixels. Do not declare a captured diagram readable just because all nodes fit.

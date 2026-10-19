@@ -215,6 +215,12 @@ TOOL_CATALOG: dict[str, ToolCatalogEntry] = {
     "fs_read_file": _builtin_entry(
         "fs_read_file", "workspace", {"workspace"}, domain="workspace", planner_visible=False
     ),
+    "fs_list_directory": _builtin_entry(
+        "fs_list_directory", "workspace", {"workspace"}, domain="workspace", planner_visible=False
+    ),
+    "fs_search_text": _builtin_entry(
+        "fs_search_text", "workspace", {"workspace"}, domain="workspace", planner_visible=False
+    ),
     "fs_apply_edit_write": _builtin_entry(
         "fs_apply_edit_write", "workspace", {"workspace"}, domain="workspace", planner_visible=False
     ),
