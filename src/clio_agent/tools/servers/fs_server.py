@@ -87,7 +87,7 @@ def search_text(
     context_lines: Annotated[int, Field(ge=0, le=50)] = 2,
     case_sensitive: bool = True,
 ) -> dict[str, Any]:
-    """Search literal text below an absolute approved directory, with line-numbered context.
+    """Search literal text in an approved file or directory, with line-numbered context.
 
     Use file_glob to narrow source files. Does not follow links, execute code or write.
     Scan/result limits and incomplete files are explicit; no matches is not proof of absence

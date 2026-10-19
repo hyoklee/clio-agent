@@ -66,6 +66,19 @@ def test_literal_search_has_line_numbers_context_and_glob(approved: Path) -> Non
     )
 
 
+def test_single_file_search_does_not_scan_siblings(approved: Path) -> None:
+    source = approved / "core.py"
+    source.write_text("before\ndef resolve_command():\n    pass\n", encoding="utf-8")
+    (approved / "sibling.py").write_text("def resolve_command():\n", encoding="utf-8")
+    result = fs_inspection.search_text(str(source), "def resolve_command", context_lines=35)
+    assert result["path"] == str(source)
+    assert result["files_scanned"] == 1
+    assert result["entries_visited"] == 1
+    assert len(result["matches"]) == 1 and result["matches"][0]["line"] == 2
+    assert not result["truncated"]
+    assert not fs_inspection.search_text(str(source), "resolve_command", "*.md")["matches"]
+
+
 @pytest.mark.parametrize("tool", [fs_inspection.list_directory, fs_inspection.search_text])
 def test_read_tools_deny_outside_and_traversal(
     approved: Path, tool: Callable[..., dict[str, Any]]

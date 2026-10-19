@@ -6,6 +6,7 @@ import os
 import stat
 import time
 from collections import deque
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +28,7 @@ _SKIP_DIRS = frozenset(
 )
 
 
-def _is_link(entry: os.DirEntry[str]) -> bool:
+def _is_link(entry: os.DirEntry[str] | Path) -> bool:
     attributes = entry.stat(follow_symlinks=False)
     return stat.S_ISLNK(attributes.st_mode) or bool(
         getattr(attributes, "st_file_attributes", 0)
@@ -77,7 +78,14 @@ def search_text(
     if len(query) > 1_000 or not 0 <= context_lines <= 50:
         raise ValueError("query is limited to 1,000 characters and context_lines to 0–50")
     policy = FileAccessPolicy.from_env()
-    root = policy.validate_read_directory(path)
+    single_file: Path | None = None
+    try:
+        root = policy.validate_read_directory(path)
+    except FilePolicyError as exc:
+        if exc.code != "not_a_directory":
+            raise
+        single_file = policy.validate_read(path)
+        root = single_file.parent
     pending = deque([root])
     matches: list[dict[str, Any]] = []
     visited = scanned = total_bytes = skipped = output_chars = 0
@@ -87,7 +95,8 @@ def search_text(
     needle = query if case_sensitive else query.casefold()
     while pending and not reason:
         directory = pending.popleft()
-        with os.scandir(directory) as iterator:
+        scanner = os.scandir(directory) if single_file is None else nullcontext(iter([single_file]))
+        with scanner as iterator:
             for entry in iterator:
                 visited += 1
                 if (
@@ -103,7 +112,7 @@ def search_text(
                 if _is_link(entry):
                     skipped += 1
                     continue
-                candidate = Path(entry.path)
+                candidate = Path(entry.path) if isinstance(entry, os.DirEntry) else entry
                 if entry.is_dir(follow_symlinks=False):
                     if entry.name not in _SKIP_DIRS:
                         pending.append(policy.validate_read_directory(str(candidate)))
@@ -166,7 +175,7 @@ def search_text(
                 if reason:
                     break
     return {
-        "path": str(root),
+        "path": str(single_file or root),
         "query": query,
         "matches": matches,
         "files_scanned": scanned,
