@@ -88,7 +88,10 @@ a distinct persistence gap: a confirmed Question answer could be replaced before
 its callback checkpoint. The follow-up reads that authoritative answer first,
 preserves accepted control recording across later grant revocation, and expands
 constructed coverage to seven cases. The follow-up requires fresh CI and affected
-live recovery acceptance. R321 normal input was provider-blocked after acceptance;
+live recovery acceptance. The first CI inventory found one new-test contract
+error: task_handles returns a set, while the test expected a tuple. Both matching
+identity/count assertions now compare the exact singleton set; no production
+behavior, timeout or assertion strength changed. No local pytest loop was run. R321 normal input was provider-blocked after acceptance;
 its already accepted native operation completed without replay, but that does not
 pass the model gate.
 
