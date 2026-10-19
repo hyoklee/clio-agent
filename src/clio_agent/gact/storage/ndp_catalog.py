@@ -370,12 +370,20 @@ class NDPCatalog:
             dataset = self._results.get((endpoint_id, dataset_id))
         if dataset is None:
             raise ValueError("Search for this NDP dataset again before attaching it")
-        if (
-            not resources
-            or len(resources) != len(set(resources))
-            or not set(resources).issubset({item.id for item in dataset.resources})
-        ):
-            raise ValueError("Choose resources from this NDP dataset")
+        if not resources:
+            raise ValueError(
+                "Choose at least one resource ID from this NDP dataset's resource list"
+            )
+        if len(resources) != len(set(resources)):
+            raise ValueError("Repeated NDP resource IDs; include each selected resource only once")
+        unknown = set(resources) - {item.id for item in dataset.resources}
+        if unknown:
+            raise ValueError(
+                f"Unknown resource IDs for dataset {dataset.id}: {', '.join(sorted(unknown)[:5])}. "
+                "CLIO rejected this selection before contacting NDP. Search for the dataset "
+                "again with connected_data_search_ndp and copy its returned resources[].id "
+                "values exactly; names, paths and reconstructed IDs are not resource IDs."
+            )
         return dataset.model_copy(
             update={"resources": [item for item in dataset.resources if item.id in resources]}
         )

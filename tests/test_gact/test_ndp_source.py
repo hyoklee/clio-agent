@@ -170,8 +170,10 @@ def test_selection_rejects_injected_resource_and_write_mode(
 ) -> None:
     catalog = NDPCatalog()
     catalog.search("sea")
-    with pytest.raises(ValueError, match="Choose resources"):
+    with pytest.raises(ValueError, match="Unknown resource IDs") as error:
         catalog.selected("weather", "weather", ["http://unapproved.test/private"])
+    assert "before contacting NDP" in str(error.value)
+    assert "connected_data_search_ndp" in str(error.value)
     with pytest.raises(ValueError, match="again"):
         catalog.selected("other", "weather", ["stations"])
     service = StorageService(tmp_path / "sources", tmp_path / "private" / "credentials.json")
@@ -180,6 +182,22 @@ def test_selection_rejects_injected_resource_and_write_mode(
             "work",
             CreateSource(provider="ndp", label="Denied", root="dataset", mode="write_enabled"),
         )
+
+
+@pytest.mark.parametrize(
+    ("resources", "message"),
+    [([], "at least one resource ID"), (["stations", "stations"], "Repeated NDP resource IDs")],
+)
+def test_selection_errors_do_not_change_the_approved_resource_set(
+    catalog_http: tuple[str, list[str]], resources: list[str], message: str
+) -> None:
+    catalog = NDPCatalog()
+    catalog.search("sea")
+    with pytest.raises(ValueError, match=message):
+        catalog.selected("weather", "weather", resources)
+    assert [item.id for item in catalog.selected("weather", "weather", ["stations"]).resources] == [
+        "stations"
+    ]
 
 
 @pytest.mark.parametrize("choice", ["link", "download"])
