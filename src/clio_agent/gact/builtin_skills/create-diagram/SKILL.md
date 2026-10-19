@@ -34,8 +34,12 @@ there is no requirement to render every family. No additional syntax reference
 from this skill is needed. Mermaid remains the source language and component
 name; the bundled rendering library is an implementation detail.
 
-For a short explanation, a `mermaid` fenced block uses the same source language.
-For a composed saved report, `create-dashboard` covers publication and revision.
+When the user asks for diagrams, render them with the declared A2UI surface
+tools, including diagrams embedded in a short chat explanation. A `mermaid`
+fenced block displays source code; it does not create the visual. Return source
+instead when the user asks for Mermaid code or a Markdown export. If rendering
+is unavailable, explain the limitation rather than claiming the source was
+rendered. For a composed saved report, `create-dashboard` covers publication and revision.
 The catalog is the authority for source/artifact inputs, controls, themes,
 navigation and limitations. Do not invent component properties from library APIs.
 
