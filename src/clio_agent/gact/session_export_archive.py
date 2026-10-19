@@ -11,10 +11,12 @@ import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from clio_agent import paths
 from clio_agent.gact.artifacts.export import register_export_gc_roots
 from clio_agent.gact.artifacts.registry import get_registry
-from clio_agent.gact.artifacts.storage import resolve_owned_artifact_path
+from clio_agent.gact.artifacts.storage import (
+    resolve_owned_artifact_path,
+    resolve_workspace_state_artifact_path,
+)
 from clio_agent.gact.session_export_viewer import write_archive_review
 from clio_agent.platform_paths import path_is_within, win_extended_path
 from clio_agent.tools.servers.shell_spill_store import spill_directory
@@ -254,16 +256,17 @@ def build_archive(
                     app, version, workspace_root=roots[0] if roots else None
                 )
                 candidate = Path(version.path).resolve() if version.path else None
-                # Materialized inputs and harness definitions live in this
-                # workspace's canonical state store, outside its project root.
-                # A recorded path does not authorize another workspace's state.
-                artifact_roots = [*roots]
-                if roots:
-                    artifact_roots.append(paths.workspace_state_dir(roots[0]).resolve())
-                source = owned or (
-                    candidate
-                    if candidate and any(path_is_within(candidate, root) for root in artifact_roots)
-                    else None
+                managed = resolve_workspace_state_artifact_path(
+                    version, workspace_root=roots[0] if roots else None
+                )
+                source = (
+                    owned
+                    or managed
+                    or (
+                        candidate
+                        if candidate and any(path_is_within(candidate, root) for root in roots)
+                        else None
+                    )
                 )
                 if source is not None:
                     source = Path(win_extended_path(source))

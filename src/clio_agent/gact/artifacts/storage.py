@@ -70,6 +70,29 @@ def resolve_owned_artifact_path(
     return artifact_store(app).resolve_owned_path(version, workspace_root=workspace_root)
 
 
+def resolve_workspace_state_artifact_path(
+    version: "ArtifactVersion", *, workspace_root: Path | None
+) -> Path | None:
+    """Resolve a hash-pinned reference within this workspace's managed state.
+
+    Materialized source resources live outside the project directory. Their
+    advertised artifact references must remain readable without granting access
+    to another workspace's state or to arbitrary recorded external paths.
+    Callers must verify the recorded hash when opening the returned file.
+    """
+    from clio_agent import paths  # noqa: PLC0415
+    from clio_agent.platform_paths import path_is_within, win_extended_path  # noqa: PLC0415
+
+    if workspace_root is None or not version.path or not version.sha256:
+        return None
+    source = Path(version.path).expanduser().resolve()
+    state_root = paths.workspace_state_dir(workspace_root).resolve()
+    if not path_is_within(source, state_root):
+        return None
+    source = Path(win_extended_path(source))
+    return source if source.is_file() else None
+
+
 def resolve_owned_artifact_or_raise(
     app: "FastAPI",
     version: "ArtifactVersion",
@@ -110,4 +133,5 @@ __all__ = [
     "harness_write_artifact_identity",
     "ingest_artifact_identity",
     "resolve_owned_artifact_path",
+    "resolve_workspace_state_artifact_path",
 ]

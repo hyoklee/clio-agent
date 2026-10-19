@@ -653,7 +653,8 @@ def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion)
     local object; a CMF receipt with no resolvable object is a typed 409
     ``artifact_store_unavailable``, raised by the storage owner); (2) the native
     ``cas`` compatibility rung (self-validating blob under
-    ``<root>/.clio/agent/artifacts/cas/``); (3) the referenced workspace path
+    ``<root>/.clio/agent/artifacts/cas/``); (3) hash-pinned files in this
+    workspace's canonical managed state; (4) the referenced project path
     (verified fallback; plain ``workspace-referenced`` 409s ``custody_not_cas``
     after the re-hash). Detection (the re-hash) is the universal guarantee
     (design §7). Runs on a worker thread; :func:`_artifact_error` HTTPExceptions
@@ -661,6 +662,7 @@ def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion)
     """
     from clio_agent.gact.artifacts.storage import (  # noqa: PLC0415
         resolve_owned_artifact_or_raise,
+        resolve_workspace_state_artifact_path,
     )
 
     root = _workspace_root(app, record.workspace_id)
@@ -670,7 +672,7 @@ def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion)
     if owned is not None:
         return _open_verify_stream(owned, version.sha256, version, record.name)
 
-    # Defence in depth: never read outside the workspace root (owner decision 10).
+    # Defence in depth: referenced bytes need a resolved owning workspace.
     # An UNRESOLVABLE root REFUSES the serve (typed ``containment_unresolved``) —
     # containment cannot be verified, so precision over recall (finding [5]).
     if root is None:
@@ -695,6 +697,12 @@ def _serve_bytes(app: FastAPI, record: ArtifactRecord, version: ArtifactVersion)
             # read anyway (detection is universal — self-heal/corruption is caught).
             return _open_verify_stream(blob, recorded_sha, version, record.name)
         # Blob absent (evicted / never ingested) — fall through to the referenced rung.
+
+    # Managed source inputs and harness definitions are hash-pinned in this
+    # workspace's canonical state store rather than its project directory.
+    managed = resolve_workspace_state_artifact_path(version, workspace_root=root)
+    if managed is not None:
+        return _open_verify_stream(managed, recorded_sha, version, record.name)
 
     # ---- Rung 2: referenced workspace path -----------------------------------
     source = Path(version.path) if version.path else None
