@@ -1,18 +1,22 @@
 # Tasks replacement acceptance ledger
 
-## Current evidence — 2026-10-19 01:55 UTC
+## Current evidence — 2026-10-19 02:54 UTC
 
-Current repair is a40af08b / GACT aca98ce4. The 0593f40a regression baseline
-passed all 24 jobs and 27 explicitly checked repair cases across three interpreters;
-50 exclusions per interpreter remain exclusions. Fresh a40af08b CI and both
-independent repair reviews are underway. R258 has actual-model Download overlap
-and complete byte/hash/manifest adjudication; its original checker failure is
-retained. It also demonstrated the artifact-observer defect repaired in a40af08b.
-R261 passed its model/physical checks and retained all five durable transform traces; the first-scope Core capture failed after chunk rollover. Direct multi-chunk Core acceptance remains pending. Astra-approved test setup corrections await fresh CI.
-R252 website layout passed six inspected desktop/phone views, not Q9 service acceptance.
-See [current status](task-replacement-current-status.md) for exact identities,
-counts, findings and cleanup receipts. Every required row below and **0/30**
-final race repetitions remains unaccepted until its full evidence is established.
+Current production is 4f34bb9b / GACT aca98ce4. The complete b1bdb185 CI inventory
+contains seven distinct failures. The five observer-fixture cases now pass. Both
+immediate-answer cases first reproduced the missed wake; all three approval
+publishers are now corrected. All six initial and seven final permission cases
+passed sequentially, including store-failure cleanup. Scoped Ruff/format, Linux
+Mypy and existing guards passed. Astra and actual Claude Code/Fable returned
+source GO for the combined correction. Fresh combined candidate CI remains due.
+
+R266 supplies actual Claude Stop/Question wake evidence: the original assignment
+resumed, one answer input was committed, and no duplicate arrived on a later turn.
+The model used the queued answer; no explicit result-tool read is claimed. Original
+R263 failures remain retained. Both services/tasks are settled and fresh data roots
+absent. R268/R269/R272 test roots are also absent. See the current-status document
+for exact identities, scope/impact boundaries and receipts. All full rows below
+and **0/30** final races remain unaccepted until their complete evidence is established.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 

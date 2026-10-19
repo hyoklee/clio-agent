@@ -1,31 +1,27 @@
 # Tasks replacement: finite live experiments
 
-## Current execution — 2026-10-19 01:55 UTC
+## Current execution — 2026-10-19 02:54 UTC
 
-Initial implementation/test construction are complete. Current a40af08b / GACT
-aca98ce4 repairs the actual async-observation failure found in R258; all existing
-execution owners remain. CI 39187370616 exposed the new test-construction errors;
-both are corrected in a test-only follow-up. Actual Fable returned source GO;
-Astra approved the corrected setup. Fresh test execution/final review remain due.
-The preceding 0593f40a baseline has 13,062 passes / 50 exclusions per
-interpreter and all nine repair cases explicitly passed on each interpreter.
+Current production is 4f34bb9b / GACT aca98ce4. Initial implementation/test
+construction are complete; regression repair and live qualification continue.
+The coordinated repair now has five passing observer cases, six passing initial
+permission cases, seven passing final cases, scoped checks and both source-review
+GOs. The complete b1bdb185 inventory is retained; fresh combined CI remains due.
 
-R258's original checker failure remains retained alongside independent verification
-of the actual completed transfer: 8,001 files, 36,124,063 bytes, exact selections
-and all hashes. R261 now exercises an outcome-led mission on production run_server,
-with confirmed Core provenance required for every tool observation. Its source,
-processes, ports and fresh D data were registered before launch. Its model/physical
-checks passed; the first-scope Core read missed the last event in _events/2.
-All five durable semantic events and the original raw failure remain retained;
-direct multi-chunk Core acceptance is still required. R257/R258/R261 data roots
-are absent, and each service exited 0 with no active task at cleanup.
+R266 passed actual Claude Stop/Question answer wake on production run_server,
+including physical turn retirement, an open Question after Stop, original-handle
+continuation, one confirmed answer input and no duplicate later. The queued answer
+was sufficient for the model; explicit get_task_result collection is not claimed.
+The canonical Core event reader captured all successful observed transforms.
+Original R263 failed prerequisites remain historical evidence. Both services exited
+zero, active tasks were empty and fresh roots are absent. R266's source impact to
+4f34bb9b is limited to unused folder/network approval paths and test cleanup.
 
-Keep the existing 120/600/900-second harness diagnostics, four-GiB commit reserve,
-actual returned provider check, and production launcher. Do not equate HTTP health
-with durable task readiness. Source remains frozen within each family. Respect
-all prior/manual-only rejections; no retry, delegation, parent deletion or archives.
-The complete Q1–Q9 matrix and **0/30** final races remain required. Details and
-bounded receipts are in [current status](task-replacement-current-status.md).
+Continue native/mixed, child/workflow, external/recovery, capacity and real UI
+families on frozen production tuples. Keep the production launcher, canonical Core
+reader, 120/600/900-second diagnostics, four-GiB commit reserve, actual provider
+checks, process manifests and post-family cleanup. Q1–Q9 and **0/30** final races
+remain unaccepted. No engine, fallback, budget or relay scope is added.
 
 ## Pre-integration evidence — October 18, 22:39 UTC
 
