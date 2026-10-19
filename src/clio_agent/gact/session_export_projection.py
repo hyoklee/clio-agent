@@ -6,6 +6,7 @@ from copy import deepcopy
 from typing import Any
 
 from clio_agent.gact.protocol.v3.message import transcript_entities
+from clio_agent.gact.ssh_recorded_presentation import legacy_ssh_presentation
 
 
 def archive_transcript_views(transcript: dict[str, Any]) -> dict[str, Any]:
@@ -26,7 +27,7 @@ def archive_transcript_views(transcript: dict[str, Any]) -> dict[str, Any]:
         for message in row["messages"]:
             for part in message.get("parts", []):
                 call_id = part.get("call_id")
-                value = part.get("presentation")
+                value = legacy_ssh_presentation(part) or part.get("presentation")
                 if not call_id or not value:
                     continue
                 previous = presentations.get(call_id, {})

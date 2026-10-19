@@ -1,12 +1,14 @@
 ---
 title: Scientific questions for NDP
-description: Questions spanning snow, fire, habitat and hydrology, with explicit data and validation requirements.
+description: Four multi-turn scientific conversations using NDP datasets and Endpoints, with downloadable HTML transcripts and explicit limitations.
 ---
 
 import Capture from '../../../../components/overview/Capture';
 import { captureImage } from '../../../../lib/captures';
 import altaResults from '../../../../assets/tutorials/ndp/alta-native-results.png';
 import tahoeArea from '../../../../assets/tutorials/ndp/tahoe-native-area.png';
+import konzaAssociation from '../../../../assets/tutorials/ndp/konza-association.png';
+import aresStations from '../../../../assets/tutorials/ndp/ares-station-comparison.png';
 
 Ask for the scientific result. You do not need to name a skill, supply operation
 IDs, or prescribe the intermediate tool calls. CLIO should discover appropriate
@@ -20,9 +22,38 @@ and the publisher's attribution: a publisher citation alone does not establish
 which acquisition path succeeded. A useful session records the selected
 resources, successful read/download, source hashes, methods and actual results.
 
-## Two recorded investigations
+## Download the four conversations
 
-These development-build conversations used Sol 6.1 with high reasoning on
+These standalone HTML files include the conversation, figures, captured views
+and recorded tool activity, with their CSS and viewer embedded. Download a file
+and open it in a desktop browser; recipients do not need a CLIO account. The
+files are large because the saved results travel with the conversation.
+They show retained results; opening one does not connect to a private Endpoint
+or start a stream.
+
+| Conversation | User questions | Data path | Download |
+| --- | --- | --- | --- |
+| Alta-Collins snowfall | 3 | NDP discovery and acquisition of publisher-hosted observations | [HTML, about 40 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Alta-snowfall-session.html) |
+| Lake Tahoe area and shoreline | 3 | TRPA geometry acquired through NDP | [HTML, about 61 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Lake-Tahoe-session.html) |
+| Konza Prairie burn observations | 3 | Previously acquired NDP files and checked derived tables | [HTML, about 47 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Konza-session.html) |
+| Ares Endpoint and historical replay | 7 | SSH-connected Endpoint services, then a separate NDP replay service | [HTML, about 81 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Ares-Endpoint-session.html) |
+
+The examples use **Sol 6.1 with high reasoning**. Alta and Tahoe are selected
+conversations whose execution audits found no failed operations. Konza retains
+a recovered calculation error; Ares retains unavailable listing and protected
+operation failures. These have not been removed from the transcripts. Successful
+analysis does not make every attempted operation successful, and these selected
+examples are not a general model-reliability benchmark.
+
+**The stream example demonstrates historical replay and continuation without
+repeated observations. Protected live-stream access remains unresolved.** The
+native stream-interface interaction was performed by the operator and supplied
+to the final Ares question as an actual screenshot; it is distinct from the
+agent's own service calls.
+
+## Follow the investigations
+
+The Alta and Tahoe development-build conversations were recorded on
 19 October 2026. Each started with an empty scientific workspace and a saved
 public NDP catalog connection. The prompts below supplied no skills, tools,
 resource IDs or analysis procedures. Both conversations contain three questions;
@@ -73,6 +104,57 @@ independent extracted rerun reproduced the numerical results and both images on
 the tested Windows host. The source does not establish its survey date, reference
 water level or island exclusions. This measures the mapped footprint, not
 today's water extent or the basin's wetland/riparian acreage.
+
+### Konza: particles, wind and carbon dioxide
+
+1. “What do NDP's Konza burn observations actually show about particles, wind and CO₂? Give me a colleague-friendly explanation and a figure I can explore, with gaps and sensor limits visible. No dot separators in titles or captions.”
+2. “Are the biggest particle episodes also the largest CO₂ episodes, or does the answer depend on the time window? Quantify the comparison without implying that correlation proves a cause.”
+3. “Which conclusions are robust, and what additional measurements would most improve the explanation? Leave a concise summary and the key figures for a collaborator.”
+
+This conversation begins in an existing scientific workspace with files already
+downloaded through NDP and checked derived tables. It demonstrates follow-up
+analysis and interpretation, rather than fresh catalog discovery or an
+independent derivation from raw measurements. The preceding investigation checked
+the large wind and CO₂ archives, including multiple measurement packets within
+individual archive records.
+
+The strongest particle and CO₂ episodes overlap only partly. The figure compares
+958 paired minute observations and shows how descriptive correlations change
+with the chosen time window. Missing observations, quality flags and unverified
+clock synchronization limit interpretation. The particle inlet size is not
+documented, so these readings do not establish PM2.5, PM10 or AQI. Correlation
+does not establish a combustion source or a causal wind effect.
+
+<Capture client:visible image={await captureImage(konzaAssociation)}
+  alt="Agent-produced Konza figure showing paired particle and carbon-dioxide minute observations and correlations across different time windows"
+  caption="Actual saved scientific figure from the NDP-data investigation. All windows use the checked reductions; changing the window changes the descriptive association. The full transcript retains the recovered error and scientific caveats." />
+
+### Ares: an Endpoint, station services and replay
+
+The conversation starts with **“Can you connect to the NDP endpoint on ares
+(ssh ares)?”** and continues with six questions about its catalog, California
+stations, changes since 2005, available streams, continuation and a collaborator
+guide. Ares already had a running Endpoint; this example does not install or
+start one. The connection uses the configured SSH route to its loopback API.
+
+The Endpoint's EarthScope station service returned **1,247 California station
+identifiers for 19 October 2005** and **1,803 for 19 October 2026**, with **710
+shared identifiers**. The same California boundary and channel filters were
+used for both snapshots. These are operating epochs reconstructed from the
+current station-metadata archive; they do not verify waveform availability or
+uninterrupted station operation.
+
+<Capture client:visible image={await captureImage(aresStations)}
+  alt="Agent-produced map comparing California station metadata for 2005 and 2026 through the NDP Endpoint on Ares"
+  caption="Actual saved figure from the Endpoint conversation. Static outlines keep the geographic context visible offline. The comparison concerns station metadata, not measured ground displacement or waveform completeness." />
+
+The local Endpoint advertised no readable stream operation. A separate NDP
+service supplied archived station CSV replay: the agent read 30 observations
+and continued for ten more. In the native stream interface, the operator then
+captured records 40–42 and resumed at 43 for records 43–45. The six measurement
+timestamps were consecutive and unique. Pausing between these finite captures
+did not pause a remote producer. See [the stream guide](/docs/files/ndp-streams/)
+for limits, cursors, producer ownership and the unresolved protected-access path.
 
 ### Share the conversation and the reproducible work
 

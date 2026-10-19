@@ -32,6 +32,7 @@ def _catalog_id(service: StorageService, identifier: str) -> str:
     for endpoint in service.ndp.endpoints():
         if (
             not connection.ssh_profile
+            and connection.ssh_route is None
             and connection.url == endpoint.url
             and (connection.authentication == "ndp") == endpoint.authenticated
         ):

@@ -66,6 +66,7 @@ from clio_agent.gact.memory_tools import build_memory_tools
 from clio_agent.gact.plan_mode import build_plan_exit_tool
 from clio_agent.gact.recall_context_tool import build_recall_context_tool
 from clio_agent.gact.resource_tools import build_resource_tools
+from clio_agent.gact.ssh_tools import build_ssh_execute_tool
 from clio_agent.gact.storage.connect_tool import build_connected_data_connect_tool
 from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
 from clio_agent.gact.storage.ndp_endpoint_tools import build_ndp_endpoint_tools
@@ -157,6 +158,8 @@ def build_auto_react_tools(
         build_recall_context_tool(),
     ]
     declared = {str(name).strip() for name in (getattr(agent_def, "tools", None) or [])}
+    if "shell_bash" in declared and "ssh_execute" not in declared:
+        tools.append(build_ssh_execute_tool())
     if not (getattr(agent_def, "parent_id", "") or ""):
         # Root compatibility: automatic unless explicitly declared (the
         # declared-native resolver already attached the same tool) -- but ONLY

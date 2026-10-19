@@ -52,6 +52,16 @@ An observed replay on October 18, 2026 returned three records followed by two
 more, with measurement times **December 3, 2024, 00:00:00–00:00:04 UTC**. That is
 archived replay, despite being delivered through a stream today.
 
+The [seven-question Ares conversation](/docs/examples/ndp-science/#download-the-four-conversations)
+also records this distinction. Its local Endpoint supplied station metadata,
+while a separate replay service supplied archived station observations. After
+the agent's first 40 records, two actual native-interface captures read records
+40–42 and 43–45 using the returned cursors. All six measurement timestamps were
+unique and consecutive. This demonstrates continuation of finite archived reads;
+protected live-stream access was not established. The downloadable HTML retains
+the failed listing and protected-operation attempts alongside the successful
+replay, and includes the real operator capture of the stream interface.
+
 ## Own the producer you start
 
 A live bridge can register a derived dataset and forward an upstream topic.

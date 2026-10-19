@@ -384,6 +384,9 @@ def build_shell_tool_description(facts: ShellEnvFacts, limits: ShellLimits | Non
     """
     limits_text = _limits_text(limits or _SHELL_LIMITS)
     task_text = (
+        "For remote commands, use ssh_execute when available with the shared SSH profile "
+        "or jump route. Direct ssh in this local shell may be blocked by its network fence; "
+        "approval/bypass does not disable that fence. "
         "For files outside permitted folders, declare access_paths and access_reason so CLIO "
         "asks the user before execution. Include source and destination for moves. "
         "Already approved downloaded source inputs can be read at their returned paths "

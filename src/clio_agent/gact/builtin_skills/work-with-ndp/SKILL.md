@@ -19,6 +19,11 @@ Status's `ndp_catalogs` identifies catalogs for discovery; `ndp_endpoints`
 identifies saved services for operation queries. Dataset search returns the
 catalog ID to use for resource selection. Each source's `selection` identifies
 the exact approved dataset/resources, including documentation-only subsets.
+For a request to connect an NDP Endpoint on a named SSH host without a URL,
+`connected_data_ndp_endpoint_connect(name=..., ssh_profile=...)` discovers the
+existing API through the approved connector. Do not guess its port or attempt
+shell SSH to perform that setup. Read `references/services-and-streams.md` for
+custom routes, explicit URLs and discovery limits.
 NDP-specific tools are available only when this workspace has a connected NDP
 dataset or a visible saved Endpoint. If absent, direct the user to **Attach >
 NDP** to select a dataset or connect an Endpoint, then continue on the next
@@ -28,6 +33,9 @@ Connecting starts a metadata index. After its task completes, list and read the
 selected resources with `connected_data_open` using its default `linked=true`.
 For shell/Python analysis, use the approved `connected_data_download` task, then
 use the materialized paths or open with `linked=false` and the returned revision.
+Downloads stream to disk with an 8 GiB ceiling per selected resource; linked-file
+reads have a separate 512 MiB limit. For large analysis, download first and process
+incrementally rather than loading the entire file into memory.
 Linked and downloaded manifests have different revisions; do not interchange them.
 Returned downloaded paths are approved read inputs even outside the workspace.
 Do not request shell `access_paths` for those reads: it requests broader folder
@@ -106,7 +114,8 @@ Accepted indexing/download tasks have durable handles: wait for their results,
 don't resubmit while they run. A successful query, upload or producer start is
 only that stage's result. Inspect actual bytes, record identities/revisions and
 hashes, and report what was observed. For scientific results, verify units,
-measurement time coverage and missing values; visually inspect derived figures.
+measurement framing, time coverage and missing values; visually inspect derived
+figures.
 
 ## Bundled helpers
 

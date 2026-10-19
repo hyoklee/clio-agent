@@ -80,6 +80,14 @@ folder path or resubmit an accepted download. NDP originals stay intact; create
 separate derivatives in the workspace. A downloaded historical copy is not a
 current upstream read after disconnection.
 
+Downloads stream in bounded chunks with an 8 GiB ceiling per resource. Capacity,
+cancellation and complete-snapshot publication belong to the transfer task; its
+success does not mean the file was loaded into the model or into RAM. Linked-file
+reads retain their separate 512 MiB ceiling. Use a download for a larger approved
+resource, then inspect its format and process it incrementally. Preserve only the
+needed columns, intervals and aggregates rather than constructing an unbounded
+dataframe. A transfer-limit error is a CLIO size limit, not an NDP access denial.
+
 Use the returned downloaded input path directly for reads, even when CLIO stores
 it outside the workspace root. Shell `access_paths` requests broader folder
 permissions; it is not needed to read these approved inputs and cannot authorize
@@ -93,9 +101,16 @@ Choose analysis from actual data, not format assumptions:
 | Data | Checks before computing |
 | --- | --- |
 | Time series | Measurement time vs capture time, timezone/epoch encoding, cadence, gaps, duplicates, component names and units. GNSS components may differ in scaling and reference frame. |
+| Instrument log / packet archive | A stored record may contain zero, one or several measurement frames. Inspect framing and device timestamps; retain complete frames and diagnose duplicates/truncation. Envelope/readout time and record count are not automatically measurement time and sample count. |
 | HDF5 / NetCDF / array output | Group/variable names, dimensions, coordinate conventions, units, fill values, chunking and requested subset. Inspect metadata before reading an entire large array. |
 | Spatial/station records | Coordinate reference, channel/network/station identifiers, geometry and station epochs. Metadata rows are not waveform or displacement samples. |
 | Service or stream response | Actual payload schema, status/control events, measurement timestamps and whether data is replay or current acquisition. See `services-and-streams.md`. |
+
+Repeated measurement fields can represent successive frames, not duplicate
+metadata keys. Do not silently reduce them to the first or last value in a
+dictionary. State which clock and observation unit an aggregate uses, and verify
+the logical sample counts before aligning instruments or interpreting missing
+observations.
 
 Use existing installed readers and the relevant analysis/visualization skills;
 don't execute downloaded notebooks or deserialize executable objects merely to

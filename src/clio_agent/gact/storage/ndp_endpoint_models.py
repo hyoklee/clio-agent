@@ -8,6 +8,7 @@ from urllib.parse import unquote, urlsplit
 
 from pydantic import Field, model_validator
 
+from clio_agent.gact.infrastructure.models import SshRoute
 from clio_agent.gact.storage.models import StorageModel
 from clio_agent.gact.storage.ndp_catalog import NDPEndpoint
 
@@ -18,6 +19,7 @@ class EndpointConnectionInput(StorageModel):
     name: str = Field(min_length=1, max_length=120)
     url: str = Field(max_length=4096)
     ssh_profile: str = ""
+    ssh_route: SshRoute | None = None
     authentication: Literal["none", "ndp"] = "none"
 
     @model_validator(mode="after")
@@ -25,8 +27,14 @@ class EndpointConnectionInput(StorageModel):
         """Bind authentication to a reviewed destination and SSH to a trusted local port."""
         self.url = NDPEndpoint.validate_url(self.url)
         parsed = urlsplit(self.url)
-        if self.ssh_profile:
-            if not re.fullmatch(r"[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,159}", self.ssh_profile):
+        if self.ssh_profile and self.ssh_route is not None:
+            raise ValueError("Choose one SSH route, not both a route and a legacy profile")
+        if self.ssh_route is not None and not (self.ssh_route.profile or self.ssh_route.host):
+            raise ValueError("Choose an SSH destination")
+        if self.ssh_profile or self.ssh_route is not None:
+            if self.ssh_profile and not re.fullmatch(
+                r"[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,159}", self.ssh_profile
+            ):
                 raise ValueError("Choose an existing SSH profile on the connected CLIO")
             if parsed.scheme != "http" or parsed.hostname not in {"localhost", "127.0.0.1", "::1"}:
                 raise ValueError("For SSH, use the Endpoint's remote loopback HTTP URL")
@@ -54,6 +62,7 @@ class EndpointConnectionUpdate(StorageModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     url: str | None = Field(default=None, max_length=4096)
     ssh_profile: str | None = None
+    ssh_route: SshRoute | None = None
     authentication: Literal["none", "ndp"] | None = None
     hidden: bool | None = None
 
@@ -114,3 +123,4 @@ class EndpointCapture(StorageModel):
     endpoint_name: str = ""
     endpoint_url: str = ""
     ssh_profile: str = ""
+    ssh_route: SshRoute | None = None

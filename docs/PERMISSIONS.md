@@ -210,6 +210,36 @@ cannot enforce these exclusions, shell execution fails before starting a child.
 
 ### Network chokepoint + deny mode (#978/#979)
 
+Agents with `shell_bash` also receive `ssh_execute` for remote commands. An
+agent may explicitly declare `ssh_execute` without receiving local shell
+access. Read-only side sessions do not receive this effectful tool. It reuses
+the shared SSH profile/custom route and jump chain, existing keys/agent and
+strict known-host verification. Approval names the route and exact remote
+command before connecting; **Bypass checks** records the usual automatic
+approval. Private keys are not copied into the shell workspace.
+
+This is a trusted SSH transport operation, separate from a local shell's
+HTTP-proxy network fence. A raw `ssh` subprocess does not automatically use
+HTTP proxy variables, so approving a local shell command alone cannot make
+its direct TCP connection work. The managed `ssh_execute` connector provides
+finite remote execution through CLIO's configured routes. Ordinary shell SSH
+is still a valid capability, but proxy integration for the enforced network
+route remains unresolved; this tool does not establish Bash/OpenSSH parity.
+Use the NDP connector for NDP service operations. Neither requires disabling
+the local sandbox. Remote commands run with the SSH account's permissions;
+the local workspace write fence does not constrain the remote filesystem.
+The tool captures both output streams, spills large output into session-owned
+files and reports the real exit status. Its finite command deadline or
+cancellation closes the SSH channel, but does not prove remote descendants
+stopped; inspect remote state before retrying an uncertain command.
+
+The normal tool catalog describes its command, profile/custom route, command
+deadline and output limits. Its typed result contains the normalized route,
+stdout/stderr, exit status, stop reason, truncation flags and optional spill
+receipts. Command input and actual output use the existing terminal blocks,
+including an explicit empty-capture message when both streams are empty.
+See [SSH contract and qualification](verification/ssh-agent-execution-2026-10-19.md#contract-and-presentation-follow-up).
+
 Child egress defaults to **ALLOW + RECORD**: every spawned child routes through one
 clio-owned CONNECT-only proxy (`runtime/net_chokepoint.py`), and each connection is
 recorded as a trace-only `net.egress` event and joined into provenance as a

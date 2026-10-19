@@ -21,6 +21,7 @@ import httpx
 import pytest
 
 from clio_agent.gact.artifacts.registry import ArtifactRegistry
+from clio_agent.gact.infrastructure.models import SshRoute
 from clio_agent.gact.resource_custody import ResourceStore
 from clio_agent.gact.skills import SkillCatalog, read_skill_body
 from clio_agent.gact.storage import ndp_artifact_upload, ndp_endpoint_tools, ndp_endpoint_transport
@@ -425,8 +426,9 @@ def test_invalid_selection_refuses_before_upload(tmp_path: Path, peer: str, prob
     assert CatalogPeer.writes == 0
 
 
+@pytest.mark.parametrize("shared_route", [False, True])
 def test_ssh_transport_streams_multipart_over_one_closed_channel(
-    tmp_path: Path, peer: str, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, peer: str, monkeypatch: pytest.MonkeyPatch, shared_route: bool
 ) -> None:
     """Exercise real HTTP framing over a test socket standing in for an SSH channel."""
     clients = []
@@ -449,15 +451,37 @@ def test_ssh_transport_streams_multipart_over_one_closed_channel(
             self.closed = True
 
     monkeypatch.setattr(ndp_endpoint_transport, "connect_profile", lambda _: SSHPeer())
+    route = SshRoute(
+        host="compute.example",
+        user="scientist",
+        port=2222,
+        jump_hosts=["login.example"],
+        identity_file="D:/keys/science key",
+    )
+    seen: list[SshRoute] = []
+
+    def connect_route(choice: SshRoute) -> SSHPeer:
+        seen.append(choice)
+        return SSHPeer()
+
+    monkeypatch.setattr(ndp_endpoint_transport, "connect_route", connect_route)
     app, store = _app(tmp_path), SourceStore(tmp_path / "ledger")
     connection = NDPEndpointService(store, "tester").connect(
-        "ws", EndpointConnectionInput(name="Lab", url=peer, ssh_profile="test-profile")
+        "ws",
+        EndpointConnectionInput(
+            name="Lab",
+            url=peer,
+            ssh_profile="" if shared_route else "test-profile",
+            ssh_route=route if shared_route else None,
+        ),
     )
     identifier = _artifact(app, tmp_path, "result.csv", b"a,b\n1,2\n" * 200000)
     with prepare_artifact_upload(app, "ws", connection, identifier, "gnosis", "ssh") as upload:
         result = upload_artifact(store, connection, upload, None)
     assert result["state"] == "verified" and CatalogPeer.writes == 1
     assert clients and all(client.closed for client in clients)
+    assert (seen and all(choice == route for choice in seen)) if shared_route else not seen
+    assert result["ssh_route"] == (route.model_dump() if shared_route else None)
     reads = [headers for method, headers in CatalogPeer.requests if method == "GET"]
     assert reads and all(
         "transfer-encoding" not in {key.lower() for key in headers} for headers in reads
