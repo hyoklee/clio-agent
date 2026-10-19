@@ -22,6 +22,7 @@ import asyncio
 import concurrent.futures
 import contextvars
 import logging
+from collections.abc import Coroutine
 from typing import Any, Callable, Optional, TypeVar, cast
 
 from fastmcp.utilities.async_utils import call_sync_fn_in_threadpool
@@ -61,6 +62,23 @@ async def join_off_loop(fn: Callable[..., T], *args: Any, **kwargs: Any) -> T:
     It does not turn a cancelled waiter into proof that its thread has exited.
     """
     worker = asyncio.create_task(call_sync_fn_in_threadpool(fn, *args, **kwargs))
+    cancellation: asyncio.CancelledError | None = None
+    while True:
+        try:
+            result = await asyncio.shield(worker)
+            break
+        except asyncio.CancelledError as error:
+            cancellation = error
+            if worker.cancelled():
+                raise
+    if cancellation is not None:
+        raise cancellation
+    return result
+
+
+async def join_cleanup(cleanup: Coroutine[Any, Any, T]) -> T:
+    """Finish one owned cleanup operation before propagating caller cancellation."""
+    worker = asyncio.create_task(cleanup)
     cancellation: asyncio.CancelledError | None = None
     while True:
         try:

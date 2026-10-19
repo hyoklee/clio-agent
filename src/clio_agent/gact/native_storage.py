@@ -19,7 +19,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.errors import ClioError
 from clio_agent.gact.native_work import NativeWork, WorkEvidence, now
-from clio_agent.gact.off_loop import join_off_loop
+from clio_agent.gact.off_loop import join_cleanup, join_off_loop
 from clio_agent.gact.storage.connect_tool import prepare_connect
 from clio_agent.gact.storage.globus import GlobusSource
 from clio_agent.gact.storage.identity import source_submission_identity
@@ -212,69 +212,75 @@ def register_native_storage(
                     progress=lambda done, total: progress(context, done, total, "bytes"),
                 )
             finally:
-                settled = await join_off_loop(
-                    service.store.get, "operation", operation.id, TransferOperation
-                )
-                if (
-                    settled.state in {"completed", "failed", "cancelled"}
-                    and settled.provider_cleanup_confirmed
-                ):
-                    drafts = getattr(app.state, "source_drafts", None)
-                    if drafts is not None:
-                        await join_off_loop(drafts.cleanup)
-                    evidence.confirm_cleanup()
-                    if previous_publication_absent:
 
-                        def confirm_previous() -> None:
-                            with work.history.serialized():
-                                for attempt in work.history.native_attempts(context.handle):
-                                    if (
-                                        attempt.incarnation
-                                        not in continuation.previous_incarnations
-                                        or attempt.cleanup_state in {"confirmed", "never_started"}
-                                    ):
-                                        continue
-                                    receipt = work.history.write_content(
-                                        context.owner.session_id,
-                                        {
-                                            "incarnation": attempt.incarnation,
-                                            "execution_key": attempt.execution_key,
-                                            "provider_job_id": continuation.provider_job_id,
-                                            "continuation": context.reference,
-                                            "previous_local_execution_retired": True,
-                                            "previous_publication_absent": True,
-                                            "provider_and_staging_settled": True,
-                                        },
-                                    )
-                                    work.history.record_attempt(
-                                        attempt.model_copy(
-                                            update={
-                                                "cleanup_state": "confirmed",
-                                                "cleanup_receipt": receipt,
-                                                "finished_at": now(),
-                                            }
-                                        )
-                                    )
-
-                        async def retain_previous_evidence() -> None:
-                            await join_off_loop(confirm_previous)
-
-                        try:
-                            await retain_previous_evidence()
-                        except (ClioError, OSError, TimeoutError, RecordingUnconfirmed):
-                            work.recovery.defer(
-                                "provider-predecessor-cleanup:" + context.reference,
-                                retain_previous_evidence,
-                            )
-                if retired or not settled.provider_cleanup_confirmed:
-                    evidence.retire_provider_observer(
-                        {
-                            "operation_id": settled.id,
-                            "source_id": settled.source_id,
-                            "provider_job_id": settled.native_job_id,
-                            "publication_started_at": settled.publication_started_at,
-                        }
+                async def finalize() -> TransferOperation:
+                    settled = await join_off_loop(
+                        service.store.get, "operation", operation.id, TransferOperation
                     )
+                    if (
+                        settled.state in {"completed", "failed", "cancelled"}
+                        and settled.provider_cleanup_confirmed
+                    ):
+                        drafts = getattr(app.state, "source_drafts", None)
+                        if drafts is not None:
+                            await join_off_loop(drafts.cleanup)
+                        evidence.confirm_cleanup()
+                        if previous_publication_absent:
+
+                            def confirm_previous() -> None:
+                                with work.history.serialized():
+                                    for attempt in work.history.native_attempts(context.handle):
+                                        if (
+                                            attempt.incarnation
+                                            not in continuation.previous_incarnations
+                                            or attempt.cleanup_state
+                                            in {"confirmed", "never_started"}
+                                        ):
+                                            continue
+                                        receipt = work.history.write_content(
+                                            context.owner.session_id,
+                                            {
+                                                "incarnation": attempt.incarnation,
+                                                "execution_key": attempt.execution_key,
+                                                "provider_job_id": continuation.provider_job_id,
+                                                "continuation": context.reference,
+                                                "previous_local_execution_retired": True,
+                                                "previous_publication_absent": True,
+                                                "provider_and_staging_settled": True,
+                                            },
+                                        )
+                                        work.history.record_attempt(
+                                            attempt.model_copy(
+                                                update={
+                                                    "cleanup_state": "confirmed",
+                                                    "cleanup_receipt": receipt,
+                                                    "finished_at": now(),
+                                                }
+                                            )
+                                        )
+
+                            async def retain_previous_evidence() -> None:
+                                await join_off_loop(confirm_previous)
+
+                            try:
+                                await retain_previous_evidence()
+                            except (ClioError, OSError, TimeoutError, RecordingUnconfirmed):
+                                work.recovery.defer(
+                                    "provider-predecessor-cleanup:" + context.reference,
+                                    retain_previous_evidence,
+                                )
+                    if retired or not settled.provider_cleanup_confirmed:
+                        evidence.retire_provider_observer(
+                            {
+                                "operation_id": settled.id,
+                                "source_id": settled.source_id,
+                                "provider_job_id": settled.native_job_id,
+                                "publication_started_at": settled.publication_started_at,
+                            }
+                        )
+                    return settled
+
+                settled = await join_cleanup(finalize())
             latest = await join_off_loop(service.get, record.source.workspace_id, record.source.id)
             return await join_off_loop(result, latest, settled)
 
@@ -516,27 +522,32 @@ def register_native_storage(
                     shutdown_requested=lambda: native._closing,
                 )
             finally:
-                settled = await join_off_loop(
-                    service.store.get, "operation", operation.id, TransferOperation
-                )
-                if settled.state in {"completed", "failed", "cancelled"} and (
-                    record.source.provider != "globus" or settled.provider_cleanup_confirmed
-                ):
-                    drafts = getattr(app.state, "source_drafts", None)
-                    if drafts is not None:
-                        await join_off_loop(drafts.cleanup)
-                    evidence.confirm_cleanup()
-                if record.source.provider == "globus" and (
-                    retired or not settled.provider_cleanup_confirmed
-                ):
-                    evidence.retire_provider_observer(
-                        {
-                            "operation_id": settled.id,
-                            "source_id": settled.source_id,
-                            "provider_job_id": settled.native_job_id,
-                            "publication_started_at": settled.publication_started_at,
-                        }
+
+                async def finalize() -> TransferOperation:
+                    settled = await join_off_loop(
+                        service.store.get, "operation", operation.id, TransferOperation
                     )
+                    if settled.state in {"completed", "failed", "cancelled"} and (
+                        record.source.provider != "globus" or settled.provider_cleanup_confirmed
+                    ):
+                        drafts = getattr(app.state, "source_drafts", None)
+                        if drafts is not None:
+                            await join_off_loop(drafts.cleanup)
+                        evidence.confirm_cleanup()
+                    if record.source.provider == "globus" and (
+                        retired or not settled.provider_cleanup_confirmed
+                    ):
+                        evidence.retire_provider_observer(
+                            {
+                                "operation_id": settled.id,
+                                "source_id": settled.source_id,
+                                "provider_job_id": settled.native_job_id,
+                                "publication_started_at": settled.publication_started_at,
+                            }
+                        )
+                    return settled
+
+                settled = await join_cleanup(finalize())
             latest = await asyncio.to_thread(service.get, record.source.workspace_id, source_id)
             return await asyncio.to_thread(result, latest, settled)
 
@@ -629,11 +640,16 @@ def register_native_storage(
         try:
             await run_index(service, record, operation, report_progress=report)
         finally:
-            settled = await join_off_loop(
-                service.store.get, "operation", operation.id, TransferOperation
-            )
-            if settled.state in {"completed", "failed", "cancelled"}:
-                evidence.confirm_cleanup()
+
+            async def finalize() -> TransferOperation:
+                settled = await join_off_loop(
+                    service.store.get, "operation", operation.id, TransferOperation
+                )
+                if settled.state in {"completed", "failed", "cancelled"}:
+                    evidence.confirm_cleanup()
+                return settled
+
+            settled = await join_cleanup(finalize())
         latest = await asyncio.to_thread(
             service.store.get, "source", record.source.id, SourceRecord
         )

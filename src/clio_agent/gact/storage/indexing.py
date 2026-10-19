@@ -106,12 +106,10 @@ async def run_index(
     interrupted = False
     while not worker.done():
         try:
-            await asyncio.shield(worker)
+            await asyncio.wait({worker})
         except asyncio.CancelledError:
             interrupted = True
             service.store.update_operation(operation.id, cancel_requested=True)
-        except (InterruptedError, OSError, ValueError, RuntimeError):
-            break  # Inspect the actual joined worker result below.
     try:
         worker.result()
     except InterruptedError as exc:

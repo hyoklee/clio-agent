@@ -1,74 +1,60 @@
 # Tasks replacement acceptance ledger
 
-## Active live execution — 2026-10-19 18:49 UTC
+## Active live execution — 2026-10-19 19:17 UTC
 
-Initial implementation and test construction are complete. This phase is actual
-production-service/model/UI qualification and bug repair; no local pytest/Vitest
-suite ran in this execution period.
+Initial implementation and initial test construction are complete. This phase is
+live qualification and bug repair. No local pytest/Vitest loop ran in this period.
 
-- Candidate: agent `acbe5cd4b886e8d87abc7a24b03c39b71d5a0655`, GACT
-  `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb`. Python production bytes are unchanged
-  from 52cc. Agent CI39296275978 passed all24jobs; each interpreter (3.12/3.13/3.14)
-  reports13,081passes/zero failures/50exclusions. Allseven agent workflows passed.
-  GACT workspace39296213548 passed six jobs, with three conditional publication
-  job skips. Exclusions and publication skips are not executed test passes.
-- This revision adds a coordinated repair batch from live findings: query reads
-  use the existing confirmed passive view and finite SDK I/O resource instead of
-  waiting on the durable-writer lane. Authorization and Core writing are unchanged.
-  Explicit connected_data_download declarations resolve through the same builtin,
-  with duplicate auto-attachment suppressed. Three new public-contract regressions
-  are constructed; execution is delegated to CI. The green acbe result above is the
-  baseline, not acceptance of these new repairs. Live R358 remains frozen on acbe.
-- Astra and actual Claude Code/Fable cleared the acbe baseline. Both rejected
-  repair head 076e for the same new lock inversion: query held the view lock while
-  task_order still took the writer lock. This revision corrects that helper to the
-  existing view lock; the query call graph uses only passive, view-locked indexes.
-  The rejected head was never deployed to live services. Fresh independent review,
-  CI and affected live cancellation/query checks remain required.
-- R341 passed allfive fresh R3 busy-to-idle arrival races with actual Luna,
-  confirmed recipient-input commitment once, normal service exit and cleanup.
-- R342 passed four R6 cases. The fifth parent omitted commands in its child
-  assignment, so the child correctly asked for clarification. The raw family is
-  failed, not five passes; all accepted work/processes/data were settled/removed.
-- R347 on Ares/Core2.3.2 passed the scoped goal/dependency/Question contract:
-  progress/partial results do not wake, feedback/answers bypass dependencies,
-  one assignment, one delivery per outcome, real bytes/hashes and actual model
-  judge completion. The raw controller remains failed because it demanded four
-  explicit submits; three default yields plus a direct final response were valid.
-  Independent evidence checks are in `r347-qualified-scope.json`; data is removed.
-- R343 exercised current real UI restart, pause, held steering, resume, inherited
-  descendant cancellation, Question answer and parent reports. Its driver failed
-  an exact-label select lookup. R352 passed the focused desktop/phone grant,
-  keyboard revocation, containment and clean-browser checks against the retained
-  real service. Inspected/hash-matched website screenshots are updated locally.
-  `Q9-current-ui-scope.json` states the limits; no full Q4/Q9 blanket pass.
-  Independent evidence review supports the Q3/grant scopes, but found the explicit
-  no-replay invocation guard did not execute after the UI assertion. That stronger
-  claim is withdrawn and remains a fresh live obligation.
-- R350 was an OS-command harness failure before workload effects. R353 reached
-  actual cancellation but a five-second status request expired. Later readback
-  found every task terminal and original processes absent. Neither family passed;
-  both were physically retired and cleaned. No persistent deadlock claim or
-  deadline increase follows from this evidence.
-- R356 runs the same five races and five-second request budget in a node-local
-  repository on allocated Ares node ares-comp-07/job24927, testing shared-storage
-  latency as a hypothesis. Three repetitions passed, then the fourth hit the same
-  five-second request timeout; shared storage did not explain it. The failed family
-  settled and was cleaned. R357 stopped before inference because explicit builtin
-  declaration was rejected. R358 proved both original assignments yielded while
-  Download progressed, but its 788 MB / 48,001-file invented workload exceeded the
-  unchanged 600-second diagnostic. Its raw result is failed; work was explicitly
-  cancelled, physically settled and removed. The next family uses the previously
-  qualified 8,001-file workload with all byte/hash and assignment assertions intact.
-- All local campaign service/browser processes and R341/R342/R343 disposable
-  roots are retired/absent. The failed read-only R354 helper was force-closed by
-  verified ownership after memory pressure; no model work was submitted by it.
-  Exact R345 credential staging deletion was automatically rejected; do not retry,
-  bypass or delegate it. Existing manual-only boundaries remain intact.
-- Remaining: required Q3/Q4 combinations (including child Download/yield/wake),
-  Q6 real-provider work, Q7 recovery/history/effect-loss obligations, affected R6
-  repetitions and final integrated adjudication. The candidate is not qualified
-  for publication or daily Desktop installation.
+- The frozen live pair is agent24902aef77e26aeee99078c7bd8463f5be71db04 and
+  GACT0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb, on Ares/Core2.3.2 with
+  FastMCP/tasks4.1.0, MCP2.0.0 and Docket0.26.2. Astra and actual Claude Code/Fable
+  cleared that source delta. Their reviews do not replace runtime acceptance.
+- All30 fresh race repetitions passed on that pair: R1/r376, R2+R4/r373,
+  R3/r369, R5/r370 and R6/r365, five each. These are actual models and production
+  owners, including original native identities, real process retirement, queued
+  withdrawal, recipient-input commitment and before/after input-commit crashes.
+  All six disposable families have physical cleanup receipts and absent roots.
+- R363 supplies independently audited child Download/yield/wake evidence: one
+  original invocation, both original assignments yielded while it ran, automatic
+  wake/collection, one final notice per recipient, and8,001files/34,868,063bytes
+  with exact hashes. Its raw driver remains failed because a generic checker
+  additionally demanded a child query call. The scope and raw outcome stay separate.
+- R374 passed the stronger retained-context restart proof before unrelated UI
+  checks: immutable original Shell submission count remained one across restart;
+  pause held the model while its process continued; steering waited until resume;
+  successor cancellation retired inherited processes; original terminal history
+  stayed fixed and the parent committed attributed human controls once.
+- R364 retained/delivered all1,005messages under the original assignment and
+  measured ten hot reads with zero Core storage calls before900seconds. Restart
+  replay was observed at912.5seconds, so the full timed family is not accepted.
+  R378 repeats every original count/assertion under the unchanged900second budget
+  using shorter arbitrary receipt-note bodies. It remains frozen on24902.
+- Complete current CI inventory: all12XMLreports retained; Python3.12/3.14 each
+  executed13,084passing cases. Python3.13 has13,083passes and one storage-cleanup
+  hang; each interpreter has50excluded cases, never counted as passes. The three
+  prior query/declaration regressions passed. No other distinct failure appears.
+- This revision repairs that existing storage boundary. Final state reads, draft
+  cleanup and physical-evidence confirmation finish before cancellation propagates,
+  including provider continuation. The joined indexing-worker result handler also
+  records ordinary unexpected failures. Native execution, Core authority, budgets
+  and original regression assertions remain unchanged. Five new regression cases
+  are constructed; scoped Ruff/format/Mypy pass. Fresh CI, both independent source
+  reviews and affected actual-model storage qualification are still required.
+- Failed setup runs remain failed: R367/R368 used the wrong blueprint and were
+  stopped/cleaned. R372 held an unrelated inline Shell inspection rather than the
+  requested background command; R376 binds the exact persisted owner/arguments.
+  R362's same-head five-second status-read expiry remains a separate unresolved
+  observation; subsequent five R6 passes do not erase it or establish its cause.
+- Aresjob24927 owns the common runtime and node-local worktree. Each family records
+  processes, ports and paths before launch and removes disposable state afterward.
+  The remaining allocation/runtime/worktree also require final retirement.
+- Remaining gates include the timed large-history repeat, affected storage cleanup,
+  positive pending-only peer pressure, remaining provider/bridge and recovery
+  combinations, actual approved surviving-provider work and final integrated
+  adjudication. This candidate is not qualified and has no release GO.
+- Installed Desktop/auth/defaults/released pins and unrelated work are preserved.
+  The tiny R345 D credential-staging removal was automatically rejected and remains
+  manual-only, alongside all earlier blocked/private/native cleanup boundaries.
 
 ## Current execution — 2026-10-19 17:18 UTC
 
