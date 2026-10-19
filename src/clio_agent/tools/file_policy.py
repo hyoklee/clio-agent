@@ -577,8 +577,6 @@ def _has_symlink(path: Path) -> bool:
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
+    from clio_agent.platform_paths import path_is_within
+
+    return path_is_within(path, root)

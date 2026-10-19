@@ -10,6 +10,7 @@ from pathlib import Path, PurePath, PureWindowsPath
 from urllib.parse import quote
 
 from clio_agent import paths
+from clio_agent.platform_paths import path_is_within
 
 
 def _read_only_database_uri(database: PurePath) -> str:
@@ -120,12 +121,12 @@ def check_storage_access(path: Path, *, write: bool = False) -> None:
     """Keep source writes on the explicit review path and credentials out of tools."""
     read_only, denied = storage_access_roots()
     resolved = path.resolve(strict=False)
-    if any(resolved.is_relative_to(root) for root in denied):
+    if any(path_is_within(resolved, root) for root in denied):
         raise PermissionError(
             "Storage sign-in credentials are private to the trusted setup process"
         )
     if write and any(
-        resolved.is_relative_to(root) or root.is_relative_to(resolved) for root in read_only
+        path_is_within(resolved, root) or path_is_within(root, resolved) for root in read_only
     ):
         raise PermissionError(
             "This source is read-only outside its approved linked filesystem; use that filesystem to edit it"

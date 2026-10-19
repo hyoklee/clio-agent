@@ -40,7 +40,7 @@ import shutil
 import sys
 import time
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 
 _EXTENDED_PREFIX = "\\\\?\\"
 _UNC_PREFIX = "\\\\?\\UNC\\"
@@ -102,6 +102,34 @@ def win_extended_path(path: str | Path) -> str:
         return _EXTENDED_PREFIX + normalized
     # Relative or drive-relative ("C:foo") -- cannot be extended; leave as-is.
     return text
+
+
+def path_is_within(path: PurePath, root: PurePath) -> bool:
+    r"""Compare resolved paths across Windows DOS and extended namespaces.
+
+    Callers must resolve traversal and filesystem links first. Windows may return
+    either ``D:\...`` or ``\\?\D:\...`` for the same resolved file, including
+    transiently during concurrent creation. Normalize only DOS-drive/UNC aliases;
+    other device namespaces remain distinct. This performs no filesystem access.
+    """
+
+    def comparable(value: PureWindowsPath) -> PureWindowsPath:
+        text = str(value)
+        if text.lower().startswith(_UNC_PREFIX.lower()):
+            return PureWindowsPath("\\\\" + text[len(_UNC_PREFIX) :])
+        if (
+            text.startswith(_EXTENDED_PREFIX)
+            and len(text) >= 7
+            and text[4].isascii()
+            and text[4].isalpha()
+            and text[5:7] == ":\\"
+        ):
+            return PureWindowsPath(text[len(_EXTENDED_PREFIX) :])
+        return value
+
+    if isinstance(path, PureWindowsPath) and isinstance(root, PureWindowsPath):
+        path, root = comparable(path), comparable(root)
+    return path.is_relative_to(root)
 
 
 def _is_retryable_replace_error(exc: OSError) -> bool:

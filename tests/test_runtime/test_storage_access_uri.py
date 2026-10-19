@@ -6,10 +6,47 @@ import json
 import sqlite3
 import sys
 from pathlib import Path, PureWindowsPath
+from typing import cast
 
 import pytest
 
 from clio_agent.runtime import storage_access
+
+
+@pytest.mark.parametrize("extended_root", [False, True])
+def test_windows_namespace_aliases_do_not_bypass_source_protection(
+    monkeypatch: pytest.MonkeyPatch, extended_root: bool
+) -> None:
+    """Credential denial and source read-only decisions survive either path spelling."""
+    root_prefix = "\\\\?\\" if extended_root else ""
+    candidate_prefix = "" if extended_root else "\\\\?\\"
+    monkeypatch.setattr(
+        storage_access,
+        "storage_access_roots",
+        lambda: (
+            (PureWindowsPath(root_prefix + r"D:\source"),),
+            (PureWindowsPath(root_prefix + r"D:\config\storage-auth"),),
+        ),
+    )
+
+    class ResolvedAlias:
+        def __init__(self, suffix: str) -> None:
+            self.value = PureWindowsPath(candidate_prefix + suffix)
+
+        def resolve(self, strict: bool = False) -> PureWindowsPath:
+            return self.value
+
+    source = cast(Path, ResolvedAlias(r"D:\source\observations.csv"))
+    storage_access.check_storage_access(source)
+    with pytest.raises(PermissionError, match="read-only"):
+        storage_access.check_storage_access(source, write=True)
+    with pytest.raises(PermissionError, match="private"):
+        storage_access.check_storage_access(
+            cast(Path, ResolvedAlias(r"D:\config\storage-auth\credentials.json"))
+        )
+    storage_access.check_storage_access(
+        cast(Path, ResolvedAlias(r"D:\source-other\output.csv")), write=True
+    )
 
 
 @pytest.mark.parametrize(
