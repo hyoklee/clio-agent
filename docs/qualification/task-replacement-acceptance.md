@@ -31,6 +31,20 @@ bug repair continue. No local pytest/Vitest loop ran during this checkpoint.
 - **Previous baseline/review:** agent a61577ba6 CI passed 24 jobs, 13,079 passes
   and 50 exclusions per interpreter. Astra/Fable found no source blocker at
   a615/7260. Those results precede the repair batch and are not new-head acceptance.
+- **Review follow-up:** Astra identified a P2 in the first UI correction: fifty
+  historical rows could hide current work and its footer state. GACT `b44037fd`
+  preserves the independent active-work query and adds optional, separately paged
+  completed-work disclosure. Its regression keeps a current task visible while
+  paging fifty older records and restarting a completed child. Fresh review,
+  exact-head CI and a matching live UI build remain required.
+- **R339:** the real UI confirmed completed-child restart and pause with background
+  heartbeat continuity. The browser driver then could not reopen the Resume row
+  after navigation; that family remains failed. Its source stayed frozen and
+  service exited0; all fresh runtime/temp data was removed after physical audit.
+- **Current resource hold:** R341 race preflight stopped before creating a service
+  because available machine commit headroom fell below 4 GiB. No qualification
+  services, browsers or review workers remain active. Do not count this prepared
+  race family as executed. No unrelated application was stopped.
 - **Race impact:** all thirty earlier R1–R6 repetitions remain recorded. The new
   post-cancellation admission correction requires affected R3/R6 repetitions and
   lifecycle verification; do not claim all thirty accepted on the new tuple yet.

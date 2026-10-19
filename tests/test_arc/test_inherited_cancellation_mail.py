@@ -30,14 +30,12 @@ async def test_cancelled_successor_retains_inherited_outcome_until_new_input(
             owner=predecessor.owner.model_copy(update={"parent_handle": predecessor.handle}),
             label="Original background operation",
             invocation_id="original-operation",
-            status="cancelled",
-            raw_status="cancelled",
+            status="running",
+            raw_status="working",
             created_at=stamp,
             updated_at=stamp,
-            terminal_at=stamp,
-            settlement="confirmed",
         )
-        history.record_snapshot(work, observation_id="shell-settled")
+        history.record_snapshot(work, observation_id="shell-running")
         history.record_snapshot(
             predecessor.model_copy(
                 update={"status": "completed", "raw_status": "completed", "terminal_at": stamp}
@@ -53,19 +51,37 @@ async def test_cancelled_successor_retains_inherited_outcome_until_new_input(
         )
         assert successor.details is not None
         details = AssignmentDetails.model_validate(history.read_content(successor.details))
-        cancelled = successor.model_copy(
+        cancelling = successor.model_copy(
             update={
-                "status": "cancelled",
-                "raw_status": "cancelled",
-                "cancellation_requested_at": stamp,
-                "terminal_at": now(),
-                "settlement": "confirmed",
+                "cancellation_requested_at": now(),
+                "activity": "cancelling",
                 "details": history.write_content(
                     sid,
                     details.model_copy(update={"cancellation_members": (work.handle,)}).model_dump(
                         mode="json"
                     ),
                 ),
+            }
+        )
+        history.record_snapshot(cancelling, observation_id="successor-cancelling")
+        history.record_snapshot(
+            work.model_copy(
+                update={
+                    "status": "cancelled",
+                    "raw_status": "cancelled",
+                    "terminal_at": now(),
+                    "settlement": "confirmed",
+                }
+            ),
+            observation_id="shell-settled",
+        )
+        cancelled = cancelling.model_copy(
+            update={
+                "status": "cancelled",
+                "raw_status": "cancelled",
+                "activity": "",
+                "terminal_at": now(),
+                "settlement": "confirmed",
             }
         )
         history.record_snapshot(cancelled, observation_id="successor-cancelled")
