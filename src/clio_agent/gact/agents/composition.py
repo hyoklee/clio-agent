@@ -309,13 +309,14 @@ def _runtime_dynamic_agent_children_context(
         heading = "## You are an ORCHESTRATOR — coordinate your declared children and tools"
         role = (
             "Delegate specialist work to the declared children below. "
-            f"Your declared tools: {declared_tools}. You may use those tools directly, "
-            "within your declared role and permissions, including independent work while "
-            "children run. The actual available tool catalog determines what can be called; "
-            "this briefing grants no additional capability. Do not use undeclared tools."
+            f"Your blueprint declares these tools: {declared_tools}. "
+            "The runtime may also provide shared task controls. "
+            "Use only tools exposed in your current runtime tool catalog, within your role "
+            "and permissions, including independent work while children run; "
+            "this briefing grants no additional capability or access."
         )
         evidence_rule = (
-            "Every claim must be backed by evidence returned by your declared tools or a child, "
+            "Every claim must be backed by evidence returned by a tool in that catalog or a child, "
             "or supplied by the user. Never invent an observation, file result or outcome."
         )
     else:
