@@ -9,7 +9,7 @@ regression repair, independent review and live qualification. The candidate is
 - Agent pushed candidate: **4b33f858d674c22937b1a51b415522733ab189b7**.
 - Agent test correction: cc2a8086faa05672caebd7d4f19027568b8215f0.
 - Agent production commit: **6c79df316273aeed0fb95230c846706f574cb834**.
-- GACT UI correction: **973ddf172149bb5a27b08e35bc69bbdd1864a242**;
+- GACT UI correction: **2f367f6d2b7f5b6287fa1598dc23614ca3e39815**;
   completed runtime/race evidence used aca98ce477bbee1d1f14b1f384d1cf283906de6d.
 - Both repositories retain `codex/agent-facing-async-tasks`; no merge, release or
   daily Desktop installation has been performed.
@@ -59,7 +59,7 @@ and 6c79df316's canonical prompt correction (Astra turn
 ## Live evidence and remaining qualification
 
 Completed runtime/race tuple: agent 4b33f858d / production 6c79df316 / GACT aca98ce4.
-The current presentation correction is GACT 973ddf172; it changes no agent runtime,
+The current presentation correction is GACT 2f367f6d2; it changes no agent runtime,
 execution owner, dependencies or schema. The completed runtime race evidence carries
 forward with that limited impact; fresh matching-UI and CI acceptance remain required.
 Initial implementation and initial test construction are complete. Actual-model
@@ -108,9 +108,15 @@ preflights R299/R302; earlier rejected/manual-only targets remain untouched.
 
 The real UI exposed a P2: a task with lost visibility correctly says Needs
 inspection in Work but the footer says No active work. Astra confirmed a frontend
-projection defect. GACT 973ddf172 corrects both footer and dock through the existing task projection,
+projection defect. GACT 2f367f6d2 corrects both footer and dock through the existing task projection,
 with constructed terminal-transition/click/attention regression coverage. Fresh CI,
-matching UI build and actual-service UI requalification are pending. No task-engine
+matching UI build and actual-service UI requalification are pending. The first
+973ddf17 correction received two source NO-GOs: Astra found its inspection button
+opened goals/schedules rather than task evidence; Fable found the new fixture
+widened its status literals. R306's real TypeScript build independently reported
+three fixture diagnostics before any Vite output was replaced. 2f367f6d fixes both
+in one batch, including a browser regression through the actual workspace route.
+Both reviewers are being asked to review that correction; no fresh UI pass is claimed. No task-engine
 production change was made during the frozen families.
 
 Full Q1–Q9, approved-provider/input/recovery/migration, remaining lifecycle/UI
