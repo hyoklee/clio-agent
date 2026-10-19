@@ -49,3 +49,14 @@ Claude/Haiku. Both desktop frames are 1280×900; the phone frame is 390×844.
 The C3 family's baseline and UI passed, but its repetition gate failed after
 seven successful cycles when an overlong Stop mission exhausted its unchanged
 eight-iteration model budget. That failure is retained and is not called a pass.
+
+## Current replacement pair — R471, October 19, 2026
+
+Untouched real-service/model captures: agent `bab261dbf201ba5db5d8b2097d309944e87215f2`, GACT `9bf5791c098f53f0ff5a6c9b50b6a444cb0a2446`; Ares Linux, Python 3.14.6 / Core 2.3.2. Desktop 1440×1000; phone 390×844. Actual UI controls, parent injections, Question collection and process settlement passed. No page/console errors. These are selected screenshots, not a continuous video or fresh Windows Desktop acceptance. Raw R465/R470 failures remain separate.
+
+| Website file | Original | SHA256 |
+| --- | --- | --- |
+| tasks-current-paused-desktop.png | desktop-paused.png | 3653bf0bad32394f02b716e2709ac55de7b0f1325276179672889e75e234baaa |
+| tasks-current-work-desktop.png | desktop-progress-details.png | f591fdf8da9519d54aae33c82411df526ce75a8a7ea562e65398d3719128eafb |
+| tasks-current-work-phone.png | phone-work.png | db7d9f966f18fbd5833bf419ff708e3a606ced0c7ee83cf5e1cd2759c82ef767 |
+| tasks-current-cancel-phone.png | phone-cancel-confirmation.png | d18f1ff5db0ad8ce5927350a2e8224d354979d1c5fbd439adc0f6c159c8f4ac2 |

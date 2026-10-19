@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastapi import FastAPI
 
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.minting import mint_artifact
 from clio_agent.gact.artifacts.records import (
     ArtifactKind,
@@ -27,6 +28,7 @@ from clio_agent.gact.session_export import build_transcript
 from clio_agent.gact.session_export_archive import build_archive
 from clio_agent.gact.session_export_recorded_read import recorded_read_bytes
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.workspaces import WorkspaceStore
 from clio_agent.tools.servers.shell_spill_store import spill_directory
 
@@ -121,10 +123,11 @@ def test_incomplete_or_unbound_receipt_cannot_replace_recorded_bytes(
 
 @pytest.mark.parametrize("deleted", [False, True])
 def test_archive_preserves_legacy_input_read_after_edit_or_delete(
-    tmp_path: Path, deleted: bool
+    tmp_path: Path, deleted: bool, arc: ARCMemory
 ) -> None:
     """Export retained original bytes and provenance without mutating the ledger."""
-    app = FastAPI()
+    app = build_app(sessions_path=tmp_path / "sessions.json", arc=arc)
+    app.state.task_history = TaskHistory(arc)
     app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
     app.state.workspaces = WorkspaceStore(path=tmp_path / "workspaces.json")
     root = tmp_path / "source"
@@ -173,10 +176,11 @@ def test_archive_preserves_legacy_input_read_after_edit_or_delete(
 
 @pytest.mark.parametrize("matching_path", [False, True])
 def test_anonymous_consumed_versions_use_their_exact_retained_objects(
-    tmp_path: Path, matching_path: bool
+    tmp_path: Path, matching_path: bool, arc: ARCMemory
 ) -> None:
     """A path consumed before designation can identify multiple historical hashes."""
-    app = FastAPI()
+    app = build_app(sessions_path=tmp_path / "sessions.json", arc=arc)
+    app.state.task_history = TaskHistory(arc)
     app.state.sessions = SessionStore(path=tmp_path / "sessions.json")
     app.state.workspaces = WorkspaceStore(path=tmp_path / "workspaces.json")
     root = tmp_path / "source"
