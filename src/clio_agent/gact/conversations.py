@@ -209,9 +209,15 @@ class Conversations:
                 and item.handle
             ):
                 source = self.history.task_snapshot(item.handle)
+                details = (
+                    AssignmentDetails.model_validate(self.history.read_content(assignment.details))
+                    if assignment.details is not None
+                    else AssignmentDetails()
+                )
                 if source is not None and (
                     source.owner.assignment_id == assignment.handle
                     or source.owner.parent_handle == assignment.handle
+                    or source.handle in (details.cancellation_members or ())
                 ):
                     return False  # Retain cancelled subtree outcomes for deliberate continuation.
         if item.kind in {"human", "question_answer", "approval", "control", "peer"}:
