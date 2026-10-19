@@ -319,6 +319,58 @@ def test_over_cap_boundary(tmp_path, monkeypatch):
     assert P.proposal_count(app, sess.id, "t1") == 2
 
 
+def test_batch_results_expose_remaining_turn_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The model sees remaining capacity before planning its next output batch."""
+    monkeypatch.setattr(P, "proposals_per_turn", lambda: 2)
+    app, sess, _ = _make_app(tmp_path)
+
+    def submit(name: str, content: str, *, turn: str = "t1") -> dict[str, Any]:
+        return promote_proposals(
+            app,
+            sess.id,
+            [Proposal(name=name, kind="report", content=content)],
+            workspace_id="ws1",
+            turn_id=turn,
+        )
+
+    first = submit("one.md", "initial")
+    assert first["promotion_budget"] == {"limit": 2, "used": 1, "remaining": 1}
+    assert submit("one.md", "initial")["promotion_budget"] == first["promotion_budget"]
+    assert submit("one.md", "revised")["promotion_budget"] == first["promotion_budget"]
+    mixed = promote_proposals(
+        app,
+        sess.id,
+        [Proposal(name=f"{name}.md", kind="report", content=name) for name in ("two", "three")],
+        workspace_id="ws1",
+        turn_id="t1",
+    )
+    assert mixed["created"] == 1 and mixed["rejected"] == 1
+    assert mixed["promotion_budget"] == {"limit": 2, "used": 2, "remaining": 0}
+    assert submit("one.md", "another revision")["rejected"] == 0
+    fresh = submit("four.md", "new turn", turn="t2")
+    assert fresh["promotion_budget"] == {"limit": 2, "used": 1, "remaining": 1}
+
+
+def test_oversized_batch_reports_unchanged_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rejected batch does not hide or consume the remaining retention budget."""
+    monkeypatch.setattr(P, "proposals_per_turn", lambda: 3)
+    monkeypatch.setattr(P, "proposals_batch_max", lambda: 1)
+    app, sess, _ = _make_app(tmp_path)
+    result = promote_proposals(
+        app,
+        sess.id,
+        [Proposal(name=f"{n}.md", kind="report", content="body") for n in range(2)],
+        workspace_id="ws1",
+        turn_id="t1",
+    )
+    assert result["rejected"] == 1 and result["created"] == 0
+    assert result["promotion_budget"] == {"limit": 3, "used": 0, "remaining": 3}
+
+
 def test_duplicate_does_not_consume_cap(tmp_path, monkeypatch):
     monkeypatch.setattr(P, "proposals_per_turn", lambda: 1)
     app, sess, _ = _make_app(tmp_path)
@@ -523,6 +575,7 @@ def test_dedup_only_batch_reads_honest_not_contradictory(tmp_path):
         "created": 0,
         "deduplicated": 1,
         "rejected": 0,
+        "promotion_budget": {"limit": 8, "used": 1, "remaining": 7},
     }
     assert "accepted" not in result
     # The per-item boolean is untouched: true for a dedup, honest on its own.

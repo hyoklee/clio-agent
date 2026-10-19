@@ -31,6 +31,12 @@ def proposal_count(app: "FastAPI", sid: str, turn_id: str) -> int:
         return len(_counter_map(app).get(_counter_key(sid, turn_id), set()))
 
 
+def promotion_budget_state(app: "FastAPI", sid: str, turn_id: str, *, limit: int) -> dict[str, int]:
+    """Expose the current turn's retention budget so callers can plan outputs."""
+    used = proposal_count(app, sid, turn_id)
+    return {"limit": limit, "used": used, "remaining": max(0, limit - used)}
+
+
 def _already_counted(app: "FastAPI", sid: str, turn_id: str, workspace_id: str, name: str) -> bool:
     """Check the normalized artifact identity within this turn's output budget."""
     with _COUNTER_LOCK:

@@ -4,7 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Optional
 
-from clio_agent.gact.artifacts.proposals import parse_proposals, promote_proposals
+from clio_agent.gact.artifacts.proposals import (
+    parse_proposals,
+    promote_proposals,
+    proposals_per_turn,
+)
 
 if TYPE_CHECKING:
     from clio_agent.gact.types import AgentDef
@@ -165,7 +169,12 @@ def build_create_artifact_tool(agent_def: "AgentDef") -> Any:
             "Returns each accepted record or a typed rejection reason "
             "(path_missing, escapes_root, over_cap, invalid_kind, missing_input) you "
             "can correct and retry. Inspect every batch item's accepted flag; a partial "
-            "batch may contain rejections. The per-turn cap counts distinct outputs; "
+            "batch may contain rejections. "
+            f"This turn can register {proposals_per_turn()} distinct outputs, including "
+            "intermediate and verification files. Each result's promotion_budget gives "
+            "limit, used and remaining slots. Keep working scripts as ordinary workspace "
+            "files unless they need artifact identity; prioritize requested deliverables "
+            "and group related companion files in a retained package when appropriate. "
             "revisions of outputs already promoted in this turn reuse their slot. "
             "Nothing is auto-registered; the artifact exists "
             "only because you called this."

@@ -44,6 +44,7 @@ from clio_agent.gact.artifacts.presentation import PURPOSES
 from clio_agent.gact.artifacts.proposal_budget import (
     _already_counted,
     _increment_proposal_count,
+    promotion_budget_state,
     proposal_count,
 )
 from clio_agent.gact.artifacts.proposal_effects import (
@@ -680,6 +681,9 @@ def promote_proposals(
             "created": 0,
             "deduplicated": 0,
             "rejected": 1,
+            "promotion_budget": promotion_budget_state(
+                app, sid, turn_id, limit=proposals_per_turn()
+            ),
         }
         declare_create_artifact_structured_content([outcome], result)
         return result
@@ -703,6 +707,7 @@ def promote_proposals(
         "created": created,
         "deduplicated": deduplicated,
         "rejected": rejected,
+        "promotion_budget": promotion_budget_state(app, sid, turn_id, limit=proposals_per_turn()),
     }
     declare_create_artifact_structured_content(outcomes, result)
     return result
