@@ -404,18 +404,20 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
             assert len(transports) == 1
             assert '"name": "jarvis_run"' in result["value"]
         finally:
-            stopping.set()
-            for row in tuple(app.state.permissions.values()):
-                if (
-                    row["status"] == "pending"
-                    and row["tool_call"]["tool_name"] == "relay_jarvis_run"
-                ):
-                    client.post(f"/v1/permissions/{row['id']}", json={"action": "deny"})
-            thread.join(timeout=2.0)
-            assert not thread.is_alive(), "".join(
-                traceback.format_stack(sys._current_frames().get(thread.ident or -1))
-            )
-            executor.close()
+            try:
+                stopping.set()
+                for row in tuple(app.state.permissions.values()):
+                    if (
+                        row["status"] == "pending"
+                        and row["tool_call"]["tool_name"] == "relay_jarvis_run"
+                    ):
+                        client.post(f"/v1/permissions/{row['id']}", json={"action": "deny"})
+                thread.join(timeout=2.0)
+                assert not thread.is_alive(), "".join(
+                    traceback.format_stack(sys._current_frames().get(thread.ident or -1))
+                )
+            finally:
+                executor.close()
 
 
 @pytest.mark.parametrize(

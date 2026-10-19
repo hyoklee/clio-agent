@@ -580,6 +580,7 @@ def test_deny_mode_prompt_store_failure_fails_closed(tmp_path, captured_events) 
 
     app.state.permissions = _Wedged()
     assert grants._egress_gate_decision(app, _egress_record("x.test", str(root))) == "deny"
+    assert app.state.permission_events == {}
     reasons = {
         e["payload"].get("reason")
         for e in captured_events

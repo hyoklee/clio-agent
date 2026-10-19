@@ -679,9 +679,10 @@ def _prompt_egress(
     evt = prompt["event"]
     if is_creator:
         try:
-            app.state.permissions[row["id"]] = row
             app.state.permission_events[row["id"]] = evt
+            app.state.permissions[row["id"]] = row
         except Exception as exc:  # noqa: BLE001 — a wedged prompt store must fail SAFE (deny)
+            app.state.permission_events.pop(row["id"], None)
             with _PENDING_EGRESS_LOCK:
                 _PENDING_EGRESS.pop(key, None)
             _record_egress_denied(app, workspace_id, host, reason=REASON_EGRESS_PROMPT_UNWRITABLE)

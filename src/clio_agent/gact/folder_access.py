@@ -148,8 +148,9 @@ def request_folder_access(
             "scope": "workspace",
         },
     }
-    app.state.permissions[pid] = row
+    # Human resolution may run immediately after the row becomes visible.
     app.state.permission_events[pid] = event
+    app.state.permissions[pid] = row
     enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
     publish_permission_event(app, "permission.requested", owner_session_id=sid, payload=row)
     if not event.wait(timeout=permission_timeout.PERMISSION_REQUEST_TIMEOUT_S):
