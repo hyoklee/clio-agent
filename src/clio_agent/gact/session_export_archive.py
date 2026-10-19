@@ -17,6 +17,7 @@ from clio_agent.gact.artifacts.storage import (
     resolve_owned_artifact_path,
     resolve_workspace_state_artifact_path,
 )
+from clio_agent.gact.session_export_recorded_read import recorded_read_bytes
 from clio_agent.gact.session_export_viewer import write_archive_review
 from clio_agent.platform_paths import path_is_within, win_extended_path
 from clio_agent.tools.servers.shell_spill_store import spill_directory
@@ -275,7 +276,19 @@ def build_archive(
                     "workspace_id": record.workspace_id,
                     **version.model_dump(mode="json"),
                 }
-                if source is None or not source.is_file():
+                retained = recorded_read_bytes(transcript, version) if source is not None else None
+                if retained is not None:
+                    name = f"effects/{_segment(aid)}/{_segment(Path(record.name).name)}"
+                    archive.writestr(name, retained)
+                    manifest["files"].append(
+                        {"archive_path": name, "bytes": len(retained), "sha256": version.sha256}
+                    )
+                    item.update(
+                        archive_path=name,
+                        byte_source="recorded_tool_read",
+                        source_call_id=version.producer["call_id"],
+                    )
+                elif source is None or not source.is_file():
                     item["archive_path"] = None
                     manifest["omissions"].append(
                         {"artifact_id": aid, "reason": "recorded_bytes_unavailable"}

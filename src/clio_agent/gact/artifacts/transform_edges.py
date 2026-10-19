@@ -247,11 +247,11 @@ def detect_used_edges(
     tool-schema mint; omitted (module default ``""``) only by a caller — a direct
     unit-test invocation — that genuinely has no call to attribute, never invented.
     """
+    from clio_agent.gact.artifacts.consumed_inputs import mint_consumed_input  # noqa: PLC0415
     from clio_agent.gact.artifacts.minting import (  # noqa: PLC0415
         _contained,
         _workspace_root,
         compute_identity,
-        mint_artifact_outcome,
     )
     from clio_agent.gact.artifacts.registry import get_registry  # noqa: PLC0415
 
@@ -384,36 +384,19 @@ def detect_used_edges(
             if (
                 kind_for_path(resolved) is ArtifactKind.SCRIPT or granted_input
             ) and evidence.sha256:
-                outcome = mint_artifact_outcome(
+                outcome = mint_consumed_input(
                     app,
                     sid,
-                    name=Path(resolved).name,
+                    path=resolved,
+                    workspace_root=root,
                     workspace_id=workspace_id,
                     evidence=evidence,
-                    kind=kind_for_path(resolved),
-                    mechanism=Mechanism.TOOL_SCHEMA,
-                    producing=False,
-                    path=resolved,
+                    tool_name=tool_name,
+                    call_id=call_id,
                     turn_id=turn_id,
                     trace_id=trace_id,
-                    # A8 (#1176): this mint seam was dropping ``producer`` entirely
-                    # (no kwarg → ``mint_artifact_outcome`` defaults it to ``{}``),
-                    # so a consumed script's OWN version carried no session/call
-                    # identity — unlike every other tool-schema mint. That breaks
-                    # the session-scoped artifacts route (it joins on
-                    # ``producer.session_id``) for exactly this record. Stamp the
-                    # SAME shape the other tool-schema seams use: the consuming
-                    # call's session/tool/call_id, plus a designation note so the
-                    # weaker "observed as a used input, not a designated output"
-                    # basis stays visible (never invented — arrives as "" only
-                    # when the caller genuinely has no call to attribute).
-                    producer={
-                        "designation": "used-granted-file" if granted_input else "used-script",
-                        "session_id": sid,
-                        "tool": tool_name,
-                        "call_id": call_id,
-                        "turn_id": turn_id,
-                    },
+                    granted_input=granted_input,
+                    notes=notes,
                 )
                 if outcome is not None:
                     minted_version = outcome.version
