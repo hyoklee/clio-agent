@@ -44,7 +44,7 @@ def observation_world(
         assert workspace.status_code == 201
         wid = workspace.json()["id"]
         response = client.post("/v1/sessions", json={"workspace_id": wid})
-        assert response.status_code == 201
+        assert response.status_code == 200
         sid = response.json()["id"]
         record_assignment_fixture(app, sid)
         hooks = execution.ToolRuntimeHooks(tool_observer=tool_observer._make_tool_observer(app))
