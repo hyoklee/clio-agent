@@ -46,7 +46,12 @@ def connected_data_download(
     gate = getattr(app.state, "pending_permission_gate", None) or app.state.make_permission_gate()
     arguments = {"source_id": source_id, "selected_paths": selected_paths}
     if (
-        _invoke_permission_gate(gate, "connected_data_download", arguments, {"kind": "native"})
+        _invoke_permission_gate(
+            gate,
+            "connected_data_download",
+            arguments,
+            {"kind": "native", "summary": f"Download {source.source.label}"},
+        )
         != "allow"
     ):
         raise PermissionError("Source download was not approved")

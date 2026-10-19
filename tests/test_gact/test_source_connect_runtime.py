@@ -89,6 +89,7 @@ def test_connection_uses_live_permission_gate(
         pending = next(iter(app.state.permissions.values()))
         assert pending["status"] == "pending"
         assert pending["tool_call"]["tool_name"] == "connected_data_connect"
+        assert pending["summary"] == "Connect Input"
         replied = client.post(
             f"/v1/permissions/{pending['id']}", headers=HEADERS, json={"action": decision}
         )

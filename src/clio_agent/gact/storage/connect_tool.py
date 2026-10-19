@@ -120,7 +120,12 @@ def _ndp_connection(
         "endpoint": dataset.endpoint.name,
         "resources": [item.name for item in dataset.resources],
     }
-    if _invoke_permission_gate(gate, "connected_data_connect", args, {"kind": "native"}) != "allow":
+    if (
+        _invoke_permission_gate(
+            gate, "connected_data_connect", args, {"kind": "native", "summary": f"Connect {label}"}
+        )
+        != "allow"
+    ):
         raise PermissionError("Source connection was not approved")
     return select_source(service, workspace_id, dataset, workspace_root)
 
@@ -166,7 +171,12 @@ def _ordinary_connection(
         )
         args = body.model_dump(mode="json")
         if (
-            _invoke_permission_gate(gate, "connected_data_connect", args, {"kind": "native"})
+            _invoke_permission_gate(
+                gate,
+                "connected_data_connect",
+                args,
+                {"kind": "native", "summary": f"Connect {label}"},
+            )
             != "allow"
         ):
             raise PermissionError("Source connection was not approved")
