@@ -117,3 +117,58 @@ def test_health_timeout_retires_its_native_future_worker(monkeypatch: pytest.Mon
 
     assert not rpc_liveness.probe_rpc_health(reconnect=None, make_probe_call=health, port=9413)
     assert retired.wait(0.5), "The health worker retained the ordinary 181-second wait"
+
+
+@pytest.mark.parametrize(("health_ceiling", "slice_s"), [(None, 301.0), (2.0, 2.0)])
+def test_only_explicit_health_limits_change_the_native_wait_slice(
+    monkeypatch: pytest.MonkeyPatch, health_ceiling: float | None, slice_s: float
+) -> None:
+    """An ordinary configured RPC slice is passed through unchanged."""
+    from clio_agent.arc import clio_core_async_ops
+
+    captured: list[dict[str, Any]] = []
+
+    def watch(_done: Any, **kwargs: Any) -> daemon_progress.WaitOutcome:
+        captured.append(kwargs)
+        return daemon_progress.WaitOutcome("ceiling", 0)
+
+    monkeypatch.setattr(daemon_progress, "max_wait_s", lambda: 10.0)
+    monkeypatch.setattr(daemon_progress, "wait_while_progressing", watch)
+    monkeypatch.setattr(
+        clio_core_async_ops,
+        "resolve_liveness_policy",
+        lambda: SimpleNamespace(stall_after_s=300.0),
+    )
+    with pytest.raises(clio_core_async_ops.ClioCoreFutureTimeout):
+        clio_core_async_ops.await_future(
+            SimpleNamespace(done=lambda: False), op_name="put", ceiling_s=health_ceiling
+        )
+    assert captured[0]["slice_s"] == slice_s
+    assert captured[0]["ceiling_s"] == (11.0 if health_ceiling is None else health_ceiling)
+
+
+def test_status_eligibility_uses_one_captured_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An OS sample cannot mix a later quarantine reason into an earlier snapshot."""
+    gate = liveness.LivenessGate(auto_recover=False, attached_identity=(101, 123.5))
+    gate.note_rpc_stalled()
+
+    original_lock = gate._lock
+
+    class AfterSnapshot:
+        armed = True
+
+        def __enter__(self) -> None:
+            original_lock.acquire()
+
+        def __exit__(self, _kind: object, _error: object, _trace: object) -> None:
+            original_lock.release()
+            if self.armed:
+                self.armed = False
+                gate.note_rpc_stalled("clio_core_client_restart_required")
+
+    monkeypatch.setattr(gate, "_lock", AfterSnapshot())
+    monkeypatch.setattr(liveness, "_daemon_identity", lambda _config: (101, 123.5))
+    snapshot = gate.status()
+    assert snapshot["reason"] == liveness.RPC_STALLED_REASON
+    assert snapshot["restart_required"] is False
+    assert gate.status()["restart_required"] is True

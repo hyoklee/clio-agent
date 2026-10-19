@@ -114,9 +114,12 @@ def await_future(future: Any, *, op_name: str, ceiling_s: float | None = None) -
     )
 
     ceiling = max_wait_s() + _WATCH_FIRST_MARGIN_S if ceiling_s is None else ceiling_s
+    slice_s = resolve_liveness_policy().stall_after_s + _WATCH_FIRST_MARGIN_S
+    if ceiling_s is not None:
+        slice_s = min(slice_s, ceiling)
     outcome = wait_while_progressing(
         polled,
-        slice_s=min(resolve_liveness_policy().stall_after_s + _WATCH_FIRST_MARGIN_S, ceiling),
+        slice_s=slice_s,
         op_name=op_name,
         ceiling_s=ceiling,
     )

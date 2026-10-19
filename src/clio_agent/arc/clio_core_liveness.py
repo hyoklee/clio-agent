@@ -324,20 +324,14 @@ class LivenessGate:
                 "port": self._port,
                 "ttl_s": self._ttl_s,
             }
-        snapshot["restart_required"] = (
-            snapshot["quarantined"]
-            and not self._auto_recover
-            and not self._can_probe_existing_client()
+            identity = self._attached_identity
+            requires_restart = self._quarantined and not self._auto_recover
+        snapshot["restart_required"] = requires_restart and not (
+            snapshot["reason"] in _RPC_PROBE_RECOVERY_REASONS
+            and identity is not None
+            and _daemon_identity(self._config_path) == identity
         )
         return snapshot
-
-    def _can_probe_existing_client(self) -> bool:
-        """A stalled but identical daemon may answer through its existing client."""
-        return (
-            self._reason in _RPC_PROBE_RECOVERY_REASONS
-            and self._attached_identity is not None
-            and _daemon_identity(self._config_path) == self._attached_identity
-        )
 
     def ensure_live(
         self,
