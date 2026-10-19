@@ -134,7 +134,7 @@ class TaskOperations:
             ),
             kind or "",
         )
-        with self.history.serialized():
+        with self.history.read_view():
             orders = access.query_orders(scope, kind=canonical_kind, active_only=active_only)
             total: int | None = (
                 len(orders[0])

@@ -11,6 +11,7 @@ from uuid import uuid4
 from clio_agent.arc.task_types import QuestionDefinition, TaskOwner
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
+from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.task_access import TaskAccess
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.gact.tool_observation import CollectedTaskResult
@@ -138,7 +139,7 @@ def build_task_tools() -> list[Any]:
         scope: str = "tree",
     ) -> dict[str, Any]:
         app, caller = _runtime()
-        value = await app.state.task_history.io.run(
+        value = await run_off_loop(
             app.state.task_operations.query,
             caller,
             kind,

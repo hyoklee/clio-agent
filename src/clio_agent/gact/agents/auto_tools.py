@@ -202,4 +202,5 @@ def build_auto_react_tools(
     tools.extend(build_knowledge_tools())
     from clio_agent.gact.task_declarations import TASK_TOOL_NAMES
 
-    return [tool for tool in tools if tool.name not in TASK_TOOL_NAMES or tool.name not in declared]
+    declarable_auto = TASK_TOOL_NAMES | {"connected_data_download"}
+    return [tool for tool in tools if tool.name not in declarable_auto or tool.name not in declared]

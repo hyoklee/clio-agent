@@ -1,30 +1,69 @@
 # Tasks replacement acceptance ledger
 
-## Active live execution — 2026-10-19 17:41 UTC
+## Active live execution — 2026-10-19 18:12 UTC
 
-Initial implementation and test construction are complete; live qualification and
-bug repair are active. No local pytest/Vitest suite ran in this repair batch.
+Initial implementation and test construction are complete. This phase is actual
+production-service/model/UI qualification and bug repair; no local pytest/Vitest
+suite ran in this execution period.
 
-- Agent 52cc exact-head CI completed: 13,079 passed, two failed, 50 exclusions
-  per interpreter (3.12/3.13/3.14). All twelve shard XML reports were inventoried.
-  The same two new regression cases failed only because their expected snapshot
-  omitted Core's persisted description reference. The correction retains full
-  equality and additionally checks that the referenced description is preserved.
-- GACT 0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb corrects history controls leaking
-  into Data in compact/full views. The original 390x500 geometry assertions remain
-  unchanged. Regression execution is delegated to CI; a matching production UI
-  build and fresh real-service UI qualification are required.
-- Windows Document runtime also failed in soffice.com (3221226505). This is an
-  outstanding CI failure, not a Tasks pass or a reason to halt other live work.
-- R341 is running on D: against frozen agent 52cc/GACT b440, exercising five
-  actual-model busy-to-idle arrival races. Prepared scenarios are not passes.
-- The human authorized Ares compute-node qualification, with owned allocations,
-  processes and repository data cleaned afterward. Homelab remains disallowed.
-- The Python production digest remains 7b24b26aaf3358d867bb6dca7c65079579d0f3b2e6dd646b4a828b85d5550c44.
-  This batch changes the regression fixture, UI pointer and documentation, not
-  Python runtime behavior. Previous source-impact limits still apply.
-- Full Q3/Q4/Q6/Q7/Q9 and affected R3/R6 repetitions remain incomplete. No release
-  go decision, daily Desktop change or native/relay acceptance is claimed.
+- Candidate: agent `acbe5cd4b886e8d87abc7a24b03c39b71d5a0655`, GACT
+  `0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb`. Python production bytes are unchanged
+  from 52cc. Agent CI39296275978 passed all24jobs; each interpreter (3.12/3.13/3.14)
+  reports13,081passes/zero failures/50exclusions. Allseven agent workflows passed.
+  GACT workspace39296213548 passed six jobs, with three conditional publication
+  job skips. Exclusions and publication skips are not executed test passes.
+- This revision adds a coordinated repair batch from live findings: query reads
+  use the existing confirmed passive view and finite SDK I/O resource instead of
+  waiting on the durable-writer lane. Authorization and Core writing are unchanged.
+  Explicit connected_data_download declarations resolve through the same builtin,
+  with duplicate auto-attachment suppressed. Three new public-contract regressions
+  are constructed; execution is delegated to CI. The green acbe result above is the
+  baseline, not acceptance of these new repairs. Live R358 remains frozen on acbe.
+- Astra and actual Claude Code/Fable independently found no source blocker in
+  this batch. Their source reviews are not runtime acceptance.
+- R341 passed allfive fresh R3 busy-to-idle arrival races with actual Luna,
+  confirmed recipient-input commitment once, normal service exit and cleanup.
+- R342 passed four R6 cases. The fifth parent omitted commands in its child
+  assignment, so the child correctly asked for clarification. The raw family is
+  failed, not five passes; all accepted work/processes/data were settled/removed.
+- R347 on Ares/Core2.3.2 passed the scoped goal/dependency/Question contract:
+  progress/partial results do not wake, feedback/answers bypass dependencies,
+  one assignment, one delivery per outcome, real bytes/hashes and actual model
+  judge completion. The raw controller remains failed because it demanded four
+  explicit submits; three default yields plus a direct final response were valid.
+  Independent evidence checks are in `r347-qualified-scope.json`; data is removed.
+- R343 exercised current real UI restart, pause, held steering, resume, inherited
+  descendant cancellation, Question answer and parent reports. Its driver failed
+  an exact-label select lookup. R352 passed the focused desktop/phone grant,
+  keyboard revocation, containment and clean-browser checks against the retained
+  real service. Inspected/hash-matched website screenshots are updated locally.
+  `Q9-current-ui-scope.json` states the limits; no full Q4/Q9 blanket pass.
+  Independent evidence review supports the Q3/grant scopes, but found the explicit
+  no-replay invocation guard did not execute after the UI assertion. That stronger
+  claim is withdrawn and remains a fresh live obligation.
+- R350 was an OS-command harness failure before workload effects. R353 reached
+  actual cancellation but a five-second status request expired. Later readback
+  found every task terminal and original processes absent. Neither family passed;
+  both were physically retired and cleaned. No persistent deadlock claim or
+  deadline increase follows from this evidence.
+- R356 runs the same five races and five-second request budget in a node-local
+  repository on allocated Ares node ares-comp-07/job24927, testing shared-storage
+  latency as a hypothesis. Three repetitions passed, then the fourth hit the same
+  five-second request timeout; shared storage did not explain it. The failed family
+  settled and was cleaned. R357 now runs the remaining child Download/yield/wake
+  experiment on the same frozen candidate; it is not yet accepted evidence. R357
+  stopped before inference because explicit builtin declaration was rejected. R358
+  uses the existing automatic attachment and has proved parent/child yield while
+  the real original Download progresses; completion is still pending.
+- All local campaign service/browser processes and R341/R342/R343 disposable
+  roots are retired/absent. The failed read-only R354 helper was force-closed by
+  verified ownership after memory pressure; no model work was submitted by it.
+  Exact R345 credential staging deletion was automatically rejected; do not retry,
+  bypass or delegate it. Existing manual-only boundaries remain intact.
+- Remaining: required Q3/Q4 combinations (including child Download/yield/wake),
+  Q6 real-provider work, Q7 recovery/history/effect-loss obligations, affected R6
+  repetitions and final integrated adjudication. The candidate is not qualified
+  for publication or daily Desktop installation.
 
 ## Current execution — 2026-10-19 17:18 UTC
 

@@ -20,6 +20,7 @@ from clio_agent.errors import ClioError
 from clio_agent.gact.auth import configured_bearer_token, has_valid_bearer
 from clio_agent.gact.human_controls import intervene
 from clio_agent.gact.native_work import now
+from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.question_surface import question_view
 from clio_agent.gact.routes.session_question_helpers import (
     answer_question_response,
@@ -167,9 +168,9 @@ def register_task_routes(app: FastAPI) -> None:
         active_only: bool = False,
     ) -> dict[str, Any]:
         try:
-            return await app.state.task_history.io.run(
+            return await run_off_loop(
                 app.state.task_operations.query,
-                await app.state.task_history.io.run(caller, sid),
+                await run_off_loop(caller, sid),
                 kind=kind,
                 status=status,
                 cursor=cursor,
