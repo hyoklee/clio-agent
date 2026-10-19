@@ -1,6 +1,6 @@
 # Tasks replacement acceptance ledger
 
-## Active live execution — 2026-10-19 18:12 UTC
+## Active live execution — 2026-10-19 18:49 UTC
 
 Initial implementation and test construction are complete. This phase is actual
 production-service/model/UI qualification and bug repair; no local pytest/Vitest
@@ -19,8 +19,12 @@ suite ran in this execution period.
   with duplicate auto-attachment suppressed. Three new public-contract regressions
   are constructed; execution is delegated to CI. The green acbe result above is the
   baseline, not acceptance of these new repairs. Live R358 remains frozen on acbe.
-- Astra and actual Claude Code/Fable independently found no source blocker in
-  this batch. Their source reviews are not runtime acceptance.
+- Astra and actual Claude Code/Fable cleared the acbe baseline. Both rejected
+  repair head 076e for the same new lock inversion: query held the view lock while
+  task_order still took the writer lock. This revision corrects that helper to the
+  existing view lock; the query call graph uses only passive, view-locked indexes.
+  The rejected head was never deployed to live services. Fresh independent review,
+  CI and affected live cancellation/query checks remain required.
 - R341 passed allfive fresh R3 busy-to-idle arrival races with actual Luna,
   confirmed recipient-input commitment once, normal service exit and cleanup.
 - R342 passed four R6 cases. The fifth parent omitted commands in its child
@@ -50,11 +54,12 @@ suite ran in this execution period.
   repository on allocated Ares node ares-comp-07/job24927, testing shared-storage
   latency as a hypothesis. Three repetitions passed, then the fourth hit the same
   five-second request timeout; shared storage did not explain it. The failed family
-  settled and was cleaned. R357 now runs the remaining child Download/yield/wake
-  experiment on the same frozen candidate; it is not yet accepted evidence. R357
-  stopped before inference because explicit builtin declaration was rejected. R358
-  uses the existing automatic attachment and has proved parent/child yield while
-  the real original Download progresses; completion is still pending.
+  settled and was cleaned. R357 stopped before inference because explicit builtin
+  declaration was rejected. R358 proved both original assignments yielded while
+  Download progressed, but its 788 MB / 48,001-file invented workload exceeded the
+  unchanged 600-second diagnostic. Its raw result is failed; work was explicitly
+  cancelled, physically settled and removed. The next family uses the previously
+  qualified 8,001-file workload with all byte/hash and assignment assertions intact.
 - All local campaign service/browser processes and R341/R342/R343 disposable
   roots are retired/absent. The failed read-only R354 helper was force-closed by
   verified ownership after memory pressure; no model work was submitted by it.

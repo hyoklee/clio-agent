@@ -207,8 +207,8 @@ def task_order(
     kind: str = "",
     active_only: bool = False,
 ) -> Sequence[tuple[str, str]]:
-    """Borrow a passive ordering while the caller holds history serialization."""
-    with self._lock:
+    """Borrow a passive ordering while the caller holds the confirmed read view."""
+    with self._view_lock:
         return self._query_order.get((domain, identity, human_id, kind, active_only), ())
 
 
