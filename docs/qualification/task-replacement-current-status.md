@@ -140,8 +140,15 @@ inputs through its recoverable intent. Confirmed answers remain unchanged. No ne
 scheduler, driver or shutdown deadline is added. Four constructed regression cases
 (two cancellation scopes, pending input closure and confirmed-answer retention)
 will run in CI; no local pytest/Vitest loop was executed. Scoped Ruff/format,
-Mypy and removal/size/class guards passed. Fresh live cancellation and affected
-input qualification remain required after this patch.
+Mypy and removal/size/class guards passed. R320 passed all ten actual-model cancellation races (five subtree, five individual)
+on ffc974100, with no late Questions and normal service shutdown. Astra then found
+a distinct persistence gap: a confirmed Question answer could be replaced before
+its callback checkpoint. The follow-up reads that authoritative answer first,
+preserves accepted control recording across later grant revocation, and expands
+constructed coverage to seven cases. The follow-up requires fresh CI and affected
+live recovery acceptance. R321 normal input was provider-blocked after acceptance;
+its already accepted native operation completed without replay, but that does not
+pass the model gate.
 
 Both reviewers found no blockers in the specific GACT 7260f2dd correction; that
 source assessment is not candidate or release clearance. Remaining recovery,

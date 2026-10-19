@@ -36,11 +36,7 @@ async def cancel(
 
     def intent() -> None:
         with owner.history.serialized():
-            selected = (
-                TaskAccess(owner.history, caller).require(handle, "control")
-                if caller is not None
-                else owner.history.task_snapshot(handle)
-            )
+            selected = owner.history.task_snapshot(handle)
             if selected is None:
                 raise ValueError("External task is unavailable")
             if selected.cancellation_requested_at is None:
@@ -56,11 +52,6 @@ async def cancel(
                     ),
                     observation_id=uuid4().hex,
                 )
-            # A native cancellation ACK cannot advance the SDK's result poll
-            # while its elicitation callback still waits for one of our Questions.
-            # Close inputs in the same recoverable intent write, never before
-            # authorization or as a prerequisite for the cancellation RPC.
-            close_input_questions(owner, selected)
 
     owner.recovery.defer_recording("external-cancel:" + handle, intent)
     for host in owner.connections.values():
@@ -92,6 +83,19 @@ async def cancel(
                 update={"task_id": bound.task.task_id}
             ):
                 raise ValueError("External cancellation differs from its original SDK identity")
+
+            def close_inputs() -> None:
+                with owner.history.serialized():
+                    current = owner.history.task_snapshot(handle)
+                    if current is None or current.backend != latest.backend:
+                        raise ValueError("Input cancellation differs from its accepted owner")
+                    close_input_questions(owner, current)
+
+            # This owner action is admitted only after the final rights/identity
+            # check above. Later revocation cannot make recording an already
+            # accepted effect retry forever. Core recovery still precedes the
+            # Question write, without delaying the native cancellation RPC.
+            owner.recovery.defer_recording("external-cancel-inputs:" + handle, close_inputs)
             await bound.request_cancel()
             return True
 
@@ -124,6 +128,7 @@ async def cancel(
             "settlement": "external_acknowledged" if acknowledged else "unknown",
             "recording": "unconfirmed"
             if owner.recovery.is_pending("external-cancel:" + handle)
+            or owner.recovery.is_pending("external-cancel-inputs:" + handle)
             else "confirmed",
         }
     return {

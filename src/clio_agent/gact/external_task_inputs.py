@@ -182,6 +182,13 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
             details = self._details(current)
             if key in details.get("answers", {}):
                 return "", details["answers"][key]
+            qid = "task_" + hashlib.sha256((task.handle + "\0" + key).encode()).hexdigest()
+            pending = self.history.task_snapshot(qid)
+            if pending is not None and pending.raw_status == "answered":
+                # The Question commit precedes the callback's canonical-response
+                # copy. Recover that answer through the existing post-wait path;
+                # later cancellation cannot replace it with a synthesized reply.
+                return qid, None
             cancelled = current.cancellation_requested_at is not None or self.recovery.is_pending(
                 "external-cancel:" + task.handle
             )
@@ -202,8 +209,6 @@ async def _input(self: ExternalTasks, host: ExternalConnection, params: Any, req
                     observation_id=uuid4().hex,
                 )
                 return "", value
-            qid = "task_" + hashlib.sha256((task.handle + "\0" + key).encode()).hexdigest()
-            pending = self.history.task_snapshot(qid)
             if pending is None or not pending.raw_status:
                 from clio_agent.gact.elicitation_config import trusted_origins
                 from clio_agent.gact.elicitation_schema import (
