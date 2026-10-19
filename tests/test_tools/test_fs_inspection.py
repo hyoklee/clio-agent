@@ -151,7 +151,7 @@ def test_links_are_visible_but_never_searched(approved: Path) -> None:
         {"query": ""},
         {"query": "x", "limit": 0},
         {"query": "x", "limit": 201},
-        {"query": "x", "context_lines": 6},
+        {"query": "x", "context_lines": 51},
         {"query": "x", "file_glob": ""},
         {"query": "x" * 1001},
     ],
@@ -165,9 +165,12 @@ def test_invalid_search_bounds_fail(approved: Path, kwargs: dict[str, object]) -
 async def test_real_gateway_discovers_and_searches_approved_source(approved: Path) -> None:
     (approved / "source.py").write_text("def callback():\n    pass\n", encoding="utf-8")
     async with Client(build_gateway({}), cache=False) as client:
+        tools = {tool.name: tool for tool in await client.list_tools()}
+        context_schema = tools["fs_search_text"].input_schema["properties"]["context_lines"]
+        assert context_schema["maximum"] == 50 and context_schema["minimum"] == 0
         listing = await client.call_tool("fs_list_directory", {"path": str(approved)})
         result = await client.call_tool(
-            "fs_search_text", {"path": str(approved), "query": "def callback"}
+            "fs_search_text", {"path": str(approved), "query": "def callback", "context_lines": 35}
         )
     assert not listing.is_error and not result.is_error
     assert result.structured_content is not None

@@ -69,7 +69,7 @@ _MAX_READ_BYTES = conf.resolve(
 
 
 @fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)
-def list_directory(path: str, limit: int = 200) -> dict[str, Any]:
+def list_directory(path: str, limit: Annotated[int, Field(ge=1, le=1_000)] = 200) -> dict[str, Any]:
     """List immediate entries in an absolute approved directory; does not follow links.
 
     Use this to discover repository paths without guessing filenames or running shell.
@@ -81,10 +81,10 @@ def list_directory(path: str, limit: int = 200) -> dict[str, Any]:
 @fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)
 def search_text(
     path: str,
-    query: str,
+    query: Annotated[str, Field(min_length=1, max_length=1_000)],
     file_glob: str = "*",
-    limit: int = 100,
-    context_lines: int = 2,
+    limit: Annotated[int, Field(ge=1, le=200)] = 100,
+    context_lines: Annotated[int, Field(ge=0, le=50)] = 2,
     case_sensitive: bool = True,
 ) -> dict[str, Any]:
     """Search literal text below an absolute approved directory, with line-numbered context.
@@ -92,6 +92,7 @@ def search_text(
     Use file_glob to narrow source files. Does not follow links, execute code or write.
     Scan/result limits and incomplete files are explicit; no matches is not proof of absence
     when truncated. Binary files and common dependency/Git directories are skipped.
+    context_lines supplies 0–50 lines on each side; returned text is capped at 32,000 characters.
     """
     return _search_text(path, query, file_glob, limit, context_lines, case_sensitive)
 

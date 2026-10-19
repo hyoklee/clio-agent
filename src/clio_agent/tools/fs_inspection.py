@@ -74,8 +74,8 @@ def search_text(
     validate_non_empty_string(path, field="path")
     validate_non_empty_string(file_glob, field="file_glob")
     validate_positive_int(limit, field="limit", max_value=200)
-    if len(query) > 1_000 or not 0 <= context_lines <= 5:
-        raise ValueError("query is limited to 1,000 characters and context_lines to 0–5")
+    if len(query) > 1_000 or not 0 <= context_lines <= 50:
+        raise ValueError("query is limited to 1,000 characters and context_lines to 0–50")
     policy = FileAccessPolicy.from_env()
     root = policy.validate_read_directory(path)
     pending = deque([root])

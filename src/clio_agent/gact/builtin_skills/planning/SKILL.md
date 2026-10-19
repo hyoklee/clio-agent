@@ -28,6 +28,9 @@ Establish the current behavior before proposing a change: the request may alread
 be implemented. Resolve source questions during planning rather than deferring
 them to implementation. Report an existing capability or a demonstrated gap;
 do not manufacture work to match the request's wording.
+Search tests by observable behavior, messages and test names as well as source
+symbols. A test can exercise a feature without naming its internal exception or
+helper. Check matching test bodies before declaring coverage missing.
 Turn unknowns into evidence before you propose anything. "Do not ask what the repo
 can answer" is the rule; a question to the user is for genuine intent/tradeoff
 decisions, not for facts you can look up.
