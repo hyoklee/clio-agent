@@ -128,6 +128,12 @@ sums**, not a dissolved unique habitat footprint. Forested stream environments
 are a broad proxy and classes can overlap. A basin-wide unique wetland percentage
 remains unverified; the figure and result must preserve those qualifications.
 
+Independent provider queries reproduce the ledger: `43.4003908564`,
+`102.3963746284`, `498.1367810603` and `1329.6613275535` km² respectively.
+The actual query parameters/responses are retained in
+`tahoe-independent-verification.json`. This verifies the stated layer-sum method,
+not a dissolved or overlap-corrected habitat inventory.
+
 The map is retained as a scientific output, not as evidence that every NDP
 GeoJSON resource downloaded successfully. The agent's recovery through the
 provider service and its unresolved original-link failures remain in the trace.
@@ -200,11 +206,15 @@ Private evidence root: `D:/CLIO-Develop/ndp-science-20261018/`:
 - `alta-independent-verification.json`, `verify_alta.py`: independent computation.
 - `konza-independent-verification.json`, `verify_konza.py`: independently checked
   instrument coverage and burn-day concentration summaries.
+- `tahoe-independent-verification.json`, `verify_tahoe.py`: actual provider area
+  queries, with the layer-sum limitation preserved.
 - `replay-verification.json`: actual SSE contents and saved-byte verification.
 - `bridge-start-raw.json`: redacted actual nested start failure.
 - `ares-organization-create.json`, `ndp-organization-create.json`: real denials.
 - `actual-alta-ui.jpg`, `actual-alta-chart-ui.jpg`, `stream-docs.jpg`,
   `science-question-bank.jpg`: actual client/docs screenshots.
+- `actual-tahoe-ui.jpg`, `actual-tahoe-canvas-ui.jpg`: the real map artifact opened
+  in its actual CLIO workspace, after the completed session and backend reload.
 - Original semantic traces remain in the reused private CLIO home's
   `state/traces/semantic_traces/`, with the session IDs above.
 
@@ -223,3 +233,17 @@ new Core installation, Endpoint installation, release or main merge is included.
   zero errors/warnings, and its 96-page build passes internal link validation.
 - Actual CLIO UI/chart images and rendered documentation were inspected. No
   fixture UI is presented as real-agent acceptance.
+
+Focused test commands (each group passed without skips):
+
+```powershell
+uv run --no-sync pytest tests/test_gact/test_ndp_endpoints.py tests/test_gact/test_ndp_agent_workflow.py tests/test_gact/test_connected_data_setup_tool.py -q
+uv run --no-sync pytest tests/test_gact/test_ndp_source.py tests/test_gact/test_ndp_artifact_upload.py -q
+uv run --no-sync pytest tests/test_gact/test_ndp_endpoint_workflow.py tests/test_gact/test_ndp_skill_helpers.py tests/test_gact/test_ndp_catalog_pages.py -q
+uv run --no-sync pytest tests/test_tools/test_shell_server.py -q
+```
+
+Ruff/Pyright cover all changed production modules; site checks used `pnpm check`
+and `pnpm build` from `site/`. Logs remain in the private evidence root. The
+unrelated marketplace submodule modification was present before this task and
+was not included in either commit.
