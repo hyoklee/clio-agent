@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
@@ -60,6 +61,7 @@ def test_connection_uses_live_permission_gate(
     client.__enter__()
     request.addfinalizer(lambda: client.__exit__(None, None, None))
     app = client.app
+    assert isinstance(app, FastAPI)
     upstream = tmp_path / "upstream"
     upstream.mkdir()
     (upstream / "readme.txt").write_text("input", encoding="utf-8")
@@ -125,9 +127,13 @@ def test_connection_is_real_and_reused_without_a_second_approval(
     settled = wait_tasks(first["handle"])
     assert settled["results"][0]["status"] == "completed"
     assert first["connection"]["state"] == "indexing"
+    accepted = setup_tool.setup_presentation({}, first, None)
+    assert accepted["summary"] == "Indexing requested"
+    assert accepted["blocks"][0]["result_kind"] == "snapshot"
     second = connect_tool.connected_data_connect("local", str(upstream), "Measurements")
     assert second["connection"]["source_id"] == first["connection"]["source_id"]
     assert second["connection"]["state"] == "linked"
+    assert setup_tool.setup_presentation({}, second, None)["summary"] == "Source linked"
     assert len(requests) == 1 and requests[0][0] == "connected_data_connect"
     opened = setup_tool.connected_data_open(first["connection"]["source_id"])
     assert [row["path"] for row in opened["entries"]] == ["measurements.csv"]
@@ -153,6 +159,7 @@ def test_oauth_connection_waits_for_private_sign_in(
     service, _, _ = bound
     result = connect_tool.connected_data_connect("google_drive", "drive-folder", "Dataset")
     assert result["connection"]["state"] == "sign_in_required"
+    assert setup_tool.setup_presentation({}, result, None)["summary"] == "Sign-in required"
     assert service.sources("ws_default")[0].linked_manifest_id is None
     assert (
         next(row for row in result["accounts"] if row["provider"] == "google_drive")[

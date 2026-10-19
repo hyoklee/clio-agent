@@ -123,8 +123,13 @@ def connected_data_status() -> dict[str, Any]:
 
 
 def setup_presentation(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
-    """Display the same inventory the agent received, without a setup button."""
+    """Distinguish an accepted connection task from the source/account inventory."""
     row = structured if isinstance(structured, Mapping) else result
+    if isinstance(row, Mapping):
+        from clio_agent.gact.task_tools import task_submission_presentation
+
+        if (submission := task_submission_presentation(row)) is not None:
+            return submission
     if not isinstance(row, Mapping) or row.get("status") != "available":
         return {"summary": "Connected data is unavailable", "blocks": []}
     lines = ["### Workspace folders"]
@@ -142,8 +147,16 @@ def setup_presentation(args: Mapping[str, Any], result: Any, structured: Any) ->
     )
     if not row["sources"]:
         lines.append("No attached remote sources. Files may already be in the workspace folders.")
+    connection = row.get("connection")
+    state = connection.get("state") if isinstance(connection, Mapping) else None
     return {
-        "summary": "Workspace inputs and provider accounts",
+        "summary": (
+            "Source linked"
+            if state == "linked"
+            else "Sign-in required"
+            if state == "sign_in_required"
+            else "Workspace inputs and provider accounts"
+        ),
         "blocks": [
             {
                 "id": "source-inventory",
