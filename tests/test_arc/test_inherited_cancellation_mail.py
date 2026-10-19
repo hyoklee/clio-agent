@@ -49,6 +49,10 @@ async def test_cancelled_successor_retains_inherited_outcome_until_new_input(
             predecessor=history.task_snapshot(predecessor.handle),
             invocation_id="explicit-restart",
         )
+        persisted = history.task_snapshot(successor.handle)
+        assert persisted is not None and persisted.description_reference is not None
+        assert history.read_content(persisted.description_reference) == predecessor.description
+        successor = persisted
         assert successor.details is not None
         details = AssignmentDetails.model_validate(history.read_content(successor.details))
         cancelling = successor.model_copy(

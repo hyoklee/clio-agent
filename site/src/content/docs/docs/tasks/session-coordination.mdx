@@ -119,9 +119,18 @@ a completed human-owned root did not wake itself.
 The root run also demonstrated observation-only redaction, a denied result read,
 desktop granting and phone revocation through the real UI. One model initially
 declined messaging and needed one feedback clarification before using the exposed
-control. These scoped demonstrations do not accept every busy-message case,
-historical-handle case, inference route or recovery race. They also do not
-demonstrate a distributed scheduler or Slurm integration.
+control.
+
+A later recorded Codex/Luna run completed the busy-message and historical-handle
+cases between two independent declared workflows. A peer request arrived while
+the recipient waited on real Shell work, and its reply continued the other
+session without human steering. Revocation withheld pending messages and results;
+the agent's result read was denied. Restored access admitted each retained notice
+once, while the owner's delivery remained independent. A linked successor could
+read the completed original handles without rerunning either workflow.
+
+These scoped demonstrations do not accept every inference route, lifecycle or
+recovery race. They do not demonstrate a distributed scheduler or Slurm integration.
 
 Read [Messages and feedback](/docs/tasks/messages/) for the implemented addressing
 and mailbox behavior, and [Background work](/docs/tasks/) for accepted task execution.

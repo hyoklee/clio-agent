@@ -1,5 +1,71 @@
 # Tasks replacement: finite live experiments
 
+## Active live execution — 2026-10-19 17:41 UTC
+
+Initial implementation and test construction are complete; live qualification and
+bug repair are active. No local pytest/Vitest suite ran in this repair batch.
+
+- Agent 52cc exact-head CI completed: 13,079 passed, two failed, 50 exclusions
+  per interpreter (3.12/3.13/3.14). All twelve shard XML reports were inventoried.
+  The same two new regression cases failed only because their expected snapshot
+  omitted Core's persisted description reference. The correction retains full
+  equality and additionally checks that the referenced description is preserved.
+- GACT 0463c6839ff747eed2ff8a63679ca8ef2bc2e5cb corrects history controls leaking
+  into Data in compact/full views. The original 390x500 geometry assertions remain
+  unchanged. Regression execution is delegated to CI; a matching production UI
+  build and fresh real-service UI qualification are required.
+- Windows Document runtime also failed in soffice.com (3221226505). This is an
+  outstanding CI failure, not a Tasks pass or a reason to halt other live work.
+- R341 is running on D: against frozen agent 52cc/GACT b440, exercising five
+  actual-model busy-to-idle arrival races. Prepared scenarios are not passes.
+- The human authorized Ares compute-node qualification, with owned allocations,
+  processes and repository data cleaned afterward. Homelab remains disallowed.
+- The Python production digest remains 7b24b26aaf3358d867bb6dca7c65079579d0f3b2e6dd646b4a828b85d5550c44.
+  This batch changes the regression fixture, UI pointer and documentation, not
+  Python runtime behavior. Previous source-impact limits still apply.
+- Full Q3/Q4/Q6/Q7/Q9 and affected R3/R6 repetitions remain incomplete. No release
+  go decision, daily Desktop change or native/relay acceptance is claimed.
+
+## Current execution — 2026-10-19 17:18 UTC
+
+Initial implementation and test construction are done. Current production source
+is agent `52cc8e7bcff0a4d28347aa9beac0ac1654e00172` with GACT
+`b44037fdde19568f1085da44f0c970c32f439ab0`; Python digest
+`7b24b26aaf3358d867bb6dca7c65079579d0f3b2e6dd646b4a828b85d5550c44`.
+This is not a release go decision.
+
+- Actual-model R338 passed the two-workflow Q5 family. Real SSE lines reached
+  85,924 bytes without parser errors under the configured 1 MiB limit. Q1/Q2/Q8
+  retain their explicitly scoped evidence and source-impact records.
+- R332 discovered inherited-result admission after cancellation and inaccessible
+  completed-child restart. The backend correction uses the captured cancellation
+  set. GACT preserves live-work queries and loads completed history on demand.
+  R339 verified real UI restart/pause, then failed its navigation to Resume; it
+  is not a complete lifecycle/UI pass. R343 corrects panel navigation and remains
+  prepared, not executed.
+- e114 CI exposed the unchanged 800-line guard. The redundant assignment
+  forwarding method was removed in 52cc; the guard now passes at 783 lines,
+  scoped Ruff/Mypy pass, and replacement CI is pending. No guard baseline changed.
+- Matching TypeScript/online/offline UI builds passed at e114/b440; the later
+  Python-only binding change leaves all UI compilation inputs identical.
+- Astra and actual Claude Code/Fable cleared b440's source delta. Astra also cleared the mechanical
+  52cc binding removal; neither reviewer identified a remaining source blocker. Reviews and builds do not qualify runtime.
+- No local pytest/Vitest suite ran in this live campaign. Tests are in CI.
+- All R332/R338/R339 service/browser processes and disposable runtime/temp roots
+  are retired/absent. Current live launches are held by machine commit headroom
+  below the recorded 4 GiB preflight threshold. No unrelated app was stopped.
+- Remaining live work: Q3/Q4 full combinations, Q6 approved-provider work, Q7
+  outage/history/effect-loss obligations, Q9 current controls and affected R3/R6
+  five repetitions each. Thirty earlier races remain recorded; do not claim all
+  thirty accepted on the new tuple. R341/R342/R343 have not run on this tuple.
+
+Receipts: `Q5-current-adjudication.json`, `SSE-current-adjudication.json`,
+`candidate-impact-e114b5db8.json`, `candidate-impact-52cc8e7bc.json`,
+`r343-web-build.json`, `r340-claude-review.json`, `r344-claude-review.json`,
+`r332-cleanup.json`, `r338-cleanup.json`, `r339-cleanup.json` in the D execution
+repository. Installed Desktop/auth/defaults/released pins and manual-only
+boundaries remain preserved; no merge, release, install or archive was performed.
+
 ## Live execution checkpoint — 2026-10-19 16:55 UTC
 
 Initial implementation and test construction are complete. Live qualification and

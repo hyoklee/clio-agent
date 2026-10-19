@@ -133,7 +133,18 @@ A blueprint lists the servers it needs in `mcp_servers` in its `AGENT.md`, in th
 
 ## Lifecycle
 
-CLIO does not start every server at launch. A server starts the first time one of its tools is called. Each workspace has its own set of running servers, and a set that has been idle for two minutes is stopped. By default at most two workspaces keep servers running at once. The next tool call starts what it needs again.
+Workspace tools can start their servers on demand, and idle workspace clients
+can be recycled. An accepted task has a longer lifetime: CLIO retains its task
+connection while submission, input or result observation still needs it. This
+includes a local stdio server carrying active task work.
+
+The built-in Shell and connected-storage task servers belong to the running CLIO
+service. An idle workspace client or a stopped agent response does not shut down
+their accepted background work. During service shutdown, CLIO settles its owned
+local work before closing those servers. An external server may keep its jobs
+running independently; reconnection uses their original identities and does not
+repeat the original tool call. See [Tools and sources](/docs/tasks/tools-and-sources/)
+for recovery limits, including memory-backed work that cannot survive shutdown.
 
 If a local server fails to start, CLIO reports the cause when it can, such as a command that is not on your `PATH` or a working directory that does not exist. Install the program, or give the full path in `command`, and reconnect the server.
 
