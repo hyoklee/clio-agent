@@ -4,12 +4,12 @@ import { join, resolve } from 'node:path';
 
 /** Published native exports, pinned to the reviewed bytes rather than a moving session. */
 export const ndpConversations = [
-  { slug: 'alta', file: 'Alta-snowfall-session.html', bytes: 40359492,
-    sha256: 'f1d5dd67cdf564f8619c86d5a7d407f39c38b7fed4a7b54d4beea09df1813f6e' },
-  { slug: 'tahoe', file: 'Lake-Tahoe-session.html', bytes: 61345784,
-    sha256: 'e26c03515dd3fb5b35a11522792731a2ecc29b6362040bc641cc7f03579723e3' },
-  { slug: 'konza', file: 'Konza-session.html', bytes: 46724281,
-    sha256: '42ed10fac4f83e365232403608d6f76ba34d6def3cb2ed7c190325dedbd1a1f8' },
+  { slug: 'alta', file: 'Alta-snowfall-session-maps-v2.html', bytes: 40359592,
+    sha256: '84e3de064bd91e453463f45c0179f34116c658bea5e90c7b088fa27a5a30e69f' },
+  { slug: 'tahoe', file: 'Lake-Tahoe-session-maps-v2.html', bytes: 61345872,
+    sha256: '58a93fa96435f2489307130565002f732cece325e0f7a5509c60a89cad709bfa' },
+  { slug: 'konza', file: 'Konza-session-maps-v2.html', bytes: 46724377,
+    sha256: 'd9653d6835153479e2395f0eae082c8b8b07388cfd93ba22e349a901c0104f93' },
 
 ] as const;
 
