@@ -20,12 +20,16 @@ The plot's input contained 857,957 data rows, 50,084,343 bytes, and SHA-256
 `d4c935cf040a64c433be33be17118723bbe91abcdd00f01370e327243dd9e240`.
 Dataset `2611eeb1-4efd-4ab3-badd-abacc6b64d9f`, CSV resource
 `9ed2d1f4-6fd4-4720-9724-7280c2db9b4e`. Component physical units were not
-established, so the figure retains “source units.”
+established, so the figure retains “source units.” Observational provenance,
+processing and reference frame were not established either. The plot was removed
+from the public scientific walkthrough on 19 October; its files remain retained
+for audit. Successful file acquisition is not scientific validation.
 
 The Endpoint check queried the existing Ares API over SSH for IU.ANMO station
-metadata, and used a direct HTTPS on-demand service for three then two archived
-measurements with a resume cursor. Captured bytes/hashes, non-overlapping records,
-and equality to the original CSV were checked. Protected live Kafka sampling
+metadata, and used a direct HTTPS on-demand service for three then two CSV replay
+records with a resume cursor. Captured bytes/hashes, non-overlapping records,
+and equality to the source CSV were checked. The replay's scientific authenticity
+was not established by these transport checks. Protected live Kafka sampling
 was not qualified; an unsigned request returned HTTP 401. Catalog publisher
 selection does not grant account groups or Endpoint roles.
 

@@ -181,6 +181,9 @@ def connected_data_ndp_endpoint_request(
     the API contract. For organizations, dataset creation and edits, load
     work-with-ndp and references/catalog-authoring.md. Artifact uploads use
     connected_data_ndp_upload_artifact, then register its resource descriptors.
+    Scientific stream/history requests use references/scientific-stream-analysis.md:
+    acquire and analyze the data yourself, verify provenance and historical
+    availability, and report missing history instead of substituting example data.
     Read operations, finite SSE samples and bridge start/status/
     stop use the same route. Starting a remote job is NOT consuming its output:
     inspect its status, capture actual data, and stop only sessions you own.
@@ -188,7 +191,8 @@ def connected_data_ndp_endpoint_request(
     byte limit (maximum 30 seconds, 1000 SSE messages, 2 MiB). This does not
     stop a separate remote background producer. Use its returned session ID to
     stop it explicitly. Preserve resume cursors from SSE done events for the
-    next segment. The immutable resource_id can be read/inspected with workspace
+    next segment internally; do not make the user copy opaque cursors for an
+    ordinary analysis request. The immutable resource_id can be read/inspected with workspace
     resource tools. Never provide tokens/passwords in parameters or bodies;
     authentication=ndp uses the private account. A denied action returns control.
     """

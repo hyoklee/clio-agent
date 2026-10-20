@@ -1,6 +1,6 @@
 ---
 title: Sample and analyze NDP streams
-description: Choose observations, save a stream sample and continue from the next record.
+description: Ask CLIO to analyze stream observations, check available history and explain the limits of the evidence.
 ---
 
 import Capture from '../../../../components/overview/Capture';
@@ -8,89 +8,110 @@ import { captureImage } from '../../../../lib/captures';
 import sampleForm from '../../../../assets/tutorials/ndp/stream-sample-form.png';
 import savedSample from '../../../../assets/tutorials/ndp/stream-saved-result.png';
 
-A stream is a way to deliver measurements. It does not establish when those
-measurements were acquired. Start with the scientific question and inspect the
-measurement timestamps before calling a result live.
+Ask the agent a scientific question. It should discover the appropriate source,
+retrieve and analyze the available observations, and explain which historical
+comparisons the data supports. You approve a connection or finish private sign-in
+when needed; you should not have to collect samples or copy continuation tokens
+for the agent.
 
-## Choose the data you need
+```text
+What do the available observations tell us about ground movement at this station?
+Compare the recent stream with its historical record and show the evidence.
+```
 
-| Source | Useful for | What CLIO retains |
-| --- | --- | --- |
-| A published dataset file | Historical analysis over its documented coverage | The selected original and separate analysis outputs |
-| Archived CSV replay | Processing historical observations incrementally | Finite SSE captures, measurement timestamps and a resume cursor when supplied |
-| An Endpoint service query | A filtered scientific response, such as station metadata | The response bytes and query provenance |
-| A live bridge or producer | Forwarding current upstream observations to a destination topic | Producer identity/status and separately captured observations |
+This is an example research request, not a claim that every connected service has
+displacement measurements or an archive. The agent must check those capabilities
+against the requested station, variables and dates.
 
-Station metadata describes an instrument and its location or operating epochs.
-It is not a displacement, waveform or water-level time series. A successfully
-started producer is also not evidence that CLIO has received measurements.
+## What data supports the analysis?
 
-## Capture a finite segment
+A catalog entry or a working connection does not establish what the values mean.
+CLIO should inspect the producing source, variable definitions, units, time
+encoding, reference frame and documented processing before drawing conclusions.
 
-Connect the existing service from **Attach → National Data Platform → Endpoints &
-streams** using its URL or a saved SSH profile. Use the service's Files, Stations
-or Streams view as available. Review the selected resource/station and limits,
-then save a sample. Opening a saved connection does not start a producer.
+| Data supplied | How to use it |
+| --- | --- |
+| Traceable instrument observations | Analyze their actual coverage, quality flags and uncertainty. |
+| Derived or preprocessed observations | Check and report the transformations, units and limits relevant to the question. |
+| Simulation or demonstration data | Identify it as such; it does not establish what a real instrument observed. |
+| Values with unverified provenance | Explain what is missing before using them as evidence about the physical phenomenon. |
 
-For an archived CSV, choose **Files → Sample CSV from URL**, paste the published
-file address and choose **Rows to sample**. Open **Options** to set the delivery
-interval or continue from a previous sample. Choose **Save sample**.
+The label “raw,” a CSV filename, or columns called east, north and up do not
+establish instrument provenance or physical displacement. Station metadata
+describes an instrument and its operating epochs; it is not its measurement time
+series.
+
+## Is historical data available?
+
+The agent should inspect the service's historical-query or retention capabilities
+and check actual measurement timestamps. A short sample does not establish the
+full available history. If a corresponding NDP archive is available, CLIO can
+compare it after checking instrument, variables, processing and units, while
+keeping that archive's identity separate from the stream.
+
+- **History is available:** report the verified dates, coverage and gaps, then
+  analyze the supported comparison.
+- **Only a limited window is available:** state which requested periods it covers.
+- **The inspected stream provides current data only and no compatible archive was
+  found:** say that historical data is unavailable through those checked sources.
+- **Access or a service error prevents checking:** say that historical availability
+  could not be verified, with the actual reason.
+
+When history is unavailable, a new bounded capture may still answer a question
+about current observations. Replaying an unrelated CSV does not supply the missing
+historical record.
+
+## Acquire, continue and analyze
+
+Once the source is connected through **Attach → National Data Platform**, the
+agent uses the service's advertised operations to capture a bounded interval,
+inspect its bytes and produce useful analysis and figures. Opening a saved
+connection does not start a producer. Starting a producer does not establish that
+measurements were received.
+
+Captures become ordinary files in **Sources**. Their receipts retain the Endpoint,
+operation, filters, capture times, status, byte count, SHA-256 and stop reason.
+The agent can read the retained bytes and keep the original separate from its
+derived tables, figures and report.
+
+For the next segment, ask the agent to continue. It should retain and reuse the
+service's exact continuation position, check for repeated or skipped observations,
+and keep opaque cursors out of the ordinary answer. A missing completion position
+must be reported before assuming a safe resume point. An SSE event ID, a replay
+row cursor and a broker offset are different concepts.
+
+Default capture limits are **10 seconds and 100 SSE events**; maxima are
+**30 seconds, 1,000 events and 2 MiB**. These bounds do not promise that many
+scientific observations: control messages count as events too. A limit may leave
+the final event incomplete, which must not be counted as a complete observation.
+
+## Replay and live acquisition
+
+A CSV replay service emits rows from a file, possibly at a chosen delivery rate.
+It can test transport, parsing and continuation. It can support historical science
+only when the file's observational provenance and processing are established.
+Its delivery rate does not establish the measurement cadence or make old values
+current. An archived HTML conversation cannot acquire new data.
+
+A live producer requires a supported upstream source and a readable output. The
+agent should retain its session identity and obtain actual measurements before
+claiming live access. Closing CLIO's reader does **not** stop a separate remote
+producer. CLIO should stop the producer started for this investigation and check
+its terminal state, unless you asked to leave it active.
+
+## Inspect captures yourself, if useful
+
+The interface also exposes supported Files, Stations and Streams views. These
+controls are an optional way to inspect a service; they are not steps you must
+perform before asking the agent to analyze it.
 
 <Capture client:visible image={await captureImage(sampleForm)}
-  alt="Actual historical replay form with a published CSV URL, three rows, delivery interval and the previous sample's resume cursor"
-  caption="Request a small segment and use the previous completion cursor to continue. This is a real historical GNSS replay request in CLIO, 19 October 2026." />
-
-The capture becomes an ordinary file in **Sources**. Its receipt records the
-Endpoint, operation, filters, capture times, status, byte count, SHA-256 and stop
-reason. The agent can read these same bytes and create a chart or report.
+  alt="Actual historical replay form with a CSV URL, row limit and continuation options"
+  caption="Optional manual replay controls in CLIO, captured on 19 October 2026. This verifies the interface and replay request; the example CSV's observational provenance was not established." />
 
 <Capture client:visible image={await captureImage(savedSample)}
-  alt="Actual completed stream sample showing Saved 917 bytes, received observation records and Open saved data"
-  caption="The request completed and saved its received bytes. Open saved data to inspect the observations. This actual sample continued at record 46 and returned records 46–48, then cursor 49." />
-
-Default limits are **10 seconds and 100 SSE events**. Maximum limits are
-**30 seconds, 1,000 events and 2 MiB**. These are capture bounds, not a promise of
-that many observations. For example, `hello`, heartbeat and `done` messages count
-as events but are not scientific samples. A byte or time limit may leave a final
-event incomplete; preserve that fact rather than counting it as a complete row.
-
-## Resume without duplicating observations
-
-When an API returns a resume value, pass the exact value to its advertised cursor
-parameter. Inspect its response schema: the EarthScope replay service returns a
-`done` event containing **`resume`** and **`next_index`**, while the next request's
-parameter is named **`cursor`**. An SSE event ID is not necessarily a cursor.
-
-Check sample identities or measurement timestamps across adjacent segments for
-duplicates and gaps. Record the selected resource revision/hash as well as the
-cursor. A missing completion event does not establish a safe resume point.
-
-An observed replay on October 18, 2026 returned three records followed by two
-more, with measurement times **December 3, 2024, 00:00:00–00:00:04 UTC**. That is
-archived replay, despite being delivered through a stream today.
-
-## Own the producer you start
-
-A live bridge can register a derived dataset and forward an upstream topic.
-Inspect its actual station/topic catalog and existing sessions first. Keep the
-returned session ID, destination and any registration IDs. Inspect status and
-obtain actual observations before claiming live data access.
-
-Closing CLIO's capture closes its HTTP/SSH reader. It does **not** stop a remote
-producer. Stop the specific producer started for your investigation and check
-its terminal state. Do not stop unrelated sessions. If a start request times out,
-inspect session state before retrying; a lost response does not prove no work began.
-
-## Check what the sample contains
-
-Open the saved capture and check its measurement timestamps, units and coverage
-before interpreting it. A successful connection or a station listing is not a
-measurement result. Historical observations remain historical even when the
-service delivers them incrementally.
-
-If a sample contains only status messages, it does not yet support a scientific
-comparison. Keep the capture and its receipt with the investigation so that you
-can distinguish the requested observations from the bytes actually received.
+  alt="Actual completed stream sample with retained response bytes and Open saved data"
+  caption="A saved replay response can be inspected in Sources. Successful delivery and continuation are transport evidence, not independent validation of the values as scientific observations." />
 
 See [scientific questions to investigate](/docs/examples/ndp-science/) and the
-[NDP source guide](/docs/files/ndp/) for discovery, linking and publication.
+[NDP source guide](/docs/files/ndp/) for discovery, analysis and sharing results.
