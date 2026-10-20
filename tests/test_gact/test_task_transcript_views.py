@@ -454,7 +454,10 @@ def test_multiple_live_previews_share_the_existing_output_budget(
     """Selecting more active handles cannot multiply the global content allowance."""
     world = transcript_world
     world.grant()
-    peer = world.app.state.sessions.create(title="Second analyst").id
+    peer = world.app.state.sessions.create(
+        title="Second analyst",
+        workspace_id=world.app.state.sessions.get(world.target).workspace_id,
+    ).id
     peer_task = record_assignment_fixture(world.app, peer)
     TranscriptWorld(world.app, world.client, world.reader, peer, peer_task, world.root).grant()
     monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "128")

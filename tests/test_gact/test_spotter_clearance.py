@@ -35,11 +35,7 @@ def test_progress_after_timed_out_poll_is_not_discarded(
     # Pause both model owners and join their actual control work. The child's
     # attributed pause notice must not start a parent turn that publishes more
     # watcher evidence while this test asserts the two controlled progress polls.
-    async def hold_models() -> None:
-        for sid in (parent, child):
-            assignment = app.state.task_history.latest_assignment(sid)
-            await owner.pause(owner.caller(sid), assignment.handle)
-        await asyncio.gather(*tuple(owner._controls.values()))
+    async def join_admission() -> None:
         # Control notices can reserve a final admission-only probe. Join those
         # checks and inspect retirement on the owner loop; sampling busy from
         # the test thread races with a correctly vetoed, worker-free probe.
@@ -52,6 +48,13 @@ def test_progress_after_timed_out_poll_is_not_discarded(
                 assert not app.state.turn_runner.busy(sid)
                 assert owner.model_paused(sid)
                 break
+
+    async def hold_models() -> None:
+        for sid in (parent, child):
+            assignment = app.state.task_history.latest_assignment(sid)
+            await owner.pause(owner.caller(sid), assignment.handle)
+        await asyncio.gather(*tuple(owner._controls.values()))
+        await join_admission()
 
     asyncio.run_coroutine_threadsafe(hold_models(), owner._loop).result(timeout=5)
     wake_on_parent_activity(app, parent, tool_name="fs_read_file")
@@ -68,6 +71,9 @@ def test_progress_after_timed_out_poll_is_not_discarded(
             return result
         for item in app.state.task_history.pending_mail(child):
             app.state.task_history.withdraw_mail(child, item.id)
+        # Confirmed withdrawal also wakes admission. Join that worker-free
+        # probe before asserting the next clearance state, on the owner loop.
+        asyncio.run_coroutine_threadsafe(join_admission(), owner._loop).result(timeout=5)
         signal_clearance(app, parent)
         polls.append(True)
         return original_wait(timeout)

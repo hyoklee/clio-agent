@@ -1,57 +1,27 @@
 # Tasks replacement: finite live experiments
 
-### Current delta — 2026-10-20 04:32 UTC
+## Current disposition — 2026-10-20 17:00 UTC
 
-R546 actual Claude/Haiku continuation FAILED again: the correct new human input
-was committed, but no peer message/successor was accepted; Core records an invalid
-tool call. The earlier failure is not erased. Its API probe did read the real live
-frame and reuse that cursor after sealing without a source-change error; this is
-HTTP/production-owner proof, not model acceptance of that read. Service exited0;
-all8ports absent;279,522,617logical bytes of disposable state removed, no archive.
+Initial implementation is complete; qualification/repair is active. R550 actual
+Claude Opus now passes parent cancelled-child transcript inspection, old-handle
+mail, linked retained-context continuation without replay and one input commit at
+agent4989338ca/GACT0f7917cc. R539/R543 supplies earlier scoped Codex/Luna evidence.
+Haiku R542/R546 remain failed lanes. R555 actual UI found the missing historical
+child navigation; GACT86214905 repairs it using Task identity and constructed
+regressions, awaiting fresh CI/live UI. No new execution owner is introduced.
 
-R547 independent Opus review accepted the access/cursor direction and found one
-output-bound defect: several live previews could reuse the full allowance. The
-correction subtracts each preview from the existing shared budget and adds a
-multi-handle regression. Fail-closed session-history rights remain intentional.
-CI is still required. R545 all20 scoped types/lint/format and9guards passed;
-R548 confirms the corrected binary fixture types. Latest-budget static check
-remains pending at this snapshot. No local pytest/Vitest was run.
+CI39370044443 all12 reports are complete: two distinct failures (missing fixture
+workspace_id and SPOTTER admission-probe timing), corrected together without
+relaxing assertions or budgets. GACT0f7917cc CI/schema/both workspace runs pass.
+Fifty skipped cases per interpreter remain exclusions. Current-batch CI is still
+required. Stop/reviewer/SPOTTER gates, approved durable-provider prerequisite,
+final30/Q1–Q9 reconciliation, remaining coordination coverage, final Opus review
+and matching docs/media remain open. Astra stays stopped. NO GO for publication.
 
-GACT0f7917cc changes only a browser-test prerequisite: wait for actual canvas
-closure before interacting with the returned task row. A push run atdf62fe66 had
-one disclosure failure (158browsercases passed); its separate PR run passed.
-That inconsistency remains visible. No UI production bytes changed or redundant
-UI build is needed. Fresh CI must validate the test correction.
-
-R550 is registered for the same natural continuation using actual Claude Opus.
-No result is claimed before execution. This does not replace the failed Haiku
-lane or complete Q1–Q9/final30/provider/UI obligations. NO GO for publication.
-
-## Current disposition — 2026-10-20 04:25 UTC
-
-Agent1a22ffc8 / GACTdf62fe66: R539/R543 is a scoped actual Codex/Luna PASS for
-parent transcript inspection of a cancelled child, fresh mail to the old handle,
-same-session linked continuation retaining Core context, no repeated read/Question
-or spawn/restart, and one committed mail input. R516/R520 separately proves
-authorized discovery after restart, recorded outcome, actual linked artifact
-bytes/hash and idle peer mail. Neither is a whole-matrix pass.
-
-R542/R544 Claude/Haiku is FAILED: the model fabricated textual tool results;
-Core contains no claimed peer mail/successor. A prompt-only correction is being
-prepared with live-cursor stability, alias authorization and privacy regressions.
-R541 Opus found the live cursor issue and no hard access/lifecycle blocker.
-Final independent acceptance remains open. Astra reviews remain stopped.
-
-CI39366938417 completed at1a22ffc8; all12 reports identify two distinct fixture
-failures: the unavailable-artifact expectation and binary bytes registered as a
-text Report. Both are corrected together; final CI remains required. Fifty skipped
-cases per interpreter are not passes. No local behavior-test loop ran. Matching
-UI655 hashes/build pass; no new browser claim. Full Q1–Q9, approved durable-provider
-prerequisite, final30 race reconciliation and final source/UI review remain open.
-
-R539/R542 services/ports physically retired; family roots actually removed with
-no archives. R544 passive Core read admitted no models and exited. Reusable Ares
-allocation24953 remains owned. NO GO for release/install.
+Allocation24958 is owned; R550/viewer/tunnels previously settled. R526's expired
+new auth stage was hash-verified and removed1326bytes. Original auth and prior
+prohibited/manual-only roots remain preserved. R550 Core records remain only for
+repaired-UI inspection and must then be removed without archives.
 
 ## Earlier recorded source and evidence
 

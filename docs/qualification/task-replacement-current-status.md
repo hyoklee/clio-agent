@@ -1,113 +1,93 @@
 # Tasks replacement status
 
-### Current delta — 2026-10-20 04:32 UTC
+## Current disposition — 2026-10-20 17:00 UTC
 
-R546 actual Claude/Haiku continuation FAILED again: the correct new human input
-was committed, but no peer message/successor was accepted; Core records an invalid
-tool call. The earlier failure is not erased. Its API probe did read the real live
-frame and reuse that cursor after sealing without a source-change error; this is
-HTTP/production-owner proof, not model acceptance of that read. Service exited0;
-all8ports absent;279,522,617logical bytes of disposable state removed, no archive.
+**Initial implementation DONE. Regression repairs and live qualification are
+active. The complete Tasks candidate remains unqualified: NO GO for publication
+or daily installation.** Further independent reviews are Claude Opus only.
 
-R547 independent Opus review accepted the access/cursor direction and found one
-output-bound defect: several live previews could reuse the full allowance. The
-correction subtracts each preview from the existing shared budget and adds a
-multi-handle regression. Fail-closed session-history rights remain intentional.
-CI is still required. R545 all20 scoped types/lint/format and9guards passed;
-R548 confirms the corrected binary fixture types. Latest-budget static check
-remains pending at this snapshot. No local pytest/Vitest was run.
+Source baseline is agent4989338ca / GACT0f7917cc. The current combined correction
+updates the missing-workspace fixture and joins the real paused SPOTTER admission
+probe after mailbox withdrawal, retaining the exact two-poll assertion. It also
+records GACT86214905, which restores historical-child navigation from the same
+Task record through the existing projection helper. No new store/driver/policy,
+deadline change or assertion relaxation is introduced. This correction needs CI
+and fresh UI acceptance. Core production algorithms are unchanged by this batch.
 
-GACT0f7917cc changes only a browser-test prerequisite: wait for actual canvas
-closure before interacting with the returned task row. A push run atdf62fe66 had
-one disclosure failure (158browsercases passed); its separate PR run passed.
-That inconsistency remains visible. No UI production bytes changed or redundant
-UI build is needed. Fresh CI must validate the test correction.
+Develop550bfd744 remains integrated. Runtime tuple: Python3.14.6 / Core2.3.2 /
+FastMCP+tasks4.1.0 / MCP2.0.0 / Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159.
+Daily Desktop, original auth, defaults, released pins and human work are preserved.
 
-R550 is registered for the same natural continuation using actual Claude Opus.
-No result is claimed before execution. This does not replace the failed Haiku
-lane or complete Q1–Q9/final30/provider/UI obligations. NO GO for publication.
+## Confirmed scoped model and UI evidence
 
-## Current status — 2026-10-20 04:25 UTC
+- R539/R543 Codex/Luna PASS at1a22ffc8: parent read the cancelled child's original
+  transcript and sent fresh mail to the old handle. A linked assignment in the
+  same child session retained Core context and computed34.5seconds from the one
+  prior17.25second read. The new message supplied neither number. One spawn/read/
+  Question, no restart/resume or effect replay, and one committed peer input.
+- R550 Claude Opus PASS at4989338ca/GACT0f7917cc: the same natural sequence passed
+  through the actual Claude SDK text-tool bridge. Parent inspected the original
+  transcript, messaged the old handle, discovered/collected the linked successor,
+  and the child used retained context without tools. Peer attribution and the
+  cancelled/unanswered Question remained explicit. One mail input commit; source
+  and original auth hashes unchanged; service exited0.
+- R516/R520 scoped Codex/Luna proof: after unrelated work and a real restart,
+  a fresh authorized session discovered the earlier policy without answer/session
+  ID, read transcript/recorded outcome and exact linked722-byte artifact/hash,
+  and exchanged attributed idle-wake messages. The full family checker failed;
+  only independently inspected scopes are accepted.
+- R542/R546 Haiku FAILED: invalid textual tool calls/fabricated observations;
+  Core confirms no claimed continuation mail/successor. These are retained failed
+  model lanes, not capacity/auth failures or successful Claude acceptance.
+- R555 real-service UI read actual R550 records and showed compact task history
+  and assignments. It exposed the missing historical-child Open conversation
+  action. Desktop inspection and390px DOM measurement were recorded; this is a
+  FAILED navigation gate, not full Q9 acceptance. Browser error log was empty.
 
-**Initial implementation DONE. Regression CI and actual-model qualification are
-running. Full Tasks qualification remains incomplete: NO GO for publication or
-installation.**
+## CI, checks and independent review
 
-The Task transcript extension is implemented on agent `1a22ffc8`, based on develop
-`550bfd744`, with GACT `df62fe66`. It provides authorized lexical discovery,
-typed transcript pages, recorded summaries/outcomes, verified linked artifacts
-and messaging into stable sessions. Default catalogs use shared Task tools;
-explicit shipped memory aliases remain delegates. No new execution registry,
-mailbox or history store was added. Runtime identities remain Python3.14.6,
-Core2.3.2, FastMCP+tasks4.1.0, MCP2.0.0, Docket0.26.2, DSPy3.4.0 and Claude SDK0.2.159.
+Agent CI39370044443 at4989338ca completed; all12 XML reports recovered. Two distinct
+failures: the new transcript fixture omitted workspace_id, and the SPOTTER poll
+test sampled admission while its confirmed withdrawal triggered another probe.
+Retained1005-message and sustained-load obligations pass on3.12/3.13/3.14. Fifty
+exclusions per interpreter remain exclusions. GACT0f7917cc CI/schema/both workspace
+runs passed. Fresh CI is required for the current correction.
 
-### Fresh model evidence
+R545/R548/R552 scoped formatting/lint/types and R554 all9guards pass at their
+recorded source. Current correction static checks are pending. No local pytest or
+Vitest loop runs; constructed cases go to CI while live acceptance proceeds.
 
-- **R539/R543 PASS, Codex/Luna:** parent read its cancelled child's retained
-  transcript, then sent fresh mail to the original historical handle. That mail
-  created a linked assignment in the same child session, retaining the original
-  Core context. The child calculated34.5seconds from its retained17.25seconds
-  without receiving either number in the new message. Exactly one original file
-  read, one Question and one spawn; no restart/resume call; one mail input commit.
-  The original handle and cancelled Question remain historical. Human cancellation
-  was attributed to the parent exactly once. This is scoped evidence, not Q1–Q9.
-- **R516/R520 scoped Codex/Luna proof:** after unrelated work and actual service
-  restart, an authorized fresh session discovered the earlier policy without its
-  answer/session ID, read transcript and recorded outcome, then read the actual
-  linked722-byte report with matching hash. Peer mail woke idle sessions, each
-  committed message ID once. The family checker failed before the child scenario;
-  only these independently inspected scopes are accepted.
-- **R542/R544 FAILED, Claude/Haiku:** the first real child read/Question/cancel
-  settled. On continuation the model emitted several fenced blocks, fabricated
-  tool observations and claimed a fake successor. Core proves no peer message or
-  successor was accepted. This is a failed model/protocol scenario, not an auth
-  or capacity block. The pending prompt correction tells the text-tool bridge to
-  stop after one call block and wait for real host observations. No parser,
-  execution deadline or task policy is relaxed.
-- Matching GACT online/offline build and all655 transferred file hashes pass;
-  60,454,517bytes. This does not claim fresh browser acceptance.
+R547 Opus review found the multi-live-preview budget defect, fixed in4989338ca
+with regression coverage. Session history continues to fail closed for missing
+rights. The final whole-candidate Opus review remains open; Astra is stopped.
 
-### CI, review and current correction
+## Remaining work
 
-All12 reports for prior7cb52b4c were inventoried. Four shared fixture/catalog
-causes were corrected together and pushed as1a22ffc8. CI39366938417 is complete
-with all12 reports: two distinct fixture failures, the stale artifact-list
-expectation and binary bytes incorrectly registered as a textual Report.
-Both fixtures are corrected together; retained1005-message and load obligations
-pass on all three interpreters. Fifty excluded
-cases per interpreter remain exclusions. No local pytest/Vitest loops ran.
+1. Complete the current regression batch in CI and live-verify repaired child
+   navigation at desktop/phone widths, including the real child transcript.
+2. Stop while an AI permission reviewer is actually running; stop a parent while
+   its SPOTTER watcher and Question remain active. R502 did not prove either.
+3. Reattach a surviving approved external transfer job by original provider ID.
+   NDP streams have no persistent job ID; authorized durable provider/paths remain
+   a missing prerequisite. No provider job is invented.
+4. Reconcile final-source Q1–Q9 and all30 lifecycle races; rerun required affected
+   cases. Complete busy messaging, denial/revocation, summary/artifact and recovery
+   coverage, retaining exact source/scope instead of blanket old-source passes.
+5. Final Claude Opus review, honest Haiku disposition, matching website/media and
+   reconciliation of all acceptance rows. No release/install before acceptance.
+6. Settle/remove disposable state and reconcile custody after each family.
 
-R541 independent Claude Opus review found no hard access/lifecycle blocker, but
-identified mutable live-message cursor invalidation. The current correction keeps
-the unfinished preview outside retained-history cursors, closes the legacy alias
-existence oracle and adds privacy/cursor/bounds regressions. Static checks and
-fresh CI/live evidence are required for this delta. No new Astra review is used.
+## Resource custody
 
-### Resource custody
+R550 model service and R555 viewer exited0; their earlier Windows tunnels/static
+servers are physically retired with absent-listener receipts. Allocation24953
+ended. Allocation24958 is newly owned on ares-comp-07 for the remaining campaign.
+Its fresh process audit found no active R550/staged-auth processes. The exact
+expired R526 auth stage was hash-verified and removed1326bytes, without archives.
+Original credentials were preserved. R550's disposable Core records are retained
+only for the imminent repaired-UI check, then its exact root/temporary directory
+must be removed. All previously prohibited/manual-only roots remain preserved.
 
-R516/R519/R525/R531/R535/R539/R542 product services exited, owned listeners were
-absent and disposable family roots were removed without archives. R542 cleanup
-removed279,591,711logical bytes. Passive R544 Core inspection admitted no model
-turns and exited normally. Allocation24953 owns the reusable Ares environment;
-no product model service is running at this snapshot. The next family must be
-registered before launch. Daily Desktop, auth, defaults, released pins and all
-previous prohibited/manual-only roots remain preserved.
-
-## Remaining qualification
-
-1. Qualify the current live-preview cursor correction and distinct Claude bridge;
-   Codex/Luna restart/discovery/artifact/message and cancelled-child continuation
-   have the scoped evidence above. Fresh UI/source impact review remains required.
-2. Stop an actually active AI permission reviewer; SPOTTER parent Stop while its
-   independent watcher/Question remains alive. R502 did not prove those cases.
-3. Surviving approved-provider job recovery/cleanup (N12/W01/Q6): NDP streams do
-   not supply a persistent provider job identity. Authorized durable provider and
-   disposable paths are still an unmet prerequisite; no provider job is invented.
-4. Final exact-tuple CI/exclusion disposition, affected Q1–Q9 repeats, all thirty
-   final R1–R6 race dispositions, migration and uncertainty/final delivery.
-5. Matching integrated UI/screenshots/docs and final Opus implementation review.
-
-Canonical ledgers: this file, task-replacement-acceptance.md and
-task-replacement-live-experiments.md. Bounded receipts live under the D
-qualification repository's `.pytest-runtime/static/`. Protected/manual-only
-residues remain untouched; no merge to released branches, release or installation.
+Canonical reporting set: this file, task-replacement-acceptance.md and
+task-replacement-live-experiments.md. Bounded receipts are in the repository-owned
+D qualification `.pytest-runtime/static/`. No claim of full qualification.
