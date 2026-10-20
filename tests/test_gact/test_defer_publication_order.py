@@ -14,7 +14,9 @@ def test_failed_defer_persistence_exposes_no_resolvable_permission(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A failed durable write cannot leave an accepted pending permission behind."""
-    app: Any = SimpleNamespace(state=SimpleNamespace(permissions={}, permission_events={}))
+    app: Any = SimpleNamespace(
+        state=SimpleNamespace(permissions={}, permission_events={}, cancel_events={})
+    )
 
     def fail_record(*args: Any, **kwargs: Any) -> None:
         assert app.state.permissions == {}
@@ -39,7 +41,9 @@ def test_defer_publication_follows_confirmed_metadata_and_precedes_resolution(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Immediate approval sees both recovery metadata and its actual waiting event."""
-    app: Any = SimpleNamespace(state=SimpleNamespace(permissions={}, permission_events={}))
+    app: Any = SimpleNamespace(
+        state=SimpleNamespace(permissions={}, permission_events={}, cancel_events={})
+    )
     durable: dict[str, Any] = {}
     order: list[str] = []
 

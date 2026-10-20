@@ -215,6 +215,14 @@ def test_cancelled_permission_keeps_original_token_after_session_map_removal(
             assert row["status"] == "resolved" and row["action"] == "deny"
             assert row["reason"] == "permission_request_cancelled"
             assert row["grantor"] == "system" and not app.state.permission_events
+            if family == "pretool_defer":
+                from clio_agent.gact.hooks.wire import hook_reasons
+
+                assert any(
+                    item.get("reason") == "hook_defer_cancelled"
+                    and item.get("permission_id") == row["id"]
+                    for item in hook_reasons()
+                )
             assert resolve_permission(app, row["id"], "allow_workspace") is None
             resolved = [
                 item

@@ -1,82 +1,70 @@
 # Tasks replacement acceptance ledger
 
-## Current qualification — 2026-10-20 00:35 UTC
+## Current qualification â€” 2026-10-20 02:19 UTC
 
-Initial implementation and initial test construction are **done**. Work remains
-regression repair and qualification. **NO GO for merge, release or installation.**
+Initial implementation and initial test construction are **done**. Current work
+is regression repair and live qualification. **NO GO for merge, release or installation.**
 
-- Repair base agent `b50fc3dc1ffd1d380bccfd8d5c3cd8b01362b1bd` had production
-  source identical to `bab261dbf201ba5db5d8b2097d309944e87215f2`. GACT is
-  `9bf5791c098f53f0ff5a6c9b50b6a444cb0a2446`, marketplace
+- Frozen repair base: agent `524734626b0496d5a281a1164c6fd82be7da26d6`,
+  GACT `9bf5791c098f53f0ff5a6c9b50b6a444cb0a2446`, marketplace
   `2c172233a9f895e41f7de121a3871d282a5fc0a2`. Python 3.14.6 / Core 2.3.2 /
   FastMCP/tasks 4.1.0 / MCP 2.0.0 / Docket 0.26.2 / DSPy 3.4.0 /
-  Claude SDK 0.2.159. The new repair below is not yet live-qualified.
-- `develop` through `c3db245cc8d6f20cd9987293377d94d6955d348b` is merged;
-  zero behind at the recorded October 19 23:52 UTC refresh. NDP is present.
-  Its optional tools activate through workspace source selection.
-- [Agent CI 39344604388](https://github.com/iowarp/clio-agent/actions/runs/39344604388)
-  finished: all 12 interpreter/shard reports identify five distinct failing
-  cases: four archive fixtures missing the complete export application and one
-  Stop/explicit-idle-send race. The complete existing export fixture is reused;
-  idle sending now classifies a single TurnRunner reservation snapshot.
-  New regressions cover both a held empty reservation and its retirement.
-  These are one combined batch; no local pytest/Vitest loop ran.
-- R477 used actual Luna and the production NDP adapter. One Indexing and one
-  Download completed, with independent model work. The real file has 602 bytes,
-  SHA256 `0b028fd6fe6f9be231f71f1b74cbb9efeb9b6f94e8f60058910cefe008f92684`.
-  Five approved-source Shell probes read/hash-checked it and were denied writes;
-  all published copies matched. Normal first-service restart retained original
-  handles and results without replay. NDP direct streaming has no surviving
-  provider-job identity; it does not close N12.
-- R477's four SSH approval/cancel cases passed. Its fifth case delegated work
-  to a child the harness's root-only permission query missed. The raw family
-  failed. Cleanup exposed a real short-RPC permission-worker retirement bug;
-  normal second-service shutdown did not finish. Thread/async stacks were
-  captured, then the exact owned service/Core processes were force-closed.
-  Both family data roots were subsequently removed, with process/port absence
-  receipts. No normal-shutdown or fifth-cycle acceptance is inferred.
-- The repair retains a claimed short RPC until its actual server worker exits
-  and shares cancellation-aware permission waiting across tool, folder and
-  PreToolUse deferral paths, retaining their configured answer deadlines.
-  Constructed regressions cover actual SDK cancellation/worker retirement,
-  pre-execution authorization failure and original cancellation-token custody.
-  The same audit adds cancellable SPOTTER clearance without cancelling its
-  independent watcher, and physical AI-review worker retirement with inherited
-  turn cancellation. The verdict deadline still decides timeout escalation.
-  Astra cleared the final combined source batch; Fable R483 cleared its
-  production changes and identified the corrected reason-set fixture. A final
-  focused Fable progress-poll supplement is running. Source review does not
-  qualify runtime behavior. No local pytest/Vitest cases have executed.
-- [GACT workspace CI 39339096564](https://github.com/iowarp/gact-tui/actions/runs/39339096564)
-  passed six executed jobs; three release-event jobs were conditionally
-  excluded. Fixture-backed WebView is not fresh native Desktop acceptance.
-  R471 actual-service desktop/phone UI and human controls passed on bab/9bf;
-  zero page/console errors, 141 aborted requests retained, physical cleanup
-  and service exit 0. Four selected current screenshots are published in site.
-- R447/R449 staged peer capacity and goal/Question input, R453 Indexing reuse,
-  R455 active-child shutdown, R461 two-start migration and R463 actual-model
-  legacy collection retain their accepted scopes and original source IDs.
-  The 30 earlier R1–R6 repetitions retain their recorded scopes, not a claim
-  that they all ran on this commit. This repair changes cancellation and idle
-  submission: affected R3/M07 and permission/Stop/shutdown paths require fresh
-  production/model evidence and reviewer source-impact disposition.
-- Still required: current repair CI/live acceptance; approved surviving-provider
-  job recovery/cleanup (N12/W01/Q6); exclusion disposition (Z02); integrated
-  source/evidence review (Z03). Fifty interpreter exclusions remain exclusions,
-  not passes or waived gates. No earlier green CI qualifies the current head.
-- Ares jobs 24940 and 24946 are absent. The reusable owned r443 source/runtime
-  environment remains registered for the next campaign; no product service is
-  active. R477 disposable state is gone. Daily Desktop, original credentials,
-  defaults and released pins remain preserved. No archives were created.
-- Earlier automatic-review cleanup rejections remain manual-only, including
-  R465/R470 browser roots/token files and ci-bef-reports. Never retry, bypass,
-  delegate or remove them through an ancestor.
+  Claude SDK 0.2.159. Develop through `c3db245` is integrated, zero behind
+  at the recorded October 19 23:52 UTC refresh. NDP is present.
+- [Agent CI 39349269414](https://github.com/iowarp/clio-agent/actions/runs/39349269414)
+  is complete: all 12 reports, **four distinct failing cases**. Each interpreter
+  collected 13,338 cases with 50 exclusions; Python 3.12/3.14 had three failures,
+  Python 3.13 had four. The earlier archive and explicit-idle-send failures passed.
+  The remaining failures are two incomplete defer fixtures, the unregistered
+  `hook_defer_cancelled` production reason, and a progress-signal test that
+  allowed its watcher to enter model execution during the asserted sequence.
+- One combined repair registers the actual cancellation reason, completes those
+  fixtures and holds the real watcher through its existing pause control.
+  An additional SDK-boundary correction propagates caller cancellation to the
+  claimed asynchronous server request while retaining physical cleanup. Its new
+  regression requires independent accepted work to survive repeated waiter Stop.
+  Existing typed-denial, single-resolution, output and worker assertions remain.
+  Scoped Ruff/format, production type checking and all nine existing guards pass.
+  No local pytest/Vitest loop ran; the constructed batch goes to CI together.
+- Astra found the missing reason registration and cleared the corrected source
+  batch. Actual Claude Code/Fable R489 source review is running. Source review
+  does not qualify runtime behavior. Fresh actual-model Stop/waiter evidence is
+  required; R491 observes the real TurnRunner reservation rather than inferring
+  retirement from projected task activity.
+- The local computer restarted. R487's remote receipt was recovered: five actual
+  Luna background Shell/Stop/ordinary-Send cycles, original handles and results,
+  each retained user/future message committed once, normal service exit 0.
+  Its activity predicate did **not** establish prompt physical waiter retirement.
+  Do not infer that missing proof from its raw `pass=true` field. On the newly
+  allocated original compute node, processes and all nine ports were absent;
+  286,829,872 logical bytes plus the temporary root were removed, no archive.
+- R482 retains its original scoped acceptance: real NDP Indexing/Download,
+  602 bytes and SHA256 `0b028fd6fe6f9be231f71f1b74cbb9efeb9b6f94e8f60058910cefe008f92684`,
+  five source read/hash/write-denial probes, original handles after restart,
+  five ordinary and one deferred SSH cancellation cases with zero canary
+  connections and normal shutdown. Its raw family failed on a nonexistent
+  `session.busy` harness field; no Stop proof is inferred from that failure.
+- [GACT CI 39339096564](https://github.com/iowarp/gact-tui/actions/runs/39339096564)
+  passed six executed jobs; three release-event jobs were conditional exclusions.
+  R471 actual-service desktop/phone controls and four published screenshots retain
+  their exact bab/9bf scope: zero page/console errors, 141 aborted requests kept.
+  Fixture-backed WebView is not fresh native Desktop acceptance.
+- Earlier scoped acceptance and all 30 R1â€“R6 receipts retain their original
+  commits. They are not a claim that all 30 ran on the current repair. Still open:
+  fresh affected Stop/permission/shutdown and SPOTTER/reviewer live evidence;
+  surviving approved-provider job recovery N12/W01/Q6; exclusion disposition Z02;
+  final integrated review Z03. NDP streams have no surviving provider-job ID.
+- Allocation 24948 is gone. New bounded allocation 24950 on ares-comp-07 owns
+  custody inspection and the next family. The reusable r443 environment remains
+  owned, not retired. Desktop, source credentials, defaults, released pins and
+  unrelated work remain preserved. Session-recall work is queued after this goal.
+- Existing automatic-review cleanup rejections remain manual-only. No retry,
+  bypass, delegation or ancestor removal; no archives were created.
 
-Bounded receipts in the D qualification repository's `.pytest-runtime/static/`:
-`ci-b50-inventory.json`, `r477-scoped-evidence.json`, original R477 raw failure,
-shutdown stacks, `r479-force-retirement.json`, `r477-cleanup.json`, R471 UI and
-cleanup receipts, and independent reviewer receipts. They preserve failures
-and scope; they do not turn partial acceptance into overall qualification.
+Receipts in the D qualification repository's `.pytest-runtime/static/` include
+`ci-524-final-inventory.json`, `r488-restart-status.json`, original R487 receipt,
+`r487-cleanup.json`, R482 scoped/raw/cleanup receipts, `r489-static.json` and
+reviewer results. Failed and incomplete scopes remain visible.
 
 Every retained behavior ID below remains required. Historical construction notes
 keep their original dates and cannot override this current disposition.
@@ -145,7 +133,7 @@ keep their original dates and cannot override this current disposition.
 | R5 | Recipient-input commit recovery repeated five times on final candidate | R2 race matrix; related owner lessons above | CI: `test_task_history` (20/20 selected cases passed on all three interpreters). Live/source: `final-race-matrix-current.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | R6 | Subtree cancellation/admission repeated five times on final candidate | R2 race matrix; related owner lessons above | CI: `test_task_control_recovery` (7/7 selected cases passed on all three interpreters). Live/source: `final-race-matrix-current.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | Z01 | Removal complete; denylist production guard; Astra and Claude approve before rebuild | R2 removal manifest and caller inventory | CI: `test_task_replacement_guard`, `test_task_removal_guard` (11/11 selected cases passed on all three interpreters). Live/source: `docs/qualification/task-replacement-removal-reviews.md`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
-| Z02 | Focused tests sequential/one worker; scoped lint/format/types/guards and exact-head CI | R2 completion gate | Complete current b50 CI: `ci-b50-inventory.json` (12 reports, five distinct failing cases). | New combined repair has constructed regressions; no local pytest/Vitest loop. | FAILED/PENDING: current-head CI fails; repair CI and required disposition of all 50 interpreter exclusions remain open. Earlier 6a4 CI is historical. |
+| Z02 | Focused tests sequential/one worker; scoped lint/format/types/guards and exact-head CI | R2 completion gate | Complete 524 CI: `ci-524-final-inventory.json` (12 reports, four distinct failing cases). | New combined repair has constructed regressions; no local pytest/Vitest loop. | FAILED/PENDING: current-head CI fails; repair CI and required disposition of all 50 interpreter exclusions remain open. Earlier 6a4 CI is historical. |
 | Z03 | Freeze actual agent/GACT/dependency/schema/runtime tuple before final acceptance | Agent gitlink; R2 freeze requirement | Current tuple and source-impact history: `task-replacement-current-status.md`, `candidate-go-no-go-current.json`. | develop through c3db245 is integrated, zero behind at recorded refresh; GACT9bf pinned. Cancellation/idle-send repair needs fresh affected acceptance. | BLOCKED: current repair CI/live and integrated reviewer disposition remain open; no publication GO. |
 | Z04 | Owned processes/ports/data registered before each family; settled and disposable state removed after | R2 cleanup contract; previous disk-pressure failures | CI: `test_task_resource_lifetime` (2/2 selected cases passed on all three interpreters). Live/source: `ares-final-cleanup.json`, `ci-bef-partial-removal-rejection.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | Z05 | October14 publication only after all gates, release procedure and immediate go/no-go | R2 gated release contract | CI: `test_task_replacement_guard` (10/10 selected cases passed on all three interpreters). Live/source: `candidate-go-no-go-current.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | GATED: no merge, release or installation. October14 target was missed; publication is separate and remains prohibited while required acceptance is open. |
@@ -157,7 +145,7 @@ keep their original dates and cannot override this current disposition.
 | A08 | Retain existing producer/context/provenance features through the one new owner | Spotter watcher, skill spawn/commission, goal redrive, failed-init retained feedback, parent reasoning, @agent_run, ancestor paths, session export/descendants and deletion | CI: `test_skill_runtime`, `test_hook_defer`, `test_retained_task_behaviors`, `test_agent_elicitation` (120/120 selected cases passed on all three interpreters). Live/source: `r326-qualified-scope.json`, `r374-live-native.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | P03 | Retain atomic answer-versus-expiry arbitration and input routing attribution | 5475042f user_question_ledger claim/stamp helpers; permission/external-input regressions | CI: `test_question_resolution_contracts`, `test_question_expiry_publication`, `test_a2ui_mailbox_delivery`, `test_hook_approval_contracts` (31/31 selected cases passed on all three interpreters). Live/source: `r326-qualified-scope.json`, `r147-scoped-audit.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | M06 | Migrate pending legacy human steers without inventing input acknowledgements | 5475042f composer_runtime.recover_pending_feedback; message_intents.json | R461 metadata-backed human input projection and pending mail stable; R463 actual continued session without replay; Astra accepted. | Current production delta and scope: see current-status; recorded owner comparison replaces stale 305a line-count inference. | SCOPED ACCEPTED: confirmed legacy metadata reconstruction does not invent input ACKs. |
-| M07 | Preserve future-composer edit/order/revision/promotion/pause behavior over Core | 5475042f MessageIntentStore queued-message methods and existing composer UI tests | CI: `test_message_intents`, `test_stop_pending_feedback` (9/9 selected cases passed on all three interpreters). Live/source: `r393-live-native.json`, `r414-live-native.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | FAILED/PENDING: b50 CI exposed explicit idle-send resume race. Single-reservation correction and two constructed regression variants require CI and fresh R3/M07 model evidence. |
+| M07 | Preserve future-composer edit/order/revision/promotion/pause behavior over Core | 5475042f MessageIntentStore queued-message methods and existing composer UI tests | CI: `test_message_intents`, `test_stop_pending_feedback` (9/9 selected cases passed on all three interpreters). Live/source: `r393-live-native.json`, `r414-live-native.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | SCOPED/PENDING: single-reservation correction and both variants passed current 524 CI; R487 retained all five user/future input identities once. Prompt physical Stop retirement and affected current-source R3 proof remain open. |
 | N17 | Preserve native queue identity and all URL/QUEUE/CONCURRENCY environment overrides | 5475042f NativeTaskHost.__init__; CLIO_TASKS_{SHELL,STORAGE}_{URL,QUEUE,CONCURRENCY} | CI: `test_native_task_client_contract` (22/22 selected cases passed on all three interpreters). Live/source: `r297-qualified-scope.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | K01 | Shipped spawn names, blueprint/strategy preparation, local placement and per-member failures | `task_declarations`; `test_spawn_tool_compatibility` | CI: `test_spawn_tool_compatibility`, `test_task_compatibility_review` (9/9 selected cases passed on all three interpreters). Live/source: `Q1-current-adjudication.json`, `r363-qualified-scope.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | K02 | Finished child evidence is pinned and authorized before creation and input commit | `assignment_evidence`, `session_mail`; `test_assignment_evidence_contracts` | CI: `test_assignment_evidence_contracts`, `test_task_compatibility_review` (12/12 selected cases passed on all three interpreters). Live/source: `r374-live-native.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |

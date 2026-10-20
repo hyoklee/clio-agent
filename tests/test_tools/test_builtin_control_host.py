@@ -29,6 +29,74 @@ from tests.test_arc.test_conversation_owner_contracts import create_environment
 
 
 @pytest.mark.asyncio
+async def test_cancelled_async_control_retires_waiter_without_stopping_work(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """SDK cancellation reaches the actual wait RPC, retaining its cleanup only."""
+    entered, interrupted, release_cleanup = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    finish_work, work_exited = asyncio.Event(), asyncio.Event()
+
+    async def accepted_work() -> str:
+        try:
+            await finish_work.wait()
+            return "accepted result"
+        finally:
+            work_exited.set()
+
+    work = asyncio.create_task(accepted_work())
+
+    async def wait_control() -> str:
+        entered.set()
+        try:
+            return await asyncio.shield(work)
+        except asyncio.CancelledError:
+            interrupted.set()
+            await release_cleanup.wait()
+            raise
+
+    tool = native_tool(
+        wait_control,
+        name="wait_control",
+        desc="Wait for independently accepted work.",
+        args={},
+        presentation="text",
+        domain="tasks",
+        read_only=True,
+    )
+    try:
+        async with _control_context(arc, tmp_path) as boundary:
+            caller = asyncio.create_task(boundary.call(tool, {}, contextvars.copy_context()))
+            try:
+                async with asyncio.timeout(5):
+                    await entered.wait()
+                caller.cancel()
+                async with asyncio.timeout(5):
+                    await interrupted.wait()
+                assert not caller.done(), "The RPC released before its cleanup retired"
+                assert not work.done() and not work_exited.is_set()
+                assert len(boundary.invocations) == 1 and not boundary._retired.is_set()
+                caller.cancel()
+                await asyncio.sleep(0)
+                assert not caller.done(), "Repeated Stop detached live RPC cleanup"
+            finally:
+                release_cleanup.set()
+                # Also settle on the old implementation, without turning its
+                # missing-cancellation assertion into a pass.
+                if not interrupted.is_set():
+                    finish_work.set()
+                async with asyncio.timeout(5):
+                    outcome = await asyncio.gather(caller, return_exceptions=True)
+            assert isinstance(outcome[0], asyncio.CancelledError)
+            assert not boundary.invocations and boundary._retired.is_set()
+            assert not work.done() and not work_exited.is_set()
+    finally:
+        finish_work.set()
+        async with asyncio.timeout(5):
+            assert await work == "accepted result"
+    assert work_exited.is_set()
+
+
+@pytest.mark.asyncio
 async def test_cancelled_short_rpc_retains_its_actual_server_worker(
     arc: ARCMemory, tmp_path: Path
 ) -> None:

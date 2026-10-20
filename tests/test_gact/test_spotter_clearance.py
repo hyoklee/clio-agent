@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from typing import Any
@@ -29,6 +30,13 @@ def test_progress_after_timed_out_poll_is_not_discarded(
 ) -> None:
     """A signal arriving after wait returns false still refreshes the real progress window."""
     app, parent, child = watcher_world
+    owner = app.state.conversations
+    assignment = app.state.task_history.latest_assignment(child)
+    # Keep the real watcher dormant: this test controls progress signals,
+    # whereas model admission/worker retirement has separate coverage.
+    asyncio.run_coroutine_threadsafe(
+        owner.pause(owner.caller(child), assignment.handle), owner._loop
+    ).result(timeout=5)
     wake_on_parent_activity(app, parent, tool_name="fs_read_file")
     event = clearance_event(app, parent)
     original_wait = event.wait

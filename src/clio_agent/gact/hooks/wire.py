@@ -126,6 +126,13 @@ _HOOK_REASON_DEFINITIONS: dict[str, dict[str, Any]] = {
             "auto-approve)"
         ),
     },
+    "hook_defer_cancelled": {
+        "severity": "info",
+        "detail": (
+            "the owning turn stopped while a PreToolUse approval was pending; "
+            "the request was resolved as a system deny and the call did not run"
+        ),
+    },
     "hook_defer_denied": {
         "severity": "warning",
         "detail": "a deferred approval was resolved as DENY out-of-band; a typed deny reached the model",
