@@ -1,6 +1,7 @@
 ---
 title: Sample and analyze NDP streams
 description: Ask CLIO to analyze stream observations, check available history and explain the limits of the evidence.
+lastUpdated: false
 ---
 
 import Capture from '../../../../components/overview/Capture';
@@ -107,11 +108,11 @@ perform before asking the agent to analyze it.
 
 <Capture client:visible image={await captureImage(sampleForm)}
   alt="Actual historical replay form with a CSV URL, row limit and continuation options"
-  caption="Optional manual replay controls in CLIO, captured on 19 October 2026. This verifies the interface and replay request; the example CSV's observational provenance was not established." />
+  caption="Set limits for a bounded replay. Replayed timestamps remain those of the source file; replaying it does not make the observations current." />
 
 <Capture client:visible image={await captureImage(savedSample)}
   alt="Actual completed stream sample with retained response bytes and Open saved data"
-  caption="A saved replay response can be inspected in Sources. Successful delivery and continuation are transport evidence, not independent validation of the values as scientific observations." />
+  caption="Open a retained response in Sources to inspect its bytes and capture details, or ask the agent to analyze it." />
 
 See [scientific questions to investigate](/docs/examples/ndp-science/) and the
 [NDP source guide](/docs/files/ndp/) for discovery, analysis and sharing results.
