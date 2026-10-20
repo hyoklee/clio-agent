@@ -44,6 +44,10 @@ class ObserveRequest(SelectedTasks):
     pattern: str | None = None
     timeout_s: float | None = Field(default=None, ge=0)
     notify: bool | None = None
+    view: Literal["progress", "transcript", "summary", "artifacts"] = "progress"
+    history: Literal["assignment", "session"] = "assignment"
+    limit: int = Field(default=50, ge=1, le=200)
+    artifact_id: str | None = None
 
 
 class WaitRequest(SelectedTasks):
@@ -166,6 +170,7 @@ def register_task_routes(app: FastAPI) -> None:
         tool: str | None = None,
         agent: str | None = None,
         active_only: bool = False,
+        query: str | None = None,
     ) -> dict[str, Any]:
         try:
             return await run_off_loop(
@@ -180,6 +185,7 @@ def register_task_routes(app: FastAPI) -> None:
                 tool=tool,
                 agent=agent,
                 active_only=active_only,
+                query=query,
             )
         except ValueError as error:
             raise HTTPException(400, str(error)) from error

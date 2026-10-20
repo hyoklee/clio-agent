@@ -31,12 +31,19 @@ def test_progress_after_timed_out_poll_is_not_discarded(
     """A signal arriving after wait returns false still refreshes the real progress window."""
     app, parent, child = watcher_world
     owner = app.state.conversations
-    assignment = app.state.task_history.latest_assignment(child)
-    # Keep the real watcher dormant: this test controls progress signals,
-    # whereas model admission/worker retirement has separate coverage.
-    asyncio.run_coroutine_threadsafe(
-        owner.pause(owner.caller(child), assignment.handle), owner._loop
-    ).result(timeout=5)
+
+    # Pause both model owners and join their actual control work. The child's
+    # attributed pause notice must not start a parent turn that publishes more
+    # watcher evidence while this test asserts the two controlled progress polls.
+    async def hold_models() -> None:
+        for sid in (parent, child):
+            assignment = app.state.task_history.latest_assignment(sid)
+            await owner.pause(owner.caller(sid), assignment.handle)
+        await asyncio.gather(*tuple(owner._controls.values()))
+
+    asyncio.run_coroutine_threadsafe(hold_models(), owner._loop).result(timeout=5)
+    assert not app.state.turn_runner.busy(parent)
+    assert not app.state.turn_runner.busy(child)
     wake_on_parent_activity(app, parent, tool_name="fs_read_file")
     event = clearance_event(app, parent)
     original_wait = event.wait

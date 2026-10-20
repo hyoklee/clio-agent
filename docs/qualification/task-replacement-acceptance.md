@@ -1,77 +1,119 @@
 # Tasks replacement acceptance ledger
 
-## Current qualification â€” 2026-10-20 02:19 UTC
+## Active Task transcript extension — 2026-10-20 03:30 UTC
 
-Initial implementation and initial test construction are **done**. Current work
-is regression repair and live qualification. **NO GO for merge, release or installation.**
+The human made this active Tasks scope: use shared task handles to discover
+sessions/children, read original transcript, recorded summaries and verified
+artifacts, then message the stable recipient. New production code and 25 behavior
+cases are constructed; R515 static checks passed. CI and fresh model acceptance
+remain pending. R514 Opus findings were corrected as a batch, with actual child
+continuation still an explicit live obligation. This supersedes older "recall
+deferred" wording; maintained long-term facts/forgetting remain separate.
 
-- CI repair base: agent `b271ae0300c2be2fd0491123de2c76f2567ccdfd`,
-  GACT `9bf5791c098f53f0ff5a6c9b50b6a444cb0a2446`, marketplace
-  `2c172233a9f895e41f7de121a3871d282a5fc0a2`. Python 3.14.6 / Core 2.3.2 /
-  FastMCP/tasks 4.1.0 / MCP 2.0.0 / Docket 0.26.2 / DSPy 3.4.0 /
-  Claude SDK 0.2.159. Develop through `c3db245` is integrated, zero behind
-  at the recorded October 19 23:52 UTC refresh. NDP is present.
-- [Agent CI 39349269414](https://github.com/iowarp/clio-agent/actions/runs/39349269414)
-  is complete: all 12 reports, **four distinct failing cases**. Each interpreter
-  collected 13,338 cases with 50 exclusions; Python 3.12/3.14 had three failures,
-  Python 3.13 had four. The earlier archive and explicit-idle-send failures passed.
-  The remaining failures are two incomplete defer fixtures, the unregistered
-  `hook_defer_cancelled` production reason, and a progress-signal test that
-  allowed its watcher to enter model execution during the asserted sequence.
-- One combined repair registers the actual cancellation reason, completes those
-  fixtures and holds the real watcher through its existing pause control.
-  R491 rejected an additional direct asyncio cancellation change: it closed the
-  shared SDK connection and subsequent model controls failed. That change is
-  removed completely; native MCP request-scope cancellation and the retained
-  retirement boundary remain authoritative. The stronger regression now requires
-  both independent work survival and a successful subsequent same-client RPC.
-  Existing typed-denial, single-resolution, output and worker assertions remain.
-  Scoped Ruff/format, production type checking and all nine existing guards pass.
-  No local pytest/Vitest loop ran; the constructed batch goes to CI together.
-- Astra found the missing reason registration and cleared the corrected source
-  batch before R491. Fable R489 expired without a verdict; its owned process and
-  profile were retired. Bounded final Fable R493 and Astra review are running. Source review
-  does not qualify runtime behavior. Fresh actual-model Stop/waiter evidence is
-  required; prepared R494 observes the real TurnRunner reservation rather than inferring
-  retirement from projected task activity.
-- The local computer restarted. R487's remote receipt was recovered: five actual
-  Luna background Shell/Stop/ordinary-Send cycles, original handles and results,
-  each retained user/future message committed once, normal service exit 0.
-  Its activity predicate did **not** establish prompt physical waiter retirement.
-  Do not infer that missing proof from its raw `pass=true` field. On the newly
-  allocated original compute node, processes and all nine ports were absent;
-  286,829,872 logical bytes plus the temporary root were removed, no archive.
-- R491 is FAILED, not partial overall acceptance: two cycles completed before
-  later controls hit `MCPError: Connection closed`; the third runner probe failed.
-  Service exit 0 and actual cleanup are confirmed: 279,910,595 logical bytes
-  removed, no remaining family processes or listeners. It does not close R3.
-- R482 retains its original scoped acceptance: real NDP Indexing/Download,
-  602 bytes and SHA256 `0b028fd6fe6f9be231f71f1b74cbb9efeb9b6f94e8f60058910cefe008f92684`,
-  five source read/hash/write-denial probes, original handles after restart,
-  five ordinary and one deferred SSH cancellation cases with zero canary
-  connections and normal shutdown. Its raw family failed on a nonexistent
-  `session.busy` harness field; no Stop proof is inferred from that failure.
-- [GACT CI 39339096564](https://github.com/iowarp/gact-tui/actions/runs/39339096564)
-  passed six executed jobs; three release-event jobs were conditional exclusions.
-  R471 actual-service desktop/phone controls and four published screenshots retain
-  their exact bab/9bf scope: zero page/console errors, 141 aborted requests kept.
-  Fixture-backed WebView is not fresh native Desktop acceptance.
-- Earlier scoped acceptance and all 30 R1â€“R6 receipts retain their original
-  commits. They are not a claim that all 30 ran on the current repair. Still open:
-  fresh affected Stop/permission/shutdown and SPOTTER/reviewer live evidence;
-  surviving approved-provider job recovery N12/W01/Q6; exclusion disposition Z02;
-  final integrated review Z03. NDP streams have no surviving provider-job ID.
-- Allocation 24948 is gone. New bounded allocation 24950 on ares-comp-07 owns
-  custody inspection and the next family. The reusable r443 environment remains
-  owned, not retired. Desktop, source credentials, defaults, released pins and
-  unrelated work remain preserved. Session-recall work is queued after this goal.
-- Existing automatic-review cleanup rejections remain manual-only. No retry,
-  bypass, delegation or ancestor removal; no archives were created.
+| Row | Required proof | Current state |
+| --- | --- | --- |
+| T01 | Authorized paraphrased discovery and typed transcript after restart, no supplied answer/session ID | Constructed; R516 not launched |
+| T02 | Recorded summary/outcome with source/coverage and honest absence | Constructed; CI/live pending |
+| T03 | Exact linked artifact bytes/hash through existing custody, denied foreign identity | Constructed; CI/live pending |
+| T04 | Parent inspects cancelled/failed child, messages same stable session, linked successor retains context and does not replay effect | Constructed; CI/live pending |
+| T05 | Original finite handles, admission identities, cursor source change/revocation, non-consumption and mixed per-handle errors | Constructed; CI pending |
+| T06 | Codex/Luna and distinct Claude bridge evidence; matching UI; final Opus review | Pending |
 
-Receipts in the D qualification repository's `.pytest-runtime/static/` include
-`ci-524-final-inventory.json`, `r488-restart-status.json`, original R487 receipt,
-`r487-cleanup.json`, R482 scoped/raw/cleanup receipts, `r489-static.json` and
-reviewer results. Failed and incomplete scopes remain visible.
+Source includes develop550bfd744 and GACTdf62fe66. Old CI39358960951 is complete:
+one distinct SPOTTER assertion failure, corrected with both owners actually held
+and retired. All twelve reports were recovered; fifty exclusions per interpreter
+are not passes. No local behavioral test loop ran. R499/R501/R502 are physically
+settled and cleaned; allocation24951 is registered for the next frozen family.
+
+
+## Earlier recorded source and evidence
+
+## Current qualification — 2026-10-20 02:53 UTC
+
+**Initial implementation DONE. Initial tests constructed. Regression CI and live
+qualification remain incomplete. NO GO for merge, release or installation.**
+
+Frozen production tuple: agent `9bf46e6eea0011a1295e6ec4ce44c39a997ead55`,
+GACT `9bf5791c098f53f0ff5a6c9b50b6a444cb0a2446`, marketplace
+`2c172233a9f895e41f7de121a3871d282a5fc0a2`. Develop through `d9ab0d4b`
+is integrated (zero commits behind at the recorded refresh). Python 3.14.6,
+Core 2.3.2, FastMCP/tasks 4.1.0, MCP 2.0.0, Docket 0.26.2, DSPy 3.4.0,
+Claude SDK 0.2.159. Daily Desktop, source credentials, defaults and released pins
+remain preserved. Session-recall work remains deferred until this goal finishes.
+
+### Fresh live passes on this production source
+
+- **R499, five actual Codex/Luna cycles:** background Shell accepted while running;
+  independent work; unbounded wait; conversation Stop; actual TurnRunner retirement
+  in 1.02–1.05 seconds; another actual file read on the same SDK connection and
+  future-message promotion while the original Shell still ran; original Shell
+  completion; each completion/input identity committed once. Normal service exit,
+  all eight ports absent, disposable data removed. This is not all thirty races.
+- **R501, six actual Codex/Luna cases:** five ordinary and one PreToolUse-deferred
+  SSH permission cancellations. Actual assignment/worker settlement, system denial,
+  late approval cannot revive the request, zero canary connections. Normal service
+  exit, all nine ports absent, disposable data removed. These observations have
+  bounded raw/scoped receipts; they do not prove every permission route.
+- **R502 partial only:** two real model reviewer timeout/escalation/human-denial
+  cases settled with no effect. The third reviewer had already retired before
+  Stop, so active-reviewer Stop is NOT demonstrated. SPOTTER blueprint loading
+  timed out before its required parent-Stop case. The family FAILED. Service
+  exited normally, all eight ports are absent and 276,726,532 logical bytes of
+  disposable data were removed. Raw failure evidence is retained.
+
+### Previously demonstrated live behavior, retained with its original source
+
+| Area | Recorded production/model evidence |
+| --- | --- |
+| All seven kinds | Shell, Download, Indexing, MCP, Session, Subagent and Question handles before completion, followed by independent model work (Q1 scoped adjudication). |
+| Mixed controls | Query, progress/cursors/pattern observation, any/all/expired waits, independent failures, pending uncertainty and later collection (Q2 scoped adjudication). |
+| Delivery and Questions | Busy next-iteration input, idle/post-Stop wakes, pause/resume, immediate Questions and answer delivery; Codex and Claude bridge-specific scopes (R447/R449 and earlier receipts). |
+| Agents | Child yield/download/wake under one assignment, lifecycle/restart/inherited work and subtree cancellation scopes (R363/R374/R392). |
+| Sessions/workflows | Independent sessions and two declared workflow executions: discovery, attributed messages/replies, observation/waits/subscriptions and denied rights (R338 and associated receipts). |
+| Storage | Real download bytes/hash/revision/cleanup; indexing manifests/counts and active-request reuse; actual NDP read/download plus confinement denial (R388/R453/R482). |
+| External MCP | Real native input, confirmed/partial answers and reconnect without resubmission (R326). External acknowledgement is not physical provider cleanup proof. |
+| Recovery/history | Actual Core outage/recovery, lost result after effects and deliberate inspection, recipient-input crash recovery, migration twice and 1,005 retained messages/restart (R418/R430/R461/R463/R378). |
+| Capacity/shutdown | Independent native roots, nested/peer capacity, active-child shutdown and physical cleanup scopes (R447/R449/R455 and native receipts). |
+| UI | Production-service desktop/phone Questions, grants, controls and disclosure with actual screenshots (R471, unchanged GACT). No fresh installed Desktop claim. |
+
+These are scoped passes, not a claim that every scenario ran on the current commit.
+Final source-impact disposition must explicitly identify necessary repeats.
+
+### Live work still open
+
+1. Stop while a real model permission reviewer is still running; prove its physical
+   retirement and the blocked effect remains absent.
+2. SPOTTER parent Stop while its independent watcher/Question is active; prove
+   parent retirement without cancelling that watcher/Question. Latest setup timed out.
+3. Surviving approved-provider transfer job recovery and original-job continuation/
+   cleanup (N12/W01/Q6). NDP is a stream without a persistent provider job ID;
+   existing authorized collections and disposable paths remain an unmet prerequisite.
+4. Final source-impact and race reconciliation: thirty R1–R6 repetitions exist at
+   their original SHAs; affected repeats and explicit carry dispositions must be
+   closed for the final tuple. Migration and uncertainty/final-result scope must
+   remain explicit. Earlier evidence alone is not blanket current acceptance.
+
+### Separate regression/review gates
+
+- Current [CI 39358960951](https://github.com/iowarp/clio-agent/actions/runs/39358960951)
+  is running. First five XML reports show one distinct failure:
+  `test_progress_after_timed_out_poll_is_not_discarded` on Python 3.14. Collect
+  the complete twelve-report inventory before a combined correction. No local
+  pytest/Vitest loop ran. Excluded cases remain exclusions, not passes.
+- Unchanged GACT CI passed six executed jobs; three event/release jobs were
+  conditional exclusions. Website media uses four actual-service screenshots.
+- R493 actual Claude Code Fable source review found no hard blocker in its six
+  frozen files; it is not a final integrated qualification verdict. R489 timed
+  out with NO verdict. **The human stopped further Astra reviews; only Claude
+  Opus is authorized for further reviews.** Final integrated review and exclusion
+  disposition remain open. No additional reviewer has been launched for this update.
+- R502 is physically settled/cleaned. Allocation 24950 and the single reusable
+  Ares environment remain owned and await the next family or explicit retirement;
+  they are not claimed cleaned. Prohibited/manual-only residues remain untouched.
+
+Evidence is under the D qualification repository's `.pytest-runtime/static/`:
+R499/R501 raw and scoped receipts, R502 raw failure and cleanup receipts,
+`ci-9bf46-inventory.json` (partial), and `r493-claude-review.json`.
 
 Every retained behavior ID below remains required. Historical construction notes
 keep their original dates and cannot override this current disposition.
@@ -152,7 +194,7 @@ keep their original dates and cannot override this current disposition.
 | A08 | Retain existing producer/context/provenance features through the one new owner | Spotter watcher, skill spawn/commission, goal redrive, failed-init retained feedback, parent reasoning, @agent_run, ancestor paths, session export/descendants and deletion | CI: `test_skill_runtime`, `test_hook_defer`, `test_retained_task_behaviors`, `test_agent_elicitation` (120/120 selected cases passed on all three interpreters). Live/source: `r326-qualified-scope.json`, `r374-live-native.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | P03 | Retain atomic answer-versus-expiry arbitration and input routing attribution | 5475042f user_question_ledger claim/stamp helpers; permission/external-input regressions | CI: `test_question_resolution_contracts`, `test_question_expiry_publication`, `test_a2ui_mailbox_delivery`, `test_hook_approval_contracts` (31/31 selected cases passed on all three interpreters). Live/source: `r326-qualified-scope.json`, `r147-scoped-audit.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | M06 | Migrate pending legacy human steers without inventing input acknowledgements | 5475042f composer_runtime.recover_pending_feedback; message_intents.json | R461 metadata-backed human input projection and pending mail stable; R463 actual continued session without replay; Astra accepted. | Current production delta and scope: see current-status; recorded owner comparison replaces stale 305a line-count inference. | SCOPED ACCEPTED: confirmed legacy metadata reconstruction does not invent input ACKs. |
-| M07 | Preserve future-composer edit/order/revision/promotion/pause behavior over Core | 5475042f MessageIntentStore queued-message methods and existing composer UI tests | CI: `test_message_intents`, `test_stop_pending_feedback` (9/9 selected cases passed on all three interpreters). Live/source: `r393-live-native.json`, `r414-live-native.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | SCOPED/PENDING: single-reservation correction and both variants passed current 524 CI; R487 retained all five user/future input identities once. Prompt physical Stop retirement and affected current-source R3 proof remain open. |
+| M07 | Preserve future-composer edit/order/revision/promotion/pause behavior over Core | 5475042f MessageIntentStore queued-message methods and existing composer UI tests | Current-source R499 five actual-model Stop/ordinary-Send/future-queue cycles, physical waiter retirement, one original background Shell and one commitment per completion/input identity; see raw/scoped/cleanup receipts. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | SCOPED LIVE PASS: exercised five current-source paths; final integrated race/source-impact disposition remains. |
 | N17 | Preserve native queue identity and all URL/QUEUE/CONCURRENCY environment overrides | 5475042f NativeTaskHost.__init__; CLIO_TASKS_{SHELL,STORAGE}_{URL,QUEUE,CONCURRENCY} | CI: `test_native_task_client_contract` (22/22 selected cases passed on all three interpreters). Live/source: `r297-qualified-scope.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | K01 | Shipped spawn names, blueprint/strategy preparation, local placement and per-member failures | `task_declarations`; `test_spawn_tool_compatibility` | CI: `test_spawn_tool_compatibility`, `test_task_compatibility_review` (9/9 selected cases passed on all three interpreters). Live/source: `Q1-current-adjudication.json`, `r363-qualified-scope.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |
 | K02 | Finished child evidence is pinned and authorized before creation and input commit | `assignment_evidence`, `session_mail`; `test_assignment_evidence_contracts` | CI: `test_assignment_evidence_contracts`, `test_task_compatibility_review` (12/12 selected cases passed on all three interpreters). Live/source: `r374-live-native.json`. | Historical scoped receipt retains its original source. Current owner-impact review and changed-path requalification are required; R430 covers the Core delta. | MAPPED: scoped live evidence and/or independent regression assurance; pending final reviewer adjudication, not an automatic full-qualification pass. |

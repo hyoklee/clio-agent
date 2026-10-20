@@ -335,7 +335,9 @@ async def start(app: Any) -> None:
 
         recovery.defer("task-refresh:" + task.handle, refresh)
 
-    app.state.task_operations = TaskOperations(history, cancel_owner, refresh_owner=request_refresh)
+    app.state.task_operations = TaskOperations(
+        history, cancel_owner, refresh_owner=request_refresh, app=app
+    )
 
     def task_changed(task: TaskSnapshot) -> None:
         from clio_agent.gact.events import Event

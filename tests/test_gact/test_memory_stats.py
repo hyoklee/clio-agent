@@ -1017,15 +1017,16 @@ def test_memory_tool_search_excludes_rewound_messages(tmp_path: Path, arc: ARCMe
         assert summary["excluded_message_ids"] == ["msg_delete"]
 
 
-def test_root_agent_auto_attaches_the_three_policy_gated_memory_tools() -> None:
+def test_root_agent_uses_shared_tasks_instead_of_memory_named_session_tools() -> None:
     from types import SimpleNamespace
 
     from clio_agent.gact.agents.auto_tools import build_auto_react_tools
 
     root = SimpleNamespace(id="main", parent_id="", tools=[])
     names = {tool.name for tool in build_auto_react_tools(root)}
-    assert {
+    assert {"query_tasks", "observe_tasks", "send_agent_message"} <= names
+    assert not {
         "memory_search_sessions",
         "memory_read_session_summary",
         "memory_read_context_frame",
-    } <= names
+    }.intersection(names)

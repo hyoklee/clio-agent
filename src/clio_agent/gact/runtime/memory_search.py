@@ -127,49 +127,10 @@ def _message_text_excerpt(message: "Message", *, max_chars: int = 360) -> str:
 def agent_memory_search(
     app: "FastAPI", session_id: str, *, query: str, scope: str = "session", limit: int = 20
 ) -> MemorySearchResponse:
-    """Authorize session candidates before searching, counting or ranking transcripts."""
-    from clio_agent.gact.task_access import TaskAccess
+    """Compatibility entry point for task-backed session discovery."""
+    from clio_agent.gact.task_transcripts import search_session_alias
 
-    session = app.state.sessions.get(session_id)
-    if session is None:
-        raise ValueError("Session unavailable")
-    readable = TaskAccess(
-        app.state.task_history, app.state.conversations.caller(session_id)
-    ).session_candidates("read")
-    selected_scope = {
-        "user": "global",
-        "user_global": "global",
-        "workspace": "current_workspace",
-        "cross_session": "current_workspace",
-    }.get(scope, scope)
-    if selected_scope not in {"session", "current_workspace", "global", "authorized"}:
-        raise ValueError("Memory scope must be session, current_workspace, global or authorized")
-    response = _memory_search_response(
-        app,
-        query=query,
-        limit=limit,
-        session_id=session_id if selected_scope == "session" else "",
-        include_cross_session=selected_scope != "session",
-        workspace_id=GLOBAL_WORKSPACE_ID
-        if selected_scope == "global"
-        else session.workspace_id
-        if selected_scope == "current_workspace"
-        else "",
-        allowed_session_ids={session_id}
-        if selected_scope == "session"
-        else readable - {session_id}
-        if selected_scope == "current_workspace"
-        else readable,
-    )
-    return response.model_copy(
-        update={
-            "metadata": {
-                **response.metadata,
-                "policy_decision": "allow_core_relationship",
-                "policy_scope": selected_scope,
-            }
-        }
-    )
+    return search_session_alias(app, session_id, query=query, scope=scope, limit=limit)
 
 
 def _memory_search_response(

@@ -1,4 +1,4 @@
-"""Policy-gated retained-memory tools for dynamic agents."""
+"""Compatibility names for session/transcript tools; Tasks is the default surface."""
 
 from __future__ import annotations
 
@@ -132,7 +132,7 @@ def _summary_result(
             caller=caller,
             policy=policy,
         )
-    summary = _memory_session_summary(app, target_id)
+    summary = _memory_session_summary(app, target_id, caller_id=session_id)
     audit = _memory_tool_audit(
         app,
         tool_name="memory_read_session_summary",
@@ -261,7 +261,7 @@ def build_memory_search_tool(agent_def: Any) -> Any:
         name="memory_search_sessions",
         presentation="memory",
         domain="memory",
-        title="Search memory",
+        title="Search sessions (compatibility alias)",
         representation="row",
         desc=(
             "Search retained transcript excerpts in your session, delegated tree and explicitly granted peers. "
@@ -300,9 +300,9 @@ def build_memory_summary_tool(agent_def: Any) -> Any:
         name="memory_read_session_summary",
         presentation="memory",
         domain="memory",
-        title="Read session summary",
+        title="Read recent session activity (compatibility alias)",
         representation="row",
-        desc="Read a bounded summary of one retained session without returning its full transcript.",
+        desc="Compatibility alias for recent session activity. Prefer query_tasks and observe_tasks(view='transcript' or 'summary') on an authorized task handle.",
         args={
             "target_session_id": {"type": "string", "description": "Session to summarize."},
             "scope": {"type": "string", "description": "Requested memory scope."},
@@ -333,7 +333,7 @@ def build_memory_context_frame_tool(agent_def: Any) -> Any:
         name="memory_read_context_frame",
         presentation="memory",
         domain="memory",
-        title="Read context frame",
+        title="Read context frame (compatibility alias)",
         representation="row",
         desc=(
             "Read one bounded retained context frame with source and policy provenance. "

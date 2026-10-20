@@ -604,6 +604,18 @@ class TaskHistory:
             handle = self._assignments.get(session_id)
             return self._tasks.get(handle) if handle is not None else None
 
+    def assignment_turns(self, handle: str) -> frozenset[str]:
+        """Read admitted turn identities from the existing session mailbox headers."""
+        with self._view_lock:
+            task = self._tasks.get(handle)
+            if task is None:
+                return frozenset()
+            return frozenset(
+                item.admission.turn_id
+                for item in self._mail.get(task.owner.session_id, {}).values()
+                if item.admission is not None and item.admission.assignment_id == handle
+            )
+
     def coordination_grants(self, recipient_session: str) -> tuple[CoordinationGrant, ...]:
         """Read exact human/configuration relationships for one recipient."""
         with self._view_lock:

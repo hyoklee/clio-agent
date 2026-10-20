@@ -61,7 +61,6 @@ from clio_agent.gact.cron_tools import build_cron_tools
 from clio_agent.gact.goal import build_goal_status_tool
 from clio_agent.gact.goal_control import build_goal_wait_tool, build_set_goal_tool
 from clio_agent.gact.loop_control import build_set_loop_tool
-from clio_agent.gact.memory_tools import build_memory_tools
 from clio_agent.gact.plan_mode import build_plan_exit_tool
 from clio_agent.gact.recall_context_tool import build_recall_context_tool
 from clio_agent.gact.resource_tools import build_resource_tools
@@ -202,7 +201,6 @@ def build_auto_react_tools(
         tools.append(build_connected_data_index_tool())
         tools.append(build_connected_data_open_tool())
         tools.append(build_connected_data_write_tool())
-        tools.extend(build_memory_tools(agent_def))
         # Phase 9: the main agent may draft alternatives of its answer (BestOfN /
         # Refine on demand, judged by the user or an LM). Imported here: the drafting
         # module needs dspy, which the server's app import must not load.

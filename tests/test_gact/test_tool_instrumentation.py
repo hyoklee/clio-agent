@@ -704,12 +704,6 @@ def test_every_auto_tool_and_a_plain_tool_lands_a_tool_call_part(
             # Reads back compacted context; called with neither query nor ids on
             # purpose: a typed refusal, and the tool_call part must land anyway.
             "recall_context": {},
-            "memory_search_sessions": {"query": "missing"},
-            "memory_read_session_summary": {"target_session_id": sid},
-            "memory_read_context_frame": {
-                "target_session_id": sid,
-                "frame_id": "missing",
-            },
             # Phase 9 (tier-1 MAIN only): outside an agent loop it refuses typed
             # (draft_alternatives_refused); the tool_call part lands either way.
             "draft_alternatives": {"n": 2, "rubric": "short"},

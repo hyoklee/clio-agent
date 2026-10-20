@@ -11,7 +11,7 @@ from uuid import uuid4
 from clio_agent.arc.task_types import QuestionDefinition, TaskOwner
 from clio_agent.gact import context
 from clio_agent.gact.agents.tool_instrumentation import native_tool
-from clio_agent.gact.off_loop import run_off_loop
+from clio_agent.gact.off_loop import join_off_loop
 from clio_agent.gact.task_access import TaskAccess
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.gact.tool_observation import CollectedTaskResult
@@ -137,9 +137,10 @@ def build_task_tools() -> list[Any]:
         cursor: str | None = None,
         limit: int = 50,
         scope: str = "tree",
+        query: str | None = None,
     ) -> dict[str, Any]:
         app, caller = _runtime()
-        value = await run_off_loop(
+        value = await join_off_loop(
             app.state.task_operations.query,
             caller,
             kind,
@@ -151,6 +152,7 @@ def build_task_tools() -> list[Any]:
             cursor,
             limit,
             scope,
+            query,
         )
         return _task_read(value)
 
@@ -160,10 +162,23 @@ def build_task_tools() -> list[Any]:
         pattern: str | None = None,
         timeout_s: float | None = None,
         notify: bool | None = None,
+        view: str = "progress",
+        history: str = "assignment",
+        limit: int = 50,
+        artifact_id: str | None = None,
     ) -> dict[str, Any]:
         app, caller = _runtime()
         value = await app.state.task_operations.observe(
-            caller, tasks, cursor, pattern, timeout_s, notify
+            caller,
+            tasks,
+            cursor,
+            pattern,
+            timeout_s,
+            notify,
+            view=view,
+            history=history,
+            limit=limit,
+            artifact_id=artifact_id,
         )
         return _task_read(value)
 
@@ -221,13 +236,13 @@ def build_task_tools() -> list[Any]:
             {
                 **{
                     name: dict(_STRING)
-                    for name in ("kind", "status", "handle", "tool", "agent", "cursor")
+                    for name in ("kind", "status", "handle", "tool", "agent", "cursor", "query")
                 },
                 "active_only": {"type": "boolean", "default": False},
                 "limit": {"type": "integer", "minimum": 1, "default": 50},
                 "scope": {"type": "string", "enum": ["tree", "authorized"], "default": "tree"},
             },
-            "Inspect authorized tasks and finite session assignments. query_tasks('Subagent') filters children. Follow cursor even after a short or empty page; total=null means the full count is unknown. Reading does not consume results.",
+            "Discover authorized tasks and finite Session/Subagent assignments. query searches readable descriptions and retained transcript text. Follow cursor even after a short or empty page; total=null means the count is unknown. Use returned handles with observe_tasks and send_agent_message. Reading consumes nothing.",
             read=True,
         ),
         _tool(
@@ -239,8 +254,20 @@ def build_task_tools() -> list[Any]:
                 "pattern": _STRING,
                 "timeout_s": _TIMEOUT,
                 "notify": {"anyOf": [{"type": "boolean"}, {"type": "null"}], "default": None},
+                "view": {
+                    "type": "string",
+                    "enum": ["progress", "transcript", "summary", "artifacts"],
+                    "default": "progress",
+                },
+                "artifact_id": _STRING,
+                "history": {
+                    "type": "string",
+                    "enum": ["assignment", "session"],
+                    "default": "assignment",
+                },
+                "limit": {"type": "integer", "minimum": 1, "maximum": 200, "default": 50},
             },
-            "Read incremental progress without consuming results. Without a pattern this returns immediately, regardless of timeout_s. With a pattern, wait for matching output or settlement; timeout_s ends only that wait. Unavailable members return independent outcomes; continue with the valid handles. notify subscribes/unsubscribes this exact handle.",
+            "Peek without consuming completion: view progress (default), transcript, recorded summary, or linked artifacts. Transcript preserves typed source rows, IDs and resumable JSON fragments for large rows. history=session requires stable session read rights; assignment stays on the selected run. Content views return immediately; patterns/subscriptions use progress. Follow cursor while has_more. timeout_s ends only a progress wait; tasks continue.",
         ),
         _tool(
             wait_tasks,

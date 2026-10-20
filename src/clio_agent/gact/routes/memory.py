@@ -195,7 +195,9 @@ def _raise_memory_policy_denied(
     )
 
 
-def _memory_session_summary(app: FastAPI, session_id: str) -> dict[str, Any]:
+def _memory_session_summary(
+    app: FastAPI, session_id: str, *, caller_id: str | None = None
+) -> dict[str, Any]:
     """Project a session to a compact summary (recent excerpts + counts).
 
     Never includes the raw full transcript -- only bounded excerpts of the last
@@ -211,7 +213,11 @@ def _memory_session_summary(app: FastAPI, session_id: str) -> dict[str, Any]:
             details={"session_id": session_id},
             recoverable=False,
         )
-    messages = list(app.state.messages.get(session_id, []))
+    from clio_agent.gact.task_transcripts import session_activity_messages
+
+    messages = session_activity_messages(
+        app, app.state.conversations.caller(caller_id or session_id), session_id
+    )
     excerpts = [
         {
             "message_id": message.id,
@@ -447,7 +453,7 @@ def register_memory_routes(app: FastAPI, deps: "GactDeps") -> None:
                 caller=caller_map,
                 policy=policy,
             )
-        summary = _memory_session_summary(app, target_sid)
+        summary = _memory_session_summary(app, target_sid, caller_id=sid)
         audit = _memory_tool_audit(
             app,
             tool_name="memory_read_session_summary",

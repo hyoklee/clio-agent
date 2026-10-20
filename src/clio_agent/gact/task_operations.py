@@ -82,9 +82,11 @@ class TaskOperations:
         cancel_owner: CancelOwner,
         *,
         refresh_owner: Callable[[TaskSnapshot], None] | None = None,
+        app: Any = None,
     ) -> None:
         self.history, self.cancel_owner = history, cancel_owner
         self.refresh_owner = refresh_owner
+        self.app = app
 
     def query(
         self,
@@ -98,11 +100,13 @@ class TaskOperations:
         cursor: str | None = None,
         limit: int = 50,
         scope: str = "tree",
+        query: str | None = None,
     ) -> dict[str, Any]:
         """Return authorized filtered snapshots; pages never disclose hidden counts."""
         if limit < 1:
             raise ValueError("limit must be positive")
         access = TaskAccess(self.history, caller)
+        query = query.strip() or None if query is not None else None
         filters = {
             "kind": kind,
             "status": status,
@@ -111,6 +115,7 @@ class TaskOperations:
             "agent": agent,
             "active_only": active_only,
             "scope": scope,
+            "query": query,
             "recipient": caller.session_id,
             "human": caller.human_id,
             "human_action": caller.human_action,
@@ -138,7 +143,11 @@ class TaskOperations:
             orders = access.query_orders(scope, kind=canonical_kind, active_only=active_only)
             total: int | None = (
                 len(orders[0])
-                if len(orders) == 1 and status is None and tool is None and agent is None
+                if len(orders) == 1
+                and status is None
+                and tool is None
+                and agent is None
+                and query is None
                 else None
             )
             if handle is not None:
@@ -148,65 +157,84 @@ class TaskOperations:
                 total = None
             anchor = (after[0], after[1]) if after else None
             streams = (_ordered_after(ordering, anchor) for ordering in orders)
-            page, previous, last = [], None, None
-            last_readable = False
-            candidates = iter(merge(*streams))
-            for key in islice(candidates, max(200, limit * 4)):
-                if key == previous:
-                    continue
-                previous = key
-                current = self.history.task_snapshot(key[1])
-                if (
-                    current is None
-                    or not access.in_scope(current, scope)
-                    or not {"read", "observe"}.intersection(access.rights(current))
-                ):
-                    if handle is not None:
-                        continue
-                    raise ValueError("Task query visibility changed; restart the query")
-                last = key
-                last_readable = "read" in access.rights(current)
-                if (
-                    (kind is not None and current.kind.casefold() != kind.casefold())
-                    or (status is not None and current.status != status)
-                    or (tool is not None and current.tool != tool)
-                    or (
-                        agent is not None
-                        and current.owner.session_id != agent
-                        and current.owner.assignment_id != agent
-                    )
-                    or (active_only and current.terminal_at is not None)
-                ):
-                    matched = False
-                else:
-                    matched = True
-                    page.append(current)
+            scan_limit = max(200, limit * 4)
+            # Copy only this bounded candidate page while the orderings are
+            # protected. Transcript hydration must not hold the writer's lock.
+            candidates = list(islice(merge(*streams), scan_limit + 1))
+        page, previous, last = [], None, None
+        last_readable, scanned = False, 0
+        for key in candidates[:scan_limit]:
+            scanned += 1
+            access = TaskAccess(self.history, caller)
+            if key == previous:
+                continue
+            previous = key
+            current = self.history.task_snapshot(key[1])
+            if (
+                current is None
+                or not access.in_scope(current, scope)
+                or not {"read", "observe"}.intersection(access.rights(current))
+            ):
                 if handle is not None:
-                    total = int(matched)
-                if len(page) >= limit:
-                    break
-            exhausted = next(candidates, None) is None
-            next_cursor = (
-                _cursor({"filter": signature, "after": list(last)})
-                if not exhausted and last is not None
-                else None
-            )
-            if handle is not None and total is None:
-                total = 0
-            value = {
-                "tasks": [access.view(task) for task in page],
-                "total": total,
-                "cursor": next_cursor,
-                "revision": self.history.revision,
-            }
-            # Sparse-page cursors identify their last authorized candidate too.
-            return CollectedTaskResult(
-                value,
-                (),
-                (last[1],) if last is not None and last_readable else (),
-                observe_handles=(last[1],) if last is not None and not last_readable else (),
-                collect=False,
-            )
+                    continue
+                raise ValueError("Task query visibility changed; restart the query")
+            last = key
+            last_readable = "read" in access.rights(current)
+            if (
+                (kind is not None and current.kind.casefold() != kind.casefold())
+                or (status is not None and current.status != status)
+                or (tool is not None and current.tool != tool)
+                or (
+                    agent is not None
+                    and current.owner.session_id != agent
+                    and current.owner.assignment_id != agent
+                )
+                or (active_only and current.terminal_at is not None)
+                or (query is not None and not self._matches_text(caller, current, query))
+            ):
+                matched = False
+            else:
+                matched = True
+                page.append(current)
+            if handle is not None:
+                total = int(matched)
+            if len(page) >= limit:
+                break
+        exhausted = scanned == len(candidates)
+        next_cursor = (
+            _cursor({"filter": signature, "after": list(last)})
+            if not exhausted and last is not None
+            else None
+        )
+        if handle is not None and total is None:
+            total = 0
+        access = TaskAccess(self.history, caller)
+        for task in page:
+            if not ({"read"} if query is not None else {"read", "observe"}).intersection(
+                access.rights(task)
+            ):
+                raise TaskAccessDenied("Task query visibility changed; restart the query")
+        value = {
+            "tasks": [access.view(task) for task in page],
+            "total": total,
+            "cursor": next_cursor,
+            "revision": self.history.revision,
+        }
+        return CollectedTaskResult(
+            value,
+            (),
+            (last[1],) if last is not None and last_readable else (),
+            observe_handles=(last[1],) if last is not None and not last_readable else (),
+            collect=False,
+        )
+
+    def _matches_text(self, caller: TaskCaller, task: TaskSnapshot, query: str) -> bool:
+        """Search only readable task content through the existing conversation source."""
+        if self.app is None or "read" not in TaskAccess(self.history, caller).rights(task):
+            return False
+        from clio_agent.gact.task_transcripts import matches_task_text
+
+        return matches_task_text(self.app, caller, task, query)
 
     def result(self, caller: TaskCaller, handle: str, cursor: str | None = None) -> dict[str, Any]:
         """Read immutable result content outside the writer lock, then recheck disclosure."""
@@ -410,8 +438,31 @@ class TaskOperations:
         *,
         row_limit: int | None = None,
         include_state: bool = False,
+        view: str = "progress",
+        history: str = "assignment",
+        limit: int = 50,
+        artifact_id: str | None = None,
     ) -> dict[str, Any]:
         """Read available changes immediately, or explicitly await output/settlement."""
+        if view != "progress":
+            if self.app is None or pattern is not None or notify is not None:
+                raise ValueError(
+                    "Context views are immediate reads; use progress for patterns/subscriptions"
+                )
+            from clio_agent.gact.off_loop import join_off_loop
+            from clio_agent.gact.task_transcripts import read_task_context
+
+            return await join_off_loop(
+                read_task_context,
+                self.app,
+                caller,
+                _handles(tasks),
+                view,
+                history,
+                cursor,
+                limit,
+                artifact_id,
+            )
         with track(pattern is not None and timeout_s != 0, session_id=caller.session_id):
             handles = await self.history.io.run(self._canonical_observed, caller, _handles(tasks))
             timeout, previous = _timeout(timeout_s), _decode(cursor)
