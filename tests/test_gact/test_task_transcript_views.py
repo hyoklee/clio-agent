@@ -448,6 +448,30 @@ def test_recorded_thinking_has_the_same_read_boundary_as_other_transcript_conten
     assert allowed["parts"][0]["text"] == secret
 
 
+def test_multiple_live_previews_share_the_existing_output_budget(
+    transcript_world: TranscriptWorld, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Selecting more active handles cannot multiply the global content allowance."""
+    world = transcript_world
+    world.grant()
+    peer = world.app.state.sessions.create(title="Second analyst").id
+    peer_task = record_assignment_fixture(world.app, peer)
+    TranscriptWorld(world.app, world.client, world.reader, peer, peer_task, world.root).grant()
+    monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "128")
+    world.app.state.live_assistant_message_ids = {
+        world.target: "first_live_frame",
+        peer: "second_live_frame",
+    }
+    world.app.state.live_assistant_parts = {
+        sid: [Part(type="text", text="progress " * 1000)] for sid in (world.target, peer)
+    }
+    observed = world.observe(handle=[world.task.handle, peer_task.handle], view="transcript")
+    assert all(not row.get("error") for row in observed["tasks"]), observed
+    previews = [row["live_snapshot"] for row in observed["tasks"]]
+    assert all(preview["truncated"] for preview in previews)
+    assert 0 < sum(len(part["content"]) for preview in previews for part in preview["parts"]) <= 128
+
+
 def test_legacy_activity_alias_does_not_reveal_unauthorized_session_existence(
     transcript_world: TranscriptWorld,
 ) -> None:

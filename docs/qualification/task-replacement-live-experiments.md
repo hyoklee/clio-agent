@@ -1,5 +1,32 @@
 # Tasks replacement: finite live experiments
 
+### Current delta — 2026-10-20 04:32 UTC
+
+R546 actual Claude/Haiku continuation FAILED again: the correct new human input
+was committed, but no peer message/successor was accepted; Core records an invalid
+tool call. The earlier failure is not erased. Its API probe did read the real live
+frame and reuse that cursor after sealing without a source-change error; this is
+HTTP/production-owner proof, not model acceptance of that read. Service exited0;
+all8ports absent;279,522,617logical bytes of disposable state removed, no archive.
+
+R547 independent Opus review accepted the access/cursor direction and found one
+output-bound defect: several live previews could reuse the full allowance. The
+correction subtracts each preview from the existing shared budget and adds a
+multi-handle regression. Fail-closed session-history rights remain intentional.
+CI is still required. R545 all20 scoped types/lint/format and9guards passed;
+R548 confirms the corrected binary fixture types. Latest-budget static check
+remains pending at this snapshot. No local pytest/Vitest was run.
+
+GACT0f7917cc changes only a browser-test prerequisite: wait for actual canvas
+closure before interacting with the returned task row. A push run atdf62fe66 had
+one disclosure failure (158browsercases passed); its separate PR run passed.
+That inconsistency remains visible. No UI production bytes changed or redundant
+UI build is needed. Fresh CI must validate the test correction.
+
+R550 is registered for the same natural continuation using actual Claude Opus.
+No result is claimed before execution. This does not replace the failed Haiku
+lane or complete Q1–Q9/final30/provider/UI obligations. NO GO for publication.
+
 ## Current disposition — 2026-10-20 04:25 UTC
 
 Agent1a22ffc8 / GACTdf62fe66: R539/R543 is a scoped actual Codex/Luna PASS for

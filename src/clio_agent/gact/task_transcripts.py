@@ -379,6 +379,8 @@ def read_task_context(
                 if view == "transcript"
                 else None
             )
+            if live is not None and remaining is not None:
+                remaining = max(0, remaining - len(json.dumps(live["parts"], ensure_ascii=False)))
             TaskAccess(app.state.task_history, caller).require(handle, "read")
             sources = [handle]
             if live is not None:
