@@ -1,14 +1,16 @@
 # Tasks replacement: finite live experiments
 
-## Current disposition — 2026-10-20 18:30 UTC
+## Current disposition — 2026-10-20 18:49 UTC
 
 Initial implementation DONE. Full Tasks qualification remains NO GO. Latest
-executed production tuple is agent57b1b17fe / GACT86214905. The pending batch
+executed production tuple is agent57b1b17fe / GACT86214905. The pushed d784 batch
 changes only the schedule regression's observation boundary and documentation.
 
 Fresh actual-model final-source races: R594 R2=5/5 and R4=5/5; independently
-inspected R597 R6=2 and R611 R6=1. **13/30 scoped passes;17 remain.** R611 case4
-failed on a five-second query timeout and its cleanup audit remains open. R599
+inspected R597 R6=2 and R611 R6=1 and R622 R6=2. **15/30 scoped physical/delivery passes;15 remain.**
+R611 case4 failed on a five-second query timeout; R623 verified physical retirement
+and removed its disposable state without inventing missing confirmations. R622
+did not reproduce the timeout, which remains an open finding. R599
 failed target-notice interpretation; SPOTTER parent Stop is not accepted. Active
 reviewer Stop retains the earlier R574/R579 scoped pass. Do not broaden these
 scopes or treat model/harness failures as new task-engine defects without evidence.
@@ -23,7 +25,9 @@ findings require adjudication, not a blanket clean verdict. Astra remains stoppe
 See [current status](task-replacement-current-status.md) for exact evidence,
 remaining Q1–Q9/coordination/provider/UI obligations and resource custody. NDP
 streaming still cannot establish Q6/N12 surviving-provider recovery; the required
-approved durable job is unavailable. No release, installation or scope waiver.
+approved durable job is unavailable. R632/R633 records actual Runs history, keyboard disclosure and cancelled-child
+transcript navigation with a selected real-service screenshot; no fresh phone or
+UI cancellation proof is added. No release, installation or scope waiver.
 
 ## Earlier recorded source and evidence
 

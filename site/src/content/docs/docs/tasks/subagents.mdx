@@ -25,6 +25,10 @@ A child shown through its durable task record appears once in Background work.
 Older records can lack an assignment or some controls; CLIO identifies missing
 descriptions rather than inventing an assignment.
 
+You can also find earlier children in **Runs → All states → Agents**. Expand
+**Details** to read an assignment, or open its conversation link with the mouse
+or keyboard. The original conversation remains available after cancellation.
+
 ## Pause and resume
 
 Pause holds the child's model execution and retains its context. The handle
@@ -89,9 +93,11 @@ that session's tasks to find the continuation; the old result never changes to
 running. Previously accepted operations are not replayed automatically. The
 child should inspect uncertain side effects before choosing another operation.
 
-The candidate implements these reads. The live qualification must still show
-the parent reading an actual cancelled child, the linked continuation using its
-context, and the original side effect occurring only once.
+Recorded Codex/Luna and Claude Opus runs demonstrated this sequence: the parent
+read an actual cancelled child's transcript, messaged its original handle and
+collected the linked continuation. The child used its retained context without
+repeating the original operation. Broader lifecycle and recovery qualification
+remains separate from those scoped demonstrations.
 
 ## Human controls notify the parent
 

@@ -51,6 +51,12 @@ on another run must not consume that run's own parent notification. Permission t
 message or observe a peer does not grant lifecycle control.
 Human interventions continue to notify the actual owning agent.
 
+In **Runs**, select **All states** to include earlier outcomes. The **Agents**
+filter shows human-started assignments and delegated children together. Open
+**Details** for an assignment or follow its name to the original conversation.
+
+<GuideScreenshot name="tasks-session-runs-desktop" format="jpg" alt="Runs lists completed Session assignments and cancelled Subagent assignments, with their details collapsed and conversation links available" caption="Parent assignments and delegated children share the Runs list. Their outcomes remain separate: completing a parent does not rewrite a cancelled child's history." />
+
 ## Choose what another session can do
 
 1. Open the receiving session's **Work** view and expand **Access to other sessions**.
@@ -120,9 +126,12 @@ context with `history="session"` requires stable-session read permission. An
 exact historical grant does not expand to later assignments. These views do not
 consume result notifications, and copied text retains its original attribution.
 
-The new transcript views are implemented in the candidate. Their fresh CI and
-actual-model acceptance are still being recorded; earlier messaging screenshots
-do not qualify these new reads.
+Recorded Codex/Luna and Claude Opus runs exercised transcript inspection followed
+by messaging the original cancelled-child handle. The linked continuation used
+retained context without repeating the original operation. These are scoped
+demonstrations; current-source summary/artifact and remaining coordination
+qualification are still being recorded. The screenshots of grants do not qualify
+every transcript view.
 
 ## A possible workflow
 

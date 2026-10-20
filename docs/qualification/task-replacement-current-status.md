@@ -1,6 +1,6 @@
 # Tasks replacement status
 
-## Current disposition — 2026-10-20 18:30 UTC
+## Current disposition — 2026-10-20 18:49 UTC
 
 **Initial implementation DONE. Regression repairs and live qualification remain
 active. The candidate is NOT fully qualified: NO GO for release or daily
@@ -11,7 +11,7 @@ GACT `86214905b4fd99b184ac0b5b6e4e9506f6bd7bf6`, marketplace `2c172233a9f895e41f
 Develop550bfd744 remains integrated. Python3.14.6 / Core2.3.2 / FastMCP+tasks4.1.0 /
 MCP2.0.0 / Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159. Production Python digest:
 `c61c5babe5aefc9c9b82ca823b1b57facc59f0bcb7857d6cc887a2344f9eb140`.
-The current pending correction changes a regression test and these reports only;
+The pushed d784 correction changes a regression test and these reports only;
 it adds no production behavior. Installed Desktop, original auth, defaults,
 released pins and protected human files remain preserved.
 
@@ -37,11 +37,19 @@ released pins and protected human files remain preserved.
   Exact data/temp roots removed568,003,672bytes without archives.
 - **R611: one additional R6 repetition scoped PASS (case3).** Case4 FAILED on an
   actual five-second task-query HTTP timeout after cancellation. Failure snapshot
-  and logs are retained. Cleanup also encountered read timeouts; although the
-  controller reports service exit, physical/recording cleanup still needs its
-  independent custody audit. Cases4/5 are not accepted. No budget was raised.
-- **Final-source race count:13/30 scoped passes:** R2=5, R4=5, R6=3. R1/R3/R5 and
-  the remaining two R6 repetitions remain open. Older race evidence keeps its
+  and logs are retained. Cleanup also encountered read timeouts. R623 independently
+  verified physical retirement and removed564,890,112bytes; it does not fabricate
+  the missing history confirmations. Cases4/5 are not accepted from R611.
+- **R622 remaining two R6 repetitions PASS at d784:** exact same production
+  digest, task prompt, GACT and dependencies; real descendant termination, queued
+  withdrawal and attributed parent delivery. Service/viewer exited0; all local
+  execution and listeners retired. Exact disposable roots removed565,797,433bytes.
+  The five-second timeout did not recur and the diagnostic stack file remained
+  empty, so this is not a demonstrated remedy for R611. The final case's model
+  prose appears to reverse the two command labels; canonical handle outcomes and
+  physical evidence are retained separately from that prose.
+- **Final-source race count:15/30 scoped physical/delivery passes:** R2=5, R4=5,
+  R6=5 across inspected R597/R611/R622 scopes. R1/R3/R5 remain open. Older race evidence keeps its
   original source and cannot silently supply the final-source count.
 - **R574/R579 active reviewer Stop scoped PASS at1c1235495:** the real Codex
   reviewer was running when Stop was requested; reservation/reviewer retirement
@@ -79,7 +87,8 @@ The correction keeps those checks during execution and checks the same exactly-o
 schedule injection/no-human-authorship assertions after Stop retires the worker.
 Assertions and3/5-second budgets are unchanged. R616 lint, format, Mypy and all
 nine guards pass; no local pytest/Vitest was run. The combined test/report batch
-must go through CI before a green baseline is claimed.
+is pushed atd784. CI39475590134 is running last inspected with16successful jobs and no observed
+failure; a green final baseline is not yet claimed.
 
 ## Claude Opus review
 
@@ -104,7 +113,7 @@ no speculative task-engine patch is accepted as its cause or remedy.
 
 1. Diagnose the live cancellation/query timeout; finish the SPOTTER Stop and
    target-notice behavior. Construct regressions before executing fixes.
-2. Complete the17 outstanding final-source race repetitions and reconcile all
+2. Complete the15 outstanding final-source race repetitions and reconcile all
    Q1–Q9/migration/uncertainty obligations against the final production tuple.
 3. Finish current-source busy messaging, denial/revocation and summary/artifact
    acceptance. Preserve independent owner/subscriber delivery and exact grants.
@@ -112,21 +121,26 @@ no speculative task-engine patch is accepted as its cause or remedy.
    NDP's current adapter streams HTTP bytes and exposes no durable remote job ID.
    It can verify ordinary downloads and honest interruption, not the same provider
    job surviving CLIO. R2 Q6/N12 still requires this; scope has not been changed.
-5. Resolve remaining review findings; disposition failed model lanes; complete
-   real-service UI/keyboard/phone and matching website media. New UI attempts in
-   this family did not establish a connected review and add no acceptance.
+5. Resolve remaining review findings and model-lane disposition. R632/R633 actual
+   production-service UI now passed Runs history/filtering, keyboard assignment
+   disclosure and exact cancelled-child navigation/transcript access, with an
+   empty browser error log. A real1280x720 light-mode JPEG75,009bytes is selected
+   for the website. Admission was closed: no fresh inference, phone, Shift-click
+   or UI cancellation acceptance is claimed by this viewer. Matching website
+   changes still require their Pages build.
 6. Finish exact-head CI and owned cleanup. Retain only bounded receipts and
    selected product media; no archives or forbidden cleanup retries.
 
 ## Current custody
 
-Allocation24960 on ares-comp-07 owns the one reusable source/runtime and fresh
-non-refreshing Codex stage. R590/R594/R597/R599 disposable roots are absent.
-R611's failed-family data remains until its cleanup audit. R607/R608/R610 local
-UI helpers and both review profiles are absent; R617 verifies their ports absent
-and deletes the111-byte disposable UI credential stage. R618/R619 UI helper
-custody and its fresh credential copy still need retirement. Preserve every
-previous prohibited/manual-only root and all unrelated human/installed state.
+Allocation24961 on ares-comp-07 owns the one reusable source/runtime and fresh
+non-refreshing Codex stage. Quiescent24960 was closed after physical audits.
+R590/R594/R597/R599/R611/R622 disposable roots are absent. R632 viewer exited0;
+R630/R631 local UI helpers and listeners are absent. R634 verifies both review
+profiles removed, original review credentials/source unchanged, and removal of
+the111-byte UI token copy. Only bounded receipts and selected media remain.
+Preserve every previously prohibited/manual-only root and unrelated human state.
+
 
 Canonical reporting set: this file, task-replacement-acceptance.md and
 task-replacement-live-experiments.md. Bounded receipts are under the D
