@@ -48,6 +48,28 @@ def register_native_storage(
     """Install Download and Indexing on the independent storage queue."""
     service = app.state.connected_storage
 
+    def runtime_lost(task: TaskSnapshot) -> None:
+        """Retire publication custody after the native owner proves local execution lost."""
+        expected = {"Download": "materialize", "Indexing": "indexing"}.get(task.kind)
+        if expected is None:
+            return
+        try:
+            operation = service.store.get("operation", task.handle, TransferOperation)
+        except KeyError:
+            return  # The queued body never acquired source publication custody.
+        if operation.kind != expected:
+            raise ValueError("Retained source operation does not match the native task")
+        if operation.native_request is not None or operation.native_job_id is not None:
+            raise ValueError("Provider custody must settle through its original recovery owner")
+        if operation.state in {"queued", "running"}:
+            service.store.update_operation(
+                operation.id,
+                state="interrupted",
+                error="The local runtime is gone; inspect uncertain effects before retrying.",
+            )
+
+    work.runtime_loss_observer = runtime_lost
+
     def owner(context: SubmissionContext) -> tuple[Any, Path]:
         session = app.state.sessions.get(context.owner.session_id)
         if session is None:

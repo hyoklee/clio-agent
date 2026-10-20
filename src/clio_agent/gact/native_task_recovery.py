@@ -18,7 +18,7 @@ from clio_agent.arc.task_types import (
 )
 from clio_agent.gact.native_identity import local_runtime_gone, local_runtime_identity
 from clio_agent.gact.native_task_settlement import provider_locally_retired
-from clio_agent.gact.native_work import SUBMISSION_ARGUMENT, now
+from clio_agent.gact.native_work import SUBMISSION_ARGUMENT, NativeWork, now
 from clio_agent.gact.task_publication import publish_task_notice
 from clio_agent.tools.native_roots import NativeRootKind
 from clio_agent.tools.task_client import (
@@ -93,9 +93,25 @@ async def restore(self: NativeTools, handles: tuple[str, ...] | None = None) -> 
                 if await self.provider_recovery(current, submission):
                     continue
 
-            def interrupted(handle: str = handle) -> None:
+            work = self.work[root]
+
+            def interrupted(
+                handle: str = handle,
+                work: NativeWork = work,
+                original: TaskSnapshot = current,
+            ) -> None:
+                task = self._current(handle)
+                if task.terminal_at is not None or task.submission != original.submission:
+                    return
+                observer = work.runtime_loss_observer
+                if observer is not None:
+                    # Persist workload custody first, outside the Core lock. A
+                    # crash here leaves the active task eligible for safe recovery.
+                    observer(task)
                 with self.history.serialized():
                     task = self._current(handle)
+                    if task.terminal_at is not None or task.submission != original.submission:
+                        return
                     result = self.history.write_content(
                         task.owner.session_id,
                         {

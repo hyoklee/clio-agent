@@ -75,6 +75,8 @@ class NativeWork:
         self.history, self.backend = history, backend
         self.authorize, self.cleanup_observer = authorize, cleanup_observer
         self.recovery, self.admission = recovery, admission
+        # Workload metadata only; the native owner alone establishes runtime loss.
+        self.runtime_loss_observer: Callable[[TaskSnapshot], None] | None = None
 
     async def run(
         self,
