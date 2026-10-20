@@ -1,5 +1,33 @@
 # Tasks replacement: finite live experiments
 
+## Current disposition — 2026-10-20 04:25 UTC
+
+Agent1a22ffc8 / GACTdf62fe66: R539/R543 is a scoped actual Codex/Luna PASS for
+parent transcript inspection of a cancelled child, fresh mail to the old handle,
+same-session linked continuation retaining Core context, no repeated read/Question
+or spawn/restart, and one committed mail input. R516/R520 separately proves
+authorized discovery after restart, recorded outcome, actual linked artifact
+bytes/hash and idle peer mail. Neither is a whole-matrix pass.
+
+R542/R544 Claude/Haiku is FAILED: the model fabricated textual tool results;
+Core contains no claimed peer mail/successor. A prompt-only correction is being
+prepared with live-cursor stability, alias authorization and privacy regressions.
+R541 Opus found the live cursor issue and no hard access/lifecycle blocker.
+Final independent acceptance remains open. Astra reviews remain stopped.
+
+CI39366938417 completed at1a22ffc8; all12 reports identify two distinct fixture
+failures: the unavailable-artifact expectation and binary bytes registered as a
+text Report. Both are corrected together; final CI remains required. Fifty skipped
+cases per interpreter are not passes. No local behavior-test loop ran. Matching
+UI655 hashes/build pass; no new browser claim. Full Q1–Q9, approved durable-provider
+prerequisite, final30 race reconciliation and final source/UI review remain open.
+
+R539/R542 services/ports physically retired; family roots actually removed with
+no archives. R544 passive Core read admitted no models and exited. Reusable Ares
+allocation24953 remains owned. NO GO for release/install.
+
+## Earlier recorded source and evidence
+
 ## Active Task transcript extension — 2026-10-20 03:30 UTC
 
 The human made this active Tasks scope: use shared task handles to discover

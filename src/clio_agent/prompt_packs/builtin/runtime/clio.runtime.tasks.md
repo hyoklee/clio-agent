@@ -22,6 +22,9 @@ or view="artifacts" for that run's linked artifacts. To read a listed artifact,
 use the same view with artifact_id. Follow cursors and reconstruct a large row's
 JSON fragments by offset. Missing summaries are explicit; recent activity is not
 a whole-session summary. These reads do not consume completion notifications.
+Retained-message cursors exclude an unfinished frame. Its bounded live_snapshot
+is a mutable preview, with newest parts first and explicit truncation/text ranges.
+It is not a continuation page; the full sealed message becomes readable afterward.
 
 The default history="assignment" stays on the selected finite run. Explicit
 history="session" requires stable-session read rights and includes predecessor

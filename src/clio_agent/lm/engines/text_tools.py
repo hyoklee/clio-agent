@@ -76,7 +76,11 @@ I'll check both sources.
 
 (Those two names only illustrate the format -- call only names from the Available tools
 list.) All calls in one block run at the same time; you see all their results together in
-the next message. A message that ends without a block is your final answer."""
+the next message. Stop your reply immediately after the closing fence. Do not author
+new [tool results] sections or simulate later turns: only the host supplies actual
+observations. If a call needs another call's output, emit only the prerequisite now,
+then use its real result on the next step. Never invent a result or placeholder handle.
+A message that ends without a block is your final answer."""
 
 #: Appended to every user or tool-result turn the transport sends (never to the
 #: system prompt), so the model is reminded where its tools are at each step.
@@ -88,6 +92,8 @@ TURN_REMINDER = (
     "A JSON object wrapping a tool_calls list or XML <tool_calls> tags is not a call either. "
     "A single JSON call object also needs the complete fenced JSON list. "
     "Underscores are not tool-call fences. "
+    "Stop after the closing fence and wait for host observations; do not simulate "
+    "tool results or later turns. Dependent calls require the preceding real result. "
     "If no calls are needed, answer normally.)"
 )
 

@@ -204,6 +204,14 @@ def _memory_session_summary(
     few messages plus visibility/rollback bookkeeping.
     """
 
+    from clio_agent.gact.task_transcripts import session_activity_messages
+
+    # Agent callers must not learn existence before their read authorization.
+    messages = (
+        session_activity_messages(app, app.state.conversations.caller(caller_id), session_id)
+        if caller_id
+        else None
+    )
     sess = app.state.sessions.get(session_id)
     if sess is None:
         raise _memory_tool_error(
@@ -213,11 +221,10 @@ def _memory_session_summary(
             details={"session_id": session_id},
             recoverable=False,
         )
-    from clio_agent.gact.task_transcripts import session_activity_messages
-
-    messages = session_activity_messages(
-        app, app.state.conversations.caller(caller_id or session_id), session_id
-    )
+    if messages is None:
+        messages = session_activity_messages(
+            app, app.state.conversations.caller(session_id), session_id
+        )
     excerpts = [
         {
             "message_id": message.id,

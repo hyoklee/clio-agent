@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 
 from clio_agent.arc.task_types import CoordinationGrant, MailAdmission, MailItem, TaskSnapshot
 from clio_agent.gact.app import build_app
+from clio_agent.gact.artifacts.records import ArtifactKind
 from clio_agent.gact.native_work import now
 from clio_agent.gact.summarization_record import summarization_part
 from clio_agent.gact.task_access import TaskCaller
@@ -280,9 +281,10 @@ def _registered_report(
     *,
     payload: bytes | None = None,
     name: str = "report.txt",
+    kind: ArtifactKind = ArtifactKind.REPORT,
 ) -> tuple[Any, bytes]:
     """Mint and ingest real bytes through the selected artifact owner."""
-    from clio_agent.gact.artifacts.records import ArtifactKind, Mechanism
+    from clio_agent.gact.artifacts.records import Mechanism
     from clio_agent.gact.artifacts.registry import get_registry
     from clio_agent.gact.artifacts.storage import ingest_artifact_identity
 
@@ -299,7 +301,7 @@ def _registered_report(
         workspace_id=workspace,
         name=name,
         event_id="event_" + uuid4().hex,
-        kind=ArtifactKind.REPORT,
+        kind=kind,
         custody=ingested.custody,
         mechanism=Mechanism.TOOL_SCHEMA,
         evidence=ingested.evidence,
@@ -362,10 +364,103 @@ def test_forged_artifact_link_does_not_grant_another_producers_bytes(
     world = transcript_world
     world.grant()
     version, _ = _registered_report(world, "ungranted_session")
-    assert world.observe(view="artifacts")["tasks"][0]["items"] == []
+    assert world.observe(view="artifacts")["tasks"][0]["items"] == [
+        {"id": version.artifact_id, "artifact_id": version.artifact_id, "available": False}
+    ]
     result = world.observe(view="artifacts", artifact_id=version.artifact_id)
     assert result["tasks"][0].get("error")
     assert "17.25 seconds" not in json.dumps(result)
+
+
+def test_live_growth_and_sealing_do_not_rewrite_the_history_cursor(
+    transcript_world: TranscriptWorld,
+) -> None:
+    """A busy peek remains mutable while retained history has a stable continuation."""
+    world = transcript_world
+    world.grant()
+    retained = world.message("Previously retained evidence")
+    live = Part(id="live_progress", type="text", text="First live update")
+    world.app.state.live_assistant_message_ids = {world.target: "current_frame"}
+    world.app.state.live_assistant_parts = {world.target: [live]}
+    first = world.observe(view="transcript", limit=1)
+    assert first["tasks"][0]["items"] == [retained.to_wire()]
+    assert first["tasks"][0]["live_snapshot"]["parts"][0]["text"] == live.text
+    grown = live.model_copy(update={"text": "First live update, now with more progress"})
+    world.app.state.live_assistant_parts[world.target] = [grown]
+    second = world.observe(view="transcript", cursor=first["cursor"], limit=1)
+    assert second["tasks"][0]["items"] == []
+    assert second["tasks"][0]["live_snapshot"]["parts"][0]["text"] == grown.text
+    sealed = Message(
+        id="current_frame",
+        session_id=world.target,
+        turn_id=world.task.invocation_id,
+        role="assistant",
+        created_at=now(),
+        updated_at=now(),
+        parts=[grown],
+    )
+    world.app.state.messages[world.target] = [retained, sealed]
+    world.app.state.live_assistant_message_ids.clear()
+    world.app.state.live_assistant_parts.clear()
+    final = world.observe(view="transcript", cursor=second["cursor"], limit=1)
+    assert final["tasks"][0]["items"] == [sealed.to_wire()]
+    assert final["tasks"][0]["live_snapshot"] is None
+    assert final.collect is False
+
+
+def test_live_preview_keeps_the_existing_output_bound(
+    transcript_world: TranscriptWorld,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A growing model frame cannot bypass the configured content budget."""
+    world = transcript_world
+    world.grant()
+    monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "128")
+    world.app.state.live_assistant_message_ids = {world.target: "current_frame"}
+    world.app.state.live_assistant_parts = {
+        world.target: [Part(id="large_live_part", type="text", text="progress " * 1000)]
+    }
+    preview = world.observe(view="transcript")["tasks"][0]["live_snapshot"]
+    assert preview["mutable"] is True and preview["truncated"] is True
+    assert sum(len(part["content"]) for part in preview["parts"]) <= 128
+
+
+def test_recorded_thinking_has_the_same_read_boundary_as_other_transcript_content(
+    transcript_world: TranscriptWorld,
+) -> None:
+    """Status access cannot disclose recorded reasoning through search or a peek."""
+    world = transcript_world
+    world.grant(("observe",))
+    message = world.message("Public-looking source")
+    secret = "PRIVATE_RECORDED_REASONING_481"
+    world.app.state.messages[world.target] = [
+        message.model_copy(
+            update={"parts": [Part(id="recorded_reasoning", type="thinking", text=secret)]}
+        )
+    ]
+    denied = world.observe(view="transcript")
+    assert denied["tasks"][0].get("error") and secret not in json.dumps(denied)
+    queried = world.app.state.task_operations.query(world.caller, scope="authorized", query=secret)
+    assert queried["tasks"] == []
+    world.grant()
+    allowed = world.observe(view="transcript")["tasks"][0]["items"][0]
+    assert allowed["parts"][0]["type"] == "thinking"
+    assert allowed["parts"][0]["text"] == secret
+
+
+def test_legacy_activity_alias_does_not_reveal_unauthorized_session_existence(
+    transcript_world: TranscriptWorld,
+) -> None:
+    """Missing and forbidden targets reach the same authorization boundary first."""
+    from clio_agent.gact.routes.memory import _memory_session_summary
+
+    world = transcript_world
+    failures = []
+    for target in (world.target, "sess_missing_ungranted"):
+        with pytest.raises(ValueError) as denied:
+            _memory_session_summary(world.app, target, caller_id=world.reader)
+        failures.append(str(denied.value))
+    assert failures[0] == failures[1]
 
 
 def test_retained_exact_grant_does_not_expand_to_session_history(
@@ -474,7 +569,9 @@ def test_binary_artifact_pages_bound_the_encoded_output(
     world = transcript_world
     world.grant()
     payload = bytes(range(256)) * 4
-    version, _ = _registered_report(world, world.target, payload=payload, name="payload.bin")
+    version, _ = _registered_report(
+        world, world.target, payload=payload, name="payload.bin", kind=ArtifactKind.DATASET
+    )
     monkeypatch.setenv("CLIO_TOOL_RESULT_CHARS", "64")
     result = world.observe(view="artifacts", artifact_id=version.artifact_id)
     body = result["tasks"][0]["items"][0]

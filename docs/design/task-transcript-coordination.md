@@ -22,10 +22,15 @@ This change introduces no mailbox, task registry, worker or history store.
 - Transcript pages preserve typed source messages/parts and original IDs. A large
   source row has resumable JSON fragments instead of silently discarded bytes.
   Rewritten/deleted cursor sources cause an explicit cursor-recovery error.
+- The current unfinished frame is a separate bounded, mutable `live_snapshot`,
+  newest parts first. Its partial text ranges are explicit. It does not enter a
+  retained-history cursor until sealed, so ordinary streaming growth cannot
+  invalidate that cursor. The full sealed source remains available afterward.
 - Summary views return recorded model summaries and assignment outcomes with
   coverage/source references. Recent activity is labeled separately; missing
   summaries are explicit. A partial compaction is never called a whole-session
-  summary. Generating maintained long-term knowledge is separate work.
+  summary. The compatibility recent-activity overview retains its separate label.
+  Generating maintained long-term knowledge is separate work.
 - Artifact views list versions linked to the selected assignment/transcript,
   with exact producer identity and hashes. Reading a version uses the existing
   provider/containment/hash-verification owner, with bounded pages. Knowing an

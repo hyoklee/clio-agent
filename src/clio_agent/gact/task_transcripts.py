@@ -37,25 +37,15 @@ def task_messages(app: Any, caller: TaskCaller, task: TaskSnapshot, history: str
     if history == "session" and task.owner.session_id not in access.session_candidates("read"):
         raise ValueError("Stable session history is unavailable for this operation")
     rows = list(app.state.messages.get(task.owner.session_id, ()))
-    if task.terminal_at is None:
-        from clio_agent.gact.live_edge import overlay_in_flight_part
-        from clio_agent.gact.types import Message
-
-        sid = task.owner.session_id
-        identity = getattr(app.state, "live_assistant_message_ids", {}).get(sid)
-        parts = list(getattr(app.state, "live_assistant_parts", {}).get(sid, ()))
-        if identity and parts and all(row.id != identity for row in rows):
-            rows.append(
-                Message(
-                    id=identity,
-                    session_id=sid,
-                    role="assistant",
-                    created_at=task.created_at,
-                    updated_at=task.updated_at,
-                    parts=overlay_in_flight_part(app, sid, parts),
-                    metadata={"live": True, "status": "running"},
-                )
-            )
+    current = app.state.task_history.latest_assignment(task.owner.session_id)
+    live_id = (
+        getattr(app.state, "live_assistant_message_ids", {}).get(task.owner.session_id)
+        if current is not None and current.terminal_at is None
+        else None
+    )
+    # An unfinished frame is mutable even when its message header is retained.
+    # Keep it outside the continuation cursor until its owner seals the frame.
+    rows = [row for row in rows if row.id != live_id]
     if history == "session":
         return rows
     start = _timestamp(task.created_at)
@@ -261,6 +251,50 @@ def _page(
     return result, position, False
 
 
+def _live_preview(
+    app: Any, task: TaskSnapshot, history: str, limit: int, bound: int | None
+) -> dict[str, Any] | None:
+    """Peek at the current frame without putting mutable parts in a durable cursor."""
+    from clio_agent.gact.live_edge import overlay_in_flight_part
+
+    sid = task.owner.session_id
+    current = app.state.task_history.latest_assignment(sid)
+    if (
+        current is None
+        or current.terminal_at is not None
+        or (history == "assignment" and current.handle != task.handle)
+    ):
+        return None
+    identity = getattr(app.state, "live_assistant_message_ids", {}).get(sid)
+    parts = list(getattr(app.state, "live_assistant_parts", {}).get(sid, ()))
+    if not identity or not parts:
+        return None
+    parts = overlay_in_flight_part(app, sid, parts)
+    rows = []
+    shortened = False
+    for part in reversed(parts[-limit:]):
+        row = part.to_wire()
+        text = row.get("text")
+        if isinstance(text, str) and bound is not None and len(text) > bound:
+            start = len(text) - bound
+            row["text"] = text[start:]
+            row["metadata"] = {
+                **row.get("metadata", {}),
+                "live_text_range": {"start": start, "total": len(text)},
+            }
+            shortened = True
+        rows.append(row)
+    page, _, truncated = _page(rows, {}, limit, bound)
+    return {
+        "message_id": identity,
+        "source_handle": current.handle,
+        "mutable": True,
+        "part_order": "newest_first",
+        "parts": page,
+        "truncated": truncated or shortened or len(parts) > limit,
+    }
+
+
 def read_task_context(
     app: Any,
     caller: TaskCaller,
@@ -340,8 +374,15 @@ def read_task_context(
                 page, position, pending = _page(rows, positions.get(handle, {}), limit, remaining)
                 if remaining is not None:
                     remaining = max(0, remaining - len(json.dumps(page, ensure_ascii=False)))
+            live = (
+                _live_preview(app, task, history, limit, remaining)
+                if view == "transcript"
+                else None
+            )
             TaskAccess(app.state.task_history, caller).require(handle, "read")
             sources = [handle]
+            if live is not None:
+                sources.append(live["source_handle"])
             if history == "session":
                 sources.extend(
                     row.handle
@@ -359,6 +400,7 @@ def read_task_context(
                     "items": page,
                     "has_more": pending,
                     "summary_available": bool(rows) if view == "summary" else None,
+                    "live_snapshot": live,
                 }
             )
             readable.extend(sources)
