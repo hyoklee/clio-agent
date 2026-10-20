@@ -1,152 +1,133 @@
 # Tasks replacement status
 
-## Current disposition — 2026-10-20 17:58 UTC
+## Current disposition — 2026-10-20 18:30 UTC
 
-**Initial implementation DONE. Regression repairs and live qualification are
-active. The complete Tasks candidate remains unqualified: NO GO for publication
-or daily installation.** Further independent reviews are Claude Opus only.
+**Initial implementation DONE. Regression repairs and live qualification remain
+active. The candidate is NOT fully qualified: NO GO for release or daily
+installation. Astra is stopped; reviews are Claude Opus only.**
 
-Pushed source baseline is agent77e66d738 / GACT86214905. The earlier1c1235495 correction
-updates the missing-workspace fixture and joins the real paused SPOTTER admission
-probe after mailbox withdrawal, retaining the exact two-poll assertion. It also
-records GACT86214905, which restores historical-child navigation from the same
-Task record through the existing projection helper. No new store/driver/policy,
-deadline change or assertion relaxation is introduced. Both repaired cases passed
-on all three interpreters in the eleven recovered CI reports. One incomplete
-Python3.12 shard and its coverage gate subsequently passed. Core production algorithms
-are unchanged by that batch. The next scoped repair changes only shared input
-wording: a relayed human control identifies its target and explains that its
-quoted message was addressed there. It adds no mailbox, lifecycle, admission or
-execution policy. Three constructed regression cases distinguish the parent's
-informational relay, actionable child steering and local system resume. R583
-lint/format/types/all9guards pass. R584 live execution proved that initial notice
-label insufficient: the parent still copied its child's instructions. The current
-replacement wording explicitly states target/recipient sessions and prohibition
-on executing the forwarded message here; the shared root/child task prompt carries
-the same rule. R587 lint/format/types/all9guards pass for this correction. Its
-constructed cases and live repeat remain pending; no successful fix is claimed.
+Latest executed production tuple: agent `57b1b17fe7fc95224fc95bd8b4f39449b69cd778`,
+GACT `86214905b4fd99b184ac0b5b6e4e9506f6bd7bf6`, marketplace `2c172233a9f895e41f7de121a3871d282a5fc0a2`.
+Develop550bfd744 remains integrated. Python3.14.6 / Core2.3.2 / FastMCP+tasks4.1.0 /
+MCP2.0.0 / Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159. Production Python digest:
+`c61c5babe5aefc9c9b82ca823b1b57facc59f0bcb7857d6cc887a2344f9eb140`.
+The current pending correction changes a regression test and these reports only;
+it adds no production behavior. Installed Desktop, original auth, defaults,
+released pins and protected human files remain preserved.
 
-Develop550bfd744 remains integrated. Runtime tuple: Python3.14.6 / Core2.3.2 /
-FastMCP+tasks4.1.0 / MCP2.0.0 / Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159.
-Daily Desktop, original auth, defaults, released pins and human work are preserved.
+## Executed live evidence
 
-## Confirmed scoped model and UI evidence
+- **R594: ten final-source repetitions PASS:** R2 queued cancellation5/5 and R4
+  explicit collection/automatic delivery5/5. Actual Codex/Luna submitted native
+  Shell tasks. Queued bodies never entered, including after the holding worker
+  released; collection committed once, later historical reads remained possible,
+  and actual process identities retired. Source, task prompt and auth hashes
+  remained unchanged. Service exited0; all tasks, processes and eight listeners
+  settled. Exact data/temp roots removed576,009,091bytes without archives.
+- **R597/R613: two R6 repetitions scoped PASS:** real child assignments, running
+  process plus descendant, queued command withdrawal, attributed human cancel
+  notice and parent collection. The third setup FAILED: the model changed the
+  first script path, causing a real failed Shell task; the later command began,
+  so the intended running/queued scenario was impossible. The verified harness
+  was interrupted into its normal cleanup rather than waiting its full diagnostic.
+  A missing optional prompt field then broke final receipt formatting after
+  worker retirement. R613 independently confirms all processes/listeners absent,
+  empty active cleanup lists and prompt/production matching the frozen commit;
+  the service exit code was not recovered. Do not call the whole family passed.
+  Exact data/temp roots removed568,003,672bytes without archives.
+- **R611: one additional R6 repetition scoped PASS (case3).** Case4 FAILED on an
+  actual five-second task-query HTTP timeout after cancellation. Failure snapshot
+  and logs are retained. Cleanup also encountered read timeouts; although the
+  controller reports service exit, physical/recording cleanup still needs its
+  independent custody audit. Cases4/5 are not accepted. No budget was raised.
+- **Final-source race count:13/30 scoped passes:** R2=5, R4=5, R6=3. R1/R3/R5 and
+  the remaining two R6 repetitions remain open. Older race evidence keeps its
+  original source and cannot silently supply the final-source count.
+- **R574/R579 active reviewer Stop scoped PASS at1c1235495:** the real Codex
+  reviewer was running when Stop was requested; reservation/reviewer retirement
+  followed14.271seconds later and the protected write never occurred. The204
+  acknowledged Stop rather than proving immediate physical retirement.
+- **SPOTTER parent Stop remains open.** R590 showed correct target interpretation
+  but waited for an unsuitable tool-start event (published only after clearance).
+  The corrected experiment observes the actual clearance-wait stack. R599 then
+  FAILED earlier: Luna copied child-directed quoted instructions again. Thus57's
+  notice wording is not a consistently accepted remedy. Keep this model/input
+  failure explicit; do not add a new execution policy merely to force the case.
+- **Existing coordination scopes:** R539/R543 Codex and R550 actual Claude Opus
+  demonstrated parent transcript inspection of a cancelled child, messaging its
+  original handle and linked continuation with retained17.25/34.5-second context,
+  without operation replay. R516/R520 separately inspected discovery, recorded
+  outcomes and an exact722-byte artifact after restart. R563/R567 accepted
+  historical-child canvas/central navigation and phone containment against the
+  real service. Those receipts keep their original revisions/scopes; current
+  source-impact adjudication and remaining coordination cases stay open.
+- HaikuR542/R546 remain FAILED model lanes (invalid calls/fabricated observations),
+  not authentication/capacity errors or successful product qualification.
 
-- R539/R543 Codex/Luna PASS at1a22ffc8: parent read the cancelled child's original
-  transcript and sent fresh mail to the old handle. A linked assignment in the
-  same child session retained Core context and computed34.5seconds from the one
-  prior17.25second read. The new message supplied neither number. One spawn/read/
-  Question, no restart/resume or effect replay, and one committed peer input.
-- R550 Claude Opus PASS at4989338ca/GACT0f7917cc: the same natural sequence passed
-  through the actual Claude SDK text-tool bridge. Parent inspected the original
-  transcript, messaged the old handle, discovered/collected the linked successor,
-  and the child used retained context without tools. Peer attribution and the
-  cancelled/unanswered Question remained explicit. One mail input commit; source
-  and original auth hashes unchanged; service exited0.
-- R516/R520 scoped Codex/Luna proof: after unrelated work and a real restart,
-  a fresh authorized session discovered the earlier policy without answer/session
-  ID, read transcript/recorded outcome and exact linked722-byte artifact/hash,
-  and exchanged attributed idle-wake messages. The full family checker failed;
-  only independently inspected scopes are accepted.
-- R542/R546 Haiku FAILED: invalid textual tool calls/fabricated observations;
-  Core confirms no claimed continuation mail/successor. These are retained failed
-  model lanes, not capacity/auth failures or successful Claude acceptance.
-- R555 real-service UI read actual R550 records and showed compact task history
-  and assignments. It exposed the missing historical-child Open conversation
-  action. Desktop inspection and390px DOM measurement were recorded; this is a
-  FAILED navigation gate, not full Q9 acceptance. Browser error log was empty.
-- R563/R567 actual-service UI recheck at1c1235495/86214905 passed the repaired
-  historical cancelled-child action: canvas navigation preserved the parent URL;
-  Make central opened the exact original child session. Its retained transcript
-  included the original17.25-second read and34.5-second continuation. At390x844,
-  the child transcript was readable with no horizontal overflow or browser errors.
-  This is scoped UI/read acceptance over actual R550 records, with model admission
-  closed. No new inference, Shift-click/keyboard acceptance, full Q9 acceptance or
-  saved website screenshot is claimed. Screenshots were emitted in browser output.
-- R574/R579 scoped active-reviewer Stop PASS at1c1235495: the real ai-review
-  thread was inside the actual Codex direct provider call when production Stop
-  was requested. The204 response acknowledged Stop; the reservation and reviewer
-  physically retired14.271seconds later, with the protected write absent. The
-  reviewer could record its late low-risk verdict without reviving that effect.
-  This is one scope, not five repeats or the complete R574 family: its later
-  SPOTTER setup refused an ambiguous blueprint name. No production fix followed.
-- R580 failed before the required parent mutation: the real watcher opened its
-  Question, but the parent treated the forwarded child-directed human message
-  as its own assignment and also asked/waited. The qualification root prompt also
-  incorrectly included "original delegated child work." The next family removes
-  that conflicting role wording and exercises the shared control-notice repair.
-  R580 is failed, not a SPOTTER Stop pass. It is retired and cleaned813,867,847bytes.
-- R584 also FAILED the new explicit no-parent-Question assertion at77e66d738.
-  Its actual transcript confirms the initial control prefix reached the model;
-  the target handle alone did not prevent copying the quoted instruction. This
-  drives the explicit session-identity/shared-prompt correction. Its original
-  failure and cleanup are retained; exact disposable roots removed813,862,511bytes.
+## Regression baseline and repair
 
-## CI, checks and independent review
+[CI39470748252](https://github.com/iowarp/clio-agent/actions/runs/39470748252)
+completed at57: **23 successful jobs /1 failed job**. All12XML reports recovered;
+one distinct failure, `test_fired_schedule_is_registered_and_cancellable` on3.14.
+All other constructed cases, retained1005-message and sustained-load cases passed
+within that inventory. Fifty excluded tests per interpreter remain exclusions.
+GACT86214905 CI/schema/both workspace runs passed. Earlier1c CI passed all24jobs.
 
-Agent CI39462457313 at1c1235495 is complete: all24jobs passed and all12reports were
-recovered with zero test failures. Both previous failing cases passed on all three
-interpreters. The incomplete3.12shard passed its single retry at the unchanged
-25-minute limit and coverage passed. Retained1005-message and sustained-load cases
-passed on all three interpreters. Fifty exclusions per interpreter remain
-exclusions. GACT86214905 CI/schema/both workspace runs all passed. CI39469488966
-belongs to77e66d738; it does not accept the newer working control-prompt correction.
+The schedule fake emits no live parts. Its test read the transcript before worker
+retirement, despite already proving committed Core input and active cancellation.
+The correction keeps those checks during execution and checks the same exactly-one
+schedule injection/no-human-authorship assertions after Stop retires the worker.
+Assertions and3/5-second budgets are unchanged. R616 lint, format, Mypy and all
+nine guards pass; no local pytest/Vitest was run. The combined test/report batch
+must go through CI before a green baseline is claimed.
 
-R545/R548/R552 scoped formatting/lint/types and R554 all9guards pass at their
-recorded source. R562 current correction lint/format/types/all9guards pass. No local pytest or
-Vitest loop runs; constructed cases go to CI while live acceptance proceeds.
+## Claude Opus review
 
-R547 Opus review found the multi-live-preview budget defect, fixed in4989338ca
-with regression coverage. Session history continues to fail closed for missing
-rights. The final whole-candidate Opus review remains open; Astra is stopped.
-R582 actual Opus preflight returned401 expired OAuth access token, with no model
-usage. The disposable D profile was removed and original credentials remained
-byte-identical. The human has been asked to refresh the usual login; available
-Codex qualification continues. This is an authentication prerequisite, not a
-Tasks-engine defect.
+The human refreshed the expired login. R592 and R596 then executed actual
+`claude-opus-5-5` source reviews of the frozen candidate in fresh D-owned profiles.
+Both completed; profiles were removed, original credentials and reviewed files
+remained unchanged. R592 traced common history/access/mail/Questions/admission;
+R596 traced native SDK acceptance/transport/settlement/reconnect and task-row UI.
+These are scoped source reviews, not live acceptance or a clean whole-candidate
+verdict. Their exact findings remain in bounded review receipts.
 
-## Remaining work
+Source checks already distinguish several conditional concerns: trusted child
+creation explicitly grants a message-only return channel; stopped-before-commit
+inputs differ from veto/setup-error holds; Shell strips human API credentials;
+native Shell/storage fail closed for unsupported elicitation. Still adjudicate
+shared-transport pre-acceptance input, recovery under unrecorded adoption, passive
+mailbox read contention, and UI uncertainty presentation against actual supported
+routes and evidence. The R611 timeout particularly requires measured stacks;
+no speculative task-engine patch is accepted as its cause or remedy.
 
-1. Complete the remaining Python3.12 CI shard/coverage. Historical-child canvas/
-   central navigation and phone transcript read now have scoped live UI proof;
-   keyboard/Shift-click and matching website media remain open.
-2. Finish parent Stop while its SPOTTER watcher and Question remain active. Active
-   real-reviewer Stop now has scoped R574/R579 proof; R502 itself remains failed.
-3. Reattach a surviving approved external transfer job by original provider ID.
-   The current NDP download adapter opens an HTTP stream and exposes no remote
-   transfer-job identity. It can qualify download Tasks and honest interruption,
-   but not a provider job surviving CLIO. Q6/N12 still explicitly requires this
-   latter behavior in R2; no release-scope change or provider job is invented.
-4. Reconcile final-source Q1–Q9 and all30 lifecycle races; rerun required affected
-   cases. Complete busy messaging, denial/revocation, summary/artifact and recovery
-   coverage, retaining exact source/scope instead of blanket old-source passes.
-5. Final Claude Opus review, honest Haiku disposition, matching website/media and
-   reconciliation of all acceptance rows. No release/install before acceptance.
-6. Settle/remove disposable state and reconcile custody after each family.
+## Remaining gates
 
-## Resource custody
+1. Diagnose the live cancellation/query timeout; finish the SPOTTER Stop and
+   target-notice behavior. Construct regressions before executing fixes.
+2. Complete the17 outstanding final-source race repetitions and reconcile all
+   Q1–Q9/migration/uncertainty obligations against the final production tuple.
+3. Finish current-source busy messaging, denial/revocation and summary/artifact
+   acceptance. Preserve independent owner/subscriber delivery and exact grants.
+4. **Approved surviving external transfer job remains prerequisite-blocked.**
+   NDP's current adapter streams HTTP bytes and exposes no durable remote job ID.
+   It can verify ordinary downloads and honest interruption, not the same provider
+   job surviving CLIO. R2 Q6/N12 still requires this; scope has not been changed.
+5. Resolve remaining review findings; disposition failed model lanes; complete
+   real-service UI/keyboard/phone and matching website media. New UI attempts in
+   this family did not establish a connected review and add no acceptance.
+6. Finish exact-head CI and owned cleanup. Retain only bounded receipts and
+   selected product media; no archives or forbidden cleanup retries.
 
-R567 audited the missing local helper handles against actual process identities
-and absent5173/19180 listeners; their exit statuses were not recovered. The R563
-viewer diagnostic expired and its verified owned tree was force-closed; no process
-remained. All eight remote listeners were absent. The exact R550 data/temp roots
-were removed280,358,653logical bytes without archives. Allocation24958 was closed.
-The expired R526 stage was previously removed1326bytes; originals were preserved.
-R571/R574/R578 are physically retired; their data/temp roots were removed without
-archives (275,510,612 /561,723,257 /353,053,344logical bytes respectively). R574's
-reviewer scope passed; later SPOTTER setup failed, and R578 caught a Linux manifest
-case error in the harness before model work. Allocation24959 now owns fresh R580
-SPOTTER Stop verification on ares-comp-07, exact1c1235495/86214905, with a registered
-900-second harness diagnostic, explicit unique configured pack identity, prepared
-uppercase AGENT.md, fresh non-refreshing Codex stage and repository-owned data.
-R580 and R584 are failed/retired and their exact roots are now absent. The next
-SPOTTER repeat and native R2/R4 races require the new frozen source. Native race
-harnesses are prepared but not launched; preparation is not accepted evidence.
-The fresh Codex auth stage and
-single reusable source/runtime remain owned; all subsequent families must be
-registered before launch and cleaned afterward.
-All previously prohibited/manual-only roots remain preserved.
+## Current custody
+
+Allocation24960 on ares-comp-07 owns the one reusable source/runtime and fresh
+non-refreshing Codex stage. R590/R594/R597/R599 disposable roots are absent.
+R611's failed-family data remains until its cleanup audit. R607/R608/R610 local
+UI helpers and both review profiles are absent; R617 verifies their ports absent
+and deletes the111-byte disposable UI credential stage. R618/R619 UI helper
+custody and its fresh credential copy still need retirement. Preserve every
+previous prohibited/manual-only root and all unrelated human/installed state.
 
 Canonical reporting set: this file, task-replacement-acceptance.md and
-task-replacement-live-experiments.md. Bounded receipts are in the repository-owned
-D qualification `.pytest-runtime/static/`. No claim of full qualification.
+task-replacement-live-experiments.md. Bounded receipts are under the D
+qualification repository's `.pytest-runtime/static/`.

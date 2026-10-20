@@ -1,69 +1,29 @@
 # Tasks replacement acceptance ledger
 
-## Current disposition — 2026-10-20 17:58 UTC
+## Current disposition — 2026-10-20 18:30 UTC
 
-Initial implementation DONE; qualification/repair remains active. Current pushed
-agent77e66d738 records GACT86214905. The current correction extends only shared
-control rendering and the root/child task prompt. R550 Opus and R539/R543 Codex child-history/mail/
-retained-context proofs retain their original source and scopes. Haiku R542/R546
-remain failed lanes. Astra is stopped; final review is Claude Opus only.
+Initial implementation DONE. Full Tasks qualification remains NO GO. Latest
+executed production tuple is agent57b1b17fe / GACT86214905. The pending batch
+changes only the schedule regression's observation boundary and documentation.
 
-Agent CI39462457313 at1c1235495 is complete: all24jobs passed, all12reports recovered,
-zero failures. Both repaired cases passed on3.12/3.13/3.14. The incomplete3.12shard
-and coverage passed their one retry without changing the25-minute job cap.
-Fifty exclusions per interpreter remain
-exclusions. GACT86214905 CI/schema/both workspace runs all passed. R562 scoped
-static checks and all9guards pass. No local pytest/Vitest loop ran.
+Fresh actual-model final-source races: R594 R2=5/5 and R4=5/5; independently
+inspected R597 R6=2 and R611 R6=1. **13/30 scoped passes;17 remain.** R611 case4
+failed on a five-second query timeout and its cleanup audit remains open. R599
+failed target-notice interpretation; SPOTTER parent Stop is not accepted. Active
+reviewer Stop retains the earlier R574/R579 scoped pass. Do not broaden these
+scopes or treat model/harness failures as new task-engine defects without evidence.
 
-R563/R567 scoped real-service UI accepted historical cancelled-child canvas and
-central navigation to the exact original child session, with actual retained
-R550 transcript content. Phone390x844 had no horizontal overflow or browser
-errors. Model admission was closed: this is no fresh model acceptance, fullQ9,
-keyboard/Shift-click or saved website-media proof. Screenshots were emitted only.
+CI39470748252 completed23successful/1failed job; all12reports show one distinct
+schedule-transcript timing failure. Its constructed test-only correction retains
+all assertions/deadlines. Scoped static checks/all9guards pass; no local behavior
+test loop ran. GACT86214905 CI passed. Fifty exclusions per interpreter remain
+exclusions. Auth refresh unblocked actual Claude Opus R592/R596 source reviews;
+findings require adjudication, not a blanket clean verdict. Astra remains stopped.
 
-R567 verified all viewer/tunnel/static processes and listeners absent, recording
-the viewer diagnostic force-close honestly, then removed the exact R550 data/temp
-roots280,358,653logical bytes without archives. Allocation24958 was closed.
-R574/R579 scoped active-reviewer Stop passed: real Codex reviewer stack at Stop,
-then physical reviewer/turn retirement14.271seconds later with no protected write.
-The204 is acknowledgement rather than a claim of instant settlement. Later
-SPOTTER setup refused an ambiguous pack name, so the R574 full family is failed.
-R571/R574/R578 are physically retired and their disposable roots removed without
-archives. R578 exposed an uppercase-manifest harness error before model work.
-Allocation24959 now owns registered R580 SPOTTER Stop checks at the frozen
-1c1235495/86214905 tuple, with prepared original pack and a unique configured ID.
-R580 is now failed/retired and cleaned813,867,847bytes: the real watcher opened a
-Question, but its parent executed the child-directed text in the forwarded human
-notice and opened its own Question before the mutation. The test root prompt also
-incorrectly claimed delegated child work. The next family removes that conflicting
-role wording and exercises a seven-line shared input-rendering repair: explicit
-target and informational human-control context, with the same Core mailbox and
-input commitment. Three constructed cases cover direct child instructions,
-parent relays and local resume; R583 lint/format/types/all9guards pass. Behavioral
-execution is CI-only. R584 then FAILED its explicit no-parent-Question assertion
-at77e66d738: actual transcript confirms the first prefix reached the model, which
-still copied the child's quoted instruction. Its exact data/temp roots were
-removed813,862,511bytes after retirement. The next correction explicitly states
-target and recipient sessions and adds the same rule to the shared root/child
-task prompt. R587 scoped static checks and all9guards pass; new CI and fresh live
-acceptance remain required. R2/R4 harnesses are prepared, not launched.
-
-R582 actual Opus availability preflight returned401 expired access token, with no
-model usage. Its disposable D profile was removed and source credentials stayed
-byte-identical. The human has been asked to refresh the usual login. Final Opus
-review remains prerequisite-blocked while Codex qualification continues.
-
-The current NDP adapter streams HTTP bytes and exposes no persistent remote
-transfer-job identity. This can qualify ordinary download Tasks and interruption,
-but cannot prove an external provider job surviving CLIO. R2 Q6/N12 explicitly
-retains that release gate; approved durable provider/paths remain prerequisite-
-blocked. No scope change, invented job or substitution is recorded.
-
-Still open: final Q1–Q9/30-race reconciliation and affected repetitions, remaining
-coordination cases, remaining SPOTTER Stop results, external-provider
-reattachment, final Opus review/Haiku disposition and matching website media.
-NO GO for release or daily installation. Previously prohibited cleanup targets
-and unrelated human/installed state remain preserved.
+See [current status](task-replacement-current-status.md) for exact evidence,
+remaining Q1–Q9/coordination/provider/UI obligations and resource custody. NDP
+streaming still cannot establish Q6/N12 surviving-provider recovery; the required
+approved durable job is unavailable. No release, installation or scope waiver.
 
 ## Earlier recorded source and evidence
 

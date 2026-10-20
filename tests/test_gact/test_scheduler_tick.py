@@ -109,18 +109,9 @@ def test_fired_schedule_is_registered_and_cancellable(
             ]
             assert status_events, "no session.status_changed event for the scheduled turn"
 
-            # The staged injection carries the schedule metadata, never human authorship.
-            response = await asyncio.to_thread(client.get, f"/v1/sessions/{sid}/messages")
-            msgs = response.json()["messages"]
-            wakes = [
-                part
-                for message in msgs
-                for part in message["parts"]
-                if part["type"] == "injection" and part.get("source") == "schedule"
-            ]
-            assert len(wakes) == 1
-            assert "scheduled q" in wakes[0]["text"]
-            assert not [m for m in msgs if m["role"] == "user"]
+            # Confirm the model input while its worker is still cancellable.
+            # This host agent emits no live parts; its transcript is sealed at
+            # retirement, after the input commitment and running-status event.
             acknowledged = app.state.task_history.acknowledged_notifications(sid)
             [mail] = [
                 app.state.task_history.mail_item(sid, identity)
@@ -141,6 +132,19 @@ def test_fired_schedule_is_registered_and_cancellable(
             assert original is not None and original.turn_id
             await asyncio.wait_for(app.state.turn_runner.stop(sid), timeout=5.0)
             assert app.state.turn_runner.handle(sid) != original
+
+            # Retirement must also retain exactly one attributed injection.
+            response = await asyncio.to_thread(client.get, f"/v1/sessions/{sid}/messages")
+            msgs = response.json()["messages"]
+            wakes = [
+                part
+                for message in msgs
+                for part in message["parts"]
+                if part["type"] == "injection" and part.get("source") == "schedule"
+            ]
+            assert len(wakes) == 1
+            assert "scheduled q" in wakes[0]["text"]
+            assert not [m for m in msgs if m["role"] == "user"]
         finally:
             tick.cancel()
             with contextlib.suppress(asyncio.CancelledError):
