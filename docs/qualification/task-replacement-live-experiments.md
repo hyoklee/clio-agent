@@ -1,17 +1,17 @@
 # Tasks replacement: finite live experiments
 
-## Current disposition — 2026-10-20 17:46 UTC
+## Current disposition — 2026-10-20 17:58 UTC
 
 Initial implementation DONE; qualification/repair remains active. Current pushed
-agent1c1235495 records GACT86214905. Core production algorithms are unchanged by
-this regression/gitlink batch. R550 Opus and R539/R543 Codex child-history/mail/
+agent77e66d738 records GACT86214905. The current correction extends only shared
+control rendering and the root/child task prompt. R550 Opus and R539/R543 Codex child-history/mail/
 retained-context proofs retain their original source and scopes. Haiku R542/R546
 remain failed lanes. Astra is stopped; final review is Claude Opus only.
 
-Current agent CI39462457313 has eleven recovered reports, zero assertion failures;
-both repaired cases passed on3.12/3.13/3.14. Python3.12 shard1 hit the unchanged
-25-minute job cap at98%, leaving its coverage missing. That incomplete job and
-dependent coverage are rerunning. Fifty exclusions per interpreter remain
+Agent CI39462457313 at1c1235495 is complete: all24jobs passed, all12reports recovered,
+zero failures. Both repaired cases passed on3.12/3.13/3.14. The incomplete3.12shard
+and coverage passed their one retry without changing the25-minute job cap.
+Fifty exclusions per interpreter remain
 exclusions. GACT86214905 CI/schema/both workspace runs all passed. R562 scoped
 static checks and all9guards pass. No local pytest/Vitest loop ran.
 
@@ -40,7 +40,13 @@ role wording and exercises a seven-line shared input-rendering repair: explicit
 target and informational human-control context, with the same Core mailbox and
 input commitment. Three constructed cases cover direct child instructions,
 parent relays and local resume; R583 lint/format/types/all9guards pass. Behavioral
-execution is CI-only. R584 and R2/R4 harnesses are prepared, not launched.
+execution is CI-only. R584 then FAILED its explicit no-parent-Question assertion
+at77e66d738: actual transcript confirms the first prefix reached the model, which
+still copied the child's quoted instruction. Its exact data/temp roots were
+removed813,862,511bytes after retirement. The next correction explicitly states
+target and recipient sessions and adds the same rule to the shared root/child
+task prompt. R587 scoped static checks and all9guards pass; new CI and fresh live
+acceptance remain required. R2/R4 harnesses are prepared, not launched.
 
 R582 actual Opus availability preflight returned401 expired access token, with no
 model usage. Its disposable D profile was removed and source credentials stayed

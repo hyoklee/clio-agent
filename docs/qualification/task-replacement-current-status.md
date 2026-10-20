@@ -1,25 +1,30 @@
 # Tasks replacement status
 
-## Current disposition — 2026-10-20 17:46 UTC
+## Current disposition — 2026-10-20 17:58 UTC
 
 **Initial implementation DONE. Regression repairs and live qualification are
 active. The complete Tasks candidate remains unqualified: NO GO for publication
 or daily installation.** Further independent reviews are Claude Opus only.
 
-Current pushed source is agent1c1235495 / GACT86214905. The combined correction
+Pushed source baseline is agent77e66d738 / GACT86214905. The earlier1c1235495 correction
 updates the missing-workspace fixture and joins the real paused SPOTTER admission
 probe after mailbox withdrawal, retaining the exact two-poll assertion. It also
 records GACT86214905, which restores historical-child navigation from the same
 Task record through the existing projection helper. No new store/driver/policy,
 deadline change or assertion relaxation is introduced. Both repaired cases passed
 on all three interpreters in the eleven recovered CI reports. One incomplete
-Python3.12 shard and its coverage gate are rerunning. Core production algorithms
+Python3.12 shard and its coverage gate subsequently passed. Core production algorithms
 are unchanged by that batch. The next scoped repair changes only shared input
 wording: a relayed human control identifies its target and explains that its
 quoted message was addressed there. It adds no mailbox, lifecycle, admission or
 execution policy. Three constructed regression cases distinguish the parent's
 informational relay, actionable child steering and local system resume. R583
-lint/format/types/all9guards pass; behavioral execution goes to CI.
+lint/format/types/all9guards pass. R584 live execution proved that initial notice
+label insufficient: the parent still copied its child's instructions. The current
+replacement wording explicitly states target/recipient sessions and prohibition
+on executing the forwarded message here; the shared root/child task prompt carries
+the same rule. R587 lint/format/types/all9guards pass for this correction. Its
+constructed cases and live repeat remain pending; no successful fix is claimed.
 
 Develop550bfd744 remains integrated. Runtime tuple: Python3.14.6 / Core2.3.2 /
 FastMCP+tasks4.1.0 / MCP2.0.0 / Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159.
@@ -71,16 +76,21 @@ Daily Desktop, original auth, defaults, released pins and human work are preserv
   incorrectly included "original delegated child work." The next family removes
   that conflicting role wording and exercises the shared control-notice repair.
   R580 is failed, not a SPOTTER Stop pass. It is retired and cleaned813,867,847bytes.
+- R584 also FAILED the new explicit no-parent-Question assertion at77e66d738.
+  Its actual transcript confirms the initial control prefix reached the model;
+  the target handle alone did not prevent copying the quoted instruction. This
+  drives the explicit session-identity/shared-prompt correction. Its original
+  failure and cleanup are retained; exact disposable roots removed813,862,511bytes.
 
 ## CI, checks and independent review
 
-Current agent CI39462457313 at1c1235495 has eleven recovered reports and zero test
-failures. Both previous failing cases passed on3.12/3.13/3.14. Python3.12 shard1
-reached98% before its existing25-minute job cap cancelled it; missing coverage is
-not a product assertion failure or a pass. That incomplete job and its dependent
-coverage are rerunning without budget changes. Retained1005-message and sustained
-load cases passed on all three interpreters. Fifty exclusions per interpreter
-remain exclusions. GACT86214905 CI/schema/both workspace runs all passed.
+Agent CI39462457313 at1c1235495 is complete: all24jobs passed and all12reports were
+recovered with zero test failures. Both previous failing cases passed on all three
+interpreters. The incomplete3.12shard passed its single retry at the unchanged
+25-minute limit and coverage passed. Retained1005-message and sustained-load cases
+passed on all three interpreters. Fifty exclusions per interpreter remain
+exclusions. GACT86214905 CI/schema/both workspace runs all passed. CI39469488966
+belongs to77e66d738; it does not accept the newer working control-prompt correction.
 
 R545/R548/R552 scoped formatting/lint/types and R554 all9guards pass at their
 recorded source. R562 current correction lint/format/types/all9guards pass. No local pytest or
@@ -129,9 +139,10 @@ case error in the harness before model work. Allocation24959 now owns fresh R580
 SPOTTER Stop verification on ares-comp-07, exact1c1235495/86214905, with a registered
 900-second harness diagnostic, explicit unique configured pack identity, prepared
 uppercase AGENT.md, fresh non-refreshing Codex stage and repository-owned data.
-R580 is failed/retired and its exact roots are now absent. R584 SPOTTER and native
-R2/R4 race repetition harnesses are prepared for the next frozen source but not
-launched; preparation is not accepted evidence. The fresh Codex auth stage and
+R580 and R584 are failed/retired and their exact roots are now absent. The next
+SPOTTER repeat and native R2/R4 races require the new frozen source. Native race
+harnesses are prepared but not launched; preparation is not accepted evidence.
+The fresh Codex auth stage and
 single reusable source/runtime remain owned; all subsequent families must be
 registered before launch and cleaned afterward.
 All previously prohibited/manual-only roots remain preserved.
