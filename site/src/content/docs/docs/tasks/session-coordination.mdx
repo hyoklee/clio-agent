@@ -70,11 +70,11 @@ An observation-only grant exposes status and numeric progress, not assignments,
 answers or output. Subscribing to the eventual result requires both read and
 observation rights. Revocation is checked again before queued content is injected.
 
-<GuideScreenshot name="tasks-session-grant-desktop" format="png" alt="A root session's Work view offers separate read, observe, message, lifecycle-control and delegated-child choices before granting access" caption="Real desktop grant: read, observe and message are selected. Lifecycle control and delegated children remain separate, unselected choices. The transcript records an intentionally denied read under the preceding observe-only grant." />
+<GuideScreenshot name="tasks-session-grant-desktop-current" format="jpg" alt="Task access offers separate Read, Observe, Message and Control choices for a peer conversation" caption="Select the rights this conversation needs. In this real-service example, Read, Observe and Message are selected; Control and delegated children remain unselected." />
 
-<GuideScreenshot name="tasks-session-access" format="png" alt="The root conversation's Work view lists its granted Read, Observe and Message rights beside a Revoke button" caption="Replacement-service capture: the exact relationship and its rights appear in Work. Revoke removes this relationship without changing the historical task outcomes." />
+<GuideScreenshot name="tasks-session-access-current" format="jpg" alt="The granted peer conversation has Read, Observe and Message rights beside a Revoke button" caption="The saved relationship shows its exact rights. Revoke removes this access without changing either conversation's history." />
 
-<GuideScreenshot name="tasks-session-revoke-phone" format="png" portrait alt="At phone width, the current peer grant shows Read, Observe, Message and a Revoke button" caption="Replacement-service capture at phone width. Grant and keyboard-driven revocation were exercised through the real authenticated service; historical task handles remained unchanged." />
+<GuideScreenshot name="tasks-session-revoke-phone-current" format="jpg" portrait alt="The phone-width access view shows the peer grant and its Revoke button" caption="At phone width, the same grant remains accessible. Pressing Enter on Revoke removed the rights in Core while the peer's pending Question stayed open." />
 
 <details>
 <summary>Find a run and subscribe to its result</summary>
@@ -177,4 +177,9 @@ recovery race. They do not demonstrate a distributed scheduler or Slurm integrat
 Read [Messages and feedback](/docs/tasks/messages/) for the implemented addressing
 and mailbox behavior, and [Background work](/docs/tasks/) for accepted task execution.
 
-The current replacement UI also demonstrated desktop and phone grants/revocation, keyboard access, and reconnect preserving the original completed/cancelled handles. These interface checks complement the separate actual-model workflow and permission-boundary evidence.
+On the current candidate, a separate real-service check granted Read, Observe and
+Message at desktop width, then revoked the relationship with the keyboard at
+390-pixel phone width. Core confirmed the rights before and after; Control was
+never granted, the peer's Question stayed pending, and the page had no overflow
+or browser errors. This interface check complements the separate actual-model
+workflow and permission-boundary evidence.

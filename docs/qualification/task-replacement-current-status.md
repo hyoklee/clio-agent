@@ -1,44 +1,80 @@
 # Tasks replacement status
 
-## Current disposition — 2026-10-20 19:25 UTC
+## Current disposition — 2026-10-20 23:02 UTC
 
-**Initial implementation DONE. The completed fb tuple has green regression CI
-and 30 scoped race passes. The new upstream/read-lock repair batch needs its own
-CI and affected live acceptance. NO GO for release or daily installation.**
+**Implementation DONE. Test construction DONE. Required production regression
+checks PASS. The agreed finite release has accepted live evidence, including the
+final local recovery/retry gate and retained source-assessed races. Final Opus
+review found no blocking issue in its inspected scope. Publication and daily
+Desktop installation remain separate. Reporting/media checks and the current
+candidate disposition are recorded in PR checks and the bounded go/no-go receipt.**
 
-Latest completed live tuple: agent `fb2052275b900357dd96c9f896fa03b37ee141bb`; GACT `86214905b4fd99b184ac0b5b6e4e9506f6bd7bf6`;
-marketplace `2c172233a9f895e41f7de121a3871d282a5fc0a2`. Develop through550bfd744
-is integrated. Python3.14.6 / Core2.3.2 / FastMCP+tasks4.1.0 / MCP2.0.0 /
-Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159. Production Python digest:
-`c61c5babe5aefc9c9b82ca823b1b57facc59f0bcb7857d6cc887a2344f9eb140`. R635 confirms57→d784→fb has identical
-production/dependencies/schema/GACT; d784 changed one regression's observation
-boundary, fb changed documentation/media. The current integration batch adds develop dcba0b857 (three upstream commits)
-and changes two existing passive read locks, with two new constructed regression
-cases. It introduces no owner, worker, registry or execution policy. Current-batch
-CI and live acceptance are pending; earlier passes are not relabeled.
+Frozen production: agent `601ef47b669ca6bacd86aca319f7b9fbe1cbfc7d`;
+GACT `86214905b4fd99b184ac0b5b6e4e9506f6bd7bf6`;
+marketplace `2c172233a9f895e41f7de121a3871d282a5fc0a2`.
+Develop through `dcba0b857476656469c33ecb05beaf928e72271a` is integrated.
+Python 3.14.6 / Core 2.3.2 / FastMCP+tasks 4.1.0 / MCP 2.0.0 /
+Docket 0.26.2 / DSPy 3.4.0 / Claude SDK 0.2.159.
+Production Python digest `fd025b1b01e6952993c831f8ed9eb72dd942a7809a5791181c3252df7fd9e15f`.
+Dependencies, schema, prompts and UI are unchanged from R654. No running family
+was modified. The runtime family used production 601, not later reporting edits.
 
-CI [39475590134](https://github.com/iowarp/clio-agent/actions/runs/39475590134)
-completed **24 successful jobs**. All 12 XML reports:39,966 passed executions,
-zero failures/errors and150 exclusions (50 per interpreter). Exclusions are not
-passes. GACT86214905 CI/schema/both workspace runs passed. No local pytest/Vitest
-loop ran. [Pages39478374630](https://github.com/iowarp/clio-agent/actions/runs/39478374630)
-passed build/checks/browser tests; deployment and main-only uploads were skipped.
+[CI 39509462898](https://github.com/iowarp/clio-agent/actions/runs/39509462898):
+PASS: all 24 jobs; 40,197 passed executions, zero failures/errors and 150 excluded executions. All 24 executions of the eight new recovery cases passed across three interpreters. Exclusions are not passes and remain explicitly outside the finite
+required routes below. GACT 862's four workflows are green.
 
-Completed fb-tuple race scopes: **30/30**. R1=5(R604), R2=5/R4=5(R594),
-R3=5(R636), R6=5(scoped R597/R611/R622). R606: five actual-model pre/post recipient-input crash/restart repetitions PASS, same original assignment and Question, one input commitment, no replay.
-The two failed R6 families remain failed despite accepted individual cases.
-R611's five-second query timeout remains unexplained; R622 did not reproduce it.
-R622 case5 model prose reversed command labels; canonical physical/handle outcomes
-are retained separately and are not proof of accurate prose.
+R880 passes actual Codex/Luna partial-copy interruption, restart, automatic wake,
+inspection and deliberate new work under the original assignment. The original
+handle remains interrupted with uncertain effects and is never replayed; the new
+seed-only download has a distinct handle/native ID and completes. Both immutable
+manifests retain the correct seed hash; exactly one original completion notice
+was committed. `r884-local-retry-scope.json` binds the raw receipt, model, runtime,
+handles, invocations, staged files and process evidence.
 
-Claude Opus R592/R596 reviews executed after the human refreshed login. Both
-finished and their disposable profiles were removed; original credentials/source
-were preserved. These are scoped reviews, not a clean whole-candidate verdict.
-Astra remains stopped.
+Opus R850 independently confirmed the stale publication-custody defect. Commit
+601 corrects its existing owner: retire the lost local operation before publishing
+Core interruption. The production change is 42 added / 2 replaced lines across
+three files; no scheduler, registry, backend or execution policy was added.
+Eight new Download/Indexing cases cover both proven-loss recovery (including a
+commit fault) and alive/unknown runtime exclusion. The local assertions passed,
+but that command failed NFS temporary-directory teardown; its residue was later
+removed after verified process retirement. This failed command is not a test-suite
+pass. The subsequent clean CI executions above provide regression acceptance.
+Scoped Ruff/format/Mypy/size/class guards passed; local Pyright was unavailable.
 
-The human explicitly deferred durable-provider recovery for this release on
-2026-10-20. No surviving-provider-job claim is made. Available NDP downloads
-and ordinary external MCP input/reconnect remain in release scope.
+R1–R6 passed five times each at d35. `r885-final-source-impact.json` retains those
+30 original executions and assesses 601's narrow change: normal execution,
+Stop/cancellation, mailbox/input commit, assignments and SDK bridges are unchanged.
+The R5 Question crash does not enter native runtime-loss recovery. These are
+retained, source-assessed results, not 30 freshly executed 601 races. The changed
+boundary has R880 live evidence and the new regression cases. Opus R890 found
+no blocking issue in the inspected correction/evidence mapping and accepted the
+claimed carry-over scope, using the recorded function comparison rather than an
+independent full diff. It did not execute tests or qualify routes itself. Its
+non-blocking notes were the then-pending CI (now passed) and the fail-safe
+uncertainty if custody validation raises; that defensive branch lacks a dedicated
+new test. Historical latency risk remains disclosed for release review, not
+misrepresented as human consent or a repaired issue.
+
+**N12 surviving durable-provider-job recovery is human-deferred for this release,
+not passed.** NDP streaming and ordinary external MCP/input/reconnect remain
+separate demonstrated scopes. No broader provider, native-platform or distributed
+scheduler claim is made.
+
+Historical R664/R680 five-second query timeouts remain failed, cause unknown and
+unrepaired. R720's 240 queries (maximum 73.2 ms) and R730's 651 concurrent read-only
+queries (maximum 592.3 ms) passed without relaxed limits. Their overlap with each
+individual cancellation/commit window is not asserted. The implementing agent
+records residual query-latency risk; this is not human risk acceptance.
+
+Every latest model/service/controller has retired; family listeners and roots
+are absent. R825 confirms allocation 24985 absent. R827 confirms the complete
+fresh Ares mirror/environment and staged credentials removed: 69,112
+files / 3,840,883,774 logical bytes, no archive or canonical-source
+change. The earlier mirror was retired under R745/R756. Original auth, installed
+Desktop, defaults, released pins, human files and manual-only paths are preserved.
+Automatic review rejected removal of one unused 27,655-byte screenshot copy;
+that exact untracked copy remains without retry/bypass (R687).
 
 ## Accepted scopes and unresolved failures
 
@@ -63,38 +99,41 @@ and ordinary external MCP input/reconnect remain in release scope.
   transcript, messaging its original handle and linked continuation retaining
   17.25/34.5 context without operation replay. R516/R520 scoped discovery,
   recorded outcome and722-byte artifact reads after restart. They retain their
-  original revisions and require explicit current-source impact adjudication.
+  original revisions, retained through the acceptance ledger source assessment;
+  they are not described as fresh d35 execution.
 - R632/R633 real-service Runs filtering, keyboard disclosure and exact cancelled
   child navigation/transcript access passed with no browser errors. Admission was
   closed, so no inference, fresh phone, Shift-click or UI cancellation proof is
   claimed. The selected1280x720 light-mode75,009-byte JPEG is on the website.
 - HaikuR542/R546 remain failed model lanes, not authentication/capacity failures.
 
-## Remaining gates
+## Issue status
 
-1. Finish the integration/read-lock batch, its CI and affected live acceptance.
-   Adjudicate child-directed notice interpretation and the R611 responsiveness
-   finding using actual evidence, without claiming the lock correction caused it.
-2. Finish unaccepted races and final-source Q1–Q9/migration/uncertainty mapping.
-   Earlier accepted scopes are not blanket acceptance of changed input paths.
-3. Finish current-source coordination/summary/artifact coverage and deny/revoke
-   before injection. Preserve separate owner/subscriber delivery and exact grants.
-4. Q6 ordinary external MCP input/reconnect remains required. N12 durable-provider
-   recovery is explicitly deferred by the human for this release; NDP streaming
-   does not prove a surviving provider job and is not described that way.
-5. Resolve remaining Opus concerns: shared-HTTP pre-task input identity, recovery
-   with unrecorded adoption, passive mailbox contention and uncertainty display.
-   Several conditional findings have source explanations, not universal verdicts:
-   trusted child creation grants message-only return rights; veto holds differ
-   from Stop; Shell strips human API credentials; native roots fail closed for
-   unsupported elicitation. Do not report untested routes as passing.
-6. Complete final integrated UI/source-impact review, required-exclusion
-   disposition and accurate cleanup receipts before any publication decision.
+| Issue | Status | Evidence or limit |
+| --- | --- | --- |
+| Initial production implementation and test construction | DONE | No unfinished feature implementation identified. |
+| Local runtime loss and deliberate retry | FIXED; live PASS | R880/601: original operation remains interrupted; distinct deliberate work completes. |
+| Required regression baseline | PASS | Exact production CI 39509462898; counts above. Exclusions are not passes. |
+| Q1–Q9 finite release matrix | ACCEPTED within recorded scopes | Full ledger below; N12 alone human-deferred. |
+| R1–R6 | 30/30 baseline; retained under source assessment | Five each at d35; 601 changed-path impact accepted by scoped Opus review. |
+| Session/transcript/summary/artifact/message extension | Scoped live PASS | Original bridge/permission/source limitations retained in T01–T06. |
+| UI and website | Real-service desktop/phone PASS | Selected current media hash-matched; reporting/media build disposition in PR checks and current go/no-go receipt. |
+| Owned latest runtime/data | RETIRED | Allocation, mirror/env/credentials, processes/ports and family roots absent. Protected residues remain listed. |
+| Independent final review | NO BLOCKING FINDING in inspected scope | R890 actual Claude Opus; limitations and non-blocking risk notes above. Astra remains stopped. |
+| Query-timeout history | UNRESOLVED residual risk | Earlier five-second timeouts failed; no cause/repair or human risk consent claimed. |
+| Surviving durable-provider job recovery | DEFERRED by human | N12, not passed; no NDP streaming substitution. |
+| Merge/release/installation | SEPARATE | No merge, tag, publication or daily Desktop replacement. |
+
+The bounded `candidate-go-no-go-current.json` receipt and current PR checks record
+the final reporting/media build outcome. This candidate assessment does not grant
+publication approval or qualify excluded provider/platform routes.
 
 ## Custody and reporting
 
-R604/R605/R636/R606/R638/R648 disposable roots are absent. Quiescent allocation24961 was closed
-after physical cleanup; R640 records allocation24962 for remaining work. Every
+Completed R656/R660–R664/R674/R680/R684 disposable roots are absent, with physical
+retirement and exact cleanup receipts. Quiescent allocation24964 was closed;
+R720 and its read-only probe retired; allocation24966 and the whole Ares
+mirror/environment are absent under R745/R756. Every
 new family records processes/ports/data before launch. Settle and remove its
 disposable roots afterward. Preserve canonical product history, original auth,
 daily Desktop, defaults, released pins, human files and every prohibited or
@@ -105,3 +144,10 @@ This file, `task-replacement-acceptance.md` and
 Bounded raw/scoped receipts live in the D qualification checkout under
 `.pytest-runtime/static/`. Earlier checkpoints remain in Git history rather than
 being duplicated as conflicting current sections.
+
+R785/R795/R805/R820 remain failed harness/model attempts, not passes: source
+registration ordering, sampling before positive bytes, premature second submission,
+and startup-readiness timeout respectively. All were physically settled and cleaned.
+R840 passed original interruption/inspection but revealed stale workload custody;
+R880 is the corrected candidate's deliberate-retry proof. No assertion, worker,
+product deadline or request budget was weakened to obtain it.

@@ -1,48 +1,80 @@
 # Tasks replacement: finite live experiments
 
-## Current disposition — 2026-10-20 19:25 UTC
+## Current disposition — 2026-10-20 23:02 UTC
 
-**Initial implementation DONE. The completed fb tuple has green regression CI
-and 30 scoped race passes. The new upstream/read-lock repair batch needs its own
-CI and affected live acceptance. NO GO for release or daily installation.**
+**Implementation DONE. Test construction DONE. Required production regression
+checks PASS. The agreed finite release has accepted live evidence, including the
+final local recovery/retry gate and retained source-assessed races. Final Opus
+review found no blocking issue in its inspected scope. Publication and daily
+Desktop installation remain separate. Reporting/media checks and the current
+candidate disposition are recorded in PR checks and the bounded go/no-go receipt.**
 
-Latest completed live tuple: agent `fb2052275b900357dd96c9f896fa03b37ee141bb`; GACT `86214905b4fd99b184ac0b5b6e4e9506f6bd7bf6`;
-marketplace `2c172233a9f895e41f7de121a3871d282a5fc0a2`. Develop through550bfd744
-is integrated. Python3.14.6 / Core2.3.2 / FastMCP+tasks4.1.0 / MCP2.0.0 /
-Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159. Production Python digest:
-`c61c5babe5aefc9c9b82ca823b1b57facc59f0bcb7857d6cc887a2344f9eb140`. R635 confirms57→d784→fb has identical
-production/dependencies/schema/GACT; d784 changed one regression's observation
-boundary, fb changed documentation/media. The current integration batch adds develop dcba0b857 (three upstream commits)
-and changes two existing passive read locks, with two new constructed regression
-cases. It introduces no owner, worker, registry or execution policy. Current-batch
-CI and live acceptance are pending; earlier passes are not relabeled.
+Frozen production: agent `601ef47b669ca6bacd86aca319f7b9fbe1cbfc7d`;
+GACT `86214905b4fd99b184ac0b5b6e4e9506f6bd7bf6`;
+marketplace `2c172233a9f895e41f7de121a3871d282a5fc0a2`.
+Develop through `dcba0b857476656469c33ecb05beaf928e72271a` is integrated.
+Python 3.14.6 / Core 2.3.2 / FastMCP+tasks 4.1.0 / MCP 2.0.0 /
+Docket 0.26.2 / DSPy 3.4.0 / Claude SDK 0.2.159.
+Production Python digest `fd025b1b01e6952993c831f8ed9eb72dd942a7809a5791181c3252df7fd9e15f`.
+Dependencies, schema, prompts and UI are unchanged from R654. No running family
+was modified. The runtime family used production 601, not later reporting edits.
 
-CI [39475590134](https://github.com/iowarp/clio-agent/actions/runs/39475590134)
-completed **24 successful jobs**. All 12 XML reports:39,966 passed executions,
-zero failures/errors and150 exclusions (50 per interpreter). Exclusions are not
-passes. GACT86214905 CI/schema/both workspace runs passed. No local pytest/Vitest
-loop ran. [Pages39478374630](https://github.com/iowarp/clio-agent/actions/runs/39478374630)
-passed build/checks/browser tests; deployment and main-only uploads were skipped.
+[CI 39509462898](https://github.com/iowarp/clio-agent/actions/runs/39509462898):
+PASS: all 24 jobs; 40,197 passed executions, zero failures/errors and 150 excluded executions. All 24 executions of the eight new recovery cases passed across three interpreters. Exclusions are not passes and remain explicitly outside the finite
+required routes below. GACT 862's four workflows are green.
 
-Completed fb-tuple race scopes: **30/30**. R1=5(R604), R2=5/R4=5(R594),
-R3=5(R636), R6=5(scoped R597/R611/R622). R606: five actual-model pre/post recipient-input crash/restart repetitions PASS, same original assignment and Question, one input commitment, no replay.
-The two failed R6 families remain failed despite accepted individual cases.
-R611's five-second query timeout remains unexplained; R622 did not reproduce it.
-R622 case5 model prose reversed command labels; canonical physical/handle outcomes
-are retained separately and are not proof of accurate prose.
+R880 passes actual Codex/Luna partial-copy interruption, restart, automatic wake,
+inspection and deliberate new work under the original assignment. The original
+handle remains interrupted with uncertain effects and is never replayed; the new
+seed-only download has a distinct handle/native ID and completes. Both immutable
+manifests retain the correct seed hash; exactly one original completion notice
+was committed. `r884-local-retry-scope.json` binds the raw receipt, model, runtime,
+handles, invocations, staged files and process evidence.
 
-Claude Opus R592/R596 reviews executed after the human refreshed login. Both
-finished and their disposable profiles were removed; original credentials/source
-were preserved. These are scoped reviews, not a clean whole-candidate verdict.
-Astra remains stopped.
+Opus R850 independently confirmed the stale publication-custody defect. Commit
+601 corrects its existing owner: retire the lost local operation before publishing
+Core interruption. The production change is 42 added / 2 replaced lines across
+three files; no scheduler, registry, backend or execution policy was added.
+Eight new Download/Indexing cases cover both proven-loss recovery (including a
+commit fault) and alive/unknown runtime exclusion. The local assertions passed,
+but that command failed NFS temporary-directory teardown; its residue was later
+removed after verified process retirement. This failed command is not a test-suite
+pass. The subsequent clean CI executions above provide regression acceptance.
+Scoped Ruff/format/Mypy/size/class guards passed; local Pyright was unavailable.
 
-The human explicitly deferred durable-provider recovery for this release on
-2026-10-20. No surviving-provider-job claim is made. Available NDP downloads
-and ordinary external MCP input/reconnect remain in release scope.
+R1–R6 passed five times each at d35. `r885-final-source-impact.json` retains those
+30 original executions and assesses 601's narrow change: normal execution,
+Stop/cancellation, mailbox/input commit, assignments and SDK bridges are unchanged.
+The R5 Question crash does not enter native runtime-loss recovery. These are
+retained, source-assessed results, not 30 freshly executed 601 races. The changed
+boundary has R880 live evidence and the new regression cases. Opus R890 found
+no blocking issue in the inspected correction/evidence mapping and accepted the
+claimed carry-over scope, using the recorded function comparison rather than an
+independent full diff. It did not execute tests or qualify routes itself. Its
+non-blocking notes were the then-pending CI (now passed) and the fail-safe
+uncertainty if custody validation raises; that defensive branch lacks a dedicated
+new test. Historical latency risk remains disclosed for release review, not
+misrepresented as human consent or a repaired issue.
 
-The following definitions remain the required contract. The current acceptance
-ledger records each scope and outstanding obligation; older checkpoints are in
-Git history rather than repeated as contradictory current status.
+**N12 surviving durable-provider-job recovery is human-deferred for this release,
+not passed.** NDP streaming and ordinary external MCP/input/reconnect remain
+separate demonstrated scopes. No broader provider, native-platform or distributed
+scheduler claim is made.
+
+Historical R664/R680 five-second query timeouts remain failed, cause unknown and
+unrepaired. R720's 240 queries (maximum 73.2 ms) and R730's 651 concurrent read-only
+queries (maximum 592.3 ms) passed without relaxed limits. Their overlap with each
+individual cancellation/commit window is not asserted. The implementing agent
+records residual query-latency risk; this is not human risk acceptance.
+
+Every latest model/service/controller has retired; family listeners and roots
+are absent. R825 confirms allocation 24985 absent. R827 confirms the complete
+fresh Ares mirror/environment and staged credentials removed: 69,112
+files / 3,840,883,774 logical bytes, no archive or canonical-source
+change. The earlier mirror was retired under R745/R756. Original auth, installed
+Desktop, defaults, released pins, human files and manual-only paths are preserved.
+Automatic review rejected removal of one unused 27,655-byte screenshot copy;
+that exact untracked copy remains without retry/bypass (R687).
 
 ## Regression and live-verification loop
 
@@ -87,7 +119,8 @@ special path is outside scope; ordinary external MCP Tasks remain in scope.
 Before launch, record the exact core/GACT/dependency/schema/runtime/platform
 tuple, selected model, available routes, owned process identities, ports and
 data roots. Freeze the tuple for the family. All writable state, profiles,
-caches, input files and generated output stay under the D: execution checkout.
+caches, input files and generated output stay under the D: execution checkout
+or the explicitly human-authorized owned Ares qualification repository/allocation.
 Keep installed Desktop, credentials, defaults, released pins and prohibited or
 manual-only roots untouched. Do not retry a rejected launch through another
 command or host.
@@ -125,7 +158,7 @@ peer collection must not consume owner delivery.
 | E3 / Q3 | Complete work while the parent is busy, idle, explicitly stopped and explicitly paused. Inject human feedback between model iterations. Resume the paused parent. Repeat distinct delivery cases with Claude. Answer a Question while other work/goal dependencies remain pending. | Watch live feedback land during execution. Post Question immediately, answer through its card, and distinguish waiting from Finished. Stop leaves background work and the Question open; later completion/answer wakes the stopped agent. Pause holds execution until resume. | Busy input appears at the next eligible model call; idle/post-Stop input admits one continuation. Paused input remains pending. Stable assignment across yield; no ordinary duplicate on a later turn. Include the known empty-wake/pending-work regression. |
 | E4 / Q4 | A child starts a download, yields, receives its completion and analyzes it under the same handle. Parent observes and continues other work. Exercise child pause/resume, steering, cancellation and explicit restart; control inherited predecessor work. Repeat Claude-specific child/control bridges. | Apply real human controls through identifying confirmations. Child cancel warns about descendants. Show Cancellation requested/Stopping until physical settlement. Verify the parent receives attributed intervention notices. | Model hold differs from task cancellation. Admission closes before subtree cancellation. Actual child execution and owned descendant processes/transfers settle; restart gets a linked new handle without replaying accepted work. Unknown settlement prevents successor launch. |
 | E5 / Q5 | Run two independent root sessions in two distinct declared workflow executions. Discover authorized sessions, message while busy/idle, reply, observe/wait/subscribe to an exact peer handle. Attempt denied control, then revoke a grant before injection. | Grant only selected read/observe/message rights, separately opt into control/descendants, and revoke the exact grant. Open peer task details according to rights. | Distinct workflow/root/step/session provenance; human grant attribution; no model-created grant. Observe-only does not disclose assignment/output/answers. Historical handles do not retarget successors; peer collection preserves owner delivery; revocation blocks pending disclosure. |
-| E6 / Q6 | Use an actual external task-capable MCP server and approved provider operation. Exercise progress-only updates, input required, partial answers, a lost input-update reply and reconnect. Collect a surviving provider job through its verified original identity. | Present input required even when the agent is idle; answer through the existing permission/question surface. Show lost visibility distinctly from failure and restore it after reconnect. | Immutable server/auth/session/task/input identity, persisted answers and original provider job ID. No repeated question for a confirmed answer, no acceptance/submission replay, no changed-content key reuse. An unavailable real backend leaves this family blocked. |
+| E6 / Q6 | Use an actual external task-capable MCP server and approved provider operation. Exercise progress-only updates, input required, partial answers, a lost input-update reply and reconnect. The surviving durable-provider-job portion alone is human-deferred as N12 for this release; it is not passed. Other external MCP/input/reconnect obligations remain required. | Present input required even when the agent is idle; answer through the existing permission/question surface. Show lost visibility distinctly from failure and restore it after reconnect. | Immutable server/auth/session/task/input identity, persisted answers and original provider job ID. No repeated question for a confirmed answer, no acceptance/submission replay, no changed-content key reuse. An unavailable real backend leaves this family blocked. |
 | E7 / Q7 | In disposable isolated services, interrupt before and after recipient-input commit; interrupt after a visible side effect but before result recording; temporarily lose Core and recover. Agent inspects prior effects and deliberately retries/revises with a linked new handle. Import retained-format records twice. | Display uncertainty/recording-unconfirmed honestly. Trusted pause/cancel still acts on verified work during a Core outage; new undurable submissions are refused. After recovery show one attention episode followed independently by the final outcome. | Reconstruct committed model input, retain precommit pending input, no automatic replay of uncertain commands, matching owner-local recovery flush. Migration identities/mail/results stay stable and migration submits nothing. More than 1,000 messages remain retained; positive capacity counts only undelivered peer mail. |
 | E8 / Q8 | Saturate Shell's configured native capacity (default 10) and submit storage work; storage starts independently. With child inference capacity one, execute nested children/peer work while waits release inference capacity. Exercise foreground versus background Stop and worker retirement under constrained executor capacity. | Show queued versus started work and Stopping during actual worker retirement. New input remains pending; no second turn starts before the old worker exits. | Independent native roots/pools; no shared-executor starvation. Foreground Stop cancels and physically settles its process tree; background Stop preserves the task. No leaked children/listeners or unbounded worker growth after settlement. |
 | E9 / Q9 | Complete an end-to-end user assignment through the real UI: start tasks, ask/answer, steer, observe, pause/resume, cancel and collect. Use production service outcomes from E1–E8 rather than fabricated fixtures. | Review desktop and 390-pixel phone widths: Work, Observability and Runs; progressive disclosure, clickable rows, Questions, grants, cancel confirmations, output and history. Use keyboard interaction and check viewport containment and browser errors. | Screenshots/interaction timestamps link to actual handles and server state. Cancellation has actual physical outcomes; dismissal does not cancel. Accepted user controls reach the parent. No falsely Finished waiting state, duplicate card or hidden pending input. |
