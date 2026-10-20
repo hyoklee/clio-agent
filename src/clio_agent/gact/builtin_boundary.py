@@ -56,7 +56,6 @@ class Invocation:
     collect: bool = True
     claimed: bool = False
     error: BaseException | None = None
-    execution: asyncio.Task[Any] | None = None
     retired: asyncio.Event = field(default_factory=asyncio.Event)
 
 
@@ -80,7 +79,6 @@ class BuiltinTool(Tool):
         if saved.argument_digest != argument_digest(supplied):
             raise PermissionError("Built-in arguments differ from trusted request context")
         invocation.claimed = True
-        invocation.execution = asyncio.current_task()
         try:
             await self._boundary.app.state.task_history.io.run(self._boundary.authorize, saved)
             if inspect.iscoroutinefunction(invocation.function):
@@ -245,13 +243,6 @@ class BuiltinBoundary:
                 reply = await self.client.call_tool(
                     registered, {**arguments, "_clio_submission": reference}
                 )
-            except asyncio.CancelledError:
-                # Cancelling the SDK client need not cancel its in-process
-                # server request. Stop the claimed RPC, not work that the
-                # control observes. Its actual cleanup is joined below.
-                if invocation.execution is not None and not invocation.retired.is_set():
-                    invocation.execution.cancel()
-                raise
             except BaseException as error:
                 if invocation.error is not None:
                     raise invocation.error from error

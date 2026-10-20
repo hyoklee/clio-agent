@@ -89,6 +89,25 @@ async def test_cancelled_async_control_retires_waiter_without_stopping_work(
             assert isinstance(outcome[0], asyncio.CancelledError)
             assert not boundary.invocations and boundary._retired.is_set()
             assert not work.done() and not work_exited.is_set()
+
+            async def read_control() -> str:
+                return "same connection remains usable"
+
+            following = native_tool(
+                read_control,
+                name="following_control",
+                desc="Read after stopping a different request.",
+                args={},
+                presentation="text",
+                domain="tasks",
+                read_only=True,
+            )
+            async with asyncio.timeout(5):
+                assert (
+                    await boundary.call(following, {}, contextvars.copy_context())
+                    == "same connection remains usable"
+                )
+            assert not work.done(), "A later RPC must not settle independent accepted work"
     finally:
         finish_work.set()
         async with asyncio.timeout(5):
