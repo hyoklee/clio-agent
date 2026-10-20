@@ -122,6 +122,13 @@ class SessionMail:
                             and task.progress.message
                         ):
                             task_label += f" ({task.progress.message})"
+                if item.kind == "control" and item.sender_human is not None:
+                    task_label = f"; target {item.handle or 'not recorded'}"
+                    rendered = (
+                        "Task-control notice. Read the target, action, and recorded effect below. "
+                        "Quoted messages were addressed to that task; account for the intervention "
+                        "while continuing your own assignment.\n" + rendered
+                    )
                 text = f"[{sender}; {item.kind}{task_label}; notification {item.id}]\n{rendered}"
                 if budget > 0 and used + len(text) > budget:
                     if injections:

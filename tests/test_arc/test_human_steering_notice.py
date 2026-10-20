@@ -9,6 +9,8 @@ import pytest
 from clio_agent.arc.memory import ARCMemory
 from clio_agent.arc.task_types import MailItem, MailKind, TaskOwner, TaskSnapshot
 from clio_agent.gact.human_controls import relay_confirmed_human_input
+from clio_agent.gact.session_mail import SessionMail
+from clio_agent.gact.task_access import TaskCaller
 from clio_agent.gact.task_history import TaskHistory
 
 STAMP = "2026-10-16T06:00:00Z"
@@ -98,6 +100,56 @@ def test_agent_or_system_input_cannot_create_human_intervention(
     history, _ = history_with_child(arc)
     relay_confirmed_human_input(history, input_mail(history, kind=kind))
     assert history.pending_mail("parent") == ()
+
+
+@pytest.mark.parametrize("kind", ["human", "composer"])
+def test_parent_control_notice_distinguishes_targeted_steering_from_its_own_assignment(
+    arc: ARCMemory, kind: MailKind
+) -> None:
+    """Keep direct child instructions actionable and their parent relay informational."""
+    history, child = history_with_child(arc)
+    item = input_mail(history, kind=kind)
+    relay_confirmed_human_input(history, item)
+    mailbox = SessionMail(history, lambda _sid, _item: True)
+
+    parent_input = mailbox.stage(TaskCaller("parent", "human"))
+    child_input = mailbox.stage(TaskCaller("child", "human"))
+    assert len(parent_input.injections) == len(child_input.injections) == 1
+    parent_source, parent_text = parent_input.injections[0]
+    child_source, child_text = child_input.injections[0]
+    assert parent_source == "control" and child_source == "steer"
+    assert f"target {child.handle}" in parent_text
+    assert "Human human" in parent_text
+    assert "Task-control notice" in parent_text
+    assert "Quoted messages were addressed to that task" in parent_text
+    assert parent_text.index("Task-control notice") < parent_text.index('"message":')
+    assert '"message": "Keep the accepted work."' in parent_text
+    assert "Keep the accepted work." in child_text and "Task-control notice" not in child_text
+    assert history.pending_mail("child") == (item,)
+    assert history.pending_mail("parent") == parent_input.items
+    assert history.task_snapshot(child.handle) == child
+
+
+def test_system_resume_control_remains_an_instruction_for_the_receiving_assignment(
+    arc: ARCMemory,
+) -> None:
+    """The informational human relay must not relabel the engine's local resume input."""
+    history, child = history_with_child(arc)
+    resume = history.record_mail(
+        MailItem(
+            id="resume:child_assignment",
+            recipient_session="child",
+            kind="control",
+            created_at=STAMP,
+            handle=child.handle,
+            content=history.write_content("child", "Resume this assignment."),
+        )
+    )
+    staged = SessionMail(history, lambda _sid, _item: True).stage(TaskCaller("child", "human"))
+    assert staged.items == (resume,)
+    assert len(staged.injections) == 1
+    assert "Resume this assignment." in staged.injections[0][1]
+    assert "Task-control notice" not in staged.injections[0][1]
 
 
 def test_replay_keeps_original_assignment_after_a_successor_exists(arc: ARCMemory) -> None:

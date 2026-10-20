@@ -1,18 +1,25 @@
 # Tasks replacement status
 
-## Current disposition — 2026-10-20 17:00 UTC
+## Current disposition — 2026-10-20 17:46 UTC
 
 **Initial implementation DONE. Regression repairs and live qualification are
 active. The complete Tasks candidate remains unqualified: NO GO for publication
 or daily installation.** Further independent reviews are Claude Opus only.
 
-Source baseline is agent4989338ca / GACT0f7917cc. The current combined correction
+Current pushed source is agent1c1235495 / GACT86214905. The combined correction
 updates the missing-workspace fixture and joins the real paused SPOTTER admission
 probe after mailbox withdrawal, retaining the exact two-poll assertion. It also
 records GACT86214905, which restores historical-child navigation from the same
 Task record through the existing projection helper. No new store/driver/policy,
-deadline change or assertion relaxation is introduced. This correction needs CI
-and fresh UI acceptance. Core production algorithms are unchanged by this batch.
+deadline change or assertion relaxation is introduced. Both repaired cases passed
+on all three interpreters in the eleven recovered CI reports. One incomplete
+Python3.12 shard and its coverage gate are rerunning. Core production algorithms
+are unchanged by that batch. The next scoped repair changes only shared input
+wording: a relayed human control identifies its target and explains that its
+quoted message was addressed there. It adds no mailbox, lifecycle, admission or
+execution policy. Three constructed regression cases distinguish the parent's
+informational relay, actionable child steering and local system resume. R583
+lint/format/types/all9guards pass; behavioral execution goes to CI.
 
 Develop550bfd744 remains integrated. Runtime tuple: Python3.14.6 / Core2.3.2 /
 FastMCP+tasks4.1.0 / MCP2.0.0 / Docket0.26.2 / DSPy3.4.0 / Claude SDK0.2.159.
@@ -43,33 +50,63 @@ Daily Desktop, original auth, defaults, released pins and human work are preserv
   and assignments. It exposed the missing historical-child Open conversation
   action. Desktop inspection and390px DOM measurement were recorded; this is a
   FAILED navigation gate, not full Q9 acceptance. Browser error log was empty.
+- R563/R567 actual-service UI recheck at1c1235495/86214905 passed the repaired
+  historical cancelled-child action: canvas navigation preserved the parent URL;
+  Make central opened the exact original child session. Its retained transcript
+  included the original17.25-second read and34.5-second continuation. At390x844,
+  the child transcript was readable with no horizontal overflow or browser errors.
+  This is scoped UI/read acceptance over actual R550 records, with model admission
+  closed. No new inference, Shift-click/keyboard acceptance, full Q9 acceptance or
+  saved website screenshot is claimed. Screenshots were emitted in browser output.
+- R574/R579 scoped active-reviewer Stop PASS at1c1235495: the real ai-review
+  thread was inside the actual Codex direct provider call when production Stop
+  was requested. The204 response acknowledged Stop; the reservation and reviewer
+  physically retired14.271seconds later, with the protected write absent. The
+  reviewer could record its late low-risk verdict without reviving that effect.
+  This is one scope, not five repeats or the complete R574 family: its later
+  SPOTTER setup refused an ambiguous blueprint name. No production fix followed.
+- R580 failed before the required parent mutation: the real watcher opened its
+  Question, but the parent treated the forwarded child-directed human message
+  as its own assignment and also asked/waited. The qualification root prompt also
+  incorrectly included "original delegated child work." The next family removes
+  that conflicting role wording and exercises the shared control-notice repair.
+  R580 is failed, not a SPOTTER Stop pass. It is retired and cleaned813,867,847bytes.
 
 ## CI, checks and independent review
 
-Agent CI39370044443 at4989338ca completed; all12 XML reports recovered. Two distinct
-failures: the new transcript fixture omitted workspace_id, and the SPOTTER poll
-test sampled admission while its confirmed withdrawal triggered another probe.
-Retained1005-message and sustained-load obligations pass on3.12/3.13/3.14. Fifty
-exclusions per interpreter remain exclusions. GACT0f7917cc CI/schema/both workspace
-runs passed. Fresh CI is required for the current correction.
+Current agent CI39462457313 at1c1235495 has eleven recovered reports and zero test
+failures. Both previous failing cases passed on3.12/3.13/3.14. Python3.12 shard1
+reached98% before its existing25-minute job cap cancelled it; missing coverage is
+not a product assertion failure or a pass. That incomplete job and its dependent
+coverage are rerunning without budget changes. Retained1005-message and sustained
+load cases passed on all three interpreters. Fifty exclusions per interpreter
+remain exclusions. GACT86214905 CI/schema/both workspace runs all passed.
 
 R545/R548/R552 scoped formatting/lint/types and R554 all9guards pass at their
-recorded source. Current correction static checks are pending. No local pytest or
+recorded source. R562 current correction lint/format/types/all9guards pass. No local pytest or
 Vitest loop runs; constructed cases go to CI while live acceptance proceeds.
 
 R547 Opus review found the multi-live-preview budget defect, fixed in4989338ca
 with regression coverage. Session history continues to fail closed for missing
 rights. The final whole-candidate Opus review remains open; Astra is stopped.
+R582 actual Opus preflight returned401 expired OAuth access token, with no model
+usage. The disposable D profile was removed and original credentials remained
+byte-identical. The human has been asked to refresh the usual login; available
+Codex qualification continues. This is an authentication prerequisite, not a
+Tasks-engine defect.
 
 ## Remaining work
 
-1. Complete the current regression batch in CI and live-verify repaired child
-   navigation at desktop/phone widths, including the real child transcript.
-2. Stop while an AI permission reviewer is actually running; stop a parent while
-   its SPOTTER watcher and Question remain active. R502 did not prove either.
+1. Complete the remaining Python3.12 CI shard/coverage. Historical-child canvas/
+   central navigation and phone transcript read now have scoped live UI proof;
+   keyboard/Shift-click and matching website media remain open.
+2. Finish parent Stop while its SPOTTER watcher and Question remain active. Active
+   real-reviewer Stop now has scoped R574/R579 proof; R502 itself remains failed.
 3. Reattach a surviving approved external transfer job by original provider ID.
-   NDP streams have no persistent job ID; authorized durable provider/paths remain
-   a missing prerequisite. No provider job is invented.
+   The current NDP download adapter opens an HTTP stream and exposes no remote
+   transfer-job identity. It can qualify download Tasks and honest interruption,
+   but not a provider job surviving CLIO. Q6/N12 still explicitly requires this
+   latter behavior in R2; no release-scope change or provider job is invented.
 4. Reconcile final-source Q1–Q9 and all30 lifecycle races; rerun required affected
    cases. Complete busy messaging, denial/revocation, summary/artifact and recovery
    coverage, retaining exact source/scope instead of blanket old-source passes.
@@ -79,14 +116,25 @@ rights. The final whole-candidate Opus review remains open; Astra is stopped.
 
 ## Resource custody
 
-R550 model service and R555 viewer exited0; their earlier Windows tunnels/static
-servers are physically retired with absent-listener receipts. Allocation24953
-ended. Allocation24958 is newly owned on ares-comp-07 for the remaining campaign.
-Its fresh process audit found no active R550/staged-auth processes. The exact
-expired R526 auth stage was hash-verified and removed1326bytes, without archives.
-Original credentials were preserved. R550's disposable Core records are retained
-only for the imminent repaired-UI check, then its exact root/temporary directory
-must be removed. All previously prohibited/manual-only roots remain preserved.
+R567 audited the missing local helper handles against actual process identities
+and absent5173/19180 listeners; their exit statuses were not recovered. The R563
+viewer diagnostic expired and its verified owned tree was force-closed; no process
+remained. All eight remote listeners were absent. The exact R550 data/temp roots
+were removed280,358,653logical bytes without archives. Allocation24958 was closed.
+The expired R526 stage was previously removed1326bytes; originals were preserved.
+R571/R574/R578 are physically retired; their data/temp roots were removed without
+archives (275,510,612 /561,723,257 /353,053,344logical bytes respectively). R574's
+reviewer scope passed; later SPOTTER setup failed, and R578 caught a Linux manifest
+case error in the harness before model work. Allocation24959 now owns fresh R580
+SPOTTER Stop verification on ares-comp-07, exact1c1235495/86214905, with a registered
+900-second harness diagnostic, explicit unique configured pack identity, prepared
+uppercase AGENT.md, fresh non-refreshing Codex stage and repository-owned data.
+R580 is failed/retired and its exact roots are now absent. R584 SPOTTER and native
+R2/R4 race repetition harnesses are prepared for the next frozen source but not
+launched; preparation is not accepted evidence. The fresh Codex auth stage and
+single reusable source/runtime remain owned; all subsequent families must be
+registered before launch and cleaned afterward.
+All previously prohibited/manual-only roots remain preserved.
 
 Canonical reporting set: this file, task-replacement-acceptance.md and
 task-replacement-live-experiments.md. Bounded receipts are in the repository-owned

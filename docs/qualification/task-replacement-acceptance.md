@@ -1,27 +1,63 @@
 # Tasks replacement acceptance ledger
 
-## Current disposition — 2026-10-20 17:00 UTC
+## Current disposition — 2026-10-20 17:46 UTC
 
-Initial implementation is complete; qualification/repair is active. R550 actual
-Claude Opus now passes parent cancelled-child transcript inspection, old-handle
-mail, linked retained-context continuation without replay and one input commit at
-agent4989338ca/GACT0f7917cc. R539/R543 supplies earlier scoped Codex/Luna evidence.
-Haiku R542/R546 remain failed lanes. R555 actual UI found the missing historical
-child navigation; GACT86214905 repairs it using Task identity and constructed
-regressions, awaiting fresh CI/live UI. No new execution owner is introduced.
+Initial implementation DONE; qualification/repair remains active. Current pushed
+agent1c1235495 records GACT86214905. Core production algorithms are unchanged by
+this regression/gitlink batch. R550 Opus and R539/R543 Codex child-history/mail/
+retained-context proofs retain their original source and scopes. Haiku R542/R546
+remain failed lanes. Astra is stopped; final review is Claude Opus only.
 
-CI39370044443 all12 reports are complete: two distinct failures (missing fixture
-workspace_id and SPOTTER admission-probe timing), corrected together without
-relaxing assertions or budgets. GACT0f7917cc CI/schema/both workspace runs pass.
-Fifty skipped cases per interpreter remain exclusions. Current-batch CI is still
-required. Stop/reviewer/SPOTTER gates, approved durable-provider prerequisite,
-final30/Q1–Q9 reconciliation, remaining coordination coverage, final Opus review
-and matching docs/media remain open. Astra stays stopped. NO GO for publication.
+Current agent CI39462457313 has eleven recovered reports, zero assertion failures;
+both repaired cases passed on3.12/3.13/3.14. Python3.12 shard1 hit the unchanged
+25-minute job cap at98%, leaving its coverage missing. That incomplete job and
+dependent coverage are rerunning. Fifty exclusions per interpreter remain
+exclusions. GACT86214905 CI/schema/both workspace runs all passed. R562 scoped
+static checks and all9guards pass. No local pytest/Vitest loop ran.
 
-Allocation24958 is owned; R550/viewer/tunnels previously settled. R526's expired
-new auth stage was hash-verified and removed1326bytes. Original auth and prior
-prohibited/manual-only roots remain preserved. R550 Core records remain only for
-repaired-UI inspection and must then be removed without archives.
+R563/R567 scoped real-service UI accepted historical cancelled-child canvas and
+central navigation to the exact original child session, with actual retained
+R550 transcript content. Phone390x844 had no horizontal overflow or browser
+errors. Model admission was closed: this is no fresh model acceptance, fullQ9,
+keyboard/Shift-click or saved website-media proof. Screenshots were emitted only.
+
+R567 verified all viewer/tunnel/static processes and listeners absent, recording
+the viewer diagnostic force-close honestly, then removed the exact R550 data/temp
+roots280,358,653logical bytes without archives. Allocation24958 was closed.
+R574/R579 scoped active-reviewer Stop passed: real Codex reviewer stack at Stop,
+then physical reviewer/turn retirement14.271seconds later with no protected write.
+The204 is acknowledgement rather than a claim of instant settlement. Later
+SPOTTER setup refused an ambiguous pack name, so the R574 full family is failed.
+R571/R574/R578 are physically retired and their disposable roots removed without
+archives. R578 exposed an uppercase-manifest harness error before model work.
+Allocation24959 now owns registered R580 SPOTTER Stop checks at the frozen
+1c1235495/86214905 tuple, with prepared original pack and a unique configured ID.
+R580 is now failed/retired and cleaned813,867,847bytes: the real watcher opened a
+Question, but its parent executed the child-directed text in the forwarded human
+notice and opened its own Question before the mutation. The test root prompt also
+incorrectly claimed delegated child work. The next family removes that conflicting
+role wording and exercises a seven-line shared input-rendering repair: explicit
+target and informational human-control context, with the same Core mailbox and
+input commitment. Three constructed cases cover direct child instructions,
+parent relays and local resume; R583 lint/format/types/all9guards pass. Behavioral
+execution is CI-only. R584 and R2/R4 harnesses are prepared, not launched.
+
+R582 actual Opus availability preflight returned401 expired access token, with no
+model usage. Its disposable D profile was removed and source credentials stayed
+byte-identical. The human has been asked to refresh the usual login. Final Opus
+review remains prerequisite-blocked while Codex qualification continues.
+
+The current NDP adapter streams HTTP bytes and exposes no persistent remote
+transfer-job identity. This can qualify ordinary download Tasks and interruption,
+but cannot prove an external provider job surviving CLIO. R2 Q6/N12 explicitly
+retains that release gate; approved durable provider/paths remain prerequisite-
+blocked. No scope change, invented job or substitution is recorded.
+
+Still open: final Q1–Q9/30-race reconciliation and affected repetitions, remaining
+coordination cases, remaining SPOTTER Stop results, external-provider
+reattachment, final Opus review/Haiku disposition and matching website media.
+NO GO for release or daily installation. Previously prohibited cleanup targets
+and unrelated human/installed state remain preserved.
 
 ## Earlier recorded source and evidence
 
