@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from pathlib import Path
@@ -63,7 +64,100 @@ def _wait_for_feedback(app: Any, sid: str, ids: list[str]) -> None:
         if set(ids) <= completed and not app.state.turn_runner.busy(sid):
             return
         time.sleep(0.01)
-    pytest.fail("submitted feedback did not finish automatically after Stop")
+    pytest.fail(
+        "submitted feedback did not finish automatically after Stop: "
+        f"expected={ids!r}, acknowledged={sorted(completed)!r}, "
+        f"reservation={app.state.turn_runner.handle(sid)!r}, "
+        f"queue_paused={session_autostart_suspended(app, sid)!r}, "
+        f"pending={[(item.id, item.kind, item.delivery) for item in app.state.task_history.pending_mail(sid)]!r}"
+    )
+
+
+@pytest.mark.parametrize("retire_before_read", [False, True])
+def test_idle_send_resumes_queue_during_empty_admission_reservation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retire_before_read: bool
+) -> None:
+    """Idle admission owns the slot but must not turn a new human send into steering."""
+    from tests.test_gact.test_post_messages import FakeClioAgent
+
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent())
+    entered = threading.Event()
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Paused queue"}).json()["id"]
+        app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": True})
+        queued = client.post(
+            f"/v1/sessions/{sid}/queued-messages",
+            json={"text": "retained future work", "client_message_id": "msg_future_idle"},
+        )
+        assert queued.status_code == 201, queued.text
+        original_admit = app.state.turn_runner.admit
+        release: asyncio.Event | None = None
+        held_once = False
+
+        async def install_hold() -> None:
+            nonlocal release
+            release = asyncio.Event()
+
+        async def held_admit(session_id: str) -> Any:
+            nonlocal held_once
+            if held_once:
+                return await original_admit(session_id)
+            held_once = True
+            assert release is not None
+            selected = await original_admit(session_id) if retire_before_read else None
+            assert selected is None
+            entered.set()
+            await release.wait()
+            return selected if retire_before_read else await original_admit(session_id)
+
+        assert client.portal is not None
+        client.portal.call(install_hold)
+        monkeypatch.setattr(app.state.turn_runner, "admit", held_admit)
+        app.state.turn_runner.signal(sid)
+        assert entered.wait(5), "idle admission never reserved the session"
+        try:
+            reservation = app.state.turn_runner.handle(sid)
+            assert reservation is not None and reservation.turn_id == ""
+            assert app.state.turn_runner.busy(sid)
+            if retire_before_read:
+                from clio_agent.gact import message_submission
+
+                original_parts = message_submission._plan_resource_parts
+                original_handle = app.state.turn_runner.handle
+                armed = threading.Event()
+
+                def prepare_parts(*args: Any, **kwargs: Any) -> Any:
+                    planned = original_parts(*args, **kwargs)
+                    armed.set()
+                    return planned
+
+                def read_after_retirement(session_id: str) -> Any:
+                    if armed.is_set():
+                        armed.clear()
+                        assert release is not None and client.portal is not None
+                        client.portal.call(release.set)
+                        deadline = time.monotonic() + 5
+                        while original_handle(session_id) is not None:
+                            assert time.monotonic() < deadline, "empty admission did not retire"
+                            time.sleep(0.01)
+                    return original_handle(session_id)
+
+                monkeypatch.setattr(message_submission, "_plan_resource_parts", prepare_parts)
+                monkeypatch.setattr(app.state.turn_runner, "handle", read_after_retirement)
+            response = client.post(
+                f"/v1/sessions/{sid}/messages",
+                json={"text": "resume normal sending", "client_message_id": "msg_resume_idle"},
+            )
+            assert response.status_code == 202, response.text
+            assert not session_autostart_suspended(app, sid)
+            if not retire_before_read:
+                assert app.state.turn_runner.handle(sid) == reservation
+                assert app.state.task_history.acknowledged_notifications(sid) == set()
+        finally:
+            assert release is not None
+            client.portal.call(release.set)
+        _wait_for_feedback(app, sid, [response.json()["message_id"], queued.json()["id"]])
+        assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == []
 
 
 def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(

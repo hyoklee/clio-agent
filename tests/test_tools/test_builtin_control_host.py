@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import threading
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -25,6 +26,81 @@ from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.tool_observation import CollectedTaskResult, PresentedToolResult
 from tests.test_arc.conftest import core_arc as core_arc
 from tests.test_arc.test_conversation_owner_contracts import create_environment
+
+
+@pytest.mark.asyncio
+async def test_cancelled_short_rpc_retains_its_actual_server_worker(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """Client cancellation cannot release ownership while the native handler still runs."""
+    entered, release, exited = threading.Event(), threading.Event(), threading.Event()
+
+    def execute() -> str:
+        entered.set()
+        try:
+            release.wait()
+            return "retired"
+        finally:
+            exited.set()
+
+    tool = native_tool(
+        execute,
+        name="held_control",
+        desc="Wait for test release.",
+        args={},
+        presentation="text",
+        domain="tasks",
+        read_only=True,
+    )
+    async with _control_context(arc, tmp_path) as boundary:
+        caller = asyncio.create_task(boundary.call(tool, {}, contextvars.copy_context()))
+        try:
+            async with asyncio.timeout(5):
+                while not entered.is_set():
+                    await asyncio.sleep(0.01)
+            caller.cancel()
+            await asyncio.sleep(0.05)
+            caller.cancel()
+            await asyncio.sleep(0.05)
+            assert not caller.done(), "SDK cancellation released a live server worker"
+            assert len(boundary.invocations) == 1 and not boundary._retired.is_set()
+            assert not exited.is_set()
+        finally:
+            release.set()
+            async with asyncio.timeout(5):
+                outcomes = await asyncio.gather(caller, return_exceptions=True)
+        assert isinstance(outcomes[0], asyncio.CancelledError)
+        assert exited.is_set() and not boundary.invocations and boundary._retired.is_set()
+
+
+@pytest.mark.asyncio
+async def test_short_rpc_authorization_failure_retires_claimed_invocation(
+    arc: ARCMemory, tmp_path: Path
+) -> None:
+    """Pre-execution authorization rejection retires the same claimed RPC boundary."""
+    entered = threading.Event()
+
+    def reject(saved: SubmissionContext) -> None:
+        raise PermissionError("Revoked before effects")
+
+    def execute() -> None:
+        entered.set()
+
+    tool = native_tool(
+        execute,
+        name="revoked_control",
+        desc="A revoked control.",
+        args={},
+        presentation="text",
+        domain="tasks",
+        read_only=True,
+    )
+    async with _control_context(arc, tmp_path) as boundary:
+        boundary.authorize = reject
+        async with asyncio.timeout(5):
+            with pytest.raises(PermissionError, match="Revoked before effects"):
+                await boundary.call(tool, {}, contextvars.copy_context())
+        assert not entered.is_set() and not boundary.invocations and boundary._retired.is_set()
 
 
 @asynccontextmanager

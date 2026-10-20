@@ -9,7 +9,7 @@ import functools
 import hashlib
 import inspect
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 from uuid import uuid4
 
@@ -56,6 +56,7 @@ class Invocation:
     collect: bool = True
     claimed: bool = False
     error: BaseException | None = None
+    retired: asyncio.Event = field(default_factory=asyncio.Event)
 
 
 class BuiltinTool(Tool):
@@ -78,8 +79,8 @@ class BuiltinTool(Tool):
         if saved.argument_digest != argument_digest(supplied):
             raise PermissionError("Built-in arguments differ from trusted request context")
         invocation.claimed = True
-        await self._boundary.app.state.task_history.io.run(self._boundary.authorize, saved)
         try:
+            await self._boundary.app.state.task_history.io.run(self._boundary.authorize, saved)
             if inspect.iscoroutinefunction(invocation.function):
 
                 async def execute() -> tuple[Any, dict[str, Any] | None]:
@@ -96,18 +97,20 @@ class BuiltinTool(Tool):
                 )
             else:
                 value, presentation = await self._boundary.run_callable(invocation, supplied)
+            if isinstance(value, CollectedTaskResult):
+                invocation.notifications = value.notification_ids
+                invocation.read_handles = value.read_handles
+                invocation.observe_handles = value.observe_handles
+                invocation.collect = value.collect
+            result = self.convert_result(value)
+            if presentation is not None:
+                result.meta = {**(result.meta or {}), _PRESENTATION_META: presentation}
+            return result
         except BaseException as error:
             invocation.error = error
             raise
-        if isinstance(value, CollectedTaskResult):
-            invocation.notifications = value.notification_ids
-            invocation.read_handles = value.read_handles
-            invocation.observe_handles = value.observe_handles
-            invocation.collect = value.collect
-        result = self.convert_result(value)
-        if presentation is not None:
-            result.meta = {**(result.meta or {}), _PRESENTATION_META: presentation}
-        return result
+        finally:
+            invocation.retired.set()
 
 
 class BuiltinBoundary:
@@ -265,6 +268,16 @@ class BuiltinBoundary:
                 return PresentedToolResult(value, presentation)
             return value
         finally:
+            # The SDK's cancelled client request may finish before the server
+            # handler or its synchronous worker. Retain this RPC until actual
+            # server retirement; an unclaimed late request fails closed above.
+            if invocation.claimed:
+                retired = asyncio.create_task(invocation.retired.wait())
+                while not retired.done():
+                    try:
+                        await asyncio.shield(retired)
+                    except asyncio.CancelledError:
+                        continue
             self.invocations.pop(reference, None)
             if not self.invocations:
                 self._retired.set()

@@ -195,6 +195,9 @@ def park_pretool_defer(
         stash_pre_tool_intercept(None)
         return "deny"
 
+    from clio_agent.gact.permission_timeout import wait_for_permission
+
+    cancelled = app.state.cancel_events.get(sid)
     defer_reason = str(getattr(outcome, "reason", "") or "") or (
         f"tool call {name!r} was deferred by a PreToolUse hook for out-of-band approval"
     )
@@ -230,16 +233,19 @@ def park_pretool_defer(
     enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
     _publish_pending(app, sid, row)
 
-    resolved = evt.wait(timeout=defer_timeout_s())
+    decision = wait_for_permission(
+        app, pid, row, evt, tool_name=name, cancelled=cancelled, timeout_s=defer_timeout_s()
+    )
     _clear_pending_meta(app, sid, pid)
-    if not resolved:
-        # Bounded (never infinite) — release the parked thread and DENY fail-safe.
-        row["status"] = "timeout"
+    if decision is not None:
         record_hook_reason(
-            "hook_defer_timeout", event="PreToolUse", tool_name=name, permission_id=pid
+            "hook_defer_timeout" if row.get("status") == "timeout" else "hook_defer_cancelled",
+            event="PreToolUse",
+            tool_name=name,
+            permission_id=pid,
         )
         stash_pre_tool_intercept(None)
-        return "deny"
+        return decision
 
     action = str(row.get("action", "deny") or "deny")
     if action in {"allow", "allow_session", "allow_workspace"}:

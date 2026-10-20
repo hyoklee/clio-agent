@@ -111,6 +111,7 @@ def request_folder_access(
     wid = str(getattr(session, "workspace_id", "") or "")
     if not sid or not wid or app.state.workspaces.get(wid) is None:
         return DenyDecision("Folder access needs an active workspace and user approval")
+    cancelled = app.state.cancel_events.get(sid)
     for folder in folders:
         if (
             resolve(
@@ -161,9 +162,10 @@ def request_folder_access(
     app.state.permissions[pid] = row
     enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
     publish_permission_event(app, "permission.requested", owner_session_id=sid, payload=row)
-    if not event.wait(timeout=permission_timeout.PERMISSION_REQUEST_TIMEOUT_S):
-        if expired := permission_timeout.expire_permission(app, pid, row, tool_name=name):
-            return expired
+    if decision := permission_timeout.wait_for_permission(
+        app, pid, row, event, tool_name=name, cancelled=cancelled
+    ):
+        return decision
     if row.get("action") == "allow_workspace":
         # Recheck immediately before dispatch; a concurrent revoke is not an approval.
         if not requested_folders(name, args):

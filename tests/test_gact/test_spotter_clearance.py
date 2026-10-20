@@ -10,6 +10,7 @@ import pytest
 
 from clio_agent.gact.native_work import now
 from clio_agent.gact.spotter_clearance import (
+    CLEARANCE_CANCELLED,
     CLEARANCE_GRANTED,
     CLEARANCE_PROGRESS_STALLED,
     CLEARANCE_WATCHER_FAILED,
@@ -23,9 +24,79 @@ from clio_agent.gact.spotter_clearance import (
 from clio_agent.gact.spotter_watcher import disarm_spotter_watcher, wake_on_parent_activity
 
 
+def test_progress_after_timed_out_poll_is_not_discarded(
+    watcher_world: tuple[Any, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A signal arriving after wait returns false still refreshes the real progress window."""
+    app, parent, child = watcher_world
+    wake_on_parent_activity(app, parent, tool_name="fs_read_file")
+    event = clearance_event(app, parent)
+    original_wait = event.wait
+    polls: list[bool] = []
+
+    def signal_after_poll(timeout: float | None = None) -> bool:
+        if not polls:
+            result = original_wait(timeout)
+            assert not result
+            polls.append(result)
+            signal_clearance(app, parent)
+            return result
+        for item in app.state.task_history.pending_mail(child):
+            app.state.task_history.withdraw_mail(child, item.id)
+        signal_clearance(app, parent)
+        polls.append(True)
+        return original_wait(timeout)
+
+    monkeypatch.setattr(event, "wait", signal_after_poll)
+    assert wait_for_spotter_clearance(app, parent, progress_timeout_s=0.05) == CLEARANCE_GRANTED
+    assert polls == [False, True]
+
+
 def test_idle_healthy_watcher_clears(watcher_world: tuple[Any, str, str]) -> None:
     app, parent, _child = watcher_world
     assert wait_for_spotter_clearance(app, parent, progress_timeout_s=0) == CLEARANCE_GRANTED
+
+
+def test_stop_releases_clearance_wait_without_cancelling_the_watcher(
+    watcher_world: tuple[Any, str, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invocation cancellation keeps independent watcher evidence and execution intact."""
+    app, parent, child = watcher_world
+    wake_on_parent_activity(app, parent, tool_name="fs_read_file")
+    before = app.state.task_history.latest_assignment(child)
+    pending = app.state.task_history.pending_mail(child)
+    stopped, entered = threading.Event(), threading.Event()
+    app.state.cancel_events = {parent: stopped}
+    event = clearance_event(app, parent)
+    original_wait = event.wait
+
+    def entered_wait(timeout: float | None = None) -> bool:
+        entered.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(event, "wait", entered_wait)
+    outcomes: list[str] = []
+    worker = threading.Thread(
+        target=lambda: outcomes.append(
+            wait_for_spotter_clearance(app, parent, progress_timeout_s=30)
+        )
+    )
+    worker.start()
+    try:
+        assert entered.wait(2), "The real clearance wait never started"
+        stopped.set()
+        assert app.state.cancel_events.pop(parent) is stopped
+        worker.join(timeout=2)
+        assert not worker.is_alive(), "Stop left the invocation awaiting watcher progress"
+        assert outcomes == ["spotter_clearance_cancelled"]
+        assert app.state.task_history.latest_assignment(child) == before
+        assert app.state.task_history.pending_mail(child) == pending
+    finally:
+        if worker.is_alive():
+            disarm_spotter_watcher(app, app.state.sessions.get(parent))
+            signal_clearance(app, parent)
+            worker.join(timeout=2)
+        assert not worker.is_alive()
 
 
 @pytest.mark.parametrize("status", ["failed", "interrupted", "task_state_uncertain"])
@@ -115,7 +186,12 @@ def test_release_sets_waiter_event_and_removes_its_hint(
 
 
 def test_every_denial_has_a_distinct_model_facing_explanation() -> None:
-    reasons = {CLEARANCE_WATCHER_UNAVAILABLE, CLEARANCE_WATCHER_FAILED, CLEARANCE_PROGRESS_STALLED}
+    reasons = {
+        CLEARANCE_WATCHER_UNAVAILABLE,
+        CLEARANCE_WATCHER_FAILED,
+        CLEARANCE_PROGRESS_STALLED,
+        CLEARANCE_CANCELLED,
+    }
     assert reasons == set(SPOTTER_CLEARANCE_REASONS)
     assert all(SPOTTER_CLEARANCE_REASONS[reason].strip() for reason in reasons)
     assert len({SPOTTER_CLEARANCE_REASONS[reason] for reason in reasons}) == len(reasons)

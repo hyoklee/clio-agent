@@ -356,13 +356,10 @@ def resolve_permission(
     intercept: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Resolve a request, serializing folder grants against duplicate responses."""
-    from clio_agent.gact.folder_access import FOLDER_ACCESS_KIND, FOLDER_RESOLUTION_LOCK
+    from clio_agent.gact.folder_access import FOLDER_RESOLUTION_LOCK
 
-    row = app.state.permissions.get(pid)
-    if row is not None and row.get("kind") == FOLDER_ACCESS_KIND:
-        with FOLDER_RESOLUTION_LOCK:
-            return _resolve_permission(app, pid, action, grantor=grantor, intercept=intercept)
-    return _resolve_permission(app, pid, action, grantor=grantor, intercept=intercept)
+    with FOLDER_RESOLUTION_LOCK:
+        return _resolve_permission(app, pid, action, grantor=grantor, intercept=intercept)
 
 
 def _resolve_permission(
@@ -487,6 +484,7 @@ def _resolve_permission(
             "action": action,
             "session_id": owner_session_id,
             "grantor": grantor,
+            **({"reason": row["reason"]} if row.get("reason") else {}),
         },
     )
     return row
@@ -538,6 +536,7 @@ def _make_permission_gate(app: "FastAPI"):
         # Prefer the session currently driving the turn. Recency is
         # only a fallback for truly out-of-band tool calls.
         sid, current = _resolve_tool_session(app)
+        cancelled = app.state.cancel_events.get(sid)
         if denial := _spotter_clearance(
             app, sid, current, name, args, subject, _record_resolved_permission
         ):
@@ -752,9 +751,10 @@ def _make_permission_gate(app: "FastAPI"):
             # reason and the call falls through to the human wait below (fail-safe).
         # Block the bridge thread until POST /v1/permissions/{pid}
         # sets the event (or we time out).
-        if not evt.wait(timeout=permission_timeout.PERMISSION_REQUEST_TIMEOUT_S):
-            if expired := permission_timeout.expire_permission(app, pid, row, tool_name=name):
-                return expired  # typed, published + logged; the model is told it timed out
+        if decision := permission_timeout.wait_for_permission(
+            app, pid, row, evt, tool_name=name, cancelled=cancelled
+        ):
+            return decision
         action = row.get("action", "deny")
         if action in {"allow", "allow_session", "allow_workspace"}:
             return "allow"

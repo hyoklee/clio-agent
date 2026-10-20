@@ -613,8 +613,14 @@ def accept_message(
         parts, deliveries = _plan_resource_parts(
             app, workspace_id=session.workspace_id, message_id=identity, parts=parts, model=selected
         )
-        busy = app.state.turn_runner.busy(sid)
-        if not busy and req.delivery != "steer":
+        reservation = app.state.turn_runner.handle(sid)
+        busy = reservation is not None
+        # Idle admission reserves the slot before checking pending input. That
+        # empty reservation is not model execution: an ordinary human send must
+        # still release a future queue paused by Stop. Keep the reservation and
+        # normal busy routing; no second segment is admitted here.
+        idle_reservation = reservation is not None and not reservation.turn_id
+        if (not busy or idle_reservation) and req.delivery != "steer":
             from clio_agent.gact.composer_runtime import resume_session_composer_autostart
 
             resume_session_composer_autostart(app, sid)

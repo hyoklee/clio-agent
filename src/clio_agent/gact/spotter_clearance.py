@@ -58,11 +58,13 @@ CLEARANCE_WATCHER_FAILED = "spotter_watcher_check_failed"
 #: The watcher is armed, live and healthy, but published no observable progress
 #: for a whole progress window (see :func:`clearance_progress_timeout_s`).
 CLEARANCE_PROGRESS_STALLED = "spotter_clearance_progress_stalled"
+CLEARANCE_CANCELLED = "spotter_clearance_cancelled"
 
 #: Closed set of typed clearance denials -> the model-facing explanation. Every
 #: fail-closed return of :func:`wait_for_spotter_clearance` is a key here, so a
 #: caller can neither invent a reason nor lose the distinction between them.
 SPOTTER_CLEARANCE_REASONS: dict[str, str] = {
+    CLEARANCE_CANCELLED: "The invocation was cancelled while waiting for SPOTTER clearance.",
     CLEARANCE_WATCHER_UNAVAILABLE: (
         "SPOTTER surveillance is armed for this session but no watcher is running, "
         "so this tool call was not run."
@@ -303,11 +305,17 @@ def wait_for_spotter_clearance(
     window = clearance_progress_timeout_s() if progress_timeout_s is None else progress_timeout_s
     window = max(0.0, window)
     event = clearance_event(app, parent_session_id)
+    cancelled = getattr(app.state, "cancel_events", {}).get(parent_session_id)
     progress_deadline = time.monotonic() + window
+    # Clear once before the initial state read. Polling must not clear a
+    # progress signal that arrived just after a timed-out wait.
+    event.clear()
     while True:
-        # Clear BEFORE reading the state so a signal published during the read
-        # is retained by the wait below instead of being lost.
-        event.clear()
+        if cancelled is not None and cancelled.is_set():
+            return _record_denial(parent_session_id, CLEARANCE_CANCELLED, window_s=window)
+        if event.is_set():
+            event.clear()
+            progress_deadline = time.monotonic() + window
         reason, pending = _clearance_state(app, parent_session_id)
         if reason:
             return _record_denial(parent_session_id, reason, window_s=window)
@@ -315,7 +323,7 @@ def wait_for_spotter_clearance(
             return CLEARANCE_GRANTED
         remaining = progress_deadline - time.monotonic()
         if remaining <= 0:
+            if event.is_set():
+                continue
             return _record_denial(parent_session_id, CLEARANCE_PROGRESS_STALLED, window_s=window)
-        if event.wait(remaining):
-            # Observable watcher progress: restart the per-exchange window.
-            progress_deadline = time.monotonic() + window
+        event.wait(min(0.1, remaining))
