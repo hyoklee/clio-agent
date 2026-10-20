@@ -20,6 +20,14 @@ the context establishes; ask only for ambiguity that changes the selection.
    coverage; a familiar station name does not guarantee the requested variable or
    time interval. Offer a small useful selection when there are several candidates.
 
+Establish the producing source and whether values are measured, derived,
+simulated or provenance-unverified. A `raw_csv` path or a catalog's publisher
+label is insufficient to establish instrument observations. Inspect documented
+processing and scientific metadata; derived data can be valid when its meaning
+and transformations support the question. For stream/history comparisons load
+`scientific-stream-analysis.md`, including its distinction between unavailable
+history and a failed attempt to establish availability.
+
 Each agent search page holds up to 50 datasets. Use the returned `next_offset`
 with the same query/publisher/Endpoint, stopping when enough suitable data is found
 or pagination ends. Do not call the first page the entire catalog. Use total

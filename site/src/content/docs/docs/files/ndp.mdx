@@ -91,7 +91,7 @@ for offline work or editable derived analysis.
 
 <Capture client:visible image={await captureImage(catalog)}
   alt="NDP dataset search for WWMT.CI.LY_.40 with the CSV selected and PNG and HTML resources unselected"
-  caption="Actual public EarthScope catalog result. Only the measurement CSV is selected; the image and dashboard remain separate. Development UI, 18 October 2026." />
+  caption="Actual catalog result with its CSV selected separately from image and HTML resources. A catalog listing does not establish the CSV's observational provenance. Development UI, 18 October 2026." />
 
 The source appears in **Files → Sources**. NDP originals are read-only. Make
 derived tables, scripts and reports in your workspace. CLIO retains source IDs
@@ -186,8 +186,10 @@ and retained captures; new capture receipts record the actual destination used.
 
 ## Capture, inspect and resume
 
-For a full walkthrough of archived replay, live producer ownership, cursor
-handling and diagnosis, see [NDP streams](/docs/files/ndp-streams/).
+Ask the agent to acquire and analyze the selected observations, including any
+historical record the service supplies. It should explain when history is
+unavailable or could not be verified, and keep replay or demonstration data
+distinct from measured observations. See [NDP streams](/docs/files/ndp-streams/).
 
 **Run and save response** saves the actual response in workspace **Sources**. Open it
 immediately or return to **Captured responses**. The retained record includes
@@ -197,8 +199,9 @@ stopped. The agent can inspect or analyze its local copy.
 Expand **Response limits** to change stream sampling. Captures default to
 **10 seconds / 100 SSE events**, with limits of **30 seconds,
 1,000 events and 2 MiB**. Control messages such as `hello` and `done` count as
-events. For a finite API that returns a resume cursor, use that cursor in the next
-request and check for repeated measurements.
+events. For a finite API that returns a resume cursor, the agent should retain it
+and use it for the next segment, checking for repeated measurements. You should
+not need to copy an opaque token for an ordinary analysis request.
 
 Closing a capture closes CLIO's read. If you separately started a remote producer,
 retain its session ID and stop that specific producer when finished. Stream
@@ -217,10 +220,9 @@ See [scientific questions for NDP](/docs/examples/ndp-science/) for snow, fire,
 habitat and hydrology investigations that start from an ordinary research request.
 
 ```text
-Get EarthScope data from NDP. Find WWMT.CI.LY_.40 and select its CSV.
-Ask for any connection approval or sign-in needed, then download it,
-check timestamps and units, and make a chart with a short source report.
-Keep the original data intact.
+How did the 2023–24 snow-to-liquid ratio at Alta-Collins compare with the
+available historical record? Show what the observations support and explain
+any limitations in comparing the records.
 ```
 
 The agent uses the same source approval, private sign-in and retained files as
@@ -254,4 +256,5 @@ not determine the number of datasets for other requests. Local catalog creation,
 staging and publication to the federation are checked separately when requested.
 
 Try the
-[EarthScope walkthrough](/docs/examples/ndp-earthscope/) for a checked example.
+[EarthScope investigation guide](/docs/examples/ndp-earthscope/) for provenance
+and historical-coverage checks.

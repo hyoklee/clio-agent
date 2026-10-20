@@ -159,7 +159,7 @@ event, resume cursor `row:44`, and last event ID `43`. The ID and cursor differ.
 The sample timestamps are from 2020: this is archived replay, regardless of when
 the capture is made. An incomplete final event is flagged and not counted.
 
-For a genuinely live request, follow the separate producer lifecycle in
+For live acquisition, follow the separate producer lifecycle in
 `services-and-streams.md`: choose actual station codes/topic, start the requested
 session, retain its identity, inspect status, consume output and stop that specific
 producer when finished. The finite read channel closing does not stop it.

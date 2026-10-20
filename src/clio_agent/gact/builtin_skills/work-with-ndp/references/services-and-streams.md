@@ -4,6 +4,9 @@ Use an Endpoint when the task needs its local holdings, a callable scientific
 service or stream. A published file from central discovery need not pass through
 an extra Endpoint connection. The normal user workflow concerns datasets,
 organizations, services, stations, files and sessions, not HTTP operation names.
+For a scientific stream/history question, first load
+`scientific-stream-analysis.md`. Execute the acquisition and analysis yourself;
+the user should not have to operate the sampling form or carry a cursor for you.
 
 ## Connect and discover
 
@@ -90,14 +93,15 @@ separately through approval. Do not work around a denied role with shell HTTP.
 
 ## Archived-file sampling and finite replay
 
-In the user interface, saved services are under Attach → NDP → Endpoints & streams.
-An advertised URL replay offers Files → Sample CSV from URL independently of the
-file listing. Save sample captures a finite segment; Options → Resume cursor
-continues from the service's exact completion cursor using the same CSV URL.
-There is no persistent subscription to pause between finite requests. Do not
-describe this as pausing a separate producer, or imply an offline HTML can acquire
-new remote samples. The stream-event limit includes control messages; leave room
-for a completion event and cursor beyond the requested measurement count.
+Use replay when it matches the user's requested source and purpose. Establish the
+file's provenance and processing before treating its values as scientific
+observations. A published CSV, or a URL supplied to a replay service, is not
+automatically historical data retained by the requested stream.
+
+A finite request completes and closes its read channel. There is no persistent
+subscription to pause between these requests. Do not describe this as pausing a
+separate producer, or imply an offline HTML can acquire new remote samples. Leave
+room in the event limit for control/completion events as well as the data records.
 
 Some services advertise `/data/csv-files` and `/stream/segment/url`; others do not.
 List/select actual files or use a user-supplied approved CSV URL. The segment route
@@ -110,7 +114,9 @@ Control events such as `hello`, `done` and heartbeats are not measurements and
 count toward CLIO's event limit. Inspect complete data events, not just the count.
 
 If the API's `done` event returns a cursor, preserve that exact value/type for the
-next segment. Check the boundary for duplicated/skipped measurements using the
+next segment and use it yourself when the user asks to continue. Keep opaque
+cursors in the retained investigation state rather than ordinary answer prose.
+Check the boundary for duplicated/skipped measurements using the
 service's sample identity/time. An SSE `id` is not automatically the API's resume
 cursor. A cut-off event or missing completion cursor does not prove a resumable
 segment; consult the API contract and report partial state.
@@ -142,10 +148,10 @@ on local connection success.
 
 ## Capture limits and evidence
 
-Treat each layer independently. A failed file listing does not establish that an
-advertised URL-based replay operation is broken. Find a real CSV resource through
-the catalog, then request a finite segment from that observed URL. Do not invent
-filenames or substitute an unrelated example. Inspect the completion payload:
+Treat each layer independently. If replay fits the requested source and purpose,
+a failed file listing does not establish that its advertised URL-based operation
+is broken. Use only an approved file with provenance appropriate to the task.
+Do not invent filenames or substitute an unrelated example. Inspect the completion payload:
 some services return `resume` in the SSE `done` event but accept it as `cursor`
 on the next request. Preserve the exact value and verify adjacent measurement
 identities and timestamps.
