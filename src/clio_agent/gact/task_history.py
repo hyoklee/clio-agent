@@ -632,13 +632,13 @@ class TaskHistory:
 
     def subscriptions(self, handle: str) -> tuple[TaskSubscription, ...]:
         """Read subscribers from the passive relationship index, without per-subscriber workers."""
-        with self._lock:
+        with self._view_lock:
             return tuple(self._subscriptions.get(handle, {}).values())
 
     def pending_mail(self, session_id: str) -> tuple[MailItem, ...]:
         """Read pending inputs without claiming, consuming or imposing retention."""
         assert_store_write_off_loop("task.mail.read")
-        with self._lock:
+        with self._view_lock:
             return tuple(self._pending.get(session_id, {}).values())
 
     @contextmanager

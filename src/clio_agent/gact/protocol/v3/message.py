@@ -15,9 +15,8 @@ from clio_agent.gact.evidence import _bounded_tool_call_result
 from clio_agent.gact.protocol.v3 import utcnow_iso
 from clio_agent.gact.protocol.v3.tool_outcome import MISSING_EXECUTION_OUTCOME, tool_execution_state
 from clio_agent.gact.reasoning_timing import reasoning_timing
-from clio_agent.gact.ssh_recorded_presentation import legacy_ssh_presentation
 from clio_agent.gact.summarization_record import legacy_compaction_block
-from clio_agent.gact.tool_result_presentation import project_presentation
+from clio_agent.gact.tool_result_presentation import project_presentation, recorded_presentation
 
 if TYPE_CHECKING:
     from clio_agent.gact.a2ui_catalogs.registry import CatalogResolver
@@ -501,7 +500,7 @@ def _project_tool(context: _TranscriptProjection, part: Mapping[str, Any], part_
                 output = value
                 break
     presentation = project_presentation(
-        legacy_ssh_presentation(part, current.get("input")) or part.get("presentation"),
+        recorded_presentation(part, current.get("input")),
         context.session_id,
         tool_id,
         running=state == "running",

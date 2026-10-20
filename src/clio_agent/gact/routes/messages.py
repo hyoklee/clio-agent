@@ -178,8 +178,10 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
     ) -> dict[str, Any]:
         """Page persisted presentation content within the owning session only."""
 
-        from clio_agent.gact.ssh_recorded_presentation import legacy_ssh_presentation
-        from clio_agent.gact.tool_result_presentation import presentation_page
+        from clio_agent.gact.tool_result_presentation import (
+            presentation_page,
+            recorded_presentation,
+        )
 
         if app.state.sessions.get(sid) is None:
             raise _session_not_found(sid)
@@ -188,7 +190,10 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         for part in reversed(parts):
             if part.call_id != call_id:
                 continue
-            presentation = legacy_ssh_presentation(part.model_dump()) or part.presentation or {}
+            args = next(
+                (p.input for p in parts if p.call_id == call_id and p.type == "tool_call"), None
+            )
+            presentation = recorded_presentation(part.model_dump(), args) or {}
             for block in presentation.get("blocks", []):
                 if block["id"] == block_id:
                     try:
@@ -352,7 +357,7 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         if sess.message_count == 0 and not has_persisted_ledger:
             get_if_resident = getattr(messages, "get_if_resident", None)
             if callable(get_if_resident):
-                chronological_rows = list(cast(list[Message], get_if_resident(sid) or []))
+                chronological_rows = list(cast(list[Message] | None, get_if_resident(sid)) or [])
             elif isinstance(messages, dict):
                 chronological_rows = list(cast(list[Message], messages.get(sid, [])))
             else:

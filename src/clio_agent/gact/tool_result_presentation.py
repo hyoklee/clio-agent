@@ -6,11 +6,32 @@ derived from those blocks; neither is used to construct a model observation.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 PAGE_CHARS = 2048
+
+
+def recorded_presentation(
+    part: Mapping[str, Any], args: Mapping[str, Any] | None = None
+) -> dict[str, Any] | None:
+    """Use the same recorded legacy display for transcript projection and paging."""
+    from clio_agent.gact.agents.recorded_inspection_presentation import (
+        legacy_inspection_presentation,
+    )
+    from clio_agent.gact.agents.skill_presentation import legacy_skill_presentation
+    from clio_agent.gact.ssh_recorded_presentation import legacy_ssh_presentation
+    from clio_agent.gact.storage.ndp_recorded_presentation import legacy_ndp_presentation
+
+    return (
+        legacy_ssh_presentation(part, args)
+        or legacy_ndp_presentation(part, args)
+        or legacy_skill_presentation(part, args)
+        or legacy_inspection_presentation(part, args)
+        or part.get("presentation")
+    )
 
 
 class PresentationBlock(BaseModel):
