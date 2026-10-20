@@ -1,6 +1,7 @@
 ---
 title: Work with National Data Platform
 description: Search NDP datasets, connect existing remote APIs, and keep data and stream captures with your analysis.
+lastUpdated: false
 ---
 
 import { Aside, Steps } from '@astrojs/starlight/components';
@@ -28,7 +29,7 @@ an existing remote API to query a service or capture a finite stream segment.
 | **Organization** | The publisher named in the catalog. Choosing it filters results; it does not join a group. | `earthscope_consortium`. |
 | **Dataset** | A collection of scientific observations, measurements, simulations or analysis results, described by a catalog record. | A station's GNSS time series, an ocean simulation or satellite observations. |
 | **Resource** | One way to access or understand a dataset: a data file, object, stream, service, image or document. | An HDF5 or NetCDF file, a CSV measurement table, or a link to live observations. |
-| **Endpoint** | An institution's running data service. It can provide its own catalog, storage, queries and streams. | An NDP Endpoint on Ares, reached through SSH. |
+| **Endpoint** | An institution's running data service. It can provide its own catalog, storage, queries and streams. | A research group's data service, reached directly or through SSH. |
 | **Action** | One request advertised by a connected API. | List stations, query measurements, or start a stream. |
 | **Capture** | The response bytes CLIO saved from a request. | A station list or a bounded segment of streaming measurements. |
 
@@ -48,8 +49,7 @@ central catalog. NDP's [Endpoint guide](https://nationaldataplatform.org/documen
 explains that distinction.
 
 <Aside type="note" title="Development build">
-  This guide covers the NDP development build, captured on 18 October 2026.
-  The NDP changes are merged into develop and are not in a published installer.
+  NDP support is available in development builds and is not in a published installer.
   See [Features and versions](/docs/versions/).
 </Aside>
 
@@ -75,11 +75,11 @@ explains that distinction.
 
 <Capture client:visible image={await captureImage(catalogList)}
   alt="Actual NDP catalog showing compact collapsed dataset entries, organization and access filters, and Show more datasets"
-  caption="Browse a compact list, then open the dataset you want to inspect. Actual development UI and public catalog, 19 October 2026." />
+  caption="Browse a compact list, then open the dataset you want to inspect." />
 
 <Capture client:visible image={await captureImage(expandedDataset)}
   alt="Actual Alta-Collins search with an expanded three-line description, Show more, a collapsible Resources list and selected measurement CSV"
-  caption="Searching expands matching datasets. Inspect their descriptions and select individual resources before continuing. Actual development UI, 19 October 2026." />
+  caption="Searching expands matching datasets. Inspect their descriptions and select individual resources before continuing." />
 
 **Link selected files** saves the selected resource identities and their source
 locations in your workspace. It does not copy every file in the dataset. When
@@ -91,7 +91,7 @@ for offline work or editable derived analysis.
 
 <Capture client:visible image={await captureImage(catalog)}
   alt="NDP dataset search for WWMT.CI.LY_.40 with the CSV selected and PNG and HTML resources unselected"
-  caption="Actual catalog result with its CSV selected separately from image and HTML resources. A catalog listing does not establish the CSV's observational provenance. Development UI, 18 October 2026." />
+  caption="Select the data CSV separately from preview images and HTML pages. Check the dataset documentation to understand the values." />
 
 The source appears in **Files → Sources**. NDP originals are read-only. Make
 derived tables, scripts and reports in your workspace. CLIO retains source IDs
@@ -117,11 +117,6 @@ control to reconnect CLIO. An Endpoint denying access after successful sign-in
 can mean that its required role or identity issuer differs; repeating login is
 not a substitute for the necessary Endpoint permission.
 
-The development default uses NDP's **test** identity service with public client
-`clio`. A production deployment needs a client registered for its identity service.
-An Endpoint can require a different issuer or role. Check an actual access denial
-rather than assuming a successful sign-in grants every dataset.
-
 The Organization filter identifies a **publisher**. Selecting EarthScope there
 does not join a group or change your account permissions.
 
@@ -141,8 +136,8 @@ sign-in** for requests using your saved NDP account. SSH authentication is
 separate from API sign-in.
 
 <Capture client:visible image={await captureImage(endpointSsh)}
-  alt="Actual Endpoint setup using the shared SSH route selector with ares, remote loopback API URL and separate API sign-in choice"
-  caption="The saved SSH route identifies the computer hosting the API. API sign-in determines whether requests also use your NDP account. Actual Ares setup form, 19 October 2026." />
+  alt="Actual Endpoint setup using the shared SSH route selector, remote loopback API URL and separate API sign-in choice"
+  caption="The saved SSH route identifies the computer hosting the API. API sign-in determines whether requests also use your NDP account." />
 
 Connecting saves the service's route for this workspace. It does not start a
 stream or download measurements by itself. Its supported data views load actual
@@ -234,7 +229,7 @@ The requested research collection determines how resources are grouped.
 
 ```text
 Take these three selected artifacts and create one dataset titled
-“TO Optimization dataset 1” in the Gnosis organization on our NDP Endpoint.
+“Lake survey results” in our research group's organization on our NDP Endpoint.
 Keep their filenames and include all three as resources.
 ```
 

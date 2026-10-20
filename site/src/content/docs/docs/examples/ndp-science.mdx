@@ -1,6 +1,7 @@
 ---
 title: Scientific questions for NDP
-description: Three multi-turn scientific conversations using NDP datasets, with downloadable HTML transcripts and explicit limitations.
+description: Explore scientific investigations with NDP data, follow-up questions, interactive results and downloadable conversations.
+lastUpdated: false
 ---
 
 import Capture from '../../../../components/overview/Capture';
@@ -9,17 +10,18 @@ import altaResults from '../../../../assets/tutorials/ndp/alta-native-results.pn
 import tahoeArea from '../../../../assets/tutorials/ndp/tahoe-native-area.png';
 import konzaAssociation from '../../../../assets/tutorials/ndp/konza-association.png';
 
-Ask for the scientific result. You do not need to name a skill, supply operation
-IDs, or prescribe the intermediate tool calls. CLIO should discover appropriate
-collections, obtain measurements, check their meaning and produce inspectable
-analysis. Finding a catalog entry is only the first step.
+Start with a scientific question, then use follow-up questions to explore the
+result's coverage, sensitivity and interpretation. CLIO finds relevant NDP
+collections, obtains the available data and keeps its analysis alongside the
+sources. You do not need to specify tools or intermediate steps.
 
 NDP can discover and provide access to a collection whose original publisher
 hosts the files. Alta's citations therefore still point to the University of
 Utah's Hive, and Tahoe's to TRPA. Keep both the NDP dataset/resource identities
-and the publisher's attribution: a publisher citation alone does not establish
-which acquisition path succeeded. A useful session records the selected
-resources, successful read/download, source hashes, methods and actual results.
+and the publisher's attribution with your results, so a colleague can trace the
+measurements and reproduce the analysis.
+
+<span id="download-the-four-conversations" />
 
 ## Download the conversations
 
@@ -34,24 +36,18 @@ for offline reading in a desktop browser.
 
 | Conversation | User questions | Data path | Read | Download |
 | --- | --- | --- | --- | --- |
-| Alta-Collins snowfall | 3 | NDP discovery and acquisition of publisher-hosted observations | [Open conversation](/conversations/ndp/alta/) | [HTML, about 40 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Alta-snowfall-session.html) |
-| Lake Tahoe area and shoreline | 3 | TRPA geometry acquired through NDP | [Open conversation](/conversations/ndp/tahoe/) | [HTML, about 61 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Lake-Tahoe-session.html) |
-| Konza Prairie burn observations | 3 | Previously acquired NDP files and checked derived tables | [Open conversation](/conversations/ndp/konza/) | [HTML, about 47 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Konza-session.html) |
+| Alta-Collins snowfall | 3 | NDP discovery and acquisition of publisher-hosted observations | [Open conversation](/conversations/ndp/alta/) | [HTML, about 40 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Alta-snowfall-session-maps-v2.html) |
+| Lake Tahoe area and shoreline | 3 | TRPA geometry acquired through NDP | [Open conversation](/conversations/ndp/tahoe/) | [HTML, about 61 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Lake-Tahoe-session-maps-v2.html) |
+| Konza Prairie burn observations | 3 | Previously acquired NDP files and checked derived tables | [Open conversation](/conversations/ndp/konza/) | [HTML, about 47 MB](https://github.com/iowarp/clio-agent/releases/download/ndp-scientific-conversations-2026-10-19/Konza-session-maps-v2.html) |
 
-The examples use **Sol 6.1 with high reasoning**. Alta and Tahoe are selected
-conversations whose execution audits found no failed operations. Konza retains
-a recovered calculation error. It has not been removed from the transcript. Successful
-analysis does not make every attempted operation successful, and these selected
-examples are not a general model-reliability benchmark.
+The examples use **Sol 6.1**. Each archive includes the full conversation and
+recorded tool activity, including corrections made during the investigation.
 
 ## Follow the investigations
 
-The Alta and Tahoe development-build conversations were recorded on
-19 October 2026. Each started with an empty scientific workspace and a saved
-public NDP catalog connection. The prompts below supplied no skills, tools,
-resource IDs or analysis procedures. Both conversations contain three questions;
-their complete tool histories and scientific calculations were reviewed.
-They are selected examples, not a reliability estimate for every model or dataset.
+Each investigation develops over three questions: establish a result, examine
+it more closely, then prepare it for a colleague. Alta and Tahoe start by finding
+data through NDP; Konza continues from data already acquired through NDP.
 
 ### Alta: from a seasonal total to monthly explanations
 
@@ -68,7 +64,7 @@ baselines answer different questions.
 
 <Capture client:visible image={await captureImage(altaResults)}
   alt="Actual exported Alta conversation results with all 25 seasonal bars, baseline and month controls, monthly comparison charts and a coverage table"
-  caption="Actual native HTML export from the three-question Sol 6.1 session. NDP acquired the original Hive measurements and READMEs. This is a product screenshot, not an interface fixture. Development UI, 19 October 2026." />
+  caption="Explore seasonal totals and monthly comparisons, switching between historical baselines. The source measurements and READMEs were acquired through NDP from Hive." />
 
 The analysis package includes the original measurements and READMEs, a portable
 standard-library Python script, derived tables, methods and checksums. An
@@ -89,7 +85,7 @@ accuracy or image resolution.
 
 <Capture client:visible image={await captureImage(tahoeArea)}
   alt="Actual native-export image viewer displaying the complete Tahoe equal-area measurement figure, its grid method and original scientific caveats"
-  caption="Actual native-export fullscreen viewer. The model produced this scientific figure from the NDP-acquired TRPA polygon; the screenshot records the real viewer. The complete figure and its caveats remain visible. Development UI, 19 October 2026." />
+  caption="The lake-area figure explains the measurement method and its limits. Open the conversation to explore the NDP-acquired TRPA boundary and shoreline comparisons." />
 
 The portable package includes the original GeoJSON, provenance, pinned Python
 dependencies, both analyses, an offline report and automated checks. An
@@ -104,12 +100,11 @@ today's water extent or the basin's wetland/riparian acreage.
 2. “Are the biggest particle episodes also the largest CO₂ episodes, or does the answer depend on the time window? Quantify the comparison without implying that correlation proves a cause.”
 3. “Which conclusions are robust, and what additional measurements would most improve the explanation? Leave a concise summary and the key figures for a collaborator.”
 
-This conversation begins in an existing scientific workspace with files already
-downloaded through NDP and checked derived tables. It demonstrates follow-up
-analysis and interpretation, rather than fresh catalog discovery or an
-independent derivation from raw measurements. The preceding investigation checked
-the large wind and CO₂ archives, including multiple measurement packets within
-individual archive records.
+This conversation continues from files already downloaded through NDP and
+checked derived tables. The analysis uses reductions of the large wind and CO₂
+archives, accounting for multiple measurement packets within individual archive
+records. Open the conversation to follow the comparison and interpretation; it
+does not repeat the initial catalog search or raw-file processing.
 
 The strongest particle and CO₂ episodes overlap only partly. The figure compares
 958 paired minute observations and shows how descriptive correlations change
@@ -120,7 +115,7 @@ does not establish a combustion source or a causal wind effect.
 
 <Capture client:visible image={await captureImage(konzaAssociation)}
   alt="Agent-produced Konza figure showing paired particle and carbon-dioxide minute observations and correlations across different time windows"
-  caption="Actual saved scientific figure from the NDP-data investigation. All windows use the checked reductions; changing the window changes the descriptive association. The full transcript retains the recovered error and scientific caveats." />
+  caption="Compare particle and carbon-dioxide observations across time windows. The association changes with the window; sensor limits and missing observations remain part of the interpretation." />
 
 ### Share the conversation and the reproducible work
 
@@ -129,17 +124,10 @@ saved results embedded. They include the conversation, recorded tool activity,
 loaded skills and captured views. A transcript does not include every original
 data file or analysis artifact.
 
-Separate Alta and Tahoe analysis packages were tested from clean extracted copies
-outside CLIO during verification; those packages are not included in these three
-downloads. First-time installation of Tahoe's pinned dependencies needs internet
-access or a prepared package cache; its calculations then run offline.
-
-Artifact-inclusive exports require every retained dependency to be available.
-The Alta review exposed an additional gap in earlier temporary UI-definition
-inputs, so its artifact-inclusive export is not qualified. Its native transcript
-HTML and separately verified scientific package remain distinct deliverables.
-Direct opening of the exported HTML from disk was not tested in the in-app
-browser; the actual HTML was reviewed through a local HTTP server.
+To share reproducible work as well as a conversation, ask CLIO to package the
+original data, analysis scripts, dependencies and methods. The HTML downloads
+above do not include the separate Alta and Tahoe analysis packages. Opening an
+interactive result is different from rerunning its calculation.
 
 ## Snow and water
 
@@ -221,8 +209,8 @@ Related questions:
 This is a research-feasibility task until the required coverage is established.
 It needs appropriately located GNSS stations with multiple winters of compatible
 displacement observations, alongside independent hydrological measurements such
-as snowpack, precipitation, lake level or a water-storage product. A short replay
-from one station in December 2024 cannot answer it.
+as snowpack, precipitation, lake level or a water-storage product. A short segment
+from one station cannot answer a multi-winter regional question.
 
 GNSS displacement can reflect regional hydrological loading, tectonics, snow,
 reference-frame choices and instrument effects. Establish component units, station
@@ -242,7 +230,7 @@ conversion from one lake-adjacent station's motion to that lake's stored volume.
 
 This requires successful acquisition and consumption, measured timestamps and
 cadence. Station metadata, a running producer or archived SSE delivery alone
-cannot establish that result. See [stream capture and diagnosis](/docs/files/ndp-streams/).
+cannot establish that result. See [sampling and analyzing streams](/docs/files/ndp-streams/).
 
 > Put this investigation's report, chart and derived table into one private NDP
 > dataset for our research group, and verify that the files can be read back.
@@ -250,17 +238,10 @@ cannot establish that result. See [stream capture and diagnosis](/docs/files/ndp
 The agent must resolve or, when authorized, create the organization, store the
 selected artifact versions, register their real locations and read back both the
 dataset record and stored bytes. A catalog record does not itself upload files.
-Missing write authorization or object storage is a blocked publication, not a
-successful publication test. New local datasets are distinct from federation
-publication.
+Publishing needs write permission and a storage destination. Creating a dataset
+in an Endpoint's local catalog does not automatically publish it to the central
+NDP catalog.
 
-These are a question bank, not a claim that every workflow has completed live
-acceptance. The checked-in verification report records exact prompts, model
-behavior, actual measurements, scientific outputs and failures separately.
-
-For a shareable investigation, use follow-up questions to test the result's
-coverage, sensitivity and provenance. Review the full conversation and its
-export, including failed reads, calculations and files that were not saved. A
-green tool row, truthful failure explanation or attractive map does not establish
-successful data acquisition. Keep failed trials in the benchmark; do not remove
-their failed operations to make a showcase look successful.
+These suggested questions depend on the data and permissions available at your
+connected service. For your own investigation, ask follow-up questions about
+coverage, sensitivity and provenance before sharing the conclusions.

@@ -41,3 +41,24 @@ test('unqualified Ares archive is unpublished', async ({ page }) => {
   const response = await page.goto('/conversations/ndp/ares/');
   expect(response?.status()).toBe(404);
 });
+
+test('saved Tahoe geometry renders in a restricted-origin archive frame', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.route('**/__archive-map-origin-test', route => route.fulfill({
+    contentType: 'text/html',
+    body: '<!doctype html><title>Archive map regression</title><iframe title="Saved conversation" sandbox="allow-scripts" style="width:100%;height:900px" src="/conversations/ndp/tahoe/#results"></iframe>',
+  }));
+  await page.goto('/__archive-map-origin-test');
+  const frame = page.frameLocator('iframe');
+  await expect(frame.getByRole('heading', { name: 'Saved results', exact: true })).toBeVisible({ timeout: 20_000 });
+  const surface = frame.locator('[data-slot="a2ui-map-surface"]').first();
+  await expect.poll(() => surface.evaluate(node => {
+    const map = (node as HTMLElement & { __clioMap?: {
+      getLayer(id: string): unknown;
+      queryRenderedFeatures(options: { layers: string[] }): unknown[];
+    } }).__clioMap;
+    const layer = 'clio-map-geometry-fill';
+    return map?.getLayer(layer) ? map.queryRenderedFeatures({ layers: [layer] }).length : 0;
+  }), { timeout: 20_000 }).toBeGreaterThan(0);
+  await surface.screenshot({ path: test.info().outputPath('tahoe-restricted-origin-map.png') });
+});
