@@ -195,7 +195,14 @@ def test_catalog_tools_describes_bare_clio_without_blueprint_activation(
     assert resp.status_code == 200
     rows = resp.json()["tools"]
     names = {row["name"] for row in rows}
-    assert {"fs_read_file", "create_artifact", "memory_search_sessions"} <= names
+    assert {
+        "fs_read_file",
+        "create_artifact",
+        "query_tasks",
+        "observe_tasks",
+        "send_agent_message",
+    } <= names
+    assert "memory_search_sessions" not in names
     assert {
         "spawn_agent_task",
         "query_tasks",

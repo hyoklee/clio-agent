@@ -1,6 +1,34 @@
 # Tasks replacement acceptance ledger
 
-## Active Task transcript extension — 2026-10-20 03:30 UTC
+## Current CI/live disposition — 2026-10-20 03:56 UTC
+
+Agent7cb52b4c / GACTdf62fe66: all12 CI XML reports recovered. Per interpreter:
+13,364 cases; 27 failures on3.12 and26 each on3.13/3.14; 50 exclusions each.
+Four owning fixture/catalog groups are corrected together, with no product
+execution policy changes or relaxed budgets. R532/R536 static checks pass; the
+combined CI rerun is still required. These failures are not passes.
+
+T01/T02/T03 have scoped actual Codex/Luna evidence in R520's adjudication of
+R516: authorized discovery after service restart, transcript/recorded outcome,
+real artifact722bytes/hash and attributed idle-wake peer input IDs committed once.
+The entire R516 family remains failed at its checker; no child proof is inferred.
+T04 remains open: R525 read/continuation evidence included a model-chosen restart.
+R535 is running the direct original-handle mailbox path with a child artifact and
+Question. T05 awaits corrected CI; T06's distinct Claude bridge/final UI/review
+remain open. Matching UI build and all655 remote hashes passed; no new browser
+acceptance is claimed by that transfer.
+
+R516/R519/R525/R531 owned processes and ports are settled and disposable roots
+actually removed, with bounded receipts and no archives. Allocation24951 and its
+reusable environment remain owned; R535 is active. Current process/custody is in
+`current-ares-execution.json`. All previous prohibited/manual-only roots remain
+preserved. Full Tasks qualification, the approved durable-provider prerequisite,
+and final race reconciliation remain open. NO GO for release/installation.
+
+
+## Earlier recorded source and evidence
+
+## Active Task transcript extension â€” 2026-10-20 03:30 UTC
 
 The human made this active Tasks scope: use shared task handles to discover
 sessions/children, read original transcript, recorded summaries and verified
@@ -28,7 +56,7 @@ settled and cleaned; allocation24951 is registered for the next frozen family.
 
 ## Earlier recorded source and evidence
 
-## Current qualification — 2026-10-20 02:53 UTC
+## Current qualification â€” 2026-10-20 02:53 UTC
 
 **Initial implementation DONE. Initial tests constructed. Regression CI and live
 qualification remain incomplete. NO GO for merge, release or installation.**
@@ -45,7 +73,7 @@ remain preserved. Session-recall work remains deferred until this goal finishes.
 
 - **R499, five actual Codex/Luna cycles:** background Shell accepted while running;
   independent work; unbounded wait; conversation Stop; actual TurnRunner retirement
-  in 1.02–1.05 seconds; another actual file read on the same SDK connection and
+  in 1.02â€“1.05 seconds; another actual file read on the same SDK connection and
   future-message promotion while the original Shell still ran; original Shell
   completion; each completion/input identity committed once. Normal service exit,
   all eight ports absent, disposable data removed. This is not all thirty races.
@@ -88,7 +116,7 @@ Final source-impact disposition must explicitly identify necessary repeats.
 3. Surviving approved-provider transfer job recovery and original-job continuation/
    cleanup (N12/W01/Q6). NDP is a stream without a persistent provider job ID;
    existing authorized collections and disposable paths remain an unmet prerequisite.
-4. Final source-impact and race reconciliation: thirty R1–R6 repetitions exist at
+4. Final source-impact and race reconciliation: thirty R1â€“R6 repetitions exist at
    their original SHAs; affected repeats and explicit carry dispositions must be
    closed for the final tuple. Migration and uncertainty/final-result scope must
    remain explicit. Earlier evidence alone is not blanket current acceptance.

@@ -40,10 +40,20 @@ def test_progress_after_timed_out_poll_is_not_discarded(
             assignment = app.state.task_history.latest_assignment(sid)
             await owner.pause(owner.caller(sid), assignment.handle)
         await asyncio.gather(*tuple(owner._controls.values()))
+        # Control notices can reserve a final admission-only probe. Join those
+        # checks and inspect retirement on the owner loop; sampling busy from
+        # the test thread races with a correctly vetoed, worker-free probe.
+        for sid in (parent, child):
+            while True:
+                pump = app.state.turn_runner._pumps.get(sid)
+                if pump is not None and not pump.done():
+                    await asyncio.shield(pump)
+                    continue
+                assert not app.state.turn_runner.busy(sid)
+                assert owner.model_paused(sid)
+                break
 
     asyncio.run_coroutine_threadsafe(hold_models(), owner._loop).result(timeout=5)
-    assert not app.state.turn_runner.busy(parent)
-    assert not app.state.turn_runner.busy(child)
     wake_on_parent_activity(app, parent, tool_name="fs_read_file")
     event = clearance_event(app, parent)
     original_wait = event.wait

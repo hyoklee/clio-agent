@@ -6,7 +6,9 @@ import asyncio
 import json
 import sys
 import threading
+import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import psutil
@@ -40,7 +42,7 @@ async def _read_identity(path: Path) -> dict[str, Any]:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("ending", ["cancel", "timeout", "descendant-exit"])
 async def test_hook_owner_waits_for_descendants_and_confirms_actual_cleanup(
-    tmp_path: Path, ending: str
+    tmp_path: Path, ending: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Exercise the production adapter and OS container with owned, real processes."""
     script = tmp_path / "hook.py"
@@ -78,6 +80,23 @@ async def test_hook_owner_waits_for_descendants_and_confirms_actual_cleanup(
         timeout_ms=1500 if ending == "timeout" else 10000,
     )
     cancel = threading.Event()
+    deadline_ready = threading.Event()
+    if ending == "timeout":
+        from clio_agent.gact.hooks import adapters
+
+        def after_fixture_startup() -> float:
+            # The production owner already acquired its OS tree before reading
+            # this clock. Hold only that first deadline acquisition until both
+            # real fixture processes publish identities. The original 1500ms
+            # deadline then uses real time, including the real cleanup path.
+            # Cold Python imports under CI contention must not preempt the
+            # active-descendant scenario before it has actually been set up.
+            deadline_ready.wait()
+            return time.monotonic()
+
+        monkeypatch.setattr(
+            adapters, "time", SimpleNamespace(monotonic=after_fixture_startup, sleep=time.sleep)
+        )
     work = asyncio.create_task(
         asyncio.to_thread(
             SubprocessAdapter().invoke,
@@ -98,6 +117,7 @@ async def test_hook_owner_waits_for_descendants_and_confirms_actual_cleanup(
             assert cancelled.value.invocation_started is True
             assert cancelled.value.cleanup_confirmed is True
         elif ending == "timeout":
+            deadline_ready.set()
             with pytest.raises(HookInfraError) as timed_out:
                 await asyncio.wait_for(asyncio.shield(work), 10)
             assert timed_out.value.reason == "hook_timeout"
@@ -108,6 +128,7 @@ async def test_hook_owner_waits_for_descendants_and_confirms_actual_cleanup(
         assert not any(_alive(identity) for identity in identities)
     finally:
         cancel.set()
+        deadline_ready.set()
         release.write_text("test retirement")
         # The diagnostic timeout never abandons the adapter or its process tree.
         await asyncio.gather(work, return_exceptions=True)

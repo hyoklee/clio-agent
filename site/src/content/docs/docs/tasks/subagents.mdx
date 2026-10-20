@@ -70,6 +70,29 @@ already-terminal outcomes remain unchanged.
 The old task and outcome remain inspectable. A message to a terminal child can
 create a linked successor; it does not change the old task back to running.
 
+## Inspect a child before continuing it
+
+If a child fails or is cancelled, its task handle still identifies that original
+run. Its parent can inspect the retained transcript and then message the child:
+
+```python
+observe_tasks(tasks=child_handle, view="transcript")
+send_agent_message(
+    target=child_handle,
+    message="Inspect the existing report, then continue the unfinished analysis."
+)
+```
+
+The message addresses the child's stable session. When admission permits it,
+CLIO creates a linked assignment with a new handle and retained context. Query
+that session's tasks to find the continuation; the old result never changes to
+running. Previously accepted operations are not replayed automatically. The
+child should inspect uncertain side effects before choosing another operation.
+
+The candidate implements these reads. The live qualification must still show
+the parent reading an actual cancelled child, the linked continuation using its
+context, and the original side effect occurring only once.
+
 ## Human controls notify the parent
 
 If you steer, pause, resume, cancel or restart a child, CLIO queues an attributed

@@ -58,7 +58,7 @@ class TranscriptWorld:
             created_at=now(),
             target_handle=self.task.handle if exact else None,
         )
-        self.app.state.task_history.record_grant(grant)
+        self.app.state.task_history.record_grant(grant, observation_id=uuid4().hex)
         return grant
 
     def observe(self, handle: str | list[str] | None = None, **kwargs: Any) -> Any:
@@ -190,7 +190,9 @@ def test_revocation_prevents_continued_transcript_disclosure(
     world.message("Second source", identity="second")
     first = world.observe(view="transcript", limit=1)
     assert first["has_more"]
-    world.app.state.task_history.record_grant(grant.model_copy(update={"revoked_at": now()}))
+    world.app.state.task_history.record_grant(
+        grant.model_copy(update={"revoked_at": now()}), observation_id=uuid4().hex
+    )
     after = world.observe(view="transcript", cursor=first["cursor"])
     assert after["tasks"][0].get("error")
     assert "Second source" not in json.dumps(after)

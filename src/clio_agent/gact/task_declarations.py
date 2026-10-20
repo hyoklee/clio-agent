@@ -295,7 +295,7 @@ def build_task_tools() -> list[Any]:
             send_agent_message,
             "send_agent_message",
             {"target": {"type": "string"}, "message": {"type": "string"}, "reply_to": _STRING},
-            "Message an exact authorized task/session. Busy recipients receive it next iteration; eligible idle recipients wake. Messaging conveys no control rights.",
+            "Message an exact authorized task/session. Busy recipients receive it next iteration; eligible idle recipients wake. A terminal agent handle addresses its stable session and may start a linked continuation; messaging alone needs no restart_agent call. Use reply_to only for an actual peer message from that recipient. Omit it for a new message or a response to task results or human controls. Messaging conveys no control rights.",
         ),
     ]
     for name, operation in (

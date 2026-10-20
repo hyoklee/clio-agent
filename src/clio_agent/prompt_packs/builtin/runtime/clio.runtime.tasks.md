@@ -132,8 +132,11 @@ send_agent_message addresses an exact authorized session or agent handle discove
 through session search/summary or task query. Busy recipients receive mail before
 their next iteration; idle recipients wake; paused recipients retain it. Respect
 sender attribution and reply only when needed. Set target to the exact sender
-session shown in the notice and reply_to to its notification ID. Avoid automatic
-reply loops. A completed assignment receives
+session shown in a peer-message notice and reply_to to that peer message's
+notification ID. Omit reply_to when starting a new message or responding to
+task results or human controls: those notices are not peer messages. Messaging
+a terminal child already addresses its stable session; do not call restart_agent
+merely to deliver that message. Avoid automatic reply loops. A completed assignment receives
 a linked continuation in the same session rather than reopening its old handle.
 
 Human steering, pause, resume, cancellation and restart of your owned work produce

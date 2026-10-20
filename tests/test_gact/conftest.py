@@ -14,9 +14,10 @@ from collections.abc import Iterator
 from contextlib import ExitStack
 from functools import wraps
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from tests.test_arc.conftest import core_arc as core_arc
@@ -196,14 +197,14 @@ def _fold_published_parts(history: list[Any], message_id: str) -> list[dict[str,
             parts.append(folded)
             by_id[folded["id"]] = folded
         elif event.type == "message.part.delta":
-            folded = by_id.get(str(payload.get("part_id") or ""))
-            if folded is not None:
-                folded["text"] += str((payload.get("delta") or {}).get("text_append") or "")
+            delta_part = by_id.get(str(payload.get("part_id") or ""))
+            if delta_part is not None:
+                delta_part["text"] += str((payload.get("delta") or {}).get("text_append") or "")
         elif event.type == "message.part.completed":
-            folded = by_id.get(str(payload.get("part_id") or ""))
-            if folded is not None:
-                folded["completed"] = True
-                folded["text"] = str(payload.get("final_text") or "")
+            completed_part = by_id.get(str(payload.get("part_id") or ""))
+            if completed_part is not None:
+                completed_part["completed"] = True
+                completed_part["text"] = str(payload.get("final_text") or "")
     if not minted:
         return None
     # A live streamed text/thinking part that never completed was dropped from
@@ -294,7 +295,7 @@ def settle_turn_slot(client: TestClient, sid: str, *, timeout: float = 30.0) -> 
     assert goal/loop metadata after a turn wait for the slot to clear first. A plain dict
     read on the runner, safe from the test thread."""
 
-    runner = client.app.state.turn_runner
+    runner = cast(FastAPI, client.app).state.turn_runner
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         pump = runner._pumps.get(sid)
