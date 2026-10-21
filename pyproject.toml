@@ -358,7 +358,3 @@ also_copy = ["src/clio_agent/", "tests/"]
 # combination's import surface is test-verified, the live session smoke runs
 # at the phase gate. Drop this override when upstream supports mcp 2.
 override-dependencies = ["mcp==2.0.0"]
-
-[tool.uv.sources]
-# Develop consumes the merged canonical guidance until the next schema publication.
-clio-schemas = { git = "https://github.com/iowarp/clio-schemas.git", rev = "9cb6a91c27c5befe5b4f05f7b72882ef5ed82abd" }
