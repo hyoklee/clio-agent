@@ -175,10 +175,12 @@ def test_invalid_windows_are_rejected_before_query_execution(
 ) -> None:
     """Invalid dates, naive timestamps and empty/reversed windows are public errors."""
     world = transcript_world
-    with pytest.raises(ValueError, match="message_"):
+    with pytest.raises(ValueError, match="message_") as error:
         world.app.state.task_operations.query(world.caller, scope="authorized", **limits)
     response = world.client.get(f"/v1/sessions/{world.reader}/tasks/query", params=limits)
-    assert response.status_code == 400 and "message_" in response.json()["detail"]
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["message"] == str(error.value)
+    assert response.json()["error"]["recoverable"] is True
 
 
 def test_cursor_binds_normalized_message_times_and_preserves_legacy_omission(
