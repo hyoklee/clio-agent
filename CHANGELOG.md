@@ -51,6 +51,8 @@ TUI/HTTP surface aren't tracked here.
 
 ### Fixed
 
+- Use CLIO Kit 2.11.0 for valid typed statistical distribution results. Keep NDP
+  catalog browsing independent of optional MCP component installation.
 - Reuse goal work clients across iterations and close checker-owned clients on
   success, failure or cancellation. Refresh credentials without leaking pools.
 - Report waiting, reasoning and goal-judging activity; preserve steering order and

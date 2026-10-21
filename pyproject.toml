@@ -64,7 +64,7 @@ dependencies = [
     # transitively (litellm/fastmcp's own tree), declared explicitly now that
     # first-party code imports it directly.
     "websockets>=13.0",
-    "clio-kit==2.10.6",  # Reuse the bundled NDP science catalog client on every service.
+    "clio-kit==2.11.0",  # Source-locked scientific MCP components and launcher.
     "fastmcp==4.1.0",  # stable native Tasks integration; adapter contracts are acceptance gates
     "fastmcp-tasks==4.1.0",
     "mcp==2.0.0",  # reviewed native Tasks wire/client contract
@@ -184,7 +184,7 @@ desktop = [
     # from ONE `uv lock` resolution. Before this extra, clio-kit was a
     # hardcoded pin outside the lock and its click>=8.3.3 floor could never
     # be reconciled with the locked click (resolver failure at release time).
-    # Runtime deps of clio-kit's bundled Web Search adapter (web-mcp 2.1.0,
+    # Runtime deps of clio-kit's bundled Web Search adapter (web-mcp 2.1.2,
     # installed from clio-kit's data dir), mirrored from its pyproject so
     # they are locked too. fastmcp, httpx, pydantic and platformdirs are
     # already base deps. When bumping clio-kit, re-mirror this list:
