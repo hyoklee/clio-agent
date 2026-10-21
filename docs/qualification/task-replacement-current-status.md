@@ -1,5 +1,22 @@
 # Tasks replacement status
 
+## Viewer follow-up — 2026-10-21 01:28 UTC
+
+GACT `08dd73c811ae5918254b63aacec348dea884503b` corrects shared task-notification
+presentation and narrow archive tabs, and prevents recorded session links from
+requiring the live router. Raw envelopes use the normal info control. The two
+website conversations contain refreshed native viewer assets with unchanged
+recorded payloads and fallback documents. No Python runtime, task lifecycle,
+dependency, schema or prompt changed.
+
+All 27 affected notification/navigation/archive checks passed with one worker;
+scoped lint/format, TypeScript, six guards and the offline production build passed.
+Browser inspection of the final rebuilt exports covers desktop/phone containment,
+real output/failure presentation, peer mail, full output and keyboard info access.
+Current-head CI is separate from these local results. Earlier runtime/model/race
+acceptance below retains its stated source and scope; these recorded-conversation
+UI checks do not replace it. See the [viewer correction receipt](../verification/tasks-portable-conversations-2026-10-20.md#viewer-readability-correction--2026-10-21-0128-utc).
+
 ## Current disposition — 2026-10-20 23:02 UTC
 
 **Implementation DONE. Test construction DONE. Required production regression

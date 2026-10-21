@@ -40,6 +40,8 @@ with `captureSessionReview`, the matching `offline-review.js`/CSS and the produc
 `export-download` route. Mode is **Transcript**: standalone HTML, without Effects
 or Full backup ZIPs. No exported message, error, observation or payload was edited.
 
+Original capture hashes, before the viewer-only correction below:
+
 | Website file under `site/public/conversations/tasks/` | Bytes | SHA256 |
 | --- | ---: | --- |
 | `workshop-planner.html` | 15,496,750 | `60581e58c8d2a89983a6744174e650ca1238108e5fb9f155c825399b844db460` |
@@ -71,9 +73,10 @@ is 55,290 bytes, SHA256 `84c5c4497ed8eec57565122319f53832ffe02ea5a1051fb6f701315
   reported that it was absent and reviewed the available `updated-plan.md` instead.
   The planner's initial contingency reduction and later attendance tradeoff are
   retained; no real saving or vendor acceptance is claimed.
-- The archive's three-tab header exceeds a narrow phone viewport (observed
+- The original archive's three-tab header exceeded a narrow phone viewport (observed
   document width 387, scroll width 448). Desktop inspection had no horizontal
-  overflow. This is an archive presentation limitation, not a passed phone gate.
+  overflow. That original capture was not a passed phone gate. The viewer-only
+  correction below fixes the header without modifying the conversation.
 - The planner's `artifact://workspace/name@version` peer link renders as text in
   this archive viewer. The note's own artifact card opens in **Budget review**;
   the planner's local plan/run-sheet cards are also present. Live workspace paths
@@ -94,6 +97,60 @@ coverage checks the shipped React experts and distinct bridge boundaries.
 No domain `main.md` duplication, prompt edit, runtime change, dependency change
 or released pin change was made for these examples. This review is source
 evidence; it is not fresh live execution of every marketplace agent.
+
+## Viewer readability correction — 2026-10-21 01:28 UTC
+
+GACT `08dd73c811ae5918254b63aacec348dea884503b` changes the shared live/archive
+transcript renderer. Task notifications display decoded output once, using the
+existing bounded terminal/result components. Peer messages display their text
+and sender. The original envelope is available through the normal row info
+button and existing technical-details dialog; there is no additional raw-payload
+link. Unknown legacy envelopes remain available there without being guessed.
+
+The archive tabs fit a narrow viewport. Expanding a recorded outgoing message
+also exposed an existing session-link crash outside the live router. Recorded
+session labels now remain readable without inventing live navigation; normal
+live-router links and explicit workspace callbacks retain their behavior.
+
+Only the compiled native viewer JavaScript, stylesheet and corresponding CSP
+hashes were refreshed in the two website HTML files. Both compressed recorded
+data bootstraps and script-free fallback bodies are byte-for-byte unchanged.
+No model response, error, task observation, snapshot or transcript was edited.
+This is a display correction, not another live model execution.
+
+| Current website file | Bytes | SHA256 |
+| --- | ---: | --- |
+| `budget-review.html` | 12,269,728 | `7f3243147dec63428f86db03b2e3674049616a3c3f57f3ca4a6f83a977f02827` |
+| `workshop-planner.html` | 15,683,430 | `d238ad1874ce2802494cfee3a05c0e980576a2262bc81f22d2bc03c564edf434` |
+
+Twenty notification/injection cases, five navigation cases and two native archive
+cases passed sequentially with one worker and a 1 GiB Node heap. Scoped Oxlint,
+Prettier, TypeScript at 2 GiB, all six UI guards and the actual offline production
+build passed. Existing CSS-highlight/import-meta build warnings remain visible
+in the build receipt; they were not suppressed.
+
+The rebuilt native viewers were inspected through a localhost preview restricted
+to the two regenerated files. Budget review demonstrated bounded multiline
+output, complete output, normal info, keyboard Enter/Escape and focus return,
+readable peer mail, and the real failed command's exit code 1. Final inspection
+reported no new console errors. Desktop document/scroll widths were 1203/1203;
+the phone's measured CSS viewport was 387×842, with document/scroll widths
+368/368 after the scrollbar. Workshop planner also mounted without fallback
+or console errors. Selected native captures:
+[desktop](media/tasks-result-readable-desktop.jpg) and
+[phone](media/tasks-result-readable-phone.jpg).
+
+Bounded R970 receipts record the build, executed checks, unchanged data hashes,
+browser findings and owned-resource cleanup. The earlier browser session-link
+failure is retained separately from the corrected final review. Current-head
+CI remains a separate result; this correction does not claim another provider,
+workflow, recovery or model qualification campaign.
+
+The temporary preview has no listener on 18938. The fresh D-owned rendering
+snapshot/build/preview was removed: 2,317 regular files, 77,986,530 logical bytes
+and three module junctions removed without following their targets. Existing
+dependency roots were preserved. No dependency installation or archive was
+created. The temporary browser tab was closed and its viewport override reset.
 
 ## Build and cleanup
 
