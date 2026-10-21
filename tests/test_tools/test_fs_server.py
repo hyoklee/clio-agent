@@ -24,6 +24,12 @@ def test_fs_tools_declare_expected_annotations_and_catalog_projects_them() -> No
     read/write tag is a PROJECTION of those declared annotations (single source of truth)."""
     listed = {t.name: t for t in _list_tools_sync(fs_server)}
     expected = {
+        "list_directory": (
+            "fs_list_directory",
+            {"readOnlyHint": True, "openWorldHint": False},
+            "read",
+        ),
+        "search_text": ("fs_search_text", {"readOnlyHint": True, "openWorldHint": False}, "read"),
         "read_file": ("fs_read_file", {"readOnlyHint": True, "openWorldHint": False}, "read"),
         "propose_edit": ("fs_propose_edit", {"readOnlyHint": True, "openWorldHint": False}, "read"),
         "apply_edit_write": (
