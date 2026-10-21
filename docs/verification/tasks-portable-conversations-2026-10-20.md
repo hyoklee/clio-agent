@@ -55,6 +55,12 @@ Browser inspection opened both native viewers and the reviewer's captured
 Markdown artifact. The latter rendered its complete figures and caveats without
 the live service. Browser console error list was empty on this inspection.
 
+The website walkthrough itself rendered at measured 1315×900 and 387×843 CSS
+viewports, with matching document/scroll widths and no console errors. Following
+its **Open Workshop planner** link opened the unchanged native HTML and its
+interactive viewer. The selected light-mode [phone capture](media/tasks-walkthrough-phone.jpg)
+is 55,290 bytes, SHA256 `84c5c4497ed8eec57565122319f53832ffe02ea5a1051fb6f7013156b0f617e4`.
+
 ### Retained rough edges
 
 - The model altered one opaque cursor: its position key omitted a character
@@ -110,6 +116,10 @@ credentials, Core state and workspaces were removed: **103,366 regular files,
 The SSH tunnel and local private operator profile were also removed; port 19172
 had no remaining listener. Original Desktop, authentication and unrelated data
 were preserved. Local site-build/preview cleanup is recorded in the final receipt.
+Both local preview listeners were retired. The exact fresh site copy, dependencies,
+package store, generated build/cache, duplicate exports and temporary raw transcript
+copies were removed: 62,878 regular files / 1,550,145,066 logical bytes. Only the
+two canonical HTML files, selected phone capture and bounded receipts remain.
 
 Bounded D-repository receipts: R910 (Claude), R940/R943 (native exports/privacy),
 R944 (no active tasks), R948 (Ares retirement), R950 (tunnel/auth), and the final
