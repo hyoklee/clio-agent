@@ -1,0 +1,63 @@
+{
+  "behavioral_tests": "unexecuted",
+  "syntax_files": [
+    "tests/test_arc/test_external_task_observations.py",
+    "tests/test_arc/test_task_replacement_migration.py",
+    "tests/test_gact/conftest.py",
+    "tests/test_gact/test_autonomy_guard.py",
+    "tests/test_gact/test_context_recovery.py",
+    "tests/test_gact/test_goal.py",
+    "tests/test_gact/test_goal_judge_offloop.py",
+    "tests/test_arc/test_question_resolution_contracts.py",
+    "tests/test_arc/test_retained_task_behaviors.py",
+    "tests/test_arc/test_task_boundary_contracts.py",
+    "tests/test_arc/test_task_route_aliases.py",
+    "tests/test_arc/test_workflow_checkpoint_contracts.py",
+    "tests/test_gact/test_turn_runner_contracts.py"
+  ],
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "--fix",
+        "tests/test_arc/test_external_task_observations.py",
+        "tests/test_arc/test_task_replacement_migration.py",
+        "tests/test_gact/conftest.py",
+        "tests/test_gact/test_autonomy_guard.py",
+        "tests/test_gact/test_context_recovery.py",
+        "tests/test_gact/test_goal.py",
+        "tests/test_gact/test_goal_judge_offloop.py",
+        "tests/test_arc/test_question_resolution_contracts.py",
+        "tests/test_arc/test_retained_task_behaviors.py",
+        "tests/test_arc/test_task_boundary_contracts.py",
+        "tests/test_arc/test_task_route_aliases.py",
+        "tests/test_arc/test_workflow_checkpoint_contracts.py",
+        "tests/test_gact/test_turn_runner_contracts.py"
+      ],
+      "exit_code": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "tests/test_arc/test_external_task_observations.py",
+        "tests/test_arc/test_task_replacement_migration.py",
+        "tests/test_gact/conftest.py",
+        "tests/test_gact/test_autonomy_guard.py",
+        "tests/test_gact/test_context_recovery.py",
+        "tests/test_gact/test_goal.py",
+        "tests/test_gact/test_goal_judge_offloop.py",
+        "tests/test_arc/test_question_resolution_contracts.py",
+        "tests/test_arc/test_retained_task_behaviors.py",
+        "tests/test_arc/test_task_boundary_contracts.py",
+        "tests/test_arc/test_task_route_aliases.py",
+        "tests/test_arc/test_workflow_checkpoint_contracts.py",
+        "tests/test_gact/test_turn_runner_contracts.py"
+      ],
+      "exit_code": 0,
+      "output": "13 files left unchanged\n"
+    }
+  ]
+}

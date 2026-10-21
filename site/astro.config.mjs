@@ -77,6 +77,18 @@ export default defineConfig({
 					collapsed: true,
 					items: [
 						{ label: 'Start and steer a conversation', slug: 'docs/sessions' },
+						{
+							label: 'Tasks and coordination', collapsed: true,
+							items: [
+								{ label: 'Background work', slug: 'docs/tasks' },
+								{ label: 'Observe and wait', slug: 'docs/tasks/observe-and-wait' },
+								{ label: 'Subagent controls', slug: 'docs/tasks/subagents' },
+								{ label: 'Messages and feedback', slug: 'docs/tasks/messages' },
+								{ label: 'Tools and sources', slug: 'docs/tasks/tools-and-sources' },
+								{ label: 'Session coordination', slug: 'docs/tasks/session-coordination' },
+								{ label: 'Real conversations', slug: 'docs/tasks/recorded-conversations' },
+							],
+						},
 						{ label: 'Answer a question', slug: 'docs/questions' },
 						{ label: 'Follow work in progress', slug: 'docs/following-work' },
 						{ label: 'Updates during a conversation', slug: 'docs/injections' },

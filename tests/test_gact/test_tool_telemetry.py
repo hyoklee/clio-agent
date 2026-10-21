@@ -14,11 +14,12 @@ import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from fastmcp import Client, FastMCP
+from fastmcp.tools.base import ToolResult
 from mcp.types import TextContent
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -243,52 +244,6 @@ class _LiveObservedProgressAgent:
         return _Pred()
 
 
-class _LiveObservedWaitAgentTasksAgent:
-    """Drives the observer directly for ``wait_agent_tasks`` (#... P5 wire
-    semantics): the started tool_call Part must carry ``metadata.waited_tasks``
-    resolved from the agent-task registry AT CALL TIME — never a raw task-id
-    array the UI would have to render/derive a name for."""
-
-    def __init__(self) -> None:
-        self.app: Any = None
-
-    def forward(self, question: str, session_id: str):
-        from clio_agent.gact.agent_tasks import AgentTask
-        from clio_agent.tools.execution import current_tool_runtime, notify_global_tool_observer
-
-        assert current_tool_runtime().tool_observer is not None
-        registry = self.app.state.agent_task_registry
-        registry.register(
-            AgentTask(
-                task_id="task_a",
-                parent_session_id=session_id,
-                child_session_id="child_a",
-                agent_ref={"expert_id": "geospatial", "requesting_expert_id": "main"},
-                run_index=0,
-                run_label="LA dense scan",
-            )
-        )
-        registry.register(
-            AgentTask(
-                task_id="task_b",
-                parent_session_id=session_id,
-                child_session_id="child_b",
-                agent_ref={"expert_id": "ndp", "requesting_expert_id": "main"},
-                run_index=0,
-            )
-        )
-        args = {"task_ids": ["task_a", "task_b", "task_missing"], "timeout_s": 30.0}
-        notify_global_tool_observer("wait_agent_tasks", args, "started", None)
-        notify_global_tool_observer(
-            "wait_agent_tasks",
-            args,
-            "completed",
-            None,
-            '{"results": [], "workflow_state_conflicts": [], "merged_workflow_state": {}}',
-        )
-        return _Pred()
-
-
 class _LiveObservedDeclaredStructuredContentAgent:
     """Drives the observer directly to prove a native tool's DECLARED structured
     payload (:func:`declare_structured_content`) wins over the plain-string
@@ -371,44 +326,6 @@ class _RootExecutionResult(BaseModel):
     payload: str
 
 
-class _RootDataClient:
-    """Return a parsed FastMCP result whose public JSON is available via data."""
-
-    def __init__(self, root: _RootExecutionResult) -> None:
-        self.root = root
-
-    async def __aenter__(self) -> "_RootDataClient":
-        return self
-
-    async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-        return None
-
-    async def list_tools(self) -> list[Any]:
-        return [
-            SimpleNamespace(
-                name="relay_jarvis_get_execution",
-                description="Query one durable JARVIS execution.",
-                inputSchema={"properties": {"execution_id": {"type": "string"}}},
-            )
-        ]
-
-    async def call_tool(
-        self, name: str, arguments: dict[str, Any], *, progress_handler: Any = None
-    ) -> Any:
-        return SimpleNamespace(
-            content=[TextContent(type="text", text=f"Root({self.root!s})")],
-            structured_content=None,
-            data=self.root,
-            is_error=False,
-            meta={"private": {"capability": "must-not-enter-telemetry"}},
-        )
-
-    async def read_resource(self, uri: str) -> list[Any]:
-        """Satisfy the workspace bridge client protocol for this tool-only test."""
-
-        raise AssertionError(f"unexpected resource read: {uri}")
-
-
 class _LiveWorkspaceMcpRootDataAgent:
     """Drive the same workspace MCP bridge used by blueprint tools in production."""
 
@@ -421,17 +338,30 @@ class _LiveWorkspaceMcpRootDataAgent:
         )
         self.model_text = ""
         self.workspace = workspace
+        self.server = FastMCP("structured-result-contract")
+
+        @self.server.tool(
+            name="relay_jarvis_get_execution",
+            output_schema=_RootExecutionResult.model_json_schema(),
+        )
+        def read_execution(execution_id: str) -> ToolResult:
+            """Return actual MCP content and structured data through the native SDK."""
+            assert execution_id == self.root.execution_id
+            return ToolResult(
+                content=[TextContent(type="text", text=f"Root({self.root!s})")],
+                structured_content=self.root.model_dump(mode="json", by_alias=True),
+                meta={"private": {"capability": "must-not-enter-telemetry"}},
+            )
 
     def forward(self, question: str, session_id: str) -> object:
         from clio_agent.tools.execution import SyncMCPToolExecutor, tool_workspace_context
 
-        client = _RootDataClient(self.root)
         with (
             tool_workspace_context(str(self.workspace)),
             SyncMCPToolExecutor(
-                object(),
+                self.server,
                 timeout=2.0,
-                client_factory=lambda _server: client,
+                client_factory=Client,
                 permission_gate=lambda _name, _args: "allow",
             ) as executor,
         ):
@@ -705,58 +635,6 @@ def test_live_observer_correlates_and_accumulates_terminal_progress(tmp_path: Pa
     assert [event.payload["text"] for event in deltas] == ["collecting\n", "warning\n"]
 
 
-def test_wait_agent_tasks_tool_call_stamps_waited_tasks_display_rows(tmp_path: Path) -> None:
-    """P5 wire semantics: the wait_agent_tasks STARTED tool_call Part carries
-    ``metadata.waited_tasks`` — one resolved display row per requested id,
-    including a typed fallback row for an id the registry does not know — so
-    the UI never renders a raw task-id array."""
-
-    from .conftest import complete_turn
-
-    agent = _LiveObservedWaitAgentTasksAgent()
-    app = build_app(sessions_path=tmp_path / "s.json", agent=agent)
-    agent.app = app
-    with TestClient(app) as client:
-        sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-        complete_turn(client, sid, "wait")
-
-        history = _settled_history(app, sid)
-        tool_call = next(
-            e.payload["part"]
-            for e in history
-            if e.type == "message.part.added"
-            and e.payload.get("part", {}).get("type") == "tool_call"
-            and e.payload["part"].get("tool_name") == "wait_agent_tasks"
-        )
-
-    assert tool_call["metadata"]["waited_tasks"] == [
-        {
-            "task_id": "task_a",
-            "agent_id": "geospatial",
-            "run_index": 0,
-            "run_label": "LA dense scan",
-            "child_session_id": "child_a",
-            "name": "LA dense scan",
-        },
-        {
-            "task_id": "task_b",
-            "agent_id": "ndp",
-            "run_index": 0,
-            "run_label": "",
-            "child_session_id": "child_b",
-            "name": "ndp #1",
-        },
-        {
-            "task_id": "task_missing",
-            "agent_id": "",
-            "run_index": 0,
-            "run_label": "",
-            "child_session_id": "",
-            "name": "task_missing",
-        },
-    ]
-
-
 def test_declared_structured_content_wins_over_raw_result_and_is_one_shot(
     tmp_path: Path,
 ) -> None:
@@ -860,8 +738,6 @@ def test_live_observer_keeps_exact_large_mcp_structured_content(tmp_path: Path) 
 def test_workspace_mcp_root_data_reaches_exact_gact_structured_content(tmp_path: Path) -> None:
     """The wire keeps exact Root/data while the model receives a bounded projection."""
 
-    from clio_agent.tools.mcp_result_json import pydantic_json_default
-
     from .conftest import complete_turn
 
     agent = _LiveWorkspaceMcpRootDataAgent(tmp_path / "workspace")
@@ -878,17 +754,14 @@ def test_workspace_mcp_root_data_reaches_exact_gact_structured_content(tmp_path:
             and event.payload.get("part", {}).get("type") == "tool_result"
         )
 
-        model_input = json.dumps(
-            agent.root,
-            allow_nan=False,
-            default=pydantic_json_default,
-        )
+        expected = agent.root.model_dump(mode="json", by_alias=True)
+        model_input = json.dumps(expected, allow_nan=False)
         assert agent.model_text.startswith(
             f"[clio: result_spilled] This result is {len(model_input):,} characters"
         )
         spilled = re.search(r"the full result is in `([^`]+)`", agent.model_text)
         assert spilled, agent.model_text[:400]
-        assert Path(spilled.group(1)).read_text(encoding="utf-8") == model_input
+        assert json.loads(Path(spilled.group(1)).read_text(encoding="utf-8")) == expected
         assert len(agent.model_text) <= 12_000
         assert tool_result["metadata"]["result"]["truncated"] is True
         # #1190: the structured copy is served at the part TOP LEVEL (the UI
@@ -906,9 +779,9 @@ def test_workspace_mcp_root_data_reaches_exact_gact_structured_content(tmp_path:
         # the exact structuredContent payload the wire part carries. The complete
         # structured copy is trace/UI-only.
         assert json.dumps(tool_result["structured_content"]) not in agent.model_text
-        # The shown head is the ``.data`` serialization (snake_case keys), never the
-        # structuredContent twin (camelCase ``schedulerNativeId``).
-        assert '"schedulerNativeId"' not in agent.model_text  # no JSON-keyed twin
+        # The native SDK derives data from the declared output schema, including
+        # its public alias. The bounded model preview retains that actual key.
+        assert '"schedulerNativeId"' in agent.model_text
 
 
 def test_live_observer_preserves_failed_structured_tool_result_evidence(tmp_path: Path) -> None:
@@ -947,6 +820,49 @@ def test_live_observer_preserves_failed_structured_tool_result_evidence(tmp_path
         assert tools_called[0]["result"] == expected_result
         assert tool_results[0]["is_error"] is True
         assert tool_results[0]["metadata"]["result"] == expected_result
+
+
+def test_repeated_capture_arguments_keep_each_observer_identity_and_image() -> None:
+    """Pair ID-less wrapper rows with each invocation once, never the first image twice."""
+    args = {"surface_id": "report", "expected_view_revision": None}
+    rows = _merge_tool_call_rows(
+        [
+            {
+                "name": "capture_a2ui_surface",
+                "args": args,
+                "ok": True,
+                "result": {"sha256": image},
+                "telemetry_source": "blueprint_react_tool_wrapper",
+            }
+            for image in ("first", "second")
+        ],
+        [
+            {
+                "name": "capture_a2ui_surface",
+                "args": args,
+                "call_id": call_id,
+                "ok": True,
+                "result": {"sha256": image},
+                "telemetry_source": "live_observer",
+            }
+            for call_id, image in (("call_first", "first"), ("call_second", "second"))
+        ],
+    )
+    assert [(row["call_id"], row["result"]["sha256"]) for row in rows] == [
+        ("call_first", "first"),
+        ("call_second", "second"),
+    ]
+
+
+def test_distinct_known_tool_invocations_never_merge_by_arguments() -> None:
+    rows = _merge_tool_call_rows(
+        [{"name": "inspect", "call_id": "first", "args": {"id": "same"}, "result": "old"}],
+        [{"name": "inspect", "call_id": "second", "args": {"id": "same"}, "result": "new"}],
+    )
+    assert [(row["call_id"], row["result"]) for row in rows] == [
+        ("first", "old"),
+        ("second", "new"),
+    ]
 
 
 def test_tool_call_merge_does_not_attach_success_result_to_failed_attempt() -> None:
@@ -1212,74 +1128,41 @@ def test_other_tools_input_is_not_elided_only_generically_bounded(tmp_path: Path
 
 
 # --------------------------------------------------------------------------- #
-# Finding C (proven, wire-corrupting): a model emitting ``task_ids`` as       #
-# anything other than a list of ids must never be turned into fabricated     #
-# rows -- ``list("task_a")`` iterates a STRING's characters.                  #
-# --------------------------------------------------------------------------- #
-
-
-def test_wait_agent_tasks_string_task_ids_does_not_fabricate_per_character_rows(
-    tmp_path: Path,
-) -> None:
-    app = build_app(sessions_path=tmp_path / "s.json")
-    client = TestClient(app)
-    sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-    observer = _make_tool_observer(app)
-
-    observer("wait_agent_tasks", {"task_ids": "task_a"}, "started", None)
-
-    parts = (app.state.live_assistant_parts or {}).get(sid, [])
-    call_part = next(p for p in parts if p.type == "tool_call")
-    assert call_part.metadata["waited_tasks"] == [{"invalid": "task_ids_not_a_list"}]
-
-
-def test_wait_agent_tasks_non_string_list_items_does_not_fabricate_rows(
-    tmp_path: Path,
-) -> None:
-    """A list with non-string items is ALSO not a valid task_ids array."""
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    client = TestClient(app)
-    sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-    observer = _make_tool_observer(app)
-
-    observer("wait_agent_tasks", {"task_ids": [1, 2, 3]}, "started", None)
-
-    parts = (app.state.live_assistant_parts or {}).get(sid, [])
-    call_part = next(p for p in parts if p.type == "tool_call")
-    assert call_part.metadata["waited_tasks"] == [{"invalid": "task_ids_not_a_list"}]
-
-
-def test_wait_agent_tasks_missing_task_ids_resolves_empty_not_invalid(tmp_path: Path) -> None:
-    """Absent task_ids keeps its ORIGINAL behavior (an empty resolved list) --
-    only a genuinely malformed value gets the typed marker."""
-
-    app = build_app(sessions_path=tmp_path / "s.json")
-    client = TestClient(app)
-    sid = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
-    observer = _make_tool_observer(app)
-
-    observer("wait_agent_tasks", {}, "started", None)
-
-    parts = (app.state.live_assistant_parts or {}).get(sid, [])
-    call_part = next(p for p in parts if p.type == "tool_call")
-    assert call_part.metadata["waited_tasks"] == []
-
-
-# --------------------------------------------------------------------------- #
 # Finding D (refactor): the generic observer path must never hardcode a      #
 # tool name -- per-tool STARTED metadata comes from a registry declared in   #
 # tool_instrumentation.py.                                                    #
 # --------------------------------------------------------------------------- #
 
 
-def test_wait_agent_tasks_call_metadata_is_registered_not_hardcoded() -> None:
-    import inspect
+def test_generic_tool_metadata_declaration_is_scoped_to_its_tool(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The observer applies declared metadata without parsing task identities."""
+    from clio_agent.gact.agents.tool_instrumentation import TOOL_CALL_METADATA_RESOLVERS
+    from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
-    from clio_agent.gact import tool_observer as _tool_observer_module
-    from clio_agent.gact.agents.tool_instrumentation import tool_call_metadata_resolver
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    calls: list[tuple[Any, dict[str, Any]]] = []
 
-    assert tool_call_metadata_resolver("wait_agent_tasks") is not None
+    def metadata(owner: Any, arguments: Any) -> dict[str, Any]:
+        calls.append((owner, dict(arguments)))
+        return {"declared_note": "Readable native progress"}
 
-    source = inspect.getsource(_tool_observer_module._make_tool_observer)
-    assert 'name == "wait_agent_tasks"' not in source
+    monkeypatch.setitem(TOOL_CALL_METADATA_RESOLVERS, "example_declared_tool", metadata)
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Metadata owner"}).json()["id"]
+        record_assignment_fixture(app, sid)
+        observer = _make_tool_observer(app)
+        arguments = {"opaque_request": "value"}
+        with active_turn_fixture(app, sid):
+            observer("example_declared_tool", arguments, "started", None)
+            observer("example_other_tool", arguments, "started", None)
+            observer("example_declared_tool", arguments, "completed", None, "done")
+            observer("example_other_tool", arguments, "completed", None, "done")
+        parts = [part for part in app.state.live_assistant_parts[sid] if part.type == "tool_call"]
+        first = next(part for part in parts if part.tool_name == "example_declared_tool")
+        other = next(part for part in parts if part.tool_name == "example_other_tool")
+        assert calls == [(app, arguments)]
+        assert first.metadata["declared_note"] == "Readable native progress"
+        assert "declared_note" not in other.metadata
+        assert arguments == {"opaque_request": "value"}

@@ -17,6 +17,7 @@ from clio_agent.gact.session_kind import session_kind
 _SESSION_STATE = {
     "idle": "completed",
     "running": "running",
+    "stopping": "stopping",
     "waiting_permission": "waiting_permission",
     "waiting_user": "waiting_user",
     "error": "failed",

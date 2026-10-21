@@ -30,6 +30,7 @@ from fastapi.testclient import TestClient
 from clio_agent.gact.a2ui_capabilities import client_capabilities, remember_client_capabilities
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
+from tests.test_gact.input_capture import capture_inputs
 
 HEADERS = {"X-GACT-Version": "0.3", "X-A2UI-Version": "0.9.1"}
 WORKSPACE_CATALOG_ID = workspace_catalog_id()
@@ -55,15 +56,9 @@ class _CapturingAgent:
         return call()
 
 
-def _stub_spawn(app: Any, monkeypatch: Any) -> list[Any]:
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-    return spawned
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def _record_stubbed_turn(app: Any, sid: str) -> None:
@@ -121,7 +116,7 @@ def test_surface_and_action_record_survive_a_real_compaction_pass(
     with TestClient(app) as client:
         session = app.state.sessions.create(workspace_id="ws_default", title="durability")
         sid = session.id
-        _stub_spawn(app, monkeypatch)
+        _capture_inputs(app, monkeypatch)
 
         created = client.post(
             f"/v1/sessions/{sid}/a2ui/messages",
@@ -181,7 +176,7 @@ def test_capabilities_action_and_surface_survive_a_full_server_restart(
         )
         assert created.status_code == 200, created.text
 
-        _stub_spawn(app1, monkeypatch)
+        _capture_inputs(app1, monkeypatch)
         timestamp = "2026-09-17T01:00:00Z"
         context = {"selection": "SGPS"}
         first_action = client1.post(
@@ -208,7 +203,7 @@ def test_capabilities_action_and_surface_survive_a_full_server_restart(
         assert record_after["id"] == action_id_before
         assert record_after["state"] == "delivered"
 
-        spawned_after = _stub_spawn(app2, monkeypatch)
+        spawned_after = _capture_inputs(app2, monkeypatch)
         duplicate_action = client2.post(
             f"/v1/sessions/{sid}/a2ui/actions",
             headers=HEADERS,

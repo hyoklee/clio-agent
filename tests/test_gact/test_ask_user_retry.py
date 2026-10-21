@@ -1,16 +1,22 @@
 from __future__ import annotations
 
+import asyncio
 import time
 from collections.abc import Iterator
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Literal, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
 from clio_agent.gact.types import Message, Part, Tokens
-from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
+from tests.test_gact.input_capture import capture_inputs
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
+from tests.test_gact.test_streaming import _wait_for_turn_settlement
+from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S, wait_for_terminal_status
 
 # #948 S4b: default sessions run the blueprint react ``main``; route it to each
 # test's ``build_app(agent=...)`` host fake.
@@ -21,7 +27,7 @@ class _FakeAgent:
     def __init__(self) -> None:
         self.questions: list[str] = []
 
-    def forward(self, question: str, session_id: str):
+    def forward(self, question: str, session_id: str) -> Any:
         self.questions.append(question)
         return type(
             "Pred",
@@ -35,51 +41,102 @@ class _FakeAgent:
 
 
 class _AskUserAgent:
+    """A test model posts a real asynchronous Question, then yields normally."""
+
     def __init__(self) -> None:
         self.questions: list[str] = []
 
-    def forward(self, question: str, session_id: str):
+    def forward(self, question: str, session_id: str) -> Any:
+        from clio_agent.gact import context
+        from clio_agent.gact.task_declarations import build_ask_user_tool
+
         self.questions.append(question)
         if len(self.questions) == 1:
+            app = context.active_app()
+            assert app is not None
+            asyncio.run(
+                app.state.builtin_boundary.bind(build_ask_user_tool()).acall(
+                    question="Which dataset should I inspect?",
+                    kind="choice",
+                    options=[
+                        {"label": "Small", "value": "small"},
+                        {"label": "Large", "value": "large"},
+                    ],
+                    allow_freeform=False,
+                )
+            )
             return type(
-                "Pred",
+                "Prediction",
                 (),
-                {
-                    "answer": "",
-                    "selected_expert": "main",
-                    "routing_rationale": "needs clarification",
-                    "ask_user": {
-                        "action": "ask_user",
-                        "question": "Which dataset should I inspect?",
-                        "choices": [
-                            {"id": "small", "label": "Small"},
-                            {"id": "large", "label": "Large"},
-                        ],
-                        "allow_freeform": False,
-                        "reason": "missing_target_dataset",
-                        "caller": {"agent_id": "main", "expert_id": "planner"},
-                    },
-                },
+                {"answer": "I can continue once you choose.", "selected_expert": "main"},
             )()
         return type(
-            "Pred",
-            (),
-            {
-                "answer": f"resumed with: {question}",
-                "selected_expert": "main",
-                "routing_rationale": "answer supplied",
-            },
+            "Prediction", (), {"answer": "resumed with: " + question, "selected_expert": "main"}
         )()
 
 
 @pytest.fixture()
-def client(tmp_path: Path) -> Iterator[TestClient]:
+def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClient]:
     with TestClient(build_app(sessions_path=tmp_path / "sessions.json")) as test_client:
+        capture_inputs(test_client.app, monkeypatch)
         yield test_client
 
 
 def _create_session(client: TestClient) -> str:
     return client.post("/v1/sessions", json={"title": "ask user"}).json()["id"]
+
+
+def _ask_question(
+    client: TestClient,
+    sid: str,
+    *,
+    prompt: str,
+    kind: str,
+    options: list[dict[str, str]] | None = None,
+    reason: str = "",
+    via: Literal["rest", "native"] = "native",
+    turn_id: str = "",
+    attempt_id: str = "",
+) -> dict[str, Any]:
+    """Exercise both public creation boundaries over the same Question owner/view."""
+    from clio_agent.gact.task_declarations import build_ask_user_tool
+
+    app = cast(FastAPI, client.app)
+    if via == "rest":
+        response = client.post(
+            f"/v1/sessions/{sid}/questions",
+            json={
+                "prompt": prompt,
+                "kind": kind,
+                "options": options or [],
+                "turn_id": turn_id,
+                "attempt_id": attempt_id,
+                "metadata": {"reason": reason},
+            },
+        )
+        assert response.status_code == 201, response.text
+        created = response.json()
+        handle = created["task_handle"]
+    else:
+        record_assignment_fixture(app, sid)
+        with active_turn_fixture(app, sid):
+            accepted = asyncio.run(
+                app.state.builtin_boundary.bind(build_ask_user_tool()).acall(
+                    question=prompt, kind=kind, options=options, allow_freeform=False, reason=reason
+                )
+            )
+        assert accepted["accepted"] is True and accepted["kind"] == "Question"
+        handle = accepted["handle"]
+    listed = client.get(f"/v1/sessions/{sid}/questions?status=pending")
+    assert listed.status_code == 200, listed.text
+    [question] = listed.json()["questions"]
+    assert question["id"] == question["task_handle"] == handle
+    assert question["response_mode"] == "async"
+    parent = app.state.task_history.latest_assignment(sid)
+    assert parent is not None
+    stored = app.state.task_history.task_snapshot(handle)
+    assert stored.owner.session_id == sid and stored.owner.assignment_id == parent.handle
+    return question
 
 
 def _seed_message(client: TestClient, sid: str, message_id: str = "msg_seed") -> None:
@@ -94,8 +151,8 @@ def _seed_message(client: TestClient, sid: str, message_id: str = "msg_seed") ->
         tokens=Tokens(output=12),
         stop_reason="end_turn",
     )
-    client.app.state.messages[sid] = [msg]
-    client.app.state.message_store.replace_session(sid, [msg])
+    cast(FastAPI, client.app).state.messages[sid] = [msg]
+    cast(FastAPI, client.app).state.message_store.replace_session(sid, [msg])
 
 
 def _seed_turn(
@@ -125,18 +182,25 @@ def _seed_turn(
         tokens=Tokens(output=12),
         stop_reason="end_turn",
     )
-    client.app.state.messages[sid] = [user, assistant]
-    client.app.state.message_store.replace_session(sid, [user, assistant])
-    client.app.state.sessions.update(sid, message_count=2)
+    cast(FastAPI, client.app).state.messages[sid] = [user, assistant]
+    cast(FastAPI, client.app).state.message_store.replace_session(sid, [user, assistant])
+    cast(FastAPI, client.app).state.sessions.update(sid, message_count=2)
 
 
-def _wait_for_idle(client: TestClient, sid: str, timeout: float = TURN_SIGNAL_BACKSTOP_S) -> None:
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        if client.get(f"/v1/sessions/{sid}").json()["status"] == "idle":
-            return
-        time.sleep(0.02)
-    raise AssertionError("session did not return to idle")
+def _wait_for_idle(
+    client: TestClient,
+    sid: str,
+    timeout: float = TURN_SIGNAL_BACKSTOP_S,
+    *,
+    after_event_id: int,
+) -> None:
+    """Wait for this admitted turn and actual retirement within the original backstop."""
+    app = cast(FastAPI, client.app)
+    started = time.monotonic()
+    wait_for_terminal_status(app.state.bus, sid, after_event_id=after_event_id, backstop_s=timeout)
+    remaining = timeout - (time.monotonic() - started)
+    assert remaining > 0, "The turn exhausted its original settlement backstop"
+    _wait_for_turn_settlement(app, sid, timeout=remaining)
 
 
 def _wait_for_status(
@@ -157,33 +221,32 @@ def test_capabilities_advertise_ask_user_and_retry(client: TestClient) -> None:
     assert caps["x_clio_retry_attempts"] is True
 
 
-def test_create_and_answer_user_question_updates_session_state(client: TestClient) -> None:
+@pytest.mark.parametrize("via", ["rest", "native"])
+def test_create_and_answer_user_question_updates_session_state(
+    client: TestClient, via: Literal["rest", "native"]
+) -> None:
     sid = _create_session(client)
 
-    created = client.post(
-        f"/v1/sessions/{sid}/questions",
-        json={
-            "prompt": "Which dataset should I inspect?",
-            "kind": "choice",
-            "options": [
-                {"label": "Small", "value": "small"},
-                {"label": "Large", "value": "large"},
-            ],
-            "turn_id": "msg_user_1",
-            "attempt_id": "att_1",
-            "metadata": {"reason": "ambiguous_dataset"},
-        },
+    question = _ask_question(
+        client,
+        sid,
+        prompt="Which dataset should I inspect?",
+        kind="choice",
+        options=[{"label": "Small", "value": "small"}, {"label": "Large", "value": "large"}],
+        reason="ambiguous_dataset",
+        via=via,
+        turn_id="msg_user_1",
+        attempt_id="att_1",
     )
-
-    assert created.status_code == 201, created.text
-    question = created.json()
     assert question["status"] == "pending"
     assert question["session_id"] == sid
     assert question["metadata"]["reason"] == "ambiguous_dataset"
+    if via == "rest":
+        assert question["turn_id"] == "msg_user_1" and question["attempt_id"] == "att_1"
     session = client.get(f"/v1/sessions/{sid}").json()
-    assert session["status"] == "waiting_user"
-    assert session["metadata"]["pending_user_question_id"] == question["id"]
-    history = client.app.state.bus._history.get(sid, [])
+    assert session["status"] == "idle"
+    assert not session["metadata"].get("execution_gate")
+    history = cast(FastAPI, client.app).state.bus._history.get(sid, [])
     assert "user_question.created" in [event.type for event in history]
 
     listed = client.get(f"/v1/sessions/{sid}/questions?status=pending").json()
@@ -207,83 +270,141 @@ def test_create_and_answer_user_question_updates_session_state(client: TestClien
     assert body["answer_metadata"]["answered_from"] == "tui"
     session = client.get(f"/v1/sessions/{sid}").json()
     assert session["status"] == "idle"
-    assert session["metadata"]["pending_user_question_id"] == ""
-    history = client.app.state.bus._history.get(sid, [])
+    assert not session["metadata"].get("execution_gate")
+    history = cast(FastAPI, client.app).state.bus._history.get(sid, [])
     assert "user_question.answered" in [event.type for event in history]
 
 
-def test_orchestrator_ask_user_action_pauses_and_answer_resumes(tmp_path: Path) -> None:
+def test_async_question_answer_reaches_the_same_assignment_once(tmp_path: Path) -> None:
+    from clio_agent.arc.task_types import QuestionReply
+    from tests.turn_signals import wait_for_terminal_status
+
     agent = _AskUserAgent()
     app = build_app(sessions_path=tmp_path / "sessions.json", agent=agent)
     with TestClient(app) as client:
         sid = _create_session(client)
-
+        cursor = app.state.bus.latest_event_id(sid)
         accepted = client.post(
-            f"/v1/sessions/{sid}/messages",
-            json={"parts": [{"type": "text", "text": "Inspect the dataset."}]},
+            f"/v1/sessions/{sid}/messages", json={"text": "Inspect the dataset."}
         )
-
-        assert accepted.status_code == 200, accepted.text
-        _wait_for_status(client, sid, "waiting_user")
-        listed = client.get(f"/v1/sessions/{sid}/questions?status=pending").json()
-        assert len(listed["questions"]) == 1
-        question = listed["questions"][0]
-        assert question["source"] == "orchestrator_action"
+        assert accepted.status_code == 202, accepted.text
+        wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
+        assignment = app.state.task_history.latest_assignment(sid)
+        questions = client.get(f"/v1/sessions/{sid}/questions?status=pending").json()["questions"]
+        [question] = questions
         assert question["prompt"] == "Which dataset should I inspect?"
-        assert question["metadata"]["resume_on_answer"] is True
-        assert question["metadata"]["reason"] == "missing_target_dataset"
-        assert question["metadata"]["caller"]["expert_id"] == "planner"
-
+        assert assignment.terminal_at is None
+        assert not app.state.turn_runner.busy(sid)
+        cursor = app.state.bus.latest_event_id(sid)
         answered = client.post(
             f"/v1/sessions/{sid}/questions/{question['id']}/answer",
-            json={
-                "answer": "Use the large run.",
-                "selected_options": ["large"],
-                "metadata": {"answered_from": "test"},
-            },
+            json={"answer": "Use the large run.", "selected_options": ["large"]},
         )
-
         assert answered.status_code == 200, answered.text
-        _wait_for_idle(client, sid)
-        assert agent.questions == [
-            "Inspect the dataset.",
-            "[Answer to agent question]\n"
-            "Question: Which dataset should I inspect?\n"
-            "Selected option(s): large\n"
-            "Answer: Use the large run.",
-        ]
-        messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        resume_user = next(msg for msg in messages if msg["metadata"].get("ask_user_resume"))
-        assert resume_user["metadata"]["ask_user_question_id"] == question["id"]
-        assert resume_user["metadata"]["ask_user_answer"] == "Use the large run."
-        assistant = next(
-            msg
-            for msg in messages
-            if msg["role"] == "assistant"
-            and any("resumed with:" in part.get("text", "") for part in msg["parts"])
+        wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
+        assert len(agent.questions) == 2
+        # The host stand-in runs after the production input compiler. Its primary
+        # request argument is not the queued model context; inspect that confirmed
+        # boundary directly rather than claiming the stand-in is a live model.
+        history = app.state.task_history
+        notification = f"outcome:{question['id']}:{sid}"
+        committed = history.committed_notification_input(sid, notification)
+        assert committed is not None and committed.assignment_id == assignment.handle
+        assert committed.notification_ids.count(notification) == 1
+        rendered = [history.read_content(reference) for reference in committed.rendered_content]
+        assert any(
+            isinstance(value, dict)
+            and value.get("source") == "question_answer"
+            and "Use the large run." in str(value.get("text", ""))
+            for value in rendered
         )
-        assert assistant["role"] == "assistant"
-        # The text answer is the only part — routing decisions are semantic events
-        # (a0e1d9a9), never message parts.
-        assert [part["type"] for part in assistant["parts"]] == ["text"]
-        assert "resumed with:" in assistant["parts"][0]["text"]
-        history = client.app.state.bus._history.get(sid, [])
-        event_types = [event.type for event in history]
-        assert "user_question.created" in event_types
-        assert "user_question.answered" in event_types
-        assert "user_question.resumed" in event_types
+        assert app.state.task_history.latest_assignment(sid).handle == assignment.handle
+        stored = app.state.task_history.task_snapshot(question["id"])
+        assert (
+            QuestionReply.model_validate(app.state.task_history.read_content(stored.result)).answer
+            == "Use the large run."
+        )
+        original = stored.result
+        repeated = client.post(
+            f"/v1/sessions/{sid}/questions/{question['id']}/answer",
+            json={"answer": "Use the large run.", "selected_options": ["large"]},
+        )
+        assert repeated.status_code == 200
+        assert app.state.task_history.task_snapshot(question["id"]).result == original
+        assert history.committed_notification_input(sid, notification) == committed
+        assert not any(item.handle == question["id"] for item in history.pending_mail(sid))
+        assert len(agent.questions) == 2
 
 
-def test_answer_rejects_invalid_choice(client: TestClient) -> None:
+def test_question_creation_rejects_invalid_content_before_assignment_creation(
+    client: TestClient,
+) -> None:
     sid = _create_session(client)
-    question = client.post(
-        f"/v1/sessions/{sid}/questions",
-        json={
-            "prompt": "Pick one",
-            "kind": "choice",
-            "options": [{"label": "A", "value": "a"}],
-        },
-    ).json()
+    app = cast(FastAPI, client.app)
+    previous = app.state.task_history.latest_assignment(sid)
+    response = client.post(
+        f"/v1/sessions/{sid}/questions", json={"prompt": "  ", "kind": "freeform"}
+    )
+    assert response.status_code == 422, response.text
+    assert app.state.task_history.latest_assignment(sid) == previous
+    assert not app.state.task_history.task_handles(kind="Question", session_id=sid)
+
+
+def test_question_creation_cannot_escape_closed_assignment_admission(client: TestClient) -> None:
+    from clio_agent.gact.native_work import now
+
+    sid = _create_session(client)
+    app = cast(FastAPI, client.app)
+    parent = record_assignment_fixture(app, sid)
+    app.state.task_history.record_snapshot(
+        parent.model_copy(update={"cancellation_requested_at": now()}),
+        observation_id="fixture-close-question-admission",
+    )
+    response = client.post(
+        f"/v1/sessions/{sid}/questions", json={"prompt": "Continue?", "kind": "confirmation"}
+    )
+    assert response.status_code == 409, response.text
+    assert app.state.task_history.latest_assignment(sid).handle == parent.handle
+    assert not app.state.task_history.task_handles(kind="Question", session_id=sid)
+
+
+def test_question_creation_lost_recording_reply_retains_the_accepted_handle(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sid = _create_session(client)
+    app = cast(FastAPI, client.app)
+    original = app.state.questions.create
+    created: list[str] = []
+
+    def lose_reply(*args: Any, **kwargs: Any) -> Any:
+        question = original(*args, **kwargs)
+        created.append(question.handle)
+        raise OSError("Owned write reply was lost after Question acceptance")
+
+    monkeypatch.setattr(app.state.questions, "create", lose_reply)
+    response = client.post(
+        f"/v1/sessions/{sid}/questions", json={"prompt": "Continue?", "kind": "confirmation"}
+    )
+    assert response.status_code == 503, response.text
+    error = response.json()["error"]
+    assert error["error"] == "question_recording_unconfirmed"
+    assert error["details"]["handle"] == created[0] and len(created) == 1
+    retained = client.get(f"/v1/sessions/{sid}/questions?status=pending").json()["questions"]
+    assert len(retained) == 1 and retained[0]["id"] == created[0]
+    assert app.state.task_history.task_snapshot(created[0]).raw_status == "pending"
+
+
+@pytest.mark.parametrize("via", ["rest", "native"])
+def test_answer_rejects_invalid_choice(client: TestClient, via: Literal["rest", "native"]) -> None:
+    sid = _create_session(client)
+    question = _ask_question(
+        client,
+        sid,
+        prompt="Pick one",
+        kind="choice",
+        options=[{"label": "A", "value": "a"}],
+        via=via,
+    )
 
     resp = client.post(
         f"/v1/sessions/{sid}/questions/{question['id']}/answer",
@@ -294,12 +415,18 @@ def test_answer_rejects_invalid_choice(client: TestClient) -> None:
     assert resp.json()["error"]["error"] == "bad_request"
 
 
-def test_cancel_last_pending_question_returns_session_to_idle(client: TestClient) -> None:
+@pytest.mark.parametrize("via", ["rest", "native"])
+def test_cancel_last_pending_question_returns_session_to_idle(
+    client: TestClient, via: Literal["rest", "native"]
+) -> None:
     sid = _create_session(client)
-    question = client.post(
-        f"/v1/sessions/{sid}/questions",
-        json={"prompt": "Continue?", "kind": "confirmation"},
-    ).json()
+    question = _ask_question(
+        client,
+        sid,
+        prompt="Continue?",
+        kind="confirmation",
+        via=via,
+    )
 
     assert question["options"] == [
         {"label": "Yes", "value": "yes", "description": ""},
@@ -337,7 +464,7 @@ def test_retry_records_attempt_with_model_change_warning(client: TestClient) -> 
     assert attempt["model"]["model_id"] == "gpt-5.1"
     assert "increase time to first token" in attempt["warning"]
     assert attempt["metadata"]["source_message_role"] == "assistant"
-    history = client.app.state.bus._history.get(sid, [])
+    history = cast(FastAPI, client.app).state.bus._history.get(sid, [])
     assert "turn.retry_requested" in [event.type for event in history]
 
     listed = client.get(f"/v1/sessions/{sid}/attempts").json()
@@ -349,6 +476,7 @@ def test_retry_execute_queues_new_turn_with_attempt_provenance(tmp_path: Path) -
     with TestClient(build_app(sessions_path=tmp_path / "sessions.json", agent=agent)) as client:
         sid = _create_session(client)
         _seed_turn(client, sid, user_text="Inspect the large dataset.")
+        cursor = cast(FastAPI, client.app).state.bus.latest_event_id(sid)
 
         resp = client.post(
             f"/v1/sessions/{sid}/messages/msg_original/retry",
@@ -365,7 +493,7 @@ def test_retry_execute_queues_new_turn_with_attempt_provenance(tmp_path: Path) -
         assert attempt["metadata"]["source_user_message_id"] == "msg_user_original"
         assert attempt["metadata"]["queued_user_message_id"].startswith("msg_user_")
 
-        _wait_for_idle(client, sid)
+        _wait_for_idle(client, sid, after_event_id=cursor)
 
         attempts = client.get(f"/v1/sessions/{sid}/attempts").json()["attempts"]
         completed = next(row for row in attempts if row["id"] == attempt["id"])
@@ -388,7 +516,7 @@ def test_retry_execute_queues_new_turn_with_attempt_provenance(tmp_path: Path) -
             msg for msg in messages if msg["id"] == attempt["metadata"]["queued_user_message_id"]
         )
         assert retry_user["metadata"]["retry_attempt_id"] == attempt["id"]
-        history = client.app.state.bus._history.get(sid, [])
+        history = cast(FastAPI, client.app).state.bus._history.get(sid, [])
         event_types = [event.type for event in history]
         assert "turn.retry_running" in event_types
         assert "turn.retry_completed" in event_types

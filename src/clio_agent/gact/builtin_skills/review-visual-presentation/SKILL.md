@@ -1,5 +1,6 @@
 ---
 name: review-visual-presentation
+title: Review figures and layouts
 description: Inspect, control, capture and refine complex data views before presenting them. Review matching pixels at the user's viewing size; preserve coherent composition, linked evidence and consistent meanings. Use during visual investigation or for substantial dashboards.
 ---
 
@@ -8,6 +9,34 @@ will see. The loop is: inspect the evidence and current view, change a declared
 control or component, inspect the resulting image, reason, and refine.
 Choose changes that resolve a concrete uncertainty or presentation problem.
 This applies to maps, charts, tables, images, models and interconnected reports.
+
+For a substantial authored dashboard or diagram, close this concrete loop:
+
+1. Open the actual published viewer, inspect its current capture target, and
+   capture the overview at the width the person will use.
+2. Look at the returned image, not just its URI, source JSON or tool success.
+   Check whether the main idea is apparent, text is readable, the whole diagram
+   fits, and empty space or narrow columns obscure relationships. Ask whether
+   a full-width view, equal panels or a simpler arrangement would explain it better.
+   Include the surrounding frame/component headings, not only the plotted marks:
+   a title cut off with an ellipsis is a defect even when the graph fits. Check
+   whether labels can actually be read at this size, rather than merely seen.
+3. Identify a concrete defect and change the source or a declared view control.
+   Changing column counts is useful only when it fixes the observed problem.
+4. Capture the revised view and inspect its image to confirm the correction.
+   Check an expanded view as well when the docked and expanded arrangements differ.
+5. Exercise important declared controls or linked selections. For a workflow
+   folder link, verify the target with filesystem tools. If interaction tools are
+   available, check that clicking selects that folder in Files. Claim a navigation
+   check only when it was observed; a highlighted box alone does not prove it.
+
+Repeat while a material defect remains. State the actual visual checks and any
+unresolved limitation. Schema validation, a capture receipt and an uninspected
+image do not establish visual quality. A small inline diagram does not require
+building a dashboard or following an elaborate layout recipe.
+Keep docked and expanded findings separate: readability in an expanded image
+does not establish readability in a narrow pane. When text remains too small,
+revise the view or state that limitation instead of declaring the review clear.
 
 Read the current surface with `inspect_a2ui_surface` and load the relevant
 active catalog schemas. `update_a2ui_components` replaces complete definitions
@@ -44,6 +73,10 @@ instead of replacing the root data model with a guessed set of properties.
 Compare the actual captured camera, frame and filters with the requested
 values. If a declared control did not move, inspect its binding and correct
 the update, then capture again before claiming the change worked.
+For multiple tabs or camera positions, compare each returned capture's control
+values and view revision with the requested view. Keep the image hash with that
+state. Repeated tool arguments or an earlier screenshot are not evidence of a
+new view; confirm the returned pixels and state before counting it as reviewed.
 If a viewer is still loading, pass `expected_view_revision=null` (or omit it)
 to let capture wait for readiness within its deadline. Pin a view epoch
 when an already-ready human view must match exactly; a loading epoch

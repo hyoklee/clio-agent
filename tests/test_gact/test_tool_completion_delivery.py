@@ -53,7 +53,7 @@ def test_completed_tool_is_delivered_and_retained_when_trace_write_fails(
         assert completed[0]["ok"] is True
         assert completed[0]["recording_status"] == "failed"
         assert "components=26" in str(completed[0]["result"])
-        assert tool_observer._OBSERVER_CALL_T0.value is None
+        assert tool_observer._OBSERVER_CALL_T0.get() is None
         parts = app.state.live_assistant_parts[sid]
         assert any(
             part.type == "tool_result" and part.call_id == completed[0]["call_id"] for part in parts

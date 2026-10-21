@@ -3,8 +3,8 @@ title: Answering CLIO's questions
 description: See the different question types, add context to a choice, and find questions that still need your answer.
 ---
 
-import PreviewGuide from '../../../components/docs/PreviewGuide.astro';
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import TasksPreview from '../../../components/TasksPreview.astro';
+import { Aside, CardGrid, LinkCard } from '@astrojs/starlight/components';
 import Capture from '../../../components/overview/Capture';
 import QuestionGallery from '../../../components/docs/QuestionGallery';
 import { captureImage } from '../../../lib/captures';
@@ -18,8 +18,11 @@ import form from '../../../assets/captures/docs-question-form-current.png';
 import link from '../../../assets/captures/docs-question-link-current.png';
 import visualQuestion from '../../../assets/captures/docs-visual-question.png';
 import openQuestions from '../../../assets/captures/docs-open-questions.png';
+import taskWait from "../../../assets/captures/tasks/question-wait-desktop.png";
+import taskAnswer from "../../../assets/captures/tasks/question-answer-phone.png";
+import taskCancel from "../../../assets/captures/tasks/question-cancel-confirmation-desktop.png";
 
-<PreviewGuide features="The compact question controls, per-choice comments and pending-question list" />
+<TasksPreview />
 
 When CLIO needs your judgment, it can ask a question in the conversation. Your
 answer stays with that question and goes to the agent that asked it, including
@@ -141,6 +144,13 @@ which question is selected before sending.
 
 ## Questions with images and interactive views
 
+Questions linked to a dashboard leave it in its original view. The question
+notice shows **Go to question**. Choose it to reveal the view and select the tab
+containing its answer control. Your other tabs and entered values stay in place.
+Buttons, filters and sliders alone do not make a dashboard a pending question;
+the agent must explicitly ask. Small forms can explicitly appear inside a
+question instead.
+
 CLIO can put visual evidence beside a question. This is sometimes called an
 **A2UI question**: the agent supplies an interactive view as part of the question.
 You can ask in ordinary language:
@@ -168,12 +178,30 @@ finished view back to CLIO, see [Human-agent interaction](/docs/widgets/interact
 
 ## Does CLIO wait for me?
 
-The answer format and waiting behavior are separate:
+<Aside type="note" title="Task development preview">
+  The task-based question flow below is on the development branch. Its
+  screenshots show actual Codex/Luna and Claude/Haiku sessions with an isolated
+  CLIO service. They do not establish completion of the wider Tasks
+  qualification.
+</Aside>
 
-| Question status | What happens |
-| --- | --- |
-| **Answer needed to continue** | The agent that asked is waiting for your answer before continuing. |
-| **Answer when ready** | The question stays open while the agent can continue independent work. Your answer is queued for that conversation. |
+Asking a question leaves it open while CLIO can do independent work. When the
+agent needs the answer, it explicitly waits on the question's task handle. An
+answer already submitted is available immediately.
+
+<Capture
+  client:visible
+  image={await captureImage(taskWait)}
+  alt="A real Codex/Luna conversation remains active with Waiting for your answer inside its collapsed operations and one open question"
+  caption="Waiting stays inside the active operations. The conversation has not finished, and the question remains available above the composer."
+/>
+
+These labels distinguish ordinary questions from permission and connected-tool gates:
+
+| Question status               | What happens                                                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| **Answer needed to continue** | The agent that asked is waiting for your answer before continuing.                                                                       |
+| **Answer when ready**         | The question stays open while independent work continues. Your answer reaches the next eligible model iteration, or wakes an idle agent. |
 
 An answer from CLIO does not necessarily close an **Answer when ready** question.
 Check the open question count when you return to a conversation. A waiting child
@@ -186,8 +214,29 @@ Ask me which region to analyze. While I decide, check the column names and missi
 ```
 
 If the work depends on your answer, say so: “Wait for my choice before running the
-analysis.” Dismissing a question cancels that question; it is different from
-answering “No” or stopping every background task.
+analysis.” Stopping its wait leaves the question open. Closing the answer dialog
+also leaves it open. To cancel a question, use its cancellation control in
+**Work** and confirm the question you intend to close. Cancellation is different
+from answering “No” or stopping the current turn.
+
+<Capture
+  client:visible
+  image={await captureImage(taskAnswer)}
+  alt="The unanswered dataset question in a phone-width dialog, with a response field, Send response, and Close"
+  caption="Answer the specific question when ready. Closing this dialog leaves the question open."
+/>
+
+<details>
+<summary>Cancel an open question</summary>
+
+<Capture
+  client:visible
+  image={await captureImage(taskCancel)}
+  alt="A real task cancellation dialog identifies the dataset question and offers Keep running and Cancel task"
+  caption="Work identifies the question before cancellation. Keep running leaves it open."
+/>
+
+</details>
 
 ## Find an unanswered question
 

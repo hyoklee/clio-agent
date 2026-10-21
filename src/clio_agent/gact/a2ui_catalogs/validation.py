@@ -26,7 +26,6 @@ Two layers, both catalog-aware:
 from __future__ import annotations
 
 import json
-import re
 import threading
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
@@ -34,6 +33,8 @@ from urllib.parse import urlsplit
 
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import ValidationError, best_match
+
+from clio_agent.gact.a2ui_catalogs.diagram_source import validate_diagram_source
 
 if TYPE_CHECKING:
     from clio_agent.gact.a2ui_catalogs.registry import CatalogEntry
@@ -98,10 +99,6 @@ _FORBIDDEN_KEYS = frozenset(
 )
 #: Property names whose string literals are URLs (checked case-insensitively).
 A2UI_URL_KEYS = frozenset({"url", "uri", "datauri"})
-_MERMAID_EXECUTABLE_PATTERN = re.compile(
-    r"<|%%\{|\bclick\b|\bhref\b|javascript:|data:text/html|url\s*\(",
-    re.IGNORECASE,
-)
 
 
 def _most_specific_error(errors: list[ValidationError]) -> ValidationError:
@@ -162,6 +159,14 @@ def validate_components(entry: "CatalogEntry", components: Any, *, max_component
             raise A2UIValidationError(
                 f"component={name} id={comp_id} pointer={pointer}: {failure.message}"
             )
+        if name == "Tabs" and isinstance(component.get("activeTab"), str):
+            child_ids = [tab["child"] for tab in component["tabs"]]
+            if component["activeTab"] not in child_ids:
+                raise A2UIValidationError(
+                    f"Tabs {component.get('id')!r}: activeTab must equal a tabs[].child id "
+                    f"from {child_ids!r}, not the nested diagram id or tab title. "
+                    "Bind activeTab to a data-model path when agent review must switch tabs."
+                )
 
 
 #: One compiled ``Draft202012Validator`` per distinct ``context_schema`` body,
@@ -328,10 +333,13 @@ def validate_value(
         )
     if str(value.get("component") or "") == "clio.mermaid.v1":
         source = value.get("source")
-        if isinstance(source, str) and _MERMAID_EXECUTABLE_PATTERN.search(source):
-            raise A2UIValidationError(
-                "A2UI Mermaid source contains an executable or HTML directive"
-            )
+        if isinstance(source, str):
+            try:
+                validate_diagram_source(source)
+            except ValueError as error:
+                raise A2UIValidationError(
+                    f"A2UI Mermaid source contains an executable or HTML directive or invalid folder target: {error}"
+                ) from error
 
 
 __all__ = [

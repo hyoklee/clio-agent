@@ -85,7 +85,7 @@ def test_keystone_binds_app_and_session_on_orchestrator_rail(tmp_path: Path) -> 
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hi"}]},
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
 
         assert wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor) == "idle"
 

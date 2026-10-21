@@ -240,22 +240,6 @@ def _truthy_command_field(value: Any, default: bool) -> bool:
     return bool(value)
 
 
-def _catalog_stub() -> Any:
-    """Return a FRESH catalog-only placeholder callable; never executed.
-
-    A distinct function object per declared tool — never shared — so a native
-    tool's per-callable markers (:mod:`tool_instrumentation`'s
-    ``DOMAIN_ATTR``/``TITLE_ATTR``/``REPRESENTATION_ATTR``) can never
-    cross-contaminate between two catalog-only rows built off the same stub:
-    each call to this factory hands back its OWN closure.
-    """
-
-    def _stub(*_args: Any, **_kwargs: Any) -> str:
-        return ""
-
-    return _stub
-
-
 def _builtin_tool_declarations() -> list[tuple[str, str, str, Any]]:
     """Declare the code-shipped tool surface as ``(name, title, description, tool_obj)``.
 
@@ -277,9 +261,6 @@ def _builtin_tool_declarations() -> list[tuple[str, str, str, Any]]:
     from clio_agent.gact.agents.declared_native_tools import (  # noqa: PLC0415
         resolve_declared_native_tools,
     )
-    from clio_agent.gact.agents.spawn_runtime_declarations import (  # noqa: PLC0415
-        assemble_spawn_runtime_tools,
-    )
 
     seen: dict[str, tuple[str, str, str, Any]] = {}
     main = _builtin_main_agent()
@@ -293,17 +274,13 @@ def _builtin_tool_declarations() -> list[tuple[str, str, str, Any]]:
         _record_declaration(seen, tool)
     for tool_name in main.tools:
         seen.setdefault(tool_name, (tool_name, tool_name.replace("_", " ").title(), "", None))
-    for tool in build_auto_react_tools(main, a2ui_producers=True, supports_vision=True):
-        _record_declaration(seen, tool)
-    for tool in assemble_spawn_runtime_tools(
-        main,
-        spawn_agent_task=_catalog_stub(),
-        wait_agent_tasks=_catalog_stub(),
-        spawn_agents_parallel=_catalog_stub(),
-        run_workflow=_catalog_stub(),
-        has_declared_children=False,
-        can_commission_blueprints=True,
+    for tool in build_auto_react_tools(
+        main, a2ui_producers=True, supports_vision=True, ndp_tools=True
     ):
+        _record_declaration(seen, tool)
+    from clio_agent.gact.task_declarations import build_spawn_runtime_tools, build_task_tools
+
+    for tool in (*build_task_tools(), *build_spawn_runtime_tools(None, main)):
         _record_declaration(seen, tool)
     return list(seen.values())
 

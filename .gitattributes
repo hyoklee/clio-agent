@@ -28,3 +28,5 @@ tests/fixtures/a2ui_client_metadata/**   text eol=lf
 # Recorded document-generation inputs are downloadable byte-for-byte evidence.
 site/public/media/document-generation/sensor-notes.md      -text whitespace=cr-at-eol
 site/public/media/document-generation/sensor-summary.json  -text
+# Portable native session exports must retain their reviewed bytes.
+site/public/conversations/tasks/*.html binary

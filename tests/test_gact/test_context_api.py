@@ -8,6 +8,7 @@ plus the redacted arc.op SSE-bus frame for the TUI.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -127,6 +128,22 @@ def test_context_state_uses_durable_scope_owned_provider_usage(tmp_path):
                     "cache_read_tokens": 900,
                     "cache_write_tokens": 120,
                     "cache_tokens_measured": True,
+                    "recorded_at": "2026-10-21T06:00:00Z",
+                    "window_tokens": 5000,
+                    "prompt_breakdown": {
+                        "method": "characters_div_4",
+                        "tokens_estimated": 1000,
+                        "media_items": 0,
+                        "sections": [
+                            {
+                                "id": "system",
+                                "label": "System prompt",
+                                "tokens_estimated": 1000,
+                                "count": 1,
+                                "items": [],
+                            }
+                        ],
+                    },
                 }
             }
         },
@@ -148,8 +165,12 @@ def test_context_state_uses_durable_scope_owned_provider_usage(tmp_path):
         assert state["cache_read_tokens"] == 900
         assert state["cache_write_tokens"] == 120
         assert state["cache_tokens_measured"] is True
+        assert state["usage_recorded_at"] == "2026-10-21T06:00:00Z"
+        assert state["window_tokens"] == 5000
+        assert state["prompt_breakdown"]["sections"][0]["tokens_estimated"] == 1000
     assert unrelated["used_tokens"] is None
     assert unrelated["cache_tokens_measured"] is False
+    assert unrelated["prompt_breakdown"] is None
 
 
 def test_context_preferences_are_session_owned_and_reflected_in_state(tmp_path):
@@ -322,6 +343,11 @@ class _CteShapedStore:
 
     def exists(self, kind, name) -> bool:
         return (kind, name) in self._blobs
+
+    def scan_names(self, kind: str, prefix: str = "") -> Iterator[str]:
+        """List test-store record addresses."""
+        for name, _body in self.scan(kind, prefix):
+            yield name
 
     def scan(self, kind, prefix=""):
         for (k, name), data in self._blobs.items():

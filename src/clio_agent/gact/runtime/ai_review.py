@@ -24,6 +24,7 @@ override the lock, or override an explicit deny.
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, Literal
@@ -180,7 +181,9 @@ def _run_reviewer(
 
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ai-review")
     try:
-        future = executor.submit(_call)
+        # Retain the turn's cooperative cancellation in the reviewer provider.
+        captured = contextvars.copy_context()
+        future = executor.submit(captured.run, _call)
         try:
             decision = future.result(timeout=timeout_s)
         except FuturesTimeout:
@@ -190,9 +193,11 @@ def _run_reviewer(
             logger.warning("ai-review reviewer call failed -> escalate", exc_info=True)
             return "escalate", "error"
     finally:
-        # Do not block the bridge thread waiting on a hung worker; let it drain in the
-        # background (daemon-like) while the gate proceeds to the human wait.
-        executor.shutdown(wait=False)
+        # The verdict deadline still decides escalation. Physical retirement is
+        # separate: this invocation owns the reviewer until its actual exit.
+        # Cooperative providers observe the inherited Stop token; an
+        # uncancellable provider keeps the conversation visibly stopping.
+        executor.shutdown(wait=True)
     if decision in {"none", "low", "medium", "high"}:
         return decision, ""
     # Any other/unknown decision (including an explicit "escalate") -> human.

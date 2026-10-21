@@ -30,19 +30,17 @@ unsupported-override error, and the agent-not-available error) travel on
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Any, Mapping
+from typing import TYPE_CHECKING, Any, cast
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import JSONResponse
 
-from clio_agent.gact.agent_tasks import display_run_name
 from clio_agent.gact.events import Event
 from clio_agent.gact.message_submission import accept_message_async
 from clio_agent.gact.message_wire import normalize_thought_ownership
 from clio_agent.gact.messaging import raise_on_reserved_metadata
 from clio_agent.gact.off_loop import run_off_loop
 from clio_agent.gact.protocol_v3 import project_for_request, transcript_entities
-from clio_agent.gact.question_answer_message import prepare_question_answer
 from clio_agent.gact.routes.response_feedback import register_response_feedback_routes
 from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui
 from clio_agent.gact.types import (
@@ -68,6 +66,15 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
     into ``gact.app``. The message-delete helpers below are concern-private.
     """
     register_response_feedback_routes(app)
+
+    @app.get("/v1/sessions/{sid}/legacy-transcript")
+    async def read_legacy_transcript(sid: str) -> dict[str, Any]:
+        """Inspect retained legacy variants without restoring them as visible conversation."""
+        from clio_agent.gact.transcript_migration import legacy_transcript
+
+        if app.state.sessions.get(sid) is None:
+            raise _session_not_found(sid)
+        return {"legacy_transcript": await run_off_loop(legacy_transcript, app, sid)}
 
     def _session_not_found(sid: str) -> HTTPException:
         return HTTPException(
@@ -98,35 +105,6 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             ).model_dump(exclude_none=True),
         )
 
-    def _retire_pending_steer_intent(sid: str, message_id: str) -> None:
-        """Retire the delivery intent behind a deleted transcript message.
-
-        A pending steer lives on TWO planes: the transcript row the client sees
-        and the durable intent + inbox event that will deliver it. Deleting only
-        the row left the intent alive, so a later drain claimed it and steered
-        the model with a message the user had deleted. This mirrors the
-        ``DELETE /pending-steers/{id}`` cleanup; a message with no intent behind
-        it (an ordinary user or assistant row) is untouched.
-        """
-
-        intents = getattr(app.state, "message_intents", None)
-        if intents is None or intents.cancel_pending(sid, message_id) is None:
-            return
-        inbox = (getattr(app.state, "loop_inboxes", None) or {}).get(sid)
-        if inbox is not None:
-            inbox.cancel_user_message(message_id)
-        app.state.bus.publish(
-            Event(
-                type="pending_steer.cancelled",
-                session_id=sid,
-                payload={
-                    "message_id": message_id,
-                    "session_id": sid,
-                    "reason": "message_deleted",
-                },
-            )
-        )
-
     async def _delete_message_from_session(sid: str, message_id: str) -> bool:
         msgs = app.state.messages.get(sid, [])
         for i, message in enumerate(msgs):
@@ -146,10 +124,12 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             # carries their parts would delete a live surface as a side effect
             # of a prose edit, with no lifecycle event. Preserve them the way
             # compaction and rollback do (routes/session_a2ui_preservation.py).
+            from clio_agent.gact.session_input import withdraw_message_inputs
+
+            await run_off_loop(withdraw_message_inputs, app, sid, [message_id])
             removed = msgs.pop(i)
             retained = preserve_a2ui(sid, msgs, [removed], "message_delete")
             await run_off_loop(deps.replace_session_messages, app, sid, retained)  # #1334
-            _retire_pending_steer_intent(sid, message_id)
             if sess is not None:
                 app.state.sessions.update(sid, message_count=len(retained))
             app.state.bus.publish(
@@ -198,7 +178,10 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
     ) -> dict[str, Any]:
         """Page persisted presentation content within the owning session only."""
 
-        from clio_agent.gact.tool_result_presentation import presentation_page
+        from clio_agent.gact.tool_result_presentation import (
+            presentation_page,
+            recorded_presentation,
+        )
 
         if app.state.sessions.get(sid) is None:
             raise _session_not_found(sid)
@@ -207,7 +190,11 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         for part in reversed(parts):
             if part.call_id != call_id:
                 continue
-            for block in (part.presentation or {}).get("blocks", []):
+            args = next(
+                (p.input for p in parts if p.call_id == call_id and p.type == "tool_call"), None
+            )
+            presentation = recorded_presentation(part.model_dump(), args) or {}
+            for block in presentation.get("blocks", []):
                 if block["id"] == block_id:
                     try:
                         return presentation_page(block, cursor)
@@ -299,8 +286,7 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         # reference-carrying POST no longer hashes files and folds evidence
         # ledgers on the event loop.
         # #1448: a message naming a pending question IS that question's answer.
-        answer = prepare_question_answer(app, sid, dict(req.metadata))
-        ack, status_code = await accept_message_async(app, deps, sid, req, answer=answer)
+        ack, status_code = await accept_message_async(app, deps, sid, req)
         del background_tasks
         response.status_code = status_code
         return ack
@@ -371,9 +357,9 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         if sess.message_count == 0 and not has_persisted_ledger:
             get_if_resident = getattr(messages, "get_if_resident", None)
             if callable(get_if_resident):
-                chronological_rows = list(get_if_resident(sid) or [])
+                chronological_rows = list(cast(list[Message] | None, get_if_resident(sid)) or [])
             elif isinstance(messages, dict):
-                chronological_rows = list(messages.get(sid, []))
+                chronological_rows = list(cast(list[Message], messages.get(sid, [])))
             else:
                 chronological_rows = []
         else:
@@ -382,7 +368,9 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             # event-loop thread: it stalls progressive hydration and is rejected
             # by the ARC loop guard. Copy the materialized ledger in the worker so
             # response projection cannot race a concurrent in-place append.
-            chronological_rows = await run_off_loop(lambda: list(messages.get(sid, [])))
+            chronological_rows = await run_off_loop(
+                lambda: list(cast(list[Message], messages.get(sid, [])))
+            )
 
         # (1) Resolve ``before`` against the chronological list. The cursor names
         # a real stored message; return only rows strictly older than it. The
@@ -439,25 +427,27 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
         # tool_call.thought reloads with the redundant copy cleared (op-identity,
         # never a string compare); a no-op for post-S2 rows.
         def project_v3() -> JSONResponse:
-            task_registry = getattr(app.state, "agent_task_registry", None)
             subagent_links: dict[str, dict[str, Any]] = {}
-            if task_registry is not None:
-                for task in task_registry.for_parent(sid):
-                    if not task.project_to_parent:
-                        continue
-                    agent_id = str(task.agent_ref.get("expert_id") or "")
-                    result = task.result if isinstance(task.result, Mapping) else {}
-                    answer_excerpt = str(result.get("answer_excerpt") or "")
-                    subagent_links[task.task_id] = {
-                        "child_session_id": str(task.child_session_id or ""),
-                        "agent_id": agent_id,
-                        "title": display_run_name(agent_id, task.run_index, task.run_label),
-                        "state": str(task.live_state or task.status),
-                        "parent_run_id": str(task.parent_turn_id or ""),
-                        "created_at": str(task.created_at or ""),
-                        "summary": str(task.error_reason or answer_excerpt),
-                        "result": answer_excerpt,
-                    }
+            from clio_agent.gact.task_access import TaskAccess, TaskAccessDenied, TaskCaller
+
+            history = getattr(app.state, "task_history", None)
+            visible = {
+                part.handle_id
+                for row in rows
+                for part in row.parts
+                if part.type == "expert_handoff" and part.handle_id
+            }
+            if history is not None and visible:
+                access = TaskAccess(
+                    history, TaskCaller(sid, app.state.human_principal, human_action=True)
+                )
+                for handle in visible:
+                    try:
+                        task = access.require(handle, "read")
+                    except TaskAccessDenied:
+                        continue  # Retained handoff text grants no child-session disclosure.
+                    if task.kind == "Subagent":
+                        subagent_links[handle] = {"child_session_id": task.owner.session_id}
             # ``rows`` is newest-first for the 0.2 page; the v3 projection is
             # ledger-ordered and preserves what it is given, so hand it the
             # chronological view rather than making it re-sort by wall clock.
@@ -505,7 +495,28 @@ def register_messages_routes(app: FastAPI, deps: "GactDeps") -> None:
             if msg.id == message_id:
                 # #731: slim, arrival-ordered parts (matches SSE). #732/S2: read-
                 # boundary single-representation normalization (see list_messages).
-                return normalize_thought_ownership(msg).to_wire()
+                value = normalize_thought_ownership(msg).to_wire()
+                if msg.role == "user":
+                    receipt = await app.state.task_history.io.run(
+                        app.state.task_history.committed_notification_input, sid, msg.id
+                    )
+                    value["metadata"] = {
+                        **value.get("metadata", {}),
+                        "recipient_input": receipt.model_dump(
+                            mode="json",
+                            include={
+                                "id",
+                                "session_id",
+                                "assignment_id",
+                                "iteration_id",
+                                "turn_id",
+                                "boundary",
+                            },
+                        )
+                        if receipt is not None
+                        else None,
+                    }
+                return value
         raise HTTPException(
             status_code=404,
             detail=ErrorEnvelope(

@@ -1,56 +1,21 @@
-"""The agent-lane delivery matrix, shared by ordinary actions and errors (S5).
-
-Split out of ``dispatcher.py`` (rather than inlined there) because
-``client_state.py``'s ``VALIDATION_FAILED`` repair delivery needs the exact
-SAME idle/running/waiting_user routing an ordinary ``destination: "agent"``
-action gets — a repair is "one more agent-bound event," not a special case.
-Sharing this module avoids a dispatcher<->client_state import cycle (the
-dispatcher routes an ``error`` envelope to ``client_state`` BEFORE the
-surface lookup; ``client_state`` in turn needs this routing to actually
-deliver its repair).
-"""
+"""Persist A2UI input in Core; the conversation owner alone decides admission."""
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, Mapping
 
+from fastapi import HTTPException
+
+from clio_agent.arc.task_types import MailItem, QuestionDefinition, QuestionReply
+from clio_agent.errors import ClioError
 from clio_agent.gact.a2ui_actions.record import ActionRecord, fail_and_publish, persist_transition
+from clio_agent.gact.task_access import TaskCaller
+from clio_agent.gact.task_history import RecordingUnconfirmed
+from clio_agent.gact.task_publication import task_owner_recipient
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
-
-    from clio_agent.gact.interaction_types import UserQuestion
-
-
-def _correlated_pending_question(
-    app: "FastAPI", session_id: str, surface_id: str, context: Mapping[str, Any], action_name: str
-) -> "UserQuestion | None":
-    """Resolve the ONE pending question this action/error resumes, if any.
-
-    ``context.question_id`` is an explicit caller intent: when given, it MUST
-    resolve to a pending question in this session, or the caller is
-    uncorrelated (no silent fallback to a surface-tag match). Otherwise the
-    surface's own tag (``question.metadata["a2ui_surface_id"]``, stamped by
-    the ``ask_user`` tool's optional ``surface_id`` argument) is used.
-    """
-
-    question_id = str(context.get("question_id") or "")
-    for question in app.state.user_questions.values():
-        if question.session_id != session_id or question.status != "pending":
-            continue
-        answer_action = question.metadata.get("a2ui_answer_action")
-        if answer_action and answer_action != action_name:
-            continue
-        tagged = str((question.metadata or {}).get("a2ui_surface_id") or "")
-        if answer_action and tagged != surface_id:
-            continue
-        if question_id:
-            if question.id == question_id:
-                return question
-            continue
-        if tagged and tagged == surface_id:
-            return question
-    return None
 
 
 def _publish(app: "FastAPI", session_id: str, record: ActionRecord) -> None:
@@ -74,127 +39,188 @@ async def deliver_to_agent(
     narration: str,
     context: Mapping[str, Any],
 ) -> ActionRecord:
-    """Deliver ``record`` (``state="received"``) through the agent lane.
+    """Confirm one mailbox input or an exact Question answer, without spawning a turn."""
+    history = app.state.task_history
+    identity = "a2ui:" + record.id
+    question_answered = False
+    question_handle: str | None = None
+    correlation = dict(record.correlation)
 
-    ``context`` is the structured object stamped onto
-    ``metadata["a2ui_action_context"]`` — an ordinary action's resolved
-    ``context``, or a repair's ``{surface_id, path, message}`` (S5
-    deliverable 2b) — the authoritative agent input either way.
+    def accept() -> None:
+        nonlocal question_answered, question_handle
+        with history.serialized():
+            if record.session_id != session_id or app.state.sessions.get(session_id) is None:
+                raise ValueError("A2UI action owner is unavailable")
+            question = record.correlation.get("question_id")
+            if question and record.kind == "action":
+                from clio_agent.gact.question_surface import answer_question
 
-    Idle -> a new turn starts (``delivery="start"``). Running -> the
-    existing loop-inbox steer carrier (``delivery="steer"``). Waiting on a
-    correlated question -> that question is answered and the run resumes
-    (``delivery="resolve_question"``). Waiting with no correlated question ->
-    ``state="failed"``, ``delivery="rejected"``,
-    ``reason="a2ui_waiting_user_uncorrelated"`` (the caller turns this ONE
-    reason into an HTTP 409; every other outcome here is a success).
+                task = history.task_snapshot(question)
+                if (
+                    task is None
+                    or task.kind != "Question"
+                    or task.owner.session_id != session_id
+                    or task.details is None
+                ):
+                    raise HTTPException(409, "A2UI action does not address this session's Question")
+                definition = QuestionDefinition.model_validate(history.read_content(task.details))
+                if definition.metadata.get("a2ui_surface_id") != record.surface_id:
+                    raise HTTPException(409, "A2UI action does not address this Question's surface")
+                if record.action_name == definition.metadata.get(
+                    "a2ui_answer_action", "question.submit"
+                ):
+                    question_handle = task.handle
+                else:
+                    question = None  # Other visual controls remain ordinary queued feedback.
+            if question_handle is not None:
+                reply = QuestionReply.model_validate(
+                    {
+                        "answer": context.get("answer", ""),
+                        "selected_options": context.get("selected_options", ()),
+                        "source_action": {
+                            "session_id": session_id,
+                            "surface_id": record.surface_id,
+                            "action_id": record.id,
+                        },
+                        "responder_human": app.state.human_principal,
+                        "metadata": {
+                            **(
+                                {"a2ui_client_data_model": record.client_data_model}
+                                if record.client_data_model is not None
+                                else {}
+                            ),
+                            **{
+                                key: value
+                                for key, value in context.items()
+                                if key not in {"answer", "selected_options", "question_id"}
+                            },
+                        },
+                    }
+                )
+                answer_question(
+                    app,
+                    TaskCaller(session_id, app.state.human_principal, human_action=True),
+                    question_handle,
+                    reply,
+                )
+                question_answered = True
+                return
+            accepted = history.mail_item(session_id, identity)
+            if accepted is None:
+                original = history.latest_assignment(session_id)
+                data = {"context": dict(context), "client_data_model": record.client_data_model}
+                text = (
+                    narration
+                    if record.kind == "action"
+                    else narration
+                    + "\n\nA2UI action data:\n"
+                    + json.dumps(data, ensure_ascii=False)
+                )
+                if record.kind == "action" and record.client_data_model is not None:
+                    text += "\n\nA2UI client data model:\n" + json.dumps(
+                        record.client_data_model, ensure_ascii=False
+                    )
+                payload: dict[str, Any] = {
+                    "text": text,
+                    "metadata": {"a2ui_action": record.id, "surface_id": record.surface_id},
+                }
+                if record.kind == "action":
+                    from clio_agent.gact.types import Message, Part
 
-    Returns the next persisted, published snapshot.
-    """
+                    message = Message(
+                        id=identity,
+                        session_id=session_id,
+                        role="user",
+                        created_at=record.created_at,
+                        updated_at=record.created_at,
+                        parts=[Part(type="text", text=text)],
+                        metadata={
+                            **payload["metadata"],
+                            "a2ui_action_context": dict(context),
+                            **(
+                                {"a2ui_client_data_model": record.client_data_model}
+                                if record.client_data_model is not None
+                                else {}
+                            ),
+                        },
+                    )
+                    payload.update(message_id=identity, message=message.model_dump(mode="json"))
+                accepted = history.record_mail(
+                    MailItem(
+                        id=identity,
+                        recipient_session=session_id,
+                        sender_human=app.state.human_principal if record.kind == "action" else None,
+                        kind="human" if record.kind == "action" else "a2ui",
+                        handle=original.handle if original is not None else None,
+                        content=history.write_content(session_id, payload),
+                        created_at=record.created_at,
+                    )
+                )
+            if accepted.kind == "human":
+                from clio_agent.gact.session_store import project_accepted_mail_messages
 
-    sess = app.state.sessions.get(session_id)
-    metadata: dict[str, Any] = {
-        "a2ui_action": record.id,
-        "surface_id": record.surface_id,
-        "a2ui_action_context": dict(context),
-    }
-    if record.client_data_model is not None:
-        metadata["a2ui_client_data_model"] = record.client_data_model
+                project_accepted_mail_messages(app, history, session_id, (accepted,))
+                retained = history.read_content(accepted.content)
+                if isinstance(retained, dict) and retained.get("message_id"):
+                    correlation["message_id"] = retained["message_id"]
 
-    question = _correlated_pending_question(
-        app, session_id, record.surface_id, context, record.action_name
-    )
-    if question is None:
-        closed = next(
-            (
-                row
-                for row in app.state.user_questions.values()
-                if row.session_id == session_id
-                and row.status != "pending"
-                and row.metadata.get("a2ui_surface_id") == record.surface_id
-                and row.metadata.get("a2ui_answer_action") == record.action_name
-                and (not context.get("question_id") or context["question_id"] == row.id)
-            ),
-            None,
-        )
-        if closed is not None:
-            # A completed question's answer button cannot become an ordinary steer.
-            from clio_agent.gact.routes.session_question_helpers import question_already_resolved
-
-            exc = question_already_resolved(session_id, closed.id)
-            fail_and_publish(app, session_id, record, exc)
-            raise exc
-    if question is not None or (sess is not None and sess.status == "waiting_user"):
-        if question is None:
-            failed = record.transition(
-                state="failed",
-                delivery="rejected",
-                reason="a2ui_waiting_user_uncorrelated",
-                http_status=409,
-            )
-            persist_transition(app, failed)
-            _publish(app, session_id, failed)
-            return failed
-        from clio_agent.gact.interaction_types import AnswerUserQuestionRequest  # noqa: PLC0415
-
-        try:
-            answered = await app.state.answer_user_question(
-                session_id,
-                question.id,
-                AnswerUserQuestionRequest(answer=narration, metadata=metadata),
-            )
-        except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-            fail_and_publish(app, session_id, record, exc)
-            raise
-        delivered = record.transition(
-            state="delivered",
-            delivery="resolve_question",
-            correlation={"question_id": answered.id},
-        )
-        persist_transition(app, delivered)
-        _publish(app, session_id, delivered)
-        return delivered
-
-    from clio_agent.gact.turn_runner import session_busy_error_payload  # noqa: PLC0415
-
-    busy = session_busy_error_payload(getattr(app.state, "turn_runner", None), session_id)
-    if busy is not None:
-        from clio_agent.gact.loop_inbox import enqueue_user_steer  # noqa: PLC0415
-
-        try:
-            enqueue_user_steer(app, session_id, narration, metadata)
-        except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-            fail_and_publish(app, session_id, record, exc)
-            raise
-        delivered = record.transition(state="delivered", delivery="steer")
-        persist_transition(app, delivered)
-        _publish(app, session_id, delivered)
-        return delivered
-
-    from clio_agent.gact.turn import _start_background_user_turn  # noqa: PLC0415
-
-    # The gate reports idle, so this is a fresh turn: a cancellation aimed at
-    # the previous one must not poison it (mirrors the pre-S5 producer).
-    app.state.cancel_flags.discard(session_id)
-    app.state.cancel_events.pop(session_id, None)
     try:
-        user_message = _start_background_user_turn(
-            app,
-            session_id,
-            sess,
-            narration,
-            metadata=metadata,
-            prev_status=sess.status if sess is not None else "idle",
-        )
-    except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-        fail_and_publish(app, session_id, record, exc)
+        await app.state.task_history.io.run(accept)
+    except (ClioError, OSError, TimeoutError, RecordingUnconfirmed) as error:
+        # Keep the domain record received. Retrying the same action identity is
+        # safe; an uncertain Core write must not be advertised as a clean rejection.
+        raise HTTPException(
+            503,
+            {
+                "error": {
+                    "error": "a2ui_recording_unconfirmed",
+                    "message": "This action could not be confirmed. Reconnect and retry the same action.",
+                    "details": {"action_id": record.id},
+                    "recoverable": True,
+                }
+            },
+        ) from error
+    except Exception as error:
+        await app.state.task_history.io.run(fail_and_publish, app, session_id, record, error)
         raise
-    delivered = record.transition(
-        state="delivered", delivery="start", correlation={"message_id": user_message.id}
-    )
-    persist_transition(app, delivered)
-    _publish(app, session_id, delivered)
-    return delivered
+
+    def project() -> ActionRecord:
+        committed = identity in history.acknowledged_notifications(session_id)
+        if question_handle is not None:
+            task = history.task_snapshot(question_handle)
+            recipient = task_owner_recipient(history, task) if task is not None else None
+            committed = (
+                recipient is not None
+                and f"outcome:{question_handle}:{recipient}"
+                in history.acknowledged_notifications(recipient)
+            )
+        observed = record.transition(
+            state="consumed" if committed else "delivered",
+            delivery="resolve_question" if question_answered else "steer",
+            narration=narration,
+            correlation=correlation,
+        )
+        if not persist_transition(app, observed):
+            raise RuntimeError("A2UI action projection was not confirmed")
+        return observed
+
+    try:
+        observed = await app.state.task_history.io.run(project)
+    except (ClioError, OSError, TimeoutError):
+
+        async def retry_projection() -> None:
+            confirmed = await app.state.task_history.io.run(project)
+            _publish(app, session_id, confirmed)
+
+        app.state.task_recovery.defer("a2ui-projection:" + record.id, retry_projection)
+        return record.transition(
+            state="delivered",
+            delivery="resolve_question" if question_answered else "steer",
+            narration=narration,
+            correlation=correlation,
+        )
+    _publish(app, session_id, observed)
+    return observed
 
 
 __all__ = ["deliver_to_agent"]

@@ -72,13 +72,14 @@ def _construct_lm(*, model: str, **lm_kwargs: Any) -> dspy.LM:
     from clio_agent.lm.call_trace import LM_CALL_TRACE  # noqa: PLC0415 - dspy stays lazy
     from clio_agent.lm.policy import lm_retries  # noqa: PLC0415
 
-    dspy = _dspy()
     lm_kwargs.setdefault("num_retries", lm_retries())
     if model.startswith("hosted_vllm/"):
         from clio_agent.lm.attention_lm import attention_lm_class  # noqa: PLC0415
 
         return attention_lm_class()(model=model, callbacks=[LM_CALL_TRACE], **lm_kwargs)
-    return dspy.LM(model=model, callbacks=[LM_CALL_TRACE], **lm_kwargs)
+    from clio_agent.lm.admitted_dspy import AdmittedLM  # noqa: PLC0415
+
+    return AdmittedLM(model=model, callbacks=[LM_CALL_TRACE], **lm_kwargs)
 
 
 def create_lm(config: LMProviderConfig) -> dspy.LM:
@@ -147,6 +148,10 @@ def create_lm(config: LMProviderConfig) -> dspy.LM:
     lm._clio_tool_result_media = (
         "native" if _resolved_litellm_prefix(config) == "anthropic" else "user_message"
     )
+    # These stateless chat requests propose local function calls; the loop
+    # executes them only after receiving a complete response. SDK/native-tool
+    # engines retain their own recovery policy.
+    lm._clio_stream_recovery = _resolved_litellm_prefix(config) == "openai"
     return _record_identity(lm, config)
 
 
@@ -165,6 +170,9 @@ def _record_identity(lm: Any, config: LMProviderConfig) -> Any:
         pass
     # A per-forward LM reaches the running turn's usage rollup only via this.
     turn_lm_ledger.record(lm)
+    from clio_agent.lm.resources import record_created_lm  # noqa: PLC0415
+
+    record_created_lm(lm)
     return lm
 
 
@@ -237,8 +245,9 @@ def _codex_direct_lm(config: LMProviderConfig) -> Any:
         generation["reasoning_effort"] = effort
     if config.max_tokens:
         generation["max_tokens"] = config.max_tokens
-    wire = default_wire()
     http = config.codex_transport == "sse"  # the operator's explicit no-WebSocket choice
+    # Each HTTP engine builds its matched synchronous/asynchronous provider pair.
+    wire = None if http else default_wire()
     lm = dspy.LM(
         f"{_CODEX_LITELLM_PREFIX}/{bare}",
         engine=CodexDirectEngine(bare, wire=wire, http=http),

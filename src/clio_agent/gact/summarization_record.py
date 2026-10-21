@@ -79,12 +79,16 @@ class SummarizationRecord:
     compacted_message_ids: tuple[str, ...]
 
 
-def recall_line(compaction_id: str) -> str:
+def recall_line(compaction_id: str, *, search_enabled: bool = True) -> str:
     """The last line of every summary: how the agent gets the originals back."""
     return (
         f'[The steps this summary replaced are kept in full: {RECALL_TOOL}(ids=["'
-        f'{compaction_id}"]) returns them byte-exact; {RECALL_TOOL}(query="...") searches '
-        "them.]"
+        f'{compaction_id}"]) returns them byte-exact; '
+        + (
+            f'{RECALL_TOOL}(query="...") searches them.]'
+            if search_enabled
+            else "text search is unavailable here. Use ids, not a query.]"
+        )
     )
 
 

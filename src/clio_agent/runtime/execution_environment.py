@@ -57,6 +57,9 @@ def publish_environment(workspace: Path, runtime: dict[str, Any], cache: Path) -
         "CLIO_DOCUMENT_OFFICE_ROOT": runtime["office_root"],
         "CLIO_DOCUMENT_SCRATCH": scratch,
         "CLIO_DOCUMENT_SHORT_TEMP": tempfile.gettempdir(),
+        # uv otherwise chooses an AppContainer-profile cache that the write
+        # fence does not grant. Task dependencies belong to this workspace.
+        "UV_CACHE_DIR": str(Path(scratch) / "uv-cache"),
         "TMPDIR": scratch,
         "TEMP": scratch,
         "TMP": scratch,

@@ -35,7 +35,7 @@ export default function QuestionGallery({ examples, version }: { examples: reado
           <Button aria-label="Next question example" disabled={!interactive} onClick={() => setActive(examples[(index + 1) % examples.length].id)} size="icon-sm" variant="ghost"><ArrowRight aria-hidden="true" /></Button>
         </div>
       </div>
-      {examples.map((example) => (
+      {examples.filter((example) => example.id === active).map((example) => (
         <TabsContent className="space-y-3" key={example.id} value={example.id}>
           <p className="m-0 text-base leading-relaxed">{example.explanation}</p>
           <Capture alt={example.alt} caption={example.caption} image={example.image} previewHeight={example.previewHeight} version={example.version ?? version} />

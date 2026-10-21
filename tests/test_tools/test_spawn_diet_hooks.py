@@ -123,9 +123,33 @@ def test_connect_failure_fires_spawn_failed(tmp_path, monkeypatch) -> None:
         # get swallowed by fastmcp's AggregateProvider default ("warn") into
         # a fabricated NotFoundError -> ToolError("Unknown tool: 'echo'") that
         # is indistinguishable from the model hallucinating a tool name.
-        with pytest.raises(MCPError):
+        with pytest.raises(MCPError) as failure:
             executor.call_tool("broken_echo", {"text": "x"})
+        from mcp_types import CONNECTION_CLOSED
+
+        assert failure.value.code == CONNECTION_CLOSED
         assert failed == ["broken"]
         assert connected == []
     finally:
         executor.close()
+
+
+@pytest.mark.parametrize("closed", [False, True])
+def test_only_transport_failure_drops_an_unlearned_namespace(
+    monkeypatch: pytest.MonkeyPatch, closed: bool
+) -> None:
+    """A tool's ordinary JSON-RPC refusal is not a failed subprocess launch."""
+    from mcp.shared.exceptions import MCPError
+    from mcp_types import CONNECTION_CLOSED, INVALID_PARAMS
+
+    from clio_agent.tools.mcp_executor import AsyncMCPToolExecutor
+
+    failed: list[str] = []
+    monkeypatch.setattr(spawn_diet, "spawn_failed", failed.append)
+    executor = AsyncMCPToolExecutor(object())
+    error = MCPError(CONNECTION_CLOSED if closed else INVALID_PARAMS, "refused")
+    executor._namespace_call_failed("server", error)
+    assert failed == (["server"] if closed else [])
+    executor._connected_namespaces.add("server")
+    executor._namespace_call_failed("server", error)
+    assert failed == (["server"] if closed else [])

@@ -34,6 +34,7 @@ declaring expert's own pack root, mirroring how the agent rows were loaded.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
@@ -200,6 +201,11 @@ def effective_declared_skills(
                 ):
                     declared.append(ref.id)
     catalog_skill_ids: list[str] = []
+    # Agents that already declare source setup share the NDP procedure, while
+    # retaining curated specialist boundaries and normal workspace overrides.
+    if "connect-data" in declared and "work-with-ndp" not in declared:
+        if catalog.resolve("work-with-ndp").status == "resolved":
+            declared.append("work-with-ndp")
     if app is not None and session_id and wants_a2ui_catalogs:
         catalog_skill_ids = _producible_a2ui_catalog_skill_ids(catalog)
         for skill_id in catalog_skill_ids:
@@ -211,7 +217,11 @@ def effective_declared_skills(
         # the same presentation/review procedures. Catalog shapes alone do not
         # teach composition or pixel review. Resolve the shared built-ins normally
         # so pack/workspace overrides retain precedence; never copy their bodies.
-        presentation_skills = ["present-interactive-analysis", "review-visual-presentation"]
+        presentation_skills = [
+            "present-interactive-analysis",
+            "review-visual-presentation",
+            "create-diagram",
+        ]
         if automatic_producer or "publish_dashboard_report" in agent_def.tools:
             presentation_skills.append("create-dashboard")
         for skill_id in presentation_skills:
@@ -335,6 +345,10 @@ def _declare_load_skill_structured_content(
     file: str = "",
     files: list[str] | None = None,
     bundled_files: list[str] | None = None,
+    skill_title: str = "",
+    skill_description: str = "",
+    skill_directory: str = "",
+    file_paths: dict[str, str] | None = None,
 ) -> None:
     """Declare ``load_skill``'s typed wire payload (P5 wire semantics — the
     ``wait_agent_tasks`` treatment): a ``message`` naming what loaded + its
@@ -360,6 +374,9 @@ def _declare_load_skill_structured_content(
         "path": path,
         "lines": lines,
         "bytes": len(text.encode("utf-8")),
+        "skill_title": skill_title,
+        "skill_description": skill_description,
+        "skill_directory": skill_directory,
     }
     if file:
         payload["file"] = file
@@ -367,6 +384,8 @@ def _declare_load_skill_structured_content(
         payload["files"] = files
     if bundled_files:
         payload["bundled_files"] = bundled_files
+    if file_paths:
+        payload["file_paths"] = file_paths
     declare_structured_content(payload)
 
 
@@ -417,12 +436,14 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
             )
         ref = res.skill
         skill_dir = Path(ref.dir)
+        loaded_paths: dict[str, str] = {}
 
         def _read_one_bundled_file(requested_file: str) -> str:
             """Resolve + read ONE bundled file spec (``path`` or ``path#/fragment``)."""
 
             file_path, has_fragment, fragment = requested_file.partition("#")
             target = _resolve_bundled_file(skill_id, skill_dir, ref.extra_dirs, file_path)
+            loaded_paths[requested_file] = str(target)
             try:
                 content = target.read_text(encoding="utf-8")
             except (OSError, UnicodeDecodeError) as exc:
@@ -467,6 +488,9 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
                 "content": content,
                 "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
                 "agent_id": agent_id,
+                "skill_title": ref.title,
+                "skill_description": ref.description,
+                "skill_directory": ref.dir,
             }
             if bundled_file:
                 payload["file"] = bundled_file
@@ -507,6 +531,7 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
             bodies: dict[int, str] = {}
             grouped_by_document: dict[str, list[tuple[int, str]]] = {}
             document_text_cache: dict[str, str] = {}
+            document_paths: dict[str, str] = {}
             for index, requested_file in enumerate(requested_files):
                 file_path, has_fragment, fragment = requested_file.partition("#")
                 if not has_fragment or not file_path.lower().endswith(".json"):
@@ -514,10 +539,12 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
                     continue
                 if file_path not in document_text_cache:
                     target = _resolve_bundled_file(skill_id, skill_dir, ref.extra_dirs, file_path)
+                    document_paths[file_path] = str(target)
                     try:
                         document_text_cache[file_path] = target.read_text(encoding="utf-8")
                     except (OSError, UnicodeDecodeError) as exc:
                         raise ValueError(f"bundled file {file_path!r} unreadable: {exc}") from exc
+                loaded_paths[requested_file] = document_paths[file_path]
                 grouped_by_document.setdefault(file_path, []).append((index, fragment))
 
             definitions_blocks: list[str] = []
@@ -555,6 +582,10 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
                 path=ref.path,
                 text=combined,
                 files=requested_files,
+                file_paths=loaded_paths,
+                skill_title=ref.title,
+                skill_description=ref.description,
+                skill_directory=ref.dir,
             )
             return combined
         elif requested_files:
@@ -569,7 +600,15 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
                     "to a single read.)"
                 )
             _declare_load_skill_structured_content(
-                skill_id=skill_id, scope=ref.scope, path=ref.path, text=content, file=requested_file
+                skill_id=skill_id,
+                scope=ref.scope,
+                path=ref.path,
+                text=content,
+                file=requested_file,
+                file_paths=loaded_paths,
+                skill_title=ref.title,
+                skill_description=ref.description,
+                skill_directory=ref.dir,
             )
             return content
         # P1.0 (#1062): a skill may declare a PRIVILEGED runtime EFFECT in its
@@ -618,14 +657,41 @@ def build_load_skill_tool(agent_def: "AgentDef", runtime: SkillRuntime) -> Any:
             else ""
         )
         _declare_load_skill_structured_content(
-            skill_id=skill_id, scope=ref.scope, path=ref.path, text=body, bundled_files=bundled
+            skill_id=skill_id,
+            scope=ref.scope,
+            path=ref.path,
+            text=body,
+            bundled_files=bundled,
+            skill_title=ref.title,
+            skill_description=ref.description,
+            skill_directory=ref.dir,
         )
         return f"# Skill: {skill_id}\nSkill directory (use as SKILL_ROOT): {skill_dir}\n{body}{listing}"
+
+    from clio_agent.gact.agents.skill_presentation import skill_presentation
+
+    def present_skill(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
+        """Present the procedure or the actual reference files read by this call."""
+        return skill_presentation(args, result, structured)
+
+    def starting_skill(args: Mapping[str, Any]) -> dict[str, Any]:
+        """Name the requested material without reading it or claiming completion."""
+        resolution = resolved.get(str(args.get("skill_id") or ""))
+        ref = resolution.skill if resolution else None
+        return skill_presentation(
+            args,
+            "",
+            {
+                "skill_title": ref.title if ref else "",
+                "skill_description": ref.description if ref else "",
+            },
+        )
 
     return native_tool(
         load_skill,
         name="load_skill",
-        presentation="text",
+        presentation=present_skill,
+        presentation_start=starting_skill,
         domain="skills",
         title="Load skill",
         desc=(
@@ -670,7 +736,6 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
         apply_spawn_skill_effect,
         parse_skill_effect,
     )
-    from clio_agent.gact.agents.spawn_runtime import emit_spawn_started  # noqa: PLC0415
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
 
     spawnable: dict[str, Any] = {}
@@ -683,7 +748,7 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
             spawnable[skill_id] = ref
     agent_id = str(getattr(agent_def, "id", "") or "")
 
-    def spawn_skill_task(skill_id: str, task: str) -> str:
+    async def spawn_skill_task(skill_id: str, task: str) -> dict[str, Any]:
         wanted = str(skill_id or "").strip()
         ref = spawnable.get(wanted)
         if ref is None:
@@ -691,22 +756,7 @@ def build_spawn_skill_task_tool(agent_def: "AgentDef", runtime: SkillRuntime) ->
                 f"skill {wanted!r} is not a declared child-task skill; "
                 f"available: {sorted(spawnable)}"
             )
-        output, spawned, child_id = apply_spawn_skill_effect(
-            ref, agent_id=agent_id, task=str(task or "")
-        )
-        app = _ctx.active_app()
-        session_id = _ctx.active_session_id()
-        assert app is not None and session_id
-        emit_spawn_started(
-            app,
-            session_id,
-            agent_def,
-            child_id,
-            str(task or "").strip(),
-            int(getattr(spawned, "depth", 0) or 0),
-            spawned,
-        )
-        return output
+        return await apply_spawn_skill_effect(ref, agent_id=agent_id, task=str(task or ""))
 
     return native_tool(
         spawn_skill_task,

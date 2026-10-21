@@ -33,7 +33,7 @@ import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from clio_agent.arc import history_mode
 from clio_agent.errors import ClioError
@@ -235,7 +235,12 @@ def _plan(app: Any, sid: str, scope: str, open_turn: str) -> _ScopePlan | None:
     if not replaced or (len(replaced) == 1 and replaced[0].kind == "summary"):
         return None
     try:
-        lines = [line for m in fold_steps(replaced) for line in _message_lines(m)]
+        from clio_agent.gact.agents.context_reader import model_context_segments
+
+        rendered = model_context_segments(
+            replaced, getattr(app.state, "task_history", None), sid, scope
+        )
+        lines = [line for m in fold_steps(rendered) for line in _message_lines(m)]
     except ContextFoldError as exc:
         raise CompactionError(409, exc.reason, str(exc), dict(exc.details or {})) from exc
     if not lines:
@@ -382,6 +387,7 @@ def _summarize_record_fold(
 ) -> dict[str, Any]:
     from clio_agent.gact.compaction_record import RecordWriteError, write_record  # noqa: PLC0415
     from clio_agent.gact.hooks import dispatch_pre_compact  # noqa: PLC0415
+    from clio_agent.gact.recall_context_tool import context_search_available  # noqa: PLC0415
 
     sess = app.state.sessions.get(sid)
     dispatch_pre_compact(
@@ -394,7 +400,8 @@ def _summarize_record_fold(
         },
     )
     summary = _summary(app, sid, plan.transcript, focus)
-    text = f"{summary}\n\n{recall_line(base['compaction_id'])}"
+    search_enabled = context_search_available(app.state.arc)
+    text = f"{summary}\n\n{recall_line(base['compaction_id'], search_enabled=search_enabled)}"
     part = summarization_part(
         text,
         trigger=trigger,
@@ -456,7 +463,9 @@ def _summary(app: Any, sid: str, transcript: str, focus: str) -> str:
 
     retry_call = getattr(agent, "_call_with_transient_provider_retries", None)
     try:
-        summary = retry_call("compact_summary", _call) if callable(retry_call) else _call()
+        summary = (
+            cast(str, retry_call("compact_summary", _call)) if callable(retry_call) else _call()
+        )
     except Exception as exc:  # noqa: BLE001 - re-raised typed, never silently dropped
         raise CompactionError(
             502, "upstream_error", f"compact summarisation failed: {exc!r}"

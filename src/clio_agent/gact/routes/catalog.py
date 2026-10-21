@@ -16,13 +16,10 @@ plus the slash-command dispatch path:
   (``/clear`` / ``/cache-stats`` / ``/dump-trace``), then materialize a synthetic
   result message and audit row.
 
-The catalog primitives (built-in tool list, per-tool owner/tags/visibility, the
-on-disk command/skill loaders, the truthy-field coercion) live in the leaf
-:mod:`clio_agent.gact.catalog` and are shared with the agent-run path. The
-command-table assembly + dispatch helpers are concern-private and stay nested in
-the factory (they close over ``app``/``deps``). The dispatch route reaches the
-message-ledger primitives, the agent runner, and the destructive-action guard
-through ``deps`` rather than importing back into :mod:`clio_agent.gact.app`.
+Shared catalog primitives live in :mod:`clio_agent.gact.catalog`. Command assembly
+and dispatch helpers stay nested in this factory. Routes reach the message
+ledger, runner and destructive-action guard through ``deps`` without importing
+back into :mod:`clio_agent.gact.app`.
 """
 
 from __future__ import annotations
@@ -745,7 +742,9 @@ def register_catalog_routes(app: FastAPI, deps: "GactDeps") -> None:
         elif cmd_id == "/goal":  # P4.2 #1080: arm/clear a run-until goal (owner module)
             from clio_agent.gact.goal import run_goal_command  # noqa: PLC0415
 
-            body_text = run_goal_command(app, sid, request_body)
+            body_text = await app.state.task_history.io.run(
+                run_goal_command, app, sid, request_body
+            )
         elif cmd_id in ("/cron", "/schedule"):  # P4.3 #1081: cron triad (owner module)
             from clio_agent.gact.cron_tools import run_cron_command  # noqa: PLC0415
 
@@ -768,7 +767,8 @@ def register_catalog_routes(app: FastAPI, deps: "GactDeps") -> None:
         # Materialise body_text as a real assistant message so the TUI shows the result
         # (its runCommandCmd discards the POST response); persist + publish so SSE and GET
         # /messages reflect it.
-        from clio_agent.gact.types import Message, Part, Tokens  # noqa: PLC0415
+        from clio_agent.gact.command_presentation import command_result_part  # noqa: PLC0415
+        from clio_agent.gact.types import Message, Tokens  # noqa: PLC0415
 
         sys_msg = Message(
             id=f"msg_cmd_{uuid.uuid4().hex[:10]}",
@@ -777,16 +777,7 @@ def register_catalog_routes(app: FastAPI, deps: "GactDeps") -> None:
             role="assistant",
             created_at=datetime.now(timezone.utc).isoformat(),
             updated_at=datetime.now(timezone.utc).isoformat(),
-            parts=[
-                Part(
-                    id=f"part_cmd_{uuid.uuid4().hex[:10]}",
-                    type="text",
-                    # Built-in commands are executed by the orchestrator itself.
-                    agent_id="main",
-                    metadata={"synthetic": "command_result", "command": cmd_id},
-                    text=f"[{cmd_id}] {body_text}",
-                )
-            ],
+            parts=[command_result_part(app, sid, cmd_id, body_text)],
             tokens=Tokens(input=0, output=0, cache_read=0, cache_write=0),
             cost_usd=None,
             stop_reason="end_turn",
@@ -815,7 +806,7 @@ def register_catalog_routes(app: FastAPI, deps: "GactDeps") -> None:
             )
         )
 
-        if cmd_id == "/goal" and body_text.startswith("Goal started."):
+        if cmd_id == "/goal" and sys_msg.parts[0].code == "goal_started":
             from clio_agent.gact.goal_control import launch_pending_goal
 
             await launch_pending_goal(app, sid)

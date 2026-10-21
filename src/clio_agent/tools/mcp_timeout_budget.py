@@ -37,6 +37,28 @@ from typing import Any
 _TIMEOUT_FIELD = "timeout_seconds"
 
 
+def explicit_tool_timeout_seconds(
+    properties: Mapping[str, Any], args: Mapping[str, Any]
+) -> float | None:
+    """Sum positive explicit execution/wait budgets declared in the public schema."""
+    candidates: list[float] = []
+    for field in ("timeout_seconds", "wait_timeout_seconds"):
+        if field not in properties or field not in args:
+            continue
+        if field == "wait_timeout_seconds" and args.get("wait_for_terminal") is not True:
+            continue
+        raw = args[field]
+        if isinstance(raw, bool):
+            continue
+        try:
+            seconds = float(raw)
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(seconds) and seconds > 0:
+            candidates.append(seconds)
+    return sum(candidates) if candidates else None
+
+
 def component_declared_timeout_seconds(properties: Mapping[str, Any]) -> float | None:
     """Return the tool's own declared timeout floor from its schema default.
 

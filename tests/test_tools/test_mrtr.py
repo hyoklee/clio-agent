@@ -288,18 +288,16 @@ def test_rest_per_call_route_surfaces_typed_reason_not_sdk_error(
         conf.reload()
 
 
-def test_dynamic_agent_path_raises_typed_error_not_sdk_error(
+def test_dynamic_agent_input_exhaustion_retains_uncertain_submission_handle(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
-    """The dynamic-agent external tool call raises the TYPED error into the model path,
-    never the raw SDK exception (finding 1)."""
+    """Driver exhaustion cannot claim a sent operation was safely rejected."""
 
-    from clio_agent.errors import (
-        MCP_INPUT_REQUIRED_ROUNDS_EXCEEDED,
-        MCPInputRequiredRoundsExceededError,
-    )
+    from fastapi.testclient import TestClient
+
     from clio_agent.gact.agents import builders
     from clio_agent.gact.app import build_app
+    from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 
     monkeypatch.setenv("CLIO_MCP_INPUT_REQUIRED_MAX_ROUNDS", "2")
     import clio_agent.conf as conf
@@ -309,21 +307,75 @@ def test_dynamic_agent_path_raises_typed_error_not_sdk_error(
         backend = _never_terminating_backend()
         monkeypatch.setattr("clio_agent.tools.mcp_config.transport_from_spec", lambda spec: backend)
         monkeypatch.setattr(
-            "clio_agent.gact.elicitation_bridge.make_elicitation_client",
-            lambda app, transport, *a, **kw: _auto_accept_factory(transport),
+            "clio_agent.tools.mcp_runtime.make_mcp_client",
+            lambda transport, *a, **kw: _auto_accept_factory(transport),
         )
         app = build_app(sessions_path=tmp_path / "s.json")
         app.state.pending_permission_gate = lambda name, args: "allow"
         app.state.pending_tool_observer = lambda *a, **k: None
         info = {"name": "ext", "spec": {"transport": "stdio", "command": "x"}}
 
-        with pytest.raises(MCPInputRequiredRoundsExceededError) as excinfo:
-            asyncio.run(
-                builders._call_enabled_external_mcp_tool(app, "srv", info, "never_done", {})
-            )
-        assert excinfo.value.reason == MCP_INPUT_REQUIRED_ROUNDS_EXCEEDED
+        with TestClient(app) as client:
+            session = app.state.sessions.create(workspace_id="ws_default", title="MRTR owner")
+            record_assignment_fixture(app, session.id)
+            import time
+
+            with active_turn_fixture(app, session.id):
+                future = client.portal.start_task_soon(
+                    builders._call_enabled_external_mcp_tool,
+                    app,
+                    "srv",
+                    info,
+                    "never_done",
+                    {},
+                )
+            answered: set[str] = set()
+            deadline = time.monotonic() + 5
+            try:
+                while not future.done() and time.monotonic() < deadline:
+                    pending = client.get(f"/v1/sessions/{session.id}/questions").json()["questions"]
+                    for question in pending:
+                        if question["status"] != "pending" or question["id"] in answered:
+                            continue
+                        assert question["source"] == "mcp_elicitation"
+                        response = client.post(
+                            f"/v1/sessions/{session.id}/questions/{question['id']}/answer",
+                            json={"answer": "x", "metadata": {"value": "x"}},
+                        )
+                        assert response.status_code == 200, response.text
+                        answered.add(question["id"])
+                    time.sleep(0.01)
+                assert future.done(), (
+                    "The native input driver did not reach its configured round bound"
+                )
+                assert answered, (
+                    "The real MCP input must reach and resolve through the question surface"
+                )
+                import json
+
+                result = json.loads(future.result())
+                assert result["acceptance"] == "uncertain" and result["accepted"] is None
+                assert result["kind"] == "MCP" and result["retry_safe"] is False
+                retained = app.state.task_history.task_snapshot(result["handle"])
+                assert retained is not None and retained.owner.session_id == session.id
+                assert retained.status == "task_state_uncertain"
+                assert retained.terminal_at is None and retained.result is None
+                assert retained.settlement == "unknown" and retained.backend is None
+                assert (
+                    len(
+                        [
+                            item
+                            for item in app.state.task_history.pending_mail(session.id)
+                            if item.kind == "attention" and item.handle == retained.handle
+                        ]
+                    )
+                    == 1
+                )
+            finally:
+                if not future.done():
+                    future.cancel()
         for marker in _SDK_LEAK_MARKERS:
-            assert marker not in str(excinfo.value), f"SDK detail leaked: {marker}"
+            assert marker not in str(result), f"SDK detail leaked: {marker}"
     finally:
         conf.reload()
 

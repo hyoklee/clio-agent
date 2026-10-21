@@ -1,0 +1,35 @@
+{
+  "candidate": "f029d12b3f8b7990996532323ccf05006063511a",
+  "gact": "ce99316446848ddd269b1bf782ff2c87cc9db14a",
+  "marketplace": "9257bba5953b012ba796299df4c633e698dbaddc",
+  "custody": {
+    "candidate": "f029d12b3f8b7990996532323ccf05006063511a",
+    "gact": "ce99316446848ddd269b1bf782ff2c87cc9db14a",
+    "marketplace": "9257bba5953b012ba796299df4c633e698dbaddc",
+    "root": "D:\\Temp\\clio-task-implementation-review-f029d12b-c12",
+    "helper_pid": 62128,
+    "ports": [],
+    "product_services": [],
+    "status": "ended",
+    "created_at": "2026-10-14T17:45:42.133274+00:00",
+    "auth_sha256_before": "217e114a28fc875fd2a3989c1dbeee530ac8a4b0f7d0bd4ff9e002c16f0be38d",
+    "diagnostic_limit_s": 600,
+    "tools": [
+      "Read",
+      "Grep",
+      "Glob"
+    ],
+    "pid": 27936,
+    "started_at": "2026-10-14T17:45:42.737889+00:00",
+    "exit_code": 1,
+    "ended_at": "2026-10-14T17:45:44.629269+00:00",
+    "has_result": true,
+    "events": 3,
+    "remaining_owned_pids": [],
+    "auth_sha256_after": "217e114a28fc875fd2a3989c1dbeee530ac8a4b0f7d0bd4ff9e002c16f0be38d"
+  },
+  "text": "Failed to authenticate: OAuth session expired and could not be refreshed",
+  "is_error": true,
+  "model_usage": {},
+  "stderr": ""
+}

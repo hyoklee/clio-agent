@@ -40,6 +40,7 @@ and the session's own STATE — never on the action's name or its prose.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING, Any, Mapping
 
 from fastapi import HTTPException
@@ -141,7 +142,7 @@ def _duplicate_result(
                 payload={**lifecycle_event_payload(duplicate), "reason": "a2ui_action_duplicate"},
             )
         )
-    return {
+    result = {
         "action_id": existing.get("id", ""),
         "state": existing.get("state", ""),
         "delivery": existing.get("delivery", ""),
@@ -152,6 +153,13 @@ def _duplicate_result(
         "destination": destination,
         "surface": surface.to_wire(),
     }
+    if duplicate is not None:
+        message_id = duplicate.correlation.get("message_id")
+        if message_id:
+            result["message_id"] = message_id
+        if duplicate.client_data_model is not None:
+            result["a2ui_client_data_model"] = duplicate.client_data_model
+    return result
 
 
 async def dispatch_action(
@@ -250,7 +258,7 @@ async def dispatch_action(
             reason="a2ui_event_context_invalid",
             http_status=422,
         )
-        existing = persist_new_record(app, failed_record)
+        existing = await run_off_loop(persist_new_record, app, failed_record)
         if existing is not None:
             return _duplicate_result(
                 app, sid, existing, name=name, destination="agent", surface=surface
@@ -310,6 +318,16 @@ async def dispatch_action(
     # common sequential replay.
     existing_peek = find_by_idempotency_key(surface.actions, idempotency_key)
     if existing_peek is not None:
+        retry = ActionRecord.from_wire(existing_peek)
+        if (
+            retry is not None
+            and retry.state == "received"
+            and destination not in {"permission", "run", "client"}
+        ):
+            delivered_retry = await deliver_to_agent(
+                app, sid, retry, narration=retry.narration, context=context
+            )
+            existing_peek = delivered_retry.to_wire()
         return _duplicate_result(
             app, sid, existing_peek, name=name, destination=destination, surface=surface
         )
@@ -319,6 +337,14 @@ async def dispatch_action(
     )
 
     correlation_fields = dict(correlation or {})
+    if destination not in {"permission", "run", "client"} and not correlation_fields.get(
+        "question_id"
+    ):
+        question = await asyncio.to_thread(
+            app.state.questions.visual_question, sid, surface_id, name
+        )
+        if question is not None:
+            correlation_fields["question_id"] = question.handle
     record = ActionRecord(
         id=new_record_id(),
         session_id=sid,
@@ -340,8 +366,18 @@ async def dispatch_action(
     # Finding #1 (BLOCKING): the REAL idempotency decision. Persist and check
     # atomically, under the store's per-session lock -- a concurrent
     # duplicate racing the peek above is still caught here.
-    existing = persist_new_record(app, record)
+    existing = await run_off_loop(persist_new_record, app, record)
     if existing is not None:
+        retry = ActionRecord.from_wire(existing)
+        if (
+            retry is not None
+            and retry.state == "received"
+            and destination not in {"permission", "run", "client"}
+        ):
+            delivered_retry = await deliver_to_agent(
+                app, sid, retry, narration=retry.narration, context=context
+            )
+            existing = delivered_retry.to_wire()
         return _duplicate_result(
             app, sid, existing, name=name, destination=destination, surface=surface
         )
@@ -355,7 +391,9 @@ async def dispatch_action(
     elif destination == "client":
         from clio_agent.gact.a2ui_actions.source_login import deliver_source_login
 
-        delivered = deliver_source_login(app, sid, record, context, publish=_publish)
+        delivered = await run_off_loop(
+            lambda: deliver_source_login(app, sid, record, context, publish=_publish)
+        )
     else:
         delivered = await deliver_to_agent(
             app, sid, record, narration=record.narration, context=context
@@ -399,7 +437,7 @@ async def _deliver_permission(
         failed = record.transition(
             state="failed", delivery="rejected", reason="validation_error", http_status=422
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         _publish(app, sid, failed)
         raise _error(
             422,
@@ -419,7 +457,7 @@ async def _deliver_permission(
             reason="a2ui_permission_out_of_scope",
             http_status=404,
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         _publish(app, sid, failed)
         raise _error(404, "not_found", f"permission not found: {permission_id}")
     try:
@@ -427,13 +465,13 @@ async def _deliver_permission(
             lambda: resolve_permission(app, permission_id, decision, grantor=GRANTOR_USER)
         )
     except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-        fail_and_publish(app, sid, record, exc)
+        await run_off_loop(fail_and_publish, app, sid, record, exc)
         raise
     if row is None and pending is None:
         failed = record.transition(
             state="failed", delivery="rejected", reason="not_found", http_status=404
         )
-        persist_transition(app, failed)
+        await run_off_loop(persist_transition, app, failed)
         _publish(app, sid, failed)
         raise _error(404, "not_found", f"permission not found: {permission_id}")
     delivered = record.transition(
@@ -441,7 +479,7 @@ async def _deliver_permission(
         delivery="permission",
         correlation={"permission_id": permission_id, "decision": decision},
     )
-    persist_transition(app, delivered)
+    await run_off_loop(persist_transition, app, delivered)
     _publish(app, sid, delivered)
     return delivered
 
@@ -458,13 +496,13 @@ async def _deliver_run(
 
     if operation == "cancel":
         from clio_agent.gact.routes.session_cancellation import (
-            cancel_session_state,  # noqa: PLC0415
+            cancel_session_state_async,  # noqa: PLC0415
         )
 
         try:
-            cancel_session_state(app, deps, sid)
+            await cancel_session_state_async(app, deps, sid)
         except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-            fail_and_publish(app, sid, record, exc)
+            await run_off_loop(fail_and_publish, app, sid, record, exc)
             raise
         delivered = record.transition(state="delivered", delivery="run_cancel")
     elif operation == "retry":
@@ -480,7 +518,7 @@ async def _deliver_run(
                 ),
             )
         except Exception as exc:  # noqa: BLE001 - captured on the record, then re-raised verbatim
-            fail_and_publish(app, sid, record, exc)
+            await run_off_loop(fail_and_publish, app, sid, record, exc)
             raise
         delivered = record.transition(
             state="delivered", delivery="run_retry", correlation={"attempt_id": attempt.id}
@@ -489,10 +527,10 @@ async def _deliver_run(
         delivered = record.transition(
             state="failed", delivery="rejected", reason="a2ui_validation_failed", http_status=422
         )
-        persist_transition(app, delivered)
+        await run_off_loop(persist_transition, app, delivered)
         _publish(app, sid, delivered)
         raise _error(422, "validation_error", "run destination requires a declared operation")
-    persist_transition(app, delivered)
+    await run_off_loop(persist_transition, app, delivered)
     _publish(app, sid, delivered)
     return delivered
 

@@ -1,0 +1,944 @@
+{
+  "scope": "R44 development-candidate actual-model evidence; partial finite matrix, not final acceptance",
+  "core": "278d57863ebe1134ec61559fde13850eae13879e",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "python": "3.14.6",
+  "dependencies": {
+    "fastmcp": "4.1.0",
+    "fastmcp-tasks": "4.1.0",
+    "mcp": "2.0.0",
+    "pydocket": "0.26.2",
+    "iowarp-core": "2.3.1",
+    "dspy": "3.4.0"
+  },
+  "runtime_binary_sha256": "c9cb98fec384bce84bcc744d13c8902e63012ec18590a8a1a829a5b1743b490e",
+  "provider": "codex_direct",
+  "model": "gpt-6-luna",
+  "transport": "websocket",
+  "auth_refresh_disabled": true,
+  "original_auth_unchanged": true,
+  "runtime_source_diff_empty": true,
+  "shell": {
+    "scope": "R44 actual Codex/Luna Shell scenario; partial Q1/Q2 evidence only",
+    "events": [
+      {
+        "tool": "shell_bash",
+        "invocation": "call_a8b45dc75e3b",
+        "at": "2026-10-15T16:00:03.605430+00:00",
+        "acceptance": {
+          "handle": "task_371d350be8144bddaf2187a0062f7a30",
+          "kind": "Shell",
+          "accepted": true,
+          "status": "running",
+          "activity": "executing"
+        }
+      },
+      {
+        "tool": "query_tasks",
+        "invocation": "call_c026e44c9bd1",
+        "at": "2026-10-15T16:00:05.961514+00:00",
+        "snapshots": [
+          {
+            "handle": "task_371d350be8144bddaf2187a0062f7a30",
+            "kind": "Shell",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null,
+            "recording": "confirmed"
+          }
+        ]
+      },
+      {
+        "tool": "fs_read_file",
+        "invocation": "call_b36760289a05",
+        "at": "2026-10-15T16:00:11.997309+00:00",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "tool": "query_tasks",
+        "invocation": "call_b22253cc5a42",
+        "at": "2026-10-15T16:00:13.980141+00:00",
+        "snapshots": [
+          {
+            "handle": "task_371d350be8144bddaf2187a0062f7a30",
+            "kind": "Shell",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null,
+            "recording": "confirmed"
+          }
+        ]
+      },
+      {
+        "tool": "wait_tasks",
+        "invocation": "call_b981ef5746e2",
+        "at": "2026-10-15T16:00:15.838513+00:00",
+        "wait": {
+          "pending": [
+            "task_371d350be8144bddaf2187a0062f7a30"
+          ],
+          "timed_out": true,
+          "outcomes": []
+        }
+      },
+      {
+        "tool": "observe_tasks",
+        "invocation": "call_6c6b3fa60288",
+        "at": "2026-10-15T16:00:17.718458+00:00",
+        "observation": {
+          "cursor": "eyJoYW5kbGVzIjogWyJ0YXNrXzM3MWQzNTBiZTgxNDRiZGRhZjIxODdhMDA2MmY3YTMwIl0sICJvdXRwdXRzIjogeyJ0YXNrXzM3MWQzNTBiZTgxNDRiZGRhZjIxODdhMDA2MmY3YTMwIjogeyJjb21wbGV0ZWQiOiAiZGUwYTIxMWIxNDY1MDMwMGQ1ZTBiYjEzNzdmOGQ4M2FjNDc3ZTk2Y2NlYzI3NjE3NmJmNmQwOWYzMjViMTVkNyJ9fSwgInBvc2l0aW9ucyI6IHsidGFza18zNzFkMzUwYmU4MTQ0YmRkYWYyMTg3YTAwNjJmN2EzMCI6ICJmYThmN2QxZjI2YTdkMTAwNjNiMjZlNDBkMTg0MDY2NTVhYzliMDg0NTM4YWE3MzY1NDA4ZTA3MzM4N2MzZWVkIn0sICJyZWNpcGllbnQiOiAic2Vzc19kODk5ZGViZWYyZDYiLCAic2Nhbl9zdGFydCI6IDAsICJ2ZXJzaW9uIjogMn0=",
+          "next_cursor": null,
+          "task_handles": [
+            "task_371d350be8144bddaf2187a0062f7a30"
+          ],
+          "output_present": true
+        }
+      },
+      {
+        "tool": "wait_tasks",
+        "invocation": "call_d0d873046b0d",
+        "at": "2026-10-15T16:00:49.812633+00:00",
+        "wait": {
+          "pending": [],
+          "timed_out": false,
+          "outcomes": [
+            {
+              "handle": "task_371d350be8144bddaf2187a0062f7a30",
+              "status": "completed",
+              "pending": false,
+              "settlement": "confirmed",
+              "error": null
+            }
+          ]
+        }
+      },
+      {
+        "tool": "get_task_result",
+        "invocation": "call_61c563781d3b",
+        "at": "2026-10-15T16:00:51.286949+00:00",
+        "result": {
+          "handle": "task_371d350be8144bddaf2187a0062f7a30",
+          "status": "completed",
+          "pending": false,
+          "settlement": "confirmed"
+        }
+      }
+    ],
+    "terminal": {
+      "handle": "task_371d350be8144bddaf2187a0062f7a30",
+      "status": "completed",
+      "pending": false,
+      "settlement": "confirmed"
+    },
+    "process_outcome": {
+      "exit_code": 0,
+      "timed_out": false,
+      "stdout_sha256": "16275d073ce560104b3189ccb16fa2592626a7217b5d8ba4716cd72f14bcd601",
+      "progress_lines": 45,
+      "stderr": ""
+    },
+    "filesystem": {
+      "text": "owned shell completed",
+      "bytes": 21,
+      "sha256": "89174256781fcf055fd72081947b8ec17c709ef97c9b325fdb903839dad42166"
+    },
+    "model_turn_status": "idle",
+    "review": "independent source review pending on R44; no complete qualification claim",
+    "checked_at": 1792080132.991581
+  },
+  "subagent": {
+    "session_id": "sess_5511c59daf0d",
+    "events": [
+      {
+        "type": "injection",
+        "message": "msg_asst_bfa013c6f2b0",
+        "source": "tool_use",
+        "text": "You can make several tool calls in one step; the calls of a step run at the same time. When calls do not depend on each other's results -- loading several skills, reading several files, independent lookups -- make them together in one step.",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "spawn_agent_task",
+        "invocation": "call_d74628edc27d",
+        "at": "2026-10-15T16:04:46.770751+00:00",
+        "normalized_result_sha256": "d92f94fb03a75816431a209a391ea237e9507ce907d7b88aec2836b5de240c60",
+        "handle": "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba",
+        "kind": "Subagent",
+        "accepted": true
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_b701a92d41ff",
+        "at": "2026-10-15T16:04:49.133516+00:00",
+        "normalized_result_sha256": "4ca5c6d8a8b514ff8e15a6be87b9bb503d0eb7a76d35b01d1ca7d9b95638550c",
+        "tasks": [
+          {
+            "handle": "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba",
+            "kind": "Subagent",
+            "status": "active",
+            "raw_status": "active",
+            "activity": "busy",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_482f2c7fe5a0",
+        "at": "2026-10-15T16:04:49.500706+00:00",
+        "normalized_result_sha256": "4ddef2e9b53bec0753ee936ed3e70bc406795e50e30f52a702f97f2c05adfdf9",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_cbbca9195243",
+        "at": "2026-10-15T16:04:51.008811+00:00",
+        "normalized_result_sha256": "da63529178b4f280b147dc8b4fecb7138d6af74267eb218a43d831ab8fcbd2b1",
+        "tasks": [
+          {
+            "handle": "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba",
+            "kind": "Subagent",
+            "status": "active",
+            "raw_status": "active",
+            "activity": "busy",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "wait_tasks",
+        "invocation": "call_4573d1967639",
+        "at": "2026-10-15T16:04:52.859120+00:00",
+        "normalized_result_sha256": "1afbf6e9d82fd4bfd1496dd1c1e0c84b269f326b88fc815278efad50f2a6a7f6",
+        "pending": [
+          "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba"
+        ],
+        "timed_out": true,
+        "outcomes": []
+      },
+      {
+        "type": "tool_result",
+        "tool": "observe_tasks",
+        "invocation": "call_5cb91a1f2345",
+        "at": "2026-10-15T16:04:54.569646+00:00",
+        "normalized_result_sha256": "38da000a719b0066098911274a8d1719edec4b73288ac6a20ca3f179eef46dd8",
+        "timed_out": false,
+        "tasks": [
+          {
+            "handle": "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba",
+            "kind": "Subagent",
+            "status": "active",
+            "raw_status": "active",
+            "activity": "busy",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "wait_tasks",
+        "invocation": "call_2e26cc12a99f",
+        "at": "2026-10-15T16:05:40.587465+00:00",
+        "normalized_result_sha256": "18788dc5667a0bc562fca4edc350776867bbf54435151ed02326c4ef2bc76c99",
+        "pending": [],
+        "timed_out": false,
+        "outcomes": [
+          {
+            "handle": "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba",
+            "status": "completed",
+            "pending": false,
+            "settlement": "confirmed",
+            "error": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "get_task_result",
+        "invocation": "call_1d23b0875c67",
+        "at": "2026-10-15T16:05:42.667299+00:00",
+        "normalized_result_sha256": "76a2971f305c7f3fc4519eb664ec739946b640304d1072b6f3e7f85e75aeaa2c",
+        "handle": "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba",
+        "status": "completed",
+        "pending": false,
+        "settlement": "confirmed"
+      }
+    ],
+    "child_results": [
+      {
+        "handle": "task_915050a4be5deb048395e2c3518eed72f0a5209ab717719bd7ab5cbaaa5926ba",
+        "status": "completed",
+        "pending": false,
+        "settlement": "confirmed"
+      }
+    ],
+    "filesystem_output": "owned shell completed"
+  },
+  "question_idle": {
+    "session_id": "sess_9bbb3c6a0edd",
+    "handle": "task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602",
+    "before_answer": [
+      [
+        "task_2f83f4b295f04ee4af6f1cf9c32b63bb",
+        "Session",
+        "active",
+        "yielded"
+      ],
+      [
+        "task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602",
+        "Question",
+        "input_required",
+        "waiting_for_input"
+      ],
+      [
+        "task_c7ba1bdcf9be49f29c5ec4dada0a498a",
+        "MCP",
+        "completed",
+        ""
+      ]
+    ],
+    "after_answer": [
+      [
+        "task_2f83f4b295f04ee4af6f1cf9c32b63bb",
+        "Session",
+        "completed",
+        ""
+      ],
+      [
+        "task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602",
+        "Question",
+        "completed",
+        ""
+      ],
+      [
+        "task_c7ba1bdcf9be49f29c5ec4dada0a498a",
+        "MCP",
+        "completed",
+        ""
+      ]
+    ],
+    "events": [
+      {
+        "type": "injection",
+        "message": "msg_asst_0842ba0e59ea",
+        "source": "tool_use",
+        "text": "You can make several tool calls in one step; the calls of a step run at the same time. When calls do not depend on each other's results -- loading several skills, reading several files, independent lookups -- make them together in one step.",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "ask_user",
+        "invocation": "call_e7989d3f722c",
+        "at": "2026-10-15T16:02:54.827076+00:00",
+        "normalized_result_sha256": "a078068dfe9255743ed07b74a4232ab133912a5352f99b31e1b69f72bc7d1dd6",
+        "handle": "task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602",
+        "kind": "Question",
+        "accepted": true,
+        "status": "input_required"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_638947a53759",
+        "at": "2026-10-15T16:02:57.940647+00:00",
+        "normalized_result_sha256": "a25eb085d246f5019285174ee2979d71ed83753ac3384ad50a5f5e0441ab9ca1",
+        "tasks": [
+          {
+            "handle": "task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602",
+            "kind": "Question",
+            "status": "input_required",
+            "raw_status": "pending",
+            "activity": "waiting_for_input",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_fa2ca10aa9d9",
+        "at": "2026-10-15T16:02:57.991064+00:00",
+        "normalized_result_sha256": "c59e1193735b8fc884b399b327957e2000773ef7c0a6996332ea98f2c7473036",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_d8b12536dd16",
+        "at": "2026-10-15T16:02:59.570995+00:00",
+        "normalized_result_sha256": "13e2e08e1fc75587f538e7245a8a67dd47f1954c0a29bca167899a4965e1259d",
+        "tasks": [
+          {
+            "handle": "task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602",
+            "kind": "Question",
+            "status": "input_required",
+            "raw_status": "pending",
+            "activity": "waiting_for_input",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "injection",
+        "message": "msg_asst_17c27d16d61f",
+        "source": "question_answer",
+        "text": "[CLIO; question_answer; Question task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602: completed; notification outcome:task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602:sess_9bbb3c6a0edd]\n{\"schema_version\": 1, \"answer\": \"Use the October owned dataset.\", \"selected_options\": [], \"metadata\": {}, \"parts\": [], \"responder_human\": \"human:clio_285df124c445447486d4e3164a8142ea\", \"responder_session\": null, \"source_action\": null, \"action\": \"accept\"}",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "get_task_result",
+        "invocation": "call_8282c9dcce3f",
+        "at": "2026-10-15T16:03:05.211415+00:00",
+        "normalized_result_sha256": "97de2da5ddfd7125a28f9e4530cf572c273c62f803fe5bb45b42a53098002c96",
+        "handle": "task_8a8fb2716bf18297707e43787d4913ab849993ea7227b66c0a8c757c018d9602",
+        "status": "completed",
+        "pending": false,
+        "settlement": "confirmed"
+      }
+    ],
+    "final_mailbox": {
+      "pending": []
+    }
+  },
+  "question_stop": {
+    "session_id": "sess_dd47845035f8",
+    "before_answer_status": "cancelled",
+    "before_answer_tasks": [
+      {
+        "handle": "task_3e871e3fa5ac4f9ebf95e810d55593df",
+        "kind": "Session",
+        "status": "active",
+        "activity": "stopped"
+      },
+      {
+        "handle": "task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4",
+        "kind": "Question",
+        "status": "input_required",
+        "activity": "waiting_for_input"
+      },
+      {
+        "handle": "task_8f6f20a9d98449ad8f826fd536f45d0d",
+        "kind": "MCP",
+        "status": "completed",
+        "activity": ""
+      }
+    ],
+    "after_answer_status": "idle",
+    "events": [
+      {
+        "type": "injection",
+        "message": "msg_asst_ee0c18bf29e8",
+        "source": "tool_use",
+        "text": "You can make several tool calls in one step; the calls of a step run at the same time. When calls do not depend on each other's results -- loading several skills, reading several files, independent lookups -- make them together in one step.",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "ask_user",
+        "invocation": "call_e196b347a8b4",
+        "at": "2026-10-15T11:06:55.719982-05:00",
+        "normalized_result_sha256": "bdb28be46a1e2176cc60a4cce9363b92479799dff19dc09bc3585b7368bc1c44",
+        "handle": "task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4",
+        "kind": "Question",
+        "accepted": true,
+        "status": "input_required"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_00d77498e64b",
+        "at": "2026-10-15T11:06:57.164548-05:00",
+        "normalized_result_sha256": "aad27df716cca63123691ad64aa57467bab3f0295232085048a9e5ff29c9ca10",
+        "tasks": [
+          {
+            "handle": "task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4",
+            "kind": "Question",
+            "status": "input_required",
+            "raw_status": "pending",
+            "activity": "waiting_for_input",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_8b68542098fb",
+        "at": "2026-10-15T11:06:58.823337-05:00",
+        "normalized_result_sha256": "c59e1193735b8fc884b399b327957e2000773ef7c0a6996332ea98f2c7473036",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_5aa9003130de",
+        "at": "2026-10-15T11:07:00.319348-05:00",
+        "normalized_result_sha256": "e85b4dfb3507c18165458237cd1d55a6b555bdfce4fe9217080d61efb315bd88",
+        "tasks": [
+          {
+            "handle": "task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4",
+            "kind": "Question",
+            "status": "input_required",
+            "raw_status": "pending",
+            "activity": "waiting_for_input",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "wait_tasks",
+        "invocation": "call_d7263c8852ad",
+        "at": "2026-10-15T11:07:03.02126-05:00",
+        "normalized_result_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      {
+        "type": "injection",
+        "message": "msg_asst_5c0fc18048da",
+        "source": "question_answer",
+        "text": "[CLIO; question_answer; Question task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4: completed; notification outcome:task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4:sess_dd47845035f8]\n{\"schema_version\": 1, \"answer\": \"Use the October owned dataset.\", \"selected_options\": [], \"metadata\": {}, \"parts\": [], \"responder_human\": \"human:clio_285df124c445447486d4e3164a8142ea\", \"responder_session\": null, \"source_action\": null, \"action\": \"accept\"}",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "get_task_result",
+        "invocation": "call_762aa02d60ba",
+        "at": "2026-10-15T11:08:26.607378-05:00",
+        "normalized_result_sha256": "224446e7ffc6d8e8d08f6ab47379a41d8892377592939cbd5c40aece924881be",
+        "handle": "task_78967c3159aabb52cb37868af1b3505e40da95a5476ab413e25e4071ca103de4",
+        "status": "completed",
+        "pending": false,
+        "settlement": "confirmed"
+      }
+    ],
+    "final_mailbox": {
+      "pending": []
+    },
+    "harness_status": "Legacy waiter omitted cancelled turn status; actual outcome captured via public routes, then owned read-only waiter retired"
+  },
+  "indexing": {
+    "manifest": {
+      "handle": "task_96f9336e10774b9e88b4092bbaad6157",
+      "status": "completed",
+      "settlement": "confirmed",
+      "source_id": "source_09ce5d51913f4b7ca1267dd7797e5f61",
+      "manifest_id": "link_c3ea8d6586fb454494513174477dc15d",
+      "expected_entries": 48098,
+      "actual_entries": 48098,
+      "exact_paths_match": true,
+      "revision": "74b3ab80b93f17ecf4ba1b906d9858af7fd7f6352301fd43f741572fbba86fc3",
+      "note": "Actual published manifest read from the production storage repository; no fixture manifest."
+    },
+    "events": [
+      {
+        "type": "injection",
+        "message": "msg_asst_badc4bcbcf9f",
+        "source": "tool_use",
+        "text": "You can make several tool calls in one step; the calls of a step run at the same time. When calls do not depend on each other's results -- loading several skills, reading several files, independent lookups -- make them together in one step.",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "spawn_agent_task",
+        "invocation": "call_221b911812c5",
+        "at": "2026-10-15T16:13:17.847136+00:00",
+        "normalized_result_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_72bd68a26a37",
+        "at": "2026-10-15T16:13:19.429182+00:00",
+        "normalized_result_sha256": "3e829c750b4b7322e0f1379179bd3f8f1af8d35c7b6a057d66c9d5ee61faacc4",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "connected_data_connect",
+        "invocation": "call_650881671c67",
+        "at": "2026-10-15T16:15:46.250259+00:00",
+        "normalized_result_sha256": "1df9ba726fb22ed1d470dac8fe6e2ecbb49f7bbf7c18ba2e70c8e6ade897ed66",
+        "handle": "task_96f9336e10774b9e88b4092bbaad6157",
+        "kind": "Indexing",
+        "accepted": true,
+        "status": "accepted"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_8149dd0c1bff",
+        "at": "2026-10-15T16:15:47.905850+00:00",
+        "normalized_result_sha256": "d782fe465409d596a133a1fe570016bf62bbe783f9c74f740384d91ec78681d8",
+        "tasks": [
+          {
+            "handle": "task_96f9336e10774b9e88b4092bbaad6157",
+            "kind": "Indexing",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_cdf0f73b34df",
+        "at": "2026-10-15T16:15:49.960628+00:00",
+        "normalized_result_sha256": "3e829c750b4b7322e0f1379179bd3f8f1af8d35c7b6a057d66c9d5ee61faacc4",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_11ec39ec872c",
+        "at": "2026-10-15T16:15:51.962729+00:00",
+        "normalized_result_sha256": "0c82b62015c6b4f26f65aac1af2ba26e79ddf8eab0039d39a9dc46412415c75b",
+        "tasks": [
+          {
+            "handle": "task_96f9336e10774b9e88b4092bbaad6157",
+            "kind": "Indexing",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "observe_tasks",
+        "invocation": "call_e688136c77bd",
+        "at": "2026-10-15T16:15:54.168079+00:00",
+        "normalized_result_sha256": "ce5ebace019f6cc9bb43797a4ae650852efdec881b946c1daf96b03bf3e072f0",
+        "timed_out": false,
+        "tasks": [
+          {
+            "handle": "task_96f9336e10774b9e88b4092bbaad6157",
+            "kind": "Indexing",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "wait_tasks",
+        "invocation": "call_32a8802e8da9",
+        "at": "2026-10-15T16:15:56.320918+00:00",
+        "normalized_result_sha256": "b8c527449b213698820da405385544c5f1c33af66732e982586c171351b7cb25",
+        "pending": [
+          "task_96f9336e10774b9e88b4092bbaad6157"
+        ],
+        "timed_out": true,
+        "outcomes": []
+      },
+      {
+        "type": "tool_result",
+        "tool": "wait_tasks",
+        "invocation": "call_6a826985f303",
+        "at": "2026-10-15T16:17:50.224780+00:00",
+        "normalized_result_sha256": "ab918f88bf717941aa436dc69d162e14517c7f223356bba0526147c530c55818",
+        "pending": [],
+        "timed_out": false,
+        "outcomes": [
+          {
+            "handle": "task_96f9336e10774b9e88b4092bbaad6157",
+            "status": "completed",
+            "pending": false,
+            "settlement": "confirmed",
+            "error": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "get_task_result",
+        "invocation": "call_76ca4e99d553",
+        "at": "2026-10-15T16:17:51.886957+00:00",
+        "normalized_result_sha256": "b3327f3cc95e6724f74970c70bb9c472b53942db451e78579d09609c89a7517e",
+        "handle": "task_96f9336e10774b9e88b4092bbaad6157",
+        "status": "completed",
+        "pending": false,
+        "settlement": "confirmed"
+      }
+    ],
+    "first_attempt": "Model incorrectly declined available tools; no Indexing accepted. Follow-up called actual registered tool without source changes."
+  },
+  "download": {
+    "before_stop_bytes": 8846208.0,
+    "after_stop_bytes": 9280320.0,
+    "human_cancel_ack": {
+      "results": [
+        {
+          "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+          "cancellation_requested": true,
+          "recording": "confirmed",
+          "intervention_id": "intervention_d5f9f8302a3440bc96f323e1c4d62f9e",
+          "status": "cancellation_requested"
+        }
+      ],
+      "errors": []
+    },
+    "cancelled_result": {
+      "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+      "status": "cancelled",
+      "pending": false,
+      "settlement": "confirmed"
+    },
+    "events": [
+      {
+        "type": "injection",
+        "message": "msg_asst_5d8ce473bebe",
+        "source": "tool_use",
+        "text": "You can make several tool calls in one step; the calls of a step run at the same time. When calls do not depend on each other's results -- loading several skills, reading several files, independent lookups -- make them together in one step.",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "spawn_agent_task",
+        "invocation": "call_1a1fc4f8cde4",
+        "at": "2026-10-15T11:19:13.77784-05:00",
+        "normalized_result_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_16efac37fee0",
+        "at": "2026-10-15T11:19:15.477879-05:00",
+        "normalized_result_sha256": "37f28b4d1182cc4581f95a5eb257ecbffde0f08092ff98c9b1983b5810fa378f",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "connected_data_download",
+        "invocation": "call_c0edf090b360",
+        "at": "2026-10-15T11:22:24.926948-05:00",
+        "normalized_result_sha256": "e93ee8f26db3c0f5292b612c91bb5f543ccc343254c9ab644798cd12b0262fd7",
+        "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+        "kind": "Download",
+        "accepted": true,
+        "status": "accepted"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_046b35dc397c",
+        "at": "2026-10-15T11:22:27.683208-05:00",
+        "normalized_result_sha256": "2f6ab5840672a2d1724e68a5d43a1d0dc8b714c3c0b755d25268f4e93118537d",
+        "tasks": [
+          {
+            "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+            "kind": "Download",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "observe_tasks",
+        "invocation": "call_b259b518157b",
+        "at": "2026-10-15T11:22:27.684225-05:00",
+        "normalized_result_sha256": "c278c538166bc30e03a917ec4cb916d8b209a19c27e8a19e0e84dd17a5799ef9",
+        "timed_out": false,
+        "tasks": [
+          {
+            "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+            "kind": "Download",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_997ac7e212fc",
+        "at": "2026-10-15T11:22:27.78035-05:00",
+        "normalized_result_sha256": "37f28b4d1182cc4581f95a5eb257ecbffde0f08092ff98c9b1983b5810fa378f",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_804e11e645c9",
+        "at": "2026-10-15T11:22:30.043903-05:00",
+        "normalized_result_sha256": "de8d73a801279b6f6d4c57eed16915f77d8eed14aa82ae083a4ec7708dc93eb9",
+        "tasks": [
+          {
+            "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+            "kind": "Download",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "wait_tasks",
+        "invocation": "call_0b53f1da8c14",
+        "at": "2026-10-15T11:22:30.150551-05:00",
+        "normalized_result_sha256": "6e119c7fdc6e34e83f44e95273914e9082ab2ea7740aced68866b1327d9a1278",
+        "pending": [
+          "task_ba5e16d559a74d3fbc135327655815cd"
+        ],
+        "timed_out": true,
+        "outcomes": []
+      },
+      {
+        "type": "tool_result",
+        "tool": "observe_tasks",
+        "invocation": "call_c5086ef79e91",
+        "at": "2026-10-15T11:22:31.72797-05:00",
+        "normalized_result_sha256": "edd088bc8af492da673829d29f48608edaa6cd9a3a952ec0bf56ce1e871d6914",
+        "timed_out": false,
+        "tasks": [
+          {
+            "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+            "kind": "Download",
+            "status": "running",
+            "raw_status": "working",
+            "activity": "executing",
+            "terminal_at": null
+          }
+        ]
+      },
+      {
+        "type": "injection",
+        "message": "msg_asst_0d91fff52530",
+        "source": "control",
+        "text": "[Human human:clio_285df124c445447486d4e3164a8142ea; control; notification intervention_d5f9f8302a3440bc96f323e1c4d62f9e:parent]\n{\"id\": \"intervention_d5f9f8302a3440bc96f323e1c4d62f9e\", \"handle\": \"task_ba5e16d559a74d3fbc135327655815cd\", \"action\": \"cancel\", \"actor_human\": \"human:clio_285df124c445447486d4e3164a8142ea\", \"requested_at\": \"2026-10-15T16:28:44.904069+00:00\", \"message\": \"\", \"effect\": {\"handle\": \"task_ba5e16d559a74d3fbc135327655815cd\", \"cancellation_requested\": true, \"recording\": \"confirmed\"}}",
+        "truncated": false
+      },
+      {
+        "type": "tool_result",
+        "tool": "get_task_result",
+        "invocation": "call_f87156c54190",
+        "at": "2026-10-15T11:28:50.648413-05:00",
+        "normalized_result_sha256": "9fc9f4daa1c37d6858d8bd96458c4db68913775670e4244dbea0862149597199",
+        "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+        "status": "cancelled",
+        "pending": false,
+        "settlement": "confirmed"
+      },
+      {
+        "type": "tool_result",
+        "tool": "query_tasks",
+        "invocation": "call_266ffb48ee98",
+        "at": "2026-10-15T11:28:50.647997-05:00",
+        "normalized_result_sha256": "b231a6c3656ceff37130e4b8e07c3f631a263e9fc96a8d8ca41b2f8837c33b53",
+        "tasks": [
+          {
+            "handle": "task_ba5e16d559a74d3fbc135327655815cd",
+            "kind": "Download",
+            "status": "cancelled",
+            "raw_status": "cancelled",
+            "activity": "",
+            "terminal_at": "2026-10-15T11:28:50.503738-05:00"
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "connected_data_download",
+        "invocation": "call_02b74672d3cd",
+        "at": "2026-10-15T11:31:44.395835-05:00",
+        "normalized_result_sha256": "4a73f596a384b2177522e96a638079714c760196b6257ac2ee71ec2f5ad490cc",
+        "handle": "task_1e57343304e14effaee1f00ea4045c8f",
+        "kind": "Download",
+        "accepted": true,
+        "status": "accepted"
+      },
+      {
+        "type": "tool_result",
+        "tool": "fs_read_file",
+        "invocation": "call_9db43ea04fc2",
+        "at": "2026-10-15T11:31:46.780389-05:00",
+        "normalized_result_sha256": "37f28b4d1182cc4581f95a5eb257ecbffde0f08092ff98c9b1983b5810fa378f",
+        "independent_content": "independent action completed\r\n"
+      },
+      {
+        "type": "tool_result",
+        "tool": "wait_tasks",
+        "invocation": "call_e8c99cbeef47",
+        "at": "2026-10-15T11:35:37.46083-05:00",
+        "normalized_result_sha256": "40b915719f25ceb09605654221b66b89d6b5a6c68b684e02a6c4749adee81da5",
+        "pending": [],
+        "timed_out": false,
+        "outcomes": [
+          {
+            "handle": "task_1e57343304e14effaee1f00ea4045c8f",
+            "status": "completed",
+            "pending": false,
+            "settlement": "confirmed",
+            "error": null
+          }
+        ]
+      },
+      {
+        "type": "tool_result",
+        "tool": "get_task_result",
+        "invocation": "call_a5c7e26a41f0",
+        "at": "2026-10-15T11:35:38.930168-05:00",
+        "normalized_result_sha256": "ffea6f722814e0734150b8b5f1b0d41703b141447a6d944d94b42a894db92485",
+        "handle": "task_1e57343304e14effaee1f00ea4045c8f",
+        "status": "completed",
+        "pending": false,
+        "settlement": "confirmed"
+      }
+    ],
+    "successful_revised_payload": {
+      "handle": "task_1e57343304e14effaee1f00ea4045c8f",
+      "status": "completed",
+      "settlement": "confirmed",
+      "source_id": "source_09ce5d51913f4b7ca1267dd7797e5f61",
+      "manifest_id": "snapshot_d64c8b3858f2447ab86412ff98a5e8f2",
+      "actual_bytes": 2100063,
+      "reported_bytes": 2100063,
+      "actual_sha256": "c207d50a837c605b2786af4f931629a8b5b31c570790c297c5c9e605c0c5e58c",
+      "expected_sha256": "c207d50a837c605b2786af4f931629a8b5b31c570790c297c5c9e605c0c5e58c",
+      "manifest_sha256": "c207d50a837c605b2786af4f931629a8b5b31c570790c297c5c9e605c0c5e58c",
+      "result_sha256": "c207d50a837c605b2786af4f931629a8b5b31c570790c297c5c9e605c0c5e58c",
+      "exact_byte_hash_match": true,
+      "manifest_paths": [
+        "payload.bin"
+      ],
+      "actual_path_length": 228,
+      "old_cancelled_stage_absent": true,
+      "successful_stage_absent": true,
+      "old_operation_state": "cancelled",
+      "old_manifest_id": null
+    },
+    "first_attempt": "Model incorrectly declined available tools. Follow-up accepted large selection; it was deliberately cancelled after Stop proof, not completed. A new explicitly narrower operation copied and hash-verified payload.bin."
+  },
+  "not_claimed": [
+    "complete Q1-Q9 or R1-R6",
+    "five final-head race repeats",
+    "Claude bridge qualification",
+    "external MCP input/reconnect/provider survival",
+    "cross-session/workflow/grants",
+    "Core outage/recovery/migration acceptance",
+    "capacity and resource matrix",
+    "production UI/browser/website acceptance",
+    "regression execution/CI",
+    "release acceptance"
+  ],
+  "recorded_at": 1792082542.4027894
+}

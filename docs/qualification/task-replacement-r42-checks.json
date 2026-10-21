@@ -1,0 +1,44 @@
+{
+  "parent_core": "22ab2e46e347797aa03d3d0b0c142cc78b8baa3c",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "changes": [
+    "Passive latest confirmed assignment-input projection",
+    "Startup projection of accepted pending feedback through existing transcript owner",
+    "Canonical/legacy mixed wait presentation and preserved subject marker",
+    "Public composer client identity and idempotency replay",
+    "Migration of six deleted-MessageIntentStore cases with retained behavior mapping"
+  ],
+  "scoped_python_files": 14,
+  "ruff": "pass",
+  "formatting": "pass",
+  "linux_mypy": "Initial 14-file check found eight typing errors only in test_task_compatibility_review.py; corrected with stronger optional-value assertions and typed kwargs. Both corrected files then pass; remaining 12 had no reported errors and stayed unchanged.",
+  "mypy_options": [
+    "--platform linux",
+    "--follow-imports silent",
+    "--check-untyped-defs"
+  ],
+  "gact_typescript": {
+    "declared_web_version": "6.0.3",
+    "state": "pass",
+    "node_budget_mib": 2048,
+    "command": "web/node_modules/typescript/bin/tsc --project <C GACT>/web/tsconfig.app.json --noEmit --incremental false --pretty false",
+    "earlier_wrong_compiler": "Root 5.6.3 invocation does not qualify Web; corrected to declared Web compiler"
+  },
+  "gact_scoped_oxlint": "pass",
+  "gact_prettier": "pass",
+  "core_guards": {
+    "removal_violations": 0,
+    "size_cap": 800,
+    "class_guard": "pass",
+    "hidden_swallows": 480,
+    "hidden_swallow_files": 200
+  },
+  "gact_guards": "six passed, unchanged limits",
+  "behavior_executed": false,
+  "live_executed": false,
+  "initial_regression_migration": "unfinished; broader advisory 51-file audit has not been fully migrated",
+  "review": "pending renewed independent source review on R42",
+  "protected_human_documents": "three hashes verified unchanged",
+  "writable_state": "D:/Libraries/Documents/projects/clio-agent-task-qualification/.pytest-runtime"
+}

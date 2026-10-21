@@ -161,7 +161,11 @@ def test_reads_never_gated_in_any_mode(tmp_path: Path, mode: str) -> None:
 
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as c:
-        sid = c.post("/v1/sessions", json={"title": "t", "approval_mode": mode}).json()["id"]
+        created = c.post("/v1/sessions", json={"title": "t"})
+        assert created.status_code == 200, created.text
+        sid = created.json()["id"]
+        # Isolate the permission policy from the independently tested watcher arming prerequisites.
+        app.state.sessions.update(sid, approval_mode=mode)
         gate = _make_permission_gate(app)
         with _tool_session_context(sid):
             assert gate("fs_read_file", {"filepath": "x"}) == "allow"
@@ -202,7 +206,11 @@ def test_explicit_deny_policy_beats_relaxed_mode(tmp_path: Path, mode: str) -> N
 
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as c:
-        sid = c.post("/v1/sessions", json={"title": "t", "approval_mode": mode}).json()["id"]
+        created = c.post("/v1/sessions", json={"title": "t"})
+        assert created.status_code == 200, created.text
+        sid = created.json()["id"]
+        # Isolate the permission policy from the independently tested watcher arming prerequisites.
+        app.state.sessions.update(sid, approval_mode=mode)
         resp = c.put(
             "/v1/policies",
             json={

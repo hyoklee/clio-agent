@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 
 def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, Any]:
     """Require acceptance and a later model call observing that exact running handle."""
     parts = [part for message in messages for part in message.get("parts", [])]
+    calls = {
+        part.get("call_id"): position
+        for position, part in enumerate(parts)
+        if part.get("type") == "tool_call" and part.get("call_id")
+    }
     accepted = []
     running_observations = []
     for position, part in enumerate(parts):
@@ -27,6 +33,11 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
         if part.get("type") != "tool_result":
             continue
         result = part.get("structured_content") or part.get("metadata", {}).get("result") or {}
+        if isinstance(result, str):
+            try:
+                result = json.loads(result)
+            except ValueError:
+                continue
         if not isinstance(result, dict):
             continue
         data = result.get("structuredContent", result)
@@ -43,16 +54,17 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
             )
         if part.get("tool_name") in {"query_tasks", "observe_tasks"}:
             for task in data.get("tasks", []):
-                if task.get("task_kind") == kind and task.get("effective_status") not in {
-                    "completed",
-                    "failed",
-                    "cancelled",
-                    "interrupted",
-                }:
+                if (
+                    task.get("kind") == kind
+                    and task.get("status") in {"submitted", "queued", "running", "active"}
+                    and task.get("terminal_at") is None
+                    and task.get("recording") == "confirmed"
+                ):
                     running_observations.append(
                         {
                             "handle": task.get("handle"),
                             "position": position,
+                            "call_position": calls.get(part.get("call_id"), -1),
                             "invocation_id": part.get("call_id"),
                             "snapshot": task,
                         }
@@ -63,6 +75,7 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
         for observation in running_observations
         if receipt["handle"] == observation["handle"]
         and receipt["position"] < observation["position"]
+        and receipt["position"] < observation["call_position"]
     ]
     independent = [
         {"position": position, "invocation_id": part.get("call_id"), "observation": part}
@@ -73,6 +86,8 @@ def model_task_evidence(messages: list[dict[str, Any]], kind: str) -> dict[str, 
         and (kind == "MCP" or "independent action completed" in str(part))
         and any(
             receipt["position"] < position < observation["position"]
+            and receipt["position"] < calls.get(part.get("call_id"), -1)
+            and position < observation["call_position"]
             and receipt["handle"] == observation["handle"]
             for receipt in accepted
             for observation in running_observations

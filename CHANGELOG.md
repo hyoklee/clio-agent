@@ -4,6 +4,86 @@ All notable changes to clio-agent's GACT-contract surface are
 documented in this file. Internal changes that don't affect the
 TUI/HTTP surface aren't tracked here.
 
+## Unreleased
+
+## [0.9.5-beta.8] - 2026-10-21
+
+### Added
+
+- Observe, wait for and control background work through shared task handles.
+  Inspect retained results, resume interrupted assignments and exchange authorized
+  session messages, including queries over a selected observation period.
+- Use an Endpoint's installed NDP streaming_v2 runtime to capture and continue
+  authorized Kafka observations without requiring custom Endpoint stream routes.
+- Inspect the assembled context by source and prompt section, with loaded skill
+  instructions separated from their discovery descriptions.
+- Connect National Data Platform datasets, select resources, filter publishers and
+  sign in with the public device flow. Connect existing Endpoints by direct URL
+  or saved SSH profile; query operations and retain bounded stream captures.
+- Run generated HTML with WebGL and offline libraries. Adapt HTML/SVG previews
+  to content and theme, render inline math, and attach configurable large pastes
+  as clickable Sources.
+- Offer Pele diagrams, explicit workspace-folder navigation and an image-based
+  publish, inspect and revise workflow for diagrams and dashboards. Choose layouts
+  according to content instead of imposing uneven columns.
+- Configure concurrent subagents, per-agent workers and nesting depth, including
+  Unlimited. Show model context limits and support filtering by context size.
+- Present one navigable attention tray for permissions and questions, retain draft
+  answers, and submit required question bundles together.
+- Add details beside individual choices in a bundled question without losing the
+  selected options or saved answer drafts.
+
+### Changed
+
+- Keep Session and Work in separate rails, with section order and visibility in
+  Customize. Simplify file headers and preserve temporary navigation previews.
+- Pin the published frontend, agent packs and schemas releases for this beta.
+- Keep additional permitted folders visible in Files. Track hashes and versions
+  for files used or written; request approval before accessing external folders,
+  update grants and continue after access is effective.
+- Open the model picker progressively, prioritize the selected provider, cache
+  selected models and warm discovery at startup. Preserve provider and model names
+  in the compact selector and show full names on hover.
+- Separate native and container installation choices. Install llama.cpp without
+  requiring a model, expose supported AMD acceleration and offer native service
+  paths independently of a container runtime.
+- Coordinate Desktop and its managed Agent update from one product action, while
+  retaining explicit remote-service update ownership.
+- Hide SSH hosts from pickers, or remove their saved CLIO entry after confirmation
+  (#1780).
+
+### Fixed
+
+- Use CLIO Kit 2.11.0 for valid typed statistical distribution results. Keep NDP
+  catalog browsing independent of optional MCP component installation.
+- Reuse goal work clients across iterations and close checker-owned clients on
+  success, failure or cancellation. Refresh credentials without leaking pools.
+- Report waiting, reasoning and goal-judging activity; preserve steering order and
+  distinguish model thinking from tool execution time.
+- Preserve conversations and grants when editing workspace folders, accept typed
+  folder paths directly and remove grants without deleting files.
+- Extract native SearXNG sources correctly on Windows and resolve bundled Python
+  launch paths. Keep native MCP runtime caches short, preserve MXC's private temp
+  profile and pass the real workspace through the OS fence.
+- End owned MCP processes when their runtime closes, including task-capable
+  clients and shared proxy transports; keep borrowed clients under their owner.
+- Keep exactly one active question-gallery panel during rapid tab switches.
+- Reject release memory measurements when delegated tasks fail or remain active,
+  even when their parent session is idle.
+- Read approved connected-source data through shell analysis while the OS fence
+  protects the original files; write derived results in the workspace.
+- Explain invalid catalog or resource selections as local selection errors rather
+  than attributing them to NDP access refusal. Resolve saved catalog connections
+  consistently and keep discovery available before a dataset is attached.
+- Connect the first NDP Endpoint in an empty workspace, inspect its operations,
+  upload files using the deployed multipart schema and retain stream checkpoints
+  separately from bounded response previews.
+- Show tool purpose and readable returned content, distinguish skill instructions
+  from reference reads and retain the original failure when a later request retries.
+- Retain interactive chart sizing and selection and render saved map geometry in
+  portable HTML conversations. Publish four multi-question NDP examples with
+  complete recorded activity.
+
 ## [0.9.5-beta.7.2] - 2026-10-16
 
 ### Fixed

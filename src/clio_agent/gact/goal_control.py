@@ -2,6 +2,41 @@
 
 from __future__ import annotations
 
+import asyncio
+
+
+def build_goal_wait_tool() -> Any:
+    """Declare goal dependencies without leaving a dormant assignment's worker parked."""
+    from clio_agent.gact import context
+    from clio_agent.gact.agents.tool_instrumentation import native_tool
+
+    def wait_for(tasks: str | list[str], return_when: str = "all") -> dict[str, Any]:
+        app = context.active_app()
+        if app is None:
+            raise ValueError("Goal dependencies require an active product conversation")
+        return app.state.conversations.set_dependencies(
+            context.active_session_id(), tasks, return_when
+        )
+
+    return native_tool(
+        wait_for,
+        name="wait_for",
+        args={
+            "tasks": {
+                "anyOf": [
+                    {"type": "string"},
+                    {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                ]
+            },
+            "return_when": {"type": "string", "enum": ["any", "all"], "default": "all"},
+        },
+        desc="Declare the current goal's any/all task dependencies, then yield. Partial results remain queued until this condition; human feedback and Question answers still arrive. Use wait_tasks for an explicit active wait.",
+        presentation="wait",
+        title="Await goal dependencies",
+        domain="goals",
+    )
+
+
 from typing import Any
 
 from clio_agent.gact import context as _ctx
@@ -11,24 +46,34 @@ from clio_agent.gact.goal import GoalDecision, GoalError, _enqueue_goal_redrive,
 def start_goal(app: Any, sid: str, *, condition: str, **limits: Any) -> dict[str, Any]:
     """Set a goal and queue its first turn when the conversation is idle."""
     result = arm_goal(app, sid, condition=condition, **limits)
-    runner = getattr(app.state, "turn_runner", None)
-    if runner is None or not runner.busy(sid):
-        goal = _get_goal(app, sid)
-        _enqueue_goal_redrive(
-            app, sid, GoalDecision(outcome="redrive", reason="goal_started", new_state=goal), goal
-        )
+    goal = _get_goal(app, sid)
+    _enqueue_goal_redrive(
+        app, sid, GoalDecision(outcome="redrive", reason="goal_started", new_state=goal), goal
+    )
     return result
 
 
 async def launch_pending_goal(app: Any, sid: str) -> None:
-    """Prepare the conversation's model and drain an explicitly started goal."""
-    from clio_agent.gact.loop_inbox import drain_inbox_to_new_turn
-    from clio_agent.gact.message_contract import PostMessageRequest
+    """Prepare the selected model and signal accepted Core input without spawning a turn."""
     from clio_agent.gact.session_host_agent import ensure_host_agent
+    from clio_agent.gact.types import PostMessageRequest
 
     await ensure_host_agent(app, sid, PostMessageRequest(text="Continue the active goal"))
-    app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": False})
-    drain_inbox_to_new_turn(app, sid)
+    app.state.conversations.signal_pending()
+
+
+async def maintain_goal_controls(app: Any) -> None:
+    """Keep explicit goal budgets, leaving recovery and admission with the conversation owner."""
+    from clio_agent.gact.autonomy_guard import expire_goal_budget
+
+    def maintain() -> None:
+        for session in app.state.sessions.list():
+            goal = _get_goal(app, session.id)
+            if goal.get("active"):
+                expire_goal_budget(app, session.id, goal)
+
+    await asyncio.to_thread(maintain)
+    app.state.conversations.signal_pending()
 
 
 def pause_failed_goal(app: Any, sid: str, reason: str) -> None:
@@ -53,25 +98,6 @@ def retain_shutdown_goal(app: Any, sid: str) -> None:
         if goal.get("active") and not goal.get("cleared"):
             goal.update(phase="recovering", clear_reason="goal_server_interrupted")
             _put_goal(app, sid, goal)
-
-
-async def maintain_goal_controls(app: Any) -> None:
-    """Enforce explicit waiting budgets and launch retained recovery inboxes."""
-    from clio_agent.gact.autonomy_guard import expire_goal_budget
-    from clio_agent.gact.loop_inbox import drain_inbox_to_new_turn
-    from clio_agent.gact.off_loop import run_off_loop
-
-    for session in app.state.sessions.list():
-        goal = _get_goal(app, session.id)
-        if not goal.get("active"):
-            continue
-        expired = await run_off_loop(expire_goal_budget, app, session.id, goal)
-        if (
-            not expired
-            and goal.get("phase") == "recovering"
-            and getattr(app.state, "agent", None) is not None
-        ):
-            drain_inbox_to_new_turn(app, session.id)
 
 
 def build_set_goal_tool() -> Any:
@@ -112,7 +138,7 @@ def build_set_goal_tool() -> Any:
     return native_tool(
         set_goal,
         name="set_goal",
-        presentation="text",
+        presentation="goal_started",
         domain="autonomy",
         desc=set_goal.__doc__,
         title="Start goal",

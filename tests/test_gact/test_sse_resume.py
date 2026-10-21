@@ -194,7 +194,7 @@ async def _read_preamble(conn: _SSEConnection) -> list[dict[str, Any]]:
 async def test_resume_replays_exactly_after_last_event_id(tmp_path: Any) -> None:
     """Last-Event-ID k → replay exactly k+1..N as monotonic replay events."""
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 5)
     cutoff = events[1].id  # client already has up through the 2nd event
     expected_ids = [e.id for e in events[2:]]
@@ -227,7 +227,7 @@ async def test_malformed_last_event_id_falls_back_to_full_replay(
     deliberately.
     """
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 4)
     all_ids = [e.id for e in events]
 
@@ -242,7 +242,7 @@ async def test_malformed_last_event_id_falls_back_to_full_replay(
 async def test_absent_last_event_id_full_replay(tmp_path: Any) -> None:
     """No header at all → same full replay from 0 (default branch)."""
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 3)
     all_ids = [e.id for e in events]
 
@@ -265,7 +265,7 @@ async def test_beyond_head_replays_nothing(tmp_path: Any) -> None:
     stream settles at the preamble with nothing behind it.
     """
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 3)
     beyond = events[-1].id + 10_000
 
@@ -278,7 +278,7 @@ async def test_beyond_head_replays_nothing(tmp_path: Any) -> None:
 async def test_v3_beyond_process_head_emits_gap_and_restarts_replay(tmp_path: Any) -> None:
     """GACT 0.3 identifies a cursor from a previous process timeline."""
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 3)
     beyond = events[-1].id + 10_000
 
@@ -315,7 +315,7 @@ async def test_head_resume_replays_nothing_but_keeps_live(tmp_path: Any) -> None
     clears the route's ``id <= last_event_id`` live filter.
     """
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 3)
     head = events[-1].id
 
@@ -340,7 +340,7 @@ async def test_head_resume_replays_nothing_but_keeps_live(tmp_path: Any) -> None
 async def test_v3_route_emits_scoped_revisioned_envelopes(tmp_path: Any) -> None:
     """Negotiation reaches the real unbounded SSE route, not only pure projection."""
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 3)
     async with _SSEConnection(
         app,
@@ -381,7 +381,7 @@ async def test_heartbeat_frame_carries_no_id_line(tmp_path: Any) -> None:
 
     from clio_agent.gact.events import heartbeat_event  # noqa: PLC0415
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 2)
 
     async with _SSEConnection(app, sid, last_event_id=str(events[-1].id)) as conn:
@@ -402,7 +402,7 @@ async def test_reconnect_after_heartbeat_replays_nothing_and_declares_no_gap(
 
     from clio_agent.gact.events import heartbeat_event  # noqa: PLC0415
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 3)
     head = events[-1].id
 
@@ -428,7 +428,7 @@ async def test_message_state_cursor_resumes_the_stream_seamlessly(tmp_path: Any)
 
     import httpx  # noqa: PLC0415
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 4)
 
     transport = httpx.ASGITransport(app=app)
@@ -456,7 +456,7 @@ async def test_epoch_reset_reason_reaches_the_stream_audit(
         lambda stage, **fields: rows.append((stage, fields)),
     )
 
-    app, sid = _make_app_with_session(tmp_path)
+    app, sid = await asyncio.to_thread(_make_app_with_session, tmp_path)
     events = _seed_history(app, sid, 2)
     impossible = events[-1].id + 10_000
 

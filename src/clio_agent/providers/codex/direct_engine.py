@@ -51,8 +51,8 @@ engine changes only the transport:
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import dataclasses
-import hashlib
 import json
 import logging
 import queue
@@ -90,10 +90,8 @@ from clio_agent.providers.codex.file_inputs import (
     is_file_preparation_refusal,
     report_file_recovery,
 )
-from clio_agent.providers.codex.request_options import check_media as _check_media
-from clio_agent.providers.codex.request_options import (
-    with_reasoning_summary as _with_reasoning_summary,
-)
+from clio_agent.providers.codex.request_options import PreparedRequest, prepare_request
+from clio_agent.providers.codex.shutdown import close_kept_sockets
 from clio_agent.providers.codex.stream_errors import (
     CallOutcome,
     CodexStreamDroppedError,
@@ -102,11 +100,24 @@ from clio_agent.providers.codex.stream_errors import (
     terminal_error,
 )
 from clio_agent.providers.codex.stream_tool_calls import ToolCallAssembler
+from clio_agent.providers.codex.wire_validation import (
+    _check_media as _check_media,
+)
+from clio_agent.providers.codex.wire_validation import (
+    _error_code as _error_code,
+)
+from clio_agent.providers.codex.wire_validation import (
+    _error_message as _error_message,
+)
+from clio_agent.providers.codex.wire_validation import (
+    _with_reasoning_summary as _with_reasoning_summary,
+)
 from clio_agent.providers.stateful_common import (
     active_stateful_scope,
     register_scope_registry,
     stateful_reset_payload,
 )
+from clio_agent.providers.stream_queue import AsyncStreamQueue, StreamProducer, StreamSink
 
 __all__ = [
     "AsyncCodexDirectEngine",
@@ -131,50 +142,6 @@ class _WireEvent:
 
     event: str
     data: str
-
-
-class PreparedRequest:
-    """One call's wire request, built once, with a running sha256 over its input items.
-
-    Attributes:
-        body: The full Responses payload (``input`` holds every item).
-        headers: The transport headers.
-        system: The instructions the payload carries.
-        tools: The payload's tool list, serialized (the identity a continuation needs).
-        items: The full input items.
-    """
-
-    def __init__(self, body: dict[str, Any], headers: dict[str, str]) -> None:
-        """Wrap a built payload (see :func:`prepare_request`)."""
-        self.body = body
-        self.headers = headers
-        self.system = str(body.get("instructions") or "")
-        self.tools = json.dumps(body.get("tools") or [])
-        self.items: list[Any] = list(body.get("input") or [])
-        self._hasher = hashlib.sha256()
-        self._hashed = 0
-
-    def digest_at(self, count: int) -> str:
-        """sha256 over the first ``count`` items (each as compact JSON), hashed once.
-
-        Raises:
-            ValueError: ``count`` is behind a point already hashed past, or past the end.
-        """
-        if count < self._hashed or count > len(self.items):
-            raise ValueError(f"digest at {count}: hashed {self._hashed} of {len(self.items)}")
-        for item in self.items[self._hashed : count]:
-            self._hasher.update(
-                json.dumps(item, separators=(",", ":"), ensure_ascii=False).encode()
-            )
-            self._hasher.update(b"\n")
-        self._hashed = count
-        return self._hasher.copy().hexdigest()
-
-
-def prepare_request(wire: Any, request: Request) -> PreparedRequest:
-    """Build ``request``'s wire payload -- the ONE build of a call."""
-    wire_request = wire.build_request(request, stream=True)
-    return PreparedRequest(json.loads(wire_request.body), dict(wire_request.headers))
 
 
 def _from_assistant(item: Any) -> bool:
@@ -271,12 +238,34 @@ class AsyncCodexDirectEngine:
     supports_function_calling = True
     supports_reasoning = True
 
-    def __init__(self, model: str, *, wire: Any | None = None, http: bool = False) -> None:
+    def __init__(
+        self,
+        model: str,
+        *,
+        wire: Any | None = None,
+        http: bool = False,
+        http_wire: Any | None = None,
+    ) -> None:
         self.model = model
         self.wire = wire or default_wire()
         # ``http``: the operator chose stateless HTTP (``CLIO_CODEX_TRANSPORT=sse``,
         # e.g. behind a proxy that blocks WebSocket upgrades) -- no kept socket.
         self.http = http
+        self.http_wire = http_wire
+        if http and http_wire is None:
+            if wire is not None:
+                raise ValueError(
+                    "A custom HTTP wire requires its explicit asynchronous counterpart"
+                )
+            from clio_agent.providers.codex.sse_wire import CodexSSEWire
+
+            self.http_wire = CodexSSEWire(
+                api_key=self.wire.api_key,
+                account_id=self.wire.account_id,
+                base_url=self.wire.base_url,
+                originator=self.wire.originator,
+                client_version=self.wire.client_version,
+            )
         self._file_inputs = DocumentInputRecovery()
 
     async def complete(self, request: Request) -> Response:
@@ -289,14 +278,13 @@ class AsyncCodexDirectEngine:
         return self._events(request, listened=True)
 
     async def _events(self, request: Request, *, listened: bool) -> AsyncGenerator[Any, None]:
-        events: queue.SimpleQueue[Any] = queue.SimpleQueue()
+        events: AsyncStreamQueue[Any] = AsyncStreamQueue()
         key = _driven_key(conversation_key(self.model))
-        future = asyncio.run_coroutine_threadsafe(self._call(request, key, events), _OWNER.loop())
-        loop = asyncio.get_running_loop()
+        future = StreamProducer(_OWNER.loop(), lambda: self._call(request, key, events))
         outcome = CallOutcome(_RETRY_LOG, request, listened=listened)
         try:
             while True:
-                item = await loop.run_in_executor(None, events.get)
+                item = await future.receive(events.get())
                 if item is _END:
                     outcome.ended()
                     break
@@ -308,13 +296,12 @@ class AsyncCodexDirectEngine:
             outcome.close()
             if not future.done():
                 future.cancel()
+            await future.retire()
 
     async def aclose(self) -> None:
         """Nothing to release per engine: sockets belong to their conversations."""
 
-    async def _call(
-        self, request: Request, key: tuple[str, ...] | None, out: queue.SimpleQueue[Any]
-    ) -> None:
+    async def _call(self, request: Request, key: tuple[str, ...] | None, out: StreamSink) -> None:
         try:
             _check_media(request)  # typed refusal of oversized attachments before any send
             request = _with_reasoning_summary(request)
@@ -338,17 +325,13 @@ class AsyncCodexDirectEngine:
         finally:
             out.put(_END)
 
-    async def _send(
-        self, request: Request, key: tuple[str, ...] | None, out: queue.SimpleQueue[Any]
-    ) -> None:
+    async def _send(self, request: Request, key: tuple[str, ...] | None, out: StreamSink) -> None:
         if self.http:
-            await asyncio.to_thread(self._http, request, out)
+            await self._http(request, out)
         else:
             await self._run(request, key, out)
 
-    async def _run(
-        self, request: Request, key: tuple[str, ...] | None, out: queue.SimpleQueue[Any]
-    ) -> None:
+    async def _run(self, request: Request, key: tuple[str, ...] | None, out: StreamSink) -> None:
         # The backend takes the bare model id, whatever the dspy.LM model string is.
         request = dataclasses.replace(request, model=self.model)
         prepared = prepare_request(self.wire, request)
@@ -392,20 +375,26 @@ class AsyncCodexDirectEngine:
                 opened_at=live.opened_at if live is not None else time.monotonic(),
             )
 
-    def _http(self, request: Request, out: queue.SimpleQueue[Any]) -> None:
+    async def _http(self, request: Request, out: StreamSink) -> None:
         """One stateless HTTP call (lm15's own transport), events forwarded as they come."""
         from dspy.lm15 import RateLimitError  # noqa: PLC0415
 
+        wire = self.http_wire
+        if wire is None:
+            raise RuntimeError("The Codex HTTP transport was not initialized")
         output_started = False
         try:
-            for event in ToolCallAssembler().stream(
-                self.wire.stream(dataclasses.replace(request, model=self.model))
-            ):
-                if event.type == "error" and not output_started:
-                    if is_file_preparation_refusal(request, event.error.message or ""):
-                        raise FilePreparationUnsupportedError(event.error.message)
-                output_started |= event.type == "delta"
-                out.put(event)
+            assembler = ToolCallAssembler()
+            async with contextlib.aclosing(
+                wire.stream(dataclasses.replace(request, model=self.model))
+            ) as events:
+                async for event in events:
+                    for assembled in assembler.stream((event,)):
+                        if assembled.type == "error" and not output_started:
+                            if is_file_preparation_refusal(request, assembled.error.message or ""):
+                                raise FilePreparationUnsupportedError(assembled.error.message)
+                        output_started |= assembled.type == "delta"
+                        out.put(assembled)
         except RateLimitError as exc:
             if is_usage_limit_text(str(exc)):
                 raise CodexPlanLimitError(str(exc)) from exc
@@ -478,14 +467,12 @@ def default_wire() -> Any:
 
 
 def close_all() -> int:
-    """Close every kept socket (server shutdown); returns how many were open."""
+    """Close kept sockets concurrently under one shutdown bound; return their count."""
     with _CONVERSATIONS_LOCK:
         conversations = list(_CONVERSATIONS.values())
         _CONVERSATIONS.clear()
     if conversations:
-        loop = _OWNER.loop()
-        for conversation in conversations:
-            asyncio.run_coroutine_threadsafe(conversation.socket.close(), loop).result(timeout=5)
+        close_kept_sockets([conversation.socket for conversation in conversations], _OWNER.loop())
     return len(conversations)
 
 
@@ -611,7 +598,7 @@ async def _exchange(
     request: Request,
     socket: Any,
     frame: dict[str, Any],
-    out: queue.SimpleQueue[Any],
+    out: StreamSink,
     *,
     kept: bool,
 ) -> tuple[str, tuple[str, ...]]:
@@ -655,7 +642,7 @@ async def _stream(
     request: Request,
     socket: Any,
     frame: dict[str, Any],
-    out: queue.SimpleQueue[Any],
+    out: StreamSink,
     call_id: str,
     call_index: int,
     streamed: list[bool],
@@ -739,16 +726,6 @@ class _ContinuationLost(Exception):
 
 class _ConnectionLost(Exception):
     """A kept WebSocket closed before any event of the reply was forwarded."""
-
-
-def _error_message(payload: dict[str, Any]) -> str:
-    error = payload.get("error") or (payload.get("response") or {}).get("error") or {}
-    return str(error.get("message") or "") if isinstance(error, dict) else ""
-
-
-def _error_code(payload: dict[str, Any]) -> str:
-    error = payload.get("error") or (payload.get("response") or {}).get("error") or {}
-    return str(error.get("code") or "") if isinstance(error, dict) else ""
 
 
 async def _drop(key: tuple[str, ...]) -> None:

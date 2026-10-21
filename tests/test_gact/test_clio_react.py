@@ -22,6 +22,7 @@ import threading
 import time
 from typing import Any
 
+import anyio
 import dspy
 import pytest
 from dspy.lm15 import ContextLengthError, Request, ToolCallPart, ToolResultPart
@@ -335,9 +336,11 @@ class _HangingLM:
     model = "hanging"
 
     def __init__(self) -> None:
+        self.entered = threading.Event()
         self.closed = threading.Event()
 
     async def acall(self, request: Request) -> Any:
+        self.entered.set()
         try:
             await asyncio.sleep(30)
         except asyncio.CancelledError:
@@ -362,19 +365,40 @@ def test_cancel_mid_call_closes_the_in_flight_call() -> None:
     assert time.monotonic() - started < 5
 
 
-def test_an_uncancelled_call_returns_without_waiting_on_the_watch() -> None:
+def test_an_uncancelled_call_returns_without_waiting_on_the_watch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from clio_agent.gact.agents import clio_react_stream_call
     from clio_agent.gact.agents.clio_react import _call_lm
+
+    # Observe the watch actually waiting, then require completion to wake it
+    # before its deadline. A wall-clock 200 ms limit also measures cold loop
+    # startup and scheduling contention from unrelated CI workers.
+    watch_started = threading.Event()
+    watch_scopes: list[anyio.CancelScope] = []
+    move_on_after = anyio.move_on_after
+
+    def observe_watch(delay: float) -> anyio.CancelScope:
+        scope = move_on_after(delay)
+        if delay == 10:
+            watch_scopes.append(scope)
+            watch_started.set()
+        return scope
+
+    monkeypatch.setattr(clio_react_stream_call, "_CANCEL_POLL_SECONDS", 10)
+    monkeypatch.setattr(clio_react_stream_call.anyio, "move_on_after", observe_watch)
 
     class _Quick:
         model = "quick"
 
         async def acall(self, request: Request) -> str:
+            assert await asyncio.to_thread(watch_started.wait, 5)
             return "done"
 
-    started = time.monotonic()
     with cancellation_checker(lambda: False):
         assert _call_lm(_Quick(), _one_message("quick")) == "done"
-    assert time.monotonic() - started < 0.2
+    assert len(watch_scopes) == 1
+    assert not watch_scopes[0].cancel_called
 
 
 def _in_session(sid: str) -> Any:
@@ -407,7 +431,9 @@ def test_a_session_cancel_kills_the_in_flight_http_stream_and_counts_it() -> Non
 
     def cancel_when_in_flight() -> None:
         deadline = time.monotonic() + 10
-        while "sess-kill" not in active_stream_sessions() and time.monotonic() < deadline:
+        while (
+            "sess-kill" not in active_stream_sessions() or not lm.entered.is_set()
+        ) and time.monotonic() < deadline:
             time.sleep(0.01)
         killed.append(abort_session_streams("sess-kill"))
 
@@ -535,6 +561,37 @@ def test_a_provider_thinking_field_wins_and_inline_tags_stay_text(
     assert (recorded["text"], recorded["source"]) == ("real", "provider_field")
 
 
+def test_failed_call_drains_buffered_reasoning_and_preserves_the_error(
+    live_lanes: dict[str, list[Any]],
+) -> None:
+    from clio_agent.gact.agents.clio_react import _call_lm
+    from clio_agent.providers.claude_code_cancel import active_stream_sessions
+
+    original = ValueError("invalid provider response")
+    pieces = [f"reasoning {index}. " for index in range(40)]
+
+    class FailingLM:
+        model = "failed-stream"
+
+        async def acall(self, request: Request) -> Any:
+            # No checkpoints: every piece remains queued when the call raises.
+            send = dspy.settings.send_stream
+            for text in ["<think>", *pieces]:
+                send.send_nowait({"choices": [{"delta": {"content": text}}]})
+            raise original
+
+    with (
+        _in_session("sess-failed-drain"),
+        cancellation_checker(lambda: False),
+        pytest.raises(ValueError) as failed,
+    ):
+        _call_lm(FailingLM(), _one_message(FailingLM.model))
+    assert failed.value is original
+    assert "".join(text for _, text in live_lanes["thinking"]) == "".join(pieces)
+    assert live_lanes["answer"] == []
+    assert "sess-failed-drain" not in active_stream_sessions()
+
+
 def test_an_empty_think_block_records_no_thinking(thoughts: list[dict[str, Any]]) -> None:
     pred, _ = _run([Reply(text="<think>\n\n</think>\n\nHi")], [search])
     assert pred.answer == "Hi"
@@ -646,7 +703,9 @@ def test_every_step_runs_on_one_persistent_loop_in_the_callers_context() -> None
         cache=False,
         num_retries=0,
     )
-    token = gact_context.set_session_id("sess-loop")
+    session_id = gact_context.active_session_id()
+    assert session_id, "The Core fixture must supply a confirmed conversation"
+    token = gact_context.set_session_id(session_id)
     try:
         with dspy.context(lm=lm):
             ClioReAct("question -> answer", tools=[search])(question="q")
@@ -654,4 +713,4 @@ def test_every_step_runs_on_one_persistent_loop_in_the_callers_context() -> None
         gact_context.reset(token)
     loops = {loop for loop, _ in seen}
     assert len(seen) == 2 and len(loops) == 1
-    assert {session for _, session in seen} == {"sess-loop"}
+    assert {session for _, session in seen} == {session_id}

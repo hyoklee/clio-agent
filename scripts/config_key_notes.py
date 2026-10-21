@@ -13,7 +13,7 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
     ),
     (
         "Language models + providers",
-        ("lm", "providers", "summarizer"),
+        ("lm", "lm15", "providers", "summarizer"),
         "LM sampling/provider selection and the per-provider transport knobs (Claude Code, Codex).",
     ),
     (
@@ -65,12 +65,6 @@ SECTIONS: list[tuple[str, tuple[str, ...], str]] = [
         "Search gateway, or none) and the private SearXNG's engine policy.",
     ),
     (
-        "Relay",
-        ("relay",),
-        "The clio-relay integration: console/artifact transfer, the install-surface CLI and remote "
-        "agents.",
-    ),
-    (
         "Provenance, trace and debug",
         ("provenance", "trace", "debug"),
         "Agentic provenance export (Flowcept/JSONL), the semantic trace backend and "
@@ -94,12 +88,40 @@ KEY_NOTES: dict[str, str] = {
         "producers with legitimately long text fields."
     ),
     "agent_tasks.max_concurrent": (
-        "Max child agent-task threads run concurrently at one spawn depth; raise to widen fan-out "
-        "on a big host, lower to cap CPU use."
+        "Reserved or in-flight child inference at one spawn depth; tools and waits release their "
+        "inference permit. This does not cap active sessions or background tasks."
     ),
-    "agents.child_forward_deadline_s": (
-        "Seconds before an unattended parent's forwarded HITL question auto-fails the waiting "
-        "child task; defaults to the elicitation window."
+    "agent_tasks.max_depth": (
+        "Maximum nesting level for new subagents (first child is level 1); 0 means unlimited. "
+        "Changes apply to new spawns; existing deeper descendants remain visible."
+    ),
+    "gact.mailbox.max_pending_messages": (
+        "Undelivered peer-message ceiling per session; 0 means unlimited. Task results and human "
+        "input are exempt, and delivered history is retained."
+    ),
+    "gact.tasks.health_timeout_s": (
+        "Timeout in seconds for task transport discovery/cancellation RPC delivery; accepted execution, result "
+        "waits and physical cleanup retain their own semantics. Must be finite and positive."
+    ),
+    "gact.tasks.shell.url": (
+        "Native Shell backend URL. memory:// loses local work on process loss; persistent "
+        "backends can redeliver execution and do not promise exactly-once effects."
+    ),
+    "gact.tasks.storage.url": (
+        "Native Download/Indexing backend URL, independent of Shell. memory:// is ephemeral; "
+        "persistent backends can redeliver execution."
+    ),
+    "gact.tasks.shell.queue": (
+        "Shell queue identity; empty selects an automatic clio-shell name, with an incarnation "
+        "suffix for the memory backend. Keep it separate from storage."
+    ),
+    "gact.tasks.storage.queue": (
+        "Storage queue identity; empty selects an automatic clio-storage name, with an "
+        "incarnation suffix for the memory backend. Keep it separate from Shell."
+    ),
+    "gact.tasks.shell.concurrency": "Native Shell worker concurrency; positive, default 10.",
+    "gact.tasks.storage.concurrency": (
+        "Native Download/Indexing worker concurrency; positive, default 10, independent of Shell."
     ),
     "agents.default_blueprint_id": (
         "Installed marketplace Agent Blueprint a fresh deployment bootstraps and binds as its "
@@ -427,10 +449,6 @@ KEY_NOTES: dict[str, str] = {
         "How many recent messages a referenced session's bounded summary carries; raise to give "
         "the model more of the referenced conversation."
     ),
-    "gact.cancellation_grace_s": (
-        "Seconds a cooperative session cancel is given before the turn task is hard-cancelled; "
-        "raise to let a mid-tool-call turn unwind cleanly."
-    ),
     "gact.allowed_hosts": (
         "Comma-separated host names (no ports) a request without a bearer token may address, "
         "besides localhost/127.0.0.1/[::1]; set for a LAN or container deployment reached by "
@@ -443,14 +461,6 @@ KEY_NOTES: dict[str, str] = {
     "gact.interactions.projection_limit": (
         "Maximum rows one pending-interaction projection returns, newest first; the projection is "
         "a full scan of four ledgers, so raise it only when a deep spawn tree genuinely needs more."
-    ),
-    "gact.ledger_retention.user_questions.hard": (
-        "Absolute ceiling on the in-memory ask-user question ledger; past this even a still-pending "
-        "question is force-evicted oldest-first."
-    ),
-    "gact.ledger_retention.user_questions.max": (
-        "Soft cap on the ask-user question ledger where terminal (answered/cancelled/expired) rows "
-        "evict first, protecting questions somebody is still waiting on."
     ),
     "gact.ledger_retention.native_delivery_notes.max": (
         "Unsettled native-attachment decline notes buffered before the oldest are dropped; each "
@@ -513,25 +523,9 @@ KEY_NOTES: dict[str, str] = {
         "Experimental flag enabling live-edge SSE atom sealing (default off); only meaningful with "
         "the S5 atoms regime, leave off normally."
     ),
-    "gact.loop_inbox.max_events": (
-        "Per-session bound on buffered mid-turn wakes (child completions and user steers) before "
-        "the oldest recoverable one is evicted; raise for very fan-out-heavy turns."
-    ),
     "gact.media_cache_bytes": (
         "Bytes of rehydrated tool media (viewed images, PDFs) kept for reuse across context "
         "reads, least recently used first out; lower to bound memory."
-    ),
-    "gact.message_intents.max_acceptances_per_session": (
-        "Per-session cap on retained message-acceptance records used for idempotent POST replay; "
-        "raise for clients that retry over long windows, lower to shrink the intent store."
-    ),
-    "gact.message_intents.max_queued_per_session": (
-        "Per-session cap on durable queued (future) messages; a create past it is REFUSED with a "
-        "typed 429, never evicted. Raise for heavy queue use."
-    ),
-    "gact.message_intents.max_settled_steers_per_session": (
-        "Per-session cap on retained SETTLED (consumed/cancelled) pending-steer rows; undelivered "
-        "steers are never evicted. Lower to shrink the intent store."
     ),
     "gact.resident_ledgers.idle_ttl_s": (
         "Seconds an idle session's in-memory transcript ledger may sit resident before release "
@@ -614,6 +608,14 @@ KEY_NOTES: dict[str, str] = {
         "Bounded retry count for a transient (non-parse) provider failure before giving up; raise "
         "on a flaky provider connection."
     ),
+    "limits.lm_max_concurrent_requests": (
+        "Maximum CLIO model calls per endpoint origin and credential in this process, across "
+        "sessions, models and agent depths. Zero disables the local cap; provider quotas still apply."
+    ),
+    "limits.lm_request_queue_s": (
+        "Maximum seconds waiting for local model admission or a provider concurrency cooldown. "
+        "Cancellation removes queued work without sending a request."
+    ),
     "limits.mcp_content_block_max_bytes": (
         "Byte cap on one MCP content block's decoded binary payload (image/audio/resource) before "
         "it's elided; raise for larger images."
@@ -679,6 +681,11 @@ KEY_NOTES: dict[str, str] = {
     "lm.codex_transport": (
         'Selects the Codex transport; "websocket" (default, with delta continuation) or "sse" '
         "to force the stateless HTTP transport."
+    ),
+    "lm15.sse_limit": (
+        "Maximum SSE line size in bytes for CLIO's Codex direct HTTP bridge; defaults to "
+        "1 MiB. Positive values above 1 MiB also raise its event ceiling. Does not alter "
+        "WebSocket frames or other providers' native transports."
     ),
     "lm.context_sizing_strategy": (
         "Default Fit-to-GPU strategy that sizes a CLIO-managed model server's context (vLLM, "
@@ -1037,102 +1044,6 @@ KEY_NOTES: dict[str, str] = {
         "Largest single resumable-upload chunk the server accepts, enforced while the body "
         "streams; raise for fewer round-trips on fast links, lower to bound per-request memory."
     ),
-    "relay.cluster": (
-        "This deployment's registered relay cluster identity; set it to route jarvis/remote-MCP "
-        "tool calls to a specific cluster."
-    ),
-    "relay.console.enabled": (
-        "Whether the live job console tail folds into the task record; disable to stop the "
-        "periodic console pull entirely."
-    ),
-    "relay.console.pull_limit_bytes": (
-        "Bytes requested per poll of a relay job's console log (clamped to relay's 1 MiB cap); "
-        "raise to refill a window faster after a gap."
-    ),
-    "relay.console.stream": (
-        'Which relay log stream ("console", "stdout", "stderr") the console fold pulls from; '
-        "switch to stdout/stderr only for diagnostics."
-    ),
-    "relay.console.tail_cap_bytes": (
-        "Byte cap on the rolling console tail kept on the task record for UI display; raise for "
-        "more scrollback, lower to shrink records."
-    ),
-    "relay.fetch_max_bytes": (
-        "Max artifact size in bytes this deployment transfers inline via relay_fetch_artifact; "
-        "raise for larger downloads, lower to block big ones."
-    ),
-    "relay.http_url": (
-        "Relay job/artifact HTTP endpoint URL; set together with relay.mcp_url to enable the relay "
-        "transport."
-    ),
-    "relay.install_surface.attention_idle_seconds": (
-        'Seconds of no subprocess output before a relay CLI job is relabeled "needs operator '
-        'attention" (e.g. SSH/2FA); tune for slow networks.'
-    ),
-    "relay.install_surface.bounded_timeout_seconds": (
-        "Timeout in seconds for a fast, non-SSH-dialing clio-relay CLI sub-probe "
-        "(register/doctor/status); raise if calls time out on a slow host."
-    ),
-    "relay.install_surface.cli_path": (
-        "Explicit path to the deployed clio-relay executable, overriding PATH discovery; set when "
-        "it's installed somewhere non-standard."
-    ),
-    "relay.install_surface.job_retention_hard_cap": (
-        "Hard ceiling on tracked relay CLI jobs before even a running one is force-evicted; raise "
-        "on a box driving many concurrent relay ops."
-    ),
-    "relay.install_surface.job_retention_max": (
-        "Soft cap on tracked relay CLI jobs; past this the oldest terminal job is evicted first to "
-        "bound memory."
-    ),
-    "relay.install_surface.long_operation_timeout_seconds": (
-        "Runaway timeout (seconds) for SSH-dialing relay CLI ops (bootstrap, session "
-        "start/attach/teardown); raise for slow SSH targets."
-    ),
-    "relay.install_surface.output_tail_bytes": (
-        "Byte cap on the retained stdout/stderr tail from a relay CLI subprocess call; raise for "
-        "more diagnostic context on failures."
-    ),
-    "relay.install_surface.parsed_document_max_bytes": (
-        "Byte buffer size for parsing a whole clio-relay CLI JSON document; raise if a large "
-        "session document is failing to parse."
-    ),
-    "relay.jarvis_door_namespace": (
-        'The relay-registered JARVIS tool-name namespace prefix; set to "" to use relay\'s older '
-        "compact-name door instead."
-    ),
-    "relay.mcp_url": (
-        "Relay MCP control endpoint URL; set together with relay.http_url to enable relay tool "
-        "discovery."
-    ),
-    "relay.owner_session_generation_id": (
-        "Generation id paired with relay.owner_session_id identifying this deployment's owned "
-        "relay session; set both together or neither."
-    ),
-    "relay.owner_session_id": (
-        "This deployment's owned relay HTTP-API session id, required with "
-        "owner_session_generation_id when the relay door is session-bound."
-    ),
-    "relay.remote_agent.mcp_config_path": (
-        "Path to the MCP config file used by a remote relay-placed agent invocation; set to give "
-        "spawned agents a specific tool config."
-    ),
-    "relay.remote_agent.model": (
-        "Model identifier used for agents spawned onto a relay cluster; override to run remote "
-        "relay agents on a non-default model."
-    ),
-    "relay.remote_agent.prompt_path": (
-        "Path to the prompt file for a relay-cluster-placed remote agent; required (with the "
-        "cluster) for relay agent spawning to work."
-    ),
-    "relay.remote_agent.workdir": (
-        "Working directory used for a relay-placed remote agent invocation; set to point remote "
-        "execution at a specific cluster directory."
-    ),
-    "relay.tool_surfaces_ttl_seconds": (
-        "Seconds a discovered relay tool catalog is trusted before re-discovery; lower for faster "
-        "pickup of new tools, raise to cut overhead."
-    ),
     "runtime.api_base": (
         "Base URL of a running gact API used by the doctor/status live health probe; empty "
         "(default) skips that probe."
@@ -1259,12 +1170,6 @@ KEY_NOTES: dict[str, str] = {
         "Seconds between background re-probes of MCP namespaces that failed discovery; lower to "
         "recover faster, raise to cut retry noise."
     ),
-    "tools.mcp.elicitation.agent_audience.answer_mode": (
-        "Which answerer fulfills a routed agent-audience elicitation: 'inline' (default) runs "
-        "one bounded tool-less completion on the session's own model; 'turn' spawns the child "
-        "answer turn (deadlocks while the parent tool call holds the session's turn slot -- "
-        "retained for lifecycle parity only)."
-    ),
     "tools.mcp.elicitation.agent_audience.default_unhinted": (
         "Whether an UNHINTED form-mode elicitation defaults to the agent. fastmcp drops the "
         "nested _meta on the InputRequiredResult round-trip, so an explicit "
@@ -1284,10 +1189,6 @@ KEY_NOTES: dict[str, str] = {
     "tools.mcp.elicitation.agent_audience.max_depth": (
         "Recursion bound for agent-answer turns: a nested agent-audience elicitation beyond this "
         "depth falls back typed to the human; raise only for deliberately layered server flows."
-    ),
-    "tools.mcp.elicitation.agent_audience.timeout_s": (
-        "Seconds an agent-answer turn may take before the question falls back typed to the human; "
-        "bounds the 'agent is answering' window a pending question can sit in."
     ),
     "tools.mcp.elicitation.url_trusted_origins": (
         "CSV allow-list of origins a url-mode elicitation may point to; add one to enable url "
@@ -1388,9 +1289,5 @@ KEY_NOTES: dict[str, str] = {
         "Keep the per-session messages/<sid>.json copy of every transcript next to clio-core's "
         "atoms; set false to make clio-core the only transcript store (not allowed in History "
         "mode, where the file is the only durable copy)."
-    ),
-    "workflows.step_inactivity_s": (
-        "No-activity window (seconds) before a declared-workflow step's child is judged stalled; a "
-        "long but active step never trips it."
     ),
 }

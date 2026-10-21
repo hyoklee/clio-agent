@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import threading
 import time
 from pathlib import Path
@@ -18,6 +19,7 @@ from clio_agent.gact.protocol.v3.session import session_to_v3
 from clio_agent.gact.sessions import SessionStore
 from clio_agent.runtime import process_census
 from clio_agent.runtime.status import IntegrationStatus
+from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
 
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
@@ -29,9 +31,25 @@ class _BlockedFirstTurn:
         self.app: Any = None
         self.started = threading.Event()
         self.questions: list[str] = []
+        self.model_inputs: list[list[str]] = []
 
     def forward(self, question: str, session_id: str) -> Any:
         """Hold the old turn until Stop and finish follow-ups without a live LM."""
+        from dspy.lm15 import TextPart
+
+        from clio_agent.gact import context
+        from clio_agent.gact.agents.context_reader import ContextReader
+
+        scope = context.run_keyed_scope(context.current_turn().primary_agent_id or "main")
+        messages = ContextReader(self.app.state.arc, session_id, scope).read()
+        self.model_inputs.append(
+            [
+                part.text
+                for message in messages
+                for part in message.parts
+                if isinstance(part, TextPart)
+            ]
+        )
         self.questions.append(question)
         if len(self.questions) == 1:
             cancel_event = self.app.state.cancel_events[session_id]
@@ -41,17 +59,117 @@ class _BlockedFirstTurn:
 
 
 def _wait_for_feedback(app: Any, sid: str, ids: list[str]) -> None:
-    deadline = time.monotonic() + 5
+    # Wait for delivery and physical release, rather than requiring two cold
+    # Core-backed turns to finish within five seconds on a loaded CI runner.
+    # The shared backstop is a hang detector; completion still requires every
+    # submitted identity to be acknowledged and the reservation to be released.
+    deadline = time.monotonic() + TURN_SIGNAL_BACKSTOP_S
     while time.monotonic() < deadline:
-        completed = {
-            row.turn_id
-            for row in app.state.messages.get(sid, [])
-            if row.role == "assistant" and row.error_info is None
-        }
+        cursor = app.state.bus.latest_session_event_id([sid])
+        completed = app.state.task_history.acknowledged_notifications(sid)
         if set(ids) <= completed and not app.state.turn_runner.busy(sid):
             return
-        time.sleep(0.01)
-    pytest.fail("submitted feedback did not finish automatically after Stop")
+        app.state.bus.wait_for_session_events(
+            [sid],
+            after_event_id=cursor,
+            # Empty admission releases its slot without publishing another
+            # turn event. Recheck that physical boundary even without a wake.
+            timeout_s=min(0.25, max(0, deadline - time.monotonic())),
+        )
+    pytest.fail(
+        "submitted feedback did not finish automatically after Stop: "
+        f"expected={ids!r}, acknowledged={sorted(completed)!r}, "
+        f"reservation={app.state.turn_runner.handle(sid)!r}, "
+        f"queue_paused={session_autostart_suspended(app, sid)!r}, "
+        f"pending={[(item.id, item.kind, item.delivery) for item in app.state.task_history.pending_mail(sid)]!r}"
+    )
+
+
+@pytest.mark.parametrize("retire_before_read", [False, True])
+def test_idle_send_resumes_queue_during_empty_admission_reservation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retire_before_read: bool
+) -> None:
+    """Idle admission owns the slot but must not turn a new human send into steering."""
+    from tests.test_gact.test_post_messages import FakeClioAgent
+
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent())
+    entered = threading.Event()
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Paused queue"}).json()["id"]
+        app.state.sessions.update(sid, metadata_patch={"composer_queue_paused": True})
+        queued = client.post(
+            f"/v1/sessions/{sid}/queued-messages",
+            json={"text": "retained future work", "client_message_id": "msg_future_idle"},
+        )
+        assert queued.status_code == 201, queued.text
+        original_admit = app.state.turn_runner.admit
+        release: asyncio.Event | None = None
+        held_once = False
+
+        async def install_hold() -> None:
+            nonlocal release
+            release = asyncio.Event()
+
+        async def held_admit(session_id: str) -> Any:
+            nonlocal held_once
+            if held_once:
+                return await original_admit(session_id)
+            held_once = True
+            assert release is not None
+            selected = await original_admit(session_id) if retire_before_read else None
+            assert selected is None
+            entered.set()
+            await release.wait()
+            return selected if retire_before_read else await original_admit(session_id)
+
+        assert client.portal is not None
+        client.portal.call(install_hold)
+        monkeypatch.setattr(app.state.turn_runner, "admit", held_admit)
+        app.state.turn_runner.signal(sid)
+        assert entered.wait(5), "idle admission never reserved the session"
+        try:
+            reservation = app.state.turn_runner.handle(sid)
+            assert reservation is not None and reservation.turn_id == ""
+            assert app.state.turn_runner.busy(sid)
+            if retire_before_read:
+                from clio_agent.gact import message_submission
+
+                original_parts = message_submission._plan_resource_parts
+                original_handle = app.state.turn_runner.handle
+                armed = threading.Event()
+
+                def prepare_parts(*args: Any, **kwargs: Any) -> Any:
+                    planned = original_parts(*args, **kwargs)
+                    armed.set()
+                    return planned
+
+                def read_after_retirement(session_id: str) -> Any:
+                    if armed.is_set():
+                        armed.clear()
+                        assert release is not None and client.portal is not None
+                        client.portal.call(release.set)
+                        deadline = time.monotonic() + 5
+                        while original_handle(session_id) is not None:
+                            assert time.monotonic() < deadline, "empty admission did not retire"
+                            time.sleep(0.01)
+                    return original_handle(session_id)
+
+                monkeypatch.setattr(message_submission, "_plan_resource_parts", prepare_parts)
+                monkeypatch.setattr(app.state.turn_runner, "handle", read_after_retirement)
+            response = client.post(
+                f"/v1/sessions/{sid}/messages",
+                json={"text": "resume normal sending", "client_message_id": "msg_resume_idle"},
+            )
+            assert response.status_code == 202, response.text
+            assert not session_autostart_suspended(app, sid)
+            if not retire_before_read:
+                assert app.state.turn_runner.handle(sid) == reservation
+                assert app.state.task_history.acknowledged_notifications(sid) == set()
+        finally:
+            assert release is not None
+            client.portal.call(release.set)
+        _wait_for_feedback(app, sid, [response.json()["message_id"], queued.json()["id"]])
+        assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == []
 
 
 def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
@@ -75,13 +193,14 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "check the repo"}]},
         )
-        assert first.status_code == 200, first.text
+        assert first.status_code == 202, first.text
         started = agent.started.wait(timeout=5)
         assert started, "first forward never started"
         first_id = first.json()["message_id"]
         feedback = ["can you actually use gh to clone it", "then inspect its latest release"]
-        ids = ["msg_feedback_clone", "msg_feedback_release"]
-        for text, message_id in zip(feedback, ids, strict=True):
+        client_ids = ["msg_feedback_clone", "msg_feedback_release"]
+        ids = []
+        for text, message_id in zip(feedback, client_ids, strict=True):
             response = client.post(
                 f"/v1/sessions/{sid}/messages",
                 json={
@@ -91,38 +210,59 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
                 },
             )
             assert response.status_code == 202, response.text
-            assert response.json()["message_id"] == message_id
+            accepted_id = response.json()["message_id"]
+            assert accepted_id and accepted_id not in ids
+            ids.append(accepted_id)
         queued = client.post(
             f"/v1/sessions/{sid}/queued-messages",
             json={"text": "future task", "client_message_id": "msg_future"},
         )
         assert queued.status_code == 201, queued.text
+        remaining = client.post(
+            f"/v1/sessions/{sid}/queued-messages",
+            json={"text": "remaining future task", "client_message_id": "msg_remaining"},
+        )
+        assert remaining.status_code == 201, remaining.text
 
         assert client.post(f"/v1/sessions/{sid}/cancel").status_code == 204
         _wait_for_feedback(app, sid, ids)
 
-        assert len(agent.questions) == 3
-        for question, expected in zip(agent.questions[1:], feedback, strict=True):
-            assert expected in question
+        assert len(agent.questions) == 2
+        # Both accepted arrivals enter the same next model iteration, in order.
+        # A separate turn per message is not the queue's delivery boundary.
+        delivered_text = "\n".join(agent.model_inputs[1])
+        assert delivered_text.index(feedback[0]) < delivered_text.index(feedback[1])
+        proofs = app.state.task_history.context_inputs(sid, "main")
+        [batch] = [proof for proof in proofs.values() if set(ids) <= set(proof.notification_ids)]
+        assert [identity for identity in batch.notification_ids if identity in ids] == ids
         rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
         user_ids = [row["id"] for row in rows if row["role"] == "user"]
         assert len(user_ids) == 3
         assert set(user_ids) == {first_id, *ids}
-        for message_id in ids:
+        for message_id, client_id in zip(ids, client_ids, strict=True):
             row = next(row for row in rows if row["id"] == message_id)
+            assert row["metadata"]["client_message_id"] == client_id
             assert row["turn_id"] == message_id
             assert row["metadata"]["pending_steer"] is False
-            assistant = next(
-                row for row in rows if row["turn_id"] == message_id and row["role"] == "assistant"
-            )
-            assert assistant.get("error_info") is None
+        from clio_agent.gact.transcript_file import load_durable_transcript
+
+        reloaded = load_durable_transcript(app, sid)
+        assert reloaded is not None
+        for message_id in ids:
+            replayed = next(message for message in reloaded if message.id == message_id)
+            assert replayed.metadata["pending_steer"] is False
+            assert app.state.task_history.committed_notification_input(sid, message_id) == batch
+        assistant = next(
+            row for row in rows if row["turn_id"] == ids[0] and row["role"] == "assistant"
+        )
+        assert assistant.get("error_info") is None
         old_assistant = next(
             row for row in rows if row["turn_id"] == first_id and row["role"] == "assistant"
         )
         assert old_assistant["error_info"]["error"] == "cancelled"
         assert client.get(f"/v1/sessions/{sid}/pending-steers").json()["pending_steers"] == []
         queue = client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"]
-        assert [row["id"] for row in queue] == [queued.json()["id"]]
+        assert [row["id"] for row in queue] == [queued.json()["id"], remaining.json()["id"]]
         assert session_autostart_suspended(app, sid)
         session = client.get(f"/v1/sessions/{sid}").json()
         assert session["status"] == "idle"
@@ -130,7 +270,7 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
         events = app.state.bus.session_events_since(sid, cursor=1)
         assert [event.payload["turn_id"] for event in events if event.type == "turn.started"] == [
             first_id,
-            *ids,
+            ids[0],
         ]
         cancelled_index = next(
             index
@@ -165,9 +305,55 @@ def test_stop_delivers_sent_feedback_in_order_and_keeps_future_queue_paused(
             json={"revision": queue[0]["revision"], "delivery": "start"},
         )
         assert response.status_code == 200, response.text
-        _wait_for_feedback(app, sid, ["msg_future"])
-        assert len(agent.questions) == 4
+        assert response.json()["acceptance"]["message_id"] == "msg_future"
+        # Promotion preserves the accepted mailbox identity; the transcript's
+        # client message ID remains a separate public correlation identity.
+        _wait_for_feedback(app, sid, [queued.json()["id"]])
+        proof = app.state.task_history.committed_notification_input(sid, queued.json()["id"])
+        assert proof is not None and proof.turn_id == "msg_future"
+        rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        promoted = next(row for row in rows if row["id"] == "msg_future")
+        assert promoted["metadata"].get("pending_steer", False) is False
+        assert promoted["metadata"]["client_message_id"] == "msg_future"
+        assert len(agent.questions) == 3
+        # Send now is a one-item override, preserving the independently paused
+        # future queue. An ordinary new idle send explicitly resumes that queue.
+        assert session_autostart_suspended(app, sid)
+        assert [
+            row["id"]
+            for row in client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"]
+        ] == [remaining.json()["id"]]
+        assert (
+            app.state.task_history.committed_notification_input(sid, remaining.json()["id"]) is None
+        )
+        resumed = client.post(
+            f"/v1/sessions/{sid}/messages",
+            json={"text": "Resume normal sending", "client_message_id": "msg_explicit_resume"},
+        )
+        assert resumed.status_code == 202, resumed.text
+        _wait_for_feedback(app, sid, [resumed.json()["message_id"], remaining.json()["id"]])
         assert not session_autostart_suspended(app, sid)
+        assert client.get(f"/v1/sessions/{sid}/queued-messages").json()["queued_messages"] == []
+        assert len(agent.questions) == 5
+        final_rows = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+        for identity, client_id in (
+            ("msg_future", "msg_future"),
+            ("msg_remaining", "msg_remaining"),
+            (resumed.json()["message_id"], "msg_explicit_resume"),
+        ):
+            [recorded] = [row for row in final_rows if row["id"] == identity]
+            assert recorded["role"] == "user"
+            assert recorded["metadata"]["client_message_id"] == client_id
+            assert (
+                len(
+                    [
+                        row
+                        for row in final_rows
+                        if row["metadata"].get("client_message_id") == client_id
+                    ]
+                )
+                == 1
+            )
 
 
 def test_queue_pause_survives_completed_feedback_and_store_reload(tmp_path: Path) -> None:
@@ -183,13 +369,21 @@ def test_queue_pause_survives_completed_feedback_and_store_reload(tmp_path: Path
     assert not session_autostart_suspended(app, session.id)
 
 
-def test_legacy_cancelled_session_retains_queue_pause() -> None:
-    """An older persisted cancelled session has no queue-pause metadata yet."""
-    sessions = SessionStore()
+def test_startup_migrates_legacy_cancelled_queue_pause_once(tmp_path: Path) -> None:
+    """Legacy Stop is imported at startup; ordinary reads do not migrate state."""
+    path = tmp_path / "sessions.json"
+    sessions = SessionStore(path=path)
     session = sessions.create(workspace_id="ws_default", title="Legacy cancelled")
     sessions.update(session.id, status="cancelled")
-    app = SimpleNamespace(state=SimpleNamespace(sessions=sessions))
-    assert session_autostart_suspended(app, session.id)
+    app = build_app(sessions_path=path)
+    with TestClient(app):
+        assert session_autostart_suspended(app, session.id)
+        first = app.state.sessions.get(session.id)
+        from clio_agent.gact.task_migration import migrate_history
+
+        migrate_history(app)
+        assert app.state.sessions.get(session.id) == first
+        assert app.state.turn_runner.handle(session.id) is None
 
 
 def test_queue_pause_projection_does_not_expose_private_session_metadata() -> None:

@@ -73,14 +73,20 @@ def test_async_native_observation_waits_for_body_and_cleans_declarations(
     assert inspect.iscoroutinefunction(wrapped)
     assert getattr(wrapped, TOOL_OBSERVED_ATTR) is True
     assert instrument_tools([tool])[0].func is wrapped
-    declare_structured_content({"stale": True})
 
-    if failure is None:
-        assert asyncio.run(tool.acall(query="campaign")) == {"query": "campaign", "limit": 2}
-    else:
-        error_type = RuntimeError if failure == "error" else asyncio.CancelledError
-        with pytest.raises(error_type):
-            asyncio.run(tool.acall(query="campaign"))
+    async def invoke() -> None:
+        # Declarations belong to the invocation's context. asyncio.run copies
+        # its parent's ContextVars; clearing that copy cannot clear the parent.
+        declare_structured_content({"stale": True})
+        if failure is None:
+            assert await tool.acall(query="campaign") == {"query": "campaign", "limit": 2}
+        else:
+            error_type = RuntimeError if failure == "error" else asyncio.CancelledError
+            with pytest.raises(error_type):
+                await tool.acall(query="campaign")
+        assert pop_declared_structured_content() is None
+
+    asyncio.run(invoke())
 
     assert [event[0] for event in events] == ["started", "completed"]
     assert all(event[1] == {"query": "campaign", "limit": 2} for event in events)

@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import threading
-from collections.abc import Mapping
+from collections.abc import Coroutine, Mapping
+from functools import partial
 from typing import Any
 
 from clio_agent.gact import context as _ctx
@@ -26,7 +26,31 @@ async def _call_enabled_external_mcp_tool(
     tool_args: Mapping[str, Any],
     tool_annotations: Any = None,
 ) -> str:
-    """Call an explicitly enabled external MCP tool for a dynamic agent."""
+    """Retire the synchronous observation owner while the SDK stays on its app loop."""
+    from clio_agent.gact.tool_dispatch import run_owned_callable
+
+    return await run_owned_callable(
+        partial(
+            _run_external_mcp_tool_sync,
+            app,
+            server_id,
+            info,
+            tool_name,
+            tool_args,
+            tool_annotations,
+        )
+    )
+
+
+def _run_external_mcp_tool_sync(
+    app: Any,
+    server_id: str,
+    info: Mapping[str, Any],
+    tool_name: str,
+    tool_args: Mapping[str, Any],
+    tool_annotations: Any = None,
+) -> str:
+    """Keep permission and paired observation on one worker, with native SDK dispatch."""
 
     observer_name = f"{info.get('name', 'ext')}.{tool_name}"
     # Reach the permission gate via the active app's state (installed turn gate, else
@@ -44,10 +68,6 @@ async def _call_enabled_external_mcp_tool(
     if decision != "allow":
         raise PermissionError(f"tool call {observer_name!r} denied by permission gate")
 
-    # Execution path (#1106 + #1113): this dynamic-agent call dispatches call_tool, so
-    # its client comes from make_elicitation_client — the single factory PLUS the
-    # elicitation handler bound to THIS call's invocation (one client per call).
-    from clio_agent.gact.elicitation_bridge import make_elicitation_client  # noqa: PLC0415
     from clio_agent.gact.mcp_apps import call_tool_result_to_observer  # noqa: PLC0415
     from clio_agent.tools.execution import notify_tool_observer  # noqa: PLC0415
     from clio_agent.tools.mcp_config import (  # noqa: PLC0415
@@ -55,15 +75,7 @@ async def _call_enabled_external_mcp_tool(
         transport_from_spec,
     )
     from clio_agent.tools.mcp_errors import typed_mcp_call_error  # noqa: PLC0415
-
-    spec = info.get("spec", {})
-    try:
-        transport = transport_from_spec(spec)
-        client_ctx = make_elicitation_client(app, transport, server_id, tool_name)
-    except MCPTransportError:
-        raise RuntimeError(f"unknown stored MCP transport for {server_id}") from None
-    except (ImportError, RuntimeError, TypeError, ValueError, OSError) as exc:
-        raise RuntimeError("fastmcp Client unavailable") from exc
+    from clio_agent.tools.mcp_runtime import make_mcp_client
 
     tool_observer = getattr(app.state, "pending_tool_observer", None)
     if tool_observer is None:
@@ -71,19 +83,33 @@ async def _call_enabled_external_mcp_tool(
     notify_tool_observer(tool_observer, observer_name, dict(tool_args), "started")
     try:
         from clio_agent.gact.artifacts.observer_bridge import observer_call_id
-        from clio_agent.tools.mcp_executor import AsyncMCPToolExecutor
         from clio_agent.tools.task_call_context import TASK_CALL, TaskCall
 
-        executor = AsyncMCPToolExecutor(
-            transport, client_factory=lambda _: client_ctx, server_id=server_id
-        )
         token = TASK_CALL.set(
             TaskCall(invocation_id=observer_call_id(), owner_agent=_ctx.active_react_scope())
         )
         try:
-            async with executor:
-                outcome = await executor.call_tool_result(tool_name, dict(tool_args))
-                result = outcome.raw_result
+
+            async def request() -> Any:
+                """Create and use the native client only on the application event loop."""
+                import hashlib
+
+                spec = info.get("spec", {})
+                try:
+                    transport = transport_from_spec(spec)
+                    client_ctx = make_mcp_client(transport, server_id=server_id)
+                except MCPTransportError:
+                    raise RuntimeError(f"unknown stored MCP transport for {server_id}") from None
+                except (ImportError, RuntimeError, TypeError, ValueError, OSError) as exc:
+                    raise RuntimeError("fastmcp Client unavailable") from exc
+                auth_scope = hashlib.sha256(
+                    json.dumps(dict(spec), sort_keys=True, default=str).encode()
+                ).hexdigest()
+                return await app.state.external_tasks.call(
+                    server_id, client_ctx, tool_name, dict(tool_args), auth_scope=auth_scope
+                )
+
+            result = _run_external_request_sync(app, request())
         finally:
             TASK_CALL.reset(token)
     except Exception as raw_exc:  # noqa: BLE001
@@ -121,65 +147,19 @@ async def _call_enabled_external_mcp_tool(
     return str(result)
 
 
-def _run_external_mcp_tool_sync(
-    app: Any,
-    server_id: str,
-    info: Mapping[str, Any],
-    tool_name: str,
-    tool_args: Mapping[str, Any],
-    tool_annotations: Any = None,
-) -> str:
+def _run_external_request_sync(app: Any, work: Coroutine[Any, Any, Any]) -> Any:
+    """Use the application's native-client loop; retain no private-loop fallback."""
     application_loop = getattr(app.state, "mcp_app_loop", None)
-    if application_loop is not None:
-        try:
-            running = asyncio.get_running_loop()
-        except RuntimeError:
-            running = None
-        if running is application_loop:
-            raise RuntimeError("Synchronous MCP tools must execute off the application loop")
-        return asyncio.run_coroutine_threadsafe(
-            _call_enabled_external_mcp_tool(
-                app, server_id, info, tool_name, tool_args, tool_annotations
-            ),
-            application_loop,
-        ).result()
+    if application_loop is None:
+        work.close()
+        raise RuntimeError("External MCP execution requires the application lifespan")
     try:
-        asyncio.get_running_loop()
+        running = asyncio.get_running_loop()
     except RuntimeError:
-        return asyncio.run(
-            _call_enabled_external_mcp_tool(
-                app,
-                server_id,
-                info,
-                tool_name,
-                tool_args,
-                tool_annotations,
-            )
-        )
+        running = None
+    if running is application_loop:
+        work.close()
+        raise RuntimeError("Synchronous MCP tools must execute off the application loop")
+    from clio_agent.gact.tool_dispatch import call_on_application
 
-    result: dict[str, Any] = {}
-
-    def _runner() -> None:
-        try:
-            result["value"] = asyncio.run(
-                _call_enabled_external_mcp_tool(
-                    app,
-                    server_id,
-                    info,
-                    tool_name,
-                    tool_args,
-                    tool_annotations,
-                )
-            )
-        except BaseException as exc:  # noqa: BLE001
-            logger.exception(
-                "External MCP compatibility loop failed server=%s tool=%s", server_id, tool_name
-            )
-            result["error"] = exc
-
-    thread = threading.Thread(target=_runner, daemon=True)
-    thread.start()
-    thread.join()
-    if "error" in result:
-        raise result["error"]
-    return str(result.get("value", ""))
+    return call_on_application(application_loop, work)

@@ -1,0 +1,206 @@
+{
+  "candidate": "057b93bd14fbb42d0704c9eec6861ab4ba82602b",
+  "recorded_at": "2026-10-14T17:06:46.318046+00:00",
+  "status": "coverage under construction; not executed",
+  "production_frozen_for_independent_review": true,
+  "cases": [
+    {
+      "id": "tests/test_gact/test_replacement_turn_resources.py::test_shutdown_closes_admission_already_reserved_before_segment_start",
+      "behavior": "Shutdown rejects in-flight admission before model execution; no second session starts",
+      "ledger": [
+        "A05",
+        "Q8",
+        "R3"
+      ],
+      "status": "unexecuted"
+    },
+    {
+      "id": "tests/test_arc/test_task_replacement_contracts.py::test_revocation_releases_unbounded_peer_wait_without_task_progress",
+      "behavior": "Revocation alone wakes an unbounded wait, denies disclosure and leaves owner execution untouched",
+      "ledger": [
+        "Q5"
+      ],
+      "status": "unexecuted"
+    },
+    {
+      "id": "tests/test_arc/test_conversation_owner_contracts.py::test_retained_question_alias_answers_the_authorized_canonical_task",
+      "behavior": "Authorized retained alias settles the canonical Question without allocating another record",
+      "ledger": [
+        "Q1",
+        "Q3"
+      ],
+      "status": "unexecuted"
+    },
+    {
+      "id": "tests/test_tools/test_native_task_client_contract.py::test_default_client_factory_constructs_the_native_sdk_transport",
+      "behavior": "Default MCP client factory constructs a real native SDK transport without a class override",
+      "ledger": [
+        "Q6"
+      ],
+      "status": "unexecuted"
+    },
+    {
+      "id": "tests/test_arc/test_conversation_owner_contracts.py::test_cancellation_keeps_work_settling_during_worker_retirement",
+      "behavior": "Dispatch descendant cancellation before held worker release; acknowledgement alone cannot settle the parent; require actual cleanup confirmation",
+      "ledger": [
+        "A06",
+        "R6"
+      ],
+      "status": "unexecuted",
+      "fixture_correction": "The fixture now accepts and records the required cancellation dispatch instead of failing before settlement assertions."
+    }
+  ],
+  "retired_architecture_tests": [
+    {
+      "path": "tests/test_gact/test_elicitation_disclosure_1325.py",
+      "retired_authority": "elicitation_correlation record/drain/stamp cache",
+      "retained_behavior": "Input/answer attribution, no lost or duplicate recipient delivery and schema firewall",
+      "replacement_evidence_required": [
+        "Core recipient-input tests",
+        "Q6",
+        "Q3",
+        "R4",
+        "R5"
+      ],
+      "status": "blocked until replacement evidence passes"
+    },
+    {
+      "path": "tests/test_gact/test_executor_elicitation_wiring_1325.py",
+      "retired_authority": "correlated handler factory and direct elicitation bridge",
+      "retained_behavior": "Actual SDK pre-task and accepted-task input re-entry through one native callback and immutable identity",
+      "replacement_evidence_required": [
+        "tests/test_tools/test_native_task_client_contract.py",
+        "Q6"
+      ],
+      "status": "blocked until replacement evidence passes"
+    }
+  ],
+  "outstanding_test_migration": "Other mixed legacy elicitation/interaction/variant modules still need retained pure-helper imports and fresh public behavior reconstruction; their required behaviors are not waived.",
+  "mixed_legacy_test_reconstruction": [
+    {
+      "path": "tests\\test_gact\\test_agent_elicitation.py",
+      "retained_tests": [
+        "test_answer_field_text_empty_ref_is_empty",
+        "test_answer_field_text_ignores_reasoning_and_reads_only_the_answer_part",
+        "test_answer_field_text_is_untruncated_behind_a_long_reasoning_block",
+        "test_answer_field_text_unknown_message_ref_is_empty",
+        "test_apply_session_tool_allowlist_is_a_noop_without_the_stamped_metadata",
+        "test_audience_hint_absent_meta_is_empty",
+        "test_audience_hint_ignores_unrelated_meta_keys",
+        "test_audience_hint_is_case_and_whitespace_normalized",
+        "test_audience_hint_reads_the_declared_meta_key",
+        "test_decide_routing_denied_server_falls_back_typed",
+        "test_decide_routing_known_namespace_still_routes_when_not_denied",
+        "test_decide_routing_max_depth_is_configurable",
+        "test_decide_routing_no_session_falls_back_typed",
+        "test_decide_routing_policy_disabled_falls_back_typed",
+        "test_decide_routing_recursion_depth_exceeded_falls_back_typed",
+        "test_decide_routing_routes_when_audience_agent_and_policy_allows",
+        "test_decide_routing_strict_mode_makes_unhinted_a_pure_noop",
+        "test_decide_routing_unhinted_empty_namespace_still_fails_closed",
+        "test_decide_routing_unhinted_form_defaults_to_agent_by_contract",
+        "test_decide_routing_unknown_namespace_fails_closed",
+        "test_decide_routing_unrecognized_audience_value_is_also_a_noop",
+        "test_decide_routing_url_mode_never_routes_even_with_audience_agent",
+        "test_parse_agent_reply_accepts_answer_object",
+        "test_parse_agent_reply_accepts_decline",
+        "test_parse_agent_reply_extracts_json_followed_by_trailing_prose",
+        "test_parse_agent_reply_extracts_json_prefaced_by_reasoning_prose",
+        "test_parse_agent_reply_ignores_braces_inside_json_string_values",
+        "test_parse_agent_reply_prose_without_a_valid_block_stays_unparseable",
+        "test_parse_agent_reply_rejects_anything_not_the_declared_contract",
+        "test_parse_agent_reply_tolerates_fenced_code_block"
+      ],
+      "retired_architecture_tests": [
+        "test_agent_answer_child_resolves_to_an_empty_toolset",
+        "test_agent_answer_error_falls_back_typed_never_crashes",
+        "test_agent_answer_failing_schema_never_reaches_the_server",
+        "test_agent_answer_passing_schema_resolves_and_attributes_agent",
+        "test_agent_decline_is_forwarded_to_the_server_typed",
+        "test_human_still_answers_normally_after_a_fallback",
+        "test_no_audience_hint_mints_a_question_with_no_new_fields",
+        "test_over_long_agent_answer_fails_the_schema_firewall_and_falls_back",
+        "test_over_long_human_answer_is_rejected_with_a_typed_message",
+        "test_real_answer_turn_reply_parses_through_the_real_message_chain"
+      ],
+      "retained_assertions": "unchanged; pure helper imports moved to their canonical leaf",
+      "replacement_required": [
+        "single SDK callback and Question arbitration",
+        "tool-less conversation helper, human fallback and schema firewall",
+        "Q3",
+        "Q4",
+        "Q6",
+        "R4",
+        "R5"
+      ],
+      "status": "unexecuted; required lifecycle behavior remains blocked"
+    },
+    {
+      "path": "tests\\test_gact\\test_elicitation_hitl.py",
+      "retained_tests": [
+        "test_default_answer_metadata_helper_skips_none_defaults",
+        "test_multi_select_answer_builds_a_list_content_value",
+        "test_multi_select_answer_rejects_empty_selection_via_min_items_even_when_not_required",
+        "test_multi_select_answer_rejects_more_selections_than_max_items",
+        "test_multi_select_answer_validates_membership",
+        "test_punycode_warning_detects_raw_unicode_homograph_host",
+        "test_punycode_warning_falls_back_to_raw_host_on_bad_decode",
+        "test_punycode_warning_helper_detects_ace_labels",
+        "test_scalar_validation_rejects_invalid_answers",
+        "test_translate_boolean_field_is_confirmation",
+        "test_translate_enum_field_is_choice_with_options",
+        "test_translate_multi_select_carries_min_max_items_onto_the_field_descriptor",
+        "test_translate_multi_select_enum_field_is_multi_choice",
+        "test_translate_multi_select_enum_inside_a_multi_field_form_stays_freeform",
+        "test_translate_nested_array_of_objects_still_degrades_not_flat",
+        "test_translate_nested_schema_degrades_not_flat",
+        "test_translate_non_object_schema_degrades",
+        "test_translate_number_and_defaults_are_carried",
+        "test_translate_string_field_is_freeform",
+        "test_translate_unconstrained_array_still_degrades_not_flat",
+        "test_translate_unsupported_field_type_degrades",
+        "test_url_trust_accepts_listed_origin",
+        "test_url_trust_rejects_insecure_scheme",
+        "test_url_trust_rejects_untrusted_origin",
+        "test_validate_elicitation_answer_unit_rules"
+      ],
+      "retired_architecture_tests": [
+        "test_answer_vs_answer_second_is_409",
+        "test_cancelling_via_cancel_route_returns_sdk_cancel",
+        "test_child_session_elicitation_forwards_to_parent_and_resolves",
+        "test_claim_question_transition_is_atomic_first_wins",
+        "test_concurrent_first_elicitations_share_one_registry",
+        "test_correlated_capabilities_declares_url_only_when_trusted",
+        "test_correlation_registry_single_in_flight_and_ambiguity",
+        "test_declining_via_answer_route_returns_sdk_decline",
+        "test_elicitation_client_classifies_its_connection_era",
+        "test_elicitation_client_preserves_modern_negotiation",
+        "test_elicitation_mid_tool_call_blocks_and_answer_route_unblocks",
+        "test_executor_elicitation_end_to_end_through_correlated_handler",
+        "test_form_default_pre_populates_answer_metadata_before_any_answer",
+        "test_gateway_build_wires_correlated_elicitation_handler",
+        "test_mrtr_input_request_lands_on_the_one_hitl_surface",
+        "test_required_integer_invalid_answer_is_422_then_valid_accepts",
+        "test_terminalize_never_overwrites_a_landed_answer",
+        "test_timeout_expires_question_clears_anchor_and_blocks_late_answer",
+        "test_url_elicitation_plain_ascii_host_carries_no_punycode_warning",
+        "test_url_elicitation_punycode_host_carries_a_warning_and_decoded_host",
+        "test_url_elicitation_raw_unicode_homograph_host_carries_a_warning",
+        "test_url_elicitation_trusted_origin_mints_confirmation",
+        "test_url_elicitation_untrusted_origin_declines_without_minting",
+        "test_url_not_declared_when_no_trust_list"
+      ],
+      "retained_assertions": "unchanged; pure helper imports moved to their canonical leaf",
+      "replacement_required": [
+        "single SDK callback and Question arbitration",
+        "tool-less conversation helper, human fallback and schema firewall",
+        "Q3",
+        "Q4",
+        "Q6",
+        "R4",
+        "R5"
+      ],
+      "status": "unexecuted; required lifecycle behavior remains blocked"
+    }
+  ]
+}

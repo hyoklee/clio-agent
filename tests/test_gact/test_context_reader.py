@@ -109,3 +109,45 @@ def test_media_are_reused_until_the_file_changes(tmp_path: Path) -> None:
         third = result_part("c1", "view_image", descriptor, False)
     [note] = third.content
     assert "media_unavailable" in note.text
+
+
+def test_compacting_confirmed_input_removes_prompt_text_but_keeps_delivery_proof(
+    arc: ARCMemory,
+) -> None:
+    """Input references participate in compaction; their original receipts survive it."""
+    from types import SimpleNamespace
+
+    from clio_agent.gact import context
+    from clio_agent.gact.agents.context_reader import ContextReader
+    from clio_agent.gact.compaction_policy import KeepPolicy, post_compaction_context
+    from clio_agent.gact.task_history import TaskHistory
+    from tests.test_arc.test_task_history import input_record, mail
+
+    history = TaskHistory(arc)
+    item = history.record_mail(mail(history, "old-human-input"))
+    rendered = history.write_content("owner", {"text": "Original question verbatim."})
+    proof = input_record(item).model_copy(
+        update={"rendered_content": (rendered,), "turn_id": "first-turn", "human_input": True}
+    )
+    history.record_input(proof)
+    token = context.set_app(SimpleNamespace(state=SimpleNamespace(task_history=history)))
+    try:
+        reader = ContextReader(arc, "owner", "main")
+        assert "Original question verbatim." in str(reader.read())
+        live = arc.render_working_set("owner", "main")
+        [receipt] = [segment for segment in live if segment.kind == "recipient_input"]
+        decision = post_compaction_context(live, open_turn_id="next-turn", policy=KeepPolicy())
+        assert receipt.id in decision.summarize
+        assert not decision.keep
+        arc.summarize_segments("owner", "main", list(decision.summarize), {"text": "A summary."})
+        compacted = str(reader.read())
+        assert "A summary." in compacted
+        assert "Original question verbatim." not in compacted
+    finally:
+        context.reset(token)
+
+    restored = TaskHistory(arc)
+    restored.restore()
+    assert restored.recipient_input("owner", proof.id) == proof
+    assert restored.acknowledged_notifications("owner") == frozenset({item.id})
+    assert restored.pending_mail("owner") == ()

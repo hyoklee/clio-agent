@@ -25,7 +25,7 @@ from clio_agent.gact.todos import (
 )
 from clio_agent.gact.types import AgentDef
 
-pytestmark = pytest.mark.usefixtures("host_agent_executor")
+pytestmark = pytest.mark.usefixtures("host_agent_executor", "native_builtin_lifespan")
 
 _AGENT = AgentDef(id="main", source="expert_pack", title="Main", metadata={})
 

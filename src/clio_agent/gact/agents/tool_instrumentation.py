@@ -60,8 +60,8 @@ import copy
 import functools
 import inspect
 import logging
-import threading
 from collections.abc import Callable, Iterable, Mapping
+from contextvars import ContextVar
 from typing import Any, cast, get_args
 
 from clio_agent.gact.evidence import _bounded_tool_call_result
@@ -141,30 +141,6 @@ def tool_call_metadata_resolver(
 
     return TOOL_CALL_METADATA_RESOLVERS.get(str(name or ""))
 
-
-def _wait_agent_tasks_call_metadata(app: Any, args: Mapping[str, Any]) -> dict[str, Any]:
-    """Resolve ``wait_agent_tasks``'s STARTED-phase ``waited_tasks`` display rows.
-
-    Clean-wire rule (P5): resolved from the agent-task registry AT CALL TIME
-    (static spawn-time facts) so the UI never renders a raw task-id array.
-    ``task_ids`` is model-authored: a bare STRING used to reach
-    ``list(args.get("task_ids") or [])``, which iterates its CHARACTERS —
-    fabricating one bogus row per character. Anything that isn't absent or a
-    genuine list of string ids gets a typed marker instead of invented rows;
-    the tool's own argument validation surfaces the real error.
-    """
-
-    from clio_agent.gact.agent_tasks import resolve_waited_task_rows  # noqa: PLC0415
-
-    task_ids = args.get("task_ids")
-    if task_ids is None:
-        task_ids = []
-    if isinstance(task_ids, list) and all(isinstance(item, str) for item in task_ids):
-        return {"waited_tasks": resolve_waited_task_rows(app, task_ids)}
-    return {"waited_tasks": [{"invalid": "task_ids_not_a_list"}]}
-
-
-register_tool_call_metadata_resolver("wait_agent_tasks", _wait_agent_tasks_call_metadata)
 
 # create_artifact's own ``content`` (+ batch ``artifacts[].content``) is a
 # model-authored DELIVERABLE, not call evidence — the minted artifact file +
@@ -344,7 +320,9 @@ def native_tool(
     setattr(func, TITLE_ATTR, sanitize_tool_title(title))
     setattr(func, DOMAIN_ATTR, _validated_domain(domain, tool_name=name))
     setattr(func, READ_ONLY_ATTR, bool(read_only))
-    return _clio_native_tool_class()(func=func, name=name, desc=desc, args=args)
+    tool = _clio_native_tool_class()(func=func, name=name, desc=desc, args=args)
+    func.__dict__["_clio_builtin"] = True
+    return tool
 
 
 def boundary_observed_tool(
@@ -442,13 +420,11 @@ def tool_domain(tool: Any) -> ToolDomain | None:
     return cast("ToolDomain", value_str)
 
 
-# Per-thread one-shot declaration (owner ruling, wire semantics): a native tool
-# call and its instrumentation wrapper always run SYNCHRONOUSLY on the SAME
-# thread (call -> func() -> notify completed, no interleaving with another
-# tool's call on that thread), so a thread-local is a safe, simple channel —
-# the same pattern ``tool_observer``'s ``_OBSERVER_CALL_IDS``/``_OBSERVER_CALL_T0``
-# already use for the same reason.
-_DECLARED_STRUCTURED_CONTENT = threading.local()
+# One-shot presentation is local to an invocation, including concurrent async
+# calls. MCP explicitly carries it between execution and observation contexts.
+_DECLARED_STRUCTURED_CONTENT: ContextVar[dict[str, Any] | None] = ContextVar(
+    "clio_declared_structured_content", default=None
+)
 
 
 def declare_structured_content(value: Mapping[str, Any]) -> None:
@@ -461,22 +437,24 @@ def declare_structured_content(value: Mapping[str, Any]) -> None:
     incidental dict-key ORDER in the model-facing return).
 
     Call this from inside a native tool's own function body, any time before
-    it returns. The instrumentation wrapper reads + clears it the moment the
-    call completes (:func:`pop_declared_structured_content`) — one-shot, so a
-    stale value can never leak onto a later, unrelated call on the same
-    thread. A tool that never calls this gets the unchanged default
+    it returns. MCP execution captures the declaration into result metadata;
+    the calling bridge restores it for the observation wrapper to read and
+    clear on completion (:func:`pop_declared_structured_content`). It is one-shot, so a
+    stale value can never leak onto a later, unrelated call in that context.
+    A tool that never calls this gets the unchanged default
     (``structured_content`` derived from an MCP-shaped ``result``, or absent).
     """
 
-    _DECLARED_STRUCTURED_CONTENT.value = dict(value)
+    _DECLARED_STRUCTURED_CONTENT.set(dict(value))
 
 
 def pop_declared_structured_content() -> dict[str, Any] | None:
-    """Read + clear the current thread's declared structured payload, if any.
+    """Read + clear the current invocation's declared structured payload, if any.
 
     Idempotent (a second pop with nothing declared just returns ``None``), so
     it is safe to call from more than one place in the same call's lifecycle.
-    Two call sites consume it (finding A, proven leak fix):
+    The MCP boundary first captures and clears it in the execution context.
+    In the calling context, two sites consume it (finding A, proven leak fix):
 
     * the tool observer (``tool_observer._make_tool_observer``) reads it once
       per completed call to attach ``structured_content`` to the wire
@@ -486,13 +464,13 @@ def pop_declared_structured_content() -> dict[str, Any] | None:
       whether the observer ever reached its own read (an unresolved session
       id, an observer exception ``execution.notify_tool_observer`` swallows,
       or no observer installed at all all used to leave a stale value for the
-      NEXT unrelated call on this thread to inherit). This is the channel's
+      NEXT unrelated call in that context to inherit). This is the channel's
       REAL one-shot guarantee: consumption is tied to the call boundary, not
       to how far the observer got.
     """
 
-    value = getattr(_DECLARED_STRUCTURED_CONTENT, "value", None)
-    _DECLARED_STRUCTURED_CONTENT.value = None
+    value = _DECLARED_STRUCTURED_CONTENT.get()
+    _DECLARED_STRUCTURED_CONTENT.set(None)
     return value
 
 
@@ -524,25 +502,27 @@ def observed_tool_callable(func: Callable[..., Any], tool_name: str) -> Callable
 
         @functools.wraps(func)
         async def async_wrapper(*call_args: Any, **call_kwargs: Any) -> Any:
-            from clio_agent.tools import execution as _execution  # noqa: PLC0415
+            from clio_agent.gact.agents.async_tool_observation import (  # noqa: PLC0415
+                observe_native_call,
+            )
 
             bound = inspect.signature(func).bind(*call_args, **call_kwargs)
             bound.apply_defaults()
             args = dict(bound.arguments)
-            _execution.notify_global_tool_observer(tool_name, args, "started")
-            pop_declared_structured_content()
             try:
+                await observe_native_call(tool_name, args, "started")
+                pop_declared_structured_content()
                 result = await func(*call_args, **call_kwargs)
             except (Exception, asyncio.CancelledError) as exc:
                 try:
-                    _execution.notify_global_tool_observer(
+                    await observe_native_call(
                         tool_name, args, "completed", error=str(exc) or type(exc).__name__
                     )
                 finally:
                     pop_declared_structured_content()
                 raise
             try:
-                _execution.notify_global_tool_observer(tool_name, args, "completed", result=result)
+                await observe_native_call(tool_name, args, "completed", result=result)
             finally:
                 pop_declared_structured_content()
             return result
@@ -572,7 +552,9 @@ def observed_tool_callable(func: Callable[..., Any], tool_name: str) -> Callable
             result = func(*call_args, **call_kwargs)
         except Exception as exc:
             try:
-                _execution.notify_global_tool_observer(tool_name, args, "completed", error=str(exc))
+                _execution.notify_global_tool_observer(
+                    tool_name, args, "completed", error=str(exc) or type(exc).__name__
+                )
             finally:
                 # The real one-shot guarantee: consumed HERE, tied to the call
                 # boundary, whether or not the observer ever reached its own
@@ -612,6 +594,10 @@ def instrument_tools(tools: Iterable[Any]) -> list[Any]:
 
 
 def _instrument_tool(tool: Any) -> Any:
+    from clio_agent.gact.builtin_boundary import BuiltinBoundary
+
+    if getattr(getattr(tool, "func", None), "_clio_builtin", False):
+        tool = BuiltinBoundary.bind(tool)
     func = getattr(tool, "func", None)
     name = str(getattr(tool, "name", "") or "").strip()
     if not callable(func) or not name:
@@ -671,7 +657,10 @@ def present_native_result(
         return None
     args = _presentation_arguments(name, args)
     if callable(presenter):
-        return presenter(copy.deepcopy(args), copy.deepcopy(result), copy.deepcopy(structured))
+        presented = presenter(copy.deepcopy(args), copy.deepcopy(result), copy.deepcopy(structured))
+        if not isinstance(presented, dict):
+            raise TypeError("A native result presenter must return a mapping")
+        return presented
     return native_presentation(presenter, args, result, structured)
 
 

@@ -571,9 +571,14 @@ def test_message_resource_ref_is_workspace_scoped_ready_and_server_normalized(
                 ],
             },
         )
-        assert accepted.status_code == 200, accepted.text
+        assert accepted.status_code == 202, accepted.text
+        from tests.test_gact.conftest import settle_turn_slot
+
+        settle_turn_slot(client, sid)
+        accepted_id = accepted.json()["message_id"]
         messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        user_message = next(row for row in messages if row["id"] == "msg_resource_ref")
+        user_message = next(row for row in messages if row["id"] == accepted_id)
+        assert user_message["metadata"]["client_message_id"] == "msg_resource_ref"
         reference = next(part for part in user_message["parts"] if part["type"] == "resource_ref")
         assert reference["name"] == "truth.md"
         assert reference["media_type"] == "text/markdown"
@@ -584,7 +589,7 @@ def test_message_resource_ref_is_workspace_scoped_ready_and_server_normalized(
             "records"
         ]
         assert len(deliveries) == 1
-        assert deliveries[0]["message_id"] == "msg_resource_ref"
+        assert deliveries[0]["message_id"] == accepted_id
         assert deliveries[0]["resource_id"] == ready["id"]
         assert deliveries[0]["representation"] == "bounded_tools"
 
@@ -1247,7 +1252,11 @@ def test_resource_context_is_private_from_transcript_and_points_agent_to_tools(
         assert "Filesystem tools may read or transform that copy" in prompt
 
         messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        user = next(row for row in messages if row["id"] == "resource_private_context")
+        user = next(
+            row
+            for row in messages
+            if row["metadata"].get("client_message_id") == "resource_private_context"
+        )
         visible_text = "\n".join(
             str(part.get("text") or "") for part in user["parts"] if part["type"] == "text"
         )
@@ -1603,6 +1612,39 @@ def test_bounded_resource_read_returns_original_text_without_custody_path(
         assert "path" not in result
 
 
+@pytest.mark.parametrize(
+    "content",
+    [b"time,east,north\n" + b"1,2,3\n" * 100, ("Name,Value\n" + "café,地球\n" * 100).encode()],
+)
+def test_large_text_returns_a_bounded_utf8_preview(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, content: bytes
+) -> None:
+    """A CSV preview does not scan the full file or invent its character count."""
+    from clio_agent.gact import resource_tools
+
+    monkeypatch.setattr(resource_tools, "text_scan_max_bytes", lambda: 97)
+    monkeypatch.setattr(resource_tools, "text_read_max_chars", lambda: 30)
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(answer="unused"))
+    with TestClient(app) as client:
+        workspace_id = _workspace(client, tmp_path / "workspace")
+        resource = _upload(
+            client, workspace_id, name="large.csv", content=content, media_type="text/csv"
+        )
+
+        def no_full_read(path: Path) -> str:
+            raise AssertionError("Oversized previews must not read the whole text")
+
+        monkeypatch.setattr(resource_tools, "_read_text", no_full_read)
+        result = read_workspace_resource_text(app, workspace_id, str(resource["id"]))
+        assert result["content"] == content.decode()[:30]
+        assert result["total_chars"] is None and result["total_bytes"] == len(content)
+        assert result["preview"] and result["truncated"]
+        with pytest.raises(resource_tools.ResourceQueryError, match="bounded search limit"):
+            resource_tools.search_workspace_resource(
+                app, workspace_id, str(resource["id"]), "Value"
+            )
+
+
 # ---------------------------------------------------------------------------
 # S2 hardening: materialization moves off GET and is unified behind one
 # never-raising, state-updating, retrying owner (materialize_once); names
@@ -1737,6 +1779,7 @@ def test_create_resource_accepts_a_windows_unsafe_display_name(tmp_path: Path) -
         )
 
         assert resource["name"] == "Q3: notes?.md"
+        assert isinstance(resource["materialization"], dict)
         assert resource["materialization"]["state"] == "ready"
         workspace_copy = Path(str(resource["workspace_path"]))
         assert workspace_copy.name == "Q3_ notes_.md"
@@ -1767,6 +1810,7 @@ def test_a_resource_whose_materialization_fails_does_not_break_get_resources(
         good = _upload(
             client, workspace_id, name="notes.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(good["materialization"], dict)
         assert good["materialization"]["state"] == "ready"
         assert good["workspace_path"]
 
@@ -1781,14 +1825,14 @@ def test_a_resource_whose_materialization_fails_does_not_break_get_resources(
                 raise OSError("simulated disk failure")
             return original_materialize(app, record)
 
-        monkeypatch.setattr(
-            materialization_module, "materialize_resource_for_app", _fail_for_cursed
-        )
-        appended = client.patch(
-            created["upload_url"], headers={"Upload-Offset": "0"}, content=b"evil"
-        )
-        assert appended.status_code == 204
-        monkeypatch.undo()
+        # Restore only this fault; undo() also removes autouse namespace and
+        # runtime-release guards while this TestClient is still alive.
+        with monkeypatch.context() as fault:
+            fault.setattr(materialization_module, "materialize_resource_for_app", _fail_for_cursed)
+            appended = client.patch(
+                created["upload_url"], headers={"Upload-Offset": "0"}, content=b"evil"
+            )
+            assert appended.status_code == 204
 
         listed = client.get(f"/v1/workspaces/{workspace_id}/resources")
         assert listed.status_code == 200, listed.text
@@ -1831,6 +1875,7 @@ def test_get_resources_never_materializes_or_copies_files(
         resource = _upload(
             client, workspace_id, name="notes.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(resource["materialization"], dict)
         assert resource["materialization"]["state"] == "ready"
 
         monkeypatch.setattr(materialization_module, "materialize_resource_for_app", _spy)
@@ -1910,12 +1955,14 @@ def test_legacy_pending_resource_is_materialized_at_the_next_agent_touch_point(
         resource = _upload(
             client, workspace_id, name="legacy.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(resource["materialization"], dict)
         assert resource["materialization"]["state"] == "ready"
 
         # Simulate a legacy record: its workspace-tree copy is gone and its
         # materialization was never tracked (defaults to "pending", exactly
         # like a record loaded from an index written before this field
         # existed).
+        assert isinstance(resource["workspace_path"], str)
         Path(resource["workspace_path"]).unlink()
         app.state.resource_store.set_materialization(
             resource["id"], ResourceMaterialization(state="pending")
@@ -1940,6 +1987,7 @@ def test_inspect_workspace_resource_retries_materialization(tmp_path: Path) -> N
         resource = _upload(
             client, workspace_id, name="legacy.md", content=b"hello", media_type="text/markdown"
         )
+        assert isinstance(resource["workspace_path"], str)
         Path(resource["workspace_path"]).unlink()
         app.state.resource_store.set_materialization(
             resource["id"], ResourceMaterialization(state="failed", reason="disk unavailable")

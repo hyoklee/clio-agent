@@ -27,7 +27,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from clio_agent import paths
@@ -43,36 +42,6 @@ async def prune_orphans_and_cache(app: FastAPI) -> None:
 
     await _prime_orphan_scan_cache(app)
     await boot_prune_off_loop()
-
-
-def reconcile_connected_storage(app: FastAPI) -> None:
-    """Recover interrupted source operations for the server's registered workspaces."""
-    storage = getattr(app.state, "connected_storage", None)
-    if storage is not None:
-        storage.reconcile({row.id: Path(row.root_path) for row in app.state.workspaces.list()})
-    from clio_agent.gact.task_recovery import start_task_recovery
-
-    start_task_recovery(app)
-
-
-async def shutdown_connected_storage(app: FastAPI) -> None:
-    """Drain trusted source operations before the server tears down its runtime."""
-    storage = getattr(app.state, "connected_storage", None)
-    from clio_agent.gact.task_supervisor import task_supervisor
-
-    task_supervisor(app).closing = True
-    if storage is not None:
-        await storage.shutdown()
-        from clio_agent.gact.storage.task_adapter import recover_storage_handles
-
-        recover_storage_handles(app)
-
-
-async def shutdown_tasks(app: FastAPI) -> None:
-    """Settle supervised tasks before the application's sessions and bus close."""
-    from clio_agent.gact.task_supervisor import task_supervisor
-
-    await task_supervisor(app).shutdown()
 
 
 def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:
@@ -91,6 +60,14 @@ def start_provider_catalog(app: FastAPI) -> asyncio.Task | None:
 logger = logging.getLogger(__name__)
 
 
+async def stop_producers(*tasks: asyncio.Task[Any] | None) -> None:
+    """Stop application input producers before task-owner settlement or failed-start exit."""
+    pending = [task for task in tasks if task is not None and not task.done()]
+    for task in pending:
+        task.cancel()
+    await asyncio.gather(*pending, return_exceptions=True)
+
+
 _PROCESS_ARC_LOCK = threading.Lock()
 
 
@@ -105,12 +82,14 @@ def process_arc(app: "FastAPI") -> Any:
     it; rebuilt only if the app has none yet (first build). ``None`` in History mode
     (:mod:`clio_agent.arc.history_mode`): the platform cannot run clio-core.
     """
-    arc = getattr(getattr(app, "state", None), "arc", None)
-    if arc is not None:
-        return arc
-    with _PROCESS_ARC_LOCK:  # single-flight: the boot attach and a first event never race
+    with _PROCESS_ARC_LOCK:
         arc = getattr(getattr(app, "state", None), "arc", None)
-        return arc if arc is not None else _construct_process_arc(app)
+        if arc is None:
+            return _construct_process_arc(app)
+        from clio_agent.gact.transcript_file import on_process_arc_bound
+
+        on_process_arc_bound(app)
+        return arc
 
 
 def arc_for_first_event(app: Any, event_type: str, sid: str) -> Any:
@@ -179,8 +158,9 @@ async def _construct(app: "FastAPI") -> Any:
 async def process_arc_off_loop(app: "FastAPI") -> Any:
     """Return the per-process ARC, constructing it on a worker thread at most once.
 
-    Must be called on the app's event loop (every caller is a route or a lifespan
-    task). The first caller starts the construction task; concurrent callers await
+    Bind routes can run in an executor's temporary event loop. Dispatch those calls
+    onto the app's lifespan loop before touching shared boot tasks. The first caller
+    starts the construction task; concurrent callers await
     the same task. ``asyncio.shield`` keeps a cancelled caller (a dropped request)
     from cancelling the shared construction. A failed construction is not cached,
     so the next caller retries.
@@ -192,13 +172,23 @@ async def process_arc_off_loop(app: "FastAPI") -> Any:
         The ``ARCMemory`` stored on ``app.state.arc``; ``None`` in the loud History mode
         (:mod:`clio_agent.arc.history_mode`), decided once and cached like an ARC.
     """
+    owner: asyncio.AbstractEventLoop | None = getattr(app.state, "mcp_app_loop", None)
+    if owner is not None and owner is not asyncio.get_running_loop():
+        if not owner.is_running():
+            raise RuntimeError("The CLIO application event loop is not running")
+        pending = asyncio.run_coroutine_threadsafe(process_arc_off_loop(app), owner)
+        return await asyncio.wrap_future(pending)
+
     from clio_agent.gact.sandbox_setup import prepare_sandbox_before_tools  # noqa: PLC0415
 
     await prepare_sandbox_before_tools(app)
-    arc = getattr(app.state, "arc", None)
-    if arc is not None:
-        return arc
     task: asyncio.Task[Any] | None = getattr(app.state, "arc_boot_task", None)
+    if task is not None and not task.done():
+        return await asyncio.shield(task)
+    arc = getattr(app.state, "arc", None)
+    ready = getattr(app.state, "transcript_boot_ready", None)
+    if arc is not None and (ready is None or ready.is_set()):
+        return arc
     if task is None or (task.done() and (task.cancelled() or task.exception() is not None)):
         task = asyncio.get_running_loop().create_task(_construct(app))
         app.state.arc_boot_task = task

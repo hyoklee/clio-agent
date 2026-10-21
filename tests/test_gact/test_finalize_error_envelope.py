@@ -11,13 +11,19 @@ and a terminal session status.
 
 from __future__ import annotations
 
+import asyncio
+import threading
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
+from tests.test_gact.task_records import record_assignment_fixture
 from tests.turn_signals import wait_for_terminal_status
 
 # #948 S4b: default sessions run the blueprint react ``main``; route it to the
@@ -25,6 +31,19 @@ from tests.turn_signals import wait_for_terminal_status
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
 
 from .test_post_messages import FakeClioAgent
+
+
+@pytest.fixture
+def finalize_app(tmp_path: Path) -> Iterator[Callable[[], FastAPI]]:
+    """Start real owners at the test's requested moment and retire their lifespan."""
+    with ExitStack() as stack:
+
+        def start() -> FastAPI:
+            app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+            stack.enter_context(TestClient(app))
+            return app
+
+        yield start
 
 
 def test_finalize_exception_settles_turn_with_error_envelope(
@@ -49,7 +68,8 @@ def test_finalize_exception_settles_turn_with_error_envelope(
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "hi"}]},
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         user_id = ack.json()["message_id"]
 
         # Wait for the turn's terminal status event (the pre-fix symptom: the
@@ -87,6 +107,7 @@ def test_finalize_exception_settles_turn_with_error_envelope(
 
 def test_finalize_survives_a_prologue_that_skipped_context_file_provenance(
     tmp_path: Path,
+    finalize_app: Callable[[], FastAPI],
 ) -> None:
     """#1331 review round: a turn whose prologue never ran
     ``turn_start_offloop.prepare_turn_off_loop`` (both of its
@@ -110,11 +131,11 @@ def test_finalize_survives_a_prologue_that_skipped_context_file_provenance(
     from clio_agent.gact.tool_observer import _open_turn_transcript
     from clio_agent.gact.turn_finalize import finalize_turn
     from clio_agent.gact.turn_state import new_turn_state
-    from clio_agent.gact.turn_watchdog import make_turn_cancel_event
     from clio_agent.gact.types import Message, Part
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = finalize_app()
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
+    record_assignment_fixture(app, sid)
     now = "2026-09-12T00:00:00+00:00"
     user_msg = Message(
         id="msg_user_1",
@@ -132,7 +153,9 @@ def test_finalize_survives_a_prologue_that_skipped_context_file_provenance(
     # assignment under test.
     state.workflow_schema = _active_workflow_state_schema(app, sid)
     state.transcript = _open_turn_transcript(app, sid, state.turn_id)
-    make_turn_cancel_event(state)
+    # Production receives this token from an admitted runner segment. This unit
+    # case supplies that input without launching a competing model segment.
+    state.turn_cancel_event = threading.Event()
     # NEVER call prepare_turn_off_loop: context_file_provenance stays at
     # TurnState's own default. context_frame shares the same None-until-
     # prologue shape (also only set by prepare_turn_off_loop, via
@@ -175,9 +198,9 @@ def _new_prologue_shaped_state(
     from clio_agent.gact.agents.resolution import _active_workflow_state_schema
     from clio_agent.gact.tool_observer import _open_turn_transcript
     from clio_agent.gact.turn_state import new_turn_state
-    from clio_agent.gact.turn_watchdog import make_turn_cancel_event
     from clio_agent.gact.types import Message, Part
 
+    record_assignment_fixture(app, sid)
     now = "2026-09-13T00:00:00+00:00"
     user_msg = Message(
         id=turn_msg_id,
@@ -191,13 +214,15 @@ def _new_prologue_shaped_state(
     state = new_turn_state(app, sid, "hello", user_msg, "main", sess=sess, bus=app.state.bus)
     state.workflow_schema = _active_workflow_state_schema(app, sid)
     state.transcript = _open_turn_transcript(app, sid, state.turn_id)
-    make_turn_cancel_event(state)
+    # These are prologue/finalize unit inputs, not a request to admit another turn.
+    state.turn_cancel_event = threading.Event()
     return state
 
 
 async def test_prologue_never_ran_settles_typed_instead_of_crashing_finalize(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    finalize_app: Callable[[], FastAPI],
 ) -> None:
     """#1339 round 5 / L1: a turn whose off-loop prologue (``prepare_turn_off_loop``)
     never ran at all -- EVERY prologue-derived field left at ``TurnState``'s own
@@ -225,7 +250,7 @@ async def test_prologue_never_ran_settles_typed_instead_of_crashing_finalize(
         lambda stage, **fields: audits.append((stage, fields)),
     )
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = await asyncio.to_thread(finalize_app)
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
     app.state.sessions.update(sid, status="running")
     state = _new_prologue_shaped_state(app, sid, "msg_user_1")
@@ -265,6 +290,7 @@ async def test_prologue_never_ran_settles_typed_instead_of_crashing_finalize(
 
 async def test_prologue_exception_settles_with_real_cause_not_never_ran(
     tmp_path: Path,
+    finalize_app: Callable[[], FastAPI],
 ) -> None:
     """L1: an exception raised INSIDE the prologue (the deferred transcript job
     failing its ARC persist, e.g. ``TranscriptIngestError``) must settle the turn
@@ -279,7 +305,7 @@ async def test_prologue_exception_settles_with_real_cause_not_never_ran(
     from clio_agent.gact.turn_start_offloop import prepare_turn_off_loop
     from clio_agent.gact.turn_state import DeferredTranscriptJob
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = await asyncio.to_thread(finalize_app)
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
     app.state.sessions.update(sid, status="running")
     state = _new_prologue_shaped_state(app, sid, "msg_user_boom")
@@ -317,7 +343,9 @@ async def test_prologue_exception_settles_with_real_cause_not_never_ran(
     assert app.state.sessions.get(sid).status == "error"
 
 
-async def test_orphaned_transcript_job_settles_as_never_ran(tmp_path: Path) -> None:
+async def test_orphaned_transcript_job_settles_as_never_ran(
+    tmp_path: Path, finalize_app: Callable[[], FastAPI]
+) -> None:
     """L1: the ONE real 'never started' proof -- an unclaimed ``DeferredTranscriptJob``
     (the same fact ``turn_start_offloop.spawn_user_turn``'s done-callback checks) --
     must settle typed ``turn_prologue_never_ran`` when ``prepare_turn_off_loop`` is
@@ -329,7 +357,7 @@ async def test_orphaned_transcript_job_settles_as_never_ran(tmp_path: Path) -> N
     )
     from clio_agent.gact.turn_state import PROLOGUE_NOT_STARTED, DeferredTranscriptJob
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = await asyncio.to_thread(finalize_app)
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
     app.state.sessions.update(sid, status="running")
     state = _new_prologue_shaped_state(app, sid, "msg_user_orphan")
@@ -360,6 +388,7 @@ async def test_orphaned_transcript_job_settles_as_never_ran(tmp_path: Path) -> N
 async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    finalize_app: Callable[[], FastAPI],
 ) -> None:
     """L1 cancel contract: a hard cancel tripping the turn's cancel token between
     prologue steps must stop it immediately -- no ``turn.started``, no memory
@@ -385,7 +414,7 @@ async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
     )
     install_global_dispatcher(dispatcher)
     try:
-        app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+        app = await asyncio.to_thread(finalize_app)
         sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
         app.state.sessions.update(sid, status="running")
         state = _new_prologue_shaped_state(app, sid, "msg_user_cancel")
@@ -404,6 +433,11 @@ async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
         emitted: list[str] = []
         published: list[str] = []
         frame_calls: list[Any] = []
+
+        def _record_frame(*_args: Any, **_kwargs: Any) -> dict[str, str]:
+            frame_calls.append(1)
+            return {"id": "unused"}
+
         monkeypatch.setattr(offloop_module, "open_turn_minter", _open_then_cancel)
         monkeypatch.setattr(
             offloop_module,
@@ -418,7 +452,7 @@ async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
         monkeypatch.setattr(
             offloop_module,
             "_record_context_frame",
-            lambda *a, **k: frame_calls.append(1) or {"id": "unused"},
+            _record_frame,
         )
 
         assert turn_minter(app, sid) is None  # nothing opened yet
@@ -457,6 +491,7 @@ async def test_hard_cancel_mid_prologue_stops_before_any_later_step(
 
 def test_finalize_turn_crashes_on_an_unset_context_frame_without_the_guard(
     tmp_path: Path,
+    finalize_app: Callable[[], FastAPI],
 ) -> None:
     """Companion to the guard test above, proving the guard is load-bearing.
 
@@ -471,7 +506,7 @@ def test_finalize_turn_crashes_on_an_unset_context_frame_without_the_guard(
 
     from clio_agent.gact.turn_finalize import finalize_turn
 
-    app = build_app(sessions_path=tmp_path / "s.json", agent=FakeClioAgent(answer="ok"))
+    app = finalize_app()
     sid = app.state.sessions.create(workspace_id="ws_default", title="t").id
     state = _new_prologue_shaped_state(app, sid, "msg_user_2")
     state.answer_text = "a real answer, so this isn't the empty_response branch"

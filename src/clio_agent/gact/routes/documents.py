@@ -56,7 +56,7 @@ from clio_agent.gact.documents.store import (
     WorkingCopyLeaseError,
     get_document_store,
 )
-from clio_agent.gact.loop_inbox import enqueue_user_steer
+from clio_agent.gact.session_input import accept_session_input
 from clio_agent.gact.types import Part
 
 if TYPE_CHECKING:
@@ -232,29 +232,22 @@ def _dispatch_review(
         return failed
     prompt = _review_prompt(review)
     part = _review_part(review)
-    runner = getattr(app.state, "turn_runner", None)
     try:
-        if runner is not None and runner.busy(review.session_id):
-            message_id = f"user_{uuid.uuid4().hex}"
-            enqueue_user_steer(
-                app,
-                review.session_id,
-                prompt,
-                {"artifact_review_id": review.id},
-                steer_message_id=message_id,
-                steer_created_at=_now_iso(),
-                steer_parts=[part],
-            )
-        else:
-            message = deps.start_background_user_turn(
-                review.session_id,
-                session,
-                prompt,
-                request_parts=[part],
+        from clio_agent.gact.message_submission import accept_message
+        from clio_agent.gact.parts import Part
+        from clio_agent.gact.types import PostMessageRequest
+
+        response, _ = accept_message(
+            app,
+            deps,
+            review.session_id,
+            PostMessageRequest(
+                parts=[Part(id="review-prompt-" + review.id, type="text", text=prompt), part],
                 metadata={"artifact_review_id": review.id},
-                prev_status=str(session.status),
-            )
-            message_id = message.id
+                client_message_id="review_" + review.id,
+            ),
+        )
+        message_id = response.message_id
     except Exception as exc:  # noqa: BLE001 - persist dispatch failure for recovery
         failed = store.update_review(review.id, status="failed", error=str(exc))
         _emit_review(app, failed, "document.review.dispatched")
@@ -286,11 +279,12 @@ def _dispatch_checkpoint(
         f"{working_copy.head_version} ({working_copy.head_artifact_id}). Continue against "
         "this newest version; do not overwrite it from a stale base."
     )
-    enqueue_user_steer(
+    accept_session_input(
         app,
         working_copy.session_id,
         text,
-        {
+        steer_message_id=f"document-save:{working_copy.id}:{working_copy.head_version}",
+        metadata={
             "document_working_copy_id": working_copy.id,
             "coalesce_key": f"document-save:{working_copy.id}",
         },
@@ -309,7 +303,7 @@ def register_document_routes(app: FastAPI, deps: "GactDeps") -> None:
         runner = getattr(app.state, "turn_runner", None)
         if runner is None:
             return
-        runner.call_soon_threadsafe(_dispatch_checkpoint, app, deps, working_copy, reviews)
+        _dispatch_checkpoint(app, deps, working_copy, reviews)
 
     store.set_checkpoint_callback(checkpoint_callback)
 
@@ -397,7 +391,7 @@ def register_document_routes(app: FastAPI, deps: "GactDeps") -> None:
         persisted = await asyncio.to_thread(store.create_review, review)
         if persisted.id == review.id:
             _emit_review(app, persisted, "document.review.created")
-        dispatched = _dispatch_review(app, deps, persisted)
+        dispatched = await asyncio.to_thread(_dispatch_review, app, deps, persisted)
         status = 202 if dispatched.status == "dispatched" else 503
         return Response(
             content=dispatched.model_dump_json(),

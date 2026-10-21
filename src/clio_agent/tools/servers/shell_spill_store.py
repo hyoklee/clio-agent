@@ -30,6 +30,16 @@ logger = logging.getLogger(__name__)
 
 #: Directory under the workspace's managed state that holds spilled tool output.
 SPILL_DIRNAME = "tool-output"
+
+
+def spill_root(safe_cwd: Path) -> Path:
+    """Keep output in the bound session workspace, even for a downloaded-source cwd."""
+    from clio_agent.tools.execution import get_active_tool_workspace_root
+
+    active_root = get_active_tool_workspace_root()
+    return Path(active_root).resolve() if active_root else safe_cwd
+
+
 #: Typed reason logged when a deleted session's spill folder is removed.
 SPILLS_DELETED_REASON = "session_deleted"
 #: Typed reason when a deleted session's spill folder could not be removed.

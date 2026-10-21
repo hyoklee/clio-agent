@@ -380,9 +380,8 @@ class SessionsAPI:
     ) -> builtins.list[UserQuestion]:
         """GET /v1/sessions/{sid}/questions — the ask-user question log.
 
-        When the agent pauses a turn to ask the user something, the session
-        moves to ``waiting_user`` and the pending :class:`UserQuestion` lands
-        here. ``status`` filters server-side (e.g. ``"pending"``); rows come
+        Asking posts immediately; the agent may continue or explicitly wait
+        on the Question handle. ``status`` filters server-side; rows come
         back newest-first.
         """
 
@@ -391,6 +390,13 @@ class SessionsAPI:
             "GET", f"/v1/sessions/{session_id}/questions", params=params or None
         )
         return [UserQuestion.model_validate(row) for row in response.json().get("questions", [])]
+
+    def question(self, session_id: str, question_id: str) -> UserQuestion:
+        """Read one authorized Question, including its confirmed answer-input identity."""
+        response = self._client._request(
+            "GET", f"/v1/sessions/{session_id}/questions/{question_id}"
+        )
+        return UserQuestion.model_validate(response.json())
 
     def answer_question(
         self,
@@ -407,9 +413,10 @@ class SessionsAPI:
 
         Pass ``answer`` for a freeform reply and/or ``option_id`` (or the
         richer ``selected_options`` list) to pick a choice. Answering the
-        last pending question on a ``resume_on_answer`` question stages a
-        background resume turn on the SAME session that continues the same
-        assistant message — so keep consuming the event feed afterwards.
+        question stores its answer for shared collection or automatic input
+        delivery. A busy agent receives it at an eligible iteration; an idle
+        agent may wake in a later segment. Read ``answer_input`` to correlate
+        that segment with its completion event.
         """
 
         selected = list(selected_options or [])

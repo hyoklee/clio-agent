@@ -505,16 +505,35 @@ def test_overlap_skip_drops_occurrence_and_advances(tmp_path: Path) -> None:
     assert store.get(sch.id).fire_count == before + 1
 
 
-def test_overlap_queue_defers_on_busy(tmp_path: Path) -> None:
-    """overlap_policy='queue' (default) defers a busy occurrence for retry (not dropped)."""
+def test_overlap_queue_retains_one_core_input_while_busy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Queued schedules share the durable session mailbox, without a second queue."""
+    from fastapi.testclient import TestClient
 
-    store = _store(tmp_path)
-    sch = store.create(session_id="s", question="q", cron="* * * * *", overlap_policy="queue")
-    before = store.get(sch.id).fire_count
-    app = _fake_app(store, busy=True)
-    _rt._fire_schedule(app, store.get(sch.id))
-    assert sch.id in app.state.deferred_schedules  # queued for retry
-    assert store.get(sch.id).fire_count == before  # not consumed
+    from clio_agent.gact.app import build_app
+    from tests.test_gact.task_records import hold_model_segment
+
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app):
+        sid = app.state.sessions.create(workspace_id="ws_default", title="Scheduled").id
+        hold_model_segment(app, sid, monkeypatch)
+        store = app.state.schedules
+        sch = store.create(
+            session_id=sid, question="queued occurrence", cron="* * * * *", overlap_policy="queue"
+        )
+        before = store.get(sch.id).fire_count
+        _rt._fire_schedule(app, store.get(sch.id))
+        identity = f"schedule:{sch.id}:0"
+        pending = app.state.task_history.pending_mail(sid)
+        [item] = [row for row in pending if row.id == identity]
+        assert item.id not in app.state.task_history.acknowledged_notifications(sid)
+        assert app.state.task_history.read_content(item.content)["text"] == "queued occurrence"
+        assert store.get(sch.id).fire_count == before + 1
+        assert sch.id not in app.state.deferred_schedules
+        assert app.state.turn_runner.busy(sid)
+        _rt._scheduler_tick_once(app)
+        assert [row.id for row in app.state.task_history.pending_mail(sid)].count(identity) == 1
 
 
 def test_tick_fire_failure_records_retry_not_dropped(tmp_path: Path, monkeypatch) -> None:
@@ -552,8 +571,6 @@ def test_fire_failure_retries_one_shot_not_dropped(tmp_path: Path, monkeypatch) 
     masks it by replacing `_fire_schedule` wholesale.
     """
 
-    import clio_agent.gact.app as gact_app
-
     store = _store(tmp_path)
     sch = store.create(session_id="s", question="q", delay_s=1)
     app = _fake_app(store, busy=False)
@@ -561,7 +578,7 @@ def test_fire_failure_retries_one_shot_not_dropped(tmp_path: Path, monkeypatch) 
     def _boom(*_args, **_kwargs):
         raise RuntimeError("staging blew up")
 
-    monkeypatch.setattr(gact_app, "_turn_start_background_user_turn", _boom)
+    monkeypatch.setattr(_rt, "accept_session_input", _boom)
     _rt._fire_one(app, store.get(sch.id))
 
     after = store.get(sch.id)
@@ -581,8 +598,6 @@ def test_fire_failure_does_not_overcount_recurring(tmp_path: Path, monkeypatch) 
     period it never earned. This drives the REAL `_fire_schedule`.
     """
 
-    import clio_agent.gact.app as gact_app
-
     store = _store(tmp_path)
     ref = datetime(2026, 7, 1, 8, 59, tzinfo=UTC)
     sch = store.create(session_id="s", question="q", cron="* * * * *", now=ref)
@@ -594,7 +609,7 @@ def test_fire_failure_does_not_overcount_recurring(tmp_path: Path, monkeypatch) 
     def _boom(*_args, **_kwargs):
         raise RuntimeError("staging blew up")
 
-    monkeypatch.setattr(gact_app, "_turn_start_background_user_turn", _boom)
+    monkeypatch.setattr(_rt, "accept_session_input", _boom)
     _rt._fire_one(app, store.get(sch.id))
 
     after = store.get(sch.id)

@@ -17,9 +17,18 @@ def connected_data_status() -> dict[str, Any]:
     If needed, present an account's login_action in an ordinary A2UI Button in
     the answer; only the user click opens private sign-in. No credentials are
     returned. Check again after the user completes setup; do not poll.
+    NDP-specific tools are enabled on the next turn only when this workspace
+    has a connected NDP dataset or a visible saved NDP Endpoint. Otherwise use
+    Attach > NDP to select a dataset or connect an Endpoint first. Signing in
+    alone does not activate those tools.
     """
     app = context.active_app()
     sid = context.active_session_id()
+    return session_data_status(app, sid)
+
+
+def session_data_status(app: Any, sid: str) -> dict[str, Any]:
+    """Read the same safe inventory for an explicitly verified native-task owner."""
     if app is None or not sid:
         raise ValueError("Connected-data setup requires an active CLIO workspace session")
     session = app.state.sessions.get(sid)
@@ -30,9 +39,12 @@ def connected_data_status() -> dict[str, Any]:
     if workspace is None:
         raise ValueError("The session workspace is unavailable on this CLIO")
     from clio_agent.gact.storage.auth import application
+    from clio_agent.gact.storage.ndp_oauth import configuration as ndp_configuration
+    from clio_agent.gact.storage.ndp_selection import selection_summary
+    from clio_agent.gact.storage.ndp_source import public_selection
 
     accounts = []
-    for provider in ("github", "google_drive", "globus"):
+    for provider in ("github", "google_drive", "globus", "ndp"):
         authenticated = service.auth.account_connected(
             service.principal, service.store.clio_id, provider
         )
@@ -41,7 +53,9 @@ def connected_data_status() -> dict[str, Any]:
                 "provider": provider,
                 "authenticated": authenticated,
                 "sign_in_available": bool(
-                    application(provider).client_id and application(provider).redirect_uri
+                    ndp_configuration()[1]
+                    if provider == "ndp"
+                    else (application(provider).client_id and application(provider).redirect_uri)
                 ),
                 "login_action": {
                     "name": f"data_source/login/{provider}",
@@ -73,19 +87,47 @@ def connected_data_status() -> dict[str, Any]:
                     and source.source_kind == "knowledge",
                 },
                 "label": source.label,
+                "selection": selection_summary(service, record),
                 "mode": source.mode,
                 "link_access": record.linked_access,
                 "download_access": "read_only" if record.download_read_only else "editable",
                 "connected": record.connected,
                 "authenticated": service.auth.connected(record),
+                "access_without_signin": source.provider == "ndp"
+                and public_selection(service.store, record),
                 "materialization": source.materialization,
                 "revision": source.revision,
                 "local_path": source.local_path,
                 "linked": bool(record.linked_manifest_id),
                 "linked_revision": record.linked_manifest_id,
+                "open_references": {
+                    "linked": {
+                        "source_id": source.id,
+                        "revision": record.linked_manifest_id,
+                        "linked": True,
+                    }
+                    if record.linked_manifest_id
+                    else None,
+                    "downloaded": {
+                        "source_id": source.id,
+                        "revision": record.manifest_id,
+                        "linked": False,
+                    }
+                    if record.manifest_id and source.local_path
+                    else None,
+                },
+                "open_reference": {
+                    "source_id": source.id,
+                    "revision": record.linked_manifest_id or record.manifest_id,
+                    "linked": bool(record.linked_manifest_id),
+                }
+                if record.linked_manifest_id or record.manifest_id
+                else None,
                 "owner": source.owner.model_dump(mode="json"),
             }
         )
+    from clio_agent.gact.storage.ndp_tool_activation import session_ndp_tools_enabled
+
     return {
         "status": "available",
         "clio_id": service.store.clio_id,
@@ -105,12 +147,26 @@ def connected_data_status() -> dict[str, Any]:
         ],
         "accounts": accounts,
         "sources": sources,
+        "ndp_catalogs": [
+            {"id": item.id, "name": item.name, "scope": item.server}
+            for item in service.ndp.endpoints()
+        ]
+        if session_ndp_tools_enabled()
+        else [],
+        "ndp_endpoints": [
+            row.model_dump(exclude={"schema_document", "principal"})
+            for row in service.ndp_endpoints.connections(session.workspace_id)
+        ],
     }
 
 
 def setup_presentation(args: Mapping[str, Any], result: Any, structured: Any) -> dict[str, Any]:
-    """Display the same inventory the agent received, without a setup button."""
+    """Distinguish an accepted connection task from the source/account inventory."""
     row = structured if isinstance(structured, Mapping) else result
+    if isinstance(row, Mapping) and row.get("accepted") is True:
+        from clio_agent.gact.agents.native_presenters import native_presentation
+
+        return native_presentation("tasks", args, result, structured)
     if not isinstance(row, Mapping) or row.get("status") != "available":
         return {"summary": "Connected data is unavailable", "blocks": []}
     lines = ["### Workspace folders"]
@@ -128,8 +184,16 @@ def setup_presentation(args: Mapping[str, Any], result: Any, structured: Any) ->
     )
     if not row["sources"]:
         lines.append("No attached remote sources. Files may already be in the workspace folders.")
+    connection = row.get("connection")
+    state = connection.get("state") if isinstance(connection, Mapping) else None
     return {
-        "summary": "Workspace inputs and provider accounts",
+        "summary": (
+            "Source linked"
+            if state == "linked"
+            else "Sign-in required"
+            if state == "sign_in_required"
+            else "Workspace inputs and provider accounts"
+        ),
         "blocks": [
             {
                 "id": "source-inventory",
@@ -186,9 +250,34 @@ def connected_data_open(
     record = service.get(session.workspace_id, source_id, connected=linked)
     manifest_id = record.linked_manifest_id if linked else record.manifest_id
     if not manifest_id or (not linked and not record.source.local_path):
-        raise ValueError("Ask the user to link or download this folder in Attach first")
-    if revision and revision != manifest_id:
-        raise ValueError("This folder changed since it was attached; ask for an updated reference")
+        raise ValueError(
+            "This source has not been linked or downloaded. Use connected_data_download, "
+            "wait for its task, then open with linked=false; or use an existing Link "
+            "attachment from Attach with its returned revision and linked flag."
+        )
+    # Download results expose both a snapshot id and its content revision. Both
+    # identify this exact current baseline; a linked revision is a separate index.
+    valid_revisions = {manifest_id}
+    if not linked and record.source.revision:
+        valid_revisions.add(record.source.revision)
+    if revision and revision not in valid_revisions:
+        other_revisions = (
+            {record.manifest_id, record.source.revision} if linked else {record.linked_manifest_id}
+        )
+        if revision in other_revisions:
+            raise ValueError(
+                "This revision belongs to the "
+                + (
+                    "downloaded snapshot; use linked=false"
+                    if linked
+                    else "linked index; use linked=true"
+                )
+                + ", or use connected_data_status's matching open_references entry."
+            )
+        raise ValueError(
+            "This folder changed since it was attached; use connected_data_status "
+            "to obtain the current approved open_references entry."
+        )
     manifest = service.store.get("manifest", manifest_id, Manifest)
     entries = folder_entries(manifest, folder)
     if path and folder and not path.startswith(folder + "/"):
@@ -199,6 +288,7 @@ def connected_data_open(
         return {
             "source_id": source_id,
             "revision": manifest.id,
+            "linked": linked,
             "folder": folder,
             "access": record.linked_access
             if linked
@@ -228,7 +318,7 @@ def build_connected_data_open_tool() -> Any:
     return native_tool(
         connected_data_open,
         name="connected_data_open",
-        presentation="resource",
+        presentation="source_opened",
         representation="row",
         desc=connected_data_open.__doc__,
         args={
@@ -304,7 +394,7 @@ def build_connected_data_write_tool() -> Any:
             "content": {"type": "string", "description": "Complete replacement UTF-8 text."},
             "revision": {"type": "string", "description": "Current linked folder revision."},
         },
-        presentation="resource",
+        presentation="source_written",
         representation="row",
         domain="resources",
         title="Save linked file",

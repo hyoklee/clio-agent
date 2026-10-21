@@ -172,8 +172,8 @@ else
   if [ "$PYINSTALL" = "uv" ]; then
     uv venv --python 3.13 "$VENV" >/dev/null
     uv pip install --quiet --python "$VENV/bin/python" ${wheel_arg:+"$wheel_arg"} "$pkg_spec" \
-      "dspy==3.4.0" "fastmcp==4.0.0b5" "fastmcp-slim==4.0.0b5" \
-      "fastmcp-tasks==4.0.0b5"
+      "dspy==3.4.0" "fastmcp==4.1.0" "fastmcp-slim==4.1.0" \
+      "fastmcp-tasks==4.1.0"
   else
     python3 -m venv "$VENV"
     "$VENV/bin/$PYINSTALL" install --quiet --upgrade pip

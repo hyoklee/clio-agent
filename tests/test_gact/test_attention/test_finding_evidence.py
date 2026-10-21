@@ -98,19 +98,20 @@ def test_native_alert_emits_verified_inspection_or_disabled_action(
     from clio_agent.gact.action_cards import build_raise_alert_card_tool
     from clio_agent.gact.app import build_app
     from clio_agent.gact.attention import routes
+    from clio_agent.gact.session_store import _replace_session_messages
     from clio_agent.gact.types import AgentDef
-    from tests.test_gact.test_action_cards import _call_tool_as, _register_fake_child_task
+    from tests.test_gact.test_action_cards import _call_tool_as, _record_child_assignment
 
     # This test uses recorded captures, independent of optional live writers.
     monkeypatch.setenv("CLIO_PROVENANCE_PROVIDERS", "jsonl")
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         parent = client.post("/v1/sessions", json={"title": "parent"}).json()["id"]
-        task = _register_fake_child_task(app, parent_sid=parent, blueprint_id="spotter-ai")
+        task = _record_child_assignment(app, parent_sid=parent, expert_id="spotter_watcher")
         messages = fixture_transcript()
         for message in messages:
             message.session_id = parent
-        app.state.messages[parent] = messages
+        _replace_session_messages(app, parent, messages)
         monkeypatch.setattr(
             routes, "session_lm_calls", lambda app, sid: [replace(_call(), session_id=parent)]
         )
@@ -123,7 +124,7 @@ def test_native_alert_emits_verified_inspection_or_disabled_action(
             receipt["capture_sha256"] = "0" * 64
         result = _call_tool_as(
             app,
-            task.child_session_id,
+            task.owner.session_id,
             build_raise_alert_card_tool(AgentDef(id="spotter_watcher", title="SPOTTER reviewer")),
             title="Review this result",
             body="Observed evidence, not a poisoning verdict.",
@@ -137,7 +138,7 @@ def test_native_alert_emits_verified_inspection_or_disabled_action(
         )
         assert "Uncertainty:" in card["body"]
         assert card["actions"][0]["enabled"] is valid
-        assert card["actions"][1]["behavior"]["handle_id"] == task.task_id
+        assert card["actions"][1]["behavior"]["handle_id"] == task.handle
         if valid:
             from clio_agent.gact.protocol.v3.message import _action_cards
 

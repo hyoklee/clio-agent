@@ -31,7 +31,7 @@ import asyncio
 import builtins
 import dataclasses
 import json
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 import pytest
@@ -179,8 +179,28 @@ def _wire() -> OpenAICodexLM:
     return OpenAICodexLM(api_key="test", account_id="acct")
 
 
+class _AsyncHttpWire:
+    """Expose the finite scripted HTTP responses through the required async wire."""
+
+    def __init__(self, wire: Any) -> None:
+        self.wire = wire
+
+    async def stream(self, request: Request) -> AsyncIterator[Any]:
+        events = self.wire.stream(request)
+        try:
+            for event in events:
+                yield event
+        finally:
+            close = getattr(events, "close", None)
+            if close is not None:
+                close()
+
+
 def _engine(**kwargs: Any) -> AsyncCodexDirectEngine:
-    return AsyncCodexDirectEngine(MODEL, wire=kwargs.pop("wire", None) or _wire(), **kwargs)
+    wire = kwargs.pop("wire", None) or _wire()
+    if kwargs.get("http") and "http_wire" not in kwargs:
+        kwargs["http_wire"] = _AsyncHttpWire(wire)
+    return AsyncCodexDirectEngine(MODEL, wire=wire, **kwargs)
 
 
 HEAD = Message.user("what?")
@@ -515,6 +535,13 @@ class _HttpWire:
         )
 
 
+def test_custom_http_wire_requires_explicit_async_counterpart() -> None:
+    wire = _HttpWire()
+    with pytest.raises(ValueError, match="explicit asynchronous counterpart"):
+        AsyncCodexDirectEngine(MODEL, wire=wire, http=True)
+    assert wire.requests == []
+
+
 def test_http_mode_streams_lm15_http_without_a_socket(harness: Harness, loop_scope: None) -> None:
     wire = _HttpWire()
     response = _run(_engine(wire=wire, http=True), _request(HEAD))
@@ -599,6 +626,32 @@ def test_create_lm_builds_the_direct_engine_lm(monkeypatch: pytest.MonkeyPatch) 
     assert lm._clio_prompt_cache_key is True  # type: ignore[attr-defined]
     assert lm.kwargs["reasoning_effort"] == "high"
     assert not any(k.startswith("codex_") for k in lm.kwargs)
+
+
+def test_create_lm_builds_the_sse_engine_pair(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The public SSE choice must construct both native async HTTP wires."""
+    from dspy.lm15 import AsyncOpenAICodexLM
+
+    from clio_agent.config import LMProviderConfig
+    from clio_agent.lm.factory import create_lm
+
+    monkeypatch.setattr(direct_engine, "default_wire", _wire)
+    config = LMProviderConfig(
+        provider="codex",
+        model="gpt-5.5",
+        api_base="codex://direct",
+        codex_transport="sse",
+    )
+    lm = create_lm(config)
+
+    assert isinstance(lm._engine_spec, direct_engine.CodexDirectEngine)
+    assert isinstance(lm._async_engine_spec, direct_engine.AsyncCodexDirectEngine)
+    assert lm._engine_spec.http is True and lm._async_engine_spec.http is True
+    assert isinstance(lm._engine_spec.http_wire, AsyncOpenAICodexLM)
+    assert isinstance(lm._async_engine_spec.http_wire, AsyncOpenAICodexLM)
+    assert lm._engine_spec.http_wire is not lm._async_engine_spec.http_wire
+    assert lm._engine_spec.http_wire.api_key == lm._engine_spec.wire.api_key
+    assert lm._async_engine_spec.http_wire.account_id == lm._async_engine_spec.wire.account_id
 
 
 def test_an_oversized_image_is_refused_typed_before_any_send(

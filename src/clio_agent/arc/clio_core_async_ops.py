@@ -22,9 +22,10 @@ Still blocking, because the binding has no GIL-free alternative (drafted upstrea
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any
 
@@ -66,16 +67,22 @@ def _polled(future: Any) -> Callable[[float], bool]:
 
     def done_within(timeout: float) -> bool:
         deadline = time.monotonic() + timeout
+        interval = min(0.001, _POLL_S)
         while not future.done():
-            if time.monotonic() >= deadline:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
                 return False
-            time.sleep(_POLL_S)
+            # Local writes often finish within a millisecond. Charging the full
+            # idle poll interval on every small RPC dominates large histories.
+            # Back off to the existing cadence while a call actually stays pending.
+            time.sleep(min(interval, remaining))
+            interval = min(interval * 2, _POLL_S)
         return True
 
     return done_within
 
 
-def await_future(future: Any, *, op_name: str) -> Any:
+def await_future(future: Any, *, op_name: str, ceiling_s: float | None = None) -> Any:
     """Wait for ``future`` while the daemon keeps working; return it (done).
 
     No fixed deadline: a slow but working daemon is waited for (its CPU/I/O advancing;
@@ -94,16 +101,27 @@ def await_future(future: Any, *, op_name: str) -> Any:
     """
     if future.done():  # the common case: no bound to resolve (config reads are not free)
         return future
+    # A native submission can finish just after the first check. Give that
+    # normal reply one millisecond before resolving configuration and sampling
+    # daemon processes for every tiny write. Pending work still enters the same
+    # health/progress policy; this is no execution deadline or alternate backend.
+    polled = _polled(future)
+    if polled(0.001):
+        return future
     from clio_agent.arc.daemon_progress import (  # noqa: PLC0415 - cycle
         max_wait_s,
         wait_while_progressing,
     )
 
+    ceiling = max_wait_s() + _WATCH_FIRST_MARGIN_S if ceiling_s is None else ceiling_s
+    slice_s = resolve_liveness_policy().stall_after_s + _WATCH_FIRST_MARGIN_S
+    if ceiling_s is not None:
+        slice_s = min(slice_s, ceiling)
     outcome = wait_while_progressing(
-        _polled(future),
-        slice_s=resolve_liveness_policy().stall_after_s + _WATCH_FIRST_MARGIN_S,
+        polled,
+        slice_s=slice_s,
         op_name=op_name,
-        ceiling_s=max_wait_s() + _WATCH_FIRST_MARGIN_S,
+        ceiling_s=ceiling,
     )
     if not outcome.done:
         raise ClioCoreFutureTimeout(op_name, outcome.reason, outcome.waited_s)
@@ -246,9 +264,30 @@ def store_delete(store: Any, kind: str, name: str) -> bool:
     return delete_blob(store._client, store._tag_ids.get(kind), name)
 
 
+def store_delete_many(store: Any, kind: str, names: Sequence[str]) -> None:
+    """Issue independent deletes together and await every submitted operation."""
+    tag_id = store._tag_ids.get(kind)
+    futures = [store._client.AsyncDelBlob(tag_id, name) for name in names]
+    errors: list[Exception] = []
+    for future in futures:
+        try:
+            await_future(future, op_name="delete").wait(0)
+        except Exception as error:
+            logging.getLogger(__name__).exception(
+                "Core deletion failed reason=core_delete_observation_failed kind=%s", kind
+            )
+            errors.append(error)
+    if errors:
+        raise ExceptionGroup("Core deletion batch failed", errors)
+
+
 def rpc_answers(client: Any, cte: Any, sentinel: str) -> bool:
     """One GIL-free round trip (``AsyncTagQuery``): ``True`` when the runtime answered."""
+    from clio_agent.arc.rpc_liveness import health_probe_window_s  # noqa: PLC0415 - cycle
+
     future = await_future(
-        client.AsyncTagQuery(sentinel, 1, cte.PoolQuery.Dynamic()), op_name="health_probe"
+        client.AsyncTagQuery(sentinel, 1, cte.PoolQuery.Dynamic()),
+        op_name="health_probe",
+        ceiling_s=health_probe_window_s(),
     )
     return bool(future.wait(0) == 0)

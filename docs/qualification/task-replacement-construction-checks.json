@@ -1,0 +1,50 @@
+{
+  "recorded_at": "2026-10-14T16:56:43.018960+00:00",
+  "source_parent": "98a7a5ee78b04254a9853932a0c167d095ccff81",
+  "candidate": "containing core commit; initial source review only",
+  "gact": "ce99316446848ddd269b1bf782ff2c87cc9db14a",
+  "marketplace": "9257bba5953b012ba796299df4c633e698dbaddc",
+  "checks": {
+    "ruff_lint_full_src": {
+      "exit": 0
+    },
+    "ruff_format_full_src": {
+      "exit": 0
+    },
+    "scoped_mypy": {
+      "exit": 0,
+      "files": 138,
+      "follow_imports": "silent"
+    },
+    "import_application_no_lifespan": {
+      "exit": 0
+    },
+    "source_guards": {
+      "exit": 0,
+      "count": 9,
+      "file_size_baselines_raised": false,
+      "hidden_swallow_baselines_raised": false
+    },
+    "gact_scoped_oxlint": {
+      "exit": 0
+    },
+    "gact_prettier": {
+      "exit": 0
+    },
+    "gact_guards": {
+      "exit": 0,
+      "count": 6
+    },
+    "gact_types": {
+      "exit": 0,
+      "node_heap_mib": 2048
+    },
+    "git_whitespace": {
+      "exit": 0
+    }
+  },
+  "runtime_acceptance": false,
+  "tests_this_construction_turn": 0,
+  "review_acceptance": "pending",
+  "release_scope": "excluded from the separate human release"
+}

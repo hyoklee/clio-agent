@@ -228,7 +228,16 @@ def provider_failure_message(exc: BaseException, *, provider_label: str) -> str 
     if leaf is None:
         return None
     text = _provider_own_words(str(getattr(leaf, "message", "") or leaf))
-    return f"{provider_label}: {text} (HTTP {leaf.status})"
+    message = f"{provider_label}: {text} (HTTP {leaf.status})"
+    admission = getattr(leaf, "clio_request_admission", None)
+    if isinstance(admission, dict):
+        message += (
+            f" At refusal, this CLIO process had {admission['active']} admitted model calls"
+            f" (including this call) and {admission['queued']} queued for this endpoint and credential."
+            " The provider reports account-wide capacity, which may include other clients"
+            " or requests it has not yet released."
+        )
+    return message
 
 
 def turn_failure_message(exc: BaseException, provider_id: str, otherwise: str) -> str:
@@ -317,8 +326,38 @@ def forward_error_info(state: Any, exc: BaseException, partial_answer: str) -> A
     known = cli_provider_stream_failure(exc, provider_id=provider_id)
     if known is not None:
         return ErrorInfo(error="provider_error", message=known, details=details, recoverable=True)
+    from clio_agent.gact.agents.clio_react_recovery import transport_failure  # noqa: PLC0415
+
+    transport = transport_failure(exc)
+    if transport is not None:
+        from dspy.utils.exceptions import LMTimeoutError  # noqa: PLC0415
+
+        timed_out = isinstance(transport, LMTimeoutError)
+        reason = "model_request_timeout" if timed_out else "model_stream_interrupted"
+        label = provider_label(provider_id) or "Model provider"
+        message = (
+            "The model request timed out."
+            if timed_out
+            else "The model connection closed before the response finished."
+        )
+        return ErrorInfo(
+            error="provider_error",
+            message=f"{label}: {message} Completed tool results are saved.",
+            details={
+                **details,
+                "reason": reason,
+                "provider_id": provider_id,
+                "provider_label": label,
+                "diagnostic": str(transport),
+                "recovery_actions": ["retry"],
+            },
+            recoverable=True,
+        )
     provider_message = turn_failure_message(exc, provider_id=provider_id, otherwise="")
     if provider_message:
+        leaf = _provider_error_leaf(exc)
+        if isinstance(admission := getattr(leaf, "clio_request_admission", None), dict):
+            details["model_request_admission"] = admission
         return ErrorInfo(
             error="provider_error", message=provider_message, details=details, recoverable=True
         )

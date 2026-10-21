@@ -34,3 +34,18 @@ async def authorize_retry_parts(
 
 
 __all__ = ["authorize_retry_parts", "retryable_user_message"]
+
+
+def message_text(message: Message) -> str:
+    """Read the original human text in part order for a deliberate retry."""
+    return "\n".join(
+        part.text for part in message.parts if part.type == "text" and part.text
+    ).strip()
+
+
+def retry_user_text(original_text: str, notes: str) -> str:
+    """Append explicit retry notes without losing the original assignment."""
+    notes = notes.strip()
+    if not notes:
+        return original_text
+    return f"{original_text}\n\n[Retry notes]\n{notes}"

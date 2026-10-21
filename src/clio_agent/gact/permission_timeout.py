@@ -12,6 +12,8 @@ not the same as the user refusing.
 from __future__ import annotations
 
 import logging
+import threading
+import time
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -28,10 +30,48 @@ logger = logging.getLogger(__name__)
 PERMISSION_REQUEST_TIMEOUT_S = 600.0
 #: The typed reason on a permission request that expired unanswered.
 REASON_PERMISSION_TIMEOUT = "permission_request_timeout"
+REASON_PERMISSION_CANCELLED = "permission_request_cancelled"
+
+
+def wait_for_permission(
+    app: FastAPI,
+    pid: str,
+    row: dict[str, Any],
+    event: threading.Event,
+    *,
+    tool_name: str,
+    cancelled: threading.Event | None,
+    timeout_s: float | None = None,
+) -> DenyDecision | None:
+    """Await an answer while retaining the original turn's cancellation token.
+
+    Stop ends this invocation's approval wait, not an accepted background task.
+    The existing answer deadline is unchanged. A cancellation resolves only a
+    still-pending request; it cannot rewrite a human decision or grant access.
+    """
+    from clio_agent.gact.folder_access import FOLDER_RESOLUTION_LOCK
+    from clio_agent.gact.permission_gate import DenyDecision, resolve_permission
+
+    waited = PERMISSION_REQUEST_TIMEOUT_S if timeout_s is None else timeout_s
+    deadline = time.monotonic() + waited
+    while True:
+        if cancelled is not None and cancelled.is_set():
+            with FOLDER_RESOLUTION_LOCK:
+                if row.get("status") == "pending":
+                    row["reason"] = REASON_PERMISSION_CANCELLED
+                    resolve_permission(app, pid, "deny", grantor="system")
+            return DenyDecision(f"The invocation of {tool_name!r} was cancelled before approval.")
+        if event.is_set():
+            return None
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            with FOLDER_RESOLUTION_LOCK:
+                return expire_permission(app, pid, row, tool_name=tool_name, waited_s=waited)
+        event.wait(min(0.1, remaining))
 
 
 def expire_permission(
-    app: "FastAPI", pid: str, row: dict[str, Any], *, tool_name: str
+    app: "FastAPI", pid: str, row: dict[str, Any], *, tool_name: str, waited_s: float | None = None
 ) -> "DenyDecision | None":
     """Resolve an unanswered request as a typed timeout deny; ``None`` if it was answered.
 
@@ -42,7 +82,7 @@ def expire_permission(
 
     if row.get("status") != "pending":
         return None
-    waited = PERMISSION_REQUEST_TIMEOUT_S
+    waited = PERMISSION_REQUEST_TIMEOUT_S if waited_s is None else waited_s
     row["status"] = "timeout"
     row["action"] = "deny"
     row["reason"] = REASON_PERMISSION_TIMEOUT
@@ -76,4 +116,10 @@ def expire_permission(
     )
 
 
-__all__ = ["PERMISSION_REQUEST_TIMEOUT_S", "REASON_PERMISSION_TIMEOUT", "expire_permission"]
+__all__ = [
+    "PERMISSION_REQUEST_TIMEOUT_S",
+    "REASON_PERMISSION_CANCELLED",
+    "REASON_PERMISSION_TIMEOUT",
+    "expire_permission",
+    "wait_for_permission",
+]

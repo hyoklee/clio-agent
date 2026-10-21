@@ -21,13 +21,17 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from pytest import MonkeyPatch
+from pytest import MonkeyPatch, mark
 
 from clio_agent.gact.a2ui_actions.narration import MAX_NARRATION_BYTES, narration_for
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.protocol.constants import A2UI_V091
+from tests.test_gact.input_capture import capture_inputs
 
+from .task_records import hold_model_segment
 from .test_a2ui_v3 import HEADERS, _create_message, _session_client
+
+pytestmark = mark.usefixtures("a2ui_session_lifespan")
 
 WORKSPACE_CATALOG_ID = workspace_catalog_id()
 
@@ -108,17 +112,9 @@ def _install_narration_event(
     monkeypatch.setattr(registry, "get", patched_get)
 
 
-def _stub_spawn(app: Any, monkeypatch: MonkeyPatch) -> list[Any]:
-    """Prevent a real turn from executing; return the list of spawned coros."""
-
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
-    monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
-    return spawned
+def _capture_inputs(app: Any, monkeypatch: Any = None) -> list[Any]:
+    """Hold model admission and observe actual confirmed Core inputs."""
+    return capture_inputs(app, monkeypatch)
 
 
 def _event(name: str, surface_id: str, context: dict[str, Any], timestamp: str) -> dict[str, Any]:
@@ -153,7 +149,7 @@ def test_declared_narration_renders_template_and_still_carries_context_json(
     client, sid, _ = _session_client(tmp_path)
     app = client.app
     _install_narration_event(app, monkeypatch)
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
@@ -165,7 +161,7 @@ def test_declared_narration_renders_template_and_still_carries_context_json(
     )
 
     assert response.status_code == 200, response.text
-    assert response.json()["delivery"] == "start"
+    assert response.json()["delivery"] == "steer"
     message = next(m for m in reversed(app.state.messages[sid]) if m.role == "user")
     text = _text(message)
     expected_prefix = 'The user selected ["MTA1","PKRD"] for earthscope-x: analyse them.'
@@ -185,7 +181,7 @@ def test_declared_narration_renders_template_and_still_carries_context_json(
     assert reasons == []
 
 
-def test_steer_lane_carries_the_identical_declared_narration_text(
+def test_busy_feedback_preserves_declared_narration_and_structured_context(
     tmp_path: Path, monkeypatch: MonkeyPatch
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
@@ -195,11 +191,8 @@ def test_steer_lane_carries_the_identical_declared_narration_text(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )
 
-    class _LiveTurn:
-        def done(self) -> bool:
-            return False
-
-    app.state.in_flight_turns[sid] = _LiveTurn()
+    hold_model_segment(app, sid, monkeypatch)
+    pending_before = {item.id for item in app.state.task_history.pending_mail(sid)}
     context = {"stationIds": ["MTA1", "PKRD"], "searchId": "earthscope-x"}
     action = _event(EVENT_NAME, "surface_1", context, "2026-09-17T00:00:00Z")
 
@@ -209,11 +202,18 @@ def test_steer_lane_carries_the_identical_declared_narration_text(
 
     assert response.status_code == 200, response.text
     assert response.json()["delivery"] == "steer"
-    inbox = app.state.loop_inboxes[sid]
-    [queued] = inbox.snapshot()
+    [notice] = [
+        item
+        for item in app.state.task_history.pending_mail(sid)
+        if item.kind == "human" and item.id not in pending_before
+    ]
+    queued = app.state.task_history.read_content(notice.content)
     expected_prefix = 'The user selected ["MTA1","PKRD"] for earthscope-x: analyse them.'
     expected_text = f"{expected_prefix}\n\nStructured context:\n{_canonical(context)}"
-    assert queued.text == expected_text
+    assert queued["text"] == expected_text
+    assert queued["message"]["metadata"]["a2ui_action_context"] == context
+    assert notice.sender_human == app.state.human_principal
+    assert notice.id not in app.state.task_history.acknowledged_notifications(sid)
     surface = app.state.a2ui_store.get(sid, "surface_1")
     assert surface is not None
     [record] = surface.actions
@@ -230,7 +230,7 @@ def test_undeclared_event_delivers_legacy_form_and_records_reason_once(
 ) -> None:
     client, sid, _ = _session_client(tmp_path)
     app = client.app
-    _stub_spawn(app, monkeypatch)
+    _capture_inputs(app, monkeypatch)
     client.post(
         f"/v1/sessions/{sid}/a2ui/messages", headers=HEADERS, json={"messages": [_create_message()]}
     )

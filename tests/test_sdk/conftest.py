@@ -219,12 +219,12 @@ class StubAgent:
 
 
 def _fresh_arc(tmp_path: Path) -> Any:
-    """A real in-memory ARC, mirroring tests/test_gact/conftest.py."""
+    """Use the private Core writer required by durable product message acceptance."""
 
-    from clio_agent.arc.live import _MemoryStore
     from clio_agent.arc.memory import ARCMemory
+    from clio_agent.arc.storage import make_arc_store
 
-    return ARCMemory(data_dir=str(tmp_path / "arc"), store=_MemoryStore())
+    return ARCMemory(data_dir=str(tmp_path / "arc"), store=make_arc_store(backend="cte"))
 
 
 @pytest.fixture()

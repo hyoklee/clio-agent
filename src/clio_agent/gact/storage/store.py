@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -10,7 +11,7 @@ from typing import Iterator, TypeVar
 
 from pydantic import BaseModel
 
-from clio_agent.gact.storage.models import SourceRecord, TransferOperation, now
+from clio_agent.gact.storage.models import TransferOperation, now
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -27,6 +28,9 @@ class SourceStore:
                 "CREATE TABLE IF NOT EXISTS records (kind TEXT, id TEXT, body TEXT NOT NULL, PRIMARY KEY(kind,id))"
             )
             db.execute("CREATE TABLE IF NOT EXISTS identity (id TEXT PRIMARY KEY)")
+            db.execute(
+                "CREATE INDEX IF NOT EXISTS source_operations ON records(json_extract(body, '$.source_id')) WHERE kind='operation'"
+            )
             identity = db.execute("SELECT id FROM identity").fetchone()
             self.clio_id = identity[0] if identity else "clio_" + uuid.uuid4().hex
             if identity is None:
@@ -72,6 +76,15 @@ class SourceStore:
             ).fetchall()
         return [model.model_validate_json(row[0]) for row in rows]
 
+    def operations_for_source(self, source_id: str) -> builtins.list[TransferOperation]:
+        """Read one source's retained workload metadata through its existing database index."""
+        with self.transaction() as db:
+            rows = db.execute(
+                "SELECT body FROM records WHERE kind='operation' AND json_extract(body, '$.source_id')=? ORDER BY rowid",
+                (source_id,),
+            ).fetchall()
+        return [TransferOperation.model_validate_json(row[0]) for row in rows]
+
     def update_operation(self, identifier: str, **changes: object) -> TransferOperation:
         """Update progress without losing a concurrent cancellation request."""
         with self.transaction() as db:
@@ -90,7 +103,9 @@ class SourceStore:
             )
         return operation
 
-    def begin_operation(self, source_id: str, kind: str) -> TransferOperation:
+    def begin_operation(
+        self, source_id: str, kind: str, *, identifier: str = ""
+    ) -> TransferOperation:
         """Reject overlapping changes to the same source, including from another client."""
         with self.transaction() as db:
             rows = db.execute("SELECT body FROM records WHERE kind='operation'").fetchall()
@@ -99,25 +114,14 @@ class SourceStore:
                 if previous.source_id == source_id and previous.state in {"queued", "running"}:
                     raise ValueError("A transfer is already active for this source")
             operation = TransferOperation.model_validate(
-                {"id": "transfer_" + uuid.uuid4().hex, "source_id": source_id, "kind": kind}
+                {
+                    "id": identifier or "transfer_" + uuid.uuid4().hex,
+                    "source_id": source_id,
+                    "kind": kind,
+                }
             )
             db.execute(
                 "INSERT INTO records VALUES ('operation', ?, ?)",
                 (operation.id, operation.model_dump_json()),
             )
         return operation
-
-    def recover(self) -> None:
-        """Mark interrupted local transfers; native jobs remain queryable by their job IDs."""
-        for operation in self.list("operation", TransferOperation):
-            if operation.state in {"queued", "running"}:
-                self.update_operation(
-                    operation.id, state="interrupted", error="CLIO restarted; resume the transfer."
-                )
-                if operation.kind == "indexing":
-                    continue  # Its previously published manifest remains intact.
-                source = self.get("source", operation.source_id, SourceRecord)
-                source.source = source.source.model_copy(
-                    update={"materialization": "stale" if source.manifest_id else "failed"}
-                )
-                self.put("source", source.source.id, source)

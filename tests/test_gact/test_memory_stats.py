@@ -1,7 +1,7 @@
 """tests for /v1/memory/stats.
 
-Drives the app with a FakeARC so we don't need a real ARC instance
-(which would touch disk + spin up indexes). Covers:
+Stats-only cases use fixed cache counters. Recall and turn cases use the actual
+application lifespan, Core history and trusted session relationships. Covers:
 
 - ARC wired -> cache + global stats reported
 - ARC not wired -> zeros (per SPEC §6.19 'zeros are a valid signal')
@@ -12,18 +12,24 @@ Drives the app with a FakeARC so we don't need a real ARC instance
 
 from __future__ import annotations
 
-import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from clio_agent.arc.memory import ARCMemory
+from clio_agent.arc.task_types import CoordinationGrant
 from clio_agent.gact import context as ctx
 from clio_agent.gact.app import build_app
+from clio_agent.gact.native_work import now
+from clio_agent.gact.session_store import _replace_session_messages
 from clio_agent.gact.summarization_record import summarization_part
 from clio_agent.gact.types import Message, Part, Tokens
 from clio_agent.gact.workspaces import Workspace
+from tests.test_gact.test_streaming import _wait_for_turn_settlement
 
 # #948 S4b: default sessions run the blueprint react ``main``; route it to each
 # test's ``build_app(agent=...)`` host fake.
@@ -92,6 +98,10 @@ class _StubAgent:
     def __init__(self, chosen_context: int = 4000) -> None:
         self._provider_config = _StubProviderConfig(chosen_context)
 
+    def forward(self, question: str, session_id: str) -> Any:
+        """Keep stats-only fixtures from accidentally executing a model turn."""
+        raise AssertionError("Stats-only agent must not execute inference")
+
 
 class FakeAgent:
     def __init__(self) -> None:
@@ -113,10 +123,23 @@ class FakeAgent:
         )()
 
 
+def _application(client: TestClient) -> FastAPI:
+    """Narrow the actual application rather than assuming every ASGI callable has state."""
+    app = client.app
+    assert isinstance(app, FastAPI)
+    return app
+
+
 @pytest.fixture()
-def client_with_arc(tmp_path: Path) -> TestClient:
-    arc = FakeARC(hits=80, misses=20, conv_index_size=12, inv_index_size=42)
-    return TestClient(build_app(sessions_path=tmp_path / "s.json", arc=arc, agent=_StubAgent()))
+def client_with_arc(
+    tmp_path: Path, arc: ARCMemory, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[TestClient]:
+    counters = FakeARC(hits=80, misses=20, conv_index_size=12, inv_index_size=42)
+    monkeypatch.setattr(arc, "get_cache_stats", counters.get_cache_stats)
+    with TestClient(
+        build_app(sessions_path=tmp_path / "s.json", arc=arc, agent=_StubAgent())
+    ) as client:
+        yield client
 
 
 def test_memory_stats_reports_cache_counters(client_with_arc: TestClient) -> None:
@@ -142,13 +165,13 @@ def test_memory_stats_session_block_populated_when_session_id_set(
     client_with_arc: TestClient,
 ) -> None:
     sid = client_with_arc.post("/v1/sessions", json={"title": "x"}).json()["id"]
-    client_with_arc.app.state.sessions.update(
+    _application(client_with_arc).state.sessions.update(
         sid,
         message_count=3,
         add_tokens_input=120,
         add_tokens_output=80,
     )
-    client_with_arc.app.state.messages[sid] = [
+    _application(client_with_arc).state.messages[sid] = [
         Message(
             id="msg_1",
             session_id=sid,
@@ -194,7 +217,7 @@ def test_memory_stats_budget_from_handshake_context_window(tmp_path: Path) -> No
         )
     )
     sid = client.post("/v1/sessions", json={"title": "x"}).json()["id"]
-    client.app.state.messages[sid] = [
+    _application(client).state.messages[sid] = [
         Message(
             id="msg_1",
             session_id=sid,
@@ -215,7 +238,7 @@ def test_memory_stats_budget_unknown_without_provider_config(tmp_path: Path) -> 
 
     client = TestClient(build_app(sessions_path=tmp_path / "s.json", arc=FakeARC()))
     sid = client.post("/v1/sessions", json={"title": "x"}).json()["id"]
-    client.app.state.messages[sid] = [
+    _application(client).state.messages[sid] = [
         Message(
             id="msg_1",
             session_id=sid,
@@ -235,7 +258,7 @@ def test_memory_stats_reports_retained_context_files_and_compaction_pressure(
     client_with_arc: TestClient,
 ) -> None:
     sid = client_with_arc.post("/v1/sessions", json={"title": "x"}).json()["id"]
-    client_with_arc.app.state.messages[sid] = [
+    _application(client_with_arc).state.messages[sid] = [
         Message(
             id="msg_compact",
             session_id=sid,
@@ -253,7 +276,7 @@ def test_memory_stats_reports_retained_context_files_and_compaction_pressure(
             ],
         )
     ]
-    client_with_arc.app.state.context_files[sid] = {
+    _application(client_with_arc).state.context_files[sid] = {
         "large.txt": {"path": "large.txt", "mode": "read", "size": 8192}
     }
 
@@ -337,11 +360,12 @@ def _add_text_message(
     session_id: str,
     *,
     message_id: str,
-    role: str = "user",
+    role: Literal["user", "assistant", "system", "tool"] = "user",
     text: str,
     created_at: str,
 ) -> None:
-    client.app.state.messages.setdefault(session_id, []).append(
+    rows = list(_application(client).state.messages.get(session_id, []))
+    rows.append(
         Message(
             id=message_id,
             session_id=session_id,
@@ -351,10 +375,27 @@ def _add_text_message(
             parts=[Part(id=f"{message_id}_part", type="text", text=text)],
         )
     )
-    client.app.state.sessions.update(
+    _replace_session_messages(_application(client), session_id, rows)
+    _application(client).state.sessions.update(
         session_id,
-        message_count=len(client.app.state.messages[session_id]),
+        message_count=len(_application(client).state.messages[session_id]),
     )
+
+
+def _grant_read(client: TestClient, recipient: str, target: str) -> CoordinationGrant:
+    """Install a trusted human/configuration relationship, never model-supplied intent."""
+    app = _application(client)
+    grant = CoordinationGrant(
+        id=f"fixture-read:{recipient}:{target}",
+        granting_human=app.state.human_principal,
+        recipient_session=recipient,
+        target_session=target,
+        target_scope="session",
+        rights=("read",),
+        created_at=now(),
+    )
+    app.state.task_history.record_grant(grant, observation_id=grant.id)
+    return grant
 
 
 def _complete_turn_with_metadata(
@@ -385,18 +426,25 @@ def _complete_turn_with_metadata(
         f"/v1/sessions/{sid}/messages",
         json={"parts": [{"type": "text", "text": text}], "metadata": metadata},
     )
-    assert ack.status_code == 200, ack.text
-    user_id = ack.json()["message_id"]
-    deadline = time.monotonic() + 30.0
-    while time.monotonic() < deadline:
-        messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
-        for idx, message in enumerate(messages):
-            if message["id"] == user_id:
-                if idx > 0 and messages[idx - 1]["role"] == "assistant":
-                    return messages[idx - 1]
-                break
-        time.sleep(0.02)
-    raise AssertionError("turn did not settle")
+    assert ack.status_code == 202, ack.text
+    accepted = ack.json()
+    _wait_for_turn_settlement(
+        _application(client), sid, timeout=30.0, handle=accepted["task_handle"]
+    )
+    history = _application(client).state.task_history
+    assignment = history.task_snapshot(accepted["task_handle"])
+    assert assignment is not None and assignment.status == "completed", {
+        "assignment": assignment,
+        "result": history.read_content(assignment.result)
+        if assignment is not None and assignment.result is not None
+        else None,
+    }
+    messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
+    for idx, message in enumerate(messages):
+        if message["id"] == accepted["message_id"]:
+            assert idx > 0 and messages[idx - 1]["role"] == "assistant"
+            return messages[idx - 1]
+    raise AssertionError("Settled turn has no accepted user message in its transcript")
 
 
 def test_memory_search_defaults_to_session_scope(client_with_arc: TestClient) -> None:
@@ -552,7 +600,7 @@ def test_memory_search_denies_other_workspace_active_session(
 
 
 def test_memory_search_marks_global_scope(client_with_arc: TestClient) -> None:
-    client_with_arc.app.state.workspaces._workspaces["ws_global"] = Workspace(  # type: ignore[attr-defined]
+    _application(client_with_arc).state.workspaces._workspaces["ws_global"] = Workspace(  # type: ignore[attr-defined]
         id="ws_global",
         name="global",
         root_path="",
@@ -593,7 +641,7 @@ def test_memory_search_unknown_session_404s(client_with_arc: TestClient) -> None
     assert resp.json()["error"]["error"] == "not_found"
 
 
-def test_turn_can_opt_into_cross_session_memory_context(tmp_path: Path) -> None:
+def test_turn_can_opt_into_cross_session_memory_context(tmp_path: Path, arc: ARCMemory) -> None:
     """#1312-class settlement race: this drives a REAL turn (the recording
     ``FakeAgent`` must be reached), so the client MUST be entered -- see
     ``_complete_turn_with_metadata``'s docstring for why a bare
@@ -604,7 +652,7 @@ def test_turn_can_opt_into_cross_session_memory_context(tmp_path: Path) -> None:
     agent = FakeAgent()
     app = build_app(
         sessions_path=tmp_path / "s.json",
-        arc=FakeARC(hits=1, misses=0),
+        arc=arc,
         agent=agent,
     )
     with TestClient(app) as client:
@@ -629,6 +677,7 @@ def test_turn_can_opt_into_cross_session_memory_context(tmp_path: Path) -> None:
             created_at="2026-05-25T12:00:00+00:00",
         )
 
+        _grant_read(client, sid_current, sid_prior)
         assistant = _complete_turn_with_metadata(
             client,
             sid_current,
@@ -661,7 +710,7 @@ def test_turn_can_opt_into_cross_session_memory_context(tmp_path: Path) -> None:
         }
         assert assistant["metadata"]["memory_search"]["hits"][0]["session_id"] == sid_prior
         assert assistant["metadata"]["memory_search"]["hits"][0]["cross_session"] is True
-        events = client.app.state.bus._history.get(sid_current, [])
+        events = _application(client).state.bus._history.get(sid_current, [])
         assert "memory.search.completed" in [event.type for event in events]
         semantic = [
             event.payload
@@ -675,7 +724,7 @@ def test_turn_can_opt_into_cross_session_memory_context(tmp_path: Path) -> None:
         assert semantic[-1]["payload"]["hits"][0]["cross_session"] is True
 
 
-def test_memory_tool_search_same_workspace_requires_and_records_user_intent(
+def test_memory_tool_search_same_workspace_requires_and_records_trusted_grant(
     client_with_arc: TestClient,
 ) -> None:
     ws_science = client_with_arc.post(
@@ -699,6 +748,7 @@ def test_memory_tool_search_same_workspace_requires_and_records_user_intent(
         created_at="2026-05-25T12:00:00+00:00",
     )
 
+    grant = _grant_read(client_with_arc, sid_current, sid_prior)
     resp = client_with_arc.post(
         f"/v1/sessions/{sid_current}/memory/tools/search-sessions",
         json={
@@ -713,17 +763,36 @@ def test_memory_tool_search_same_workspace_requires_and_records_user_intent(
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["tool"] == "memory_search_sessions"
-    assert body["metadata"]["policy_decision"] == "allow_same_workspace_user_intent"
+    assert body["metadata"]["policy_decision"] == "allow_core_relationship"
     assert body["metadata"]["provenance"]["source"] == "gact_memory_tool"
     assert body["hits"][0]["session_id"] == sid_prior
     assert body["hits"][0]["metadata"]["cross_session"] is True
-    audit = client_with_arc.app.state.memory_tool_audit[-1]
+    audit = _application(client_with_arc).state.memory_tool_audit[-1]
     assert audit["tool_name"] == "memory_search_sessions"
     assert audit["status"] == "completed"
-    assert audit["policy_decision"] == "allow_same_workspace_user_intent"
+    assert audit["policy_decision"] == "allow_core_relationship"
+    recorded_agent = _application(client_with_arc).state.sessions.get(sid_current).agent["id"]
+    assert body["metadata"]["caller"] == {"agent_id": recorded_agent}
+    assert audit["caller"] == {"agent_id": recorded_agent}
+    assert recorded_agent != "orchestrator"
+    _application(client_with_arc).state.task_history.record_grant(
+        grant.model_copy(update={"revoked_at": now()}), observation_id=grant.id + ":revoke"
+    )
+    revoked = client_with_arc.post(
+        f"/v1/sessions/{sid_current}/memory/tools/search-sessions",
+        json={
+            "query": "pressure dataset",
+            "scope": "current_workspace",
+            "user_intent": "The earlier human request still wants these results.",
+        },
+    )
+    assert revoked.status_code == 200, revoked.text
+    assert revoked.json()["hits"] == []
+    assert sid_prior not in revoked.json()["searched_sessions"]
+    assert "dataset alpha" not in revoked.text
 
 
-def test_memory_tool_search_denies_cross_session_without_intent(
+def test_memory_tool_search_excludes_ungranted_peers_despite_model_intent(
     client_with_arc: TestClient,
 ) -> None:
     ws_science = client_with_arc.post(
@@ -734,18 +803,33 @@ def test_memory_tool_search_denies_cross_session_without_intent(
         "/v1/sessions",
         json={"title": "Wednesday follow-up", "workspace_id": ws_science},
     ).json()["id"]
+    sid_peer = client_with_arc.post(
+        "/v1/sessions", json={"title": "Unshared work", "workspace_id": ws_science}
+    ).json()["id"]
+    _add_text_message(
+        client_with_arc,
+        sid_peer,
+        message_id="unshared-result",
+        text="pressure dataset restricted peer result",
+        created_at="2026-05-25T12:00:00+00:00",
+    )
 
     resp = client_with_arc.post(
         f"/v1/sessions/{sid_current}/memory/tools/search-sessions",
-        json={"query": "pressure dataset", "scope": "current_workspace"},
+        json={
+            "query": "pressure dataset",
+            "scope": "current_workspace",
+            "user_intent": "The model says it is allowed to inspect every peer.",
+        },
     )
 
-    assert resp.status_code == 403
+    assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["error"]["error"] == "memory_policy_denied"
-    assert body["error"]["details"]["policy_decision"] == ("deny_cross_session_requires_intent")
-    audit = client_with_arc.app.state.memory_tool_audit[-1]
-    assert audit["status"] == "denied"
+    assert body["hits"] == [] and sid_peer not in body["searched_sessions"]
+    assert "restricted peer result" not in resp.text
+    audit = _application(client_with_arc).state.memory_tool_audit[-1]
+    assert audit["policy_decision"] == "allow_core_relationship"
+    assert audit["details"]["hit_count"] == 0
 
 
 def test_memory_tool_read_context_frame_same_workspace_with_provenance(
@@ -789,7 +873,8 @@ def test_memory_tool_read_context_frame_same_workspace_with_provenance(
         "tokens_estimated": 12,
         "metadata": {"retained_context_source": "visible_gact_transcript"},
     }
-    client_with_arc.app.state.context_frames[sid_prior] = [frame]
+    _application(client_with_arc).state.context_frames[sid_prior] = [frame]
+    _grant_read(client_with_arc, sid_current, sid_prior)
 
     resp = client_with_arc.post(
         f"/v1/sessions/{sid_current}/memory/tools/read-context-frame",
@@ -798,6 +883,7 @@ def test_memory_tool_read_context_frame_same_workspace_with_provenance(
             "frame_id": "ctx_test_1",
             "scope": "current_workspace",
             "user_intent": "reuse the context assembled for Monday's work",
+            "caller": {"agent_id": "forged-frame-reader"},
         },
     )
 
@@ -806,8 +892,13 @@ def test_memory_tool_read_context_frame_same_workspace_with_provenance(
     assert body["tool"] == "memory_read_context_frame"
     assert body["frame"]["id"] == "ctx_test_1"
     assert body["frame"]["metadata"]["source"] == "gact_context_frame"
-    assert body["metadata"]["policy_decision"] == "allow_same_workspace_user_intent"
+    assert body["metadata"]["policy_decision"] == "allow_core_relationship"
     assert body["metadata"]["provenance"]["target_session_id"] == sid_prior
+    recorded_agent = _application(client_with_arc).state.sessions.get(sid_current).agent["id"]
+    assert body["metadata"]["caller"] == {"agent_id": recorded_agent}
+    assert _application(client_with_arc).state.memory_tool_audit[-1]["caller"] == {
+        "agent_id": recorded_agent
+    }
 
 
 def test_memory_tool_read_summary_denies_other_workspace(
@@ -836,17 +927,22 @@ def test_memory_tool_read_summary_denies_other_workspace(
             "target_session_id": sid_other,
             "scope": "current_workspace",
             "user_intent": "look across my recent work",
+            "caller": {"agent_id": "forged-summary-reader"},
         },
     )
 
     assert resp.status_code == 403
     body = resp.json()
     assert body["error"]["error"] == "memory_policy_denied"
-    assert body["error"]["details"]["scope"] == "other_workspace"
+    assert body["error"]["details"]["policy_decision"] == "deny_session_unavailable"
+    recorded_agent = _application(client_with_arc).state.sessions.get(sid_current).agent["id"]
+    assert _application(client_with_arc).state.memory_tool_audit[-1]["caller"] == {
+        "agent_id": recorded_agent
+    }
 
 
 def test_memory_tool_global_search_requires_global_scope(client_with_arc: TestClient) -> None:
-    client_with_arc.app.state.workspaces._workspaces["ws_global"] = Workspace(  # type: ignore[attr-defined]
+    _application(client_with_arc).state.workspaces._workspaces["ws_global"] = Workspace(  # type: ignore[attr-defined]
         id="ws_global",
         name="global",
         root_path="",
@@ -867,6 +963,7 @@ def test_memory_tool_global_search_requires_global_scope(client_with_arc: TestCl
         text="User-level memory says pressure dataset decisions were stable.",
         created_at="2026-05-25T12:00:00+00:00",
     )
+    _grant_read(client_with_arc, sid_current, sid_global)
 
     resp = client_with_arc.post(
         f"/v1/sessions/{sid_current}/memory/tools/search-sessions",
@@ -875,13 +972,13 @@ def test_memory_tool_global_search_requires_global_scope(client_with_arc: TestCl
 
     assert resp.status_code == 200, resp.text
     body = resp.json()
-    assert body["metadata"]["policy_decision"] == "allow_global_user_intent"
+    assert body["metadata"]["policy_decision"] == "allow_core_relationship"
     assert body["metadata"]["policy_scope"] == "global"
     assert body["hits"][0]["session_id"] == sid_global
 
 
-def test_memory_tool_search_excludes_rewound_messages(tmp_path: Path) -> None:
-    app = build_app(sessions_path=tmp_path / "s.json", arc=FakeARC())
+def test_memory_tool_search_excludes_rewound_messages(tmp_path: Path, arc: ARCMemory) -> None:
+    app = build_app(sessions_path=tmp_path / "s.json", arc=arc)
     with TestClient(app) as client:
         sid = client.post("/v1/sessions", json={"title": "rewind memory"}).json()["id"]
         _add_text_message(
@@ -920,15 +1017,16 @@ def test_memory_tool_search_excludes_rewound_messages(tmp_path: Path) -> None:
         assert summary["excluded_message_ids"] == ["msg_delete"]
 
 
-def test_root_agent_auto_attaches_the_three_policy_gated_memory_tools() -> None:
+def test_root_agent_uses_shared_tasks_instead_of_memory_named_session_tools() -> None:
     from types import SimpleNamespace
 
     from clio_agent.gact.agents.auto_tools import build_auto_react_tools
 
     root = SimpleNamespace(id="main", parent_id="", tools=[])
     names = {tool.name for tool in build_auto_react_tools(root)}
-    assert {
+    assert {"query_tasks", "observe_tasks", "send_agent_message"} <= names
+    assert not {
         "memory_search_sessions",
         "memory_read_session_summary",
         "memory_read_context_frame",
-    } <= names
+    }.intersection(names)

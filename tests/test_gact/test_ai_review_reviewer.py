@@ -384,6 +384,85 @@ def test_risk_classification_maps_to_human_escalation(monkeypatch) -> None:
     )
 
 
+def test_reviewer_inherits_its_turn_cancellation_context(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The provider worker can observe Stop while the invocation retains custody."""
+    import contextlib
+
+    from clio_agent.errors import CancellationError
+    from clio_agent.runtime.cancellation import cancellation_checker, cancellation_requested
+
+    entered, stopped = threading.Event(), threading.Event()
+    monkeypatch.setattr(ai_review_mod.dspy, "context", lambda **_k: contextlib.nullcontext())
+
+    def prediction(_signature: Any) -> Any:
+        def run(**_inputs: Any) -> Any:
+            entered.set()
+            deadline = time.monotonic() + 2
+            while not cancellation_requested():
+                assert time.monotonic() < deadline, "Reviewer lost its turn cancellation context"
+                time.sleep(0.01)
+            raise CancellationError("Reviewer stopped")
+
+        return run
+
+    monkeypatch.setattr(ai_review_mod.dspy, "Predict", prediction)
+    outcomes: list[tuple[str, str]] = []
+
+    def invoke() -> None:
+        with cancellation_checker(stopped.is_set):
+            outcomes.append(_run_reviewer(object(), {"tool_name": "x"}, timeout_s=3))
+
+    caller = threading.Thread(target=invoke)
+    caller.start()
+    try:
+        assert entered.wait(2)
+        stopped.set()
+        caller.join(timeout=1)
+        assert not caller.is_alive(), "Stopped reviewer provider did not retire"
+        assert outcomes == [("escalate", "error")]
+    finally:
+        stopped.set()
+        caller.join(timeout=3)
+        assert not caller.is_alive()
+
+
+def test_timed_out_reviewer_keeps_ownership_until_actual_worker_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The verdict deadline cannot detach a model thread from its waiting invocation."""
+    import contextlib
+
+    entered, release, exited = threading.Event(), threading.Event(), threading.Event()
+    monkeypatch.setattr(ai_review_mod.dspy, "context", lambda **_k: contextlib.nullcontext())
+
+    def prediction(_signature: Any) -> Any:
+        def run(**_inputs: Any) -> Any:
+            entered.set()
+            try:
+                release.wait()
+                return Mock(risk_level="low")
+            finally:
+                exited.set()
+
+        return run
+
+    monkeypatch.setattr(ai_review_mod.dspy, "Predict", prediction)
+    outcomes: list[tuple[str, str]] = []
+    caller = threading.Thread(
+        target=lambda: outcomes.append(_run_reviewer(object(), {"tool_name": "x"}, timeout_s=0.05))
+    )
+    caller.start()
+    try:
+        assert entered.wait(2), "The actual reviewer worker never started"
+        caller.join(timeout=0.15)
+        assert caller.is_alive() and not outcomes and not exited.is_set()
+    finally:
+        release.set()
+        caller.join(timeout=2)
+    assert not caller.is_alive() and exited.is_set()
+    assert outcomes == [("escalate", "timeout")]
+
+
 def test_run_reviewer_timeout_escalates(monkeypatch) -> None:
     """A reviewer LM call that exceeds the bounded budget -> ('escalate', 'timeout')."""
     import contextlib

@@ -13,6 +13,7 @@ streaming; serialization and transfer proceed in bounded chunks.
 from __future__ import annotations
 
 import asyncio
+import os
 import threading
 import time
 from collections.abc import AsyncIterator
@@ -38,6 +39,7 @@ from clio_agent.gact.routes.table_route_shared import (
     table_source,
     watch_for_disconnect,
 )
+from clio_agent.platform_paths import win_extended_path
 
 if TYPE_CHECKING:
     from clio_agent.gact.artifacts.table_export import ExportResult
@@ -112,7 +114,7 @@ def _resolve_export(
     from clio_agent.gact.artifacts.table_export import resolve_export_table  # noqa: PLC0415
     from clio_agent.gact.artifacts.table_query_models import table_format_for  # noqa: PLC0415
 
-    fmt = table_format_for(record.name)
+    fmt = table_format_for(record.name, version.path)
     if fmt is None:
         raise _error(
             415,
@@ -122,7 +124,7 @@ def _resolve_export(
             name=record.name,
         )
     source = table_source(app, record, version)
-    source_size = source.stat().st_size
+    source_size = os.stat(win_extended_path(source)).st_size
     max_source_bytes = table_query_max_source_bytes()
     if source_size > max_source_bytes:
         raise _error(

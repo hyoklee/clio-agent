@@ -605,26 +605,38 @@ def clear_execution_playbook(app: Any, session_id: str) -> None:
     app.state.sessions.update(session_id, metadata_patch={PLAYBOOK_EXECUTION_METADATA_KEY: {}})
 
 
-def transition_playbook_to_execution(app: Any, session_id: str) -> Playbook | None:
+def transition_playbook_to_execution(
+    app: Any, session_id: str, *, decision_id: str = ""
+) -> Playbook | None:
     """Carry the active PLAN-phase playbook into an EXECUTION record on plan-exit APPROVE (P1.6d).
 
     Replaces the bare :func:`clear_playbook` the approve path used to call: an active playbook is
     re-recorded under :data:`PLAYBOOK_EXECUTION_METADATA_KEY` (``active_step`` reset to 0) so its
     per-step ``tools_allowed`` keeps narrowing during execution, and the plan-phase key is cleared.
-    With no active playbook it clears BOTH keys (idempotent, and drops any stale execution record
-    from a prior cycle). Returns the execution playbook, or ``None`` when none was active.
+    The exact Question decision is recorded with both keys in one SessionStore write.
+    Retrying that decision preserves execution progress. With no active playbook a new
+    decision clears both keys. Returns the execution playbook, or ``None`` when absent.
     """
 
     session = app.state.sessions.get(session_id)
+    if (
+        decision_id
+        and session is not None
+        and session.metadata.get("playbook_execution_decision") == decision_id
+    ):
+        return recorded_execution_playbook(session)
     playbook = recorded_playbook(session) if session is not None else None
-    clear_playbook(app, session_id)
-    if playbook is None:
-        clear_execution_playbook(app, session_id)
-        return None
-    execution = replace(playbook, active_step=0)
+    execution = replace(playbook, active_step=0) if playbook is not None else None
     app.state.sessions.update(
-        session_id, metadata_patch={PLAYBOOK_EXECUTION_METADATA_KEY: execution.to_metadata()}
+        session_id,
+        metadata_patch={
+            PLAN_PLAYBOOK_METADATA_KEY: {},
+            PLAYBOOK_EXECUTION_METADATA_KEY: execution.to_metadata() if execution else {},
+            "playbook_execution_decision": decision_id,
+        },
     )
+    if execution is None:
+        return None
     trace.event(
         "PLAN",
         "carried playbook %r (%d steps) into execution for %s",

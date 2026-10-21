@@ -1,4 +1,4 @@
-"""Resolve declaration-scoped in-process tools outside the MCP gateway."""
+"""Resolve declarations for built-ins registered at the application MCP boundary."""
 
 from __future__ import annotations
 
@@ -15,7 +15,6 @@ from clio_agent.gact.a2ui_producer import (
     build_update_a2ui_data_model_tool,
 )
 from clio_agent.gact.agents import toolset_inventory
-from clio_agent.gact.ask_user_tool import build_ask_user_tool
 from clio_agent.gact.document_tools import (
     build_prepare_document_runtime_tool,
     build_prepare_document_tool,
@@ -27,6 +26,15 @@ from clio_agent.gact.memory_tools import (
     build_memory_summary_tool,
 )
 from clio_agent.gact.search_assistant import build_clio_search_read_tool, build_clio_search_tool
+from clio_agent.gact.ssh_tools import build_ssh_execute_tool
+from clio_agent.gact.storage.download_tool import build_connected_data_download_tool
+from clio_agent.gact.task_declarations import (
+    TASK_COMPATIBILITY_ALIASES,
+    TASK_TOOL_NAMES,
+    build_ask_user_tool,
+    build_task_compatibility_tools,
+    build_task_tools,
+)
 from clio_agent.gact.view_image_tool import build_view_image_tool
 from clio_agent.gact.view_pdf_tool import build_view_pdf_tool
 
@@ -37,6 +45,7 @@ from clio_agent.gact.view_pdf_tool import build_view_pdf_tool
 DECLARABLE_NATIVE_TOOLS: frozenset[str] = frozenset(
     {
         "ask_user",
+        "connected_data_download",
         "clio_search",
         "clio_search_read",
         "create_a2ui_surface",
@@ -54,7 +63,10 @@ DECLARABLE_NATIVE_TOOLS: frozenset[str] = frozenset(
         "prepare_document_runtime",
         "prepare_execution_runtime",
         "prepare_document",
+        "ssh_execute",
     }
+    | TASK_TOOL_NAMES
+    | TASK_COMPATIBILITY_ALIASES
 )
 
 
@@ -141,13 +153,18 @@ def resolve_declared_native_tools(
         and (name != "view_pdf" or supports_pdf)
     ]
     available: dict[str, Any] = {}
+    if TASK_TOOL_NAMES.intersection(requested):
+        available.update({tool.name: tool for tool in build_task_tools() if tool.name in requested})
+    available.update({tool.name: tool for tool in build_task_compatibility_tools(requested)})
     builders: dict[str, Callable[[], Any]] = {
         "ask_user": lambda: build_ask_user_tool(agent_def),
+        "connected_data_download": build_connected_data_download_tool,
         "clio_search": build_clio_search_tool,
         "clio_search_read": build_clio_search_read_tool,
         "prepare_document_runtime": build_prepare_document_runtime_tool,
         "prepare_execution_runtime": build_prepare_execution_runtime_tool,
         "prepare_document": build_prepare_document_tool,
+        "ssh_execute": build_ssh_execute_tool,
         "create_a2ui_surface": build_create_a2ui_surface_tool,
         "update_a2ui_components": build_update_a2ui_components_tool,
         "update_a2ui_data_model": build_update_a2ui_data_model_tool,

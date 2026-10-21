@@ -14,14 +14,18 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import TYPE_CHECKING, Any
 
 from clio_agent import paths
 from clio_agent.gact.a2ui_producer._refusal import refusal
+from clio_agent.platform_paths import path_is_within
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
+
+logger = logging.getLogger(__name__)
 
 #: The producer designation stamped on a minted surface-definition artifact —
 #: shares the export boundary's designation (both are harness-side, S4 records
@@ -63,7 +67,6 @@ def mint_surface_definition_artifact(
 
     from clio_agent.gact.artifacts.designation import kind_for_path  # noqa: PLC0415
     from clio_agent.gact.artifacts.minting import (  # noqa: PLC0415
-        _contained,
         _session_workspace_id,
         _workspace_root,
         artifact_name_for_path,
@@ -83,18 +86,25 @@ def mint_surface_definition_artifact(
                 "definition cannot be stored as an artifact"
             ),
         )
-    resolved_root = root.resolve(strict=False)
     resolved_root = paths.workspace_state_dir(root).resolve(strict=False)
     target = (resolved_root / "a2ui" / _definition_file_name(surface_id)).resolve(strict=False)
     # Defense in depth: _definition_file_name's charset already makes escaping
-    # impossible, but a definition artifact is NEVER written outside the
-    # workspace root regardless -- a typed refusal, never a silent path fix.
-    if not _contained(target, resolved_root):
+    # impossible, but resolving a symlink must not escape the managed state root.
+    # This harness-owned destination is not a model-selected file/grant: do not
+    # query connected-source access policy or derive another state root from it.
+    if not path_is_within(target, resolved_root):
+        logger.warning(
+            "managed surface definition escaped state root: module=%s workspace=%s root=%r target=%r",
+            __file__,
+            workspace_id,
+            str(resolved_root),
+            str(target),
+        )
         return refusal(
             "a2ui_definition_artifact_failed",
             detail=(
-                f"the surface definition path resolved outside this session's "
-                f"workspace ({resolved_root}); refusing to write it"
+                f"the surface definition destination {target} resolved outside "
+                f"this session's managed state root ({resolved_root}); refusing to write it"
             ),
         )
     payload = json.dumps(components, indent=2, sort_keys=False)

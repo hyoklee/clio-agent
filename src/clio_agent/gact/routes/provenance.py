@@ -205,7 +205,8 @@ def register_provenance_routes(app: FastAPI, deps: "GactDeps") -> None:
                     *(normalized.get("degradations") or []),
                     *read_degradations,
                 ]
-                return project_child_execution(
+                return await run_in_threadpool(
+                    project_child_execution,
                     app,
                     sid,
                     normalized,
@@ -229,7 +230,9 @@ def register_provenance_routes(app: FastAPI, deps: "GactDeps") -> None:
                 child_session_ids=child_ids,
                 limit=limit,
             )
-            return project_child_execution(app, sid, result, include_children=include_children)
+            return await run_in_threadpool(
+                project_child_execution, app, sid, result, include_children=include_children
+            )
         except Exception as exc:
             raise _typed_error(
                 status_code=503,

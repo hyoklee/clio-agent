@@ -1,15 +1,9 @@
 """Session-topology substrate: who descends from whom, and by which record.
 
-The agent-task registry and the session store are TWO substrates over one
-topology, and neither alone is it: the registry knows which child an
-:class:`~clio_agent.gact.agent_tasks.AgentTask` delegated but cannot see a user
-FORK, while the session store's ``parent_session_id`` sees the fork but cannot
-say which task owns a delegated child. Every read-side walk -- the interactions
-scope, the provenance lineage, the artifact aggregation -- goes through this ONE
-module so they cannot disagree about what a session's descendants are.
-
-Owner module (#775 no-accretion): this lived inside ``agent_tasks``, which is the
-record + registry + lifecycle owner and had no room for a second concern.
+Core task snapshots identify delegated children and their assignments. Session
+metadata also identifies user forks through ``parent_session_id``. This read-only
+walk combines those edges for interactions, provenance and artifact aggregation;
+it does not create tasks or decide their lifecycle.
 """
 
 from __future__ import annotations
@@ -24,23 +18,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-#: Runaway backstop on spawn depth (NOT a 3-tier rule): ``tier`` is semantic
-#: weight, not depth, so deep declared chains are legitimate. A spawn whose
-#: computed depth would exceed this is refused (``spawn_depth_exceeded``). Defined
-#: here, in the leaf module both the spawn path and every read-side walk import,
-#: rather than in ``turn_spawn`` (which imports this module).
+#: Historical import alias; new admission reads agent_tasks.max_depth dynamically.
 MAX_SPAWN_DEPTH = 8
 
-#: Ceiling on descendant-session traversal (:func:`descendant_sessions`,
-#: :func:`~clio_agent.gact.provenance.child_projection.child_session_lineage`).
-#: Deliberately THE SAME constant as the spawn backstop: a walk that stopped
-#: shallower would silently hide legitimate children, and one that went deeper
-#: could only find a graph that spawning refuses to create. Two independent
-#: numbers is how the aggregation walk and the lineage walk came to disagree
-#: about what the tree even is.
-_DEFAULT_DESCENDANT_DEPTH = MAX_SPAWN_DEPTH
+#: Existing lineage is never hidden by the configured limit for new work.
+_DEFAULT_DESCENDANT_DEPTH = None
 
-#: A descendant a durable :class:`AgentTask` delegated.
+#: A descendant delegated by a durable Core child assignment.
 AGENT_TASK_ATTRIBUTION = "agent_task"
 #: A descendant reached only through the session store's ``parent_session_id`` --
 #: a user fork, or a child whose task row is gone. Real topology that no task
@@ -81,84 +65,46 @@ def _session_store_index(app: "FastAPI") -> dict[str, list[str]]:
 
 
 def descendant_walk(
-    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+    app: "FastAPI", root_session_id: str, *, max_depth: int | None = _DEFAULT_DESCENDANT_DEPTH
 ) -> tuple[list[SessionDescendant], bool]:
-    """Return every descendant of ``root_session_id`` (BFS, bounded), typed by origin.
-
-    The second element is TRUNCATED: the walk stopped at ``max_depth`` with a
-    frontier still to visit. A caller that serves the lineage needs it, and it is
-    free here -- deciding it afterwards costs another walk per boundary row.
-
-    ONE walk over BOTH substrates, because neither alone is the topology: the
-    agent-task registry knows which child a task delegated but cannot see a user
-    FORK, and the session store's ``parent_session_id`` sees the fork but cannot
-    say which task owns a delegated child. Reading only the registry is what let a
-    permission raised inside a fork be invisible to every interactions poll;
-    reading only the store is what made a delegated child look parentless.
-
-    Delegated children are visited first at each depth, so a session reachable
-    both ways is attributed to its task rather than to the bare pointer. The root
-    is NOT included; each descendant appears once (a ``seen`` set makes a repeated
-    or cyclic graph terminate); order is breadth-first, siblings newest-created
-    first (the registry's ``for_parent`` order).
-    """
-
-    if max_depth < 1:
-        return [], False
-    reg = getattr(app.state, "agent_task_registry", None)
-    forks = _session_store_index(app)
-    out: list[SessionDescendant] = []
-    seen: set[str] = {root_session_id}
-    frontier = [root_session_id]
-    depth = 0
-    while frontier and depth < max_depth:
-        next_frontier: list[str] = []
-        for parent in frontier:
-            delegated: list[tuple[str, str]] = []
-            if reg is not None:
-                delegated = [
-                    (str(getattr(task, "child_session_id", "") or ""), task.task_id)
-                    for task in reg.for_parent(parent)
-                ]
-            forked = [(child, "") for child in forks.get(parent, ())]
-            for child, task_id in (*delegated, *forked):
-                if not child or child in seen:
-                    continue
-                seen.add(child)
-                out.append(
-                    SessionDescendant(
-                        session_id=child,
-                        parent_session_id=parent,
-                        depth=depth + 1,
-                        attribution=(
-                            AGENT_TASK_ATTRIBUTION if task_id else SESSION_FORK_ATTRIBUTION
-                        ),
-                        task_id=task_id,
-                    )
+    """Read delegated Core lineage and independent session-fork topology."""
+    history = app.state.task_history
+    children = _session_store_index(app)
+    delegated: dict[tuple[str, str], str] = {}
+    for handle in history.tree_handles(root_session_id):
+        task = history.task_snapshot(handle)
+        if task is None or task.kind != "Subagent" or task.owner.parent_handle is None:
+            continue
+        parent = history.task_snapshot(task.owner.parent_handle)
+        if parent is not None:
+            key = (parent.owner.session_id, task.owner.session_id)
+            delegated[key] = task.handle
+            children.setdefault(key[0], []).append(key[1])
+    rows, pending, visited, truncated = [], [(root_session_id, 0)], {root_session_id}, False
+    for parent, depth in pending:
+        for child in dict.fromkeys(children.get(parent, ())):
+            if child in visited:
+                continue
+            if max_depth is not None and depth >= max_depth:
+                truncated = True
+                continue
+            visited.add(child)
+            handle = delegated.get((parent, child), "")
+            rows.append(
+                SessionDescendant(
+                    child,
+                    parent,
+                    depth + 1,
+                    AGENT_TASK_ATTRIBUTION if handle else SESSION_FORK_ATTRIBUTION,
+                    handle,
                 )
-                next_frontier.append(child)
-        frontier = next_frontier
-        depth += 1
-    # Truncated means the CAP stopped the walk, not that the tree happened to end
-    # exactly at it: a frontier row with nothing unvisited below it is a leaf.
-    truncated = any(
-        any(
-            child and child not in seen
-            for child in (
-                *(
-                    str(getattr(task, "child_session_id", "") or "")
-                    for task in (reg.for_parent(node) if reg is not None else ())
-                ),
-                *forks.get(node, ()),
             )
-        )
-        for node in frontier
-    )
-    return out, truncated
+            pending.append((child, depth + 1))
+    return rows, truncated
 
 
 def descendant_sessions(
-    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+    app: "FastAPI", root_session_id: str, *, max_depth: int | None = _DEFAULT_DESCENDANT_DEPTH
 ) -> list[SessionDescendant]:
     """The rows-only view of :func:`descendant_walk`."""
 
@@ -166,7 +112,7 @@ def descendant_sessions(
 
 
 def descendant_session_ids(
-    app: "FastAPI", root_session_id: str, *, max_depth: int = _DEFAULT_DESCENDANT_DEPTH
+    app: "FastAPI", root_session_id: str, *, max_depth: int | None = _DEFAULT_DESCENDANT_DEPTH
 ) -> list[str]:
     """The id-only view of :func:`descendant_sessions`, in the same order.
 
@@ -178,28 +124,3 @@ def descendant_session_ids(
     return [
         row.session_id for row in descendant_sessions(app, root_session_id, max_depth=max_depth)
     ]
-
-
-def purge_session_tasks(app: "FastAPI", session_id: str) -> list[str]:
-    """Drop the agent-task rows a deleted session leaves behind.
-
-    The registry is a PROJECTION over the session store, so those rows are stale
-    the moment the store loses the session: the lineage kept naming a session
-    nothing could read, and ``for_parent`` kept handing out a task whose child is
-    gone. Returns the purged task ids.
-    """
-
-    from clio_agent.gact.turn_reasoning import forget_session_reasoning  # noqa: PLC0415
-
-    forget_session_reasoning(app, session_id)
-    registry = getattr(app.state, "agent_task_registry", None)
-    if registry is None:
-        return []
-    forgotten = registry.forget_session(session_id)
-    if forgotten:
-        logger.info(
-            "agent-task rows purged with their session session=%s tasks=%s",
-            session_id,
-            ",".join(forgotten),
-        )
-    return forgotten

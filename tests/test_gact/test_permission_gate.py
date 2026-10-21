@@ -11,8 +11,11 @@ Drives the bridge directly (no FastMCP server needed) and asserts:
 from __future__ import annotations
 
 import asyncio
+import sys
 import threading
 import time
+import traceback
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,7 +26,6 @@ from fastapi.testclient import TestClient
 from mcp.types import TextContent
 
 from clio_agent.gact.app import (
-    _gact_app_context,
     _make_permission_gate,
     _make_tool_observer,
     _tool_session_context,
@@ -37,11 +39,24 @@ from clio_agent.gact.permission_gate import (
 from clio_agent.gact.types import Message, Part
 from clio_agent.tools.execution import SyncMCPToolExecutor
 from tests.test_gact.conftest import complete_turn
+from tests.test_gact.task_records import active_turn_fixture, record_assignment_fixture
 from tests.turn_signals import TURN_SIGNAL_BACKSTOP_S
 
 # #948 S4b: default sessions run the blueprint react ``main``; route it to each
 # test's ``build_app(agent=...)`` host fake.
 pytestmark = pytest.mark.usefixtures("host_agent_executor")
+
+
+def _use_external_client_class(monkeypatch: pytest.MonkeyPatch, client_cls: type[Any]) -> None:
+    """Inject an external-call double without replacing the native SDK class."""
+    from clio_agent.tools import mcp_runtime
+
+    original = mcp_runtime.make_mcp_client
+
+    def build(target: Any, **kwargs: Any) -> Any:
+        return original(target, **{**kwargs, "client_cls": client_cls})
+
+    monkeypatch.setattr(mcp_runtime, "make_mcp_client", build)
 
 
 def test_read_only_catalog_tool_fast_allows(tmp_path: Path) -> None:
@@ -87,10 +102,7 @@ def test_real_mcp_tool_annotations_normalize_with_protocol_aliases() -> None:
     from mcp.types import ToolAnnotations
 
     tool = SimpleNamespace(
-        annotations=ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-        )
+        annotations=ToolAnnotations.model_validate({"readOnlyHint": True, "destructiveHint": False})
     )
 
     assert _normalize_mcp_tool_annotations(tool) == {
@@ -279,37 +291,45 @@ def test_child_permission_lifecycle_is_visible_on_attended_root(tmp_path: Path) 
 
 def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Blueprint/workspace MCP tools must not bypass GACT annotation semantics."""
 
-    class DeclaredClient:
-        called = False
+    from fastmcp import FastMCP
 
-        async def __aenter__(self) -> "DeclaredClient":
-            return self
+    from clio_agent.tools import execution
+    from clio_agent.tools.mcp_runtime import make_mcp_client
 
-        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-            return None
+    server = FastMCP("declared-permission")
+    catalog = FastMCP("declared-catalog")
+    calls: list[str] = []
+    transports: list[Any] = []
 
-        async def list_tools(self) -> list[Any]:
-            return []
+    @server.tool(
+        name="jarvis_run",
+        annotations={"readOnlyHint": False, "destructiveHint": False},
+        task=False,
+    )
+    def mutation(pipeline_id: str) -> dict[str, Any]:
+        """Record one approved inline operation for the permission boundary test."""
+        calls.append(pipeline_id)
+        return {"name": "jarvis_run", "args": {"pipeline_id": pipeline_id}}
 
-        async def call_tool(
-            self, name: str, args: dict[str, Any], *, progress_handler: Any = None
-        ) -> Any:
-            DeclaredClient.called = True
-            return SimpleNamespace(data={"name": name, "args": args})
-
-        async def read_resource(self, uri: str) -> Any:
-            return SimpleNamespace(uri=uri)
+    def client_factory(target: Any) -> Any:
+        if target is server:
+            transports.append(target)
+        else:
+            assert target is catalog
+        return make_mcp_client(target, server_id="relay" if target is server else "catalog")
 
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
         session_id = client.post("/v1/sessions", json={"title": "t"}).json()["id"]
+        record_assignment_fixture(app, session_id)
         executor = SyncMCPToolExecutor(
-            object(),
+            catalog,
             timeout=1.0,
-            client_factory=lambda _server: DeclaredClient(),
+            client_factory=client_factory,
             preloaded_tools={
                 "relay_jarvis_run": SimpleNamespace(
                     name="relay_jarvis_run",
@@ -317,39 +337,87 @@ def test_declared_mcp_mutation_blocks_before_transport_until_ui_resolution(
                     annotations={"readOnlyHint": False, "destructiveHint": False},
                 )
             },
-            namespace_servers={"relay": object()},
+            namespace_servers={"relay": server},
         )
         result: dict[str, str] = {}
+        failures: list[Exception] = []
+        stopping = threading.Event()
+        original_hooks = execution.current_tool_runtime
+
+        def cancellable_hooks() -> execution.ToolRuntimeHooks:
+            hooks = original_hooks()
+            return replace(
+                hooks,
+                cancellation_checker=lambda: stopping.is_set()
+                or bool(hooks.cancellation_checker and hooks.cancellation_checker()),
+            )
+
+        monkeypatch.setattr(execution, "current_tool_runtime", cancellable_hooks)
 
         def call_tool() -> None:
-            with _gact_app_context(app), _tool_session_context(session_id):
-                result["value"] = executor.call_tool(
-                    "relay_jarvis_run",
-                    {"pipeline_id": "pipeline-1"},
-                )
+            try:
+                with active_turn_fixture(app, session_id), _tool_session_context(session_id):
+                    result["value"] = executor.call_tool(
+                        "relay_jarvis_run",
+                        {"pipeline_id": "pipeline-1"},
+                    )
+            except Exception as error:
+                failures.append(error)
 
         thread = threading.Thread(target=call_tool)
         thread.start()
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline and not app.state.permissions:
-            time.sleep(0.01)
+        try:
+            deadline = time.monotonic() + 2.0
+            published = None
+            while time.monotonic() < deadline:
+                published = next(
+                    (
+                        event
+                        for event in app.state.bus.session_events_since(session_id)
+                        if event.type == "permission.requested"
+                        and event.payload["tool_call"]["tool_name"] == "relay_jarvis_run"
+                    ),
+                    None,
+                )
+                if published is not None:
+                    break
+                time.sleep(0.01)
 
-        assert DeclaredClient.called is False
-        pending = next(iter(app.state.permissions.values()))
-        assert pending["status"] == "pending"
-        assert pending["tool_call"] == {
-            "tool_name": "relay_jarvis_run",
-            "input": {"pipeline_id": "pipeline-1"},
-        }
+            assert calls == []
+            assert transports == []
+            assert published is not None
+            pending = app.state.permissions[published.payload["id"]]
+            assert pending["status"] == "pending"
+            assert pending["tool_call"] == {
+                "tool_name": "relay_jarvis_run",
+                "input": {"pipeline_id": "pipeline-1"},
+            }
 
-        response = client.post(f"/v1/permissions/{pending['id']}", json={"action": "allow"})
-        assert response.status_code == 204
-        thread.join(timeout=2.0)
-        executor.close()
-
-        assert not thread.is_alive()
-        assert DeclaredClient.called is True
-        assert '"name": "jarvis_run"' in result["value"]
+            response = client.post(f"/v1/permissions/{pending['id']}", json={"action": "allow"})
+            assert response.status_code == 204
+            thread.join(timeout=2.0)
+            assert not thread.is_alive(), "".join(
+                traceback.format_stack(sys._current_frames().get(thread.ident or -1))
+            )
+            assert not failures, failures
+            assert calls == ["pipeline-1"], result
+            assert len(transports) == 1
+            assert '"name": "jarvis_run"' in result["value"]
+        finally:
+            try:
+                stopping.set()
+                for row in tuple(app.state.permissions.values()):
+                    if (
+                        row["status"] == "pending"
+                        and row["tool_call"]["tool_name"] == "relay_jarvis_run"
+                    ):
+                        client.post(f"/v1/permissions/{row['id']}", json={"action": "deny"})
+                thread.join(timeout=2.0)
+                assert not thread.is_alive(), "".join(
+                    traceback.format_stack(sys._current_frames().get(thread.ident or -1))
+                )
+            finally:
+                executor.close()
 
 
 @pytest.mark.parametrize(
@@ -370,7 +438,7 @@ def test_dynamic_external_mcp_requires_permission_before_client_invocation(
         def __init__(self, transport: Any) -> None:
             MustNotStartClient.constructed = True
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", MustNotStartClient)
+    _use_external_client_class(monkeypatch, MustNotStartClient)
     app = build_app(sessions_path=tmp_path / "s.json")
     info = {
         "name": "remote",
@@ -392,63 +460,72 @@ def test_dynamic_external_mcp_requires_permission_before_client_invocation(
     assert MustNotStartClient.constructed is False
 
 
+@pytest.mark.parametrize("route", ["async", "sync"])
 def test_dynamic_external_mcp_read_only_hint_invokes_client(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    route: str,
 ) -> None:
+    from fastmcp import FastMCP
+
     from clio_agent.gact.agents import builders
+    from clio_agent.tools.task_call_context import TASK_CALL
 
-    class FakeClient:
-        called = False
+    server = FastMCP("read-only-permission")
+    calls: list[str] = []
+    request_loops: list[asyncio.AbstractEventLoop] = []
+    invocation_ids: list[str] = []
 
-        def __init__(self, transport: Any, **_: Any) -> None:
-            self.transport = transport
+    @server.tool(name="lookup", annotations={"readOnlyHint": True}, task=False)
+    def lookup(resource_id: str) -> str:
+        """Return one inline read result through the real SDK and captured schema."""
+        calls.append(resource_id)
+        return "lookup:ok"
 
-        async def __aenter__(self) -> "FakeClient":
-            return self
+    def resolve_transport(_spec: Any) -> Any:
+        """Observe the production client boundary without substituting its implementation."""
+        request_loops.append(asyncio.get_running_loop())
+        task_call = TASK_CALL.get()
+        assert task_call.invocation_id
+        invocation_ids.append(task_call.invocation_id)
+        return server
 
-        async def __aexit__(self, exc_type: Any, exc: Any, tb: Any) -> None:
-            return None
-
-        async def call_tool(
-            self, name: str, args: dict[str, Any], *, progress_handler: Any = None
-        ) -> Any:
-            FakeClient.called = True
-            return SimpleNamespace(
-                content=[TextContent(type="text", text=f"{name}:ok")],
-                isError=False,
-            )
-
-        async def list_tools(self) -> list[Any]:
-            """Advertise the same read-only tool whose permission path is tested."""
-            from mcp.types import Tool
-
-            return [Tool(name="lookup", inputSchema={"type": "object"})]
-
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", FakeClient)
-    monkeypatch.setattr(
-        "clio_agent.tools.mcp_config.transport_from_spec",
-        lambda spec: spec,
-    )
+    monkeypatch.setattr("clio_agent.tools.mcp_config.transport_from_spec", resolve_transport)
     app = build_app(sessions_path=tmp_path / "s.json")
     info = {
         "name": "remote",
         "spec": {"transport": "stdio", "command": "fake", "args": []},
     }
 
-    result = asyncio.run(
-        builders._call_enabled_external_mcp_tool(
-            app,
-            "srv",
-            info,
-            "lookup",
-            {"resource_id": "resource-1"},
-            {"readOnlyHint": True},
-        )
-    )
-
-    assert FakeClient.called is True
-    assert result == "lookup:ok"
+    with TestClient(app) as client:
+        session_id = client.post("/v1/sessions", json={"title": "Read lookup"}).json()["id"]
+        record_assignment_fixture(app, session_id)
+        assert client.portal is not None
+        with active_turn_fixture(app, session_id):
+            arguments = (
+                app,
+                "srv",
+                info,
+                "lookup",
+                {"resource_id": "resource-1"},
+                {"readOnlyHint": True},
+            )
+            if route == "async":
+                result = client.portal.call(builders._call_enabled_external_mcp_tool, *arguments)
+            else:
+                result = builders._run_external_mcp_tool_sync(*arguments)
+        assert calls == ["resource-1"]
+        assert result == "lookup:ok"
+        assert app.state.permissions == {}
+        assert request_loops == [app.state.mcp_app_loop]
+        events = [
+            event
+            for event in app.state.bus._history.get(session_id, [])
+            if event.type in {"tool.call.started", "tool.call.completed"}
+        ]
+        assert [event.type for event in events] == ["tool.call.started", "tool.call.completed"]
+        assert events[0].payload["call_id"] == events[1].payload["call_id"]
+        assert invocation_ids == [events[0].payload["call_id"]]
 
 
 @pytest.mark.parametrize(
@@ -471,7 +548,7 @@ def test_external_mcp_route_requires_permission_before_client_invocation(
         def __init__(self, transport: Any) -> None:
             MustNotStartClient.constructed = True
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", MustNotStartClient)
+    _use_external_client_class(monkeypatch, MustNotStartClient)
     app = build_app(sessions_path=tmp_path / "s.json")
     app.state.external_mcp_servers = {
         "mcp_ext_test": {
@@ -1101,7 +1178,7 @@ def test_external_mcp_call_policy_allow_executes_without_prompt(
 
     import fastmcp.client.transports as transports
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", FakeClient)
+    _use_external_client_class(monkeypatch, FakeClient)
     monkeypatch.setattr(
         transports, "StdioTransport", lambda command, args, env=None: (command, args)
     )
@@ -1170,7 +1247,7 @@ def test_external_mcp_call_uses_explicit_session_for_policy_and_telemetry(
 
     import fastmcp.client.transports as transports
 
-    monkeypatch.setattr("clio_agent.tools.task_receipt.TaskAwareClient", FakeClient)
+    _use_external_client_class(monkeypatch, FakeClient)
     monkeypatch.setattr(
         transports, "StdioTransport", lambda command, args, env=None: (command, args)
     )

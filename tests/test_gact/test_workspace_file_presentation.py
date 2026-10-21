@@ -16,6 +16,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
 from pypdf import PdfWriter
 
 from clio_agent.gact import context as gact_context
@@ -24,6 +25,8 @@ from clio_agent.gact.agents.native_presenters_workspace_file import workspace_fi
 from clio_agent.gact.view_image_tool import VIEW_IMAGE_DESCRIPTOR_TYPE, build_view_image_tool
 from clio_agent.gact.view_pdf_tool import VIEW_PDF_DESCRIPTOR_TYPE, build_view_pdf_tool
 from clio_agent.tools.execution import tool_workspace_context
+
+pytestmark = pytest.mark.usefixtures("clio_core_plane")
 
 _ONE_PIXEL_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6ZQAAAABJRU5ErkJggg=="
@@ -71,7 +74,6 @@ def test_view_pdf_tool_declares_the_workspace_file_presenter() -> None:
 def test_view_image_descriptor_renders_a_workspace_file_block_with_relative_path(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    _with_workspace(monkeypatch)
     nested = tmp_path / "renders"
     nested.mkdir()
     (nested / "page-1.png").write_bytes(_ONE_PIXEL_PNG)
@@ -79,6 +81,7 @@ def test_view_image_descriptor_renders_a_workspace_file_block_with_relative_path
     with tool_workspace_context(tmp_path):
         descriptor = tool(path="renders/page-1.png")
 
+    _with_workspace(monkeypatch)
     presentation = workspace_file_presentation({"path": "renders/page-1.png"}, descriptor, None)
 
     assert presentation == {
@@ -105,12 +108,12 @@ def test_view_image_descriptor_renders_a_workspace_file_block_with_relative_path
 def test_view_pdf_descriptor_renders_a_workspace_file_block_with_resolved_pages(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
-    _with_workspace(monkeypatch, workspace_id="ws_pdf")
     (tmp_path / "doc.pdf").write_bytes(_make_pdf(5))
     tool = build_view_pdf_tool()
     with tool_workspace_context(tmp_path):
         descriptor = tool(path="doc.pdf", pages="2-3")
 
+    _with_workspace(monkeypatch, workspace_id="ws_pdf")
     assert descriptor["type"] == VIEW_PDF_DESCRIPTOR_TYPE
     presentation = workspace_file_presentation(
         {"path": "doc.pdf", "pages": "2-3"}, descriptor, None

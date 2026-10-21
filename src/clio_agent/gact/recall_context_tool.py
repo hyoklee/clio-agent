@@ -25,6 +25,16 @@ __all__ = ["RecallContextError", "build_recall_context_tool", "recall_atoms"]
 _MAX_ATOMS = 50
 
 
+def context_search_available(arc: Any) -> bool:
+    """Expose only supported recall modes; a missing app describes the full catalog."""
+    if arc is None:
+        return True
+    supports = getattr(arc, "segment_search_is_semantic", None)
+    return (
+        bool(supports()) if callable(supports) else callable(getattr(arc, "search_context", None))
+    )
+
+
 class RecallContextError(ClioError):
     """A ``recall_context`` call that cannot be answered as asked (shown to the agent)."""
 
@@ -106,7 +116,11 @@ def recall_atoms(
 
 def build_recall_context_tool() -> Any:
     """Build the auto-attached, read-only ``recall_context`` tool."""
+    from clio_agent.arc.history_plane import plane_for  # noqa: PLC0415
+    from clio_agent.gact import context as ctx  # noqa: PLC0415
     from clio_agent.gact.agents.tool_instrumentation import native_tool  # noqa: PLC0415
+
+    search_enabled = context_search_available(plane_for(ctx.active_app()))
 
     def recall_context(query: str = "", ids: list[str] | None = None, limit: int = 10) -> str:
         """Read back earlier context, compacted steps included, exactly as recorded."""
@@ -114,8 +128,29 @@ def build_recall_context_tool() -> Any:
         rows = recall_atoms(arc, session, query=query, ids=ids, limit=limit)
         return json.dumps(rows, ensure_ascii=False)
 
+    def recall_ids(ids: list[str]) -> str:
+        """Read retained step or compaction IDs without an unavailable search mode."""
+        return recall_context(ids=ids)
+
+    args = {
+        "ids": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "Step ids, or a summary's compaction id (cmp_...).",
+        }
+    }
+    if search_enabled:
+        args.update(
+            {
+                "query": {
+                    "type": "string",
+                    "description": "Text to search earlier steps for; omit ids.",
+                },
+                "limit": {"type": "integer", "description": "Maximum steps (1-50) for a query."},
+            }
+        )
     return native_tool(
-        recall_context,
+        recall_context if search_enabled else recall_ids,
         name="recall_context",
         presentation="memory",
         domain="memory",
@@ -124,16 +159,14 @@ def build_recall_context_tool() -> Any:
         desc=(
             "Read back this conversation's earlier steps from the context store, including "
             "ones a summary replaced, exactly as recorded. Pass `ids` (step ids, or the "
-            "compaction id a summary names) or a search `query`."
+            "compaction id a summary names). "
+            + (
+                "Alternatively pass a search query. Give exactly one of ids or query, never both."
+                if search_enabled
+                else "Text search is unavailable in this context store; only ID recall is supported. "
+                "Use the compaction id named in the summary to retrieve its original steps."
+            )
         ),
-        args={
-            "query": {"type": "string", "description": "Text to search earlier steps for."},
-            "ids": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Step ids, or a summary's compaction id (cmp_...).",
-            },
-            "limit": {"type": "integer", "description": "Maximum steps (1-50) for a query."},
-        },
+        args=args,
         read_only=True,
     )

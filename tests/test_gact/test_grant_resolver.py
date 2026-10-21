@@ -15,6 +15,7 @@ Asserts the load-bearing invariants of ``grant_resolver.resolve`` / ``is_read_on
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -134,6 +135,8 @@ def test_read_only_fast_allows_before_mode_lock(tmp_path: Path, mode: str) -> No
         gate = _make_permission_gate(app)
         with _tool_session_context(sid):
             assert gate("fs_read_file", {"filepath": "x"}) == "allow"
+            assert gate("fs_list_directory", {"path": "x"}) == "allow"
+            assert gate("fs_search_text", {"path": "x", "query": "callback"}) == "allow"
         # And no permission row was recorded for the read (it never reached the lock/prompt).
         assert app.state.permissions == {}
 
@@ -498,7 +501,7 @@ def test_sticky_append_does_not_collide_with_migrated_legacy_row(tmp_path: Path)
     assert legacy_row["priority"] == 1  # sole row -> migrated to priority=1
     app.state.permission_policies = [legacy_row]
 
-    _apply_kind_grant(app, ws.id, "tool", {"pattern": "git.push", "decision": "deny"})
+    asyncio.run(_apply_kind_grant(app, ws.id, "tool", {"pattern": "git.push", "decision": "deny"}))
 
     assert len(app.state.permission_policies) == 2
     appended = app.state.permission_policies[1]
@@ -527,8 +530,10 @@ def test_two_successive_sticky_appends_both_preserve_first_match(tmp_path: Path)
     migrate_priorities([legacy_row])
     app.state.permission_policies = [legacy_row]
 
-    _apply_kind_grant(app, ws.id, "tool", {"pattern": "git.push", "decision": "deny"})
-    _apply_kind_grant(app, ws.id, "tool", {"pattern": "git.rebase", "decision": "deny"})
+    asyncio.run(_apply_kind_grant(app, ws.id, "tool", {"pattern": "git.push", "decision": "deny"}))
+    asyncio.run(
+        _apply_kind_grant(app, ws.id, "tool", {"pattern": "git.rebase", "decision": "deny"})
+    )
 
     priorities = [row["priority"] for row in app.state.permission_policies]
     assert len(set(priorities)) == 3  # all three rows uniquely prioritized, no collisions
@@ -887,6 +892,26 @@ def test_plan_acl_allows_plan_safe_tools_in_plan_mode() -> None:
         )
     # A write/edit tool is still denied by the @40 deny band (the allow-band is name-scoped).
     assert resolve("tool", _WRITE_TOOL, policies=[], session_id="s", mode="plan") == "deny"
+
+
+@pytest.mark.parametrize("mode", ["plan", "architect"])
+def test_skill_delegation_preserves_explicit_denial_and_child_write_restrictions(mode: str) -> None:
+    assert resolve("tool", "spawn_skill_task", policies=[], session_id="s", mode=mode) == "allow"
+    policies = [
+        {
+            "scope": "session",
+            "scope_id": "s",
+            "tool_name_pattern": "spawn_skill_task",
+            "action": "deny",
+        }
+    ]
+    assert (
+        resolve("tool", "spawn_skill_task", policies=policies, session_id="s", mode=mode) == "deny"
+    )
+    assert resolve("tool", _WRITE_TOOL, policies=[], session_id="s", mode=mode) == "deny"
+    assert (
+        resolve("tool", "spawn_skill_task", policies=[], session_id="s", mode="read_only") == "deny"
+    )
 
 
 def test_plan_acl_allow_band_beats_user_deny_for_plan_exit() -> None:

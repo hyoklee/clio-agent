@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import getpass
 import logging
+import threading
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
@@ -16,7 +17,7 @@ from clio_agent.gact.storage.adapters import LocalSource, SourceAdapter
 from clio_agent.gact.storage.auth import StorageAuth
 from clio_agent.gact.storage.drive import DriveSource, drive_folder_id
 from clio_agent.gact.storage.github_access import GitHubAccess
-from clio_agent.gact.storage.globus import GlobusSource
+from clio_agent.gact.storage.globus import GlobusSource, GlobusStatusUnavailable
 from clio_agent.gact.storage.globus_consent import GlobusConsentRequired
 from clio_agent.gact.storage.globus_destination import receiving_destination
 from clio_agent.gact.storage.models import CreateSource, SourceRecord, TransferOperation
@@ -30,6 +31,10 @@ logger = logging.getLogger(__name__)
 
 def provider_capabilities(provider: str) -> SourceCapabilities:
     """Describe provider semantics before sign-in; node checks may narrow them."""
+    if provider == "ndp":
+        from clio_agent.gact.storage.ndp_source import NDPSource
+
+        return NDPSource.capabilities
     if provider == "globus":
         return GlobusSource.capabilities.model_copy(update={"link_folder": True})
     if provider == "github":
@@ -66,6 +71,10 @@ class StorageService:
         self.store = SourceStore(root)
         self.auth = StorageAuth(credential_path)
         self.github = GitHubAccess()
+        from clio_agent.gact.storage.ndp_catalog import NDPCatalog
+
+        self.ndp = NDPCatalog()
+        self.ndp_selection_lock = threading.RLock()
         from clio_agent.gact.storage.obsidian_account import ObsidianAccount
         from clio_agent.gact.storage.obsidian_sync import ObsidianSync
 
@@ -77,24 +86,17 @@ class StorageService:
         # Bind to that OS owner, not an ephemeral Desktop launch token or a
         # client-supplied username. Future multi-user auth supplies distinct subjects.
         self.principal = "os-owner:" + getpass.getuser()
-        self.tasks: dict[str, asyncio.Task[None]] = {}
-        self.transfer_settled: Callable[[], None] | None = None
-        self.target_source: Callable[[SourceRecord], SshTargetSource | SftpSource] | None = None
-        self.store.recover()
+        from clio_agent.gact.storage.ndp_endpoints import NDPEndpointService
 
-    def reconcile(self, workspaces: dict[str, Path]) -> None:
-        """Resume observing native jobs after restart without duplicating submissions."""
-        for operation in self.store.list("operation", TransferOperation):
-            if operation.native_request and operation.state == "interrupted":
-                record = self.store.get("source", operation.source_id, SourceRecord)
-                workspace = workspaces.get(record.source.workspace_id or "")
-                if record.connected and workspace is not None and workspace.is_dir():
-                    self.start_transfer(record, workspace)
+        self.ndp_endpoints = NDPEndpointService(self.store, self.principal)
+        self.target_source: Callable[[SourceRecord], SshTargetSource | SftpSource] | None = None
 
     def set_link_access(
         self, record: SourceRecord, access: Literal["read_only", "publish_later", "write_through"]
     ) -> None:
         """Keep approved link access and advertised knowledge write capability in agreement."""
+        if record.source.provider == "ndp" and access != "read_only":
+            raise PermissionError("NDP sources are read-only")
         record.link_access = access
         if record.source.source_kind == "knowledge":
             record.source = record.source.model_copy(
@@ -106,31 +108,8 @@ class StorageService:
             )
 
     async def shutdown(self) -> None:
-        """Cooperatively stop local transfers and retain native jobs for later reconciliation."""
+        """Stop the independent note synchronizer; native task hosts own storage execution."""
         await asyncio.to_thread(self.obsidian_sync.shutdown)
-        tasks = list(self.tasks.items())
-        interrupted = set()
-        for identifier, task in tasks:
-            operation = self.store.get("operation", identifier, TransferOperation)
-            if operation.native_request:
-                task.cancel()
-            else:
-                if not operation.cancel_requested:
-                    interrupted.add(identifier)
-                self.store.update_operation(identifier, cancel_requested=True)
-        if tasks:
-            _, pending = await asyncio.wait([task for _, task in tasks], timeout=10)
-            for task in pending:
-                task.cancel()
-            await asyncio.gather(*(task for _, task in tasks), return_exceptions=True)
-        for identifier in interrupted:
-            operation = self.store.get("operation", identifier, TransferOperation)
-            if operation.state == "cancelled":
-                self.store.update_operation(
-                    identifier,
-                    state="interrupted",
-                    error="Service stopped the local operation after cleanup",
-                )
 
     def create(
         self, workspace_id: str, body: CreateSource, workspace_root: Path | None = None
@@ -164,6 +143,19 @@ class StorageService:
             if body.mode not in capabilities.supported_modes:
                 raise ValueError("This SSH connection currently supports read-only transfers")
         root = body.root
+        if body.provider == "ndp":
+            from clio_agent.gact.storage.ndp_catalog import NDPSelection
+
+            if not body.configuration.ndp_selection_id:
+                raise ValueError("Choose NDP resources in the dataset picker")
+            selection = self.store.get(
+                "ndp-selection", body.configuration.ndp_selection_id, NDPSelection
+            )
+            if selection.dataset.id != root or not any(
+                selection.dataset.endpoint.same_destination(endpoint)
+                for endpoint in self.ndp.endpoints()
+            ):
+                raise ValueError("Choose resources from the configured NDP Endpoint")
         if body.create_vault:
             vault = self.store.root.parent / "knowledge-vaults" / uuid.uuid4().hex
             vault.mkdir(parents=True, exist_ok=False)
@@ -266,12 +258,7 @@ class StorageService:
     def require_idle(self, record: SourceRecord) -> None:
         """Refuse edits while an operation may still publish data or progress."""
         if any(
-            operation.source_id == record.source.id
-            and (
-                operation.state in {"queued", "running"}
-                or bool(operation.native_request)
-                and operation.state == "interrupted"
-            )
+            operation.source_id == record.source.id and (operation.state in {"queued", "running"})
             for operation in self.store.list("operation", TransferOperation)
         ):
             raise ValueError("Cancel or finish the active transfer before changing this source")
@@ -382,6 +369,23 @@ class StorageService:
             adapter = DriveSource(
                 source.root, self.auth.token(record), writable=source.mode == "write_enabled"
             )
+        elif source.provider == "ndp":
+            from clio_agent.gact.storage.ndp_catalog import NDPSelection
+            from clio_agent.gact.storage.ndp_source import NDPSource
+
+            selected = self.store.get(
+                "ndp-selection", record.configuration.ndp_selection_id, NDPSelection
+            )
+            if not any(
+                selected.dataset.endpoint.same_destination(endpoint)
+                for endpoint in self.ndp.endpoints()
+            ):
+                raise PermissionError("This NDP Endpoint changed; attach the dataset again")
+            if selected.dataset.id != source.root:
+                raise PermissionError("This NDP selection belongs to another dataset")
+            if selected.dataset.endpoint.authenticated:
+                self.auth.token(record)
+            adapter = NDPSource(selected.dataset, lambda: self.auth.token(record))
         elif source.provider == "globus":
             adapter = GlobusSource(record, self.auth.token(record))
         elif source.provider == "github":
@@ -409,116 +413,122 @@ class StorageService:
             if isinstance(adapter, (DriveSource, SftpSource)):
                 adapter.close()
 
-    def start_transfer(
-        self, record: SourceRecord, workspace_root: Path, selected_paths: list[str] | None = None
-    ) -> TransferOperation:
-        """Queue explicit materialization or resume the same native transfer identity."""
+    def validate_download(self, record: SourceRecord) -> None:
+        """Reject unsupported or conflicting downloads before native submission."""
         if record.origin == "desktop_upload":
             raise ValueError("Choose the desktop folder again to explicitly upload a new revision")
         if not self.download_available(record):
             raise ValueError("Downloads require this connector's transfer backend; use Link folder")
-        existing = next(
-            (
-                row
-                for row in reversed(self.store.list("operation", TransferOperation))
-                if row.source_id == record.source.id
-                and row.native_request
-                and row.state == "interrupted"
-            ),
-            None,
-        )
-        if not existing:
-            self.require_idle(record)
-        operation = existing or self.store.begin_operation(
-            record.source.id, "refresh" if record.manifest_id else "materialize"
-        )
-        if not existing and selected_paths is not None:
-            operation = self.store.update_operation(operation.id, selected_paths=selected_paths)
-        if existing:
-            if existing.id in self.tasks:
-                raise ValueError("This source already has an active transfer")
-            operation = self.store.update_operation(existing.id, state="queued", error=None)
-        record.source = record.source.model_copy(
-            update={"materialization": "transferring", "operation_id": operation.id}
-        )
-        self.store.put("source", record.source.id, record)
-        self.tasks[operation.id] = asyncio.create_task(
-            self._transfer(record, workspace_root, operation)
-        )
-        self.tasks[operation.id].add_done_callback(lambda _: self.tasks.pop(operation.id, None))
-        return operation
+        self.require_idle(record)
 
-    async def _transfer(
-        self, record: SourceRecord, workspace_root: Path, operation: TransferOperation
-    ) -> None:
+    async def execute_transfer(
+        self,
+        record: SourceRecord,
+        workspace_root: Path,
+        operation: TransferOperation,
+        *,
+        progress: Callable[[int, int], None] | None = None,
+        existing_job_only: bool = False,
+        cancellation_requested: Callable[[], bool] | None = None,
+        shutdown_requested: Callable[[], bool] | None = None,
+    ) -> bool:
+        """Join each provider step; return False only for local shutdown retirement."""
+
         def step() -> bool:
             current = self.store.get("operation", operation.id, TransferOperation)
+            if cancellation_requested is not None and cancellation_requested():
+                current = self.store.update_operation(operation.id, cancel_requested=True)
             with self.adapter(record) as adapter:
                 if isinstance(adapter, GlobusSource):
-                    result = adapter.poll(self.store, current, workspace_root)
+                    result = (
+                        adapter.poll_existing_job(self.store, current, workspace_root)
+                        if existing_job_only
+                        else adapter.poll(self.store, current, workspace_root)
+                    )
+                    if progress is not None:
+                        progress(result.bytes_done, result.bytes_total)
                     return result.state in {"completed", "failed", "cancelled"}
-                materialize(self.store, record, adapter, workspace_root, current)
+                if existing_job_only:
+                    raise ValueError("Existing-job continuation is unavailable for this provider")
+                materialize(self.store, record, adapter, workspace_root, current, progress=progress)
                 return True
 
-        try:
-            while True:
-                worker = asyncio.create_task(asyncio.to_thread(step))
-                try:
-                    settled = await asyncio.shield(worker)
-                except asyncio.CancelledError:
-                    current = self.store.get("operation", operation.id, TransferOperation)
-                    if not current.native_request:
-                        self.store.update_operation(operation.id, cancel_requested=True)
-                    # asyncio cancellation cannot stop the provider's worker thread.
-                    # Keep custody until that thread and staging cleanup actually exit.
-                    await asyncio.gather(worker, return_exceptions=True)
-                    raise
-                if settled:
-                    break
-                await asyncio.sleep(5)
-        except asyncio.CancelledError:
-            # The provider job may still be running. Keep its immutable request
-            # and submission ID, and reconcile it after reconnection.
-            self.store.update_operation(
-                operation.id,
-                state="interrupted",
-                error="CLIO stopped; reconnect to resume checking this transfer",
-            )
-            raise
-        except (OSError, ValueError, RuntimeError) as exc:
+        def retire() -> bool:
+            if (
+                record.source.provider != "globus"
+                or shutdown_requested is None
+                or not shutdown_requested()
+            ):
+                return False
             current = self.store.get("operation", operation.id, TransferOperation)
-            if current.state not in {"failed", "cancelled"}:
-                self.store.update_operation(
-                    operation.id,
-                    state="interrupted" if current.native_request else "failed",
-                    error=str(exc),
-                )
-            record = self.store.get("source", record.source.id, SourceRecord)
-            record.source = record.source.model_copy(
-                update={"materialization": "stale" if record.manifest_id else "failed"}
-            )
-            self.store.put("source", record.source.id, record)
-
-        except Exception:
-            logger.exception(
-                "Storage transfer failed source_id=%s operation_id=%s",
-                record.source.id,
-                operation.id,
-            )
+            if (
+                current.cancel_requested
+                or cancellation_requested is not None
+                and cancellation_requested()
+            ):
+                return False
             self.store.update_operation(
                 operation.id,
                 state="interrupted",
-                error="Storage transfer stopped unexpectedly; inspect and retry",
+                error=current.error
+                or "Local observation retired for shutdown; provider settlement remains unconfirmed.",
             )
-            record = self.store.get("source", record.source.id, SourceRecord)
-            record.source = record.source.model_copy(
-                update={"materialization": "stale" if record.manifest_id else "failed"}
-            )
-            self.store.put("source", record.source.id, record)
+            return True
 
-        finally:
-            if self.transfer_settled is not None:
-                await asyncio.to_thread(self.transfer_settled)
+        def retiring() -> bool:
+            return (
+                record.source.provider == "globus"
+                and shutdown_requested is not None
+                and shutdown_requested()
+            )
+
+        interrupted = False
+        while True:
+            if retiring() and await asyncio.to_thread(retire):
+                return False
+            worker = asyncio.create_task(asyncio.to_thread(step))
+            while not worker.done():
+                try:
+                    await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    interrupted = interrupted or not retiring()
+                    # The native cancellation request must reach the provider,
+                    # including cloud transfers, before its worker can settle.
+                    if not retiring():
+                        await asyncio.to_thread(
+                            self.store.update_operation, operation.id, cancel_requested=True
+                        )
+                except (OSError, ValueError, RuntimeError):
+                    break  # The joined worker's error and cleanup state are inspected below.
+            try:
+                settled = worker.result()
+            except GlobusStatusUnavailable as exc:
+                self.store.update_operation(operation.id, error=str(exc))
+                settled = False
+            except (OSError, ValueError, RuntimeError) as exc:
+                current = self.store.get("operation", operation.id, TransferOperation)
+                if current.state not in {"completed", "failed", "cancelled"}:
+                    self.store.update_operation(operation.id, state="interrupted", error=str(exc))
+                    if retiring() and await asyncio.to_thread(retire):
+                        return False
+                    raise
+                if interrupted:
+                    raise asyncio.CancelledError from exc
+                return True
+            if settled:
+                if interrupted:
+                    raise asyncio.CancelledError
+                return True
+            if retiring() and await asyncio.to_thread(retire):
+                return False
+            try:
+                await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                interrupted = interrupted or not retiring()
+                if not retiring():
+                    await asyncio.to_thread(
+                        self.store.update_operation, operation.id, cancel_requested=True
+                    )
 
     def download_available(self, record: SourceRecord) -> bool:
         """Offer copies only when the selected connector's transfer backend is ready."""

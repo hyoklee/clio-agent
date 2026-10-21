@@ -6,7 +6,7 @@ Stop hook that returns ``deny`` (``block``) means *"the turn is not actually don
 re-drive one more turn"* (the canonical use: a test-gate hook that blocks while the
 suite is red, or a todo-gate that blocks while items are open). The re-drive rides
 the EXISTING #1031 idle-hook re-drive seam — the finalize path enqueues a re-drive
-into the session's :class:`~clio_agent.gact.loop_inbox.LoopInbox` and the turn-runner
+into the Core-backed session mailbox and the turn-runner
 idle hook (``drain_inbox_to_new_turn``) starts exactly ONE new turn when the slot
 clears. No new store: the loop counters live on ``session.metadata`` (the #948
 ``AgentTask`` no-fifth-store projection pattern, RULE 4).
@@ -39,10 +39,12 @@ from typing import TYPE_CHECKING, Any
 from clio_agent.gact.hooks.dispatcher import dispatch_stop, get_global_dispatcher
 from clio_agent.gact.hooks.events import STOP
 from clio_agent.gact.hooks.wire import HookOutcome, record_hook_reason
+from clio_agent.gact.session_input import accept_session_input
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
+    from clio_agent.gact.conversation_assignments import ConversationOutcome
     from clio_agent.gact.types import Session
 
 logger = logging.getLogger(__name__)
@@ -212,16 +214,7 @@ def _loop_limits() -> dict[str, int]:
 
 
 def _enqueue_redrive(app: "FastAPI", session_id: str, result: StopLoopResult) -> None:
-    """Enqueue ONE Stop-loop re-drive onto the session's loop-inbox (#1031 seam).
-
-    The turn-runner idle hook drains it into exactly one new turn when the current
-    turn's slot clears. The re-drive is marked ``stop_loop_redrive`` in metadata so
-    it is identifiable on the trace (never a silent synthetic user turn), and its
-    text is the Stop hook's block reason — the "why you are not done" feedback the
-    completion gate is meant to carry back to the model.
-    """
-
-    from clio_agent.gact.loop_inbox import InboxEvent, inbox_for  # noqa: PLC0415
+    """Confirm an attributed hook continuation before hinting shared admission."""
 
     text = (result.reason or "").strip()
     if result.additional_context.strip():
@@ -232,17 +225,15 @@ def _enqueue_redrive(app: "FastAPI", session_id: str, result: StopLoopResult) ->
         )
     if not text:
         text = "A Stop hook reported the task is not complete; continue working."
-    inbox_for(app, session_id).put(
-        InboxEvent(
-            kind="user_message",
-            task_id="",
-            text=text,
-            metadata={
-                "stop_loop_redrive": True,
-                "stop_loop_count": int(result.new_state.get("count", 0) or 0),
-                "stop_loop_blocking_hooks": list(result.blocking_hook_ids),
-            },
-        )
+    accept_session_input(
+        app,
+        session_id,
+        text,
+        metadata={
+            "stop_loop_redrive": True,
+            "stop_loop_count": int(result.new_state.get("count", 0) or 0),
+            "stop_loop_blocking_hooks": list(result.blocking_hook_ids),
+        },
     )
 
 
@@ -253,6 +244,7 @@ def run_stop_hooks(
     turn_id: str,
     cwd: str,
     payload: Mapping[str, Any],
+    completion: ConversationOutcome | None = None,
 ) -> StopLoopResult:
     """Fire ``Stop`` hooks at the finalize boundary and apply the bounded self-loop.
 
@@ -303,6 +295,7 @@ def run_stop_hooks(
             resume_text=feedback
             or "A Stop hook reported the task is not complete; continue working.",
             prev_status="running",
+            completion=completion,
         )
         # A defer leaves the stop-sequence counters untouched (it neither redrove nor
         # settled); persist the prior state so a post-approval re-drive still counts.
@@ -337,7 +330,7 @@ def run_stop_hooks(
             prior_count=prior_count,
             hook_ids=list(result.blocking_hook_ids),
         )
-    elif result.redrive:
+    elif result.redrive and session is not None:
         _enqueue_redrive(app, session_id, result)
 
     return result
@@ -353,6 +346,7 @@ def dispatch_stop_at_finalize(
     assistant_msg_id: str,
     assistant_payload: Mapping[str, Any],
     blueprint_id: str,
+    completion: ConversationOutcome | None = None,
 ) -> "StopLoopResult | None":
     """Fire the bounded Stop gate at the turn-finalize boundary + emit observability.
 
@@ -386,6 +380,7 @@ def dispatch_stop_at_finalize(
             turn_id=turn_id,
             cwd=cwd,
             payload={"assistant": dict(assistant_payload), "blueprint_id": blueprint_id},
+            completion=completion,
         )
         if result.redrive:
             _emit_semantic_event(

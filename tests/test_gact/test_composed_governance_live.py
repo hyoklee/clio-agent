@@ -143,7 +143,7 @@ def test_cron_loop_goal_arm_together(tmp_path: Path) -> None:
             f"/v1/sessions/{sid}/commands/loop",
             json={"input": "keep iterating", "args": {"max_iters": 2}},
         )
-        assert r.status_code == 200
+        assert r.status_code == 200, r.text
         meta: dict[str, Any] = client.app.state.sessions.get(sid).metadata or {}
         assert isinstance(meta.get("loop"), dict), f"loop not armed on metadata: {meta.keys()}"
 
@@ -153,7 +153,7 @@ def test_cron_loop_goal_arm_together(tmp_path: Path) -> None:
             f"/v1/sessions/{sid}/commands/goal",
             json={"input": "the analysis is complete and written up"},
         )
-        assert r.status_code == 200
+        assert r.status_code == 200, r.text
         meta = client.app.state.sessions.get(sid).metadata or {}
         goal = meta.get("goal")
         assert isinstance(goal, dict), f"goal not armed on metadata: {meta.keys()}"
@@ -175,12 +175,12 @@ def test_goal_completion_preserves_independent_loop_through_real_finalize(
         response = client.post(
             f"/v1/sessions/{sid}/commands/loop", json={"input": "Monitor the running job"}
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
         pending = client.app.state.sessions.get(sid).metadata["loop"]["pending_schedule_id"]
         response = client.post(
             f"/v1/sessions/{sid}/commands/goal", json={"input": "Complete the deliverable"}
         )
-        assert response.status_code == 200
+        assert response.status_code == 200, response.text
         settle_turn_slot(client, sid)
         metadata = client.app.state.sessions.get(sid).metadata
         assert metadata["goal"]["met"] and not metadata["goal"]["active"]

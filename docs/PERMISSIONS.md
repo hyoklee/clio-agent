@@ -24,7 +24,7 @@ cannot enforce.
 ## What triggers the gate
 
 `_make_permission_gate` (in `gact/permission_gate.py`) classifies **positively**:
-a provable *read* is always allowed, and everything the gate cannot prove is a
+a provable *read* inside permitted file territory needs no action approval, and everything the gate cannot prove is a
 read proceeds to the resolution paths below. There is no tool-name
 "destructive" substring list and no shell-command safety parser — both were
 deleted (#1032). Writes and network egress are governed by the OS sandbox fence
@@ -38,7 +38,20 @@ The gate decides in this order:
    tool call is provably read-only — an MCP `readOnlyHint=true` annotation, or a
    static tool-catalog `read` tag with no `write` tag (e.g. `fs_read_file`,
    `fs_propose_edit`). A read returns `allow` **before** the mode lock and
-   records no permission row, in every `session.mode`. Reads are never gated.
+   records no tool-action permission row, in every `session.mode`. This does not
+   grant access to a new folder: a managed built-in file call outside permitted
+   roots parks on a `kind="folder_access"` request first.
+
+   Folder requests show the exact operation, command, computer, paths, reason,
+   and workspace duration. Only a human `allow_workspace` applies the existing
+   persisted root grant and wakes the original call; `deny` returns an actionable
+   refusal. No broad tool allow policy is derived. The Files browser includes
+   granted folders; actual consumed/produced files use the artifact identity and
+   version pipeline without bulk indexing. `shell_bash` declares `access_paths`
+   and `access_reason`, including both ends of a move. Built-in calls and newly
+   spawned shell children see grants immediately; leased external server fleets
+   retain the existing drain-aware restart. Arbitrary shell reads remain outside
+   the write fence's universal coverage.
 
 2. **Policy resolution** — `grant_resolver.resolve(kind, pattern, …)` (which
    `_policy_action_for_tool` and the egress `_host_action_for` both delegate to)
@@ -187,7 +200,45 @@ restart is required; an HTTP timeout does not imply the setup worker stopped.
 cannot protect source credentials or read-only source roots. The advisory floor
 is therefore not an unconditional permission to spawn arbitrary processes.
 
+Approved downloaded source copies are readable by file tools and fenced shell
+commands, including Python analysis. Declaring a source in `access_paths` does
+not request write access or add a writable folder grant. The OS fence keeps the
+source read-only; save derived tables, plots and reports in the workspace.
+File edit tools still reject writes to protected source copies before dispatch.
+Private credentials remain excluded from both reads and writes. If the host
+cannot enforce these exclusions, shell execution fails before starting a child.
+
 ### Network chokepoint + deny mode (#978/#979)
+
+Agents with `shell_bash` also receive `ssh_execute` for remote commands. An
+agent may explicitly declare `ssh_execute` without receiving local shell
+access. Read-only side sessions do not receive this effectful tool. It reuses
+the shared SSH profile/custom route and jump chain, existing keys/agent and
+strict known-host verification. Approval names the route and exact remote
+command before connecting; **Bypass checks** records the usual automatic
+approval. Private keys are not copied into the shell workspace.
+
+This is a trusted SSH transport operation, separate from a local shell's
+HTTP-proxy network fence. A raw `ssh` subprocess does not automatically use
+HTTP proxy variables, so approving a local shell command alone cannot make
+its direct TCP connection work. The managed `ssh_execute` connector provides
+finite remote execution through CLIO's configured routes. Ordinary shell SSH
+is still a valid capability, but proxy integration for the enforced network
+route remains unresolved; this tool does not establish Bash/OpenSSH parity.
+Use the NDP connector for NDP service operations. Neither requires disabling
+the local sandbox. Remote commands run with the SSH account's permissions;
+the local workspace write fence does not constrain the remote filesystem.
+The tool captures both output streams, spills large output into session-owned
+files and reports the real exit status. Its finite command deadline or
+cancellation closes the SSH channel, but does not prove remote descendants
+stopped; inspect remote state before retrying an uncertain command.
+
+The normal tool catalog describes its command, profile/custom route, command
+deadline and output limits. Its typed result contains the normalized route,
+stdout/stderr, exit status, stop reason, truncation flags and optional spill
+receipts. Command input and actual output use the existing terminal blocks,
+including an explicit empty-capture message when both streams are empty.
+See [SSH contract and qualification](verification/ssh-agent-execution-2026-10-19.md#contract-and-presentation-follow-up).
 
 Child egress defaults to **ALLOW + RECORD**: every spawned child routes through one
 clio-owned CONNECT-only proxy (`runtime/net_chokepoint.py`), and each connection is

@@ -247,6 +247,42 @@ class FileAccessPolicy:
 
     def validate_read(self, filepath: str, *, field: str = "filepath") -> Path:
         """Validate a read-only file path and return its resolved path."""
+        resolved = self._validate_read_location(filepath, field=field)
+        if not resolved.is_file():
+            raise self._error(
+                code="not_a_file",
+                message=f"Path is not a regular file: {resolved}",
+                field=field,
+                path=str(resolved),
+                next_action="Provide a regular file path.",
+            )
+        size = resolved.stat().st_size
+        if size > self.max_file_size_bytes:
+            raise self._error(
+                code="file_too_large",
+                message=f"File size {size} exceeds policy limit {self.max_file_size_bytes}: {resolved}",
+                field=field,
+                path=str(resolved),
+                next_action="Raise CLIO_MAX_FILE_SIZE_BYTES or use a smaller file sample.",
+                details={"size_bytes": size, "max_file_size_bytes": self.max_file_size_bytes},
+            )
+        return resolved
+
+    def validate_read_directory(self, path: str, *, field: str = "path") -> Path:
+        """Validate directory inspection through the same read roots and link policy."""
+        resolved = self._validate_read_location(path, field=field)
+        if not resolved.is_dir():
+            raise self._error(
+                code="not_a_directory",
+                message=f"Path is not a directory: {resolved}",
+                field=field,
+                path=str(resolved),
+                next_action="Provide an existing directory path.",
+            )
+        return resolved
+
+    def _validate_read_location(self, filepath: str, *, field: str) -> Path:
+        """Resolve one approved existing read target before checking its entry type."""
         raw_path = _coerce_path(filepath, field=field)
         self._check_connected_storage(raw_path, field=field)
         if not self.allow_symlinks and _has_symlink(raw_path):
@@ -269,35 +305,24 @@ class FileAccessPolicy:
                 next_action="Provide an existing file inside an allowed root.",
             ) from exc
 
+        if not self.allows_source_read(resolved):
+            self._ensure_allowed(resolved, field=field)
+        return resolved
+
+    def allows_source_read(self, path: Path) -> bool:
+        """Recognize approved workspace copies without adding writable territory.
+
+        Callers must still check credential exclusions and symlink policy. Shell
+        children also require the OS fence before any command can execute.
+        """
         from clio_agent.runtime.storage_access import materialized_read_roots  # noqa: PLC0415
 
-        source_roots = tuple(
-            approved for root in self.allowed_roots for approved in materialized_read_roots(root)
+        resolved = path.resolve(strict=False)
+        return any(
+            resolved.is_relative_to(approved)
+            for root in self.allowed_roots
+            for approved in materialized_read_roots(root)
         )
-        if not any(resolved.is_relative_to(root) for root in source_roots):
-            self._ensure_allowed(resolved, field=field)
-        if not resolved.is_file():
-            raise self._error(
-                code="not_a_file",
-                message=f"Path is not a regular file: {resolved}",
-                field=field,
-                path=str(resolved),
-                next_action="Provide a regular file path.",
-            )
-
-        size = resolved.stat().st_size
-        if size > self.max_file_size_bytes:
-            raise self._error(
-                code="file_too_large",
-                message=(
-                    f"File size {size} exceeds policy limit {self.max_file_size_bytes}: {resolved}"
-                ),
-                field=field,
-                path=str(resolved),
-                next_action="Raise CLIO_MAX_FILE_SIZE_BYTES or use a smaller file sample.",
-                details={"size_bytes": size, "max_file_size_bytes": self.max_file_size_bytes},
-            )
-        return resolved
 
     def validate_write(
         self,
@@ -481,6 +506,20 @@ def _coerce_path(filepath: str, *, field: str) -> Path:
             )
             base = Path.cwd()
         path = base / path
+    from clio_agent.runtime.workspace_folders import resolve_folder_location
+
+    workspace = _active_workspace_root()
+    if workspace is not None:
+        try:
+            path = resolve_folder_location(workspace, path) or path
+        except PermissionError as exc:
+            raise FilePolicyError(
+                code="outside_allowed_roots",
+                message=str(exc),
+                field=field,
+                path=str(path),
+                next_action="Ask the user to permit this folder again.",
+            ) from exc
     return path
 
 
@@ -553,8 +592,6 @@ def _has_symlink(path: Path) -> bool:
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
-    try:
-        path.relative_to(root)
-        return True
-    except ValueError:
-        return False
+    from clio_agent.platform_paths import path_is_within
+
+    return path_is_within(path, root)

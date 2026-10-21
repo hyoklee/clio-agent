@@ -26,7 +26,6 @@ from clio_agent.gact.agents.builders import _build_blueprint_dspy_module
 from clio_agent.gact.agents.clio_react import ClioReAct
 from clio_agent.gact.app import build_app
 from clio_agent.gact.types import AgentDef
-from clio_agent.lm import hooked_lm as hooked_lm_mod
 from clio_agent.lm.policy import LMOutputTruncatedError
 from tests._scripted_engine import calls, scripted_lm
 from tests.turn_signals import wait_for_terminal_status
@@ -187,7 +186,8 @@ def test_output_truncation_is_visible_terminal_state(tmp_path: Path) -> None:
             f"/v1/sessions/{sid}/messages",
             json={"parts": [{"type": "text", "text": "long report"}]},
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
+        assert response.json()["task_handle"]
         # Settled = the terminal status event (published after completion events are
         # persisted), not a fixed window a cold first turn can outlast.
         assert wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor) == "error"
@@ -202,6 +202,7 @@ def test_output_truncation_is_visible_terminal_state(tmp_path: Path) -> None:
 
 def test_blueprint_factory_failure_preserves_original_exception(
     monkeypatch: pytest.MonkeyPatch,
+    clio_core_plane: Any,
 ) -> None:
     """A pre-invocation LM factory failure must escape without stale LM lookup."""
     failure = RuntimeError("credential materialization failed")
@@ -209,7 +210,8 @@ def test_blueprint_factory_failure_preserves_original_exception(
     def fail_factory(config: LMProviderConfig) -> Any:
         raise failure
 
-    monkeypatch.setattr(hooked_lm_mod, "create_hooked_lm", fail_factory)
+    monkeypatch.setattr("clio_agent.config.create_lm", fail_factory)
+    clio_core_plane.state.sessions = {"factory-failure": object()}
     base = type(
         "Base",
         (),

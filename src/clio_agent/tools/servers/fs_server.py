@@ -1,9 +1,10 @@
 """Filesystem MCP server for CLIO.
 
-Three curated tools that map onto the file_diff workflow GACT
-clients already render:
+Read-only repository inspection and the file_diff workflow GACT clients render:
 
     - read_file: pull a file's contents (capped at 256 KB).
+    - list_directory: discover immediate approved directory entries.
+    - search_text: inspect bounded literal matches and line-numbered context.
     - propose_edit: produce a unified diff against a candidate
       replacement WITHOUT touching disk. Returns the diff text;
       the GACT layer materialises it as a file_diff Part the user
@@ -13,7 +14,7 @@ clients already render:
       directly by the agent (the agent should call propose_edit).
       Path validation goes through file_policy.
 
-All three honor file_policy + workspace boundaries; reads are
+All tools honor file_policy + workspace boundaries; reads are
 always allowed inside the policy, writes go through the
 permission gate (apply_edit's name matches "edit"/"write" so the
 gate fires).
@@ -22,9 +23,10 @@ gate fires).
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 from fastmcp import FastMCP
+from pydantic import Field
 
 from clio_agent import conf
 from clio_agent.tools.builtin_annotations import (
@@ -41,6 +43,8 @@ from clio_agent.tools.file_policy import (
     validate_read_path,
     validate_write_path,
 )
+from clio_agent.tools.fs_inspection import list_directory as _list_directory
+from clio_agent.tools.fs_inspection import search_text as _search_text
 from clio_agent.tools.fs_write import write_text_with_policy
 
 fs_server = FastMCP("fs")
@@ -65,7 +69,44 @@ _MAX_READ_BYTES = conf.resolve(
 
 
 @fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)
-def read_file(filepath: str) -> dict[str, Any]:
+def list_directory(path: str, limit: Annotated[int, Field(ge=1, le=1_000)] = 200) -> dict[str, Any]:
+    """List immediate entries in an absolute approved directory; does not follow links.
+
+    Use this to discover repository paths without guessing filenames or running shell.
+    Results explicitly report truncation at the requested entry limit (maximum 1,000).
+    """
+    return _list_directory(path, limit)
+
+
+@fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)
+def search_text(
+    path: str,
+    query: Annotated[str, Field(min_length=1, max_length=1_000)],
+    file_glob: str = "*",
+    limit: Annotated[int, Field(ge=1, le=200)] = 100,
+    context_lines: Annotated[int, Field(ge=0, le=50)] = 2,
+    case_sensitive: bool = True,
+) -> dict[str, Any]:
+    """Search literal text in an approved file or directory, with line-numbered context.
+
+    Use file_glob to narrow source files. Does not follow links, execute code or write.
+    Scan/result limits and incomplete files are explicit; no matches is not proof of absence
+    when truncated. Binary files and common dependency/Git directories are skipped.
+    context_lines supplies 0–50 lines on each side; returned text is capped at 32,000 characters.
+    """
+    return _search_text(path, query, file_glob, limit, context_lines, case_sensitive)
+
+
+@fs_server.tool(annotations=_READ_FILE_ANNOTATIONS)
+def read_file(
+    filepath: str,
+    access_reason: Annotated[
+        str,
+        Field(
+            description="Explain why this file is needed when requesting access outside permitted folders."
+        ),
+    ] = "",
+) -> dict[str, Any]:
     """Read a file's contents from disk.
 
     Capped at 256 KB. Larger files return ``truncated: true`` plus
@@ -92,7 +133,13 @@ def read_file(filepath: str) -> dict[str, Any]:
 
 
 @fs_server.tool(annotations=_PROPOSE_EDIT_ANNOTATIONS)
-def propose_edit(filepath: str, new_content: str) -> dict[str, Any]:
+def propose_edit(
+    filepath: str,
+    new_content: str,
+    access_reason: Annotated[
+        str, Field(description="Explain why this file edit needs access outside permitted folders.")
+    ] = "",
+) -> dict[str, Any]:
     """Produce a unified diff for an edit WITHOUT touching disk.
 
     The agent uses this when planning a change: it reads the file,
@@ -136,7 +183,13 @@ def propose_edit(filepath: str, new_content: str) -> dict[str, Any]:
     annotations=_APPLY_EDIT_WRITE_ANNOTATIONS,
     meta={"ui": {"visibility": ["model:plan"]}},
 )
-def apply_edit_write(filepath: str, new_content: str) -> dict[str, Any]:
+def apply_edit_write(
+    filepath: str,
+    new_content: str,
+    access_reason: Annotated[
+        str, Field(description="Explain why this write needs access outside permitted folders.")
+    ] = "",
+) -> dict[str, Any]:
     """Write ``new_content`` to ``filepath`` on disk. Its declared MCP
     annotations (``destructiveHint=True``, not read-only) project to the
     catalog ``write`` tag. The tool remains in the effective runtime catalog

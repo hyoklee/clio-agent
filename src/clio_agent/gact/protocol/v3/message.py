@@ -10,11 +10,13 @@ from clio_schemas.attention_evidence import AttentionEvidenceInspection
 from pydantic import ValidationError
 
 from clio_agent.gact.a2ui import project_a2ui_parts
+from clio_agent.gact.command_presentation import legacy_goal_receipt
 from clio_agent.gact.evidence import _bounded_tool_call_result
 from clio_agent.gact.protocol.v3 import utcnow_iso
 from clio_agent.gact.protocol.v3.tool_outcome import MISSING_EXECUTION_OUTCOME, tool_execution_state
+from clio_agent.gact.reasoning_timing import reasoning_timing
 from clio_agent.gact.summarization_record import legacy_compaction_block
-from clio_agent.gact.tool_result_presentation import project_presentation
+from clio_agent.gact.tool_result_presentation import project_presentation, recorded_presentation
 
 if TYPE_CHECKING:
     from clio_agent.gact.a2ui_catalogs.registry import CatalogResolver
@@ -165,6 +167,7 @@ def part_to_v3_block(part: Mapping[str, Any]) -> dict[str, Any]:
 
     if part.get("type") == "compaction":  # stored before the summarization record
         part = legacy_compaction_block(part)
+    part = legacy_goal_receipt(part)
     part_id = str(part.get("id") or "")
     part_type = str(part.get("type") or "unknown")
     metadata = _mapping(part.get("metadata"))
@@ -194,6 +197,7 @@ def part_to_v3_block(part: Mapping[str, Any]) -> dict[str, Any]:
         return {
             "id": part_id,
             "type": "reasoning",
+            **reasoning_timing(dict(part)),
             "text": str(part.get("text") or ""),
             "source": str(metadata.get("thinking_source") or "provider"),
             **(
@@ -239,7 +243,7 @@ def part_to_v3_block(part: Mapping[str, Any]) -> dict[str, Any]:
     if part_type == "expert_handoff":
         metadata = _mapping(part.get("metadata"))
         stage = str(part.get("stage") or metadata.get("stage") or "")
-        task = str(metadata.get("question") or "")
+        task = str(metadata.get("description") or metadata.get("question") or "")
         return {
             "id": part_id,
             "type": "subagent",
@@ -496,7 +500,7 @@ def _project_tool(context: _TranscriptProjection, part: Mapping[str, Any], part_
                 output = value
                 break
     presentation = project_presentation(
-        part.get("presentation"),
+        recorded_presentation(part, current.get("input")),
         context.session_id,
         tool_id,
         running=state == "running",
@@ -565,8 +569,14 @@ def _project_subagent(
         or part.get("text")
         or ""
     )
-    task = str(metadata.get("question") or link.get("task") or "")
     previous = context.subagents.get(subagent_id, {})
+    task = str(
+        link.get("task")
+        or metadata.get("description")
+        or previous.get("task")
+        or metadata.get("question")
+        or ("Description unavailable for this older task" if link else "")
+    )
     context.subagents[subagent_id] = {
         **previous,
         "id": subagent_id,
@@ -717,7 +727,7 @@ def transcript_entities(
         child_session_id = str(link.get("child_session_id") or "")
         agent_id = str(link.get("agent_id") or "")
         summary = str(link.get("summary") or link.get("result") or "")
-        task = str(link.get("task") or "")
+        task = str(link.get("task") or "Description unavailable for this older task")
         result = str(link.get("result") or "")
         created_at = str(link.get("created_at") or utcnow_iso())
         subagents[subagent_id] = {

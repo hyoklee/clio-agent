@@ -30,6 +30,8 @@ from clio_agent.gact.a2ui_producer import (
 )
 from clio_agent.gact.app import build_app
 
+pytestmark = pytest.mark.usefixtures("native_builtin_lifespan")
+
 PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 64
 
 

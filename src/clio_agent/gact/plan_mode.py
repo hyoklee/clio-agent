@@ -37,12 +37,13 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from clio_agent import paths
+from clio_agent.gact import context
 from clio_agent.gact.artifacts.observer_bridge import observer_call_id
 from clio_agent.gact.plan_review import ensure_owned_plan_directory, plan_review_content
 from clio_agent.gact.planning import (
@@ -52,7 +53,6 @@ from clio_agent.gact.planning import (
     recorded_plan_variant,
     recorded_playbook,
 )
-from clio_agent.gact.user_question_ledger import record_user_question
 from clio_agent.runtime import trace
 
 if TYPE_CHECKING:
@@ -185,7 +185,7 @@ def plan_file_exists(session: Any) -> bool:
     return path is not None and Path(path).exists()
 
 
-def plan_mode_reminder(app: "FastAPI", sid: str, session: Any) -> str:
+def plan_mode_reminder(app: "FastAPI", sid: str, session: Any, *, force_full: bool = False) -> str:
     """The plan-mode reminder as this turn's CLIO addition when the session is in plan mode.
 
     Empty for every non-plan mode (edit/architect) — the addition is scoped to ``plan`` for
@@ -196,6 +196,8 @@ def plan_mode_reminder(app: "FastAPI", sid: str, session: Any) -> str:
     a one-line marker is injected on every turn in between. Because it rides the per-turn input
     (not the system prompt), it survives compaction
     without invalidating the KV-cache prefix — the fix for "plan mode lost after compaction".
+    ``force_full`` supplies the same contract when a skill enters or changes the
+    planning posture during an already-running turn.
     """
 
     mode = str(getattr(session, "mode", "") or "")
@@ -246,7 +248,7 @@ def plan_mode_reminder(app: "FastAPI", sid: str, session: Any) -> str:
 
     compacted_since_full = compactions > last_full_compactions
     window_elapsed = (turn_index - last_full) >= guidance.full_interval
-    full = first_time or compacted_since_full or window_elapsed
+    full = force_full or first_time or compacted_since_full or window_elapsed
 
     metadata_patch[_PLAN_REMINDER_STATE_KEY] = {
         "turn_index": turn_index,
@@ -347,6 +349,8 @@ def _record_plan_exit_request(
                 "risk_notes": str(risk_notes or "").strip(),
                 "plan_file": plan_file,
                 "invocation_id": observer_call_id(),
+                "assignment_handle": context.current_turn().assignment_handle,
+                "context_epoch": context.current_turn().context_epoch,
                 "surfaced": False,
             }
         },
@@ -449,7 +453,7 @@ def _plan_exit_options() -> list[Any]:
         UserQuestionOption(
             label="Also clear context (modifier)",
             value="clear_context",
-            description="Modifier: clear the conversation history before resuming execution.",
+            description="Modifier: start execution with fresh model context; retain session history.",
         ),
     ]
 
@@ -474,7 +478,9 @@ def _plan_exit_prompt(summary: str, plan_file: str, recommended: str, risk_notes
     return "\n".join(lines)
 
 
-def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
+def maybe_pause_for_plan_exit(
+    state: "TurnState", *, update_retry_attempt: Callable[..., None] | None = None
+) -> bool:
     """Surface a pending ``plan_exit`` as an approval question + yield the turn (P1.4 #1066).
 
     The post-forward seam, called from ``turn.py`` right after ``maybe_pause_for_user`` (the same
@@ -489,6 +495,9 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     if getattr(state, "error_info", None) is not None:
         return False
     app = state.app
+
+    admitted = context.current_turn()
+    assignment_handle, context_epoch = admitted.assignment_handle, admitted.context_epoch
     session = app.state.sessions.get(state.sid)
     if session is None:
         return False
@@ -500,16 +509,14 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
     # approval. `_record_plan_exit_request` always writes a non-empty dict, so this is unambiguous.
     if not isinstance(pending, Mapping) or not pending or pending.get("surfaced"):
         return False
+    assignment_handle = str(pending.get("assignment_handle") or assignment_handle)
+    context_epoch = str(pending.get("context_epoch") or context_epoch)
 
-    from clio_agent.gact.enrichment import _finalize_context_frame  # noqa: PLC0415
-    from clio_agent.gact.events import Event  # noqa: PLC0415
-    from clio_agent.gact.paused_transcript import persist_paused_transcript  # noqa: PLC0415
+    from clio_agent.gact.paused_transcript import persist_paused_transcript
     from clio_agent.gact.plan_reuse import save_approved_plan  # noqa: PLC0415
     from clio_agent.gact.runtime.globals import (  # noqa: PLC0415
-        _emit_semantic_event,
         _new_question_id,
     )
-    from clio_agent.gact.turn_stream import settle_turn_transcript  # noqa: PLC0415
     from clio_agent.gact.types import UserQuestion  # noqa: PLC0415
 
     plan_file = str(pending.get("plan_file") or recorded_plan_file(session) or "")
@@ -556,21 +563,147 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
             "source_user_message_id": state.user_msg.id,
         },
     )
-    assistant_message_id = persist_paused_transcript(state)
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending, publication_step
+
+    def withdrawn() -> None:
+        from clio_agent.gact.turn_finalize import settle_withdrawn_turn
+
+        history = app.state.task_history
+        with history.serialized():
+            current = app.state.sessions.get(state.sid)
+            if current is not None and current.metadata.get(_PLAN_EXIT_PENDING_KEY) == pending:
+                app.state.sessions.update(state.sid, metadata_patch={_PLAN_EXIT_PENDING_KEY: {}})
+        settle_withdrawn_turn(
+            app, state.sid, state.turn_cancel_event, update_retry_attempt=update_retry_attempt
+        )
+
+    try:
+        assistant_message_id = persist_paused_transcript(state, after_withdrawn=withdrawn)
+    except TranscriptRecordingPending as recording:
+        first_publication = recording.after_confirmed
+        retained_message_id = recording.message.id
+
+        def publish() -> None:
+            if first_publication is not None:
+                publication_step(state.publication_steps, "paused_output", first_publication)
+            complete_plan_exit_pause(
+                state,
+                pending,
+                question,
+                retained_message_id,
+                assignment_handle=assignment_handle,
+                context_epoch=context_epoch,
+            )
+
+        recording.after_confirmed = publish
+        raise
+    if assistant_message_id is None:
+        from clio_agent.gact.turn_stream import settle_turn_transcript
+
+        settle_turn_transcript(state)
+        return True  # Withdrawn output cannot publish an approval.
+    complete_plan_exit_pause(
+        state,
+        pending,
+        question,
+        assistant_message_id,
+        assignment_handle=assignment_handle,
+        context_epoch=context_epoch,
+    )
+    return True
+
+
+def complete_plan_exit_pause(
+    state: "TurnState",
+    pending: Mapping[str, Any],
+    question: Any,
+    assistant_message_id: str,
+    *,
+    assignment_handle: str,
+    context_epoch: str,
+) -> None:
+    """Post the prepared approval after the original output confirms; never replay its setup."""
+    from clio_agent.arc.task_types import (
+        AssignmentDetails,
+        QuestionDefinition,
+        QuestionOption,
+        TaskOwner,
+    )
+    from clio_agent.gact.enrichment import _finalize_context_frame
+    from clio_agent.gact.events import Event
+    from clio_agent.gact.plan_exit_resolution import PlanApproval
+    from clio_agent.gact.question_surface import question_row
+    from clio_agent.gact.runtime.globals import _emit_semantic_event
+    from clio_agent.gact.turn_stream import settle_turn_transcript
+
+    app = state.app
     # Retire the paused turn's ledger BEFORE the question becomes answerable: an
     # answer arriving right after the status event starts the resume turn, whose
     # transcript a late settle here would close.
     settle_turn_transcript(state)
-    record_user_question(app, question)
-    updated = app.state.sessions.update(
-        state.sid,
-        status="waiting_user",
-        message_count=len(app.state.messages.get(state.sid, [])),
-        metadata_patch={
-            "pending_user_question_id": question.id,
-            _PLAN_EXIT_PENDING_KEY: {**dict(pending), "surfaced": True, "question_id": question.id},
-        },
-    )
+    history = app.state.task_history
+    with history.serialized():
+
+        def obsolete() -> None:
+            session = app.state.sessions.get(state.sid)
+            if session is not None and session.metadata.get(_PLAN_EXIT_PENDING_KEY) == pending:
+                app.state.sessions.update(state.sid, metadata_patch={_PLAN_EXIT_PENDING_KEY: {}})
+
+        assignment = history.task_snapshot(assignment_handle)
+        if assignment is None:
+            raise ValueError("Plan approval requires its owning assignment")
+        latest = history.latest_assignment(state.sid)
+        if (
+            latest is None
+            or latest.handle != assignment.handle
+            or assignment.terminal_at is not None
+            or assignment.cancellation_requested_at is not None
+        ):
+            obsolete()
+            return  # Obsolete approval: keep the recorded output, never attach to a successor.
+        details = (
+            AssignmentDetails.model_validate(history.read_content(assignment.details))
+            if assignment.details is not None
+            else AssignmentDetails()
+        )
+        if details.context_epoch != context_epoch:
+            obsolete()
+            return  # A clear/restart superseded the original plan context.
+        try:
+            app.state.conversations.require_admission(assignment)
+        except ValueError:
+            obsolete()
+            return  # Ancestor cancellation closed this approval's admission.
+        question.metadata["plan_approval"] = PlanApproval(
+            assignment=assignment.handle,
+            context_epoch=details.context_epoch,
+            request=dict(pending),
+        ).model_dump(mode="json")
+        app.state.questions.create(
+            TaskOwner(
+                human_id=assignment.owner.human_id,
+                session_id=state.sid,
+                assignment_id=assignment.handle,
+                parent_handle=assignment.handle,
+            ),
+            QuestionDefinition(
+                prompt=question.prompt,
+                kind=question.kind,
+                options=tuple(
+                    QuestionOption.model_validate(option.model_dump())
+                    for option in question.options
+                ),
+                allow_freeform=True,
+                source="plan_exit",
+                metadata=question.metadata,
+            ),
+            invocation_id=state.turn_id + ":plan_exit",
+            handle=question.id,
+        )
+    question = question_row(app, question.id)
+    # Question posting installs the recoverable gate before exposing an answerable
+    # question. Never reinstall it here after an early answer released it.
+    updated = app.state.sessions.get(state.sid)
     _finalize_context_frame(
         app,
         state.sid,
@@ -611,7 +744,6 @@ def maybe_pause_for_plan_exit(state: "TurnState") -> bool:
             },
         )
     )
-    return True
 
 
 def resolve_plan_exit_answer(app: "FastAPI", deps: "GactDeps", sid: str, question: Any) -> None:

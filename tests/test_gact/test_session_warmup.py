@@ -110,9 +110,10 @@ def test_creating_a_session_starts_its_warmup(
 def test_activating_a_blueprint_starts_its_warmup(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from tests.test_gact.test_agent_elicitation import _write_minimal_answer_blueprint
+    from tests.test_gact.test_agent_blueprints import _write_blueprint
 
-    agent_md = _write_minimal_answer_blueprint(tmp_path / "bp")
+    _write_blueprint(tmp_path / "bp", "warmup-fixture")
+    agent_md = tmp_path / "bp" / "AGENT.md"
     starts = _recorded_starts(monkeypatch)
     with TestClient(build_app(sessions_path=tmp_path / "s.json")) as c:
         sid = c.post("/v1/sessions", json={"title": "x"}).json()["id"]
@@ -156,13 +157,14 @@ def test_one_warmup_per_session_at_a_time(monkeypatch: pytest.MonkeyPatch) -> No
     other = session_warmup.start_session_warmup(app, "s2", trigger="turn_started")
     release.set()
     for thread in (first, other):
-        assert thread is not None
+        assert isinstance(thread, threading.Thread)
         thread.join(5)
 
     assert second is None, "a session already warming is not warmed twice"
     assert sorted(runs) == ["session_created", "turn_started"]
     third = session_warmup.start_session_warmup(app, "s1", trigger="turn_started")
     assert third is not None, "once done, the next turn may warm again"
+    assert isinstance(third, threading.Thread)
     third.join(5)
 
 

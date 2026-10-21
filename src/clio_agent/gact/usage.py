@@ -116,8 +116,7 @@ def _all_known_lms(app: "FastAPI") -> list[Any]:
         side = getattr(agent, attr, None) if agent is not None else None
         if side is not None and side not in lms:
             lms.append(side)
-    # The LMs this turn built for itself -- every expert / dynamic-agent forward
-    # makes a fresh one from its resolved provider spec (runtime.turn_lm_ledger).
+    # Include this turn's fresh LMs and isolated views over session-owned pools.
     for built in turn_lm_ledger.ledger_lms():
         if not any(built is known for known in lms):
             lms.append(built)
@@ -236,7 +235,13 @@ def _last_prompt_usage_from_history_slice(
 
         lm = resolve_active_lm(site="usage._last_prompt_usage_from_history_slice")
         lms = [lm] if lm else []
-    snap = {id(lms[0]): start} if isinstance(start, int) and lms else (start or {})
+    snap = (
+        {id(lms[0]): start}
+        if isinstance(start, int) and lms
+        else start
+        if isinstance(start, Mapping)
+        else {}
+    )
     candidates: list[tuple[str, int, Any, dict[str, Any]]] = []
     ordinal = 0
     for lm in lms:
@@ -275,6 +280,9 @@ def _last_prompt_usage_from_history_slice(
             source = "estimated" if used_tokens > 0 else ""
     if used_tokens <= 0:
         return {}
+    from clio_agent.gact.prompt_breakdown import request_breakdown  # noqa: PLC0415
+
+    breakdown = request_breakdown(entry)
     return {
         "used_tokens": used_tokens,
         "source": source,
@@ -282,6 +290,7 @@ def _last_prompt_usage_from_history_slice(
         "cache_read_tokens": cache_read,
         "cache_write_tokens": cache_write,
         "cache_tokens_measured": cache_measured,
+        **({"prompt_breakdown": breakdown.model_dump()} if breakdown is not None else {}),
     }
 
 

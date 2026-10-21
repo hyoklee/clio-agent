@@ -43,6 +43,7 @@ from clio_agent.arc.clio_core_liveness import (
     ClioCoreRuntimeLostError,
 )
 from clio_agent.arc.loop_guard import assert_store_write_off_loop, audit_store_read_on_loop
+from clio_agent.runtime.commitment_activity import track as track_owned_wait
 
 # Store ops that WRITE: waited on from the loop thread they are a typed defect (#1334).
 # The rest (get / exists / search / scan) are audited, not refused: a loop-thread read
@@ -262,7 +263,7 @@ def _submit_stall_watch(make_call: Callable[[], Any], fut: Future) -> None:
 
 
 def _run_with_stall_watch(
-    make_call: Callable[[], Any], stall_after_s: float
+    make_call: Callable[[], Any], stall_after_s: float, *, ceiling_s: float | None = None
 ) -> tuple[str, Any, Optional[BaseException]]:
     """Run ``make_call`` on a pooled daemon worker; watch for failure to progress.
 
@@ -290,11 +291,19 @@ def _run_with_stall_watch(
         slice_s=stall_after_s,
         op_name="rpc",
         start=lambda: _submit_stall_watch(make_call, fut),
+        ceiling_s=ceiling_s,
     )
     if not outcome.done:
         return outcome.reason, None, None  # worker abandoned, still holds its pool slot
     error = fut.exception()
     if error is not None:
+        from clio_agent.arc.clio_core_async_ops import ClioCoreFutureTimeout  # noqa: PLC0415
+
+        # The async worker samples progress independently. It can observe the
+        # same stall first; that remains this owner's liveness outcome, rather
+        # than a completed RPC exception that bypasses quarantine.
+        if isinstance(error, ClioCoreFutureTimeout):
+            return error.reason, None, None
         return outcome.reason, None, error
     return outcome.reason, fut.result(), None
 
@@ -306,6 +315,7 @@ def _stall_reason(outcome: str) -> str:
     return DAEMON_PID_UNRESOLVED_REASON if outcome == DAEMON_PID_UNRESOLVED else RPC_STALLED_REASON
 
 
+@track_owned_wait(True)
 def call_with_liveness(
     make_call: Callable[[], Any],
     *,
@@ -317,6 +327,9 @@ def call_with_liveness(
     _sleep: Callable[[float], None] = time.sleep,
 ) -> Any:
     """Run one clio-core RPC with stall (failure-to-progress) detection + recovery.
+
+    This wait has its own native liveness owner. It must not be attributed to
+    model silence while a session confirms input or other Core records.
 
     ``make_call`` MUST re-establish any per-op native handle it needs each time it is
     invoked (e.g. re-create the CTE ``Tag``), because it is re-run after a reconnect --
@@ -366,8 +379,8 @@ def call_with_liveness(
         )
         if not remaining:
             break
-        _reconnect_before_retry(reconnect, op_name, port)
         _sleep(backoff)
+        _reconnect_before_retry(reconnect, op_name, port)
         backoff = min(backoff * _BACKOFF_FACTOR, policy.backoff_max_s)
     if on_exhausted is not None:
         on_exhausted(reason)
@@ -401,6 +414,11 @@ def _reconnect_before_retry(reconnect: Callable[[], None], op_name: str, port: i
     try:
         reconnect()
     except Exception as exc:  # noqa: BLE001 - laddered, not swallowed: logged with a typed reason
+        if (
+            isinstance(exc, ClioCoreRuntimeLostError)
+            and exc.details.get("reason") == "clio_core_client_restart_required"
+        ):
+            raise  # A verified owner refused native access; no further RPC may run.
         logger.warning(
             "clio-core reconnect before stall-retry failed: reason=%s op=%s port=%s "
             "error=%s: %s (continuing the bounded ladder)",
@@ -425,7 +443,7 @@ def health_probe_window_s(policy: Optional[LivenessPolicy] = None) -> float:
 
 def probe_rpc_health(
     *,
-    reconnect: Callable[[], None],
+    reconnect: Callable[[], None] | None,
     make_probe_call: Callable[[], Any],
     port: int,
     policy: Optional[LivenessPolicy] = None,
@@ -453,7 +471,8 @@ def probe_rpc_health(
     """
     window = health_probe_window_s(policy)
     try:
-        reconnect()
+        if reconnect is not None:
+            reconnect()
     except Exception as exc:  # noqa: BLE001 - a reconnect that fails is NOT recovered
         logger.warning(
             "clio-core RPC health probe: reconnect failed: reason=%s port=%s error=%s: %s "
@@ -464,7 +483,7 @@ def probe_rpc_health(
             exc,
         )
         return False
-    outcome, _value, error = _run_with_stall_watch(make_probe_call, window)
+    outcome, _value, error = _run_with_stall_watch(make_probe_call, window, ceiling_s=window)
     if outcome != "done":
         logger.warning(
             "clio-core RPC health probe: no response within %gs (reason=%s wait=%s port=%s); "
@@ -542,14 +561,17 @@ def guarded_store_rpc(store: Any, op_name: str, make_call: Callable[..., Any], *
     )
 
 
-def store_rpc_health_probe(store: Any, *, kind: str, name: str) -> bool:
+def store_rpc_health_probe(
+    store: Any, *, kind: str, name: str, reconnect_client: bool = True
+) -> bool:
     """RPC-level health probe for a store's ``rpc_stalled`` quarantine recovery.
 
     A single cheap real RPC through :func:`probe_rpc_health`: ``AsyncTagQuery`` on a
     sentinel name, polled GIL-free (``clio_core_async_ops``; the blocking ``GetBlobSize``
     it replaces held the GIL, so a zombie froze the probe's own stall watch). Returns
-    True iff it answers cleanly within the health-probe window; reconnects first so a
-    zombie's stale handle is never reused; never raises.
+    True iff it answers cleanly within the health-probe window. Normal recovery
+    reconnects first; a verified identical surviving daemon can instead be probed
+    through its original client without rebuilding native bindings. Never raises.
     """
     from clio_agent.arc.clio_core_async_ops import rpc_answers  # noqa: PLC0415
 
@@ -560,5 +582,7 @@ def store_rpc_health_probe(store: Any, *, kind: str, name: str) -> bool:
             raise RuntimeError("clio-core health probe answered with a non-zero code")
 
     return probe_rpc_health(
-        reconnect=store._reconnect, make_probe_call=_probe, port=store._gate.port
+        reconnect=store._reconnect if reconnect_client else None,
+        make_probe_call=_probe,
+        port=store._gate.port,
     )

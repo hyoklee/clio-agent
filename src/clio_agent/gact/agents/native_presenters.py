@@ -21,6 +21,8 @@ import json
 from collections.abc import Callable, Mapping
 from typing import Any
 
+from clio_agent.gact.agents.native_presenters_inspection import INSPECTION_PRESENTERS
+
 # Re-exported (not just used) so ``native_presenters._resource_link`` /
 # ``native_presenters._session_link`` remain valid monkeypatch targets for
 # tests/test_gact/test_native_presentation_density.py even though the real
@@ -31,41 +33,6 @@ from clio_agent.gact.agents.native_presenters_memory import (  # noqa: F401
 )
 
 Presenter = Callable[[Mapping[str, Any], Any, Any], dict[str, Any]]
-
-
-def build_wait_tool(callback: Callable[..., Any]) -> Any:
-    """Declare the committed collector's model interface and observer result view."""
-    from clio_agent.gact.agents.tool_instrumentation import native_tool
-
-    return native_tool(
-        callback,
-        name="wait_agent_tasks",
-        presentation="wait",
-        domain="agents",
-        presentation_start=waiting_presentation,
-        desc=callback.__doc__,
-        title="Wait",
-        args={"task_ids": {"type": "array", "description": "Task ids returned by spawn."}},
-    )
-
-
-def waiting_presentation(args: Mapping[str, Any]) -> dict[str, Any]:
-    """Identify the requested children while the single committed wait is open."""
-    from clio_agent.gact import context
-    from clio_agent.gact.agent_tasks import resolve_waited_task_rows
-
-    task_ids = args.get("task_ids", [])
-    if not isinstance(task_ids, list) or not all(isinstance(tid, str) for tid in task_ids):
-        return {"summary": "Waiting for tasks", "blocks": []}
-    app = context.active_app()
-    rows = resolve_waited_task_rows(app, task_ids) if app is not None else []
-    names = [str(row.get("name") or row.get("task_id") or "Task") for row in rows]
-    return {
-        "summary": "Waiting for " + ", ".join(names or task_ids)
-        if task_ids
-        else "No tasks requested",
-        "blocks": [],
-    }
 
 
 def _record(value: Any) -> dict[str, Any]:
@@ -166,6 +133,8 @@ def native_presentation(
     presentation_status = ""
     subject = ""
 
+    if declaration in INSPECTION_PRESENTERS:
+        return INSPECTION_PRESENTERS[declaration](args, row)
     if declaration == "text":
         if isinstance(result, str):
             skill_id = str(args.get("skill_id") or "").strip()
@@ -179,7 +148,7 @@ def native_presentation(
         from clio_agent.gact.agents.native_presenters_tasks import present_task_family
 
         summary, blocks, header_action, presentation_status, subject = present_task_family(
-            declaration, args, result, row, summary
+            declaration, args, row, result
         )
     elif declaration in {
         "goal",
@@ -224,6 +193,8 @@ def validate_declaration(value: str | Presenter) -> None:
     """Reject missing or unknown declarations when a native tool is registered."""
 
     if callable(value):
+        return
+    if value in INSPECTION_PRESENTERS:
         return
     if value in {
         "text",

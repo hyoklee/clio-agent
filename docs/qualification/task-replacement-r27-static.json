@@ -1,0 +1,145 @@
+{
+  "base": "8f40aa8d",
+  "created_at": "2026-10-15T02:03:08.265908+00:00",
+  "behavioral_tests": "R27 unexecuted",
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "--fix",
+        "scripts/config_key_notes.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_reader.py",
+        "src/clio_agent/gact/builtin_boundary.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/external_task_controls.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/routes/tasks.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/gact/task_declarations.py",
+        "src/clio_agent/gact/task_history.py",
+        "src/clio_agent/gact/task_history_projection.py",
+        "src/clio_agent/gact/tool_observation.py",
+        "src/clio_agent/tools/task_client.py",
+        "tests/test_arc/test_retained_task_behaviors.py",
+        "tests/test_arc/test_task_boundary_contracts.py",
+        "tests/test_arc/test_task_replacement_contracts.py",
+        "tests/test_arc/test_task_route_aliases.py",
+        "tests/test_tools/test_native_task_client_contract.py",
+        "tests/test_arc/test_task_collection_authorization.py"
+      ],
+      "exit_code": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "scripts/config_key_notes.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_reader.py",
+        "src/clio_agent/gact/builtin_boundary.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/external_task_controls.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/routes/tasks.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/gact/task_declarations.py",
+        "src/clio_agent/gact/task_history.py",
+        "src/clio_agent/gact/task_history_projection.py",
+        "src/clio_agent/gact/tool_observation.py",
+        "src/clio_agent/tools/task_client.py",
+        "tests/test_arc/test_retained_task_behaviors.py",
+        "tests/test_arc/test_task_boundary_contracts.py",
+        "tests/test_arc/test_task_replacement_contracts.py",
+        "tests/test_arc/test_task_route_aliases.py",
+        "tests/test_tools/test_native_task_client_contract.py",
+        "tests/test_arc/test_task_collection_authorization.py"
+      ],
+      "exit_code": 0,
+      "output": "4 files reformatted, 17 files left unchanged\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/gen_env_reference.py"
+      ],
+      "exit_code": 0,
+      "output": "Wrote docs/ENVIRONMENT.md, .env.example and src/clio_agent/config.defaults.yaml.\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_task_replacement_removal.py"
+      ],
+      "exit_code": 0,
+      "output": "Task replacement removal guard: 0 violations\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_file_size.py"
+      ],
+      "exit_code": 0,
+      "output": "OK: no file under src/clio_agent exceeds its ratchet baseline (cap 800 for new files).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_no_class_in_function.py"
+      ],
+      "exit_code": 0,
+      "output": "OK: no class-in-function under src/clio_agent exceeds its ratchet baseline.\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_noqa_swallows.py"
+      ],
+      "exit_code": 0,
+      "output": "noqa-hidden swallows over C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent: 493 in 201 files\n"
+    },
+    {
+      "command": [
+        "mypy",
+        "--platform",
+        "linux",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_reader.py",
+        "src/clio_agent/gact/builtin_boundary.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/external_task_controls.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/routes/tasks.py",
+        "src/clio_agent/gact/session_mail.py",
+        "src/clio_agent/gact/task_declarations.py",
+        "src/clio_agent/gact/task_history.py",
+        "src/clio_agent/gact/task_history_projection.py",
+        "src/clio_agent/gact/tool_observation.py",
+        "src/clio_agent/tools/task_client.py"
+      ],
+      "exit_code": 0,
+      "output": "Success: no issues found in 14 source files\n"
+    }
+  ],
+  "source_sha256": {
+    "src/clio_agent/gact/agents/clio_react_record.py": "6357a74026bed5534c01e326e239cfa772eed18bf5b6565c66c55a2219722831",
+    "src/clio_agent/gact/agents/context_reader.py": "7ea60a16953f7878461af8a4d4c37b84a104870a1c6affa4989c695f5c98f807",
+    "src/clio_agent/gact/builtin_boundary.py": "170aafe38045972e9ff81857d304219bdf7633dfc1e6bab83a26197fee7a619a",
+    "src/clio_agent/gact/conversation_controls.py": "a367dab949a91fb38d42e838d12fbc9c85b837f997d388489ad0e83b1ed6aee0",
+    "src/clio_agent/gact/conversations.py": "9d2e85f3806d044ec842f39de4ab015492329cf574ebc4f3cc1c60b6f40e8c17",
+    "src/clio_agent/gact/external_task_controls.py": "f58322d866f19bc066c51557007e691cf656b249a866291ef488c0fd6b41fa22",
+    "src/clio_agent/gact/native_task_settlement.py": "e3b67e4b254e3cd67de4bbad0629c243e1001fab79c6a0a859121cdf9fa97cb5",
+    "src/clio_agent/gact/routes/tasks.py": "26381e39773b2cf8c035705e684f6e6fb2e340978a9f1098584dfbb4b39eedde",
+    "src/clio_agent/gact/session_mail.py": "aa13977b0f999667d52d6ab2e67379f90c0a66a83ae72ec590bd6e188558f6bc",
+    "src/clio_agent/gact/task_declarations.py": "1b07cbe8ae9fe027aa5206c4e7e2561330b07c3887bcf75851f61d23e2d39073",
+    "src/clio_agent/gact/task_history.py": "d39ab7823d66d180abb6567097901bf399e88ce2c1262a3a945108c607af4afa",
+    "src/clio_agent/gact/task_history_projection.py": "cd61682cd6e106d5b3e36dbf9d964279fea060d4732edb72174711bd02a31e60",
+    "src/clio_agent/gact/tool_observation.py": "28b4510fb2e42cc116e256a053afad319183d0b2ce90f3147b51975783eb182d",
+    "src/clio_agent/tools/task_client.py": "aa6c9f302f6761c30c864eeaf5e906a6307e23d722d49e9576a374ce3ccc1b32"
+  }
+}

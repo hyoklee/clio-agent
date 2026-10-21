@@ -17,15 +17,17 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from starlette.types import Message as ASGIMessage
 
+from clio_agent.arc.memory import ARCMemory
 from clio_agent.errors import ClioError
+from clio_agent.gact.app import build_app
 from clio_agent.gact.artifacts.minting import mint_artifact
 from clio_agent.gact.artifacts.records import ArtifactKind, Custody, IdentityEvidence, Mechanism
 from clio_agent.gact.artifacts.registry import ArtifactRegistry
 from clio_agent.gact.auth import BearerAuthMiddleware
 from clio_agent.gact.messages import MessageStore
+from clio_agent.gact.questions import QuestionCommands
 from clio_agent.gact.routes.session_export import (
     _ExportFileResponse,
-    register_session_export_routes,
 )
 from clio_agent.gact.semantic_events import SemanticEvent
 from clio_agent.gact.semantic_trace_file import FileSemanticTraceBackend
@@ -33,14 +35,21 @@ from clio_agent.gact.session_export import build_transcript
 from clio_agent.gact.session_export_archive import build_archive
 from clio_agent.gact.session_export_downloads import ExportDownloads
 from clio_agent.gact.sessions import SessionStore
+from clio_agent.gact.task_history import TaskHistory
 from clio_agent.gact.types import Message, Part
 from clio_agent.gact.workspaces import WorkspaceStore
 from clio_agent.tools.servers.shell_spill_store import spill_directory
+from tests.test_gact.task_records import record_question_fixture
 
 
 @pytest.fixture
-def export_app(tmp_path: Path) -> tuple[FastAPI, str, str]:
-    app = FastAPI()
+def export_app(tmp_path: Path, arc: ARCMemory) -> tuple[FastAPI, str, str]:
+    # Export includes Questions, permissions and transcript-backed surfaces.
+    # Start from the real application's projections instead of a partial State.
+    app = build_app(sessions_path=tmp_path / "state" / "sessions.json", arc=arc)
+    app.state.task_history = TaskHistory(arc)
+    app.state.questions = QuestionCommands(app.state.task_history)
+    app.state.human_principal = "human"
     app.state.sessions = SessionStore(path=tmp_path / "state" / "sessions.json")
     app.state.workspaces = WorkspaceStore(path=tmp_path / "state" / "workspaces.json")
     root = tmp_path / "source"
@@ -51,7 +60,6 @@ def export_app(tmp_path: Path) -> tuple[FastAPI, str, str]:
     app.state.context_files = {}
     app.state.semantic_trace_backend = FileSemanticTraceBackend(tmp_path / "state" / "traces")
     app.state.artifact_registry = ArtifactRegistry()
-    register_session_export_routes(app)
     return app, session.id, workspace.id
 
 
@@ -220,6 +228,66 @@ def test_effects_excludes_other_sessions_and_untouched_versions(
                 )
     finally:
         path.unlink()
+
+
+@pytest.mark.parametrize("location", ["own_state", "other_state", "outside"])
+def test_effects_only_includes_recorded_inputs_from_its_own_managed_state(
+    export_app: tuple[FastAPI, str, str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    location: str,
+) -> None:
+    """Keep materialized evidence without treating arbitrary recorded paths as grants."""
+    from clio_agent import paths
+
+    monkeypatch.setenv("CLIO_AGENT_HOME", str(tmp_path / "clio-home"))
+    monkeypatch.delenv("CLIO_USER_DIR", raising=False)
+    app, sid, wid = export_app
+    root = Path(app.state.workspaces.get(wid).root_path)
+    spill_directory(root, session_id=sid).mkdir(parents=True, exist_ok=True)
+    if location == "own_state":
+        folder = paths.workspace_state_dir(root) / "inputs" / "res_metadata"
+    elif location == "other_state":
+        other = tmp_path / "another-workspace"
+        other.mkdir()
+        folder = paths.workspace_state_dir(other) / "inputs" / "res_metadata"
+    else:
+        folder = tmp_path / "unapproved"
+    folder.mkdir(parents=True)
+    source = folder / "service-metadata.json"
+    content = b'{"description":"retained service metadata"}'
+    source.write_bytes(content)
+    version = mint_artifact(
+        app,
+        sid,
+        name="inputs/res_metadata/service-metadata.json",
+        kind=ArtifactKind.OTHER,
+        path=str(source),
+        workspace_id=wid,
+        mechanism=Mechanism.HARNESS,
+        custody=Custody.WORKSPACE_REFERENCED,
+        evidence=IdentityEvidence.hashed_at_use(
+            sha256=hashlib.sha256(content).hexdigest(), size_bytes=len(content)
+        ),
+        producer={"designation": "resource-upload", "resource_id": "res_metadata"},
+    )
+    assert version is not None
+    emit(app, sid, "artifact.used", {"artifact_id": version.artifact_id})
+    archive_path = build_archive(app, build_transcript(app, sid), "effects")
+    try:
+        with zipfile.ZipFile(archive_path) as archive:
+            manifest = json.loads(archive.read("manifest.json"))
+            [item] = manifest["artifacts"]
+            if location == "own_state":
+                assert manifest["omissions"] == []
+                assert archive.read(item["archive_path"]) == content
+            else:
+                assert item["archive_path"] is None
+                assert manifest["omissions"] == [
+                    {"artifact_id": version.artifact_id, "reason": "recorded_bytes_unavailable"}
+                ]
+    finally:
+        archive_path.unlink()
 
 
 @pytest.mark.parametrize("mode", ["transcript", "effects", "full"])
@@ -698,23 +766,25 @@ def test_archive_keeps_all_answered_questions_beyond_attention_limit(
     from clio_agent.gact.types import UserQuestion
 
     app, sid, _ = export_app
-    app.state.user_questions = {}
     for index in range(105):
         question = UserQuestion(
             id=f"q{index}",
             session_id=sid,
             prompt=f"Question {index}",
+            allow_freeform=True,
             status="answered",
             answer=f"Answer {index}",
             created_at="2026-10-05T00:00:00Z",
             updated_at="2026-10-05T00:01:00Z",
             metadata={"invocation_id": f"call{index}", "tool_name": "ask_user"},
         )
-        app.state.user_questions[question.id] = question
+        question = record_question_fixture(app, question)
     interactions = build_transcript(app, sid)["interactions"]
     assert len(interactions) == 105
     assert interactions[-1]["source"]["invocation_id"] == "call104"
-    assert interactions[-1]["payload"]["answer_metadata"]["answer"] == "Answer 104"
+    assert [item["payload"]["answer"] for item in interactions] == [
+        f"Answer {index}" for index in range(105)
+    ]
 
 
 def test_archive_retains_resolved_permissions_only_from_its_session(

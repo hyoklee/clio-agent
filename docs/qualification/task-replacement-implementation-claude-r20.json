@@ -1,0 +1,106 @@
+{
+  "root": "/home/jcernuda/.cache/clio-task-review-f020a591-r20",
+  "created_at": "2026-10-14T20:53:09.468529+00:00",
+  "controller_pid": 3396444,
+  "session_persistence": false,
+  "auth": "existing host login; no credentials copied",
+  "model_requested": "claude-sonnet-5-5",
+  "source_base": "f020a5912ca9a2fe57be7dd3aaba1f640bc669f5",
+  "files": 40,
+  "cli_pid": 3396445,
+  "exit_code": 0,
+  "stderr": "",
+  "status": "completed",
+  "cli_settled": true,
+  "ended_at": "2026-10-14T21:02:06.549927+00:00",
+  "root_absent": true,
+  "report_file": "docs\\qualification\\task-replacement-implementation-claude-r20.md",
+  "result_subtype": "success",
+  "result_is_error": false,
+  "usage": {
+    "input_tokens": 86,
+    "cache_creation_input_tokens": 227547,
+    "cache_read_input_tokens": 5417548,
+    "output_tokens": 63630,
+    "output_tokens_details": {
+      "thinking_tokens": 50884
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard",
+    "cache_creation": {
+      "ephemeral_1h_input_tokens": 227547,
+      "ephemeral_5m_input_tokens": 0
+    },
+    "inference_geo": "global",
+    "iterations": [
+      {
+        "input_tokens": 2,
+        "output_tokens": 4156,
+        "cache_read_input_tokens": 229590,
+        "cache_creation_input_tokens": 1066,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 1066
+        },
+        "type": "message"
+      }
+    ],
+    "speed": "standard",
+    "fallback_credit": null
+  },
+  "snapshot": {
+    "status": "running independent review",
+    "created_at": "2026-10-14T20:53:06.008529+00:00",
+    "root": "/home/jcernuda/.cache/clio-task-review-f020a591-r20",
+    "core": "f020a5912ca9a2fe57be7dd3aaba1f640bc669f5",
+    "files": 40,
+    "source_bytes": 713420,
+    "source_sha256": {
+      "docs/design/task-replacement-plan.md": "a06b85881088799360efd79f1861e0c5744221e1b33c39032d9a061291f82c5f",
+      "docs/design/task-replacement-corrections-r19.md": "e8e05dddcf0b7b5ec76452521bd088d4a387aeef27da578c7bd37b1923e0a55d",
+      "docs/qualification/task-replacement-implementation-claude-r18.md": "039f1b26a8c3368c1ee4a237b2c8f3e5e6706e4a4f2009bc3616e42ae6645806",
+      "docs/qualification/task-replacement-correction-plan-claude-r19.md": "f7d31f0ccde7556a9cb83b9730e098fffbb87656a1c2b1d5827681a42a68f6cd",
+      "docs/qualification/task-replacement-correction-plan-astra-r19.md": "8915fef6ec51917da351b6a00f21ca6227b6c39122c25b2cb3e76e172d8e5575",
+      "docs/qualification/task-replacement-retained-behaviors-astra-17.md": "d87f273360d52d00b1a9f86ecb2ba97698b45eb7be0f707b5907c8ca0b837a06",
+      "src/clio_agent/arc/context_restore.py": "72fd60a3025c9230d748f59234f62fa93d99373e2cc803e6dc2756340177bf63",
+      "src/clio_agent/arc/task_types.py": "f8f5928d0bd2e95ed286dd3e026ae3da089a30b828f0a8a1db3b19898fcc05c3",
+      "src/clio_agent/gact/agents/clio_react.py": "87a1358c67013b8d49cda3e3abdd35deab9a6bb60b299cff4700a70eb5e53f95",
+      "src/clio_agent/gact/agents/clio_react_record.py": "f08145334eeabf2d22007d4c3772b3233fd416ca23c01097a3fadc481d9d39b5",
+      "src/clio_agent/gact/agents/context_identity.py": "75c67a0ccb93a7ee374f35081f88e1c20989a865a14655ec06cdcc60faf58a66",
+      "src/clio_agent/gact/agents/context_reader.py": "39e7b2a02a403f07ebc4e4af02031c8ed6f80179e5c14daf5ae9b3bd35927df2",
+      "src/clio_agent/gact/conversation_assignments.py": "2e01c94f686992c32bfea01d94634bb250f8e0676e101dc44eef2b28bced0fad",
+      "src/clio_agent/gact/conversation_controls.py": "50c45dd1671f5d7898173e318a758e7bdccf08577aab519aa2f3ccb126008031",
+      "src/clio_agent/gact/conversation_projection.py": "f2b6cb579c8bac35eec6e1e95a1781ddd4e8dbd153cfd457cf9a0548de2698f8",
+      "src/clio_agent/gact/conversation_recovery.py": "63271e51751eea179678cebec22e1e8f299a9c88e9723d582c672277fcf8cf90",
+      "src/clio_agent/gact/conversations.py": "a6480805b1ba335dd5a773d8368a77594f61f635a80b06ae81e4b0654a1a9605",
+      "src/clio_agent/gact/native_task_settlement.py": "71b95e7f7d141bfa52dd2a35bbd750925220c0fe5da118cb6f55b7945526c25d",
+      "src/clio_agent/gact/native_task_recovery.py": "a022412cebe948ec09bd94720ce684721343fbd20721a121a88e7928820e5a9f",
+      "src/clio_agent/gact/native_tools.py": "3a32cfd01b89bb5c8eb9af698cf88026e35db32dac16c8487e90a4cd8d7ec860",
+      "src/clio_agent/gact/external_tasks.py": "47d0bd5d8a7c16e3089a283f0cab12c9b9682bd7cb78db503192e6167cdd7759",
+      "src/clio_agent/gact/external_task_inputs.py": "29ecb3582a2f8b1bdccf12628724fd953930bf485c41d4274a24f774272c710e",
+      "src/clio_agent/gact/plan_exit_resolution.py": "879fbab3973298edb01efead158fcc4517b4c3e6168a7d329eff6a82dda4efa6",
+      "src/clio_agent/gact/question_events.py": "dab8abf5b1ffd2d9ebe76406ff49bd2b58fd95762d79eabda2562abc7f5eea33",
+      "src/clio_agent/gact/question_surface.py": "a0281a380348dad9cc8193d0a4c2c8fe202be2b79c855d6efcedd8e830e79407",
+      "src/clio_agent/gact/questions.py": "122ab53174e427ea2b8f741fd836fea6c0b59aaedb47b6296f480154f6627d10",
+      "src/clio_agent/gact/task_operations.py": "b08f17bf7ec1e302668e5a87ef82f11e2dacb792ad0b5ef7c8e1ab0cea90106d",
+      "src/clio_agent/gact/task_result_content.py": "80992c9bc917e5fd899f481ed47ddaddeca173455e0679c1b1ce7c7caf73b5f0",
+      "src/clio_agent/gact/task_publication.py": "bc5eb26705e7f30d3030b4fa686d90360da5bf335e581444e0e2162975e5eba4",
+      "src/clio_agent/gact/workflows.py": "0b77266e7c84988d6a053bf6c33cab3761c2824ec1b83292990fee3b38216ed1",
+      "src/clio_agent/gact/task_history.py": "969f5c2e932a65e2270589ce3a3f571468f00622c60ba073f2b9ab11f75db437",
+      "src/clio_agent/gact/task_history_projection.py": "f68246700527f6230650dd41f178b9572df0c4139198d768ed6038bf8d9f48fa",
+      "src/clio_agent/gact/session_mail.py": "74002823f50926d2b40b29478859d7ffbc093c505c1f6fcd7c3a8fe2737fefad",
+      "src/clio_agent/gact/turn_runner.py": "8550d09c256ab2dc981f39b1c3d5049149a24cc15dad68934627d45090f5f95a",
+      "src/clio_agent/gact/task_runtime.py": "4a478a735225988d9ca6005139b12813d22f2f2ba5047b5581de9f41f4a5aace",
+      "src/clio_agent/gact/human_controls.py": "bf8bea23a188d313e5de41f82d1ab4e8b2445a479dea8401a60a401c0acf25dc",
+      "src/clio_agent/gact/task_access.py": "1322f9a9cd8778ad0a8b68266edfc283a782320a310742958f103afe4cf9f0c1",
+      "src/clio_agent/gact/task_declarations.py": "51acc76b6e3434af2394039c005d120ce8b935feb43af7d30edc471b99f86768",
+      "src/clio_agent/gact/core_recovery.py": "1d77b00f34ecdfb481c733b385986a78251a134edef1e16d9342003a3cace5e2",
+      "REVIEW-DIFF.md": "3aef21553b6e9b3a01acaed40742c2e4f67099d91a0743677b8f8bfd84dd1ab4"
+    },
+    "archive": false,
+    "ssh_pid": 32320
+  }
+}

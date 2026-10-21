@@ -88,6 +88,108 @@ def test_await_future_polls_until_done() -> None:
     assert future.polls == 4
 
 
+@pytest.mark.parametrize("operation", ["put", "delete", "tag_query"])
+def test_fast_native_reply_needs_no_daemon_discovery_or_configuration_reads(
+    monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    """A sub-millisecond RPC must not pay a process census on every history atom."""
+    from clio_agent.arc import daemon_progress
+
+    clock = [0.0]
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    def unexpected() -> Any:
+        pytest.fail("A fast completed native RPC performed slow health discovery")
+
+    monkeypatch.setattr(ops, "time", SimpleNamespace(monotonic=lambda: clock[0], sleep=sleep))
+    monkeypatch.setattr(ops, "resolve_liveness_policy", unexpected)
+    monkeypatch.setattr(daemon_progress, "max_wait_s", unexpected)
+    monkeypatch.setattr(daemon_progress, "daemon_work", unexpected)
+    future = SimpleNamespace(done=lambda: clock[0] >= 0.0005)
+    assert ops.await_future(future, op_name=operation) is future
+    assert 0 < clock[0] <= 0.001
+
+
+def test_clear_submits_independent_deletes_before_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Large cleanup must not pay one round trip before submitting the next deletion."""
+    client = _Client()
+    store = SimpleNamespace(_client=client, _tag_ids=SimpleNamespace(get=lambda _kind: "tag"))
+    original = ops.await_future
+
+    def await_submitted(future: Any, *, op_name: str) -> Any:
+        assert client.dels == [("tag", "first"), ("tag", "second"), ("tag", "third")]
+        return original(future, op_name=op_name)
+
+    monkeypatch.setattr(ops, "await_future", await_submitted)
+    ops.store_delete_many(store, "segments", ("first", "second", "third"))
+
+
+def test_clear_drains_submitted_deletes_before_reporting_an_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed observation leaves no silently abandoned members or resubmissions."""
+    submitted: list[str] = []
+    observed: list[str] = []
+
+    def delete(_tag: str, name: str) -> Any:
+        submitted.append(name)
+        return SimpleNamespace(name=name, wait=lambda _timeout: 0)
+
+    def wait(future: Any, *, op_name: str) -> Any:
+        observed.append(future.name)
+        if future.name == "second":
+            raise OSError("lost delete reply")
+        return future
+
+    store = SimpleNamespace(
+        _client=SimpleNamespace(AsyncDelBlob=delete),
+        _tag_ids=SimpleNamespace(get=lambda _kind: "tag"),
+    )
+    monkeypatch.setattr(ops, "await_future", wait)
+    with pytest.raises(ExceptionGroup, match="Core deletion batch failed") as failure:
+        ops.store_delete_many(store, "segments", ("first", "second", "third"))
+    assert submitted == observed == ["first", "second", "third"]
+    assert len(failure.value.exceptions) == 1
+
+
+@pytest.mark.parametrize("ready_at", [0.002, 0.5])
+def test_polling_finishes_promptly_without_busy_spinning(
+    monkeypatch: pytest.MonkeyPatch, ready_at: float
+) -> None:
+    """Fast local replies avoid an idle tick; longer replies keep bounded polling work."""
+    clock = [0.0]
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        clock[0] += seconds
+
+    monkeypatch.setattr(ops.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ops.time, "sleep", sleep)
+    future = SimpleNamespace(done=lambda: clock[0] >= ready_at)
+    assert ops._polled(future)(1.0)
+    if ready_at < 0.005:
+        assert clock[0] < 0.005, "A fast reply paid a full idle polling tick"
+    else:
+        assert len(sleeps) < 70, "A pending call kept the fast-reply polling rate"
+    assert all(0 < seconds <= 0.01 for seconds in sleeps)
+
+
+def test_polling_does_not_sleep_past_its_health_slice(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Backoff does not extend the existing caller's deadline."""
+    clock = [0.0]
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    monkeypatch.setattr(ops.time, "monotonic", lambda: clock[0])
+    monkeypatch.setattr(ops.time, "sleep", sleep)
+    assert not ops._polled(SimpleNamespace(done=lambda: False))(0.0025)
+    assert clock[0] == 0.0025
+
+
 def test_a_slow_future_with_a_working_daemon_is_waited_for_past_the_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -1,4 +1,4 @@
-"""Workspace-volume-contained scratch lifecycle for the CLIO test suite."""
+"""Repository-contained scratch lifecycle for the CLIO test suite."""
 
 from __future__ import annotations
 
@@ -8,14 +8,17 @@ import re
 import secrets
 import shutil
 import stat
+import sys
+import tempfile
 import time
 from collections.abc import Callable, MutableMapping
 from dataclasses import dataclass
 from pathlib import Path
 
-_RUNTIME_PARENT_SUFFIX = ".pytest-runtime"
+_RUNTIME_PARENT_NAME = ".pytest-runtime"
 _OWNER_FILE = ".clio-test-run.json"
 _RUN_NAME = re.compile(r"run-(?P<pid>[0-9]+)-[A-Za-z0-9_-]+\Z")
+_BOOTSTRAP_RUNTIME: TestRuntime | None = None
 
 
 @dataclass(frozen=True)
@@ -35,14 +38,14 @@ def resolve_test_runtime_parent(
     checkout: Path,
     environ: MutableMapping[str, str],
 ) -> Path:
-    """Return the explicit scratch parent, defaulting beside the checkout."""
-    configured = environ.get("CLIO_TEST_RUNTIME_ROOT", "").strip()
-    if configured:
-        return Path(configured).expanduser().resolve()
+    """Resolve a scratch parent inside the checkout, rejecting external overrides."""
     resolved_checkout = checkout.resolve()
-    return (
-        resolved_checkout.parent / f".{resolved_checkout.name}{_RUNTIME_PARENT_SUFFIX}"
-    ).resolve()
+    configured = environ.get("CLIO_TEST_RUNTIME_ROOT", "").strip()
+    candidate = Path(configured).expanduser() if configured else Path(_RUNTIME_PARENT_NAME)
+    parent = (resolved_checkout / candidate).resolve()
+    if parent == resolved_checkout or not parent.is_relative_to(resolved_checkout):
+        raise ValueError("CLIO_TEST_RUNTIME_ROOT must be a directory inside the checkout")
+    return parent
 
 
 def create_test_runtime(
@@ -77,15 +80,31 @@ def create_test_runtime(
         environ[name] = str(temp_dir)
     contained_paths = {
         "UV_CACHE_DIR": cache_dir / "uv",
+        "UV_PYTHON_INSTALL_DIR": cache_dir / "uv-python",
+        "UV_TOOL_DIR": cache_dir / "uv-tools",
+        "UV_TOOL_BIN_DIR": cache_dir / "uv-bin",
         "PIP_CACHE_DIR": cache_dir / "pip",
         "PYTHONPYCACHEPREFIX": cache_dir / "pycache",
+        "RUFF_CACHE_DIR": cache_dir / "ruff",
+        "MYPY_CACHE_DIR": cache_dir / "mypy",
         "XDG_CACHE_HOME": cache_dir / "xdg",
         "XDG_STATE_HOME": state_dir / "xdg",
+        "XDG_CONFIG_HOME": state_dir / "config",
+        "XDG_DATA_HOME": state_dir / "data",
+        "LOCALAPPDATA": state_dir / "local",
+        "APPDATA": state_dir / "roaming",
+        "HOME": state_dir / "home",
+        "USERPROFILE": state_dir / "home",
+        "CLIO_USER_DIR": state_dir / "clio",
+        "CLIO_RUNTIME_STATE_DIR": state_dir / "core",
+        "FASTMCP_HOME": state_dir / "fastmcp",
+        "MPLCONFIGDIR": cache_dir / "matplotlib",
     }
     for name, path in contained_paths.items():
-        path.mkdir(parents=True)
+        path.mkdir(parents=True, exist_ok=True)
         environ[name] = str(path)
     environ["CLIO_TEST_RUNTIME_DIR"] = str(root)
+    environ["USER"] = f"clio-test-{owner_pid}-{run_nonce}"
     return TestRuntime(
         parent=parent,
         root=root,
@@ -95,6 +114,32 @@ def create_test_runtime(
         cache_dir=cache_dir,
         state_dir=state_dir,
     )
+
+
+def bootstrap_test_runtime(checkout: Path) -> TestRuntime:
+    """Isolate import-time writes before pytest or application imports occur."""
+    global _BOOTSTRAP_RUNTIME
+
+    parent = resolve_test_runtime_parent(checkout, os.environ)
+    if _BOOTSTRAP_RUNTIME is None or not _BOOTSTRAP_RUNTIME.root.exists():
+        _BOOTSTRAP_RUNTIME = create_test_runtime(checkout, os.environ)
+        tempfile.tempdir = str(_BOOTSTRAP_RUNTIME.temp_dir)
+        sys.dont_write_bytecode = True
+        sys.pycache_prefix = os.environ["PYTHONPYCACHEPREFIX"]
+        for name in list(os.environ):
+            if name == "CLIO_AGENT_HOME" or re.fullmatch(r"CLIO_AGENT_\w+_DIR", name):
+                del os.environ[name]
+        os.environ.pop("CLIO_ENV_FILE", None)
+        for name in (
+            "CLIO_ARC_STORE_CONFIG",
+            "CLIO_SERVER_CONF",
+            "CLIO_CORE_PORT",
+            "CLIO_CTE_POOL",
+        ):
+            os.environ.pop(name, None)
+    elif _BOOTSTRAP_RUNTIME.parent != parent:
+        raise RuntimeError("the test runtime belongs to a different checkout")
+    return _BOOTSTRAP_RUNTIME
 
 
 def _pid_is_live(pid: int) -> bool:

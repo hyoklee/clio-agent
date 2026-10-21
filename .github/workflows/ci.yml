@@ -9,6 +9,9 @@ on:
   # GITHUB_TOKEN does not trigger pull_request workflows.
   workflow_dispatch: {}
 
+env:
+  CI_TEST_SHARD_COUNT: 4
+
 jobs:
   native-service-lifecycle:
     name: native service lifecycle (${{ matrix.os }})
@@ -79,7 +82,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers
+      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers --extra claude-code
       - run: uv run ruff check src/ tests/ scripts/create_demo_data.py scripts/validate_marketplace_blueprints.py scripts/mcp_mem_attribution.py
       # Formatting is checked, never rewritten by CI: drift fails the job and the
       # author runs `uv run ruff format src/ tests/ scripts/` locally.
@@ -127,15 +130,15 @@ jobs:
   check:
     env:
       UV_PYTHON: ${{ matrix.python-version }}
-    # The suite runs as 3 deterministic shards (tests/_sharding.py) per interpreter,
+    # The suite runs as 4 deterministic shards (tests/_sharding.py) per interpreter,
     # each on its own runner with one xdist worker per logical CPU. One 4-worker
     # runner took 23-29 min; the tests are CPU-bound (every gact test builds an app),
     # so more workers on the same 4 vCPUs only contend.
     name: check (${{ matrix.python-version }}, shard ${{ matrix.shard }})
     runs-on: ubuntu-latest
-    # Python 3.12 shards now reach 97-99% at the former 18-minute job cap
-    # while still making steady progress. Allow suite and coverage-write headroom;
-    # pytest's individual test deadlines remain the hang guard.
+    # The three-shard Python 3.12 run still made progress at the 25-minute cap
+    # (one shard reached 92%). Partition across another runner while preserving
+    # the per-test deadlines, per-runner worker count and job deadline.
     timeout-minutes: 25
     strategy:
       # Every supported interpreter completes independently: existing hosts run
@@ -143,7 +146,7 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
-        shard: [0, 1, 2]
+        shard: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,7 +154,11 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers
+      - run: uv sync --python ${{ matrix.python-version }} --extra dev --extra optimizers --extra claude-code
+      # These provider contracts must execute against the locked real SDK,
+      # rather than silently importorskip in the regular regression matrix.
+      - name: Require the Claude SDK provider contract dependency
+        run: uv run python -c "import claude_agent_sdk"
       # Coverage flags are explicit here on purpose: pyproject addopts is empty so
       # local pytest runs stay lean (iowarp/clio-agent#773). Each shard records
       # branch coverage; the coverage job below combines the shards and checks the
@@ -160,11 +167,20 @@ jobs:
       # clio-core daemon (tests/_cte_isolation.py). worksteal rebalances the long
       # tail; --durations keeps the slowest tests visible in every log.
       - run: >-
-          uv run pytest tests/ -m "not integration"
+          uv run python -B scripts/run_tests.py tests/ -m "not integration"
           ${{ matrix.python-version == '3.14' && '-W error::DeprecationWarning' || '' }}
-          --num-shards 3 --shard-id ${{ matrix.shard }}
+          --num-shards ${{ env.CI_TEST_SHARD_COUNT }} --shard-id ${{ matrix.shard }}
           -n logical --dist worksteal --durations=30 -rs
+          --junitxml=.pytest-runtime/ci/results.xml
           --cov=clio_agent --cov-branch --cov-report=
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results-${{ matrix.python-version }}-${{ matrix.shard }}
+          path: .pytest-runtime/ci/results.xml
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
       # Uploaded even when a test failed, so the coverage job still reports the shard's
       # numbers (the failed shard keeps the build red on its own).
       - if: ${{ !cancelled() }}
@@ -204,9 +220,9 @@ jobs:
         with:
           pattern: coverage-${{ matrix.python-version }}-*
           merge-multiple: true
-      # All three shards must have reported: a missing shard is a failure, never a
+      # All configured shards must have reported: a missing shard is a failure, never a
       # smaller denominator.
-      - run: test "$(ls coverage-*.dat | wc -l)" -eq 3
+      - run: test "$(ls coverage-*.dat | wc -l)" -eq "${{ env.CI_TEST_SHARD_COUNT }}"
       - run: uv run coverage combine coverage-*.dat
       - run: uv run coverage report --show-missing --fail-under=78
 
@@ -246,7 +262,7 @@ jobs:
       # importorskip would skip the module and this job would go green having
       # tested nothing (the exact skip-rot it exists to prevent).
       - run: uv run python -c "import flowcept"
-      - run: uv run pytest tests/test_gact/test_flowcept_integration.py -m integration -q
+      - run: uv run python -B scripts/run_tests.py tests/test_gact/test_flowcept_integration.py -m integration -q
 
   flake-hunt:
     # Concurrency / shared-state tests (marked ``@pytest.mark.concurrency``) run
@@ -269,5 +285,5 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           version: "latest"
-      - run: uv sync --extra dev --extra optimizers
-      - run: uv run pytest -m concurrency -n 4 --dist loadfile --count 3 -p no:cacheprovider -rs
+      - run: uv sync --extra dev --extra optimizers --extra claude-code
+      - run: uv run python -B scripts/run_tests.py -m concurrency -n 4 --dist loadfile --count 3 -p no:cacheprovider -rs

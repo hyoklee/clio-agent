@@ -313,8 +313,7 @@ def _produced_turn_workflow_state(
 ) -> dict[str, Any]:
     """The COMPLETE typed workflow_state a turn produced, for the assistant message.
 
-    The one carrier a spawned child's completion hook
-    (:func:`clio_agent.gact.turn_spawn._child_workflow_state`) reads back — so it MUST
+    The conversation owner retains this output for the child assignment, so it MUST
     be per-module-kind-agnostic: a ``predict``/``chain_of_thought`` LEAF has no tool
     loop / handoff rows and carries its state ONLY on the prediction's typed
     ``workflow_state`` field, while a ``react`` orchestrator additionally accumulates

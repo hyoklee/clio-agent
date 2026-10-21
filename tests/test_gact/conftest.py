@@ -10,10 +10,103 @@ flow for tests that just want "POST + return the assistant".
 from __future__ import annotations
 
 import time
-from typing import Any
+from collections.abc import Iterator
+from contextlib import ExitStack
+from functools import wraps
+from pathlib import Path
+from typing import Any, cast
 
 import pytest
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+
+from tests.test_arc.conftest import core_arc as core_arc
+from tests.test_gact.spotter_records import watcher_world as watcher_world
+
+
+@pytest.fixture
+def tool_declaration_scope() -> Iterator[None]:
+    """Restore the caller context when testing declaration producers directly."""
+    from clio_agent.gact.agents.tool_instrumentation import _DECLARED_STRUCTURED_CONTENT
+
+    token = _DECLARED_STRUCTURED_CONTENT.set(None)
+    try:
+        yield
+    finally:
+        _DECLARED_STRUCTURED_CONTENT.reset(token)
+
+
+@pytest.fixture(name="world")
+def question_world(tmp_path: Path) -> Iterator[tuple[Any, TestClient, str]]:
+    """Share the actual Question application fixture with its answer regressions."""
+    from clio_agent.gact.app import build_app
+    from tests.test_gact.task_records import record_assignment_fixture
+
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    with TestClient(app) as client:
+        sid = client.post("/v1/sessions", json={"title": "Questions"}).json()["id"]
+        record_assignment_fixture(app, sid)
+        yield app, client, sid
+
+
+@pytest.fixture(autouse=True)
+def a2ui_session_lifespan(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[None]:
+    """Own real app startup and shutdown for the retained A2UI client helper."""
+    module = request.module
+    original = getattr(module, "_session_client", None)
+    if not callable(original) or original.__module__ != "tests.test_gact.test_a2ui_v3":
+        yield
+        return
+    with ExitStack() as stack:
+
+        @wraps(original)
+        def started(*args: Any, **kwargs: Any) -> Any:
+            client, session_id, path = original(*args, **kwargs)
+            stack.enter_context(client)
+            return client, session_id, path
+
+        monkeypatch.setattr(module, "_session_client", started)
+        yield
+
+
+@pytest.fixture
+def native_builtin_lifespan(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Own real native app lifespans and dispatch opted-in tool calls through MCP."""
+    from fastapi import FastAPI
+
+    from clio_agent.gact import context
+    from clio_agent.gact.agents.tool_instrumentation import _clio_native_tool_class
+    from tests.test_gact.task_records import record_assignment_fixture
+
+    tool_class = _clio_native_tool_class()
+    original = tool_class.__call__
+    with ExitStack() as stack:
+
+        @wraps(original)
+        def invoke(tool: Any, *positional: Any, **keywords: Any) -> Any:
+            app, sid = context.active_app(), context.active_session_id()
+            if isinstance(app, FastAPI) and sid and getattr(tool.func, "_clio_builtin", False):
+                if not getattr(app.state, "native_tools", None):
+                    stack.enter_context(TestClient(app))
+                if app.state.task_history.latest_assignment(sid) is None:
+                    record_assignment_fixture(app, sid)
+                tool = app.state.builtin_boundary.bind(tool)
+            return original(tool, *positional, **keywords)
+
+        monkeypatch.setattr(tool_class, "__call__", invoke)
+        yield
+
+
+@pytest.fixture
+def builtin_tool_context(world: tuple[Any, TestClient, str]) -> Iterator[None]:
+    """Bind an actual Core assignment and MCP boundary for standalone tool checks."""
+    from tests.test_gact.task_records import active_turn_fixture
+
+    app, _client, session_id = world
+    with active_turn_fixture(app, session_id):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -39,24 +132,19 @@ def _default_test_arc(request, tmp_path, monkeypatch):
         yield
         return
 
-    from clio_agent.arc.live import _MemoryStore
     from clio_agent.arc.memory import ARCMemory
+    from clio_agent.arc.storage import make_arc_store
 
     counter = {"n": 0}
 
     def _build_app_with_default_arc(*args, **kwargs):
         if "arc" not in kwargs:
             counter["n"] += 1
-            # In-memory ARCStore: a real ARCMemory (so the op-logger / cache-stats /
-            # live-fold surfaces the GACT layer drives are all present), but with no
-            # filesystem persistence. The latter matters because the live tool observer
-            # runs ON the turn thread and the per-turn settle reads the same in-process
-            # ledger; an FS-backed record on the emit path adds I/O latency that races
-            # that ordering. The in-memory store keeps record fast, as the old in-memory
-            # sink fallback was, so the per-test ordering assertions hold.
+            # Native task hosts require the same confirmed Core writer as production.
+            # The suite's private daemon and namespace fixture own and clear this store.
             kwargs["arc"] = ARCMemory(
                 data_dir=str(tmp_path / f"arc_{counter['n']}"),
-                store=_MemoryStore(),
+                store=make_arc_store(backend="cte"),
             )
         return real_build_app(*args, **kwargs)
 
@@ -109,14 +197,14 @@ def _fold_published_parts(history: list[Any], message_id: str) -> list[dict[str,
             parts.append(folded)
             by_id[folded["id"]] = folded
         elif event.type == "message.part.delta":
-            folded = by_id.get(str(payload.get("part_id") or ""))
-            if folded is not None:
-                folded["text"] += str((payload.get("delta") or {}).get("text_append") or "")
+            delta_part = by_id.get(str(payload.get("part_id") or ""))
+            if delta_part is not None:
+                delta_part["text"] += str((payload.get("delta") or {}).get("text_append") or "")
         elif event.type == "message.part.completed":
-            folded = by_id.get(str(payload.get("part_id") or ""))
-            if folded is not None:
-                folded["completed"] = True
-                folded["text"] = str(payload.get("final_text") or "")
+            completed_part = by_id.get(str(payload.get("part_id") or ""))
+            if completed_part is not None:
+                completed_part["completed"] = True
+                completed_part["text"] = str(payload.get("final_text") or "")
     if not minted:
         return None
     # A live streamed text/thinking part that never completed was dropped from
@@ -207,41 +295,32 @@ def settle_turn_slot(client: TestClient, sid: str, *, timeout: float = 30.0) -> 
     assert goal/loop metadata after a turn wait for the slot to clear first. A plain dict
     read on the runner, safe from the test thread."""
 
-    runner = client.app.state.turn_runner
+    runner = cast(FastAPI, client.app).state.turn_runner
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        if not runner.busy(sid):
+        pump = runner._pumps.get(sid)
+        if not runner.busy(sid) and (pump is None or pump.done()):
             _await_release_callbacks(runner, sid, max(deadline - time.monotonic(), 1.0))
-            return
+            pump = runner._pumps.get(sid)
+            if not runner.busy(sid) and (pump is None or pump.done()):
+                return
         time.sleep(0.02)
     raise TimeoutError(f"turn slot for {sid} still busy after {timeout}s")
 
 
 def _await_release_callbacks(runner: Any, sid: str, backstop_s: float) -> None:
-    """Block until the finished turn's done-callback (its terminal status publish) ran.
-
-    ``busy()`` turns False the instant the turn task finishes, but the task's
-    done-callback -- which clears the slot and runs ``run_when_released`` (the terminal
-    ``session.status_changed``) -- is only QUEUED on the loop at that moment. A test that
-    reads the bus right after ``busy()`` flips can beat it; on a loaded CI runner it did
-    (``test_cancel_during_turn_marks_turn_as_cancelled`` read the cancel route's
-    ``cooperative_pending`` as the last word). The loop runs its ready queue in order, so
-    a callback queued now runs after that done-callback: when it fires, the publish ran.
-    """
+    """Cross the app-loop boundary after physical reservation retirement and callbacks."""
 
     import threading  # noqa: PLC0415
 
-    # The finished task's own loop while its slot is still held; the app loop otherwise
-    # (a done-callback running right now finishes before anything queued behind it).
-    task = runner._in_flight.get(sid)
-    loop = task.get_loop() if task is not None else runner._loop
+    loop = runner._loop
     if loop is None:
-        return  # no loop was ever bound: no turn ran through the runner
+        raise AssertionError(f"Admitted turn for {sid} has no application loop")
     drained = threading.Event()
     try:
         loop.call_soon_threadsafe(drained.set)
     except RuntimeError:
-        return  # that loop is closed: it ran everything it will ever run
+        raise AssertionError(f"The application loop closed before {sid} retired") from None
     if not drained.wait(backstop_s):
         raise TimeoutError(f"the app loop did not drain within {backstop_s:g}s")
 
@@ -278,7 +357,8 @@ def complete_turn(
     if json_override:
         body.update(json_override)
     ack = client.post(f"/v1/sessions/{sid}/messages", json=body)
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
+    assert ack.json()["task_handle"].startswith("task_")
     body = ack.json()
     user_id = body["message_id"]
 

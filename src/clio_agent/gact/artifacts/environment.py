@@ -140,6 +140,8 @@ def _clio_repo_root(start: Optional[Path] = None) -> Optional[Path]:
     """
     here = (start or Path(__file__)).resolve()
     for parent in here.parents:
+        if parent.name in {"site-packages", "dist-packages"}:
+            break  # An installed wheel cannot inherit a checkout's environment identity.
         pyproject = parent / "pyproject.toml"
         if not pyproject.is_file():
             continue

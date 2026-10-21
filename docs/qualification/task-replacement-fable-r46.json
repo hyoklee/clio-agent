@@ -1,0 +1,33 @@
+{
+  "purpose": "Independent actual Claude Code R46 source review",
+  "core": "1914da40c3f2c8bf4a0774acf7d8ce6249bcc0bf",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "state": "settled",
+  "started_at": 1792085347.1953156,
+  "source_cache_created": false,
+  "debug_log_enabled": false,
+  "retention": "Bounded selected reviewer identity receipt; no disposable output/debug/session export",
+  "pid": 50748,
+  "exit_code": 0,
+  "finished_at": 1792085647.108071,
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 354,
+      "outputTokens": 21938,
+      "cacheReadInputTokens": 489018,
+      "cacheCreationInputTokens": 81087,
+      "webSearchRequests": 0,
+      "costUSD": 2.8444344999999998,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 12862,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "session": "e7f933f5-d17f-4347-b907-6edfd7a49170",
+  "is_error": false,
+  "subtype": "success"
+}

@@ -306,7 +306,11 @@ def wait_turn(call: Callable[..., Any], wsid: str, sid: str, *, max_elapsed: flo
         rows = call("GET", f"/v1/sessions?workspace_id={wsid}").get("sessions", [])
         row = next((r for r in rows if r.get("id") == sid), {})
         status = str(row.get("status") or "?")
-        return status if status in ("idle", "completed", "error", "waiting_user") else None
+        return (
+            status
+            if status in ("idle", "completed", "error", "waiting_user", "cancelled", "stopped")
+            else None
+        )
 
     result = expanding_wait(
         _check, what=f"session {sid} turn to reach a terminal status", max_elapsed=max_elapsed
@@ -315,7 +319,9 @@ def wait_turn(call: Callable[..., Any], wsid: str, sid: str, *, max_elapsed: flo
 
 
 def session_messages(call: Callable[..., Any], sid: str) -> list[dict[str, Any]]:
-    return call("GET", f"/v1/sessions/{sid}/messages").get("messages", [])
+    """Return retained messages chronologically; the product API pages newest first."""
+    rows = call("GET", f"/v1/sessions/{sid}/messages").get("messages", [])
+    return sorted(rows, key=lambda row: (row.get("created_at", ""), row.get("id", "")))
 
 
 def pending_questions(call: Callable[..., Any], sid: str) -> list[dict[str, Any]]:

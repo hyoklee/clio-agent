@@ -353,7 +353,18 @@ def _child_cache_env(
         )
         return {}
     target = str(cache_dir)
-    overlay: dict[str, str] = dict.fromkeys(CHILD_CACHE_DIR_ENV_KEYS, target)
+    redirected = CHILD_CACHE_DIR_ENV_KEYS
+    if (
+        state.mechanism == MECHANISM_CODEX
+        and state.details.get("codex", {}).get("implementation") == "mxc"
+    ):
+        # MXC creates its own package profile and private TEMP. Repointing
+        # LOCALAPPDATA before that bootstrap leaves Packages/.../AC/Temp absent,
+        # breaking nested uv workers with Windows errors 3 and 267.
+        redirected = tuple(
+            key for key in redirected if key not in {"LOCALAPPDATA", "APPDATA", "TEMP", "TMP"}
+        )
+    overlay: dict[str, str] = dict.fromkeys(redirected, target)
     overlay["FASTMCP_CHECK_FOR_UPDATES"] = "off"
     return overlay
 

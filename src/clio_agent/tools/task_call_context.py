@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextvars import ContextVar, Token
+from copy import deepcopy
 from dataclasses import dataclass
 from typing import Any
 
@@ -16,26 +17,35 @@ class TaskCall:
     invocation_id: str = ""
     owner_agent: str = ""
     session_id: str = ""
+    submission_handle: str = ""
 
 
 _EMPTY_CALL = TaskCall()
 TASK_CALL: ContextVar[TaskCall] = ContextVar("clio_task_call", default=_EMPTY_CALL)
 
 
-def require_admission(app: Any = None, sid: str | None = None) -> None:
-    """Reject submissions once their conversation subtree or application starts cancelling."""
-    from clio_agent.gact.context import active_app, active_session_id
-
-    app = app if app is not None else active_app()
-    sid = sid if sid is not None else active_session_id()
-    if app is not None:
-        session = app.state.sessions.get(sid) if sid else None
-        if (
-            sid in getattr(app.state, "task_admission_closed", set())
-            or bool((getattr(session, "metadata", None) or {}).get("task_admission_closed"))
-            or getattr(getattr(app.state, "task_supervisor", None), "closing", False)
-        ):
-            raise RuntimeError("Task admission is closed")
+def permission_snapshot(app: Any, sid: str) -> dict[str, Any]:
+    """Capture current session posture and only policies relevant to this owner."""
+    session = app.state.sessions.get(sid)
+    if session is None:
+        raise RuntimeError("Task permission owner is absent")
+    policies = [
+        row
+        for row in getattr(app.state, "permission_policies", [])
+        if row.get("scope", "global") == "global"
+        or row.get("scope") == "session"
+        and row.get("scope_id") == sid
+        or row.get("scope") == "workspace"
+        and row.get("scope_id") == session.workspace_id
+    ]
+    return deepcopy(
+        {
+            "mode": session.mode,
+            "approval_mode": session.approval_mode,
+            "approval_profile": session.metadata.get("approval_profile"),
+            "policies": policies,
+        }
+    )
 
 
 def begin_backend_call(

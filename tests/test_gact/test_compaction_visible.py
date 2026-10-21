@@ -122,13 +122,14 @@ def _install_loop(
             ctx.set_react_window(WINDOW),
         ]
         try:
+            ctx.set_primary_agent_id(SCOPE)
             with dspy.context(lm=lm):
                 return ClioReAct("question -> answer", tools=_tools())(question=question)
         finally:
             for token in reversed(tokens):
                 ctx.reset(token)
 
-    install_scripted_module(monkeypatch, run)
+    install_scripted_module(monkeypatch, run, commit_input=False)
 
 
 @pytest.fixture
@@ -222,7 +223,11 @@ def test_auto_compaction_mid_turn_shows_summary_then_question_and_reloads_the_sa
     recall = (
         f'[The steps this summary replaced are kept in full: recall_context(ids=["'
         f'{cmp.payload["compaction_id"]}"]) returns them byte-exact; '
-        'recall_context(query="...") searches them.]'
+        + (
+            'recall_context(query="...") searches them.]'
+            if app.state.arc.segment_search_is_semantic()
+            else "text search is unavailable here. Use ids, not a query.]"
+        )
     )
     [record_part] = [p for m in app.state.messages.get(sid, []) for p in m.parts if _is_record(p)]
     assert record_part.text.startswith(SUMMARY) and record_part.text.endswith("\n\n" + recall)
@@ -437,17 +442,17 @@ def test_recall_context_returns_a_compacted_step_byte_exact(
     _turn(client, sid, "which stations are near LA?")
     [done] = [e.payload for e in _compaction_events(events) if e.event_type.endswith("completed")]
 
-    # The agent asks for the originals by the compaction id its summary names, then
-    # searches; both in a real turn, results as the model gets them.
+    # The agent can always recall IDs. Search is advertised only when supported.
+    search_enabled = app.state.arc.segment_search_is_semantic()
     scripts.append(
         [
             calls(("recall_context", {"ids": [done["compaction_id"]]})),
-            calls(("recall_context", {"query": "q0"})),
+            *([calls(("recall_context", {"query": "q0"}))] if search_enabled else []),
             Reply(text="recalled"),
         ]
     )
     _turn(client, sid, "what exactly did the first search return?")
-    by_ids, by_query = engines[1].requests[1], engines[1].requests[2]
+    by_ids = engines[1].requests[1]
 
     [(_, [(_, _, recalled_text, is_error)])] = _texts(by_ids.messages[-1:])
     assert not is_error
@@ -464,11 +469,18 @@ def test_recall_context_returns_a_compacted_step_byte_exact(
     first_result = _texts(engines[0].requests[1].messages)[-1]
     assert first_result == ("tool", [("result", "call_0_0", obs["content"]["text"], False)])
 
-    [(_, [(_, _, searched_text, searched_error)])] = _texts(by_query.messages[-1:])
-    if app.state.arc._segments.supports_search():
+    if search_enabled:
+        by_query = engines[1].requests[2]
+        [(_, [(_, _, searched_text, searched_error)])] = _texts(by_query.messages[-1:])
         assert not searched_error and json.loads(searched_text)
-    else:  # #905: a plain tool error naming the typed reason, never a crash
-        assert searched_error and "search" in searched_text
+    else:
+        from clio_agent.arc.memory_segments import SearchUnavailableError
+        from clio_agent.gact.recall_context_tool import recall_atoms
+
+        # The underlying query API still refuses unavailable search honestly;
+        # the model is no longer offered that mode in its tool or summary hint.
+        with pytest.raises(SearchUnavailableError):
+            recall_atoms(app.state.arc, sid, query="q0")
 
 
 def test_panel_compaction_with_scope_gives_the_same_events_and_record(
@@ -635,14 +647,15 @@ def test_a_record_whose_turn_settled_before_the_fold_is_still_shown_live(
             for token in reversed(tokens):
                 ctx.reset(token)
 
-    install_scripted_module(monkeypatch, run)
+    install_scripted_module(monkeypatch, run, commit_input=False)
     _patch_tokens(monkeypatch, high_on=set())
     bus = app.state.bus
     cursor = bus.latest_event_id(sid)
     ack = client.post(
         f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "go"}]}
     )
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
+    assert ack.json()["task_handle"]
     assert started.wait(120), "the turn never reached its tool"
 
     real_fold = app.state.arc.summarize_segments

@@ -7,7 +7,9 @@ import json
 import os
 import shutil
 import uuid
+from collections.abc import Callable
 from pathlib import Path
+from time import monotonic
 from typing import Literal
 
 from clio_agent.gact.storage.adapters import SourceAdapter, file_hash, safe_child
@@ -72,6 +74,8 @@ def materialize(
     adapter: SourceAdapter,
     workspace_root: Path,
     operation: TransferOperation,
+    *,
+    progress: Callable[[int, int], None] | None = None,
 ) -> SourceRecord:
     """Stream selected data on the connected CLIO and publish only a complete copy.
 
@@ -94,6 +98,9 @@ def materialize(
     settled_state: Literal["completed", "cancelled", "failed"] | None = None
     settled_error: str | None = None
     done = 0
+    total = 0
+    published_bytes = 0
+    progress_published_at: float | None = None
     store.update_operation(operation.id, state="running")
     try:
         entries = adapter.entries()
@@ -101,6 +108,8 @@ def materialize(
         revision = snapshot_revision(entries)
         total = sum(row.size for row in entries if row.kind == "file")
         store.update_operation(operation.id, bytes_total=total)
+        if progress is not None:
+            progress(0, total)
         required = total * (2 if not record.download_read_only else 1)
         if shutil.disk_usage(owner_root).free < required:
             raise ValueError("Insufficient capacity for the source baseline and working copy")
@@ -138,7 +147,16 @@ def materialize(
                     writer.write(chunk)
                     digest.update(chunk)
                     done += len(chunk)
-                    store.update_operation(operation.id, bytes_done=done)
+                    current_time = monotonic()
+                    # First bytes are visible immediately. Subsequent progress
+                    # matches the task observer's 5 Hz cadence instead of doing
+                    # a synchronous SQLite commit for every small source file.
+                    if progress_published_at is None or current_time - progress_published_at >= 0.2:
+                        store.update_operation(operation.id, bytes_done=done)
+                        if progress is not None:
+                            progress(done, total)
+                        published_bytes = done
+                        progress_published_at = current_time
                 writer.flush()
                 os.fsync(writer.fileno())
             if source.provider == "globus" and file_bytes != entry.size:
@@ -212,15 +230,27 @@ def materialize(
         store.put("source", source.id, record)
         raise
     finally:
-        remove_owned_tree(stage, owner_root)
-        if workspace_stage is not None:
-            remove_owned_tree(workspace_stage, workspace_root / "connected-data")
+        # Preserve exact byte accounting even if the required cleanup fails.
+        # This is progress only; terminal publication still follows cleanup.
+        try:
+            if done != published_bytes:
+                store.update_operation(operation.id, bytes_done=done)
+        finally:
+            remove_owned_tree(stage, owner_root)
+            if workspace_stage is not None:
+                remove_owned_tree(workspace_stage, workspace_root / "connected-data")
         # Terminal state acknowledges settled ownership, including staging cleanup.
         # If cleanup raises, leave the operation live for the service's error owner.
         if settled_state == "completed":
-            store.update_operation(operation.id, state=settled_state, bytes_done=done)
+            store.update_operation(
+                operation.id, state=settled_state, bytes_done=done, manifest_id=baseline_id
+            )
         elif settled_state is not None:
-            store.update_operation(operation.id, state=settled_state, error=settled_error)
+            store.update_operation(
+                operation.id, state=settled_state, error=settled_error, bytes_done=done
+            )
+        if progress is not None:
+            progress(done, total)
 
 
 def local_hashes(root: Path) -> dict[str, str]:

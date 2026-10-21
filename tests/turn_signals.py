@@ -107,5 +107,6 @@ def post_turn_and_wait(client: Any, sid: str, body: dict[str, Any]) -> str:
     bus = client.app.state.bus
     cursor = bus.latest_event_id(sid)
     ack = client.post(f"/v1/sessions/{sid}/messages", json=body)
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
+    assert ack.json()["task_handle"], "Accepted input must identify its owning assignment"
     return wait_for_terminal_status(bus, sid, after_event_id=cursor)

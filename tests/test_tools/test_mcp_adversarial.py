@@ -91,16 +91,12 @@ async def test_header_mismatch_retry_is_bounded_against_a_hostile_always_broken_
 
 
 @pytest.mark.asyncio
-async def test_pagination_empty_string_cursor_is_treated_as_terminal_fastmcp_bug() -> None:
-    """Verified LIBRARY gap, not a clio gap: fastmcp's Client.list_tools()
-    auto-pagination checks ``if not result.next_cursor: break``
-    (fastmcp/client/mixins/tools.py) -- an EMPTY-STRING cursor is falsy in
-    Python, so pagination stops one page early even though E10 says only
-    null/missing ends it. clio never implements its own pagination (a
-    repo-wide grep found zero list_page_size/pagination logic anywhere in
-    clio_agent -- it always calls client.list_tools() and trusts the result),
-    so there is no clio code to fix; this pins the OBSERVED behavior as a
-    finding, not an endorsement."""
+async def test_pagination_empty_string_cursor_does_not_drop_the_next_page() -> None:
+    """FastMCP 4.1 follows an empty-string cursor until null/missing ends listing.
+
+    Keep the original adversarial server and require both pages through the real
+    SDK. CLIO adds no pagination loop or compatibility workaround.
+    """
 
     app = build_adversarial_app()
     async with run_adversarial_lifespan(app):
@@ -109,8 +105,5 @@ async def test_pagination_empty_string_cursor_is_treated_as_terminal_fastmcp_bug
             tools = await client.list_tools()
 
     names = {t.name for t in tools}
-    assert names == {PAGINATED_TOOL}, (
-        "if this ever becomes {PAGINATED_TOOL, PAGINATED_TOOL_2}, fastmcp fixed "
-        "the empty-string-cursor bug -- update this test's expectation, don't delete it"
-    )
-    assert PAGINATED_TOOL_2 not in names
+    assert names == {PAGINATED_TOOL, PAGINATED_TOOL_2}
+    assert len(tools) == 2, "Neither page may be dropped or repeated"

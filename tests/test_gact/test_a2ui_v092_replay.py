@@ -43,6 +43,9 @@ from fastapi.testclient import TestClient
 
 from clio_agent.gact.a2ui_catalogs.builtin import workspace_catalog_id
 from clio_agent.gact.app import build_app
+from clio_agent.gact.transcript_projection import on_ledger_replaced
+from clio_agent.gact.types import Message
+from tests.test_gact.input_capture import capture_inputs
 
 FIXTURE_PATH = (
     Path(__file__).resolve().parents[1]
@@ -84,6 +87,9 @@ def _replayed_session(tmp_path: Path) -> tuple[TestClient, Any, str]:
     messages_dir.mkdir(parents=True, exist_ok=True)
     (messages_dir / f"{sid}.json").write_text(json.dumps(rows), encoding="utf-8")
 
+    # Seed the genuine historical Core lane too. JSON alone is preserved as
+    # unknown migration evidence and cannot authorize visible transcript replay.
+    on_ledger_replaced(app, sid, [Message.model_validate(row) for row in rows])
     return TestClient(app), app, sid
 
 
@@ -156,20 +162,12 @@ def test_legacy_form_submit_and_agent_submit_dispatch_to_the_agent_lane(
     tmp_path: Path, monkeypatch: Any
 ) -> None:
     """``agent.submit``/``form.submit`` are undeclared in the clio-workspace
-    catalog's sidecar events map, so they fall to the default agent lane
-    (docs/gact/a2ui-binding.md rule 6). ``delivery="start"`` is the agent
-    lane's idle-session sub-kind (a new turn starts) -- distinct from
-    ``"steer"``/``"resolve_question"`` for a running/waiting_user session."""
+    catalog's sidecar events map, so both enter the session's Core mailbox.
+    TurnRunner owns admission; this producer does not choose an idle start."""
 
     client, app, sid = _replayed_session(tmp_path)
-    spawned: list[Any] = []
-
-    def _spawn(coro: Any, **_kwargs: Any) -> None:
-        spawned.append(coro)
-        coro.close()
-
     with client:
-        monkeypatch.setattr(app.state.turn_runner, "spawn", _spawn)
+        captured_inputs = capture_inputs(app, monkeypatch)
 
         for name in ("agent.submit", "form.submit"):
             response = client.post(
@@ -178,9 +176,10 @@ def test_legacy_form_submit_and_agent_submit_dispatch_to_the_agent_lane(
                 json={"message": _legacy_action(name, {"selection": "SGPS"})},
             )
             assert response.status_code == 200, response.text
-            assert response.json()["delivery"] == "start"
+            assert response.json()["delivery"] == "steer"
+            assert response.json()["state"] == "delivered"
 
-        assert len(spawned) == 2, "both legacy names must actually reach the agent lane"
+        assert len(captured_inputs) == 2, "both legacy names must actually reach the agent lane"
 
 
 def test_legacy_approval_respond_dispatches_to_the_permission_lane(tmp_path: Path) -> None:
@@ -222,4 +221,7 @@ def test_legacy_run_cancel_dispatches_to_the_run_lane(tmp_path: Path) -> None:
 
         assert response.status_code == 200, response.text
         assert response.json()["delivery"] == "run_cancel"
-        assert app.state.sessions.get(sid).status == "cancelled"
+        # Replayed output is historical, not an active assignment to cancel.
+        assert app.state.task_history.latest_assignment(sid) is None
+        assert not app.state.turn_runner.busy(sid)
+        assert app.state.sessions.get(sid).status == "idle"

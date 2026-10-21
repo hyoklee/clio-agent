@@ -63,18 +63,29 @@ def _now_iso() -> str:
 
 
 def _observer_call_started_at() -> float | None:
-    """The current tool call's start epoch from the observer thread-local, if set.
-
-    Seam (a) runs synchronously in the observer worker thread, where the observer
-    stamped ``_OBSERVER_CALL_T0`` at the ``started`` phase — so the pre-existing
-    untouched skip (finding [8]) reads it without threading it through the call.
-    """
+    """Read the invocation's start epoch in a tool or its recording worker."""
     try:
         from clio_agent.gact.tool_observer import _OBSERVER_CALL_T0  # noqa: PLC0415
 
-        value = getattr(_OBSERVER_CALL_T0, "value", None)
+        value = _OBSERVER_CALL_T0.get()
         return float(value) if value is not None else None
     except Exception:  # noqa: BLE001 — the skip is an optimization, never load-bearing
+        return None
+
+
+def hash_if_contained(app: "FastAPI", raw_path: str, workspace_id: str) -> Optional[str]:
+    """Hash a staged file when it exists inside the workspace root, else ``None``."""
+    root = _workspace_root(app, workspace_id)
+    if root is None:
+        return None
+    path = Path(raw_path)
+    if not _contained(path, root):
+        return None
+    try:
+        if not path.is_file():
+            return None
+        return compute_identity(path).sha256
+    except OSError:
         return None
 
 
@@ -113,7 +124,15 @@ def _contained(path: Path, root: Path) -> bool:
     except OSError:
         return False
     from clio_agent import paths  # noqa: PLC0415
+    from clio_agent.runtime.sandbox_roots import granted_write_roots
+    from clio_agent.runtime.storage_access import check_storage_access
 
+    if any(_is_relative_to(resolved, folder) for folder in granted_write_roots(str(root))):
+        try:
+            check_storage_access(resolved)
+        except PermissionError:
+            return False
+        return True
     return _is_relative_to(resolved, root) or _is_relative_to(
         resolved, paths.workspace_state_dir(root).resolve()
     )
@@ -173,6 +192,18 @@ def mint_artifact_outcome(
         )
 
     registry = get_registry(app)
+
+    # Automatically designated files in different permitted folders must not
+    # become versions of one another just because their basenames match.
+    root = _workspace_root(app, workspace_id)
+    if root is not None and path and Path(path).is_absolute() and name == Path(path).name:
+        from clio_agent.runtime.sandbox_roots import granted_write_roots
+
+        resolved_path = Path(path).expanduser().resolve()
+        if not resolved_path.is_relative_to(root) and any(
+            resolved_path.is_relative_to(folder) for folder in granted_write_roots(str(root))
+        ):
+            name = f"{name} ({resolved_path.parent})"
 
     from clio_agent.gact.semantic_events import _event_id  # noqa: PLC0415
 

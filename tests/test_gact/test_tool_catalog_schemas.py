@@ -63,11 +63,13 @@ def test_every_builtin_row_declares_domain() -> None:
 
 
 def test_gateway_builtins_carry_gateway_description_and_schema() -> None:
-    """The 4 static fs/shell rows get their schema from the gateway's own MCP listing."""
+    """Static fs/shell rows get their schema from the gateway's own MCP listing."""
 
     rows = {row.name: row for row in _rows()}
     for name, expected_domain, expected_property in (
         ("fs_read_file", "workspace", "filepath"),
+        ("fs_list_directory", "workspace", "path"),
+        ("fs_search_text", "workspace", "query"),
         ("fs_propose_edit", "workspace", "filepath"),
         ("fs_apply_edit_write", "workspace", "filepath"),
         ("shell_bash", "shell", "command"),
@@ -121,8 +123,10 @@ def test_output_schema_unresolvable_forward_ref_is_typed() -> None:
     """A TYPE_CHECKING-only forward-ref return annotation is a typed error, never a raw
     ``NameError`` escaping ``typing.get_type_hints`` into the route."""
 
-    def f() -> "DefinitelyNotARealType":  # noqa: F821 - intentionally undefined, that's the point
-        return None  # type: ignore[return-value]
+    def f() -> None:
+        return None
+
+    f.__annotations__["return"] = "DefinitelyNotARealType"
 
     with pytest.raises(ToolSchemaError, match="return_annotation_unresolvable:f:NameError"):
         tool_output_schema(f, name="f")
@@ -197,8 +201,9 @@ def test_native_tool_rejects_unknown_domain() -> None:
     def f() -> str:
         return ""
 
+    untrusted_domain: Any = "not_a_real_domain"
     with pytest.raises(ValueError, match="unknown domain"):
-        native_tool(f, name="f", presentation="text", desc="", args={}, domain="not_a_real_domain")
+        native_tool(f, name="f", presentation="text", desc="", args={}, domain=untrusted_domain)
 
 
 def test_catalog_route_serves_schema_rows(client: TestClient) -> None:
@@ -220,4 +225,5 @@ def test_catalog_route_serves_schema_rows(client: TestClient) -> None:
     assert create_artifact["output_schema"]
 
     spawn = rows["spawn_agent_task"]
-    assert spawn["domain"] == "agents"
+    assert spawn["domain"] == "tasks"
+    assert rows["query_tasks"]["domain"] == "tasks"

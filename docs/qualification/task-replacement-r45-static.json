@@ -1,0 +1,19 @@
+{
+  "revision": "R45",
+  "parent": "278d57863ebe1134ec61559fde13850eae13879e",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "execution_root": "D:/Libraries/Documents/projects/clio-agent-task-qualification",
+  "ruff": {"files": 9, "status": "passed"},
+  "format": {"files": 9, "status": "passed"},
+  "linux_mypy": {"files": 9, "status": "passed", "follow_imports": "silent", "check_untyped_defs": true},
+  "removal_guard": {"violations": 0, "status": "passed"},
+  "size_guard": {"new_file_limit": 800, "status": "passed", "baselines_changed": false},
+  "class_guard": {"status": "passed"},
+  "hidden_swallows_guard": {"count": 480, "files": 200, "status": "passed"},
+  "behavioral_regressions": "constructed, unexecuted",
+  "r45_live_qualification": "pending; R44 live receipt is partial evidence of its original source only",
+  "r44_shutdown_gate": "failed; correction needs actual-model requalification and unassisted shutdown",
+  "ci": "pending",
+  "installed_state": "unchanged"
+}

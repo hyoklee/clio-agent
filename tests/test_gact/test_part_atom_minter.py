@@ -30,6 +30,7 @@ real turn exercises: a finalize-region crash, and a pause.
 from __future__ import annotations
 
 import asyncio
+import functools
 import threading
 import time
 from pathlib import Path
@@ -61,11 +62,11 @@ from clio_agent.gact.part_atoms import (
     message_stub,
     reproduce_message_wire,
 )
+from clio_agent.gact.paused_transcript import persist_paused_transcript
 from clio_agent.gact.transcript import EventBusTranscriptPublisher, TurnTranscript
 from clio_agent.gact.transcript_projection import assemble_session_messages
 from clio_agent.gact.turn_state import TurnState
 from clio_agent.gact.types import Message, Part, Tokens
-from clio_agent.gact.user_question_pause import maybe_pause_for_user
 from tests.equivalence import normalizers as N
 from tests.turn_signals import wait_for_terminal_status
 
@@ -93,7 +94,7 @@ def _arc(tmp_path: Path, name: str = "arc") -> ARCMemory:
     return ARCMemory(data_dir=str(tmp_path / name), store=_MemoryStore())
 
 
-def _fake_app(arc: ARCMemory | None) -> SimpleNamespace:
+def _fake_app(arc: ARCMemory | None) -> Any:
     # ``bus`` is real (not a stub): the package-wide autouse ``_live_equals_reload_property``
     # fixture wraps ``gact_app._append_session_message`` for every test in this package and
     # reads ``app.state.bus._history`` on every call -- a fake app must carry one too.
@@ -280,10 +281,12 @@ def test_seal_never_touches_the_store_under_the_transcript_lock(tmp_path: Path) 
             assert release.wait(timeout=5.0), "test released the store worker too late"
         return real_lock_for(session_id, scope)
 
-    arc._segments._lock_for = _blocked_lock_for  # type: ignore[method-assign]
     app = _fake_app(arc)
     minter = open_turn_minter(app, "sess5", "turn5")
     transcript = _transcript("sess5", "turn5", app)
+    # Opening the minter reads the visibility checkpoint before transcript work.
+    # Instrument the seal operations, rather than counting that setup read.
+    arc._segments._lock_for = _blocked_lock_for  # type: ignore[method-assign]
 
     try:
         transcript.append_text_delta("main", "answer", "quick")
@@ -319,8 +322,9 @@ def test_loop_never_blocks_while_a_mint_is_stuck(tmp_path: Path) -> None:
     real_lock_for = arc._segments._lock_for
 
     def _stuck_lock_for(session_id: str, scope: str) -> Any:
-        reached.set()
-        assert release.wait(timeout=5.0), "test released the mint too late"
+        if scope == MESSAGE_PART_SCOPE:
+            reached.set()
+            assert release.wait(timeout=5.0), "test released the mint too late"
         return real_lock_for(session_id, scope)
 
     arc._segments._lock_for = _stuck_lock_for  # type: ignore[method-assign]
@@ -366,6 +370,7 @@ def test_finalize_mints_exactly_the_unsealed_remainder(
         return real_append(store, sid, content)
 
     monkeypatch.setattr(part_atom_minter, "append_part_atom", _counting)
+    monkeypatch.setattr("clio_agent.gact.transcript_recording.append_part_atom", _counting)
 
     minter = open_turn_minter(app, "sess7", "turn7")
     transcript = _transcript("sess7", "turn7", app)
@@ -399,7 +404,12 @@ def test_finalize_mints_exactly_the_unsealed_remainder(
         parts=frozen,
         stop_reason="end_turn",
     )
-    written = minter.mint_remainder(message)
+    from clio_agent.gact.transcript_recording import record_message
+
+    minter.barrier()
+    before = len(_atoms_on_lane(arc, "sess7"))
+    assert record_message(arc, "sess7", message) == "recorded"
+    written = len(_atoms_on_lane(arc, "sess7")) - before
     finalize_calls = calls[live_call_count:]
 
     # Unsealed remainder: the tool_result + the batch text = 2, plus the envelope = 3.
@@ -423,7 +433,7 @@ def test_atoms_minted_true_skips_the_mint_persist_still_records_state_merge(
 
     merge_calls: list[tuple[str, str]] = []
     monkeypatch.setattr(
-        "clio_agent.gact.transcript_projection.record_state_merge_best_effort",
+        "clio_agent.gact.workflow_state.state_merge.record_state_merge_best_effort",
         lambda arc_, sid_, msg_: merge_calls.append((sid_, msg_.id)),
     )
 
@@ -437,7 +447,9 @@ def test_atoms_minted_true_skips_the_mint_persist_still_records_state_merge(
         parts=[],
         stop_reason="end_turn",
     )
-    minter.mint_remainder(message1)  # the envelope lands directly (bypassing the seam)
+    from clio_agent.gact.transcript_recording import record_message
+
+    assert record_message(arc, "sess8", message1) == "recorded"
     before = len(_atoms_on_lane(arc, "sess8"))
 
     # ``on_message_appended`` itself is a no-op under atoms_minted=True: no new atoms,
@@ -492,7 +504,9 @@ def test_envelope_atom_is_the_sole_authority_for_message_level_fields(tmp_path: 
         cost_usd=0.02,
         stop_reason="end_turn",
     )
-    minter.mint_remainder(message)
+    from clio_agent.gact.transcript_recording import record_message
+
+    assert record_message(arc, "sess9", message) == "recorded"
 
     atoms = _atoms_on_lane(arc, "sess9")
     part_atoms = [a for a in atoms if a["atom_role"] == "part"]
@@ -713,7 +727,7 @@ def test_double_sealed_atom_for_one_part_reproduces_to_one_part_last_wins() -> N
         role="assistant",
         created_at="c",
         updated_at="c",
-        parts=[Part(**final_version)],
+        parts=[Part.model_validate(final_version)],
     )
     envelope = build_envelope_atom(message)
 
@@ -744,7 +758,8 @@ def test_failed_finalize_keeps_the_streamed_parts_and_reload_equals_live(
         ack = c.post(
             f"/v1/sessions/{sid}/messages", json={"parts": [{"type": "text", "text": "hi"}]}
         )
-        assert ack.status_code == 200, ack.text
+        assert ack.status_code == 202, ack.text
+        assert ack.json()["task_handle"]
         user_id = ack.json()["message_id"]
 
         status = wait_for_terminal_status(app.state.bus, sid, after_event_id=cursor)
@@ -769,9 +784,12 @@ def test_failed_finalize_keeps_the_streamed_parts_and_reload_equals_live(
 
 
 def test_paused_transcript_persists_only_the_remainder(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest
 ) -> None:
     app = build_app(sessions_path=tmp_path / "sessions.json")
+    client = TestClient(app)
+    client.__enter__()
+    request.addfinalizer(lambda: client.__exit__(None, None, None))
     session = app.state.sessions.create(workspace_id="ws_default", title="pause", mode="chat")
     app.state.sessions.update(
         session.id,
@@ -828,19 +846,16 @@ def test_paused_transcript_persists_only_the_remainder(
     assert minter.drain()
 
     calls: list[str] = []
-    real_append = part_atom_minter.append_part_atom
+    from clio_agent.gact import transcript_recording
+
+    real_append = transcript_recording.append_part_atom
 
     def _counting(store: Any, sid: str, content: dict[str, Any]) -> Any:
         calls.append(str(content.get("atom_role")))
         return real_append(store, sid, content)
 
-    monkeypatch.setattr(part_atom_minter, "append_part_atom", _counting)
-    monkeypatch.setattr(
-        "clio_agent.gact.user_question_pause._finalize_context_frame", lambda *a, **k: None
-    )
-    monkeypatch.setattr("clio_agent.gact.enrichment._finalize_context_frame", lambda *a, **k: None)
-
-    assert maybe_pause_for_user(state, SimpleNamespace(), update_retry_attempt=lambda *a, **k: None)
+    monkeypatch.setattr(transcript_recording, "append_part_atom", _counting)
+    assert persist_paused_transcript(state)
 
     # The remainder: the never-sealed tool_result + the envelope = 2 atoms written here.
     assert len(calls) == 2
@@ -882,8 +897,9 @@ def test_minter_refuses_an_arc_without_a_canonical_log(tmp_path: Path) -> None:
         parts=[Part(id="p1", type="text", text="hello")],
         stop_reason="end_turn",
     )
-    persist_finalized_message(app, "sess_degraded", message)  # must not raise
-    assert [m.id for m in app.state.messages["sess_degraded"]] == ["msg_asst_degraded"]
+    with pytest.raises(RuntimeError, match="Final output recording requires Core"):
+        persist_finalized_message(app, "sess_degraded", message)
+    assert app.state.messages.get("sess_degraded", []) == []
     close_turn_minter(app, "sess_degraded")
 
 
@@ -895,18 +911,17 @@ def test_minter_refuses_an_arc_without_a_canonical_log(tmp_path: Path) -> None:
 # --------------------------------------------------------------------------- #
 
 
-def test_finalize_mint_failure_still_lands_the_retained_ledger_copy(
+def test_finalize_mint_failure_retains_exact_retry_without_a_cache_ghost(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Unconfirmed final output survives in its retry closure, never as acknowledged JSON."""
+    from clio_agent.gact import transcript_recording
+    from clio_agent.gact.transcript_projection import assemble_session_messages
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending
+
     arc = _arc(tmp_path)
     app = _fake_app(arc)
-
-    def _always_fails(store: Any, sid: str, content: dict[str, Any]) -> Any:
-        raise RuntimeError("simulated clio-core RPC failure")
-
     open_turn_minter(app, "sess_lost", "turn_lost")
-    monkeypatch.setattr(part_atom_minter, "append_part_atom", _always_fails)
-
     message = Message(
         id="msg_asst_lost",
         session_id="sess_lost",
@@ -917,12 +932,26 @@ def test_finalize_mint_failure_still_lands_the_retained_ledger_copy(
         parts=[Part(id="p1", type="text", text="hello")],
         stop_reason="end_turn",
     )
-    with pytest.raises(RuntimeError):
-        persist_finalized_message(app, "sess_lost", message)
-    # The must-succeed contract still raises, but the retained copy is NOT lost:
-    # it is what a later reload backfills the atom lane from.
-    assert [m.id for m in app.state.messages["sess_lost"]] == ["msg_asst_lost"]
-    close_turn_minter(app, "sess_lost")
+
+    def fail_write(*args: Any, **kwargs: Any) -> Any:
+        raise RuntimeError("simulated clio-core RPC failure")
+
+    try:
+        with monkeypatch.context() as fault:
+            fault.setattr(transcript_recording, "append_part_atom", fail_write)
+            with pytest.raises(TranscriptRecordingPending) as failure:
+                persist_finalized_message(app, "sess_lost", message)
+        pending = failure.value
+        assert pending.message == message
+        assert assemble_session_messages(arc, "sess_lost") == []
+        assert app.state.messages.get("sess_lost", []) == []
+        assert pending.confirm()
+        assert assemble_session_messages(arc, "sess_lost") == [message]
+        assert [row.id for row in app.state.messages["sess_lost"]] == [message.id]
+        assert pending.confirm()
+        assert assemble_session_messages(arc, "sess_lost") == [message]
+    finally:
+        close_turn_minter(app, "sess_lost")
 
 
 # --------------------------------------------------------------------------- #
@@ -1111,6 +1140,7 @@ def test_a_mutation_after_the_seal_is_reminted_by_the_remainder(tmp_path: Path) 
     reloaded = assemble_session_messages(arc, "sess_reseal")
     assert len(reloaded) == 1, "the reseal must stay in ONE message"
     served = next(p for p in reloaded[0].parts if p.id == "tc_z")
+    assert served.presentation is not None
     assert served.presentation["blocks"][0]["text"] == "COMPLETE OUTPUT", (
         "the stale sealed atom won: reload != live"
     )
@@ -1146,8 +1176,13 @@ def test_a_drain_of_slow_but_progressing_jobs_completes_past_the_window(
     """
     minter = part_atom_minter.PartAtomMinter(session_id="s-slow", turn_id="t", arc=None)
     landed: list[int] = []
+
+    def land(index: int) -> None:
+        time.sleep(0.2)
+        landed.append(index)
+
     for n in range(5):
-        minter.enqueue(f"job:{n}", lambda n=n: (time.sleep(0.2), landed.append(n)))
+        minter.enqueue(f"job:{n}", functools.partial(land, n))
     assert minter.drain(no_progress_s=0.4)
     assert landed == [0, 1, 2, 3, 4]
     minter.close()

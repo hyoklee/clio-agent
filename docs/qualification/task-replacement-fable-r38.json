@@ -1,0 +1,27 @@
+{
+  "core": "27b3a381d7c2da939a57e308c4f0e1cf87c3fe4e",
+  "gact": "416601856a1e828f658fd59fe6bc5bc4f1129f05",
+  "marketplace": "999fdafa9d0f1214e3f9f4f98a6d4d4a8f8f3751",
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 482,
+      "outputTokens": 32873,
+      "cacheReadInputTokens": 3676820,
+      "cacheCreationInputTokens": 596384,
+      "webSearchRequests": 0,
+      "costUSD": 14.495355,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 17474,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "session": "9f9dc88f-c456-4f02-aefd-ecfd7dc29684",
+  "is_error": false,
+  "subtype": "success",
+  "duration_ms": 464854,
+  "process_absent": true,
+  "product_qualification_executed": false
+}

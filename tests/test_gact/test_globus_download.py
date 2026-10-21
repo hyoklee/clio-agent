@@ -105,7 +105,7 @@ def test_globus_fsspec_link_and_workspace_visibility(
     assert opened == []
     assert not service.download_available(record)
     with pytest.raises(ValueError, match="transfer backend"):
-        service.start_transfer(record, workspace)
+        service.validate_download(record)
     rows, truncated = connected_file_entries(service, "w", 100)
     assert not truncated and len(rows) == 1
     assert rows[0]["display_path"] == "Linked folders/Tutorial/data.txt"

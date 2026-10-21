@@ -12,6 +12,7 @@ import multiprocessing
 import os
 import threading
 import time
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -316,34 +317,56 @@ def test_dead_pid_owner_record_triggers_break_stale_lock(
 
 def test_runaway_backstop_fires_typed_when_holder_unidentifiable(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    """A lock held with NO readable owner record (this process can never verify
+    """A lock held with NO readable owner PID (this process can never verify
     liveness) still cannot wait forever -- the generous backstop is the
     last-resort catcher, and it fires typed."""
 
+    from clio_agent.tools import mcp_config
+
+    monkeypatch.setattr(mcp_config, "_mcp_uv_cache_dir", lambda: tmp_path)
     monkeypatch.setattr(lcl, "_read_owner_pid", lambda _owner_path: None)
 
     release = threading.Event()
+    held = threading.Event()
+    checks: list[tuple[float, float]] = []
+    real_check = lcl._HolderClock.check
+
+    def _record_check(
+        clock: lcl._HolderClock, holder_record: str | None, holder_pid: int | None
+    ) -> None:
+        entered = time.monotonic()
+        try:
+            real_check(clock, holder_record, holder_pid)
+        finally:
+            checks.append((entered, time.monotonic() - entered))
+
+    monkeypatch.setattr(lcl._HolderClock, "check", _record_check)
 
     def _hold_forever() -> None:
         with acquire_launcher_cache_lock("server-d", timeout_s=30.0):
+            held.set()
             release.wait(timeout=10.0)
 
     holder = threading.Thread(target=_hold_forever, daemon=True)
     holder.start()
-    time.sleep(0.2)
-
-    started = time.monotonic()
-    with pytest.raises(LauncherCacheLockTimeoutError) as exc_info:
-        with acquire_launcher_cache_lock("server-d", timeout_s=0.5):
-            pass
-    elapsed = time.monotonic() - started
-    assert elapsed < 3.0
-    assert exc_info.value.server_id == "server-d"
-    assert LAUNCHER_CACHE_LOCK_TIMEOUT in str(exc_info.value)
-
-    release.set()
-    holder.join(timeout=5.0)
+    try:
+        assert held.wait(timeout=2.0), "holder never acquired its isolated real lock"
+        started = time.monotonic()
+        with pytest.raises(LauncherCacheLockTimeoutError) as exc_info:
+            with acquire_launcher_cache_lock("server-d", timeout_s=0.5):
+                pass
+        elapsed = time.monotonic() - started
+        assert elapsed < 3.0, f"elapsed={elapsed:.3f}s; holder-clock checks={checks!r}"
+        assert exc_info.value.server_id == "server-d"
+        assert exc_info.value.timeout_s == 0.5
+        assert exc_info.value.holder_pid is None
+        assert LAUNCHER_CACHE_LOCK_TIMEOUT in str(exc_info.value)
+    finally:
+        release.set()
+        holder.join(timeout=5.0)
+        assert not holder.is_alive(), "holder did not retire after release"
 
 
 def test_pid_alive_true_for_own_process() -> None:

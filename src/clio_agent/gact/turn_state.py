@@ -195,11 +195,6 @@ class TurnState:
     context_file_provenance: dict[str, Any] = field(default_factory=_unset_context_file_provenance)
     enriched_text: str = ""
     memory_search_metadata: dict[str, Any] = field(default_factory=dict)
-    # #948 S6 [1]/[4]: observe-later task ids composed into this turn's enriched
-    # input during enrichment but NOT yet consumed. Consumed + their delegation
-    # terminals emitted only at the commit-to-run seam (immediately before forward),
-    # so a turn aborted after enrichment leaves them pending for the next turn.
-    pending_notification_task_ids: list[str] = field(default_factory=list)
     #: CLIO's own additions for this turn, ``(source, text)`` in order; the agent loop
     #: records each as a message of its own ahead of the user message.
     injections: list[tuple[str, str]] = field(default_factory=list)
@@ -246,6 +241,8 @@ class TurnState:
     last_prompt_usage: dict[str, Any] = field(default_factory=dict)
     pred: Any = None
     cancelled_turn: bool = False
+    publication_steps: set[str] = field(default_factory=set)
+    publication_usage: tuple[int, int, float, bool] | None = None
     assistant_metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -292,12 +289,18 @@ def new_turn_state(
         )
 
         execution_blueprint_id = DEEP_RESEARCH_BLUEPRINT_ID
+
+    admitted = _ctx.current_turn()
     _ctx.set_turn_identity(
         app=app,
         session_id=sid,
         turn_id=turn_id,
         trace_id=trace_id,
         execution_blueprint_id=execution_blueprint_id,
+        assignment_handle=admitted.assignment_handle if admitted.session_id == sid else "",
+        input_notification_id=admitted.input_notification_id if admitted.session_id == sid else "",
+        context_epoch=admitted.context_epoch if admitted.session_id == sid else "",
+        context_epoch_after=admitted.context_epoch_after if admitted.session_id == sid else None,
     )
     from clio_agent.gact.app import _dspy_images_from_parts  # noqa: PLC0415
     from clio_agent.gact.messaging import _dspy_files_from_parts  # noqa: PLC0415

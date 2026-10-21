@@ -1,7 +1,7 @@
 """Persist observed assistant activity at an input-required turn boundary."""
 
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from clio_agent.gact import session_warmup
 from clio_agent.gact.events import Event, _publish_transcript_event
@@ -13,7 +13,9 @@ if TYPE_CHECKING:
     from clio_agent.gact.turn_state import TurnState
 
 
-def persist_paused_transcript(state: "TurnState") -> str:
+def persist_paused_transcript(
+    state: "TurnState", *, after_withdrawn: Callable[[], None] | None = None
+) -> str | None:
     """Save existing parts verbatim, without fabricating an answer or completing work.
 
     Input-required turns bypass normal finalization. Close and persist their
@@ -29,8 +31,6 @@ def persist_paused_transcript(state: "TurnState") -> str:
     if not state.transcript.snapshot():
         return ""
     message_id = state.transcript.ensure_message()
-    if any(m.id == message_id for m in state.app.state.messages.get(state.sid, [])):
-        return message_id
     now = datetime.now(timezone.utc).isoformat()
     message = Message(
         id=message_id,
@@ -45,7 +45,18 @@ def persist_paused_transcript(state: "TurnState") -> str:
         stop_reason="waiting_user",
         metadata=state.assistant_metadata,
     )
-    persist_finalized_message(state.app, state.sid, message)
+    confirmed = persist_finalized_message(
+        state.app,
+        state.sid,
+        message,
+        after_confirmed=lambda: publish_paused_transcript(state, message),
+        after_withdrawn=after_withdrawn,
+    )
+    return message.id if confirmed else None
+
+
+def publish_paused_transcript(state: "TurnState", message: Message) -> None:
+    """Publish the original input-required output after its Core recording confirms."""
     payload = {
         "turn_id": state.turn_id,
         "message_id": message.id,
@@ -71,4 +82,3 @@ def persist_paused_transcript(state: "TurnState") -> str:
     # do not adopt and re-append this already persisted message as an in-flight one.
     for name in ("live_assistant_message_ids", "live_assistant_parts", "live_assistant_part_keys"):
         getattr(state.app.state, name, {}).pop(state.sid, None)
-    return message.id

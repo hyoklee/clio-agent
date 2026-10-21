@@ -26,6 +26,55 @@ _SESSION, _SCOPE = "sid-lines", "analyst"
 _SEEN: list[tuple[int, list[str]]] = []
 
 
+def test_variants_inherit_input_references_without_copying_delivery_authority(
+    plane: ARCMemory,
+) -> None:
+    """Fork, winner selection and restart preserve content and scope-bound input proofs."""
+    from clio_agent.arc.task_types import ContextBoundary, RecipientInput
+    from clio_agent.gact.agents.variant_lines import fork_try, record_winner
+    from clio_agent.gact.task_history import TaskHistory
+
+    history = TaskHistory(plane)
+    ctx.active_app().state.task_history = history
+
+    def commit(scope: str, identity: str, text: str) -> None:
+        content = history.write_content(_SESSION, {"text": text})
+        history.record_input(
+            RecipientInput(
+                id=identity,
+                session_id=_SESSION,
+                assignment_id="assignment",
+                iteration_id=identity,
+                turn_id="input-turn",
+                notification_ids=(),
+                content=(),
+                boundary=ContextBoundary(session_id=_SESSION, scope=scope, logical_time=0),
+                rendered_content=(content,),
+                committed_at="2026-10-17T00:00:00Z",
+            )
+        )
+
+    commit(_SCOPE, "base-input", "Original human request")
+    forked = fork_try(0)
+    variant = _SCOPE + "#run0"
+    commit(variant, "variant-input", "Accepted variant advice")
+    record_winner(0, forked)
+    for scope in (_SCOPE, variant):
+        rows = plane.render_working_set(_SESSION, scope)
+        for row in rows:
+            if row.kind == "recipient_input":
+                assert row.content["boundary"]["scope"] == scope
+        assert any(row.kind == "user" and row.content.get("rendered_content") for row in rows)
+    restored = TaskHistory(plane)
+    restored.restore()
+    restored.restore()
+    ctx.active_app().state.task_history = restored
+    assert "Original human request" in str(read_steps(plane, _SESSION, _SCOPE))
+    assert "Accepted variant advice" in str(read_steps(plane, _SESSION, _SCOPE))
+    assert "Original human request" in str(read_steps(plane, _SESSION, variant))
+    assert "Accepted variant advice" in str(read_steps(plane, _SESSION, variant))
+
+
 @pytest.fixture
 def plane(tmp_path: Path) -> Iterator[ARCMemory]:
     arc = ARCMemory(data_dir=str(tmp_path / "arc"))

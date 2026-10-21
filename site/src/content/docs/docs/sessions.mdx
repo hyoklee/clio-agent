@@ -175,7 +175,11 @@ For a report that connects several outputs in the side panel, see
 
 While the agent is working, a **Steer** button appears next to the composer. Type a message and choose it, and the message joins the active turn at the next safe boundary instead of waiting for it to finish.
 
-During a run the send button is labeled **Stop**. Choose it to cancel the current work.
+During a run the send button is labeled **Stop**. Choose it to interrupt the
+current response. In the [task development preview](/docs/tasks/), accepted
+background work continues and a later result can wake the agent again. Use
+**Cancel task** to stop that work, or **Pause** to hold a subagent's model while
+its accepted tasks continue. See [Subagent controls](/docs/tasks/subagents/).
 
 To compare another approach, or continue from an earlier message, see
 [Try another approach](/docs/branch-and-rewind/). The guide shows both

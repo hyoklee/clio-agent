@@ -3,15 +3,14 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from typing import Any
 
 import mcp_types
-from fastmcp import Client
-from fastmcp.client.client import CallToolResult
 from fastmcp_tasks.client import _inlined_call_tool_result
-from jsonschema import Draft202012Validator, ValidationError
-from mcp.client.extension import ClaimContext
+from fastmcp_tasks.client_models import ClientGetTaskResult
+from jsonschema import Draft202012Validator, SchemaError, ValidationError
+from jsonschema.validators import validator_for
+from pydantic import ValidationError as ModelValidationError
 from referencing import Registry
 from referencing.exceptions import Unresolvable
 
@@ -24,42 +23,18 @@ class TaskResultValidationError(ValueError):
     """A settled backend result violated the original declared output contract."""
 
 
-class TaskAwareClient(Client):
-    """Parse local acceptance separately while preserving backend result validation."""
-
-    async def _resolve_claimed_result(
-        self, name: str, result: mcp_types.Result, read_timeout_seconds: float | None
-    ) -> mcp_types.CallToolResult:
-        claim = self._claim_by_model[type(result)]
-        final = await claim.resolve(
-            result,
-            ClaimContext(
-                session=self.session, tool_name=name, read_timeout_seconds=read_timeout_seconds
-            ),
-        )
-        if not isinstance(final, AcceptedTaskResult) and not final.is_error:
-            await self.session.validate_tool_result(name, final)
-        return final
-
-    async def _parse_call_tool_result(
-        self, name: str, result: mcp_types.CallToolResult, raise_on_error: bool = False
-    ) -> CallToolResult:
-        if isinstance(result, AcceptedTaskResult):
-            return CallToolResult(
-                content=result.content,
-                structured_content=result.structured_content,
-                meta=result.meta,
-                data=result.structured_content,
-                is_error=False,
-            )
-        return await super()._parse_call_tool_result(name, result, raise_on_error)
-
-
 def accepted_result(receipt: dict[str, Any]) -> AcceptedTaskResult:
     """Validate the application receipt before returning it through the SDK."""
     if (
-        receipt.get("accepted") is not True
-        or receipt.get("kind") != "MCP"
+        (
+            receipt.get("accepted") is not True
+            and not (
+                receipt.get("accepted") is None
+                and receipt.get("acceptance") == "uncertain"
+                and receipt.get("retry_safe") is False
+            )
+        )
+        or receipt.get("kind") not in {"MCP", "Shell", "Download", "Indexing"}
         or not str(receipt.get("handle", "")).startswith("task_")
     ):
         raise ValueError("Invalid CLIO task acceptance receipt")
@@ -69,12 +44,16 @@ def accepted_result(receipt: dict[str, Any]) -> AcceptedTaskResult:
     )
 
 
-def validate_terminal(record: Any, current: Any) -> None:
+def validate_terminal(schema: dict[str, Any] | None, current: ClientGetTaskResult) -> None:
     """Validate the original backend schema before successful completion is persisted."""
     if current.status != "completed":
         return
-    schema = record.backend.get("output_schema")
-    result = _inlined_call_tool_result(current.result)
+    if not isinstance(current.result, dict):
+        raise TaskResultValidationError("Completed backend task omitted its raw result")
+    try:
+        result = _inlined_call_tool_result(current.result)
+    except (ModelValidationError, TypeError) as exc:
+        raise TaskResultValidationError("Backend returned a malformed MCP tool result") from exc
     if result.is_error or schema is None:
         return
     try:
@@ -82,7 +61,18 @@ def validate_terminal(record: Any, current: Any) -> None:
             raise TaskResultValidationError("Backend omitted its declared structured result")
         # Backend schemas can use local definitions, but validation must never
         # fetch arbitrary external references using the application's credentials.
-        Draft202012Validator(schema, registry=Registry()).validate(result.structured_content)
+        declared = schema.get("$schema")
+        if "$schema" in schema and not isinstance(declared, str):
+            raise TaskResultValidationError("Captured backend schema has an invalid dialect URI")
+        validator = validator_for(schema, default=Draft202012Validator)
+        if isinstance(declared, str):
+            canonical = validator.META_SCHEMA.get("$id", validator.META_SCHEMA.get("id", ""))
+            if declared.removesuffix("#") != str(canonical).removesuffix("#"):
+                raise TaskResultValidationError(
+                    "Captured backend schema declares an unsupported dialect"
+                )
+        validator.check_schema(schema)
+        validator(schema, registry=Registry()).validate(result.structured_content)
     except ValidationError as exc:
         raise TaskResultValidationError(
             f"Backend result violates its declared schema: {exc.message}"
@@ -91,19 +81,5 @@ def validate_terminal(record: Any, current: Any) -> None:
         raise TaskResultValidationError(
             "Backend schema contains an unresolved external reference"
         ) from exc
-
-
-def record_invalid_result(store: Any, key: Any, error: TaskResultValidationError) -> None:
-    """Preserve raw settlement while publishing a terminal contract failure honestly."""
-    row = store.get(key)
-    if row is not None:
-        store.put(
-            replace(
-                row,
-                status="completed",
-                effective_status="failed",
-                effective_status_reason=str(error),
-                result={"error": str(error)},
-                notify_pending=not bool(row.consumed_at),
-            )
-        )
+    except SchemaError as exc:
+        raise TaskResultValidationError("Captured backend output schema is invalid") from exc

@@ -2,12 +2,11 @@
 
 from typing import Any
 
-import dspy
-
+from clio_agent.lm.admitted_dspy import AdmittedLM
 from clio_agent.lm.attention_lm import attention_request
 
 
-class AttentionLM(dspy.LM):
+class AttentionLM(AdmittedLM):
     """DSPy's provider engine with attention declarations enclosing trace callbacks."""
 
     def __call__(self, prompt: Any = None, *, messages: Any = None, **kwargs: Any) -> Any:

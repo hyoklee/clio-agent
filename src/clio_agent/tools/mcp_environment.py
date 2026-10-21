@@ -30,6 +30,15 @@ def stdio_environment(
     if command and is_web_search_mcp(command, args) and "WEB_STATE_DIR" not in spec_env:
         search["WEB_STATE_DIR"] = str(web_mcp_state_dir())
     env = {**os.environ, **_QUIET_SERVER_DEFAULTS, **search, **dict(spec_env)}
+    launcher = command.replace("\\", "/").rsplit("/", 1)[-1].lower()
+    if launcher.removesuffix(".exe").removesuffix(".cmd") == "clio-kit":
+        from clio_agent import paths  # noqa: PLC0415 - resolve this instance's private cache
+
+        # Reuse the same short content-addressed runtime cache as Desktop.
+        # Nesting projects beneath the redirected Windows profile adds another
+        # workspace hash and exceeds MAX_PATH while copying locked projects.
+        if not env.get("CLIO_KIT_CACHE_DIR"):
+            env["CLIO_KIT_CACHE_DIR"] = str(paths.user_cache_dir() / "mcp-runtime")
     for name in ("PYTHONHOME", "PYTHONPATH"):
         if name not in spec_env:
             env.pop(name, None)

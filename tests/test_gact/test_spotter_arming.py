@@ -43,6 +43,7 @@ from clio_agent.gact.spotter_arming import (
     _project_directories,
     validate_watcher_arming,
 )
+from clio_agent.gact.spotter_watcher import _live_watcher_tasks
 
 _BLUEPRINT_ID = "spotter-ai"
 
@@ -210,7 +211,7 @@ def test_create_into_spotter_ai_is_refused_when_declared_mcp_env_is_unset(
 
     # Nothing was armed, and the refused create left NO session behind.
     assert app.state.sessions.list() == []
-    assert app.state.agent_task_registry.for_parent("") == []
+    assert _live_watcher_tasks(app, "") == []
     # The refusal reaches the trace/log with its typed reason.
     assert any(
         "spotter_watcher_arm_refused" in record.message
@@ -343,7 +344,7 @@ def test_create_into_spotter_ai_arms_when_the_entrypoint_is_installed(
         resp = client.post("/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"})
 
     assert resp.status_code == 200, resp.text
-    assert len(app.state.agent_task_registry.for_parent(resp.json()["id"])) == 1
+    assert len(_live_watcher_tasks(app, resp.json()["id"])) == 1
 
 
 def test_a_matching_distribution_satisfies_the_entrypoint(
@@ -385,7 +386,7 @@ def test_a_sync_enabled_uv_launcher_is_not_refused(
         resp = client.post("/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"})
 
     assert resp.status_code == 200, resp.text
-    assert len(app.state.agent_task_registry.for_parent(resp.json()["id"])) == 1
+    assert len(_live_watcher_tasks(app, resp.json()["id"])) == 1
 
 
 def test_a_non_uv_launcher_shape_keeps_todays_behaviour(
@@ -401,7 +402,7 @@ def test_a_non_uv_launcher_shape_keeps_todays_behaviour(
         resp = client.post("/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"})
 
     assert resp.status_code == 200, resp.text
-    assert len(app.state.agent_task_registry.for_parent(resp.json()["id"])) == 1
+    assert len(_live_watcher_tasks(app, resp.json()["id"])) == 1
 
 
 # --------------------------------------------------------------------------- #
@@ -421,26 +422,21 @@ def test_create_into_spotter_ai_arms_when_the_declaration_resolves(
 
     assert resp.status_code == 200, resp.text
     sid = resp.json()["id"]
-    tasks = app.state.agent_task_registry.for_parent(sid)
+    tasks = _live_watcher_tasks(app, sid)
     assert len(tasks) == 1, tasks
-    assert tasks[0].agent_ref["expert_id"] == "spotter_watcher"
-    assert tasks[0].live_state == "waiting"
+    assert app.state.sessions.get(tasks[0].owner.session_id).agent["id"] == "spotter_watcher"
+    assert tasks[0].activity == "idle"
 
 
-def test_arming_without_an_installed_watcher_blueprint_is_unchanged(tmp_path: Path) -> None:
-    """No blueprint installed -> nothing declared -> nothing to resolve.
-
-    The gate refuses only a DECLARED-but-unresolvable server; a deployment that
-    declares none arms exactly as it did before (the shape every other
-    ``test_spotter_watcher.py`` case relies on).
-    """
-
+def test_arming_without_an_installed_watcher_blueprint_is_refused(tmp_path: Path) -> None:
+    """A missing executable watcher cannot leave an apparently protected session."""
     app = build_app(sessions_path=tmp_path / "s.json")
     with TestClient(app) as client:
-        resp = client.post("/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"})
-
-    assert resp.status_code == 200, resp.text
-    assert len(app.state.agent_task_registry.for_parent(resp.json()["id"])) == 1
+        response = client.post("/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"})
+        assert response.status_code == 422, response.text
+        assert response.json()["error"]["error"] == REFUSAL_WATCHER_UNMOUNTABLE
+        assert "not installed" in response.json()["error"]["message"]
+        assert app.state.sessions.list() == []
 
 
 # --------------------------------------------------------------------------- #
@@ -467,7 +463,7 @@ def test_patch_into_spotter_ai_gets_the_same_gate(
         # and no watcher was armed (so the clearance barrier never engages).
         assert app.state.sessions.get(sid).approval_mode == "ask"
         assert client.get(f"/v1/sessions/{sid}").json()["approval_mode"] == "ask"
-        assert app.state.agent_task_registry.for_parent(sid) == []
+        assert _live_watcher_tasks(app, sid) == []
 
 
 def test_patch_into_spotter_ai_arms_when_the_declaration_resolves(
@@ -483,7 +479,7 @@ def test_patch_into_spotter_ai_arms_when_the_declaration_resolves(
 
         assert resp.status_code == 200, resp.text
         assert resp.json()["approval_mode"] == "spotter-ai"
-        assert len(app.state.agent_task_registry.for_parent(sid)) == 1
+        assert len(_live_watcher_tasks(app, sid)) == 1
 
 
 def test_patch_away_from_spotter_ai_is_never_gated(
@@ -500,7 +496,7 @@ def test_patch_away_from_spotter_ai_is_never_gated(
         sid = client.post(
             "/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"}
         ).json()["id"]
-        assert len(app.state.agent_task_registry.for_parent(sid)) == 1
+        assert len(_live_watcher_tasks(app, sid)) == 1
 
         _clear_deployment_env(monkeypatch)
         resp = client.patch(f"/v1/sessions/{sid}", json={"approval_mode": "ask"})
@@ -523,7 +519,7 @@ def test_unrelated_patch_on_an_armed_session_is_never_gated(
         sid = client.post(
             "/v1/sessions", json={"title": "t", "approval_mode": "spotter-ai"}
         ).json()["id"]
-        task_id = app.state.agent_task_registry.for_parent(sid)[0].task_id
+        task_id = _live_watcher_tasks(app, sid)[0].handle
 
         _clear_deployment_env(monkeypatch)
         resp = client.patch(f"/v1/sessions/{sid}", json={"title": "renamed"})
@@ -531,8 +527,8 @@ def test_unrelated_patch_on_an_armed_session_is_never_gated(
         assert resp.status_code == 200, resp.text
         assert resp.json()["title"] == "renamed"
         assert resp.json()["approval_mode"] == "spotter-ai"
-        tasks = app.state.agent_task_registry.for_parent(sid)
-        assert [row.task_id for row in tasks] == [task_id]
+        tasks = _live_watcher_tasks(app, sid)
+        assert [row.handle for row in tasks] == [task_id]
 
 
 # --------------------------------------------------------------------------- #
@@ -639,5 +635,9 @@ def test_every_refusal_reason_is_in_the_closed_set() -> None:
 
 
 def test_validate_watcher_arming_is_a_no_op_without_a_declared_server(tmp_path: Path) -> None:
+    serverless = (
+        _AGENT_MD[: _AGENT_MD.index("mcp_servers:")] + _AGENT_MD[_AGENT_MD.index("experts:") :]
+    )
+    _install_watcher_blueprint(tmp_path, agent_md=serverless)
     app = build_app(sessions_path=tmp_path / "s.json")
     assert validate_watcher_arming(app, env={}) is None

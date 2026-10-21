@@ -1,24 +1,15 @@
-"""Wire-equivalence tests for the TurnTranscript migration (#767 PR1).
+"""Recorded transcript traces and confirmed model-input ownership.
 
-Two layers of proof that PR1 changes nothing on the wire:
+Streamed text, tool calls and thinking retain strict normalized event/part
+baselines. R2 intentionally changes submission to HTTP 202 plus an assignment
+handle and moves input acknowledgement to Core. Baseline changes must be
+inspected; regeneration alone is not acceptance.
 
-1. **Golden-trace scenarios** — three representative turns (streamed text,
-   tool-call, multi-part with thinking) are driven end-to-end through the
-   TestClient; the full transcript-vocabulary event stream plus the persisted
-   assistant parts are normalized and compared against goldens captured on
-   ``develop`` BEFORE this change (``goldens/turn_transcript_pr1/*.json``).
-   The goldens were recaptured after a0e1d9a9 (clean delegation wire): routing
-   decisions are ``routing.decision`` semantic events now, so the streams carry
-   no ``routing_decision`` ``message.part.added`` and persist no routing part.
-   To (re)capture the goldens, check out the reference tree and run::
+The repository-inspection integration adds fs_list_directory and fs_search_text
+to the recorded main-agent tool inventory; event order and assistant parts are unchanged.
 
-       CLIO_TURN_TRANSCRIPT_GOLDEN_REGEN=1 uv run --extra dev pytest \
-           tests/test_gact/test_turn_transcript_equivalence.py -k golden --no-cov
-2. **Shim equivalence** — the tool-observer/delegation append helpers are
-   driven twice, once with no transcript open (the legacy dict path — every
-   production turn in PR1) and once with a TurnTranscript open (the shimmed
-   path); both must publish the identical event sequence and hold identical
-   live parts.
+Producer-equivalence cases separately compare passive live views with and
+without an open TurnTranscript. Both views preserve the observed parts.
 """
 
 from __future__ import annotations
@@ -60,7 +51,8 @@ _EVENT_TYPES_UNDER_TEST = (
 # No \b anchors: generated ids embed inside composite ids (live_call_<hex>_result)
 # and "_" is a word character, so boundaries would skip exactly those.
 _ID_PATTERN = re.compile(
-    r"(?:msg_(?:user|asst|tool)|part|call|sess|turn|ques|att|trace|cancel)_[0-9a-f]{8,}"
+    r"(?:msg_(?:user|asst|tool)|part|call|sess|turn|ques|att|trace|cancel|task)_[0-9a-f]{8,}"
+    r"|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
 )
 _VOLATILE_KEY_TOKENS = (
     "duration",
@@ -95,7 +87,9 @@ class _Normalizer:
 
     def _token(self, raw: str) -> str:
         if raw not in self._map:
-            prefix = raw.split("_")[0] if not raw.startswith("msg_") else "msg"
+            prefix = "core" if "-" in raw else raw.split("_")[0]
+            if raw.startswith("msg_"):
+                prefix = "msg"
             self._map[raw] = f"<{prefix}#{len(self._map) + 1}>"
         return self._map[raw]
 
@@ -124,6 +118,17 @@ def _normalized_trace(app: Any, client: TestClient, sid: str) -> dict[str, Any]:
     ]
     messages = client.get(f"/v1/sessions/{sid}/messages").json()["messages"]
     assistants = [m for m in messages if m["role"] == "assistant"]
+    assert len(assistants) == 1, "accepted input must not wake a duplicate model segment"
+    human = next(message for message in messages if message["role"] == "user")
+    history = app.state.task_history
+    committed = history.committed_notification_input(sid, human["id"])
+    assert committed is not None, "the model input must be confirmed in Core"
+    assert human["id"] in history.acknowledged_notifications(sid)
+    assert committed.session_id == sid and committed.human_input
+    assert committed.turn_id == assistants[0]["turn_id"]
+    notice = history.mail_item(sid, human["id"])
+    assert notice is not None
+    assert committed.content[committed.notification_ids.index(notice.id)] == notice.content
     parts = [normalizer.normalize(part) for m in assistants for part in m["parts"]]
     return {"events": events, "persisted_assistant_parts": parts}
 
@@ -133,7 +138,8 @@ def _complete_turn(client: TestClient, sid: str, text: str, *, timeout: float = 
     unchanged on the reference tree when regenerating goldens)."""
 
     ack = client.post(f"/v1/sessions/{sid}/messages", json={"text": text})
-    assert ack.status_code == 200, ack.text
+    assert ack.status_code == 202, ack.text
+    assert ack.json()["task_handle"].startswith("task_")
     user_id = ack.json()["message_id"]
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -206,11 +212,13 @@ class _PlainAgent:
 class _ToolCallingAgent(_PlainAgent):
     def forward(self, question: str, session_id: str) -> Any:
         from clio_agent.tools.execution import current_tool_runtime
+        from clio_agent.tools.tool_observation import notify_tool_observer
 
         observer = current_tool_runtime().tool_observer
         assert observer is not None, "tool hooks not installed"
-        observer("fs_read_file", {"path": "README.md"}, "started", None)
-        observer(
+        notify_tool_observer(observer, "fs_read_file", {"path": "README.md"}, "started", None)
+        notify_tool_observer(
+            observer,
             "fs_read_file",
             {"path": "README.md"},
             "completed",
@@ -227,10 +235,11 @@ class _ToolCallingAgent(_PlainAgent):
 
 
 def _fresh_test_arc(tmp_path: Path, name: str) -> Any:
-    from clio_agent.arc.live import _MemoryStore
     from clio_agent.arc.memory import ARCMemory
 
-    return ARCMemory(data_dir=str(tmp_path / name), store=_MemoryStore())
+    # Acceptance and recipient-input receipts require the real confirmed Core writer.
+    # The test namespace fixture isolates and clears this ordinary ARC instance.
+    return ARCMemory(data_dir=str(tmp_path / name))
 
 
 def _build(tmp_path: Path, name: str, agent: Any) -> Any:
@@ -320,7 +329,7 @@ def _assert_matches_golden(name: str, trace: dict[str, Any]) -> None:
     )
     golden = json.loads(golden_path.read_text(encoding="utf-8"))
     assert trace == golden, (
-        f"wire behavior diverged from the develop golden for {name!r}: "
+        f"wire behavior diverged from the recorded baseline for {name!r}: "
         "same turn must emit the identical SSE event sequence and persist "
         "the identical assistant parts"
     )
@@ -331,15 +340,17 @@ def _assert_matches_golden(name: str, trace: dict[str, Any]) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_streamed_text_turn_matches_develop_golden(tmp_path: Path, monkeypatch: Any) -> None:
+def test_streamed_text_turn_matches_recorded_wire_golden(tmp_path: Path, monkeypatch: Any) -> None:
     _assert_matches_golden("streamed_text_turn", scenario_streamed_text_turn(tmp_path, monkeypatch))
 
 
-def test_tool_call_turn_matches_develop_golden(tmp_path: Path, monkeypatch: Any) -> None:
+def test_tool_call_turn_matches_recorded_wire_golden(tmp_path: Path, monkeypatch: Any) -> None:
     _assert_matches_golden("tool_call_turn", scenario_tool_call_turn(tmp_path, monkeypatch))
 
 
-def test_multi_part_thinking_turn_matches_develop_golden(tmp_path: Path, monkeypatch: Any) -> None:
+def test_multi_part_thinking_turn_matches_recorded_wire_golden(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
     _assert_matches_golden(
         "multi_part_thinking_turn", scenario_multi_part_thinking_turn(tmp_path, monkeypatch)
     )
@@ -469,6 +480,7 @@ def test_activated_blueprint_catalog_agent_id_executes_declared_root(tmp_path: P
     )
     assert assistant["stop_reason"] != "error", assistant.get("error_info")
     runtime = (assistant.get("metadata") or {}).get("agent_runtime")
+    assert isinstance(runtime, dict)
     assert runtime["agent_id"] == "main"
     assert runtime["agent_blueprint"]["id"] == DEFAULT_AGENT_BLUEPRINT_ID
 
@@ -651,9 +663,11 @@ def test_transcript_registry_closes_before_persist_can_release_the_gil(
     observed: list[bool] = []
     real_persist = turn_finalize_module.persist_finalized_message
 
-    def _record_registry_state_then_persist(app: Any, session_id: str, message: Any) -> None:
+    def _record_registry_state_then_persist(
+        app: Any, session_id: str, message: Any, **kwargs: Any
+    ) -> bool:
         observed.append(app.state.turn_transcripts.get(session_id) is None)
-        real_persist(app, session_id, message)
+        return real_persist(app, session_id, message, **kwargs)
 
     monkeypatch.setattr(
         turn_finalize_module, "persist_finalized_message", _record_registry_state_then_persist

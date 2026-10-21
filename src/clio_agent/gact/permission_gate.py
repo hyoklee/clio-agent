@@ -68,6 +68,7 @@ from clio_agent.gact import permission_timeout
 from clio_agent.gact.cancellation_check import (
     make_cancellation_checker as _make_cancellation_checker,  # noqa: F401 - compatibility export
 )
+from clio_agent.gact.folder_access import bind_folder_gate
 from clio_agent.gact.permission_context import (
     _external_mcp_permission_context as _external_mcp_permission_context,
 )
@@ -81,6 +82,9 @@ from clio_agent.gact.permission_context import (
     _normalize_mcp_tool_annotations as _normalize_mcp_tool_annotations,
 )
 from clio_agent.gact.permission_delivery import publish_permission_event
+from clio_agent.gact.permission_delivery import (
+    record_resolved_permission as _record_resolved_permission,
+)
 from clio_agent.gact.planning import active_playbook_allowed_tools
 from clio_agent.gact.runtime.globals import _resolve_tool_session
 from clio_agent.gact.runtime.grant_resolver import (
@@ -265,51 +269,6 @@ def _policy_detail_for_tool(
     )
 
 
-def _record_resolved_permission(
-    app: "FastAPI",
-    *,
-    session_id: str,
-    tool_name: str,
-    args: Mapping[str, Any],
-    status: str,
-    action: str,
-    summary: str,
-    reason: str,
-) -> str:
-    pid = f"perm_{uuid.uuid4().hex[:12]}"
-    now_iso = datetime.now(timezone.utc).isoformat()
-    row = {
-        "id": pid,
-        "session_id": session_id,
-        "tool_call": {
-            "tool_name": tool_name,
-            "input": dict(args),
-        },
-        "summary": summary,
-        "created_at": now_iso,
-        "status": status,
-        "action": action,
-        "resolved_at": now_iso,
-        "reason": reason,
-    }
-    if hasattr(app.state, "permissions"):
-        app.state.permissions[pid] = row
-        enforce_dict_bound(app, app.state.permissions, "permissions", session_id=session_id)
-    if hasattr(app.state, "bus"):
-        publish_permission_event(
-            app,
-            "permission.resolved",
-            owner_session_id=session_id,
-            payload={
-                "permission_id": pid,
-                "action": action,
-                "session_id": session_id,
-                "reason": reason,
-            },
-        )
-    return pid
-
-
 def _direct_permission_denied(
     *,
     tool_name: str,
@@ -396,6 +355,21 @@ def resolve_permission(
     grantor: str = GRANTOR_USER,
     intercept: Mapping[str, Any] | None = None,
 ) -> dict[str, Any] | None:
+    """Resolve a request, serializing folder grants against duplicate responses."""
+    from clio_agent.gact.folder_access import FOLDER_RESOLUTION_LOCK
+
+    with FOLDER_RESOLUTION_LOCK:
+        return _resolve_permission(app, pid, action, grantor=grantor, intercept=intercept)
+
+
+def _resolve_permission(
+    app: "FastAPI",
+    pid: str,
+    action: str,
+    *,
+    grantor: str = GRANTOR_USER,
+    intercept: Mapping[str, Any] | None = None,
+) -> dict[str, Any] | None:
     """Resolve one pending permission row and wake any blocked bridge thread.
 
     Lifted verbatim from ``routes/permissions.py::respond_permission`` (#1044) so the
@@ -415,9 +389,23 @@ def resolve_permission(
     (idempotent — a double-resolve is a no-op, matching the route's prior behaviour).
     """
 
+    from clio_agent.gact.hooks.turn_approval import SOURCE, respond
+
+    history = getattr(app.state, "task_history", None)
+    task = history.task_snapshot(pid) if history is not None else None
+    if task is not None and task.kind == "Question" and task.tool == SOURCE:
+        return respond(app, task, action, grantor)
     row = app.state.permissions.get(pid)
+    if row is not None and row.get("kind") == "turn_defer":
+        raise ValueError(
+            "Legacy hook approval lacks its verified Core input binding; gate retained"
+        )
     if row is None or row.get("status") != "pending":
         return None
+    from clio_agent.gact.folder_access import FOLDER_ACCESS_KIND, apply_folder_permission
+
+    if row.get("kind") == FOLDER_ACCESS_KIND:
+        apply_folder_permission(app, row, action, grantor)
     row["status"] = "resolved"
     row["action"] = action
     row["resolved_at"] = datetime.now(timezone.utc).isoformat()
@@ -430,7 +418,11 @@ def resolve_permission(
             row["resolution_result"] = intercept.get("result")
         elif isinstance(intercept.get("input"), Mapping):
             row["resolution_input"] = dict(intercept["input"])
-    policy = _append_permission_policy_from_resolution(app, row=row, action=action)
+    policy = (
+        None
+        if row.get("kind") == FOLDER_ACCESS_KIND
+        else _append_permission_policy_from_resolution(app, row=row, action=action)
+    )
     if policy is not None:
         row["policy"] = policy
         # iowarp/clio-agent#759: sticky grants must survive a server restart, so flush
@@ -452,14 +444,6 @@ def resolve_permission(
     evt = app.state.permission_events.pop(pid, None)
     if evt is not None:
         evt.set()
-    # P2.6: a TURN-ending defer (Stop / UserPromptSubmit) holds NO thread — it suspended
-    # the session. Resolving its row stages the deferred-resume (approve → new turn /
-    # release; deny → tighten) via the owner module. Runs exactly once (this body only
-    # runs on the pending→resolved transition, which is idempotent above).
-    if row.get("kind") == "turn_defer":
-        from clio_agent.gact.hooks.defer import resume_turn_defer  # noqa: PLC0415
-
-        resume_turn_defer(app, row, action)
     # B5 #979.8: surface the resolution on the highway/trace too so the request→resolution
     # lifecycle is consistently captured AND SSE-served. Guarded — a resolution must never
     # fail on an emit.
@@ -500,6 +484,7 @@ def resolve_permission(
             "action": action,
             "session_id": owner_session_id,
             "grantor": grantor,
+            **({"reason": row["reason"]} if row.get("reason") else {}),
         },
     )
     return row
@@ -508,14 +493,11 @@ def resolve_permission(
 def _make_permission_gate(app: "FastAPI"):
     """Build a callable suitable for MCPToolBridge.permission_gate.
 
-    Provably read-only calls (:func:`is_read_only`) fast-allow as the FIRST
-    branch — before the plan/architect lock — so no mode ever gates a read
-    (structural invariant, #1032). Every other call proceeds to the plan/architect
-    lock, the policy match, and, absent a policy, registers a permission row,
-    publishes ``permission.requested`` into the EventBus, and blocks on a
-    ``threading.Event`` with a generous timeout, returning "allow"/"deny" from the
-    user's resolution. A missing session fails closed immediately; timeouts default
-    to deny — fail-safe.
+    Bind the session's workspace before resolving paths. Reads inside permitted
+    folders fast-allow before mode or action hooks (#1032). External folder access
+    requires a separate human grant. Other calls consult modes and policies, then
+    publish a pending permission and await resolution. Missing sessions and expired
+    requests fail closed.
     """
 
     def gate(
@@ -530,13 +512,21 @@ def _make_permission_gate(app: "FastAPI"):
         from clio_agent.gact.hooks import stash_pre_tool_intercept  # noqa: PLC0415
 
         stash_pre_tool_intercept(None)
-        # #1032: reads are NEVER gated. A provably read-only call (MCP
+        # #1032: reads inside permitted territory need no action approval. A provably read-only call (MCP
         # readOnlyHint annotation OR a static catalog ``read`` tag) fast-allows
         # here as the FIRST branch — before any hook or the plan/architect lock —
-        # the structural invariant that no mode, policy, or hook can gate a read.
+        # no mode or action hook can gate that read. New folder access still
+        # requires a human boundary decision, independently of action approval.
         # (P2.2 #1070 fixes the old ordering bug where the pre_tool hook fired
         # BEFORE this branch and could gate a read-only call.)
+        from clio_agent.gact.folder_access import request_folder_access, requested_folders
+
+        folders = requested_folders(name, args)
         if is_read_only("tool", name, args, context):
+            if folders:
+                sid, current = _resolve_tool_session(app)
+                if sid:
+                    return request_folder_access(app, sid, current, name, args, folders)
             return "allow"
         subject = (
             "external MCP tool"
@@ -546,6 +536,7 @@ def _make_permission_gate(app: "FastAPI"):
         # Prefer the session currently driving the turn. Recency is
         # only a fallback for truly out-of-band tool calls.
         sid, current = _resolve_tool_session(app)
+        cancelled = app.state.cancel_events.get(sid)
         if denial := _spotter_clearance(
             app, sid, current, name, args, subject, _record_resolved_permission
         ):
@@ -616,6 +607,11 @@ def _make_permission_gate(app: "FastAPI"):
         # var (single-fire: PreToolUse dispatched exactly once, here) — the interceptor
         # is a pure consumer that reads it after this gate returns "allow".
         stash_pre_tool_intercept(hook_outcome)
+        if hook_outcome.is_modify:
+            args = dict(hook_outcome.modify_input or {})
+            folders = requested_folders(name, args)
+        elif hook_outcome.is_synthesize:
+            folders = []  # no file operation will run
         # P1.1 #1063: the plan/architect/read-only-side lock is a set of built-in plan_acl rows the
         # ONE resolver evaluates — the policy mode (plan, architect, or read_only for a side session)
         # makes ``resolve`` deny every non-read tool (@40); plan keeps its ``<plans>/*.md`` carve-out
@@ -645,6 +641,8 @@ def _make_permission_gate(app: "FastAPI"):
             # of the generic executor string. The typed audit reason above stays ``policy_deny``;
             # a non-plan (user-policy) deny returns an empty message and the plain "deny" string.
             return DenyDecision(plan_deny_message) if plan_deny_message else "deny"
+        if folders:
+            return request_folder_access(app, sid, current, name, args, folders)
         if policy_action in {"allow", "allow_session", "allow_workspace"}:
             _record_resolved_permission(
                 app,
@@ -704,7 +702,11 @@ def _make_permission_gate(app: "FastAPI"):
                 "tool_name": name,
                 "input": dict(args),
             },
-            "summary": f"{subject} call: {name}",
+            "summary": (
+                str(context["summary"])[:500]
+                if context and context.get("kind") == "native" and context.get("summary")
+                else f"{subject} call: {name}"
+            ),
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "pending",
         }
@@ -717,8 +719,9 @@ def _make_permission_gate(app: "FastAPI"):
         # the ledger attributes the ask to the ai-review mode (never a silent default).
         if approval_mode == "ai-review" and policy_action != "ask":
             row["reason"] = REASON_AI_REVIEW_REVIEWER_PENDING
-        app.state.permissions[pid] = row
+        # A responder may act as soon as the pending row is visible.
         app.state.permission_events[pid] = evt
+        app.state.permissions[pid] = row
         enforce_dict_bound(app, app.state.permissions, "permissions", session_id=sid)
         publish_permission_event(
             app,
@@ -748,12 +751,13 @@ def _make_permission_gate(app: "FastAPI"):
             # reason and the call falls through to the human wait below (fail-safe).
         # Block the bridge thread until POST /v1/permissions/{pid}
         # sets the event (or we time out).
-        if not evt.wait(timeout=permission_timeout.PERMISSION_REQUEST_TIMEOUT_S):
-            if expired := permission_timeout.expire_permission(app, pid, row, tool_name=name):
-                return expired  # typed, published + logged; the model is told it timed out
+        if decision := permission_timeout.wait_for_permission(
+            app, pid, row, evt, tool_name=name, cancelled=cancelled
+        ):
+            return decision
         action = row.get("action", "deny")
         if action in {"allow", "allow_session", "allow_workspace"}:
             return "allow"
         return "deny"
 
-    return gate
+    return bind_folder_gate(app, gate)

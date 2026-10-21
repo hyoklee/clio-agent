@@ -1,0 +1,142 @@
+{
+  "at": "2026-10-14T20:51:24.376190+00:00",
+  "parent": "9486991a47eb9757476b438572d45c54730c2f74",
+  "checks": [
+    {
+      "command": [
+        "ruff",
+        "check",
+        "--fix",
+        "src/clio_agent/arc/context_restore.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/agents/clio_react.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_identity.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversation_projection.py",
+        "src/clio_agent/gact/conversation_recovery.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/plan_exit_resolution.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/question_surface.py",
+        "src/clio_agent/gact/questions.py",
+        "src/clio_agent/gact/task_operations.py",
+        "src/clio_agent/gact/task_publication.py",
+        "src/clio_agent/gact/workflows.py"
+      ],
+      "exit": 0,
+      "output": "All checks passed!\n"
+    },
+    {
+      "command": [
+        "ruff",
+        "format",
+        "src/clio_agent/arc/context_restore.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/agents/clio_react.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_identity.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversation_projection.py",
+        "src/clio_agent/gact/conversation_recovery.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/plan_exit_resolution.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/question_surface.py",
+        "src/clio_agent/gact/questions.py",
+        "src/clio_agent/gact/task_operations.py",
+        "src/clio_agent/gact/task_publication.py",
+        "src/clio_agent/gact/workflows.py"
+      ],
+      "exit": 0,
+      "output": "1 file reformatted, 17 files left unchanged\n"
+    },
+    {
+      "command": [
+        "mypy",
+        "--platform",
+        "linux",
+        "src/clio_agent/arc/context_restore.py",
+        "src/clio_agent/arc/task_types.py",
+        "src/clio_agent/gact/agents/clio_react.py",
+        "src/clio_agent/gact/agents/clio_react_record.py",
+        "src/clio_agent/gact/agents/context_identity.py",
+        "src/clio_agent/gact/conversation_assignments.py",
+        "src/clio_agent/gact/conversation_controls.py",
+        "src/clio_agent/gact/conversation_projection.py",
+        "src/clio_agent/gact/conversation_recovery.py",
+        "src/clio_agent/gact/conversations.py",
+        "src/clio_agent/gact/native_task_settlement.py",
+        "src/clio_agent/gact/plan_exit_resolution.py",
+        "src/clio_agent/gact/question_events.py",
+        "src/clio_agent/gact/question_surface.py",
+        "src/clio_agent/gact/questions.py",
+        "src/clio_agent/gact/task_operations.py",
+        "src/clio_agent/gact/task_publication.py",
+        "src/clio_agent/gact/workflows.py"
+      ],
+      "exit": 0,
+      "output": "Success: no issues found in 18 source files\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_task_replacement_removal.py"
+      ],
+      "exit": 0,
+      "output": "Task replacement removal guard: 0 violations\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_file_size.py"
+      ],
+      "exit": 0,
+      "output": "OK: no file under src/clio_agent exceeds its ratchet baseline (cap 800 for new files).\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_no_class_in_function.py"
+      ],
+      "exit": 0,
+      "output": "OK: no class-in-function under src/clio_agent exceeds its ratchet baseline.\n"
+    },
+    {
+      "command": [
+        "python",
+        "scripts/check_noqa_swallows.py"
+      ],
+      "exit": 0,
+      "output": "noqa-hidden swallows over C:\\Users\\jaime\\.codex\\worktrees\\agent-facing-async-tasks\\clio-agent\\src\\clio_agent: 493 in 201 files\n"
+    }
+  ],
+  "behavioral_tests_executed": 0,
+  "runtime_acceptance": false,
+  "gact": "ce99316446848ddd269b1bf782ff2c87cc9db14a",
+  "marketplace": "9257bba5953b012ba796299df4c633e698dbaddc",
+  "source_sha256": {
+    "src/clio_agent/arc/context_restore.py": "a500c1aab599b101744a7118239bebaa86f39ec6a6f2a186334c4fb1e63d1268",
+    "src/clio_agent/arc/task_types.py": "f8f5928d0bd2e95ed286dd3e026ae3da089a30b828f0a8a1db3b19898fcc05c3",
+    "src/clio_agent/gact/agents/clio_react.py": "08b7e2ca679d24b6546c950974d14cbb6bf217453e6e8129a488ac6be27b8137",
+    "src/clio_agent/gact/agents/clio_react_record.py": "6782883ccfd7b716eac3c9dc6eab185a412746c32e11e633e6f62d162aee966b",
+    "src/clio_agent/gact/agents/context_identity.py": "75c67a0ccb93a7ee374f35081f88e1c20989a865a14655ec06cdcc60faf58a66",
+    "src/clio_agent/gact/conversation_assignments.py": "30fb96a990eeda4f191930a717fd47b0610a52958ba003c3014b0cad5546097a",
+    "src/clio_agent/gact/conversation_controls.py": "1d98ee91f6f4b1c6e0575af34f34255ab4c9d9869571a3cef2c496feae7aff7d",
+    "src/clio_agent/gact/conversation_projection.py": "fcfc985b6976734d3ac997c761d1123341b114b9d1d82ea7ddb18b01e34222f8",
+    "src/clio_agent/gact/conversation_recovery.py": "ef46d3e3e6e1600c5098ec4314c943b31ffd632cc866a7c86bd8483f23c3ea9b",
+    "src/clio_agent/gact/conversations.py": "70b1a7dfa5ba7b1468ad07a7e3d94a98b9fa1a9982e15b0f28571738c29c1ed5",
+    "src/clio_agent/gact/native_task_settlement.py": "70208e129d5db6a42d8b0edc157d9e0533d6cfe4295b7f29803d00369e976c34",
+    "src/clio_agent/gact/plan_exit_resolution.py": "7f49e3e4aca83b07a714d6077ecb782c4698b6760a1a3514bbc20c971427b730",
+    "src/clio_agent/gact/question_events.py": "a708d97f1f779d05e546223f55aa3159f482b054db2cc16fab9cc938be1cddfe",
+    "src/clio_agent/gact/question_surface.py": "a0281a380348dad9cc8193d0a4c2c8fe202be2b79c855d6efcedd8e830e79407",
+    "src/clio_agent/gact/questions.py": "122ab53174e427ea2b8f741fd836fea6c0b59aaedb47b6296f480154f6627d10",
+    "src/clio_agent/gact/task_operations.py": "4484965330081ad857be445ade5df959d0bd18730ea9a2dc5daa500fe6ab0113",
+    "src/clio_agent/gact/task_publication.py": "bc5eb26705e7f30d3030b4fa686d90360da5bf335e581444e0e2162975e5eba4",
+    "src/clio_agent/gact/workflows.py": "0b77266e7c84988d6a053bf6c33cab3761c2824ec1b83292990fee3b38216ed1"
+  }
+}

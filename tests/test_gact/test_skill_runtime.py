@@ -10,6 +10,7 @@ The default-registry root expert auto-declares workspace skills.
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -29,6 +30,8 @@ from clio_agent.gact.skills import SkillCatalog
 from clio_agent.gact.types import AgentDef
 
 from .a2ui_catalog_binding import bind_builtin_catalogs
+
+pytestmark = pytest.mark.usefixtures("clio_core_plane")
 
 BODY = "STEP ONE: inspect. STEP TWO: judge. SECRET_PROCEDURE_MARKER."
 
@@ -71,7 +74,6 @@ def test_load_records_exact_procedure_and_bundled_body_at_load_time(
 ) -> None:
     import hashlib
 
-    from clio_agent.gact import context
     from clio_agent.gact.runtime import globals as runtime_globals
 
     recorded: list[dict[str, Any]] = []
@@ -79,8 +81,6 @@ def test_load_records_exact_procedure_and_bundled_body_at_load_time(
     def capture(*args: Any, **kwargs: Any) -> None:
         recorded.append(kwargs["payload"])
 
-    monkeypatch.setattr(context, "active_app", lambda: object())
-    monkeypatch.setattr(context, "active_session_id", lambda: "session")
     monkeypatch.setattr(runtime_globals, "_emit_semantic_event", capture)
     tool = build_load_skill_tool(_agent(pack), _runtime(pack))
     tool.func(skill_id="quality-rubric")
@@ -90,6 +90,8 @@ def test_load_records_exact_procedure_and_bundled_body_at_load_time(
     for row in recorded:
         assert row["content_sha256"] == hashlib.sha256(row["content"].encode()).hexdigest()
         assert row["size"] == len(row["content"].encode())
+        assert row["skill_description"] == "Judge data quality"
+        assert Path(row["skill_directory"]).samefile(pack / "skills/quality-rubric")
     (pack / "skills/quality-rubric/references/checklist.md").write_text(
         "later edit", encoding="utf-8"
     )
@@ -245,6 +247,8 @@ def test_load_skill_declares_typed_structured_content_for_body(pack: Path, monke
     assert shape["skill_id"] == "quality-rubric"
     assert shape["scope"] == "pack"
     assert shape["lines"] == 1
+    assert shape["skill_description"] == "Judge data quality"
+    assert Path(shape["skill_directory"]).samefile(pack / "skills/quality-rubric")
     assert "file" not in shape
 
 
@@ -269,6 +273,39 @@ def test_load_skill_declares_typed_structured_content_for_bundled_file(
     )
     assert shape["skill_id"] == "quality-rubric"
     assert shape["file"] == "references/checklist.md"
+    assert Path(shape["file_paths"]["references/checklist.md"]).samefile(
+        pack / "skills/quality-rubric/references/checklist.md"
+    )
+
+
+def test_reference_paths_identify_the_actual_extra_root_for_batched_fragments(
+    pack: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    declared: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "clio_agent.gact.agents.tool_instrumentation.declare_structured_content",
+        lambda value: declared.append(dict(value)),
+    )
+    extra = pack / "shared-catalog"
+    extra.mkdir()
+    (extra / "catalog.json").write_text(
+        json.dumps({"components": {"Chart": {"type": "object"}, "Map": {"type": "object"}}}),
+        encoding="utf-8",
+    )
+    runtime = _runtime(pack)
+    resolution = runtime.resolutions["quality-rubric"]
+    assert resolution.skill is not None
+    runtime.resolutions["quality-rubric"] = replace(
+        resolution, skill=replace(resolution.skill, extra_dirs=(str(extra),))
+    )
+    tool = build_load_skill_tool(_agent(pack), runtime)
+    files = ["catalog.json#/components/Chart", "catalog.json#/components/Map"]
+    body = tool.func(skill_id="quality-rubric", files=files)
+    assert "File 1/2" in body and "File 2/2" in body
+    assert set(declared[0]["file_paths"]) == set(files)
+    assert all(
+        Path(path).samefile(extra / "catalog.json") for path in declared[0]["file_paths"].values()
+    )
 
 
 # ---- tool-less experts get bodies -------------------------------------------------
@@ -330,10 +367,12 @@ def test_default_root_auto_declares_workspace_skills_on_real_runtime_rows(
         "user-skill",
         "connect-data",
         "create-dashboard",
+        "create-diagram",
         "planning",
         "present-interactive-analysis",
         "review-visual-presentation",
         "update-models",
+        "work-with-ndp",
         "work-with-pdfs",
         "work-with-presentations",
         "work-with-spreadsheets",
@@ -833,6 +872,7 @@ def test_root_agent_declares_one_catalog_skill_line_per_declared_catalog_in_orde
         "a2ui-catalog-basic",
         "present-interactive-analysis",
         "review-visual-presentation",
+        "create-diagram",
         "create-dashboard",
     ]
     lines = rt.prompt_block.splitlines()
@@ -909,6 +949,7 @@ def test_pack_blueprint_keeps_its_catalog_and_shared_presentation_procedures(
         "a2ui-catalog-minimal",
         "present-interactive-analysis",
         "review-visual-presentation",
+        "create-diagram",
         "create-dashboard",
     ]
 
@@ -1031,6 +1072,30 @@ def test_catalog_skill_component_file_matches_the_validated_catalog(tmp_path: Pa
 
     assert '"const": "Button"' in out
     assert "common_types.json#/$defs/Action" in out
+
+
+def test_mermaid_component_lookup_returns_its_authoring_guide_in_the_same_call(
+    tmp_path: Path,
+) -> None:
+    """Syntax guidance reaches the model without loading a second skill/manual."""
+    from clio_agent.gact.a2ui_catalogs.builtin import load_builtin_catalogs
+
+    app = build_app(sessions_path=tmp_path / "sessions.json")
+    session = app.state.sessions.create(workspace_id="ws_default", title="diagram")
+    bind_builtin_catalogs(app, session.id)
+    root = AgentDef(id="root", title="Root", module={"kind": "react"})
+    runtime = skill_runtime_for_agent(app, root, session_id=session.id)
+    tool = build_load_skill_tool(root, runtime)
+    loaded = tool.func(
+        skill_id="a2ui-catalog-clio-workspace",
+        file="catalog.json#/components/clio.mermaid.v1",
+    )
+    decoded, _ = json.JSONDecoder().raw_decode(loaded)
+    _, catalog = load_builtin_catalogs()
+    assert (
+        decoded["x-clio-authoring"]
+        == catalog.file["components"]["clio.mermaid.v1"]["x-clio-authoring"]
+    )
 
 
 def test_catalog_skill_basic_exposes_both_sidecar_and_catalog_file_roots(

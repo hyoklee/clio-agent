@@ -37,6 +37,40 @@ def _block(calls: list[dict[str, object]]) -> str:
     return f"{FENCE}\n{json.dumps(calls)}\n```"
 
 
+@pytest.mark.parametrize("newline,indent", [("\n", ""), ("\r\n", "  ")])
+def test_multiple_tool_blocks_never_silently_drop_earlier_calls(newline: str, indent: str) -> None:
+    """The observed Claude spawn/read/ask response must execute none of its blocks."""
+    names = ["spawn_agent_task", "fs_read_file", "ask_user"]
+    blocks = [
+        indent + _block([{"name": name, "arguments": {}}]).replace("\n", newline) for name in names
+    ]
+    reply = newline.join(["I will start the work.", *blocks, "All work was accepted."])
+    parsed = split_reply(reply, call_prefix="observed", available_tools=names)
+    assert parsed.text == "I will start the work."
+    assert len(parsed.calls) == 1
+    assert parsed.calls[0].name == INVALID_TOOL_CALL
+    assert "multiple tool-call blocks" in parsed.calls[0].input["error"]
+    assert "no operation was submitted" in parsed.calls[0].input["error"]
+    assert len(parsed.calls[0].input["block"]) <= 4000
+    assert all(name in parsed.calls[0].input["block"] for name in names)
+
+
+def test_one_block_retains_every_parallel_call_in_its_original_order() -> None:
+    """Rejecting multiple blocks must preserve the supported parallel-call contract."""
+    names = ["spawn_agent_task", "fs_read_file", "ask_user"]
+    parsed = split_reply(
+        "Starting.\n"
+        + _block(
+            [{"name": name, "arguments": {"value": index}} for index, name in enumerate(names)]
+        ),
+        call_prefix="parallel",
+        available_tools=names,
+    )
+    assert parsed.text == "Starting."
+    assert [call.name for call in parsed.calls] == names
+    assert [call.input for call in parsed.calls] == [{"value": index} for index in range(3)]
+
+
 def test_system_carries_the_rules_and_every_tool_schema() -> None:
     system = render_system("You are clio.", [SEARCH])
     assert system.startswith("You are clio.\n\n# How you act")
@@ -111,6 +145,110 @@ def test_orphaned_call_list_is_rejected_without_executing_it() -> None:
     assert not split.text
 
 
+@pytest.mark.parametrize("size", [20, 5000])
+def test_orphaned_single_call_is_a_bounded_error_not_an_operation(size: int) -> None:
+    """A live fresh-restart reply had a closing fence but no opening fence or list."""
+    raw = (
+        json.dumps({"name": "restart_agent", "arguments": {"target": "x" * size, "fresh": True}})
+        + "\n```"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"restart_agent"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw[:4000]
+    assert "opening" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        pytest.param('{"name":"search","arguments":{}}\n```', set(), id="no-tools"),
+        pytest.param('{"name":"other","arguments":{}}\n```', {"search"}, id="unknown"),
+        pytest.param(
+            '{"name":"search","arguments":{},"result":"data"}\n```',
+            {"search"},
+            id="data",
+        ),
+        pytest.param('{"name":"search","arguments":[]}\n```', {"search"}, id="arguments"),
+        pytest.param('Example: {"name":"search","arguments":{}}\n```', {"search"}, id="example"),
+        pytest.param(
+            '```json\n{"name":"search","arguments":{}}\n```', {"search"}, id="fenced-example"
+        ),
+        pytest.param(
+            '{"name":"search","arguments":{}}\n```\nMore text.', {"search"}, id="trailing-text"
+        ),
+    ],
+)
+def test_orphaned_single_call_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Reject only the complete declared call shape, never data or examples."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
+def test_corrupted_tool_fence_is_a_protocol_error_without_submitting_work() -> None:
+    """The live Haiku reply replaced its opening fence with an underscore."""
+    raw = '_tool_calls\n[{"name":"spawn_agent_task","arguments":{"agent":"worker"}}]\n```'
+    split = split_reply(raw, call_prefix="t", available_tools={"spawn_agent_task"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "opening" in str(call.input["error"])
+    assert not split.text
+
+
+def test_corrupted_delimiters_around_prose_are_a_bounded_error_not_a_call() -> None:
+    """A live Haiku reply put a promise, rather than calls, inside broken delimiters."""
+    raw = (
+        "_tool_calls\nI'll spawn the worker once with the assignment as specified. "
+        "The sentinel read happens in a separate step after the handle comes back.\n\n_tool_calls"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"spawn_agent_task"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "delimiters" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ("_tool_calls\nI'll spawn the worker.\n_tool_calls", set()),
+        ("_tool_calls\nI'll spawn the worker.", {"spawn_agent_task"}),
+        ("I'll spawn the worker.\n_tool_calls", {"spawn_agent_task"}),
+        ("Example:\n_tool_calls\nI'll spawn the worker.\n_tool_calls", {"spawn_agent_task"}),
+        ("```text\n_tool_calls\nI'll spawn the worker.\n_tool_calls\n```", {"spawn_agent_task"}),
+        ("_tool_calls\nI'll spawn the worker.\n_tool_calls\nMore text.", {"spawn_agent_task"}),
+        ("_tool_calls is not a valid tool fence.", {"spawn_agent_task"}),
+    ],
+)
+def test_corrupted_delimiter_examples_and_partial_shapes_remain_answers(
+    raw: str, tools: set[str]
+) -> None:
+    """Only a complete unquoted broken wrapper is treated as malformed protocol."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('_tool_calls\n[{"name":"search","arguments":{}}]\n```', set()),
+        ('_tool_calls\n[{"name":"other","arguments":{}}]\n```', {"search"}),
+        ('_tool_calls\n[{"name":"search","arguments":{},"result":"data"}]\n```', {"search"}),
+        ('_tool_calls\n[{"name":"search","arguments":{}}]', {"search"}),
+        ('Example:\n_tool_calls\n[{"name":"search","arguments":{}}]\n```', {"search"}),
+        ('```text\n_tool_calls\n[{"name":"search","arguments":{}}]\n```', {"search"}),
+        ('_tool_calls\n[{"name":"search","arguments":{}}]\n```\nMore text.', {"search"}),
+    ],
+)
+def test_corrupted_fence_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only the whole observed shape for available tools can produce protocol feedback."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
 @pytest.mark.parametrize(
     "reply",
     [
@@ -130,6 +268,177 @@ def test_json_answers_and_tool_examples_are_not_reinterpreted(reply: str) -> Non
 def test_orphaned_call_shape_without_available_tools_remains_an_answer() -> None:
     raw = '[{"name":"search","arguments":{}}]\n```'
     split = split_reply(raw, call_prefix="t")
+    assert (split.text, split.calls) == (raw, [])
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_bare_tool_calls_envelope_is_a_protocol_error_not_an_operation(count: int) -> None:
+    """A live Claude restart ended as unfenced call-shaped JSON instead of a call."""
+    raw = json.dumps(
+        {
+            "tool_calls": [
+                {"name": "restart_agent", "arguments": {"target": "task_old", "fresh": False}}
+            ]
+            * count
+        }
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"restart_agent"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "fenced" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('{"tool_calls":[{"name":"search","arguments":{}}]}', set()),
+        ('{"tool_calls":[{"name":"other","arguments":{}}]}', {"search"}),
+        ('{"tool_calls":[]}', {"search"}),
+        ('{"tool_calls":[{"name":"search","arguments":{}}],"result":"data"}', {"search"}),
+        ('{"tool_calls":[{"name":"search","arguments":{},"result":"data"}]}', {"search"}),
+        ('{"tool_calls":[{"name":"search","arguments":[]}]}', {"search"}),
+        ('Example: {"tool_calls":[{"name":"search","arguments":{}}]}', {"search"}),
+        ('```json\n{"tool_calls":[{"name":"search","arguments":{}}]}\n```', {"search"}),
+    ],
+)
+def test_json_envelope_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only the entire reserved envelope for declared tools is a protocol error."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
+@pytest.mark.parametrize("size", [20, 5000])
+def test_bare_declared_call_object_is_a_bounded_error_not_an_operation(size: int) -> None:
+    """The live Haiku cancellation spawn returned a call object without its fence/list."""
+    raw = json.dumps(
+        {"name": "spawn_agent_task", "arguments": {"agent": "worker", "task": "x" * size}}
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"spawn_agent_task"})
+    assert len(split.calls) == 1
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw[:4000]
+    assert "fenced" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        pytest.param('{"name":"search","arguments":{}}', set(), id="no-tools"),
+        pytest.param('{"name":"other","arguments":{}}', {"search"}, id="unknown-tool"),
+        pytest.param('{"name":"search","arguments":{},"result":"data"}', {"search"}, id="data"),
+        pytest.param('{"name":"search"}', {"search"}, id="missing-arguments"),
+        pytest.param('{"name":"search","arguments":[]}', {"search"}, id="non-object-arguments"),
+        pytest.param('Example: {"name":"search","arguments":{}}', {"search"}, id="example"),
+        pytest.param(
+            '```json\n{"name":"search","arguments":{}}\n```', {"search"}, id="fenced-example"
+        ),
+        pytest.param(
+            '{"name":"search","arguments":{}} trailing text', {"search"}, id="trailing-text"
+        ),
+    ],
+)
+def test_json_call_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only a whole exact call object for a declared tool requires protocol correction."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
+@pytest.mark.parametrize("count", [1, 2])
+def test_xml_tool_calls_container_is_a_protocol_error_not_an_operation(count: int) -> None:
+    """The actual Haiku parent used XML delimiters around an otherwise valid call list."""
+    raw = (
+        "<tool_calls>\n"
+        + json.dumps(
+            [
+                {
+                    "name": "message_agent",
+                    "arguments": {"target": "sess_child", "message": "held", "wake": False},
+                }
+            ]
+            * count
+        )
+        + "\n</tool_calls>"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"message_agent"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "XML" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize("quote", ['"', "'"], ids=["double-quotes", "single-quotes"])
+def test_xml_parameter_call_list_is_a_protocol_error_not_an_operation(quote: str) -> None:
+    """Live Haiku emitted a complete parameter envelope without any invoke closer."""
+    raw = (
+        f"<parameter name={quote}tool_calls{quote}>\n"
+        '[{"name":"observe_tasks","arguments":{"tasks":["task_actual"],"notify":true}}]'
+        "\n</parameter>"
+    )
+    split = split_reply(raw, call_prefix="t", available_tools={"observe_tasks"})
+    [call] = split.calls
+    assert call.name == INVALID_TOOL_CALL
+    assert call.input["block"] == raw
+    assert "XML" in str(call.input["error"])
+    assert not split.text
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('<parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter>', set()),
+        ('<parameter name="tool_calls">[{"name":"other","arguments":{}}]</parameter>', {"search"}),
+        ('<parameter name="q">[{"name":"search","arguments":{}}]</parameter>', {"search"}),
+        ('<parameter name="tool_calls">{"name":"search","arguments":{}}</parameter>', {"search"}),
+        (
+            'Example: <parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter>',
+            {"search"},
+        ),
+        (
+            '```xml\n<parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter>\n```',
+            {"search"},
+        ),
+        (
+            '<parameter name="tool_calls">[{"name":"search","arguments":{}}]</parameter> trailing',
+            {"search"},
+        ),
+        ('<parameter name="tool_calls">invalid JSON</parameter>', {"search"}),
+    ],
+    ids=[
+        "no-tools",
+        "unknown-tool",
+        "data-parameter",
+        "object-data",
+        "example",
+        "fenced-example",
+        "trailing-text",
+        "invalid-json",
+    ],
+)
+def test_xml_parameter_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Only a whole reserved envelope with declared call objects requests correction."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
+    assert (split.text, split.calls) == (raw, [])
+
+
+@pytest.mark.parametrize(
+    ("raw", "tools"),
+    [
+        ('<tool_calls>[{"name":"search","arguments":{}}]</tool_calls>', set()),
+        ('<tool_calls>[{"name":"other","arguments":{}}]</tool_calls>', {"search"}),
+        ('<tool_calls>[{"name":"search","arguments":{},"result":"data"}]</tool_calls>', {"search"}),
+        ('Example: <tool_calls>[{"name":"search","arguments":{}}]</tool_calls>', {"search"}),
+        ('```xml\n<tool_calls>[{"name":"search","arguments":{}}]</tool_calls>\n```', {"search"}),
+        ('<tool_calls>[{"name":"search","arguments":{}}]</tool_calls> trailing data', {"search"}),
+    ],
+)
+def test_xml_tool_calls_data_and_examples_remain_answers(raw: str, tools: set[str]) -> None:
+    """Quoted examples and data never become executable calls or error observations."""
+    split = split_reply(raw, call_prefix="t", available_tools=tools)
     assert (split.text, split.calls) == (raw, [])
 
 

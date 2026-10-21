@@ -64,6 +64,11 @@ def outcomes(
         path = proof / "workspace" / "shell-done.txt"
         result["filesystem_output"] = path.read_text() if path.is_file() else None
         result["pass"] &= result["filesystem_output"] == "owned shell completed"
+    elif kind == "Question":
+        from _question_task_models import ANSWER
+
+        result["answers"] = [row.get("result", {}).get("answer") for row in rows]
+        result["pass"] &= result["answers"] == [ANSWER]
     elif kind in {"Indexing", "Download"} and source is not None:
         stores = list((proof / "clio-home").rglob("sources.sqlite3"))
         if len(stores) != 1 or len(rows) != 1:

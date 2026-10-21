@@ -9,6 +9,7 @@ kwargs land on the constructed ``dspy.LM``.
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -320,20 +321,17 @@ def _record(
     )
 
 
-def _parent_app(provider_id: str, model_id: str, level: str = "max", source: str = "per_message"):
-    tasks = {"task_1": SimpleNamespace(parent_turn_id="turn_parent_1")}
-    app = SimpleNamespace(
-        state=SimpleNamespace(
-            lm_config={}, agent=None, agent_task_registry=SimpleNamespace(get=tasks.get)
-        )
-    )
+def _parent_app(
+    provider_id: str, model_id: str, level: str = "max", source: str = "per_message"
+) -> Any:
+    app = SimpleNamespace(state=SimpleNamespace(lm_config={}, agent=None))
     _record(app, "turn_parent_1", provider_id, model_id, level, source)
     return app
 
 
 def _child_message() -> Message:
     message = _message(None)
-    message.metadata["agent_task_id"] = "task_1"
+    message.metadata["parent_turn_id"] = "turn_parent_1"
     return message
 
 
@@ -390,12 +388,35 @@ def test_child_does_not_inherit_a_global_level() -> None:
 
 
 def test_deleting_a_session_prunes_its_turn_records() -> None:
-    from clio_agent.gact.session_descendants import purge_session_tasks
+    from clio_agent.gact.turn_reasoning import forget_session_reasoning
 
     app = _parent_app("codex", "gpt-5.5")
-    app.state.agent_task_registry = None
-    purge_session_tasks(app, "sess_parent")  # type: ignore[arg-type]
+    forget_session_reasoning(app, "sess_parent")
     assert app.state.turn_reasoning_by_turn == {}
+
+
+@pytest.mark.usefixtures("host_agent_executor")
+def test_session_delete_route_prunes_only_its_reasoning_records(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from clio_agent.gact.app import build_app
+    from clio_agent.gact.turn_reasoning import record_turn_reasoning
+    from tests.test_gact.test_post_messages import FakeClioAgent
+
+    app = build_app(sessions_path=tmp_path / "sessions.json", agent=FakeClioAgent(answer="unused"))
+    with TestClient(app) as client:
+        deleted = client.post("/v1/sessions", json={"title": "Delete"}).json()["id"]
+        kept = client.post("/v1/sessions", json={"title": "Keep"}).json()["id"]
+        runtime = {
+            "model": {"provider_id": "codex", "model_id": "gpt-5.5"},
+            "reasoning": {"requested_level": "high", "source": "per_message"},
+        }
+        record_turn_reasoning(app, deleted, "delete-turn", runtime)
+        record_turn_reasoning(app, kept, "keep-turn", runtime)
+        response = client.delete(f"/v1/sessions/{deleted}")
+        assert response.status_code == 204, response.text
+        assert set(app.state.turn_reasoning_by_turn) == {"keep-turn"}
+        assert app.state.turn_reasoning_by_turn["keep-turn"]["session_id"] == kept
 
 
 def _lm_app(**lm_config: Any) -> Any:

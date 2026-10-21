@@ -1,16 +1,11 @@
 """Session lifecycle + ask-user/retry routes for the GACT server (#714).
 
-This concern owns the ``/v1/sessions`` lifecycle and scoped ask/retry protocol:
-
 * CRUD creates, lists, patches, and permission-gates session deletion.
 * Undo/rewind drop trailing messages and publish their lifecycle events.
 * Fork/import/export provide branching and portable JSON transfer.
-* Compaction appends one evidence-preserving checkpoint (``gact.compaction``); the
-  visible transcript is retained in full, only the MODEL-facing context shrinks.
+* Compaction retains the transcript; ``gact.compaction`` shrinks model-facing context.
 * Cancel cooperatively stops an in-flight turn and publishes its status.
-* Ask-user and retry own question resumption and recorded source-message attempts.
-Fork, question-answer, and retry share ``deps.start_background_user_turn``. Shared
-cross-concern helpers travel on :class:`GactDeps`; private helpers stay here.
+Shared route dependencies travel on :class:`GactDeps`.
 """
 
 from __future__ import annotations
@@ -33,31 +28,22 @@ from clio_agent.gact.mcp_apps import cleanup_session_mcp_apps
 from clio_agent.gact.message_marks import validated_session_metadata
 from clio_agent.gact.message_submission import _apply_a2ui_client_metadata_guards
 from clio_agent.gact.messaging import raise_on_reserved_metadata
-from clio_agent.gact.off_loop import run_off_loop
-from clio_agent.gact.permission_delivery import attended_session_id
+from clio_agent.gact.off_loop import join_off_loop, run_off_loop
 from clio_agent.gact.protocol_v3 import project_for_request, session_to_v3
 from clio_agent.gact.routes._body import NonObjectBodyError, json_body
 from clio_agent.gact.routes.dashboard_reports import register_dashboard_report_routes
 from clio_agent.gact.routes.session_a2ui_preservation import preserve_a2ui, split_preserved_a2ui
-from clio_agent.gact.routes.session_cancellation import cancel_session_state
+from clio_agent.gact.routes.session_cancellation import cancel_session_state_async
 from clio_agent.gact.routes.session_creation import register_session_creation_route
 from clio_agent.gact.routes.session_export import register_session_export_routes
 from clio_agent.gact.routes.session_fork import register_session_fork_route
-from clio_agent.gact.routes.session_question_helpers import (
-    normalize_question_options,
-    pending_user_questions,
-    question_already_resolved,
-    question_not_found,
-)
 from clio_agent.gact.routes.session_rows import filter_session_rows, rows_to_wire
 from clio_agent.gact.routes.side_sessions import register_side_session_routes
-from clio_agent.gact.runtime.globals import _new_attempt_id, _new_question_id
+from clio_agent.gact.runtime.globals import _new_attempt_id
 from clio_agent.gact.runtime.retention import enforce_dict_bound
-from clio_agent.gact.session_descendants import purge_session_tasks
 from clio_agent.gact.session_tool_output import delete_session_tool_output
+from clio_agent.gact.turn_reasoning import forget_session_reasoning
 from clio_agent.gact.types import (
-    AnswerUserQuestionRequest,
-    CreateUserQuestionRequest,
     ErrorEnvelope,
     ErrorInfo,
     ListSessionsResponse,
@@ -67,11 +53,9 @@ from clio_agent.gact.types import (
     Session,
     TurnAttempt,
     UpdateSessionRequest,
-    UserQuestion,
 )
 from clio_agent.gact.usage import reported_cost_total
-from clio_agent.gact.user_question_ledger import record_user_question
-from clio_agent.gact.user_question_resume import finish_cancelled_question, resume_answered_question
+from clio_agent.lm.session_clients import close_session_model_clients
 
 if TYPE_CHECKING:
     from clio_agent.gact.routes.deps import GactDeps
@@ -106,7 +90,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             ).model_dump(exclude_none=True),
         )
 
-    # ---- /v1/sessions CRUD -----------------------------------------
     register_session_creation_route(app)
 
     @app.patch("/v1/sessions/{sid}", response_model=Session)
@@ -115,7 +98,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
     ) -> Session | JSONResponse:
         """Update session settings and durable user navigation metadata."""
 
-        prior_approval_mode = str(getattr(app.state.sessions.get(sid), "approval_mode", "") or "")
+        prior_mode = str(getattr(app.state.sessions.get(sid), "approval_mode", "") or "")
         sess = app.state.sessions.update(
             sid,
             title=req.title,
@@ -140,7 +123,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     )
                 ).model_dump(exclude_none=True),
             )
-        sync_watcher_for_mode(app, sess, prior_approval_mode=prior_approval_mode)
+        await join_off_loop(sync_watcher_for_mode, app, sess, prior_approval_mode=prior_mode)
         # Publish so live SSE subscribers see mode flips immediately.
         app.state.bus.publish(
             Event(
@@ -220,9 +203,21 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             summary=f"delete session {sid}",
             reason="user_requested_session_delete",
         )
+        active = app.state.task_history.tree_handles(sid) & app.state.task_history.task_handles(
+            active_only=True
+        )
+        if active or app.state.turn_runner.busy(sid):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "error": "session_has_active_work",
+                    "message": "Cancel and settle active work before deleting this session.",
+                    "handles": sorted(active),
+                },
+            )
         # P4.1 #1079 cancel-both: a deleted session must not orphan its loop wakeup.
         stop_session_loop(app, sid)
-        stop_session_goal(app, sid)  # P4.2 #1080: abandon any active goal (goal_abandoned)
+        stop_session_goal(app, sid)
         try:
             await cleanup_session_mcp_apps(app, sid)
         except RuntimeError as exc:
@@ -251,10 +246,12 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     )
                 ).model_dump(exclude_none=True),
             )
+        forget_session_reasoning(app, sid)
+        await run_off_loop(close_session_model_clients, app, sid)
         deps.delete_session_context_files(app, sid)
         await run_off_loop(delete_session_tool_output, app, sess.workspace_id, sid)
         await run_off_loop(deps.release_session_arc, app, sid)  # #1334: drops _events scopes
-        purge_session_tasks(app, sid)
+        await run_off_loop(app.state.task_history.restore)
         app.state.a2ui_catalogs.forget_session(sid)
         app.state.a2ui_store.forget_session(sid)
         return Response(status_code=204)
@@ -346,6 +343,9 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         target_message_id: str = "",
         include_target: bool = False,
     ) -> dict[str, Any]:
+        from clio_agent.gact.session_input import withdraw_message_inputs
+
+        await run_off_loop(withdraw_message_inputs, app, sid, [m.id for m in deleted_messages])
         replacement_messages = preserve_a2ui(sid, kept_messages, deleted_messages, operation)
         await run_off_loop(deps.replace_session_messages, app, sid, replacement_messages)
         # The agents' context follows the ledger: rolled-back turns leave it too.
@@ -639,11 +639,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             )
         )
 
-    def _message_text(message: Message) -> str:
-        return "\n".join(
-            part.text for part in message.parts if part.type == "text" and part.text
-        ).strip()
-
     def _retry_source_user_message(messages: list[Message], source: Message) -> Message | None:
         if source.role == "user":
             return source
@@ -655,170 +650,6 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
             if msg.role == "user":
                 return msg
         return None
-
-    def _retry_user_text(original_text: str, notes: str) -> str:
-        notes = notes.strip()
-        if not notes:
-            return original_text
-        return f"{original_text}\n\n[Retry notes]\n{notes}"
-
-    @app.get("/v1/sessions/{sid}/questions")
-    async def list_user_questions(sid: str, status: str = "") -> dict[str, Any]:
-        if app.state.sessions.get(sid) is None:
-            raise _session_not_found(sid)
-        rows = [q for q in app.state.user_questions.values() if q.session_id == sid]
-        if status:
-            rows = [q for q in rows if q.status == status]
-        rows.sort(key=lambda q: q.created_at, reverse=True)
-        return {"questions": [q.model_dump(exclude_none=True) for q in rows]}
-
-    @app.post("/v1/sessions/{sid}/questions", response_model=UserQuestion, status_code=201)
-    async def create_user_question(
-        sid: str,
-        req: CreateUserQuestionRequest,
-    ) -> UserQuestion:
-        sess = app.state.sessions.get(sid)
-        if sess is None:
-            raise _session_not_found(sid)
-        prompt = req.prompt.strip()
-        if not prompt:
-            raise HTTPException(
-                status_code=422,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="bad_request",
-                        message="missing required field: prompt",
-                        details={"field": "prompt"},
-                        recoverable=True,
-                    )
-                ).model_dump(exclude_none=True),
-            )
-        now_iso = datetime.now(timezone.utc).isoformat()
-        row = UserQuestion(
-            id=_new_question_id(),
-            session_id=sid,
-            owner_session_id=sid,
-            attended_session_id=attended_session_id(app, sid),
-            prompt=prompt,
-            response_mode=req.response_mode,
-            kind=req.kind,
-            options=normalize_question_options(req),
-            allow_freeform=req.allow_freeform,
-            created_at=now_iso,
-            updated_at=now_iso,
-            expires_at=req.expires_at,
-            source=req.source or "orchestrator",
-            turn_id=req.turn_id,
-            attempt_id=req.attempt_id,
-            metadata=req.metadata,
-        )
-        record_user_question(app, row)
-        if row.response_mode == "blocking":
-            _set_session_status(
-                sid,
-                "waiting_user",
-                prev_status=sess.status,
-                metadata_patch={"pending_user_question_id": row.id},
-            )
-        app.state.bus.publish(
-            Event(
-                type="user_question.created",
-                session_id=sid,
-                payload=row.model_dump(exclude_none=True),
-            )
-        )
-        return row
-
-    @app.post("/v1/sessions/{sid}/questions/{question_id}/answer", response_model=UserQuestion)
-    async def answer_user_question(
-        sid: str,
-        question_id: str,
-        req: AnswerUserQuestionRequest,
-    ) -> UserQuestion:
-        if app.state.sessions.get(sid) is None:
-            raise _session_not_found(sid)
-        row = app.state.user_questions.get(question_id)
-        if row is None or row.session_id != sid:
-            raise question_not_found(sid, question_id)
-        if row.status != "pending":
-            raise question_already_resolved(sid, question_id)
-        allowed_values = {o.value or o.label for o in row.options}
-        selected = [s for s in req.selected_options if s]
-        if allowed_values and selected and any(s not in allowed_values for s in selected):
-            raise HTTPException(
-                status_code=422,
-                detail=ErrorEnvelope(
-                    error=ErrorInfo(
-                        error="bad_request",
-                        message="selected option is not valid for this question",
-                        details={
-                            "session_id": sid,
-                            "question_id": question_id,
-                            "allowed": sorted(allowed_values),
-                        },
-                        recoverable=True,
-                    )
-                ).model_dump(exclude_none=True),
-            )
-        from clio_agent.gact.elicitation_bridge import (  # noqa: PLC0415
-            check_elicitation_answer,
-            claim_question_transition,
-            resolve_answered_question,
-        )
-
-        check_elicitation_answer(row, req)  # P1.3 #1113: 422 re-prompt on invalid form answer
-        # #1113 finding 6: the ONE atomic pending->answered transition; losing means a
-        # concurrent timeout/cancel already terminalized the question -> 409.
-        updated = claim_question_transition(
-            app,
-            question_id,
-            "answered",
-            answer=req.answer,
-            selected_options=selected,
-            answer_metadata=req.metadata,
-            answered_by="human",
-        )
-        if updated is None:
-            raise question_already_resolved(sid, question_id)
-        # P1.4 #1066 (plan-exit) + P1.3 #1113 (elicitation) dispatch non-default resolution.
-        if resolve_answered_question(app, deps, sid, updated):
-            return updated
-        resume_answered_question(
-            app,
-            deps,
-            sid,
-            updated,
-            has_pending=any(
-                q.response_mode == "blocking" for q in pending_user_questions(app, sid)
-            ),
-            set_session_status=_set_session_status,
-        )
-        app.state.bus.publish(
-            Event(
-                type="user_question.answered",
-                session_id=sid,
-                payload=updated.model_dump(exclude_none=True),
-            )
-        )
-        return updated
-
-    @app.post("/v1/sessions/{sid}/questions/{question_id}/cancel", response_model=UserQuestion)
-    async def cancel_user_question(sid: str, question_id: str) -> UserQuestion:
-        if app.state.sessions.get(sid) is None:
-            raise _session_not_found(sid)
-        row = app.state.user_questions.get(question_id)
-        if row is None or row.session_id != sid:
-            raise question_not_found(sid, question_id)
-        # #1113 finding 6: atomic pending->cancelled (first-wins); if a concurrent
-        # answer/timeout already terminalized it, keep the existing row (idempotent).
-        from clio_agent.gact.elicitation_bridge import claim_question_transition  # noqa: PLC0415
-
-        row = claim_question_transition(app, question_id, "cancelled") or row
-        await finish_cancelled_question(app, sid, row, set_session_status=_set_session_status)
-        return row
-
-    app.state.answer_user_question = answer_user_question
-    app.state.cancel_user_question = cancel_user_question
 
     @app.get("/v1/sessions/{sid}/attempts")
     async def list_turn_attempts(sid: str) -> dict[str, Any]:
@@ -932,11 +763,7 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
                     status_code=422,
                     detail=envelope.model_dump(exclude_none=True),
                 )
-        # #948 S1: the within-session busy gate covers the retry producer too. A
-        # retry-execute while a turn is already in flight would double-stage a
-        # concurrent turn on this session (orphaning the running one, both writing
-        # the same session + ARC). Record the attempt with a typed blocked reason
-        # instead of staging; the client retries once the running turn finishes.
+        # Refuse concurrent retry execution; preserve the attempt's blocked reason.
         if req.execute and not execution_blocked_reason and app.state.turn_runner.busy(sid):
             execution_blocked_reason = "session_busy"
         retry_parts = None
@@ -970,21 +797,25 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         )
         app.state.turn_attempts[attempt.id] = attempt
         if req.execute and not execution_blocked_reason and source_user is not None:
-            retry_text = _retry_user_text(_message_text(source_user), req.notes)
+            retry_text = context_reference_retry.retry_user_text(
+                context_reference_retry.message_text(source_user), req.notes
+            )
             assert retry_parts is not None
-            retry_user_msg = deps.start_background_user_turn(
+            retry_user_msg = await join_off_loop(
+                deps.start_background_user_turn,
                 sid,
                 sess,
                 retry_text,
                 metadata={
+                    **req.metadata,
                     "retry_attempt_id": attempt.id,
                     "retry_source_message_id": message_id,
                     "retry_source_user_message_id": source_user.id,
                     "retry_notes": req.notes,
-                    **req.metadata,
                 },
                 prev_status=sess.status,
                 request_parts=retry_parts,
+                supersedes_input=source_user.id,
             )
             attempt = attempt.model_copy(
                 update={
@@ -1005,24 +836,17 @@ def register_sessions_routes(app: FastAPI, deps: "GactDeps") -> None:
         )
         return attempt
 
-    # A2UI actions use this exact service seam so retry provenance, busy gates,
-    # provider checks, and source-user recovery cannot drift from the REST route.
+    # A2UI shares REST retry provenance, busy/provider gates and source-user recovery.
     app.state.retry_turn_action = retry_turn
 
     # ---- POST /v1/sessions/{sid}/cancel (BBB20) -----------------------
 
     @app.post("/v1/sessions/{sid}/cancel")
     async def cancel_session(sid: str) -> Response:
-        """Best-effort cancel of an in-flight turn on this session.
+        """Request Stop; keep the session reserved until its worker actually retires.
 
-        The agent loop and sync MCP bridge observe a scoped cancellation checker between
-        planner/expert/tool boundaries and return early with ``error_info.error ==
-        "cancelled"`` when possible; the endpoint flips the flag + publishes a
-        ``session.cancelled`` event so live SSE subscribers see the transition immediately.
-        If the turn is already blocked inside executor-thread provider/tool work, cancelling
-        the asyncio Task settles the GACT envelope as cancelled but cannot kill the Python
-        thread — the status event marks this best-effort. Returns 204 whether or not a turn
-        was running (the TUI fires this speculatively on Esc/Ctrl+C).
+        Accepted background work continues. Shared task cancellation is separate.
+        Return 204 even when the session is already idle.
         """
-        cancel_session_state(app, deps, sid)
+        await cancel_session_state_async(app, deps, sid)
         return Response(status_code=204)

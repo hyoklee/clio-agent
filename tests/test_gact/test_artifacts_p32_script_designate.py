@@ -23,6 +23,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+import pytest
+
 from clio_agent.gact.artifacts.lineage import build_lineage
 from clio_agent.gact.artifacts.minting import mint_tool_declared_outputs
 from clio_agent.gact.artifacts.records import ArtifactKind, Mechanism
@@ -145,6 +147,65 @@ def test_used_shell_script_designated_too(tmp_path):
     )
     assert len(scan.edges) == 1 and scan.edges[0].artifact_id
     assert get_registry(app).get("ws1", "run.sh").head.kind is ArtifactKind.SCRIPT
+
+
+def test_used_script_copy_failure_keeps_explicit_reference_evidence(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A store failure cannot falsely claim retained custody or discard the observation."""
+    app, sessions, _ = _make_app(tmp_path, ["ws1"])
+    script = tmp_path / "input.py"
+    _write_old(script, b"print('observed')\n")
+
+    def failed_copy(*args: Any, **kwargs: Any) -> Any:
+        raise OSError("copy unavailable")
+
+    monkeypatch.setattr(
+        "clio_agent.gact.artifacts.consumed_inputs.ingest_artifact_identity", failed_copy
+    )
+    scan = detect_used_edges(
+        app,
+        sessions["ws1"].id,
+        args={"script_path": str(script)},
+        workspace_id="ws1",
+        turn_id="t1",
+        trace_id="tr1",
+    )
+    version = get_registry(app).get("ws1", "input.py").head
+    assert version.custody.value == "workspace-referenced"
+    assert scan.edges[0].sha256 == _sha(script.read_bytes())
+    assert scan.notes[0]["reason"] == "used_input_not_retained"
+
+
+def test_used_script_changed_during_copy_does_not_mint_wrong_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Copied replacement bytes must never become the earlier consumed identity."""
+    from clio_agent.gact.artifacts.storage import ingest_artifact_identity
+
+    app, sessions, _ = _make_app(tmp_path, ["ws1"])
+    script = tmp_path / "raced.py"
+    original = b"print('observed')\n"
+    _write_old(script, original)
+
+    def changed_copy(*args: Any, **kwargs: Any) -> Any:
+        script.write_bytes(b"print('replacement')\n")
+        return ingest_artifact_identity(*args, **kwargs)
+
+    monkeypatch.setattr(
+        "clio_agent.gact.artifacts.consumed_inputs.ingest_artifact_identity", changed_copy
+    )
+    scan = detect_used_edges(
+        app,
+        sessions["ws1"].id,
+        args={"script_path": str(script)},
+        workspace_id="ws1",
+        turn_id="t1",
+        trace_id="tr1",
+    )
+    assert get_registry(app).get("ws1", "raced.py") is None
+    assert not scan.edges[0].artifact_id and scan.edges[0].sha256 == _sha(original)
+    assert scan.notes[0]["reason"] == "used_input_changed_during_registration"
 
 
 # --------------------------------------------------------------------------- #

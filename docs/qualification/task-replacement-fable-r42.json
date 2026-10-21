@@ -1,0 +1,34 @@
+{
+  "purpose": "Independent actual Claude Code R42 source review",
+  "core": "23a12e43ce0c03221f23a6d9ec9f4fbe9691e24e",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "state": "settled",
+  "started_at": 1792077634.4354472,
+  "source_cache_created": false,
+  "debug_log_enabled": false,
+  "retention": "Bounded selected reviewer identity receipt; no disposable output/debug/session export",
+  "pid": 65948,
+  "exit_code": 0,
+  "finished_at": 1792077908.1891751,
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 290,
+      "outputTokens": 18278,
+      "cacheReadInputTokens": 758020,
+      "cacheCreationInputTokens": 179719,
+      "webSearchRequests": 0,
+      "costUSD": 4.700684999999999,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 10894,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "session": "c2fb70ff-4bd2-4492-87cd-3264422b64da",
+  "is_error": false,
+  "subtype": "success",
+  "process_absent": true
+}

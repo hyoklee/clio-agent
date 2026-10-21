@@ -32,6 +32,7 @@ class _SessionAggregate:
     """One session's contribution to the global metrics counters."""
 
     count: int = 0
+    command_count: int = 0
     by_role: Counter[str] = field(default_factory=Counter)
     latency_samples: dict[str, list[float]] = field(default_factory=dict)
 
@@ -68,6 +69,7 @@ class MetricsCounters:
         role = getattr(message, "role", "") or ""
         samples = _message_samples(message)
         agg.count += 1
+        agg.command_count += int(message.metadata.get("synthetic") == "command_result")
         agg.by_role[role] += 1
         self.message_total += 1
         self.by_role[role] += 1
@@ -111,6 +113,11 @@ class MetricsCounters:
                 self.latency_samples.pop(key, None)
 
     # ---- read side ------------------------------------------------------ #
+
+    def session_count(self, session_id: str) -> int:
+        """Read its conversation count; command confirmations remain in global metrics."""
+        aggregate = self._per_session.get(session_id)
+        return aggregate.count - aggregate.command_count if aggregate is not None else 0
 
     def role_counts(self) -> dict[str, int]:
         """Non-zero per-role message counts (wire ``messages.by_role``)."""

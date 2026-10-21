@@ -15,6 +15,11 @@ from clio_agent.gact.session_export_projection import archive_transcript_views
 
 
 def _page(title: str, body: str, *, stylesheet: str = "", scripts: tuple[str, ...] = ()) -> str:
+    # Fallback prose rules must not override the native viewer's layered CSS,
+    # including dialogs portalled outside its root (for example img height:auto).
+    fallback_stylesheet = (
+        f"@scope (#archive-document, #archive-status) {{{CSS}}}" if scripts else CSS
+    )
     safe_scripts = tuple(re.sub(r"</script", r"<\\/script", s, flags=re.I) for s in scripts)
     hashes = " ".join(
         "'sha256-" + base64.b64encode(hashlib.sha256(s.encode()).digest()).decode() + "'"
@@ -33,7 +38,7 @@ def _page(title: str, body: str, *, stylesheet: str = "", scripts: tuple[str, ..
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f'<meta http-equiv="Content-Security-Policy" content="{escape(policy)}">'
-        f"<title>{escape(title)} · CLIO archive</title><style>{CSS}</style>"
+        f"<title>{escape(title)} · CLIO archive</title><style>{fallback_stylesheet}</style>"
         + (f"<style>{stylesheet}</style>" if stylesheet else "")
         + "</head><body>"
         + body

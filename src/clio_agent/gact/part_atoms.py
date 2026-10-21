@@ -58,9 +58,11 @@ the internals the S2 fold's ``FoldingSegmentStore._append_raw`` already uses.
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from typing import Any
+
+import msgspec
 
 from clio_agent import conf
 from clio_agent.arc.lane_chunking import chunk_for_append, lane_segments
@@ -541,7 +543,14 @@ def _incomplete_envelope(atoms: list[dict[str, Any]]) -> dict[str, Any]:
 
 
 def _append_segment_raw(
-    store: Any, session_id: str, scope: str, kind: SegmentKind, content: dict[str, Any]
+    store: Any,
+    session_id: str,
+    scope: str,
+    kind: SegmentKind,
+    content: dict[str, Any] | Segment,
+    *,
+    persist: bool = True,
+    order: float | None = None,
 ) -> Segment:
     """Append one segment to ``scope`` WITHOUT invoking the op-logger (§2.9 raw lane).
 
@@ -557,20 +566,38 @@ def _append_segment_raw(
         session_id: Owning session.
         scope: The physical content-lane scope (:data:`MESSAGE_PART_SCOPE`).
         kind: The atom kind (:data:`MESSAGE_PART_KIND`).
-        content: The atom payload (coerced to a msgpack-safe form on the way in).
+        content: A new payload, or a confirmed retained segment during staged replay.
 
     Returns:
         The appended segment (its store-assigned ``logical_time`` + ``order``).
+
+    ``persist=False`` stages one atom for the same writer's unpublished chunk
+    batch; that caller confirms the chunk before exposing its generation.
+    Its explicit ``order`` continues the maximum reserved once for that chunk.
     """
     from clio_agent.arc.segments import _coerce_content  # noqa: PLC0415 - avoid import cycle
 
+    if order is not None and persist:
+        raise ValueError("Explicit atom order requires an unpublished batch")
     with store._lock_for(session_id, scope):
+        if isinstance(content, Segment):
+            if persist or content.session_id != session_id or content.kind != kind:
+                raise ValueError("Invalid retained atom identity or live replay")
+            # Retained payloads already crossed normalization and Core confirmation.
+            # The native codec detaches nested containers without reinterpreting data
+            # or repeating Python foreign-object conversion for the whole history.
+            payload = msgspec.msgpack.decode(
+                msgspec.msgpack.encode(content.content), type=dict[str, Any]
+            )
+        else:
+            payload = _coerce_content(content)
         segs = store._segs(session_id, scope)
-        order = max((s.order for s in segs), default=0.0) + 1.0
+        if order is None:
+            order = max((s.order for s in segs), default=0.0) + 1.0
         seg = Segment(
             scope=scope,
             kind=kind,
-            content=_coerce_content(content),
+            content=payload,
             session_id=session_id,
             step=-1,
             order=order,
@@ -578,7 +605,8 @@ def _append_segment_raw(
         )
         segs.append(seg)
         store._index.add(session_id, scope, seg)
-        store._persist(session_id, scope)
+        if persist:
+            store._persist(session_id, scope)
         return seg
 
 
@@ -599,10 +627,61 @@ def append_part_atom(
     batch mints and the replace.
     """
 
+    return append_part_atoms(store, session_id, [content], lane=lane)[0]
+
+
+def append_part_atoms(
+    store: Any,
+    session_id: str,
+    contents: Sequence[dict[str, Any] | Segment],
+    *,
+    lane: str | None = None,
+) -> list[Segment]:
+    """Use the canonical atom writer, confirming each affected chunk once.
+
+    Raw identities, ordering and cursor reservations are unchanged. A staged
+    generation remains invisible until the existing generation pointer commits.
+    Single streaming atoms still confirm immediately; a persistence error keeps
+    the existing store failure and generation rollback behavior.
+    """
+    if lane is None and (len(contents) > 1 or any(isinstance(c, Segment) for c in contents)):
+        raise ValueError("A multi-atom batch requires an unpublished generation")
     with store._lock_for(session_id, MESSAGE_PART_SCOPE):
         base = lane if lane is not None else current_base(store, session_id, MESSAGE_PART_SCOPE)
-        scope = chunk_for_append(store, session_id, base, capacity=_chunk_capacity())
-        return _append_segment_raw(store, session_id, scope, MESSAGE_PART_KIND, content)
+        scope: str | None = None
+        next_order: float | None = None
+        appended: list[Segment] = []
+        for content in contents:
+            selected = chunk_for_append(store, session_id, base, capacity=_chunk_capacity())
+            if selected != scope:
+                if scope is not None:
+                    store._persist(session_id, scope)
+                if lane is not None:
+                    with store._lock_for(session_id, selected):
+                        next_order = (
+                            max(
+                                (segment.order for segment in store._segs(session_id, selected)),
+                                default=0.0,
+                            )
+                            + 1.0
+                        )
+            scope = selected
+            appended.append(
+                _append_segment_raw(
+                    store,
+                    session_id,
+                    scope,
+                    MESSAGE_PART_KIND,
+                    content,
+                    persist=lane is None,
+                    order=next_order,
+                )
+            )
+            if next_order is not None:
+                next_order += 1.0
+        if scope is not None and lane is not None:
+            store._persist(session_id, scope)
+        return appended
 
 
 def mint_message_part_atoms(
@@ -653,7 +732,7 @@ def mint_message_part_atoms(
         for index, part in enumerate(message.parts)
     ]
     contents.append(build_envelope_atom(message))
-    return [append_part_atom(store, session_id, content, lane=lane) for content in contents]
+    return append_part_atoms(store, session_id, contents, lane=lane)
 
 
 def load_message_part_atoms(arc: Any, session_id: str) -> dict[str, list[dict[str, Any]]]:

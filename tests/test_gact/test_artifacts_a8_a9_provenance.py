@@ -29,9 +29,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 
 from clio_agent.gact.app import build_app
+
+pytestmark = pytest.mark.usefixtures("tool_declaration_scope")
 
 
 def _client(tmp_path: Path) -> TestClient:
@@ -70,6 +73,7 @@ def test_used_script_designate_on_use_carries_full_producer_and_route_serves_it(
     # freshly-written output).
     script = tmp_path / "helper.py"
     script.write_text("print('hi')\n", encoding="utf-8")
+    recorded_bytes = script.read_bytes()
 
     from clio_agent.gact.artifacts.transforms import observe_tool_transform
 
@@ -104,6 +108,15 @@ def test_used_script_designate_on_use_carries_full_producer_and_route_serves_it(
     ).json()
     assert slist_children["count"] == 1, slist_children
     assert slist_children["artifacts"][0]["producing_session_ids"] == [sid]
+
+    # A consumed script is a historical input, even if a later turn edits it.
+    assert record.head.custody.value == "cas"
+    script.write_text("print('revised')\n", encoding="utf-8")
+    original = c.get(f"/v1/artifacts/{record.head.artifact_id}/bytes")
+    assert original.status_code == 200
+    assert original.content == recorded_bytes
+    script.unlink()
+    assert c.get(f"/v1/artifacts/{record.head.artifact_id}/bytes").content == original.content
 
 
 def test_ordinary_create_artifact_mint_producer_is_unaffected(tmp_path: Path):

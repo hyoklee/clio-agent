@@ -1,0 +1,33 @@
+{
+  "purpose": "Independent actual Claude Code R45 source review",
+  "core": "0abc21d9abfe4b45cd49161460f4e394ffae7965",
+  "gact": "faddba474961c7499f1b57226af43c21de142a73",
+  "marketplace": "43af7a011805ce55c63da4d49cc04b652af5dcf8",
+  "state": "settled",
+  "started_at": 1792084719.1914997,
+  "source_cache_created": false,
+  "debug_log_enabled": false,
+  "retention": "Bounded selected reviewer identity receipt; no disposable output/debug/session export",
+  "pid": 27656,
+  "exit_code": 0,
+  "finished_at": 1792085205.4912255,
+  "modelUsage": {
+    "claude-fable-5-1": {
+      "inputTokens": 418,
+      "outputTokens": 32547,
+      "cacheReadInputTokens": 1171131,
+      "cacheCreationInputTokens": 187688,
+      "webSearchRequests": 0,
+      "costUSD": 5.67807275,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "thinkingTokens": 23800,
+      "canonicalModel": "claude-fable-5-1",
+      "provider": "firstParty",
+      "costBasis": "list"
+    }
+  },
+  "session": "51cf2ba1-c27c-4d22-ab90-b262e5cf59ea",
+  "is_error": false,
+  "subtype": "success"
+}

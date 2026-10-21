@@ -1,35 +1,9 @@
-"""Turn-orchestration engine for the GACT server (#714).
+"""Conversation segment execution and confirmed producer input acceptance.
 
-This module owns the *turn loop* — the off-request-thread machinery that drives
-one agent turn end to end:
-
-* :func:`_start_background_user_turn` stages a user message + parts, flips the
-  session to ``running``, publishes the ``session.status_changed`` /
-  ``message.created`` events, and schedules the turn as a tracked ``asyncio``
-  task (so cancellation can reach it via ``app.state.in_flight_turns``).
-* :func:`_run_turn_in_background` is the body of that task: it invokes
-  ``agent.forward`` in an executor, streams/slices the result into Parts
-  (a react main routes to its declared children by CALLING the spawn-runtime
-  tools, so its ``answer`` is already the deliverable — no post-forward settle
-  pass), publishes every SSE event the TUI consumes, persists the assistant
-  message, records the context frame + token/cost usage, and returns the session
-  to ``idle`` (or ``error``).
-
-It was carved verbatim out of ``clio_agent.gact.app.build_app`` so the route
-factories (post-message, question-answer, retry-attempt, schedules) and the
-scheduler tick can share the entrypoint via ``GactDeps`` without importing back
-into the 24k-line app module. To keep the import graph acyclic (#714), the turn
-helpers this engine calls are imported at module top from their true *leaf*
-owners (``delegation``/``streaming``/``enrichment``/``evidence``/``usage``/
-``messaging``/``session_store``/``agents.resolution``/``runtime.globals`` …) —
-so turn.py has ZERO top-level ``clio_agent.gact.app`` imports. Only the
-agent-builder + blueprint-runner seams and ``_enrich_cancellation_error_info``
-(the "danger set" retargeted by ~83 ``app._X`` test monkeypatches) are still
-resolved through ``app`` via a *function-local* import at their single call site,
-the same cycle-break pattern ``clio_agent.gact.agents.builders`` uses.
-
-Behavior preserves the original threading handoff, cancellation, timeout,
-contextvar, trajectory, and SSE semantics.
+TurnRunner owns admission and physical worker retirement. This module prepares
+and executes an admitted segment, returning its explicit outcome to the
+conversation owner. Input acceptance persists typed messages into Core mail;
+it never starts a second turn or acknowledges model delivery.
 """
 
 from __future__ import annotations
@@ -38,11 +12,11 @@ import asyncio
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any, Literal, Optional
 
 from clio_agent.errors import ClioError
-from clio_agent.gact.a2ui_actions.record import mark_a2ui_action_consumed
 from clio_agent.gact.agents.unresolved_blueprint import no_resolvable_error
 from clio_agent.gact.context_reference_delivery import record_context_reference_deliveries
 from clio_agent.gact.delegation import (
@@ -51,10 +25,10 @@ from clio_agent.gact.delegation import (
 )
 from clio_agent.gact.events import Event, EventBus, _publish_transcript_event
 from clio_agent.gact.evidence import _propose_edit_diffs_from_pred
-from clio_agent.gact.message_intents import stage_intent_user_message
 from clio_agent.gact.messaging import (
     _agent_accepts_images,
     _image_part_summaries,
+    _prediction_summary,
     _user_message_parts,
 )
 from clio_agent.gact.off_loop import emit_semantic_event_async
@@ -74,6 +48,7 @@ from clio_agent.gact.runtime.globals import (
     _UnsupportedSessionAgent,
 )
 from clio_agent.gact.runtime.retention import enforce_dict_bound
+from clio_agent.gact.session_store import _append_session_message
 from clio_agent.gact.skills import SkillNotDelegatableError
 from clio_agent.gact.stream_failures import forward_error_info
 from clio_agent.gact.streaming import _extract_tools_called, _pop_stream_fallback
@@ -82,10 +57,9 @@ from clio_agent.gact.tool_observer import (
     _tool_calls_from_handoff_rows,
 )
 from clio_agent.gact.turn_cancellation import settle_asyncio_cancellation
-from clio_agent.gact.turn_finalize import maybe_pause_for_user
 from clio_agent.gact.turn_forward import _run_turn_setup_off_loop, forward_turn
 from clio_agent.gact.turn_prologue_guard import run_finalize_or_settle_prologue_gap
-from clio_agent.gact.turn_start_offloop import prepare_turn_off_loop, spawn_user_turn
+from clio_agent.gact.turn_start_offloop import prepare_turn_off_loop
 from clio_agent.gact.turn_state import DeferredTranscriptJob, new_turn_state
 from clio_agent.gact.turn_stream import bind_live_emitter, settle_turn_transcript
 from clio_agent.gact.turn_usage import roll_up_usage
@@ -137,6 +111,139 @@ def _mint_pack_declared_artifacts(state: "TurnState", workflow_state: dict[str, 
         )
 
 
+async def _apply_turn_prediction(
+    state: "TurnState",
+    drain_observed_tool_calls: Callable[[list[dict[str, Any]]], list[dict[str, Any]]],
+    update_retry_attempt: Callable[..., None],
+) -> bool:
+    """Project a provider result and preserve input gates before finalization."""
+    state.answer_text = getattr(state.pred, "answer", "")
+    state.selected_agent = getattr(state.pred, "selected_expert", "") or ""
+    state.rationale = getattr(state.pred, "routing_rationale", "")
+    state.route_source = getattr(state.pred, "route_source", "") or ""
+    state.route_reason = getattr(state.pred, "route_reason", "") or state.rationale
+    pred_error_info = _coerce_error_info(getattr(state.pred, "error_info", None))
+    if pred_error_info is not None:
+        if pred_error_info.error == "cancelled":
+            pred_error_info.details.setdefault("session_id", state.sid)
+        state.error_info = pred_error_info
+        if not state.error_info.details.get("partial", False):
+            state.answer_text = ""
+    # Ordinary Questions are immediate tools. Plan exit retains its explicit
+    # human approval gate and yields through the same conversation owner.
+    from clio_agent.gact.plan_mode import maybe_pause_for_plan_exit  # noqa: PLC0415
+    from clio_agent.gact.transcript_recording import TranscriptRecordingPending, resume_recording
+
+    try:
+        if await _run_turn_setup_off_loop(
+            state,
+            lambda: maybe_pause_for_plan_exit(state, update_retry_attempt=update_retry_attempt),
+        ):
+            return False
+    except TranscriptRecordingPending as pending:
+        try:
+            await resume_recording(state.app, pending)
+        except asyncio.CancelledError:
+            # Recovery owns this immutable paused output. Stop retires this
+            # waiter; it must not enter normal finalization with a second output.
+            pass
+        return False
+    # iowarp/clio-agent#25: data branch reports which execution
+    # path it took ("fast" or "expert_loop"). Empty when not
+    # populated by ClioAgent.forward (older code paths, non-data
+    # branches not yet migrated).
+    state.execution_path = getattr(state.pred, "execution_path", "") or ""
+    state.tools_called = _extract_tools_called(state.pred)
+    top_level_workflow_state = _prediction_workflow_state(state.pred, schema=state.workflow_schema)
+    if top_level_workflow_state:
+        _publish_transcript_event(
+            state.bus,
+            state.sid,
+            "state.updated",
+            {
+                "turn_id": state.turn_id,
+                "value": top_level_workflow_state,
+                "visibility": "hidden",
+            },
+        )
+        await asyncio.to_thread(_mint_pack_declared_artifacts, state, top_level_workflow_state)
+    raw_handoffs = getattr(state.pred, "expert_handoffs", None) or []
+    if not state.expert_handoffs:
+        state.expert_handoffs = _coerce_expert_handoff_rows(raw_handoffs)
+    state.tools_called = _merge_tool_call_rows(
+        state.tools_called,
+        _tool_calls_from_handoff_rows(state.expert_handoffs),
+    )
+    # Drain the per-session observer ledger so direct-tool short-
+    # circuits (HDF5/Parquet/fs experts that bypass ReAct) still
+    # report tools_called on the assistant message metadata.
+    state.tools_called = drain_observed_tool_calls(state.tools_called)
+    # iowarp/clio-agent#17 — a ChainOfThought prediction's ``.reasoning``
+    # becomes the turn's `thinking` Part.
+    state.thinking_text = str(getattr(state.pred, "reasoning", "") or "")
+    # cost + token rollup — mutate
+    # state.turn_tokens / state.turn_cost from the prediction
+    # or the per-turn LM history slice (see turn_usage.py).
+    roll_up_usage(state, state.pred)
+    state.proposed_diffs = list(getattr(state.pred, "file_diffs", None) or [])
+    if not state.proposed_diffs:
+        # Dynamic tool agents call fs_propose_edit as a TOOL and never set
+        # pred.file_diffs; promote those results so they materialize as
+        # file_diff parts + pending /diffs rows (iowarp/clio-agent#674).
+        state.proposed_diffs = _propose_edit_diffs_from_pred(
+            state.pred,
+            state.tools_called,
+        )
+    state.nanoagents = list(getattr(state.pred, "nanoagents_spawned", None) or [])
+    for req in getattr(state.pred, "permissions_requested", None) or []:
+        src = (
+            req
+            if isinstance(req, dict)
+            else {
+                "tool_call": getattr(req, "tool_call", {}),
+                "summary": getattr(req, "summary", ""),
+                "id": getattr(req, "id", ""),
+            }
+        )
+        pid = src.get("id") or f"perm_{uuid.uuid4().hex[:12]}"
+        row = {
+            "id": pid,
+            "session_id": state.sid,
+            "tool_call": src.get("tool_call") or {},
+            "summary": src.get("summary", ""),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "pending",
+        }
+        state.app.state.permissions[pid] = row
+        enforce_dict_bound(
+            state.app, state.app.state.permissions, "permissions", session_id=state.sid
+        )
+        await emit_semantic_event_async(
+            state.app,
+            state.sid,
+            "permission.requested",
+            turn_id=state.turn_id,
+            trace_id=state.trace_id,
+            status="pending",
+            summary="Tool execution requested user permission.",
+            actor={"agent_id": state.selected_agent or state.invocation_agent_id},
+            subject={"permission_id": pid},
+            payload=row,
+        )
+        publish_permission_event(
+            state.app,
+            "permission.requested",
+            owner_session_id=state.sid,
+            payload=row,
+        )
+    if state.sid in state.app.state.cancel_flags:
+        state.app.state.cancel_flags.discard(state.sid)
+        state.error_info = _cancelled_error_info(state.sid, execution_cancellation="turn_boundary")
+        state.answer_text = ""
+        state.tools_called = []
+    return True
+
+
 async def _run_turn_in_background(
     app: "FastAPI",
     sid: str,
@@ -144,7 +251,7 @@ async def _run_turn_in_background(
     user_msg: "Message",
     turn_agent_id: str = "",
     transcript_job: Optional[DeferredTranscriptJob] = None,
-) -> None:
+) -> Any:
     """Drive an agent turn off the request thread.
 
     The POST handler returns immediately after staging the user
@@ -181,7 +288,6 @@ async def _run_turn_in_background(
     # #1215 S5: first-turn bring-up phase from "the background task started
     # running" to "turn.started published" (see the end_phase call below).
     bringup_timing.timer_for_session(app, sid).start_phase("turn.accept_gap")
-    mark_a2ui_action_consumed(app, sid, user_msg.metadata)
 
     # #767 Phase B: the turn's whole working set lives on one mutable ``TurnState``
     # threaded through the closures + body (formerly ~40 function-scope locals).
@@ -306,7 +412,9 @@ async def _run_turn_in_background(
         )
         if outcome != "proceed":
             settle_turn_transcript(state)
-            return
+            from clio_agent.gact.conversation_assignments import ConversationOutcome
+
+            return ConversationOutcome({}, disposition="yield", input_hold="hook_" + outcome)
         if state.context_file_error is not None:
             raise _ContextFileAccessError(state.context_file_error)
 
@@ -316,15 +424,9 @@ async def _run_turn_in_background(
                 _cancelled_error_info(state.sid, execution_cancellation="turn_boundary")
             )
 
-        # #948 S6 [1]/[4]: commit-to-run seam — past the last abort/veto seam, the
-        # turn will forward with the enriched input. Consume the staged observe-later
-        # notifications once AND emit each delegation terminal (shared once-gate with
-        # wait/check) into this turn's already-open transcript.
-        # Consuming records into clio-core (store writes): on the turn executor, never
-        # the event loop (a write there is refused and the turn failed).
-        from clio_agent.gact.task_delivery import commit_staged_completions
-
-        await _run_turn_setup_off_loop(state, lambda: commit_staged_completions(state))
+        # Re-read the shared mailbox after the prologue's abort/veto checks. This
+        # stages content only; the Core recipient-input boundary acknowledges it
+        # immediately before each model call, including subsequent iterations.
 
         # #767 Phase B Slice 5: agent resolve -> module build -> streamed/sync
         # forward -> expert-pack delegation settle lives in ``turn_forward.py``.
@@ -338,135 +440,11 @@ async def _run_turn_in_background(
         # still-open timer settles later via the registry's LRU eviction.
         bringup_timing.finish_bringup(state.app, state.sid)
 
-        state.answer_text = getattr(state.pred, "answer", "")
-        state.selected_agent = getattr(state.pred, "selected_expert", "") or ""
-        state.rationale = getattr(state.pred, "routing_rationale", "")
-        state.route_source = getattr(state.pred, "route_source", "") or ""
-        state.route_reason = getattr(state.pred, "route_reason", "") or state.rationale
-        pred_error_info = _coerce_error_info(getattr(state.pred, "error_info", None))
-        if pred_error_info is not None:
-            if pred_error_info.error == "cancelled":
-                pred_error_info.details.setdefault("session_id", state.sid)
-            state.error_info = pred_error_info
-            if not state.error_info.details.get("partial", False):
-                state.answer_text = ""
-        # #1334: both pause seams persist the paused transcript (store RPCs), so they run
-        # on the turn executor like finalize; the coroutine only reads their verdict.
-        if await _run_turn_setup_off_loop(
-            state,
-            lambda: maybe_pause_for_user(
-                state, state.pred, update_retry_attempt=_update_retry_attempt
-            ),
+        if not await _apply_turn_prediction(
+            state, _drain_observed_tool_calls, _update_retry_attempt
         ):
-            # #767 Phase B: the ask_user pause exits the turn before the
-            # finalize region — the seam mints the question, flips the
-            # session to waiting_user, and settles the ledger (see
-            # turn_finalize.py).
+            turn_lm_ledger.close_ledger(lm_ledger_token)
             return
-        # P1.4 #1066: plan_exit is the SAME turn-ending yield — surface the pending
-        # plan-exit as an N-way approval question and exit before finalize (owner
-        # module gact/plan_mode.py; only the call site lands here).
-        from clio_agent.gact.plan_mode import maybe_pause_for_plan_exit  # noqa: PLC0415
-
-        if await _run_turn_setup_off_loop(state, lambda: maybe_pause_for_plan_exit(state)):
-            return
-        # iowarp/clio-agent#25: data branch reports which execution
-        # path it took ("fast" or "expert_loop"). Empty when not
-        # populated by ClioAgent.forward (older code paths, non-data
-        # branches not yet migrated).
-        state.execution_path = getattr(state.pred, "execution_path", "") or ""
-        state.tools_called = _extract_tools_called(state.pred)
-        top_level_workflow_state = _prediction_workflow_state(
-            state.pred, schema=state.workflow_schema
-        )
-        if top_level_workflow_state:
-            _publish_transcript_event(
-                state.bus,
-                state.sid,
-                "state.updated",
-                {
-                    "turn_id": state.turn_id,
-                    "value": top_level_workflow_state,
-                    "visibility": "hidden",
-                },
-            )
-            await asyncio.to_thread(_mint_pack_declared_artifacts, state, top_level_workflow_state)
-        raw_handoffs = getattr(state.pred, "expert_handoffs", None) or []
-        if not state.expert_handoffs:
-            state.expert_handoffs = _coerce_expert_handoff_rows(raw_handoffs)
-        state.tools_called = _merge_tool_call_rows(
-            state.tools_called,
-            _tool_calls_from_handoff_rows(state.expert_handoffs),
-        )
-        # Drain the per-session observer ledger so direct-tool short-
-        # circuits (HDF5/Parquet/fs experts that bypass ReAct) still
-        # report tools_called on the assistant message metadata.
-        state.tools_called = _drain_observed_tool_calls(state.tools_called)
-        # iowarp/clio-agent#17 — a ChainOfThought prediction's ``.reasoning``
-        # becomes the turn's `thinking` Part.
-        state.thinking_text = str(getattr(state.pred, "reasoning", "") or "")
-        # cost + token rollup — mutate
-        # state.turn_tokens / state.turn_cost from the prediction
-        # or the per-turn LM history slice (see turn_usage.py).
-        roll_up_usage(state, state.pred)
-        state.proposed_diffs = list(getattr(state.pred, "file_diffs", None) or [])
-        if not state.proposed_diffs:
-            # Dynamic tool agents call fs_propose_edit as a TOOL and never set
-            # pred.file_diffs; promote those results so they materialize as
-            # file_diff parts + pending /diffs rows (iowarp/clio-agent#674).
-            state.proposed_diffs = _propose_edit_diffs_from_pred(
-                state.pred,
-                state.tools_called,
-            )
-        state.nanoagents = list(getattr(state.pred, "nanoagents_spawned", None) or [])
-        for req in getattr(state.pred, "permissions_requested", None) or []:
-            src = (
-                req
-                if isinstance(req, dict)
-                else {
-                    "tool_call": getattr(req, "tool_call", {}),
-                    "summary": getattr(req, "summary", ""),
-                    "id": getattr(req, "id", ""),
-                }
-            )
-            pid = src.get("id") or f"perm_{uuid.uuid4().hex[:12]}"
-            row = {
-                "id": pid,
-                "session_id": state.sid,
-                "tool_call": src.get("tool_call") or {},
-                "summary": src.get("summary", ""),
-                "created_at": datetime.now(timezone.utc).isoformat(),
-                "status": "pending",
-            }
-            state.app.state.permissions[pid] = row
-            enforce_dict_bound(
-                state.app, state.app.state.permissions, "permissions", session_id=state.sid
-            )
-            await emit_semantic_event_async(
-                state.app,
-                state.sid,
-                "permission.requested",
-                turn_id=state.turn_id,
-                trace_id=state.trace_id,
-                status="pending",
-                summary="Tool execution requested user permission.",
-                actor={"agent_id": state.selected_agent or state.invocation_agent_id},
-                subject={"permission_id": pid},
-                payload=row,
-            )
-            publish_permission_event(
-                state.app,
-                "permission.requested",
-                owner_session_id=state.sid,
-                payload=row,
-            )
-        if state.sid in state.app.state.cancel_flags:
-            state.app.state.cancel_flags.discard(state.sid)
-            state.error_info = _cancelled_error_info(
-                state.sid, execution_cancellation="turn_boundary"
-            )
-            state.answer_text = ""
-            state.tools_called = []
     except _TurnCancelled as exc:
         state.error_info = exc.error_info
         state.answer_text = ""
@@ -643,6 +621,16 @@ async def _run_turn_in_background(
         )
     finally:
         turn_lm_ledger.close_ledger(lm_ledger_token)
+    from clio_agent.gact.conversations import ConversationOutcome
+
+    return ConversationOutcome(
+        outputs=_prediction_summary(state.pred)
+        if state.pred is not None
+        else {"answer": state.answer_text},
+        disposition=getattr(state.pred, "assignment_disposition", None),
+        context=getattr(state.pred, "clio_context_boundary", None),
+        error=state.error_info.model_dump(mode="json") if state.error_info is not None else None,
+    )
 
 
 def _start_background_user_turn(
@@ -657,106 +645,145 @@ def _start_background_user_turn(
     turn_agent_id: str = "",
     user_msg_id: str = "",
     user_created_at: str = "",
-    replace_existing_user_message: bool = False,
     message_role: Literal["user", "system"] = "user",
+    retained_model: Optional[dict[str, Any]] = None,
+    mailbox_item: Any = None,
+    model_text: str | None = None,
+    supersedes_input: str = "",
 ) -> Message:
-    """Stage a user or system-event turn and drive it off-thread.
+    """Confirm typed user/system input; TurnRunner alone admits execution.
 
-    Persists the user message + parts, flips the session to ``running``, publishes
-    ``session.status_changed`` + ``message.created``, then schedules
-    :func:`_run_turn_in_background` as a tracked ``asyncio`` task (in
-    ``app.state.in_flight_turns`` so cancellation reaches it). Returns the staged
-    user :class:`Message`. Hoisted out of ``build_app`` (#714) so callers share it
-    via ``GactDeps`` with ``app`` an explicit arg. ``user_msg_id`` overrides the
-    minted message/turn id (empty ⇒ mint) so an idle steer re-drive reuses the id
-    its ``202`` already returned. The two ``…_existing``/``…_created_at`` args
-    promote an ALREADY persisted pending steer: acceptance wrote that identity
-    durably, so staging replaces that row in place, its accepted stamp kept.
+    Promotion preserves the accepted message identity. Retry supersession uses
+    a server-supplied input identity, never client-overridable metadata.
     """
-    now = time.time()
-    user_metadata = dict(metadata or {})
-    from clio_agent.gact.automatic_turn_injection import automatic_turn_injection
+    owner = getattr(app.state, "conversations", None)
+    if owner is None:
+        raise RuntimeError("Core conversation admission is not ready")
+    from clio_agent.arc.task_types import MailItem
 
-    automatic_injection = automatic_turn_injection(user_metadata, user_text)
-    user_parts = (
-        _user_message_parts(
-            request_parts=list(request_parts or []),
-            user_text=user_text,
+    # This finite request boundary persists input only. TurnRunner owns the
+    # decision to inject it into a busy segment or admit an idle session.
+    with owner.history.serialized():
+        from clio_agent.gact.session_input import capture_retry_input
+
+        retry_binding = capture_retry_input(
+            owner.history,
+            sid,
+            supersedes_input,
+            stopping=app.state.turn_runner.stop_requested(sid),
         )
-        if automatic_injection is None
-        else [automatic_injection]
-    )
-    if automatic_injection is not None:
-        message_role = "system"
-    record_context_reference_deliveries(user_metadata, user_parts)
-    image_count = sum(1 for part in user_parts if part.type == "image")
-    if image_count:
-        native_dispatch = _agent_accepts_images(app.state.agent)
-        user_metadata["multimodal"] = {
-            "image_part_count": image_count,
-            "transcript_preserved": True,
-            "native_model_dispatch": native_dispatch,
-        }
-        user_metadata["image_parts"] = _image_part_summaries(user_parts)
-    if turn_agent_id:
-        user_metadata["agent_override"] = {
-            "requested_agent_id": turn_agent_id,
-            "session_agent_id": _session_agent_id(sess),
-            "scope": "turn",
-        }
-    user_msg_id = user_msg_id or _new_message_id("user")
-    user_msg = Message(
-        id=user_msg_id,
-        # The turn id IS the user message id (#711); a user message correlates to
-        # its own turn.
-        turn_id=user_msg_id,
-        session_id=sid,
-        role=message_role,
-        created_at=user_created_at or _iso_from_epoch(now),
-        updated_at=_iso_from_epoch(now),
-        parts=user_parts,
-        metadata=user_metadata,
-    )
+        now = time.time()
+        user_metadata = dict(metadata or {})
+        from clio_agent.gact.automatic_turn_injection import automatic_turn_injection
 
-    # #1334: the ledger + local store are written here (the 202 already promised the
-    # identity); the ARC transcript persist is handed to the turn to run off the loop.
-    transcript_job = stage_intent_user_message(
-        app, sid, user_msg, replace_existing=replace_existing_user_message, defer_atoms=True
-    )
-    app.state.sessions.update(
-        sid,
-        status="running",
-        message_count=len(app.state.messages.get(sid, [])),
-    )
-    app.state.bus.publish(
-        Event(
-            type="session.status_changed",
+        automatic_injection = automatic_turn_injection(user_metadata, user_text)
+        user_parts = (
+            _user_message_parts(
+                request_parts=list(request_parts or []),
+                user_text=user_text,
+            )
+            if automatic_injection is None
+            else [automatic_injection]
+        )
+        if automatic_injection is not None:
+            message_role = "system"
+        if message_role == "system":
+            from clio_agent.gact.providers.config import _model_ref_dict
+
+            model_metadata = (
+                retained_model
+                if retained_model is not None
+                else {"model": _model_ref_dict(sess.model)}
+            )
+            user_metadata = {**model_metadata, **user_metadata}
+        record_context_reference_deliveries(user_metadata, user_parts)
+        image_count = sum(1 for part in user_parts if part.type == "image")
+        if image_count:
+            native_dispatch = _agent_accepts_images(app.state.agent)
+            user_metadata["multimodal"] = {
+                "image_part_count": image_count,
+                "transcript_preserved": True,
+                "native_model_dispatch": native_dispatch,
+            }
+            user_metadata["image_parts"] = _image_part_summaries(user_parts)
+        if turn_agent_id:
+            user_metadata["agent_override"] = {
+                "requested_agent_id": turn_agent_id,
+                "session_agent_id": _session_agent_id(sess),
+                "scope": "turn",
+            }
+        user_msg_id = user_msg_id or _new_message_id("user")
+        user_msg = Message(
+            id=user_msg_id,
+            # The turn id IS the user message id (#711); a user message correlates to
+            # its own turn.
+            turn_id=user_msg_id,
             session_id=sid,
-            payload={
-                "session_id": sid,
-                "status": "running",
-                "prev_status": prev_status,
+            role=message_role,
+            created_at=user_created_at or _iso_from_epoch(now),
+            updated_at=_iso_from_epoch(now),
+            parts=user_parts,
+            metadata=user_metadata,
+        )
+
+        accepted_assignment = owner.history.latest_assignment(sid)
+        content = owner.history.write_content(
+            sid,
+            {
+                "message_id": user_msg.id,
+                "assignment_id": (
+                    accepted_assignment.handle
+                    if accepted_assignment is not None and accepted_assignment.terminal_at is None
+                    else None
+                ),
+                "text": user_text,
+                "agent_id": turn_agent_id,
+                "metadata": user_metadata,
+                "message": user_msg.model_dump(mode="json"),
+                **({"supersedes_input": retry_binding} if retry_binding is not None else {}),
+                **({"model_text": model_text} if model_text is not None else {}),
+                **(
+                    {"queue_context": mailbox_item.content.model_dump(mode="json")}
+                    if mailbox_item is not None
+                    else {}
+                ),
             },
         )
-    )
-    app.state.bus.publish(
-        Event(
-            type="message.created",
-            session_id=sid,
-            payload=user_msg.to_wire(),
-        )
-    )
+        if mailbox_item is None:
+            accepted_input = owner.history.record_mail(
+                MailItem(
+                    id=user_msg.id,
+                    recipient_session=sid,
+                    sender_human=owner.caller(sid).human_id if message_role == "user" else None,
+                    kind="human" if message_role == "user" else "hook",
+                    content=content,
+                    created_at=user_msg.created_at,
+                )
+            )
+        else:
+            accepted_input = owner.history.update_mail(
+                mailbox_item.model_copy(
+                    update={
+                        "content": content,
+                        "delivery": "eligible",
+                        "revision": mailbox_item.revision + 1,
+                    }
+                ),
+                expected_revision=mailbox_item.revision,
+            )
+        from clio_agent.gact.human_controls import relay_confirmed_human_input
 
-    # #948 S1 (#662): route through the TurnRunner, the single owner of turn-task
-    # lifetime (master strong ref, app-loop anchor, busy-gate handle, slot release).
-    # ``spawn_user_turn`` wraps that spawn with the deferred-persist guard: a turn
-    # cancelled before its prologue must not take the user message's atoms with it.
-    spawn_user_turn(
-        app,
-        sid,
-        turn_id=user_msg_id,
-        transcript_job=transcript_job,
-        run_turn=_run_turn_in_background,
-        args=(app, sid, user_text, user_msg, turn_agent_id),
-    )
-    return user_msg
+        relay_confirmed_human_input(owner.history, accepted_input)
+        # Core mail is authoritative. A failure before its commit must not leave
+        # a conflicting transcript row; a later projection failure is recoverable
+        # from the confirmed message body through startup/segment preparation.
+        _append_session_message(app, sid, user_msg)
+        app.state.bus.publish(
+            Event(
+                type="message.created",
+                session_id=sid,
+                payload=user_msg.to_wire(),
+            )
+        )
+
+        return user_msg
