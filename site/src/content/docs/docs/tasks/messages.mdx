@@ -39,6 +39,17 @@ Use the exact session returned by the search, and report the reply here.
 This is an example request. Discovery and messaging require the tools declared
 by the blueprint and the permitted session scope.
 
+You can also ask without knowing the session's name:
+
+```text
+The other day we talked about catering costs and contingency. Find the agents
+that worked on it, read what they decided, and show me the relevant note.
+```
+
+The model chooses topic words for the search, then checks the returned
+transcripts. It should identify matching sessions with dates and source passages;
+it should not treat the first match as proof of the remembered decision.
+
 <Steps>
 
 1. Discover readable sessions with `query_tasks(kind="Session", scope="authorized", query="relevant words")`.
@@ -54,7 +65,11 @@ by the blueprint and the permitted session scope.
 <summary>Current task reads and retained compatibility names</summary>
 
 - **Query tasks** searches readable descriptions and retained transcript text and
-  returns handles usable by the shared controls. Search is lexical.
+  returns handles usable by the shared controls. Search is lexical: all supplied
+  search terms must occur in an assignment's searchable text. It is not semantic
+  similarity retrieval. The agent can broaden a query or try alternate wording.
+  There is no date-range argument; relative dates must be checked against the
+  returned timestamps and messages.
 - **Observe transcript, summary or artifacts** reads original typed transcript
   rows, recorded summaries/outcomes with coverage, or linked deliverables. Follow
   returned cursors; a recorded summary is not a new whole-session summary.

@@ -33,6 +33,20 @@ calendar preference. The budget and simulation are explicitly synthetic.
 | Asynchronous Question | `ask_user` returned a durable input-required handle immediately. Question `task_2a4b1de6b1b9fcfd6c4315fed896f31017feefbf19f28092f9f411c311325fda` remained pending after the response. The operator's answer at 00:28:25 UTC committed into the same active assignment and woke the model to update the run-sheet. |
 | Artifact revisions | First and corrected budget plans plus provisional and dated run-sheets are retained as distinct recorded artifact versions. |
 
+The website now points directly to the first-response transcript inspection and
+the final summary/artifact/note sequence. The recorded discovery query is the
+provided title `Budget review`, not an unknown-title topic query. The separate
+natural-language “the other day” example is explicitly illustrative. R516/R520's
+earlier topic-discovery scope remains separate; no new model run or broad semantic
+recall claim is inferred from these exports. Current task search requires all
+query terms in readable assignment text and exposes no date-range argument.
+
+The documentation-only follow-up passed `git diff --check`. Its isolated D:
+Astro preview exited before serving the edited pages (`The URL must be of scheme
+file` in route-manifest loading); the new guide layout is not browser-accepted.
+Both owned Node processes retired, port 18940 is absent, and the fresh 14,886,958-byte
+snapshot was removed without following its two borrowed-directory junctions.
+
 ## Native exports, without rewriting history
 
 Used the actual compiled production `SessionHistoryRepository.prepareSessionArchive`

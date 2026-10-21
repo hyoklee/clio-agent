@@ -3,7 +3,7 @@ title: Watch agents work together
 description: Read real CLIO conversations where independent agents inspect, message and review each other while background work and questions continue.
 ---
 
-import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { CardGrid, LinkCard, Steps } from '@astrojs/starlight/components';
 import TasksGuideNav from '../../../../components/TasksGuideNav.astro';
 
 <TasksGuideNav active="conversations" />
@@ -21,8 +21,8 @@ saved with the same portable HTML exporter available in the conversation menu.
 Each standalone file includes the native conversation viewer, tool observations
 and captured report contents. Expand operations to inspect what happened.
 The files are large because they include their viewer for offline use.
-For the most comfortable review, open them at desktop width. The archive's tab
-header currently extends beyond a narrow phone viewport.
+The viewer wraps its tabs at phone width. Raw envelopes remain behind
+each row's normal information button; expanding activity shows readable results.
 
 ## Start with a normal request
 
@@ -42,6 +42,75 @@ The model chooses the task tools itself. It discovers the authorized session,
 reads its original transcript and sends a message. Budget review receives that
 message after its first response and replies from a linked continuation.
 No person copies the answer between conversations.
+
+## Follow the transcript read
+
+Open **Workshop planner**, then expand **Used tools, ran commands, received
+injection** under its first response. This is where the planner reads another
+agent's work, rather than merely asking that agent for an answer.
+
+<Steps>
+
+1. **Find the reviewer.** The recorded Query tasks call searches for `Budget review`
+   among authorized Session assignments. The user supplied that name, so this
+   demonstrates discovery by a known name, not rediscovery of a forgotten topic.
+2. **Read its original conversation.** The next Observe tasks call selects
+   **transcript**, with **session** history. Its result contains the reviewer's
+   original messages and source IDs, including the budget calculation.
+3. **Check and use the finding.** The planner identifies the omitted $700
+   contingency and the resulting $9,510 total in its own response. Reading the
+   transcript supplied evidence for its reasoning; messaging was a separate step.
+4. **Ask for another check.** The Message call addresses the discovered handle.
+   Follow **Budget review** to see the attributed arrival and its later reply.
+
+</Steps>
+
+The planner's final response has another evidence trail. Expand its activity to
+find **Query tasks → Observe summary → Observe artifacts → Read**. The last Read
+opens the actual note before the planner shares it. A summary, an artifact list
+and the note's contents are three different reads.
+
+<details>
+<summary>Recorded calls for closer inspection</summary>
+
+| Step | Actual recorded operation |
+| --- | --- |
+| Discover | `query_tasks(kind="Session", scope="authorized", query="Budget review")` |
+| Read original conversation | `observe_tasks(tasks=returned_handle, view="transcript", history="session")` |
+| Read recorded overview | `observe_tasks(tasks=returned_handle, view="summary", history="session")` |
+| Find the deliverable | `observe_tasks(tasks=returned_handle, view="artifacts", history="session")` |
+
+`returned_handle` abbreviates the opaque handle in the recording. These are
+explanations of saved calls, not instructions injected into the recorded agents.
+The model's later malformed pagination cursor remains a failed call in the
+export; it is not presented as successful transcript pagination.
+
+</details>
+
+## Find a conversation when you have forgotten its name
+
+This is a useful request to make in a new conversation:
+
+```text
+The other day we discussed catering costs and keeping a useful contingency.
+Find the agents that worked on it. Read the relevant conversation, remind me
+what we decided, and show me the note they produced.
+```
+
+The agent should search authorized tasks using topic words, inspect the matching
+transcripts, and return the sessions, dates and source passages that support its
+answer. If several sessions fit, it should distinguish them rather than guess.
+Messaging a selected session can then ask it to continue or revisit the decision.
+
+**This request is illustrative.** The two recordings above discover a supplied
+session name; they do not demonstrate finding an unknown conversation from a
+remembered topic.
+
+Current search matches words in readable descriptions and retained transcript
+text. The model can choose shorter queries or alternate wording, but the backend
+does not perform semantic similarity search. It also has no dedicated date-range
+filter: “the other day” needs checking against returned timestamps and source
+messages. See [Messages](/docs/tasks/messages/#find-an-earlier-conversation-then-address-it-exactly).
 
 ## Review the tradeoff, not just the total
 
