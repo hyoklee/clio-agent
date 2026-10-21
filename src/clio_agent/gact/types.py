@@ -253,6 +253,9 @@ class ContextStateResponse(BaseModel):
     the line). ``categories`` buckets ``tokens_by_kind`` into Claude-Code-``/context``-style
     groups, plus a ``framing`` entry = ``used_tokens − live_tokens`` (the system-prompt +
     tool-schema overhead the model sees but ARC does not store/edit), when both are known.
+    ``prompt_breakdown`` separately attributes the actual last request's system
+    sections, tool definitions, skills and messages using explicit text estimates.
+    These estimates never replace the provider total or pretend to price media.
     """
 
     session_id: str
@@ -273,6 +276,8 @@ class ContextStateResponse(BaseModel):
     live_block_count: int = 0
     tokens_by_kind: dict[str, int] = Field(default_factory=dict)
     categories: dict[str, int] = Field(default_factory=dict)
+    prompt_breakdown: dict[str, Any] | None = None
+    usage_recorded_at: str | None = None
     segments: list[dict[str, Any]] = Field(default_factory=list)
     render_text: str = ""
     messages: list[dict[str, Any]] = Field(default_factory=list)
