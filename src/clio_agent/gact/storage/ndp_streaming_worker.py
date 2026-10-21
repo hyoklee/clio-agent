@@ -266,7 +266,7 @@ def perform(request: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
             time.sleep(0.02)
         rows = list(handle.records(limit=None))[: request["max_records"]]
         positions = {**earliest, **request["positions"]}
-        retained = []
+        retained: list[dict[str, Any]] = []
         size = 1024
         for row in rows:
             encoded = json.dumps(row).encode()

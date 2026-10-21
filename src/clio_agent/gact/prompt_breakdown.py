@@ -76,7 +76,8 @@ def _text(value: Any) -> str:
 def _system_sections(text: str) -> list[tuple[str, str]]:
     """Split real headings without treating headings inside fenced code as sections."""
     sections: list[tuple[str, str]] = []
-    title, lines, fence = "Agent instructions", [], ""
+    title, fence = "Agent instructions", ""
+    lines: list[str] = []
     for line in text.splitlines(keepends=True):
         marker = re.match(r"^\s*(`{3,}|~{3,})", line)
         if marker:
