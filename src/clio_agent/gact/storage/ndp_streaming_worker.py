@@ -304,9 +304,18 @@ def main() -> None:
     watchdog.daemon = True
     watchdog.start()
     profile: dict[str, Any] = {}
+    expected_errors: tuple[type[Exception], ...] = (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        RuntimeError,
+    )
     logging.disable(logging.CRITICAL)
     try:
         profile = json.loads(Path(request["profile_path"]).expanduser().read_text(encoding="utf-8"))
+        kafka_error = importlib.import_module("kafka.errors").KafkaError
+        expected_errors = (*expected_errors, kafka_error)
         with contextlib.redirect_stdout(sys.stderr):
             result = perform(request, profile)
     except ImportError:
@@ -314,7 +323,7 @@ def main() -> None:
             "error": "sdk_unavailable",
             "message": "Install the pinned NDP streaming_v2 SDK in the selected runtime interpreter",
         }
-    except Exception as exc:  # Worker protocol boundary: no traceback or credentials cross it.
+    except expected_errors as exc:
         message = str(exc)
         for secret in [
             request.get("token"),

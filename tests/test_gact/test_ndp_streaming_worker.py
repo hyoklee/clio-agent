@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import sys
 from collections import namedtuple
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
 import pytest
 
+from clio_agent.gact.storage import ndp_streaming_worker as worker
 from clio_agent.gact.storage.ndp_streaming_worker import PositionedConsumer, catalog_topic
 
 Partition = namedtuple("Partition", "topic partition")
@@ -171,3 +175,49 @@ def test_catalog_source_requires_accessible_parent_and_kafka_resource() -> None:
     ep.search_datasets.return_value = []
     with pytest.raises(ValueError, match="parent dataset is not accessible"):
         catalog_topic(ep, "resource", {}, "broker", 9092)
+
+
+@pytest.mark.parametrize("kind", ["runtime", "permission", "kafka"])
+def test_worker_reports_expected_failures_without_exposing_credentials(
+    kind: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """The subprocess protocol keeps typed SDK failures useful and redacts all secrets."""
+
+    class KafkaFailure(Exception):
+        pass
+
+    profile = tmp_path / "profile.json"
+    profile.write_text(
+        json.dumps({"kafka": {"username": "private-user", "password": "private-password"}})
+    )
+    error_type = {"runtime": RuntimeError, "permission": PermissionError, "kafka": KafkaFailure}[
+        kind
+    ]
+
+    def fail(request: dict[str, Any], profile: dict[str, Any]) -> dict[str, Any]:
+        raise error_type("private-token private-user private-password unavailable")
+
+    monkeypatch.setattr(
+        worker.importlib, "import_module", lambda name: SimpleNamespace(KafkaError=KafkaFailure)
+    )
+    monkeypatch.setattr(worker, "perform", fail)
+    monkeypatch.setattr(worker.threading, "Timer", Mock(return_value=Mock()))
+    monkeypatch.setattr(worker.logging, "disable", Mock())
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(
+            json.dumps(
+                {"profile_path": str(profile), "runtime_seconds": 10, "token": "private-token"}
+            )
+        ),
+    )
+    worker.main()
+    output = capsys.readouterr()
+    result = json.loads(output.out)
+    assert result["error"] == error_type.__name__
+    assert result["message"] == "[REDACTED] [REDACTED] [REDACTED] unavailable"
+    assert not output.err

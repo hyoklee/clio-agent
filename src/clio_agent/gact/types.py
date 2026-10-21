@@ -13,6 +13,8 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, Field
 
 from clio_agent.arc.schema import SegmentKind
+from clio_agent.gact.context_frame_types import ContextFrame as ContextFrame
+from clio_agent.gact.context_frame_types import ContextFrameItem as ContextFrameItem
 from clio_agent.gact.context_preferences_types import (
     ContextPreferences as ContextPreferences,
 )
@@ -397,35 +399,6 @@ class MemorySearchResponse(BaseModel):
     include_cross_session: bool = False
     searched_sessions: list[str] = Field(default_factory=list)
     hits: list[MemorySearchHit] = Field(default_factory=list)
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ContextFrameItem(BaseModel):
-    kind: str
-    source_id: str = ""
-    role: str = ""
-    path: str = ""
-    display_path: str = ""
-    included: bool = True
-    reason: str = ""
-    tokens_estimated: int = 0
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class ContextFrame(BaseModel):
-    id: str
-    session_id: str
-    turn_id: str = ""
-    user_message_id: str = ""
-    assistant_message_id: str = ""
-    created_at: str
-    updated_at: str
-    status: Literal["assembled", "context_error", "completed", "error", "cancelled"] = "assembled"
-    model: dict[str, str] = Field(default_factory=dict)
-    agent: dict[str, Any] = Field(default_factory=dict)
-    prompt: dict[str, Any] = Field(default_factory=dict)
-    items: list[ContextFrameItem] = Field(default_factory=list)
-    tokens_estimated: int = 0
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
