@@ -14,6 +14,7 @@ from fastmcp import Client
 from clio_agent.tools import fs_inspection
 from clio_agent.tools.file_policy import FileAccessPolicy, FilePolicyError
 from clio_agent.tools.gateway import build_gateway
+from clio_agent.tools.tool_presentation import present_mcp_result
 from tests._config_layer import set_config
 
 
@@ -37,8 +38,19 @@ def test_listing_reports_entry_types_and_bound(approved: Path) -> None:
         ("src", "directory"),
     ]
     assert not result["truncated"]
+    view = present_mcp_result(
+        "fs_list_directory", {"path": str(approved)}, {"structuredContent": result}
+    )
+    assert view["action"] == "List directory"
+    assert view["summary"] == "2 entries"
+    assert any(block.get("label") == "README.md" for block in view["blocks"])
     limited = fs_inspection.list_directory(str(approved), limit=1)
     assert limited["truncated"] and len(limited["entries"]) == 1
+    view = present_mcp_result(
+        "fs_list_directory", {"path": str(approved)}, {"structuredContent": limited}
+    )
+    assert "partial listing" in view["summary"]
+    assert any("incomplete" in block.get("text", "") for block in view["blocks"])
 
 
 def test_literal_search_has_line_numbers_context_and_glob(approved: Path) -> None:
@@ -56,6 +68,13 @@ def test_literal_search_has_line_numbers_context_and_glob(approved: Path) -> Non
         {"line": 3, "text": "after"},
     ]
     assert not result["truncated"]
+    view = present_mcp_result(
+        "fs_search_text", {"path": str(approved), "query": "a.*b"}, {"structuredContent": result}
+    )
+    assert view["action"] == "Search text"
+    assert view["summary"] == "1 match · 1 file searched"
+    assert any("2: call(a.*b)" in block.get("text", "") for block in view["blocks"])
+    assert "diagnostic" not in view
     assert (
         len(
             fs_inspection.search_text(str(approved), "a.*b", "*.py", case_sensitive=False)[
@@ -77,6 +96,17 @@ def test_single_file_search_does_not_scan_siblings(approved: Path) -> None:
     assert len(result["matches"]) == 1 and result["matches"][0]["line"] == 2
     assert not result["truncated"]
     assert not fs_inspection.search_text(str(source), "resolve_command", "*.md")["matches"]
+
+
+def test_search_presentation_preserves_coverage_warning(approved: Path) -> None:
+    """A result limit must remain visible alongside the matches, without changing evidence."""
+    (approved / "one.txt").write_text("hit\nhit\n", encoding="utf-8")
+    result = fs_inspection.search_text(str(approved), "hit", limit=1)
+    view = present_mcp_result(
+        "fs_search_text", {"path": str(approved), "query": "hit"}, {"structuredContent": result}
+    )
+    assert result["stop_reason"] == "result_limit"
+    assert any("result_limit" in block.get("text", "") for block in view["blocks"])
 
 
 @pytest.mark.parametrize("tool", [fs_inspection.list_directory, fs_inspection.search_text])
