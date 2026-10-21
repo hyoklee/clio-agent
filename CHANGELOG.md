@@ -35,6 +35,9 @@ TUI/HTTP surface aren't tracked here.
 
 ### Changed
 
+- Keep Session and Work in separate rails, with section order and visibility in
+  Customize. Simplify file headers and preserve temporary navigation previews.
+- Pin the published frontend, agent packs and schemas releases for this beta.
 - Keep additional permitted folders visible in Files. Track hashes and versions
   for files used or written; request approval before accessing external folders,
   update grants and continue after access is effective.
